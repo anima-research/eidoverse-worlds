@@ -948,7 +948,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = !!s.w().presence.bodies.vic?.pose;
-      s.call("vic", "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
+      s.call("vic", "consent", { switch: "refuse" });
       return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
   { id: "C4", what: "an expired allowance for one behaviour no longer masks its sponsor's: the sponsor-wide allowance applies once it has run out", run(s) { cast(s);

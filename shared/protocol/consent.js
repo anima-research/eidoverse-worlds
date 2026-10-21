@@ -65,95 +65,67 @@ export function pointClass(bodyAt, p) {
   return h <= 0.2 && y >= 0.8 && y <= 1.5 ? "intimate" : "touch";
 }
 
-export function tableOf(P, who) { const t = P.consent?.[who]; const pre = PRESETS[t?.preset ?? DEFAULT_PRESET] ?? PRESETS[DEFAULT_PRESET];
-  return { preset: t?.preset ?? DEFAULT_PRESET, everyone: { ...pre.everyone, ...(t?.cells?.everyone ?? {}) }, friends: { ...pre.friends, ...(t?.cells?.friends ?? {}) },
-    paused: !!t?.paused, friendsList: t?.friends ?? [], delegates: t?.delegates ?? [], overrides: t?.over ?? {} }; }
-export const isFriend = (P, a, b) => (P.consent?.[a]?.friends ?? []).includes(b) && (P.consent?.[b]?.friends ?? []).includes(a);
-// What `to`'s table says about `from` doing class `cls` now: { mode: allow | ask | deny, why }
+/** What the authority holds for one body (recut A2): its switch (undefined = never chosen) and its per-person answers. */
+export function tableOf(P, who) { const t = P.consent?.[who]; return { switch: t?.switch, overrides: t?.over ?? {} }; }
 // The one switch (recut A2, R 10-20): accept | ask | refuse, and what each means as a decision.
 export const SWITCHES = ["accept", "ask", "refuse"];
 export const DEFAULT_SWITCH = "accept";   // permissive; a world's body-default changes it for people who haven't chosen
 const SWITCH_MODE = { accept: "allow", ask: "ask", refuse: "deny" };
+/** What `to` says about `from` doing class `cls` now: { mode: allow | ask | deny, why }. One order, every body kind:
+ *  a per-person answer (yours, for that person) > your switch > the world's body-default > accept. */
 export function decide(P, from, to, cls, now, worldDefault) {
-  const t = tableOf(P, to); cls = classOf(cls);
-  const sw = P.consent?.[to]?.switch; worldDefault ??= P.bodyDefault;   // the authority keeps P.bodyDefault = @world.body-default
-  if (sw !== undefined || worldDefault !== undefined || !P.consent?.[to]?.preset && !P.consent?.[to]?.cells) {
-    const o = t.overrides[from]?.[cls];
-    if (o && (o.until === undefined || o.until > now)) return o.mode === "deny" ? { mode: "deny", why: `${to} said no to ${cls} from ${from}` } : { mode: "allow", why: `${to} allowed ${cls} from ${from}` };
-    const which = sw ?? (SWITCHES.includes(worldDefault) ? worldDefault : DEFAULT_SWITCH);
-    return { mode: SWITCH_MODE[which], why: sw !== undefined ? `${to}'s body is set to ${sw}` : `this world's default for bodies is ${which}` };
-  }
-  if (t.paused) return { mode: "deny", why: `${to} has paused (every class is deny, friends included)` };
+  cls = classOf(cls); const t = tableOf(P, to);
   const o = t.overrides[from]?.[cls];
-  if (o && (o.until === undefined || o.until > now)) return o.mode === "deny" ? { mode: "deny", why: `${to} said no to ${cls} from ${from}` } : { mode: "allow", why: `${to} allowed ${cls} from ${from}`, standing: "allow" };
-  const tier = isFriend(P, from, to) ? "friends" : "everyone";
-  return { mode: t[tier][cls], tier, why: `${to}'s ${cls} for ${tier} is ${t[tier][cls]}` };
+  if (o && (o.until === undefined || o.until > now)) return o.mode === "deny" ? { mode: "deny", why: `${to} said no to ${cls} from ${from}` } : { mode: "allow", why: `${to} allowed ${cls} from ${from}` };
+  worldDefault ??= P.bodyDefault;   // the authority keeps P.bodyDefault = @world.body-default
+  const which = t.switch ?? (SWITCHES.includes(worldDefault) ? worldDefault : DEFAULT_SWITCH);
+  return { mode: SWITCH_MODE[which], why: t.switch !== undefined ? `${to}'s body is set to ${t.switch}` : `this world's default for bodies is ${which}` };
 }
-// L6: change a table. Only the person opens; anyone they named a delegate may CLOSE (pause, deny), never open.
+// Change your body's answers. Only you: there is no one who decides for you (recut A2 removed delegates).
 // Names and classes arrive from the wire: every table is prototype-less, and a "who" must look like an identity
 // (security pass 2, H-0: deny '__proto__' wrote into Object.prototype for every world in the process).
 const BAD_KEY = new Set(["__proto__", "constructor", "prototype"]);
 const isWho = (w) => typeof w === "string" && /^[A-Za-z0-9_.:@+-]{1,64}$/.test(w) && !BAD_KEY.has(w);
 const bag = () => Object.create(null);
+export const RETIRED_CONSENT = ["preset", "set", "pause", "friend", "unfriend", "delegate", "undelegate", "of"];
 export function setConsent(P, actor, a, now) {
   if (a == null || typeof a !== "object") return { ok: false, code: "shape", reason: "consent takes an object" };
-  if (a.of !== undefined && !isWho(a.of)) return { ok: false, code: "shape", reason: "of: an identity" };
-  const target = a.of ?? actor; const self = target === actor;
-  const t = ((P.consent ??= bag())[target] ??= bag());
-  const set = a.set && typeof a.set === "object" ? { ...a.set, class: classOf(a.set.class), tier: tierOf(a.set.tier ?? "everyone"), mode: modeOf(a.set.mode) } : a.set;
-  const opening = a.preset !== undefined || (set && set.mode !== "deny") || a.allow !== undefined || a.pause === false || a.friend !== undefined || a.delegate !== undefined;
-  // who is on your lists is yours alone (review r11 M1): naming, and removing, a friend or a delegate. A removal closes
-  // nothing a delegate could close for you, so it is never one of their closings
-  const lists = a.unfriend !== undefined || a.undelegate !== undefined;
-  if (!self && lists) return { ok: false, code: "consent", reason: `only ${target} may change who ${target}'s friends and delegates are` };
-  if (!self && (opening || !(t.delegates ?? []).includes(actor))) return { ok: false, code: "consent", reason: opening ? `only ${target} may open ${target}'s consent` : `${target} hasn't named you a delegate` };
+  const gone = RETIRED_CONSENT.find((k) => a[k] !== undefined);
+  if (gone) return { ok: false, code: "shape", reason: `consent has no '${gone}' since the switch replaced the table`, fix: `consent {switch: ${SWITCHES.join("|")}}, or {allow|deny: <who>, class?} for one person` };
   if (a.switch !== undefined && !SWITCHES.includes(a.switch)) return { ok: false, code: "shape", reason: `switch: one of ${SWITCHES.join(", ")}, got ${JSON.stringify(a.switch)}` };
-  if (a.switch !== undefined && !self) return { ok: false, code: "consent", reason: `only ${target} may set ${target}'s body switch` };
-  // every argument is checked before any is applied: a refused change changes nothing
-  if (a.preset !== undefined && (typeof a.preset !== "string" || !Object.hasOwn(PRESETS, a.preset))) return { ok: false, code: "shape", reason: `no preset '${a.preset}'`, fix: Object.keys(PRESETS).join(", ") };
-  if (set && (!CLASSES.includes(set.class) || !MODES.includes(set.mode) || !TIERS.includes(set.tier))) return { ok: false, code: "shape", reason: "set {class, tier: everyone|friends, mode: allow|ask|deny}" };
   const who = a.allow ?? a.deny; const cls = a.class !== undefined ? [classOf(a.class)] : CLASSES;
   if (a.allow !== undefined || a.deny !== undefined) {
     if (!isWho(who)) return { ok: false, code: "shape", reason: "allow/deny: an identity" };
     if (!cls.every((c) => CLASSES.includes(c))) return { ok: false, code: "shape", reason: `class: one of ${CLASSES.join(", ")}` };
     // an allowance lasts the for it names: a positive number of ms. With no for it stands until you revoke it, as a deny does (R 10-20)
-    if (a.allow !== undefined && a.for != null && !(typeof a.for === "number" && a.for > 0)) return { ok: false, code: "shape", reason: `for: how long it lasts, in ms (a positive number), got ${JSON.stringify(a.for)}`, fix: "e.g. for: 600000 (ten minutes); leave for out to allow until you revoke it" }; }
-  // pause is true or false; any other value is refused
-  if (a.pause !== undefined && typeof a.pause !== "boolean") return { ok: false, code: "shape", reason: `pause is true or false, got ${JSON.stringify(a.pause)}` };
-  if (a.friend !== undefined && !isWho(a.friend)) return { ok: false, code: "shape", reason: "friend: an identity" };
-  if (a.delegate !== undefined && !isWho(a.delegate)) return { ok: false, code: "shape", reason: "delegate: an identity" };
-  if (a.unfriend !== undefined && !isWho(a.unfriend)) return { ok: false, code: "shape", reason: "unfriend: an identity" };
-  if (a.undelegate !== undefined && !isWho(a.undelegate)) return { ok: false, code: "shape", reason: "undelegate: an identity" };
+    if (a.allow !== undefined && a.for != null && !(typeof a.for === "number" && a.for > 0)) return { ok: false, code: "shape", reason: `for: how long it lasts, in ms (a positive number), got ${JSON.stringify(a.for)}`, fix: "leave for out to allow until you revoke it" };
+  }
+  const t = ((P.consent ??= bag())[actor] ??= bag());
   if (a.switch !== undefined) t.switch = a.switch;
-  if (a.preset !== undefined) { t.preset = a.preset; t.cells = bag(); }
-  if (set) ((t.cells ??= bag())[set.tier] ??= bag())[set.class] = set.mode;
   if (a.allow !== undefined || a.deny !== undefined) {
     const until = a.allow !== undefined && a.for != null ? now + a.for : undefined;
     for (const c of cls) ((t.over ??= bag())[who] ??= bag())[c] = { mode: a.allow !== undefined ? "allow" : "deny", ...(until !== undefined ? { until } : {}) }; }
-  if (a.pause !== undefined) t.paused = a.pause;
-  if (a.friend !== undefined) t.friends = [...new Set([...(t.friends ?? []), a.friend])];
-  if (a.delegate !== undefined) t.delegates = [...new Set([...(t.delegates ?? []), a.delegate])];
-  // removing: a friend off your list ends the mutual tier at once (isFriend reads both lists on every decision; the caller's
-  // revokeAfter ends what the friends tier alone allowed); a delegate off it can no longer close your table
-  if (a.unfriend !== undefined) t.friends = (t.friends ?? []).filter((x) => x !== a.unfriend);
-  if (a.undelegate !== undefined) t.delegates = (t.delegates ?? []).filter((x) => x !== a.undelegate);
-  return { ok: true, target };
+  return { ok: true, target: actor };
 }
 /** The presence plane's consent tables in today's shape. A table stored before 10-17 (cells.strangers, everyone/nobody,
  *  class move, one `friends` list that also closed the table) is rewritten: the old list stays the friends list AND becomes
  *  the delegates list (it did both jobs, so nobody gains or loses a power), and P.consentShape marks the plane as done so a
  *  delegates list emptied since is never refilled. Returns how many tables changed. In place; idempotent. */
-export const CONSENT_SHAPE = 2;
+export const CONSENT_SHAPE = 3;
+/** A table stored before the switch (recut A2) becomes a switch, only ever NARROWER than it was: paused, or any enforced
+ *  class closed (deny) for everyone → refuse; else any ask → ask; else accept. Friends, delegates and presets go (nobody
+ *  gains a power: a friend's wider answer is lost, never a stranger's narrower one). Per-person answers stay. */
 export function migratePresence(P) {
   if (!P || typeof P !== "object" || P.consentShape === CONSENT_SHAPE) return 0;
   let n = 0;
-  for (const t of Object.values(P.consent ?? {})) { if (!t || typeof t !== "object") continue; n++;
-    if (t.cells && typeof t.cells === "object") { const cells = bag();
-      for (const [tier, row] of Object.entries(t.cells)) { if (!row || typeof row !== "object") continue; const r = (cells[tierOf(tier)] ??= bag());
-        for (const [c, m] of Object.entries(row)) r[classOf(c)] = modeOf(m); }
-      t.cells = cells; }
+  for (const t of Object.values(P.consent ?? {})) { if (!t || typeof t !== "object") continue;
     for (const row of Object.values(t.over ?? {})) if (row && typeof row === "object" && Object.hasOwn(row, "move")) { if (!Object.hasOwn(row, "displace")) row.displace = row.move; delete row.move; }
-    if (Array.isArray(t.friends) && !Array.isArray(t.delegates)) t.delegates = t.friends.slice(); }
+    if (t.switch === undefined && (t.preset !== undefined || t.cells !== undefined || t.paused)) {
+      const pre = PRESETS[t.preset] ?? PRESETS[DEFAULT_PRESET]; const row = { ...pre.everyone };
+      for (const [tier, r] of Object.entries(t.cells ?? {})) if (tierOf(tier) === "everyone" && r && typeof r === "object") for (const [c, m] of Object.entries(r)) row[classOf(c)] = modeOf(m);
+      const modes = ENFORCED.map((c) => row[c]);
+      t.switch = t.paused || modes.includes("deny") ? "refuse" : modes.includes("ask") ? "ask" : "accept"; }
+    for (const k of ["preset", "cells", "paused", "friends", "delegates"]) if (Object.hasOwn(t, k)) { delete t[k]; n++; } }
   for (const r of P.ring ?? []) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);
   for (const k of Object.values(P.asks ?? {})) if (k && Object.hasOwn(LEGACY_CLASS, k.cls)) k.cls = classOf(k.cls);
   for (const r of Object.values(P.reaches ?? {})) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);

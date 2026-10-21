@@ -172,7 +172,7 @@ try {
     const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
     wren.send({ type: "pose", pose: { p: [mine[0] + 1, mine[1], mine[2]], yaw: 0, speed: 0, clip: "idle" } });
     let rq = 0; const wreq = (verb: string, args: any) => { const id = `w${++rq}`; wren.send({ type: "request", id, verb, args }); };
-    wreq("consent", { set: { class: "pose", tier: "everyone", mode: "allow" } }); wreq("consent", { set: { class: "displace", tier: "everyone", mode: "allow" } });
+    wreq("consent", { switch: "accept" });
     await sleep(500);
     await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
     await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendTyping('Wren'); return true; })`);

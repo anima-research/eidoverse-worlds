@@ -187,8 +187,6 @@ const pat = person("Pat", "p", [10, 0, 0]), quin = person("Quin", "q", [10.6, 0,
   const out = shoulder(pat);
   ok(out && !out.reach, "RG13c Quin going everyone → ask ends the held touch (only nobody used to)", out);
   ok(grant(pat, quin), "(RG13 setup) another yes"); ok(!!shoulder(pat)?.reach, "(RG13 setup) relays");
-  req(quin, "consent", { friend: pat.actorId }); req(pat, "consent", { friend: quin.actorId });   // friends: touch everyone
-  req(quin, "consent", { set: { class: "touch", tier: "friends", mode: "ask" } });
   }   // RG13c's friends-tier half RETIRED (recut A2): there is no friends cell to move
 
 // ---- F5: every contact point can be asked for through the verb, classed as the relay classes it ----

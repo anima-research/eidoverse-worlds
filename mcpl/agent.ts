@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { CLASSES, DEFAULT_PRESET, KIND_CLASS, REACH_NOTE_MS, TIERS, namedPointClass, pointClass, setConsent, tableOf } from "../shared/protocol/consent.js";
+import { CLASSES, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -389,13 +389,6 @@ export function voiceNote(pose: unknown): string {
   else if (v.mic === false) parts.push("mic off");
   if (v.xr) parts.push("in VR");
   return parts.length ? `; ${parts.join("; ")}` : "";
-}
-
-/** The table an agent chose (the preset it last sent, then each cell it set since) as every cell's mode, worked out by
- *  the authority's own rule (setConsent, tableOf) on a scratch plane, so legacy names read as the server reads them. */
-export function consentCells(t: { preset: string; sets: Record<string, unknown>[] }): { class: string; tier: string; mode: string }[] {
-  const P: any = {}; setConsent(P, "me", { preset: t.preset }, 0); for (const set of t.sets) setConsent(P, "me", { set }, 0);
-  const tb: any = tableOf(P, "me"); return TIERS.flatMap((tier: string) => CLASSES.map((c: string) => ({ class: c, tier, mode: tb[tier][c] })));
 }
 
 export class WorldAgent {
@@ -1180,14 +1173,11 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
             if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
-            // my consent table, as a person's client sends it on every arrival (consentsync.js): what the authority holds for
-            // me is read, and each cell that differs from the table I chose is set, in order on this one socket. Never the
-            // preset itself, which empties my cells: set cell by cell, each goes straight from what the authority held to
-            // what I chose (review of #260)
-            { const want = consentCells(this.consentTable);
-              void (async () => { const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
-                for (const set of want.filter((c) => held.table[c.tier]?.[c.class] !== c.mode)) {
-                  const r = await this.request("consent", { set }).catch(() => null); if (!r?.ok) break; } })(); }
+            // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
+            // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
+            { const want = this.consentSwitch;
+              if (want) void (async () => { const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
+                if (held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null); })(); }
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -4668,19 +4658,9 @@ export class WorldAgent {
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
-  /** This body's own consent table as it set it: a preset, then each cell it set since (consent.js: a preset resets every
-   *  cell to that preset's). Resent whole on every arrival, as a person's client sends its table (consentsync.js), so a
-   *  reconnect neither reopens a cell this body closed nor forgets one it opened. */
-  private consentTable: { preset: string; sets: Record<string, unknown>[] } = { preset: DEFAULT_PRESET, sets: [] };
-  private noteConsent(args: Record<string, unknown>) {
-    if (args.of !== undefined && args.of !== this.name) return;   // a delegate's closing of someone else's table
-    if (typeof args.preset === "string") this.consentTable = { preset: args.preset, sets: [] };
-    const set = args.set as Record<string, unknown> | undefined;
-    if (set && typeof set === "object") {
-      const key = (x: Record<string, unknown>) => `${x.class}|${x.tier ?? "everyone"}`;
-      this.consentTable.sets = [...this.consentTable.sets.filter((x) => key(x) !== key(set)), set];
-    }
-  }
+  /** This body's switch as it last set it (recut A2), resent on every arrival so a reconnect keeps it. */
+  private consentSwitch: string | null = null;
+  private noteConsent(args: Record<string, unknown>) { if (typeof args.switch === "string") this.consentSwitch = args.switch; }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
   /** Reaches the relay refused to show (server/reachgate.ts; the authority says so once per target and class per

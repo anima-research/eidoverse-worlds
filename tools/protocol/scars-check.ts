@@ -145,11 +145,11 @@ const cases: Case[] = [
       return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
     good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
   // ---------------- K: look ----------------
-  { id: "K1", what: "look: vic sees his own consent table, and nobody else's (bob's stranger cells and pause stay bob's)", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { pause: true });
+  { id: "K1", what: "look: vic sees his own consent switch, and nobody else's (bob's refuse stays bob's)", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });
       const L = s.call("vic", "look", {}); const me = L.bodies?.find((b: any) => b.id === "vic"), him = L.bodies?.find((b: any) => b.id === "bob");
       return { me, him }; },
-    good: (o) => !!o.me?.shield?.everyone && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("paused") },
+    good: (o) => o.me?.shield && "switch" in o.me.shield && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("refuse") },
   { id: "K2", what: "look: who touches whom is the toucher's and the touched's own: a third person sees none of it", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("ann", "move", { to: [3, 0, 0] });

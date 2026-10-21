@@ -222,7 +222,7 @@ try {
   // AS15 (review of #260): a rejoin resends the agent's consent table without a preset. A preset
   // empties the agent's cells, so a cell it closed would stand open until its set landed. The rejoin reads what the
   // authority holds and sets only what differs; the closed cell is closed throughout and after
-  { const closed = await ag.request("consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
+  { const closed = await ag.request("consent", { switch: "refuse" });
     const sent: any[] = []; const orig = ag.request.bind(ag);
     ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); return orig(verb, args); };
     ag.ws?.close();

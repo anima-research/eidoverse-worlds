@@ -126,9 +126,9 @@ function revokeAfter(w, to, before = {}) { syncDefault(w); const P = w.presence,
   for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r?.to === to) { const m = decideAs(P, actor, r.sponsor, to, r.cls, now).mode;
     if (m === "deny" || (m !== "allow" && m !== before[actor])) { delete P.reaches[actor]; ended.push({ actor, class: r.cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: r.cls }); } }
   w.presenceDirty = true; return ended; }
-const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { preset: t.preset, everyone: Object.fromEntries(C.ENFORCED.map((c) => [c, t.everyone[c]])), ...(t.paused ? { paused: true } : {}) }; };
+const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { switch: t.switch ?? null }; };   // recut A2: what my own snapshot says I chose
 const BODY_VERBS = {
-  // L6: the person's own table. `of: <who>` acts on someone else's: closing only, and only if they named you a delegate.
+  // L6 (recut A2): my body's switch and my per-person answers; only I change them.
   consent(w, actor, a) { const P = w.presence, now = w.now(); expireAsks(w);
     if (a.answer !== undefined) { const k = P.asks?.[a.answer]; if (!k || k.to !== actor) refuse("not-found", `no ask '${a.answer}' waiting for you`, "consent {} lists them");
       delete P.asks[a.answer];
@@ -136,12 +136,11 @@ const BODY_VERBS = {
         deliver(w, k.from, actor, k.kind, k.cls, { spec: k.spec }, "asked"); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "allowed (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: true, applied: true }); }
       else { coolDown(P, k, now); ringPush(P, { ts: now, from: k.from, to: actor, cls: k.cls, verdict: "refused (asked)" }); inboxPush(P, k.from, { type: "body-reply", ask: k.id, ok: false, why: C.refusalWords(actor, k.cls) }); }
       w.presenceDirty = true; return { ok: true, answered: a.answer, yes: a.yes === true }; }
-    const changing = ["switch", "preset", "set", "allow", "deny", "pause", "friend", "delegate", "unfriend", "undelegate"].some((k) => a[k] !== undefined);
-    if (changing) { const before = reachModes(P, typeof a.of === "string" ? a.of : actor, now); const exw = typeof a.unfriend === "string" ? a.unfriend : typeof a.friend === "string" ? a.friend : null; const ex = exw && exw !== actor ? exw : null; const beforeEx = ex ? reachModes(P, ex, now) : null; const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "a delegate you named may close your table; only you may open it (§5)");
-      // friendship is mutual, so an unfriend changes the ex-friend's effective table too: re-check grants on THEIR body (r12 M1)
-      const ended = [...revokeAfter(w, r.target, before), ...(ex ? revokeAfter(w, ex, beforeEx) : [])]; w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
+    const changing = ["switch", "allow", "deny", ...C.RETIRED_CONSENT].some((k) => a[k] !== undefined);
+    if (changing) { const before = reachModes(P, actor, now); const r = C.setConsent(P, actor, a, now); if (!r.ok) refuse(r.code, r.reason, r.fix ?? "consent {switch: accept|ask|refuse}");
+      const ended = revokeAfter(w, actor, before); w.presenceDirty = true; return { ok: true, recorded: false, of: actor, ...(ended.length ? { ended } : {}), table: C.tableOf(P, actor) }; }
     const t = C.tableOf(P, actor);
-    return { ok: true, table: { switch: P.consent?.[actor]?.switch ?? null, preset: t.preset, everyone: t.everyone, friends: t.friends, paused: t.paused, friendsList: t.friendsList, delegates: t.delegates }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
+    return { ok: true, table: { switch: t.switch ?? null, overrides: t.overrides}, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);

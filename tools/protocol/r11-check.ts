@@ -119,49 +119,24 @@ const tableOf = (s: any, who: string) => C.tableOf(s.w().presence, who);
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
-  // ---------------- C: a friend and a delegate can be removed ----------------
-  { id: "C1", what: "(stern M1, p1 A1–A6) alice names mallory a delegate, mallory pauses her, alice unpauses and removes him (consent {undelegate}): her delegates list is empty and mallory's next pause is refused `consent`", run(s) {
+  // ---------------- C: consent after recut A2 ----------------
+  // C1, C2, C3, C6 RETIRED (recut A2, 10-20): they tested delegates and the friends tier, which are gone (house K5).
+  { id: "C4", what: "(recut A2) a stored table becomes a switch only ever NARROWER: Normal's closed cells → refuse; an all-open table → accept; pause → refuse; friends and delegates are dropped; per-person answers stay", run(s) {
       s.call("olive", "create-world", { title: s.name });
-      const a1 = s.call("alice", "consent", { delegate: "mallory" }), a2 = s.call("mallory", "consent", { of: "alice", pause: true }), a3 = s.call("alice", "consent", { pause: false });
-      const un = s.call("alice", "consent", { undelegate: "mallory" }); const list = tableOf(s, "alice").delegates;
-      const a6 = s.call("mallory", "consent", { of: "alice", pause: true }); const a7 = s.call("mallory", "consent", { of: "alice", deny: "bob" });
-      return { a1: show(a1), a2: show(a2), a3: show(a3), un: show(un), list, a6: show(a6), a7: show(a7), paused: tableOf(s, "alice").paused }; },
-    good: (o) => o.a1 === "ok" && o.a2 === "ok" && o.a3 === "ok" && o.un === "ok" && JSON.stringify(o.list) === "[]" && /^refused consent/.test(o.a6) && /^refused consent/.test(o.a7) && o.paused === false },
-  // C2 RETIRED (recut A2, 10-20): it tested unfriending ending the friends tier; there is no friends tier.
-  { id: "C6", what: "(r12 M1) an unfriend re-checks the EX-FRIEND's body too (friendship is mutual): bob's friends tier allows pose; alice poses bob and her touch is on his shoulder; alice's consent {unfriend: bob} ends both on bob's body (her `ended`, body-revoked in her inbox) and her next reach is an ask, not the stale yes", run(s) {
+      s.reopen({ bodies: {}, holds: {}, consent: {
+        alice: { cells: { strangers: { touch: "everyone" } }, friends: ["carol"] },
+        dora: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } }, over: { bob: { touch: { mode: "deny" } } } },
+        eve: { preset: "open", paused: true } } });
+      C.migratePresence(s.w().presence); C.migratePresence(s.w().presence);   // idempotent
+      const P = s.w().presence.consent;
+      return { a: P.alice.switch, d: P.dora.switch, e: P.eve.switch, gone: ["alice", "dora", "eve"].every((k) => !("friends" in P[k]) && !("delegates" in P[k]) && !("cells" in P[k]) && !("preset" in P[k]) && !("paused" in P[k])),
+        kept: P.dora.over?.bob?.touch?.mode }; },
+    good: (o) => o.a === "refuse" && o.d === "accept" && o.e === "refuse" && o.gone && o.kept === "deny" },
+  { id: "C5", what: "(recut A2) said where it's read: the consent verb's doc names the switch and offers no delegate; a retired argument is refused with a pointer", run(s) {
       s.call("olive", "create-world", { title: s.name });
-      s.call("alice", "move", { to: [0, 0, 0] }); s.call("bob", "move", { to: [0.5, 0, 0] });
-      s.call("alice", "consent", { friend: "bob" }); s.call("bob", "consent", { friend: "alice" });
-      s.call("bob", "consent", { set: { class: "pose", tier: "friends", mode: "allow" } }); s.call("bob", "consent", { set: { class: "touch", tier: "friends", mode: "allow" } });
-      const p = s.call("alice", "body", { to: "bob", kind: "pose", spec: { bones: {} } }); const r = s.call("alice", "reach", { who: "bob", point: "shoulder_l" });
-      const P0 = s.w().presence; const had = { pose: P0.bodies?.bob?.poseBy === "alice", reach: !!P0.reaches?.alice };
-      const un = s.call("alice", "consent", { unfriend: "bob" });
-      const P = s.w().presence; const ra = s.call("alice", "reach", { who: "bob", point: "shoulder_l" });
-      return { p: show(p), r: show(r), had, ended: (un?.ended ?? []).filter((e: any) => e.actor === "alice").map((e: any) => e.class).sort(),
-        poseBy: P.bodies?.bob?.poseBy ?? null, reach: !!P.reaches?.alice, again: ra?.outcome ?? show(ra) }; },
-    good: (o) => o.had.pose && o.had.reach && JSON.stringify(o.ended) === '["pose","touch"]' && o.poseBy === null && !o.reach && o.again === "asked" },
-  { id: "C3", what: "(stern M1) only the owner removes: a delegate's {of, undelegate} and {of, unfriend} are refused `consent` (removing is not one of a delegate's closings); a non-identity is `shape`; the door takes both words (no unknown-arg)", run(s) {
-      s.call("olive", "create-world", { title: s.name });
-      s.call("alice", "consent", { delegate: "mallory" }); s.call("alice", "consent", { delegate: "dora" }); s.call("alice", "consent", { friend: "bob" });
-      const d1 = s.call("mallory", "consent", { of: "alice", undelegate: "dora" }), d2 = s.call("mallory", "consent", { of: "alice", unfriend: "bob" }), d3 = s.call("mallory", "consent", { of: "alice", undelegate: "mallory" });
-      const sh = s.call("alice", "consent", { undelegate: 5 }), sh2 = s.call("alice", "consent", { unfriend: "__proto__" });
-      const t = tableOf(s, "alice");
-      return { d1: show(d1), d2: show(d2), d3: show(d3), sh: show(sh), sh2: show(sh2), dl: t.delegates, fl: t.friendsList, spec: Object.keys(VS.VERBSPEC?.consent?.args ?? {}) }; },
-    good: (o) => /^refused consent/.test(o.d1) && /^refused consent/.test(o.d2) && /^refused consent/.test(o.d3) && /^refused shape/.test(o.sh) && /^refused shape/.test(o.sh2)
-      && JSON.stringify(o.dl) === '["mallory","dora"]' && JSON.stringify(o.fl) === '["bob"]' && o.spec.includes("unfriend") && o.spec.includes("undelegate") },
-  { id: "C4", what: "(stern M1, p1 C1) a presence file from before 10-17: carol, on the old friends list, is a delegate after the migration; alice removes her (undelegate) and carol's pause is refused, while carol stays on the friends list until alice unfriends her too", run(s) {
-      s.call("olive", "create-world", { title: s.name });
-      s.reopen({ bodies: {}, holds: {}, consent: { alice: { cells: { strangers: { touch: "everyone" } }, friends: ["carol"] } } }); C.migratePresence(s.w().presence);
-      const was = tableOf(s, "alice").delegates; const un = s.call("alice", "consent", { undelegate: "carol" });
-      const p = s.call("carol", "consent", { of: "alice", pause: true }); const fl = tableOf(s, "alice").friendsList;
-      const uf = s.call("alice", "consent", { unfriend: "carol" });
-      return { was, un: show(un), p: show(p), fl, uf: show(uf), dl: tableOf(s, "alice").delegates, fl2: tableOf(s, "alice").friendsList }; },
-    good: (o) => JSON.stringify(o.was) === '["carol"]' && o.un === "ok" && /^refused consent/.test(o.p) && JSON.stringify(o.fl) === '["carol"]' && o.uf === "ok" && JSON.stringify(o.dl) === "[]" && JSON.stringify(o.fl2) === "[]" },
-  { id: "C5", what: "(stern M1) said where it's read: §5 (only you add or remove a delegate; removing a friend ends the mutual tier at once), the verb row's doc, AGENTS.md and the act tool name unfriend and undelegate", run() {
-      const s5 = section(PROTO(), /\n## 5\. /); const ag = readText("AGENTS.md"); const tl = readText("mcpl/tools.ts"); const doc = VS.VERBSPEC?.consent?.doc ?? "";
-      return { s5: /only you add or remove a delegate/.test(s5) && /\{unfriend\}`/.test(s5) && /\{undelegate\}`/.test(s5) && /mutual tier ends at once/.test(s5),
-        doc: /unfriend/.test(doc) && /undelegate/.test(doc), ag: /`consent \{unfriend\}`/.test(ag) && /`\{undelegate\}`/.test(ag), tl: /friend, unfriend, delegate, undelegate/.test(tl) }; },
-    good: (o) => o.s5 && o.doc && o.ag && o.tl },
+      const doc = VS.VERBSPEC?.consent?.doc ?? ""; const r = s.call("alice", "consent", { delegate: "mallory" });
+      return { doc: /switch/.test(doc) && !/delegate/.test(doc), r: show(r) }; },
+    good: (o) => o.doc && /^refused shape/.test(o.r) && /switch/.test(o.r) },
   // ---------------- X: the spec says it ----------------
   { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: the explicit repair command renames what it finds (a load never writes) and writes nothing when there's nothing", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);

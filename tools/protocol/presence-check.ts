@@ -59,7 +59,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 { const bob = await sock("Bob"), carol = await sock("Carol"), mal = await sock("Mallory");
   // within reach, and both open pose and move to strangers (BC: the server checks a body's consent before forwarding)
   bob.at(0, 0); carol.at(1, 0); mal.at(0.5, 0.5);
-  for (const s2 of [bob, carol]) for (const cls of ["pose", "displace"]) await s2.req("consent", { set: { class: cls, tier: "everyone", mode: "allow" } });
+  for (const s2 of [bob, carol]) await s2.req("consent", { switch: "accept" });
   await sleep(300);
   ok(/^u-/.test(bob.actor ?? "") && /^u-/.test(carol.actor ?? ""), "(PR setup) every joiner knows its own actor id", [bob.actor, carol.actor]);
   const arrive = mal.msgs.find((m) => m.type === "arrive" && m.id === "Carol") ?? null;
