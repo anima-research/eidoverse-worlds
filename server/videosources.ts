@@ -129,7 +129,10 @@ export function stateFrame(now = Date.now()) {
 }
 
 // ---- the sessions ----
-const boundOf = (world: any, entity: string): string | null => { const v = world?.state?.entities?.[entity]?.c?.video; return v && typeof v === "object" && typeof v.source === "string" ? JSON.stringify([v.source]) : null; };
+// The sequencer's World.state is the VIEW (worldlog.ts viewState → shared/protocol/view.js viewOf): an entity's components
+// sit on its record, not under `c` as in the authority's fold record
+const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.video;
+const boundOf = (world: any, entity: string): string | null => { const v = videoOf(world, entity); return v && typeof v === "object" && typeof v.source === "string" ? JSON.stringify([v.source]) : null; };
 
 async function closeSession(s: Session, why: string): Promise<void> {
   if (!SESSIONS.delete(s.id)) return;
@@ -146,7 +149,7 @@ export async function offer(c: any, msg: any, now = Date.now()): Promise<object>
   if (now - last < OFFER_GAP_MS) return no(`too soon: one offer every ${OFFER_GAP_MS / 1000} s`);
   LAST_OFFER.set(c, now);
   if (typeof msg.id !== "string" || typeof msg.sdp !== "string" || !msg.sdp || msg.sdp.length > SDP_MAX) return no("video-offer is {id, sdp, req?}: the screen's thing and an SDP offer");
-  const v = c.world.state?.entities?.[msg.id]?.c?.video;
+  const v = videoOf(c.world, msg.id);
   if (!v || typeof v !== "object") return no(`${msg.id} has no video`);
   const src = SOURCES.get(v.source);
   if (!src) return no(`the source '${String(v.source).slice(0, 40)}' isn't admitted on this server`);

@@ -39,6 +39,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["Add Video takes a source by value", "shared/editschema.js", "return { ops: [OP.set(id, 'video', n.video)], errors: [] };", "return { ops: [], errors: ['no'] };", ["V8"]],
   ["near can't pass radius", "shared/protocol/authority/checks.js", "if ((comp === \"sound\" || comp === \"video\") && obj", "if ((comp === \"sound\") && obj", ["V6"]],
   ["a registry entry may not carry a credential in its URL", "server/videosources.ts", "&& !u.username && !u.password ? u.toString() : null", "? u.toString() : null", ["B1"]],
+  ["the broker reads the sequencer's view (components on the record), not a fold record's c", "server/videosources.ts", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.video;", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.c?.video;", ["B3", "B4", "B5"]],
   ["the broker adds the operator's read credential", "server/videosources.ts", "headers: { \"content-type\": \"application/sdp\", ...(basic(src) ? { authorization: basic(src)! } : {}) }", "headers: { \"content-type\": \"application/sdp\" }", ["B3"]],
   ["one offer every OFFER_GAP_MS", "server/videosources.ts", "if (now - last < OFFER_GAP_MS) return", "if (false) return", ["B4"]],
   ["at most VIEWER_SESSION_CAP sessions a viewer", "server/videosources.ts", "if (mine.length >= VIEWER_SESSION_CAP) return", "if (false) return", ["B4"]],
@@ -141,7 +142,8 @@ const REG = (extra = {}) => ({ sources: { solstice: { whep: `${APP}/screen/whep`
 const install = (doc: any) => VS.installSources?.(VS.parseRegistry(doc).sources);
 // a viewer: a connection in a world whose state holds a thing with a video
 function viewer(world: any, sent: any[] = []) { const c: any = { world, spectator: false, ws: { send: (s: string) => sent.push(JSON.parse(s)) } }; world.clients.add(c); return { c, sent }; }
-function fakeWorld(video: any) { return { state: { entities: { screen: { c: { video } } } }, clients: new Set() }; }
+// the sequencer's World.state is the VIEW (viewOf: components on the record, beside pos), so the fake is that shape exactly
+function fakeWorld(video: any) { return { state: { entities: { screen: { pos: [0, 0, 0], yaw: 0, video } } }, clients: new Set() }; }
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
@@ -249,7 +251,7 @@ const cases: Case[] = [
       const posts = FAKE.log.filter((x) => x.method === "POST").length;
       const w2 = fakeWorld({ source: "elsewhere" }); const { c: c2 } = viewer(w2); const unadm = await VS.offer?.(c2, { id: "screen", sdp: "o" }, t);
       const prefetch = FAKE.log.filter((x) => x.method === "POST").length - posts;
-      const w3 = { state: { entities: { screen: { c: {} } } }, clients: new Set() }; const { c: c3 } = viewer(w3); const novid = await VS.offer?.(c3, { id: "screen", sdp: "o" }, t);
+      const w3 = { state: { entities: { screen: { pos: [0, 0, 0], yaw: 0 } } }, clients: new Set() }; const { c: c3 } = viewer(w3); const novid = await VS.offer?.(c3, { id: "screen", sdp: "o" }, t);
       const held = VS.sessionCount?.(c);
       for (const s of [...w.clients]) w.clients.delete(s); await VS.sweep?.();
       return { a: a?.type, b: b?.why, capped: capped?.why, spec: spec?.why, unadm: unadm?.why, novid: novid?.why, held, prefetch }; },
@@ -259,8 +261,8 @@ const cases: Case[] = [
       const run1 = async (mutate: (w: any, c: any) => void) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
         const r = await VS.offer?.(c, { id: "screen", sdp: "o" }, Date.now() + Math.random() * 1e9); mutate(w, c); await VS.sweep?.(); await tick();
         return { opened: r?.type === "video-answer", del: FAKE.log.filter((x) => x.method === "DELETE").length, closed: sent.find((m) => m.type === "video-closed")?.why, left: VS.sessionCount?.(c) }; };
-      return { changed: await run1((w) => { w.state.entities.screen.c.video = { source: "movie-night" }; }),
-        down: await run1((w) => { delete w.state.entities.screen.c.video; }),
+      return { changed: await run1((w) => { w.state.entities.screen.video = { source: "movie-night" }; }),
+        down: await run1((w) => { delete w.state.entities.screen.video; }),
         left: await run1((w, c) => { w.clients.delete(c); }),
         steady: await run1(() => {}) }; },
     good: (o) => ["changed", "down", "left"].every((k) => o[k].opened && o[k].del === 1 && o[k].closed && o[k].left === 0) && /changed/.test(o.changed.closed) && /left/.test(o.left.closed)
