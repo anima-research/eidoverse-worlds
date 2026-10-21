@@ -24,7 +24,7 @@ import { custodyAt, modLogAt } from "../../server/custody.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const BASE = "9263268c";   // #260's head when video was promoted
+const BASE = "b731a8ec";   // #260's head video is stacked on (restacked 10-21 from 9263268c)
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
