@@ -79,8 +79,9 @@ does, and no role overrides it).
 
 A 10-17 audit found the line between the two tables isn't yet drawn for **avatars**: once an avatar's parts are entities,
 they fall under the *thing* rules (roles, log history, and an owner who can do anything), not under body consent. The
-spec's "Body ownership (avatars)" section states the rule (normative before avatar entities ship); five write paths
-(the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
+spec's "Body ownership (avatars)" section keeps the one rule (every write to a body goes through the one request path,
+and the body's owner decides); how it is built is direction in `docs/AVATAR-DIRECTION.md` until avatars are shared. Five
+write paths (the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
 
 ### Not yet listed
 

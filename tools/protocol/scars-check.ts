@@ -274,12 +274,12 @@ const cases: Case[] = [
       return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
         purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
     good: (o) => o.para && o.purge12 && ["act:undo", "act:use", "act:script", "act:sculpt", "act:*", "sim:launch"].every((k) => o.rows.includes(k)) && o.whole },
-  { id: "X3", what: "PROTOCOL §7a: the avatar guard rails are MUSTs before avatars (owner stamped at wear, one predicate, every path, the precedence ladder, the grant, the wearer's log); body ownership is a rule under its own heading, and the old word 'sealed' is gone (R 10-17)", run() {
-      const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("## 7a."), spec.indexOf("## 8."));
-      return { b: ["B1.", "B2.", "B3.", "B4.", "B5.", "B6."].filter((x) => !sec.includes(`**${x}`)), ladder: sec.includes("consent > body owner and grantees > world"),
-        stamped: /stamped by the authority at wear/.test(sec) && /MUST NOT be derived from the log's history/.test(sec), grant: sec.includes("`edit-grant:<identity> {until?,"),
-        wearer: /stored in the wearer's log, never the world's/.test(sec), sealed: sec.includes("### Body ownership (avatars)") && !/sealed/i.test(sec), oldIntended: sec.includes("(*intended*; the avatar design, not in this PR)") }; },
-    good: (o) => !o.b.length && o.ladder && o.stamped && o.grant && o.wearer && o.sealed && !o.oldIntended },
+  { id: "X3", what: "avatars (house markup D, #260 10-20): the spec keeps only the bone (every write to a body goes through the one request path, and the body's owner decides), under its own heading, no 'sealed'; the guard rails (owner stamped at wear, one predicate, every path, the grant, the wearer's log) are direction in docs/AVATAR-DIRECTION.md; the precedence ladder between a world and the person in the body is in neither", run() {
+      const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("### Body ownership (avatars)"), spec.indexOf("\n## 8. ")); const dir = read("docs/AVATAR-DIRECTION.md");
+      return { bone: /\*\*every write to a body goes\s+through the one request path, and the body's owner decides\*\*/.test(sec), noRules: !/\*\*B[1-6]\./.test(sec), pointer: sec.includes("docs/AVATAR-DIRECTION.md"), sealed: !/sealed/i.test(sec),
+        moved: ["B1.", "B2.", "B3.", "B5.", "B6."].filter((x) => !dir.includes(`**${x}`)), stamped: /stamped by the authority at wear/.test(dir) && /MUST NOT be derived from the log's history/.test(dir), grant: dir.includes("`edit-grant:<identity> {until?,"),
+        wearer: /stored in the wearer's log, never the world's/.test(dir), ladder: spec.includes("consent > body owner and grantees > world") || dir.includes("consent > body owner and grantees > world"), b4out: /\*\*B4 [\s\S]{0,120}?taken out\*\*/.test(dir) }; },
+    good: (o) => o.bone && o.noRules && o.pointer && o.sealed && !o.moved.length && o.stamped && o.grant && o.wearer && !o.ladder && o.b4out },
   { id: "X4", what: "the names the guard rails use are held: body-owner, edit-grant, avatar-deny reserved in the registry; the request arrive {wearing} refused as reserved; the refusal code body registered", async run(s) { cast(s);
       const CS = await import(TREE + "shared/protocol/componentspec.js"); const VS = (globalThis as any).__VS; const RC = (globalThis as any).__REG?.REFUSAL_CODES ?? {};
       const arrive = s.call("vic", "arrive", { wearing: { avatar: "x", hash: "sha256:" + "0".repeat(64) } });
