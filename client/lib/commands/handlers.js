@@ -117,7 +117,7 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (visitor, builder,
+  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (player, builder,
   // moderator, owner, or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly,
   // research roles S5); `for <duration>` ends the grant then (roles:<id>.until; 30m, 2h, 1d, 1w), `forever` clears an end
   // (upstream #258). The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own,
@@ -134,13 +134,13 @@ register('grant', (arg) => {
   const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
   const gen = flag('gen'), fly = flag('fly');
   if (!id || (!role && gen === undefined && fly === undefined && !dur && !forever)) {
-    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: visitor, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
+    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: player, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
   }
   const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
-  // * = the world's default role for people who signed in (guests stay visitors unless the world opts in)
+  // * = the world's newcomer role for people who signed in (guests stay players unless the world opts in)
   if (id === '*') {
-    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
-    if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access members|watch closes a world instead');
+    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * player');
+    if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access invite-only|watch closes a world instead');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
     send({ verb: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}` });
@@ -169,17 +169,17 @@ register('revoke', (arg) => {
     send({ verb: 'delete', args: { id: '@world', component: `roles:${who}` } }, { what: `take back ${id}'s role` }); });
 });
 
-// /access [members|watch|visitors|open] — who may come into this world (@world.access and default-role; the four doors of
+// /access [invite-only|watch|public|open] — who may come into this world (@world.access and default-role; the four doors of
 // shared/protocol/access.js DOORS). No argument: show it, and who is listed. Owner-only to change; the authority decides.
 register('access', (arg) => {
   const a = (arg || '').trim().toLowerCase();
   if (!a) return showMembers();
-  const door = { members: 'members', private: 'members', closed: 'members', listed: 'members', watch: 'watch', spectators: 'watch',
-                 visitors: 'visitors', visitor: 'visitors', open: 'open', builders: 'open' }[a];
-  if (!door) return logChat('*', 'usage: /access members|watch|visitors|open — or /access to see who can come in');
+  const door = { 'invite-only': 'invite-only', invite: 'invite-only', private: 'invite-only', closed: 'invite-only', listed: 'invite-only', watch: 'watch', spectators: 'watch',
+                 public: 'public', players: 'public', open: 'open', builders: 'open' }[a];
+  if (!door) return logChat('*', 'usage: /access invite-only|watch|public|open — or /access to see who can come in');
   const ws = doorWrites(door, worldComponents());
   const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
-  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'members' ? 'members only' : door === 'watch' ? 'watch only' : door}` });
+  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}` });
 });
 register('members', () => showMembers());
 /** Who may come into this world, and until when: the door (shared/protocol/access.js) and everyone listed, from this

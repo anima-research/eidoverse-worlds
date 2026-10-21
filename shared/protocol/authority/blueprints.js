@@ -266,7 +266,7 @@ const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities
 const READ_VERBS = {
   help(w, actor, a) {
     if (a?.verb) return verbHelp(a.verb) ? { ok: true, ...verbHelp(a.verb) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.verb}' yet`, fix: `detailed: ${Object.keys(VERBSPEC).join(", ")}` } };
-    const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : "none"; const eff = st ? effective(st, actor) : null;
+    const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : null; const eff = st ? effective(st, actor) : null;
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, permissions: eff.permissions } : {}) },
       verbs: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "lint {id?}", "history {id?, limit?, before?, after?, verbs?}", "schema {component?}"],
         world: ["create-world {title, text?} — found this world if it doesn't exist (you become its owner)"],

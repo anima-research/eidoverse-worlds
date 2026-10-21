@@ -281,7 +281,10 @@ export function settleOrphans(w, present = []) {
 // A blocked world refuses every write (not the reads, not leave) with the registered code `repair-needed`, whose text names
 // the command (authority.js request). Never a silent wrong behaviour; never a write the operator didn't ask for.
 const needsCache = new WeakMap();
-const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));   // what no reader serves in the old spelling
+// what no reader serves in the old spelling. A role word (visitor) IS served everywhere (roles.js canonRole), and so is a
+// stored none (read as no grant): those ops never block a world, wherever they sit
+const ROLE_WORD = (r) => r.field === "who" || r.field === "role" || r.field === "guests" || /\.who$/.test(r.field) || r.from === "visitor" || r.from === "none";
+const SERVED_RENAMES = (op) => (op.renamed?.length > 0 && op.renamed.every(ROLE_WORD)) || !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));
 /** Why the record itself stops a write now, or null: its log was changed outside the purge rule (§12: a value stripped to its
  *  commit that no purge names reads as unknown; nobody builds on that record until the operator restores it), or its old
  *  shapes wait for the maintenance command (lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves

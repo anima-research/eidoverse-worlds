@@ -29,7 +29,7 @@ import { SIM_ID } from '../../shared/sim.js';
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'visitor', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
+const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'player', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const has = (k) => R.isOwner(me()) || me().permissions.includes(k);
 const isOwner = () => R.isOwner(me());
 const nameOf = (id) => { for (const [n, v] of identities) if (v === id) return n; return net.names?.[id] ?? replica.nameOf?.(id) ?? id; };
@@ -213,24 +213,24 @@ function deleteRole(rid, body) {
 function paintAccess(body) {
   const a = wc().access ?? {}, dr = wc()['default-role'] ?? {}; const edit = isOwner();
   const roles = R.rolesOf(wc()).filter((r) => r.id !== 'owner');
-  const def = R.roleDef(wc(), dr.role ?? 'visitor');
+  const def = R.roleDef(wc(), dr.role ?? 'player');
   const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
   const sel = (k, opts, v) => `<select data-k="${k}" ${edit ? '' : 'disabled'}>${opts.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   // the four doors (upstream #258's World › access buttons; shared/protocol/access.js DOORS), the current one marked; closing
   // while people with no role are here asks first and says how many will have to leave
   const door = doorOf(wc());
-  body.innerHTML = `<div class="rp-actions rp-doors">${Object.keys(DOORS).map((d) => `<button type="button" class="rp-btn${d === door ? ' rp-on' : ''}" data-door="${d}" title="${esc(DOORS[d])}" ${edit ? '' : 'disabled'}>${d === 'members' ? 'members only' : d === 'watch' ? 'watch only' : d}</button>`).join('')}</div>`
+  body.innerHTML = `<div class="rp-actions rp-doors">${Object.keys(DOORS).map((d) => `<button type="button" class="rp-btn${d === door ? ' rp-on' : ''}" data-door="${d}" title="${esc(DOORS[d])}" ${edit ? '' : 'disabled'}>${d === 'watch' ? 'watch only' : d}</button>`).join('')}</div>`
     + `<p class="rp-dim">${esc(door === 'signed-in' ? 'anyone signed in may come in' : DOORS[door])}</p>`
     + `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
     + (a.join === 'listed' ? `<label class="rp-field">Everyone else ${sel('watch', [['', 'can\'t see this world'], ['anyone', 'may watch (no body)']], a.watch ?? '')}</label>` : '')
-    + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'visitor')}</label>`
+    + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'player')}</label>`
     + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), dr.guests ?? 'visitor')}</label>`
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
     + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
     + `<p class="rp-dim">moderators and owners always get in${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
   body.querySelectorAll('button[data-door]').forEach((bt) => { bt.onclick = () => { const d = bt.dataset.door; if (d === door) return;
-    const out = d === 'members' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, Date.now())).length : 0;
+    const out = d === 'invite-only' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, Date.now())).length : 0;
     if (out && !confirm(`${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}. Close the door?`)) return;
     const ops = doorWrites(d, wc()).map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
     act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { ops }, `door: ${d}`).then(() => paintAccess(body)); }; });

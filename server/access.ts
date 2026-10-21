@@ -55,7 +55,7 @@ const wcOfWorld = (w: World): Record<string, any> => (w.log?.live?.state?.().ent
 
 /** The door of a LOADED world. */
 export function doorOfWorld(w: World): Door { const wc = wcOfWorld(w); return { name: w.name, wc, label: doorOfWc(wc), world: w }; }
-/** open | visitors | signed-in | watch | members — the label a listing shows. */
+/** open | public | signed-in | watch | invite-only — the label a listing shows. */
 export function doorOf(w: World): string { return doorOfWc(wcOfWorld(w)); }
 
 // ---- a world's door, without loading the world ----------------------------------------------------------------------

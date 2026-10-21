@@ -16,7 +16,7 @@ import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
-import { READ_ONLY, LOOK_ONLY } from "./verbclasses.js";
+import { READ_ONLY } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
@@ -134,10 +134,6 @@ export function request(w, actor, verb, args = {}) {
     // an operator's recorded repair (operatorRepair) is not the person's own request: their sanctions and role here don't gate it
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && isBanned(w, actor)) refuse("banned", `${said(actor)} is banned from this world`, "the moderator log says so; ask a moderator");
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
-    // legacy role `none` (a demotion below visitor): outside membership, it holds no permission and no voice; it may look,
-    // walk and leave (top-down review 10-06: none passed say and a reaction's use)
-    if (w.exists && CTX.operator !== actor && !LOOK_ONLY.has(verb) && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
-      refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${verb}`, "someone who may grant roles (an owner, or by default a moderator) can give you one: ask them", { needs: "a role" });
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by

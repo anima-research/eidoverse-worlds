@@ -104,7 +104,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
       return summon(world, false).then((arrived) => arrived
         ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs), at)
-        : { ok: false as const, err: doorOf(world) === "members"
+        : { ok: false as const, err: doorOf(world) === "invite-only"
             ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
             : `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
     }

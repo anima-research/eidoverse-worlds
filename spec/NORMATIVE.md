@@ -55,13 +55,16 @@ does, and no role overrides it).
 
 | Choice | Value | Status · source |
 |---|---|---|
-| The ladder | `visitor` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between | trial · lead (research 10-06) |
+| The ladder | `player` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do; `visitor` is the old word for `player` (read as it, stored as `player`, rewritten by the maintenance command) | trial · lead (research 10-06; R 10-21) |
 | States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · lead |
-| An old demotion `none` | rank −1: below every member, no permissions | trial · lead |
+| Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `player` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `player` included, beats it: an owner demotes one person by hand | default · lead (R 10-21) |
+| Guests | a person without an account: an account state, never a rung. A guest starts as `player` even where newcomers build, unless the world raises `default-role.guests` | trial · lead (R 10-21) |
+| No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · lead (R 10-21) |
+| Doors | client presets that write `access` and the newcomer role: `open` (newcomers build) · `public` (newcomers play) · `invite-only` · `watch` | trial · lead (R 10-21) |
 | Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles` | trial · lead |
-| Built-in roles | visitor: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
+| Built-in roles | player: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
 | Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
-| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than visitor | default · house 22:03Z (starter config, switched on) |
+| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than player | default · house 22:03Z (starter config, switched on) |
 | Timed roles | `until` up to a year; never on owner; ended by the authority's logged act | trial · lead |
 | Locks | `lock: true`; its strength is its setter's rank now (read from the log); that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
 | Caps | mute ≤ 7 days · kick 10 min default, ≤ 60 min · reason ≤ 500 characters | trial · lead |

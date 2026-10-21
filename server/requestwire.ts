@@ -24,7 +24,7 @@ import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
 import { capture, recheck, type ReqCap } from "./reqcap.ts";
-import { isNone, isOwner } from "../shared/protocol/roles.js";
+import { isOwner } from "../shared/protocol/roles.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -73,12 +73,11 @@ function modLine(w: World, by: string, verb: string, who: string) {
 }
 /** The identity the authority stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a world) has no identity here: a request from it is a server bug. */
-/** Presence messages a role-less person doesn't send (they'd show them, or act on someone), and the one a
- *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
+/** The presence message a
+ *  muted person doesn't send (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
   const w = c.world; if (!w?.log || !c.actorId || !QUIET.has(type)) return false;
-  if (isNone(w.log.roleOf(c.actorId))) return true;
   return type === "caption" && !!w.log.mutedHere(c.actorId);
 }
 /** A guest has no account: a fresh connection is a fresh identity, so a mute on one would be shed by

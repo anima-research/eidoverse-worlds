@@ -226,3 +226,10 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - access.doors: leaves every pin: client presets that write access fields; no stored byte names a door
 - 2026-10-21: 'ghost' is no longer a reserved role id (R 10-21): it was a sanction, removed entirely in recut B4, never a role a grant named; the future neutral role is 'spectator' (wishlisted), so nothing needs the old name held
   - roles.reserved: vocabulary ["banned","everyone","ghost","guest","none","owner"] → ["banned","everyone","guest","none","owner"]
+- 2026-10-21: the base rung is player (R 10-21: rungs named for what they let you do; 'everyone' read as inclusive, 'participant' is already the code's noun for anyone present); visitor is its old word (read as player, stored as player, rewritten by the maintenance command; pinned as roles.vocab.renamed). none is gone (a ban or a mute does its job; a stored grant reads as no grant). guest and everyone are no longer reserved: guest is an account state, everyone a consent tier. grabbable.who and physics.who default to player (the same rung, the new word)
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"visitor"}}
+  - grabbable.who: default "visitor" → "player"
+  - grabbable.who: its meaning of absence "visitor" → "player"
+  - roles.rank: vocabulary {"none":-1,"visitor":0,"builder":100,"moderator":200,"owner":255} → {"player":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["player","builder","moderator","owner"]
+  - roles.reserved: vocabulary ["banned","everyone","guest","none","owner"] → ["banned","owner"]

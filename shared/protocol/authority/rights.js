@@ -10,16 +10,16 @@ import { followUpsOf, isE, opsQuiet, readback } from "./storage.js";
 const RANK = R.RANK;
 const wcOf = (st) => st.entities?.["@world"]?.c;
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && R.isOwner(c[k])); };
-// §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
-// (`default-role`, what an imported world's `roles['*']` becomes); absence means visitor.
+// §2.3: an empty owner list means NOBODY above player. A world may declare a default role for strangers
+// (`default-role`, what an imported world's `roles['*']` becomes); absence means player (a world founded since R 10-21 writes builder at founding).
 // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
 // may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
-// …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default visitor, never above the default role
+// …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default player, never above the default role
 function roleOf(st, actor, anon = CTX.isAnon(actor)) {
-  const c = wcOf(st); if (!c) return "none";
+  const c = wcOf(st); if (!c) return "player";
   return R.roleIdOf(c, actor, { anon, owners: ownersOf(st).length > 0 });
 }
-/** Where a person stands on the ladder (a role the world doesn't define reads as visitor; legacy none as -1). */
+/** Where a person stands on the ladder (a role the world doesn't define reads as player). */
 const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, anon));
 /** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
  *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */

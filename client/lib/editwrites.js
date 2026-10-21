@@ -55,8 +55,8 @@ export function writesOf(req) {
 }
 
 /** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
-// may I lift a lock (so the page offers "move anyway")? A visitor or a role-less person never does (decided by the role:
-// client-check's visitor case drives a visitor by the role alone); any other role by its build switch (a moderator, a custom role).
+// may I lift a lock (so the page offers "move anyway")? A player never does (decided by the role:
+// client-check's player case drives a player by the role alone); any other role by its build switch (a moderator, a custom role).
 // The authority decides either way; this only chooses between the dialog and the refusal.
 export const mayLift = () => { const r = net.myRights; if (!r) return false;
   return Array.isArray(r.permissions) ? r.permissions.includes('build') : isOwner(r); };   // recut B1: the build permission, never a role name
@@ -106,7 +106,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   //   ✕ cancel:  nothing is written, and the thing goes back (revert);
   //   🔓 unlock: delete the lock, then the request as it was: two acts on my stack, so Ctrl+Z undoes the edit first.
   //     Undo and redo aren't offered it: their act isn't mine to stack under an unlock (Ctrl+Z would then undo the unlock).
-  // A visitor (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
+  // A player (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
   let cancelled = false;
   // a lock above your level (lock {rank}, R 10-07: refused with mayLift: false) isn't yours to go through or lift: its
   // refusal shows as words, no buttons

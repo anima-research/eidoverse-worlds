@@ -6,11 +6,11 @@
 //
 // The facts are the world's own components on @world (PROTOCOL §7 Roles, §4 access):
 //   access {join: anyone | signed-in | listed, watch?: "anyone", max?, soft?, minAccountDays?}
-//     join    who may come in with a body: anyone; people with an account; or only people LISTED here (a roles:<id> whose
-//             role isn't `none`).
+//     join    who may come in with a body: anyone; people with an account; or only people LISTED here (a roles:<id> grant).
 //     watch   "anyone": whoever `join` turns away may still WATCH (a spectator: no body, no voice, nothing written). Absent,
 //             watching follows `join`: a listed-only world is then invisible to everyone it doesn't list.
-//   default-role {role}   what everyone not listed holds once inside (absent: visitor).
+//   default-role {role}   the NEWCOMER role: what everyone without a grant holds once inside. Absent: player (every world
+//             founded before R 10-21 keeps that meaning); a world founded since starts with builder (starter config).
 //   roles:<id> {role, can?, note?, until?}   `until` (epoch ms): when the grant ends. The authority writes its end
 //             (`expire-roles`, a system act) within a second of it, and warns the holder five minutes before.
 //
@@ -21,33 +21,33 @@
 import * as R from "./roles.js";
 /** The four doors an owner picks between (upstream's World › access buttons), in this protocol's components. */
 export const DOORS = Object.freeze({
-  open:     "anyone may come in, and build (default role: builder)",
-  visitors: "anyone may come in, as a visitor",
-  watch:    "anyone may watch; only people listed here may come in",
-  members:  "only people listed here may come in or watch; the world is invisible to everyone else",
+  open:          "anyone may come in, and build (newcomers are builders)",
+  public:        "anyone may come in and play; building is for builders and above (newcomers are players)",
+  watch:         "anyone may watch; only people listed here may come in",
+  "invite-only": "only people listed here may come in or watch; the world is invisible to everyone else",
 });
 export const ACCESS_WARN_MS = 5 * 60_000;   // a timed grant's holder is told this long before it ends
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 const accessOf = (wc) => (isObj(wc?.access) ? wc.access : null);
 
-/** Is `actor` LISTED here: a live roles:<actor> whose role isn't `none` (a demotion keeps nobody in) and whose `until`, if any,
+/** Is `actor` LISTED here: a live roles:<actor> grant (a stored `none`, from an old log, isn't one) whose `until`, if any,
  *  hasn't passed at `now` (security review 10-18 M6: an ended grant is absent on every READ — the door, the map, the HTTP reads
  *  of an unloaded world — before the authority's sweep writes its end). `now` null: no clock, until is not judged. */
 export function listedIn(wc, actor, now = null) {
   const r = actor ? wc?.[`roles:${actor}`] : null;
-  if (!(isObj(r) && typeof r.role === "string" && !R.isNone(r))) return false;
+  if (!(isObj(r) && typeof r.role === "string" && !R.isLegacyNone(r))) return false;   // a stored none (old logs) is no grant
   return !(now != null && Number.isSafeInteger(r.until) && r.until <= now);
 }
 
-/** The world's door for everyone it doesn't list: open | visitors | signed-in | watch | members. */
+/** The world's door for everyone it doesn't list: open | public | signed-in | watch | invite-only. */
 export function doorOf(wc) {
   const a = accessOf(wc);
   const join = a?.join ?? "anyone";
-  if (join === "listed") return a.watch === "anyone" ? "watch" : "members";
+  if (join === "listed") return a.watch === "anyone" ? "watch" : "invite-only";
   if (join === "signed-in") return "signed-in";
   const dr = isObj(wc?.["default-role"]) ? wc["default-role"].role : null;
-  return dr === "builder" ? "open" : "visitors";
+  return R.canonRole(dr) === "builder" ? "open" : "public";
 }
 
 /** What `who` may do at this world's door: "embody" (come in with a body), "watch" (no body), or "none", with the reason
@@ -72,10 +72,10 @@ export function doorWrites(door, wc = {}) {
   if (!Object.hasOwn(DOORS, door)) return null;
   const { join: _j, watch: _w, ...keep } = accessOf(wc) ?? {};
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : {};
-  if (door === "members") return [{ component: "access", value: { ...keep, join: "listed" } }];
+  if (door === "invite-only") return [{ component: "access", value: { ...keep, join: "listed" } }];
   if (door === "watch") return [{ component: "access", value: { ...keep, join: "listed", watch: "anyone" } }];
   return [{ component: "access", value: { ...keep, join: "anyone" } },
-    { component: "default-role", value: { ...dr, role: door === "open" ? "builder" : "visitor" } }];
+    { component: "default-role", value: { ...dr, role: door === "open" ? "builder" : "player" } }];
 }
 
 /** A duration as people type it ("30m", "2h", "1d", "1w", "90 min") → ms, or null. At most a year. */

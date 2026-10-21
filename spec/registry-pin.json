@@ -710,7 +710,7 @@
      "kind": "dynamic"
     },
     "set": {
-     "who": "visitor"
+     "who": "player"
     }
    }
   ],
@@ -827,7 +827,7 @@
   },
   "defaults": {
    "enabled": true,
-   "who": "visitor",
+   "who": "player",
    "steal": true,
    "range": 1.5,
    "priority": 0,
@@ -875,7 +875,7 @@
   },
   "absentMeans": {
    "enabled": "true: it can be picked up",
-   "who": "visitor",
+   "who": "player",
    "steal": "true",
    "range": "1.5 m",
    "priority": "0",
@@ -1572,6 +1572,11 @@
   "status": "trial",
   "keyed": true
  },
+ "imported-roles": {
+  "status": "trial",
+  "keyed": true,
+  "on": "world"
+ },
  "imported-bans": {
   "status": "trial",
   "keyed": true,
@@ -1590,14 +1595,13 @@
   },
   "vocab": {
    "rank": {
-    "none": -1,
-    "visitor": 0,
+    "player": 0,
     "builder": 100,
     "moderator": 200,
     "owner": 255
    },
    "builtin": [
-    "visitor",
+    "player",
     "builder",
     "moderator",
     "owner"
@@ -1618,11 +1622,11 @@
    "customId": "^[a-z][a-z0-9-]{0,23}$",
    "reserved": [
     "banned",
-    "everyone",
-    "guest",
-    "none",
     "owner"
-   ]
+   ],
+   "renamed": {
+    "visitor": "player"
+   }
   },
   "keyed": true,
   "on": "world"

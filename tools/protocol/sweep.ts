@@ -84,7 +84,7 @@ const yq = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const LIGHT_KEYS = ["color", "intensity", "range", "keep", "day"];
 const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex").toString("utf8") : s); // h--: a hash, not invertible; a mismatch shows
 const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor / entity.ts, entity.born, placer
-// DROPPED (translate-v1@16): a value never carries an account, a sub or *Sub whose string starts human:, agent: or aid1:
+// DROPPED (translate-v1@16; still so at @17): a value never carries an account, a sub or *Sub whose string starts human:, agent: or aid1:
 // (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays
 const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
   : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
@@ -160,7 +160,7 @@ function oldNorm(st: any, phys: any = null) {
     if (Array.isArray(v) && !v.length) continue; if (typeof v === "object" && !Array.isArray(v) && !Object.keys(v).length) continue; world[k] = v; }
   // DROPPED "roles.sub / bans.sub" (translate-v1@12): an account subject never reaches a value
   for (const k of ["roles", "bans"]) if (world[k] && typeof world[k] === "object") world[k] = Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, v && typeof v === "object" && !Array.isArray(v) && "sub" in v ? (({ sub, ...r }) => r)(v) : v]));
-  // DROPPED "behaviors.authorSub, and any other account in a value" (translate-v1@16): nor does any account-shaped sub or *Sub
+  // DROPPED "behaviors.authorSub, and any other account in a value" (translate-v1@16; still so at @17): nor does any account-shaped sub or *Sub
   for (const k of Object.keys(world)) world[k] = noAccounts(world[k]);
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;

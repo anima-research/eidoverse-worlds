@@ -47,6 +47,7 @@ import { localOf, parentOps, childrenOf, worldPose } from './hierarchy.js';
 import { recordOf } from './protocol/view.js';
 import { partSlot, motionNode, motionType } from './protocol/names.js';
 import { modelWord } from './eido.js';
+import { isBase } from './protocol/roles.js';
 import { DESCRIPTORS, fieldOf, claimOf, CLAIMED_KEYS, editorDefault, toWire } from './protocol/descriptors.js';
 
 import { recordComponents } from './protocol/view.js';
@@ -214,7 +215,7 @@ const HAND = {
         if (what === 'anchor') put('anchor', String(raw), d.anchor);
         else if (what === 'pose') { const v = json(raw); if (v === null) return; put('pose', v, d.pose); }
         else if (what === 'leaveBy') put('leaveBy', String(raw), 'any');
-        else if (what === 'who') { const v = String(raw); put('who', v === 'visitor' ? 'anyone' : v, 'anyone'); }
+        else if (what === 'who') { const v = String(raw); put('who', isBase(v) ? 'anyone' : v, 'anyone'); }
         else if (what === 'fromSeat') put('fromSeat', bool(raw) || undefined, undefined);
         else if (what === 'enter' || what === 'leave' || what === 'sync') put(what, String(raw ?? '').trim() || undefined, undefined);
         else if (what === 'input') { const inp = { ...(b.input ?? {}) }; if (!['move', 'look'].includes(idx)) { errors.push(`sockets.${slot}|input|${idx}: input is move or look`); return; }
@@ -298,7 +299,7 @@ const HAND = {
       const grips = Object.keys(g.grips);
       return { group: 'grabbable', label: 'grabbable', types: ['grabbable'], fields: [
         G('enabled', { label: 'can be picked up', hint: 'Off: nobody can pick it up for now. (A loose ball can still be punted.)' }),
-        G('who', { label: 'who may', options: GRAB_WHO.map((v) => ({ v, label: v === 'visitor' ? 'anyone' : `${v}s` })) }),
+        G('who', { label: 'who may', options: GRAB_WHO.map((v) => ({ v, label: isBase(v) ? 'anyone' : `${v}s` })) }),
         G('steal', { label: 'can be taken from a hand', hint: 'On: someone else can grab it out of your hands. Off: it stays with whoever holds it until they let go (a world owner can still take it).' }),
         G('range', { label: 'reach', hint: 'How far away your hand can pick it up from. Arm\'s reach is 1.5 m; set it further and the thing flies to your hand when grabbed.' }),
         G('priority', { label: 'priority', hint: 'When several things are in reach, the one with the highest number is picked up first. Give small things on big things a higher number: the key, not the table it sits on.' }),
@@ -607,7 +608,7 @@ export function inspectSchema(ent, id, live = {}) {
     const shapeWords = box ? `a box ${box.map((v) => v.toFixed(2)).join(' × ')} m` : sh == null ? 'none yet: measured when its model loads' : (typeof sh === 'object' && sh.kind ? `${sh.kind}` : 'measured');
     groups.push({ group: 'physics', label: 'physics', types: ['physics'], fields: [
       { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: SPEC.physics.enums.kind.map((v) => ({ v, label: v })), hint: SPEC.physics.docs.kind },
-      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'visitor', def: 'visitor', options: [['visitor', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
+      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'player', def: 'player', options: [['player', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
       { t: 'text', k: 'mass', label: `mass (${SPEC.physics.units.mass})`, value: opt(ph.mass), placeholder: 'from its size', hint: SPEC.physics.docs.mass },
       // friction, bounciness and the rest are reserved until an engine reads them (shape audit 10-16): said, never offered
       { t: 'info', label: 'friction, bounce', value: 'the engine\'s own', hint: `reserved: ${SPEC.physics.reservedFields.join(', ')} are named but no engine here reads them yet, so none can be written` },

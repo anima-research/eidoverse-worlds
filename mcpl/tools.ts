@@ -1111,7 +1111,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const here = w.name === ag.world;
         const who = (w.people ?? []).map((p) => (typeof p === "string" ? p : p.declares ? `${p.id} (${p.declares})` : p.id));   // one list; a declared word, if any, as a tag
         const occupancy = who.length ? who.join(", ") : (w.loaded ? "empty" : "empty, not loaded");
-        const door = w.access === "members" ? "members only" : w.access === "watch" ? "watch only" : "";
+        const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : "";
         const may = here ? "you are here"
           : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"
             : w.you === "watch" ? "you may watch, not travel in"

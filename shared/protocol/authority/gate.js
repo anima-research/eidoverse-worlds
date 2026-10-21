@@ -351,7 +351,7 @@ function grantCheck(w, st, s, actor, op, at) {
   if (rankOf(st, target, anon) >= me.rank) refuse("rank", `${said(target)} is ${R.roleDef(wcOf(st), before)?.name ?? before}, not ranked below you (${me.name}); you can only change the roles of people below you`, "ask someone ranked above them", { needs: "rank" });
   const wc1 = { ...(wcOf(s) ?? {}) }; if (op.verb === "delete") delete wc1[op.comp]; else wc1[op.comp] = op.value;
   const after = R.roleIdOf(wc1, target, { anon, owners: true }); const def = R.roleDef(wc1, after);
-  if ((def?.rank ?? RANK.none) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
+  if ((def?.rank ?? R.BELOW) >= me.rank) refuse("rank", `${after} stands at or above you (${me.name}); you can only give roles ranked below yours`, "ask an owner", { needs: "rank" });
   // what the person holds afterwards, as effectiveOf reads it (the role's, the default role's own `can` for someone with no
   // entry, their own `can`, closed over): a grantor gives only what they hold themselves
   const give = R.effectiveOf(wc1, target, { anon, owners: true }).permissions;
@@ -368,7 +368,7 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
   // roles:<id> is changed under the grant rule (grantCheck: rank and permissions), not its creator's: a moderator may
-  // change the role an owner gave a visitor. A capability never reaches here for roles (lacks: owner).
+  // change the role an owner gave a player. A capability never reaches here for roles (lacks: owner).
   if (!cap && op.comp.startsWith("roles:")) return;
   // research §6 (scripts): a pause made by someone who outranks you can be lifted only by them, or at their rank or above
   if (pause && op.value?.paused !== true && s.entities[op.id]?.c[op.comp]?.paused === true) {

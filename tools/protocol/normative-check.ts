@@ -68,11 +68,11 @@ check("N1", `the normative set's ${listed.length} files exist, all under spec/`,
 // N4
 const roles = section("### World roles");
 const ladder = roles.match(/^\| The ladder \|([^|]*)/m)?.[1] ?? "";
-const want = ["visitor", "builder", "moderator", "owner"].map((k) => `\`${k}\` ${R.RANK[k]}`);
+const want = ["player", "builder", "moderator", "owner"].map((k) => `\`${k}\` ${R.RANK[k]}`);
 const perms = (roles.match(/^\| Permissions \|([^|]*)/m)?.[1].match(/`[A-Za-z]+`/g) ?? []).map((x) => x.slice(1, -1));
 const built = roles.match(/^\| Built-in roles \|([^|]*)/m)?.[1] ?? "";
 const can = (k: string) => Object.keys(R.BUILTIN[k].can).filter((x) => R.BUILTIN[k].can[x]);
-const builtOk = can("visitor").length === 0 && /visitor: none/.test(built) && /builder: build, editOthers, scripts/.test(built) && can("builder").join() === "build,editOthers,scripts"
+const builtOk = can("player").length === 0 && /player: none/.test(built) && /builder: build, editOthers, scripts/.test(built) && can("builder").join() === "build,editOthers,scripts"
   && can("moderator").join() === "build,editOthers,scripts,pauseScripts,mute,kick,ban,grantRoles" && /moderator: those \+ pauseScripts, mute, kick, ban, grantRoles/.test(built)
   && can("owner").length === R.PERMISSION_NAMES.length && /owner: all/.test(built);
 const caps = R.MUTE_MAX_MIN === 7 * 1440 && R.KICK_DEFAULT_MIN === 10 && R.KICK_MAX_MIN === 60 && R.REASON_MAX === 500 && /mute ≤ 7 days · kick 10 min default, ≤ 60 min · reason ≤ 500/.test(roles);

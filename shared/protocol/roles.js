@@ -4,13 +4,14 @@
 // of its own, no clock, no imports: a browser and bun import the same file.
 //
 // THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
-//   visitor 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
+//   player 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
+// (R 10-21: the base rung is `player`, named for what it does, as builder and moderator are; `visitor` was its old word.
+// A guest is not a rung: it's a person without an account, who holds a role like anyone else.)
 // "Below you" is a total order on it (ranks are unique), and every rank comparison compares two members.
 // Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
-// holds it: reason, by, until) and Ghost (in the world but outside society: unseen, can't interact, can't read or post
-// chat; a sanction from a rank above, or a mode someone chooses). A state is never compared as a rank, and a rank can't
-// express a state: that is why banned is not "rank -5". The legacy role `none` (an old demotion) reads as rank -1:
-// below every member, holding no permission, so no gate ever fails open on it.
+// holds it: reason, by, until), and the timed ones (muted, kicked). A state is never compared as a rank, and a rank can't
+// express a state: that is why banned is not "rank -5". There is no rung below player (`none` is gone, R 10-21: a ban or
+// a mute does that job), so no gate can meet a sub-floor role.
 
 // ---------------- the five defaults R hasn't ruled on yet (one value each: flip it here) ----------------
 /** Q1: caption is a property of the SCREEN it captions, not a role switch (true = off the role list). */
@@ -29,13 +30,23 @@ export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute lasts at most 7 days
 export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
 export const REASON_MAX = 500;
 
-export const RANK = Object.freeze({ none: -1, visitor: 0, builder: 100, moderator: 200, owner: 255 });
+export const RANK = Object.freeze({ player: 0, builder: 100, moderator: 200, owner: 255 });
+/** What an id the world doesn't define stands at: below every rung, so it is never "more". Not a role. */
+export const BELOW = -1;
+/** Role ids renamed before release (R 10-21), {old: new}: a stored value in the old word READS as the new one (served), the
+ *  door stores the new one, and the maintenance command rewrites stored ones (shaperepair renameOps). An old word can't be a
+ *  custom role while it's served. */
+export const RENAMED_ROLES = Object.freeze({ visitor: "player" });
+/** A stored grant of the removed `none` (old logs: v1's spectator came in as one). Never a role: it reads as no grant, the door
+ *  refuses a new one, and the maintenance command deletes stored ones. */
+export const isLegacyNone = (v) => (typeof v === "string" ? v : v?.role) === "none";
+export const canonRole = (x) => (typeof x === "string" && Object.hasOwn(RENAMED_ROLES, x) ? RENAMED_ROLES[x] : x);
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
 // SETTER holds now, read from the log at check time (a setter who's demoted takes their locks down with them). Anyone at
 // that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
 /** The words for a lock's strength: who may lift it (display only). */
 export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
-export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "owner"]);
+export const BUILTIN_IDS = Object.freeze(["player", "builder", "moderator", "owner"]);
 
 // ---------------- the closed permission list ----------------
 // [name, plain words (UI and help), needs]. The order is the order the grid shows.
@@ -58,19 +69,19 @@ export const PERMISSION_NAMES = Object.freeze(LIST.map(([k]) => k));
 /** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
 /** Owner-only powers go through this one test (recut B1): a grant value or effective rights whose role is the built-in owner. */
 export const OWNER = "owner";
+/** The base rung (R 10-21: player), through one test like owner: "anyone here" for a who, the badge that isn't shown. */
+export const BASE = "player";
+export const isBase = (x) => canonRole(typeof x === "string" ? x : x?.role) === BASE;
 export const isOwner = (x) => (typeof x === "string" ? x : x?.role) === OWNER;   // a role string, a grant or effective rights
-/** `none` is the no-role sentinel (a removed grant, a door rung below visitor), never a role with powers. */
-export const NONE = "none";
-export const isNone = (x) => (typeof x === "string" ? x : x?.role) === NONE;
 export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
 /** The powers that may warn (research §2: warn isn't a permission; the gentlest act comes with any of these). */
 export const WARN_POWERS = Object.freeze(["mute", "kick", "ban"]);
 
 const on = (...ks) => Object.freeze(Object.fromEntries(PERMISSION_NAMES.map((k) => [k, ks.includes(k)])));
-// The built-in roles. Their rank is fixed; an owner may edit visitor's, builder's and moderator's permissions (role-defs);
+// The built-in roles. Their rank is fixed; an owner may edit player's, builder's and moderator's permissions (role-defs);
 // the owner column is locked: every permission, always (fly per OWNERS_FLY).
 export const BUILTIN = Object.freeze({
-  visitor:   Object.freeze({ name: "Visitor",   rank: RANK.visitor,   can: on() }),
+  player:    Object.freeze({ name: "Player",    rank: RANK.player,    can: on() }),
   builder:   Object.freeze({ name: "Builder",   rank: RANK.builder,   can: on("build", "editOthers", "scripts") }),
   moderator: Object.freeze({ name: "Moderator", rank: RANK.moderator, can: on("build", "editOthers", "scripts", "pauseScripts", "mute", "kick", "ban", "grantRoles") }),
   owner:     Object.freeze({ name: "Owner",     rank: RANK.owner,     can: Object.freeze(Object.fromEntries(PERMISSION_NAMES.map((k) => [k, k === "fly" ? OWNERS_FLY : true]))) }),
@@ -79,20 +90,22 @@ export const BUILTIN = Object.freeze({
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
 // The list is the registry's (roles.vocab, recut C11): a change to it is a trial break needing --ack.
-export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "banned"]));
+export const RESERVED_IDS = Object.freeze(new Set(["owner", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
-export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x));
+export const isRoleId = (x0) => { const x = canonRole(x0); return BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x)); };
 
 /** A world's role definitions: @world.role-defs (or {} ). */
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
 
 /** A role by id in a world (its @world components `wc`): {id, name, rank, can, builtin, custom} or null if the world
  *  doesn't define it. Who may install scripts is each role's `scripts` permission (script-settings.install is gone, 10-16). */
-export function roleDef(wc, id) {
-  if (id === "none") return { id, name: "No role", rank: RANK.none, can: on(), builtin: true, legacy: true };
+export function roleDef(wc, id0) {
+  const id = canonRole(id0);
   if (id === "owner") return { id, ...BUILTIN.owner, builtin: true };
-  const defs = defsOf(wc); const d = Object.hasOwn(defs, id) && isObj(defs[id]) ? defs[id] : null;
+  // a built-in's edits stored under its old word (role-defs.visitor) are read as the new one's until repair renames them
+  const defs = defsOf(wc); const key = Object.hasOwn(defs, id) ? id : Object.keys(RENAMED_ROLES).find((o) => RENAMED_ROLES[o] === id && Object.hasOwn(defs, o));
+  const d = key && isObj(defs[key]) ? defs[key] : null;
   if (Object.hasOwn(BUILTIN, id)) {
     const b = BUILTIN[id]; const can = { ...b.can, ...(isObj(d?.can) ? pickPermissions(d.can) : {}) };
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
@@ -109,7 +122,7 @@ export function rolesOf(wc) {
   return ids.map((id) => roleDef(wc, id)).filter(Boolean).sort((a, b) => b.rank - a.rank);
 }
 /** The rank a role id stands at here; an id the world doesn't define is -1 (never "more"). */
-export const rankOfRole = (wc, id) => roleDef(wc, id)?.rank ?? RANK.none;
+export const rankOfRole = (wc, id) => roleDef(wc, id)?.rank ?? BELOW;
 
 /** The permissions a set closes over: drop any permission whose needs aren't all on (read-time: never fail open). */
 export function closeOver(can) {
@@ -125,40 +138,40 @@ export function brokenNeed(can) {
 }
 
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
- *  role, else visitor. A role the world doesn't define reads as visitor. A world with no owner caps everyone at visitor
+ *  role, else player. A role the world doesn't define reads as player. A world with no owner caps everyone at player
  *  (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
-  if (!wc) return "none";
+  if (!wc) return "player";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
-  const base = dr?.role ?? "visitor";
-  let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
-  if (typeof r !== "string" || (r !== "none" && !roleDef(wc, r))) r = "visitor";
+  const base = roleDef(wc, dr?.role) ? canonRole(dr.role) : "player";   // a stored default of none (an old log) reads as player
+  const own = isObj(wc[`roles:${id}`]) ? canonRole(wc[`roles:${id}`].role) : null;
+  // a stored grant of none (v1's spectator came in as one) is no grant: the person holds what anyone without one holds
+  let r = own && !isLegacyNone(own) ? own : anon ? guestRoleOf(wc) : base;
+  if (typeof r !== "string" || !roleDef(wc, r)) r = "player";
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
-  return !hasOwner && rankOfRole(wc, r) > RANK.visitor ? "visitor" : r;
+  return !hasOwner && rankOfRole(wc, r) > RANK.player ? "player" : r;
 }
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
- *  never above the default role; else visitor, or the default role where that is below visitor (none). */
+ *  never above the default role; else player (R 10-21: guests start as players even where newcomers build). */
 export function guestRoleOf(wc) {
   const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null; const g = dr?.guests;
-  // the ceiling holds for the fallback too: with a default role of none, a guest is none, never the visitor above it
-  const above = (r) => GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, r) > rankOfRole(wc, dr?.role ?? "visitor");
-  const fallback = above("visitor") ? dr.role : "visitor";
-  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g)) return fallback;
-  if (above(g)) return fallback;
-  return g;
+  const base = roleDef(wc, dr?.role) ? dr.role : "player";
+  const above = (r) => GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, r) > rankOfRole(wc, base);
+  if (typeof g !== "string" || canonRole(g) === "owner" || !roleDef(wc, g) || above(g)) return "player";
+  return canonRole(g);
 }
 
 /** A person's effective rights: {role, name, rank, can: {<permission>: bool}, permissions: [names on]}.
  *  The role's permissions, then the default role's `can` (default-role.can, for those who hold the default role: an imported
  *  world's grant to everyone), then the per-person `can` (applied last: Discord's member overwrites), then closed over dependencies. Owners hold every
  *  permission whatever `can` says (their column is locked); `can.fly: true` may still give an owner flight when OWNERS_FLY
- *  is off. `none` holds nothing. */
+ *  is off. */
 export function effectiveOf(wc, id, opts = {}) {
-  const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "visitor");
+  const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "player");
   let can = { ...def.can };
   const entry = isObj(wc?.[`roles:${id}`]) ? wc[`roles:${id}`] : null;
   if (role === OWNER) { if (entry?.can?.fly === true) can.fly = true; }
-  else if (role !== "none") {
+  else {
     const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null;
     if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickPermissions(dr.can));
     if (isObj(entry?.can)) Object.assign(can, pickPermissions(entry.can));
@@ -176,6 +189,7 @@ export function checkRoleDefs(v, prev, held = () => 0) {
   const ranks = new Map();
   for (const [id, d] of Object.entries(v)) {
     if (id === "owner") return bad("shape", "role-defs can't define owner: the owner holds every permission, always, at rank 255", "leave owner out");
+    if (Object.hasOwn(RENAMED_ROLES, id)) return bad("shape", `'${id}' is the old word for ${RENAMED_ROLES[id]}: define ${RENAMED_ROLES[id]}`, `role-defs.${RENAMED_ROLES[id]}`);
     if (!Object.hasOwn(BUILTIN, id) && (RESERVED_IDS.has(id) || !CUSTOM_ID.test(id))) return bad("shape", `'${id}' isn't a role id you can make: a–z first, then a–z, 0–9 and '-', up to 24 (not ${[...RESERVED_IDS].join(", ")})`);
     if (!isObj(d)) return bad("shape", `role-defs.${id} must be {name, rank, can}`);
     for (const k of Object.keys(d)) if (!["name", "rank", "can", "note"].includes(k)) return bad("schema", `role-defs.${id}: unknown key '${k}'`, "a role is {name, rank, can, note?}");
@@ -183,7 +197,7 @@ export function checkRoleDefs(v, prev, held = () => 0) {
     if (d.note !== undefined && !(typeof d.note === "string" && d.note.length <= 120)) return bad("shape", `role-defs.${id}.note is up to 120 characters`);
     if (Object.hasOwn(BUILTIN, id)) { if (d.rank !== undefined && d.rank !== BUILTIN[id].rank) return bad("rank", `${id}'s rank is fixed at ${BUILTIN[id].rank}`, "make a custom role to stand somewhere else"); }
     else {
-      if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad("rank", `role-defs.${id}.rank must be a whole number 1–254 (visitor is 0, owner 255)`, "place it between two roles: e.g. 150 sits between builder (100) and moderator (200)");
+      if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad("rank", `role-defs.${id}.rank must be a whole number 1–254 (player is 0, owner 255)`, "place it between two roles: e.g. 150 sits between builder (100) and moderator (200)");
       if ([RANK.builder, RANK.moderator].includes(d.rank)) return bad("rank", `rank ${d.rank} is ${d.rank === RANK.builder ? "builder" : "moderator"}'s; two roles never share a rank`, "pick a free number");
     }
     const r = Object.hasOwn(BUILTIN, id) ? BUILTIN[id].rank : d.rank;
@@ -247,11 +261,11 @@ const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.t
 export function grantableRoles(wc, me) {
   return rolesOf(wc).filter((r) => isOwner(me) ? true : r.rank < me.rank && PERMISSION_NAMES.every((k) => !r.can[k] || (me.permissions ?? []).includes(k)));
 }
-/** The badge a person's row shows (research §UI): none for a visitor (the list doesn't shout), "guest" for someone
+/** The badge a person's row shows (research §UI): none for a player (the list doesn't shout), "guest" for someone
  *  without an account (whatever role guests get), else the role's name. {text, tone: 'owner'|'mod'|'role'|'guest'}. */
 export function badgeOf(p) {
   if (!p) return null;
   if (p.anon) return { text: "guest", tone: "guest" };
-  if (!p.role || p.role === "visitor" || p.role === "none") return null;
+  if (!p.role || canonRole(p.role) === "player") return null;
   return { text: (p.name ?? p.role).toLowerCase(), tone: isOwner(p) ? "owner" : p.role === "moderator" ? "mod" : "role" };
 }

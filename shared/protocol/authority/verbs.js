@@ -41,7 +41,10 @@ const FOUNDING_VERBS = {
     const cu = w.custody(); if (!cu) throw new Error("authority bug: founding needs io.custody (the sequencer and founder keys, §13)");
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, 0, -20], max: [20, 12, 20] }),
-      setOp("@world", `roles:${actor}`, { role: "owner" })];
+      setOp("@world", `roles:${actor}`, { role: "owner" }),
+      // starter config (R 10-21): in a NEW world newcomers are builders until the owner gates it (newcomers → player, or a
+      // grant of player by hand). Written, never implied: a world without it (every world founded before) keeps player
+      setOp("@world", "default-role", { role: "builder" })];
     // the founding writes' values are checked before anything is appended, against the state genesis folds to: a refusal
     // after genesis would leave a world that exists and that nobody owns
     for (const op of ops) valueCheck(emptyState(), op, { now: w.now() });

@@ -6,8 +6,6 @@
 // verbs that write nothing to the log (the custody guard lets them through: a world you can't sign for can still be read)
 export const READ_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 
-// what someone with no role here (`none`) may still do: read the world, walk, leave. Moderation reads are not here.
-export const LOOK_ONLY = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "move", "leave", "wait", "inbox", "effect"]);
 
 // the authority's reads a SPECTATOR is refused at the door. Empty since 2026-10-12: a world's scripts and effects are part
 // of what a spectator is looking at, and reading changes nothing (Hesperus's call, R deferred). Kept as a class so a

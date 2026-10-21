@@ -26,7 +26,7 @@ import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
-import { renameFields } from "../shaperepair.js";
+import { renameFields, renameRoleWords } from "../shaperepair.js";
 import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -174,6 +174,8 @@ function resolve(ctx, id, comp, value, prev) {
   // grabbable.pose / station.pose are anim, a grip's fingers its grasp (R 10-17 15:09/15:11): a write in the old spelling is
   // taken and stored in the new (shaperepair.js renameFields: the load renames a stored one the same way)
   if (comp === "grabbable" || comp === "station") { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): pose is anim, fingers is grasp" }); } }
+  // a role's old word (R 10-21: visitor is player) in a grant, the newcomer role, role-defs or a who: taken, stored in the new
+  { const r = renameRoleWords(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-21): visitor is player" }); } }
   // a motion's type bob is oscillate (R 10-17 21:40): the old spelling is taken for one release and stored in the new (the
   // load renames a stored one the same way: renameFields)
   if (comp === "motion" || comp.startsWith("motion:")) { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): a motion's bob is oscillate" }); } }
@@ -268,7 +270,7 @@ function buildSet(ctx, a) {
   // No `current` here, for the same reason as expect's (attack-check H5a/H5c): buildSet runs inside commit's
   // build(ctx) BEFORE admit, so before rights/lacks/lockCheck, and a dry request is never logged — a value echoed
   // here is a direct read of any component of anything, through a lock, by anyone, with no trace. The fix line
-  // already sends them to `inspect`, which is rights-checked. `version`/`by` stay: history is READ_ONLY + LOOK_ONLY,
+  // already sends them to `inspect`, which is rights-checked. `version`/`by` stay: history is READ_ONLY,
   // so who-touched-what-when is public already.
   if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
