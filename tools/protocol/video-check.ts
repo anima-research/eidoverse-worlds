@@ -4,12 +4,12 @@
 // (server/videosources.ts: the operator registry, the appliance poll, the WHEP sessions it brokers), against a FAKE
 // appliance that records every request, so what reaches the appliance and what reaches a viewer is checked exactly.
 //   bun tools/protocol/video-check.ts                 every case
-//   bun tools/protocol/video-check.ts --only V2,B3    just those
+//   bun tools/protocol/video-check.ts --only M2,B3    just those
 //   bun tools/protocol/video-check.ts --tree <dir>    against another checkout's shared/ + server/ (a mutant, the base)
-//   bun tools/protocol/video-check.ts --control       #260's head (video reserved): every V/B case must be red, K green
+//   bun tools/protocol/video-check.ts --control       #260's head (video reserved): every M/B case must be red, K green
 //   bun tools/protocol/video-check.ts --mutants       remove each gate in a copy of the tree: its cases go red
 // Cases:
-//   V  the component: its meaning, the door, look
+//   M  the component: its meaning, the door, look
 //   B  the broker: registry, source state, sessions
 //   K  kept (green at base and now)
 // The real appliance (mediamtx + a synthetic OBS feed, two browsers) is tools/video-probe.ts: this file is what can be
@@ -28,16 +28,16 @@ const BASE = "9263268c";   // #260's head when video was promoted
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the door refuses a source this server hasn't admitted", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (false)", ["V2", "V3"]],
-  ["a fork's copy carries an unadmitted source (no silent loss)", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (!isAdmittedSource(v.source))", ["V4"]],
-  ["nothing is admitted until the server says (fail closed)", "shared/video.js", "export const isAdmittedSource = (id) => typeof id === 'string' && ADMITTED.has(id);", "export const isAdmittedSource = (id) => typeof id === 'string' && (ADMITTED.size === 0 || ADMITTED.has(id));", ["V3"]],
-  ["a source is an id, never a URL", "shared/video.js", "if (/^[a-z][a-z0-9+.-]*:/i.test(id) || id.includes('/') || id.includes('.')) return", "if (false) return", ["V1"]],
-  ["the id grammar", "shared/video.js", "export const VIDEO_SOURCE_ID = /^[a-z][a-z0-9-]{0,39}$/;", "export const VIDEO_SOURCE_ID = /^.+$/;", ["V1", "B1"]],
-  ["a stale observation reads as unknown", "shared/video.js", "if (age > SOURCE_STATE_FRESH_MS) return { state: 'unknown', ageS };", "", ["V5"]],
-  ["look judges freshness on the clock the observation was stamped on", "shared/says.js", "describeVideo(c.video, sourceStateOf(c.video.source), Date.now())", "describeVideo(c.video, sourceStateOf(c.video.source), Number.isFinite(now) ? now : Date.now())", ["V5"]],
-  ["the inspector draws the Video card", "shared/editschema.js", "groups.push({ group: 'video', label: 'video', types: ['video'], fields });", "", ["V8"]],
-  ["Add Video takes a source by value", "shared/editschema.js", "return { ops: [OP.set(id, 'video', n.video)], errors: [] };", "return { ops: [], errors: ['no'] };", ["V8"]],
-  ["near can't pass radius", "shared/protocol/authority/checks.js", "if ((comp === \"sound\" || comp === \"video\") && obj", "if ((comp === \"sound\") && obj", ["V6"]],
+  ["the door refuses a source this server hasn't admitted", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (false)", ["M2", "M3"]],
+  ["a fork's copy carries an unadmitted source (no silent loss)", "shared/protocol/authority/checks.js", "if (!carry && !isAdmittedSource(v.source))", "if (!isAdmittedSource(v.source))", ["M4"]],
+  ["nothing is admitted until the server says (fail closed)", "shared/video.js", "export const isAdmittedSource = (id) => typeof id === 'string' && ADMITTED.has(id);", "export const isAdmittedSource = (id) => typeof id === 'string' && (ADMITTED.size === 0 || ADMITTED.has(id));", ["M3"]],
+  ["a source is an id, never a URL", "shared/video.js", "if (/^[a-z][a-z0-9+.-]*:/i.test(id) || id.includes('/') || id.includes('.')) return", "if (false) return", ["M1"]],
+  ["the id grammar", "shared/video.js", "export const VIDEO_SOURCE_ID = /^[a-z][a-z0-9-]{0,39}$/;", "export const VIDEO_SOURCE_ID = /^.+$/;", ["M1", "B1"]],
+  ["a stale observation reads as unknown", "shared/video.js", "if (age > SOURCE_STATE_FRESH_MS) return { state: 'unknown', ageS };", "", ["M5"]],
+  ["look judges freshness on the clock the observation was stamped on", "shared/says.js", "describeVideo(c.video, sourceStateOf(c.video.source), Date.now())", "describeVideo(c.video, sourceStateOf(c.video.source), Number.isFinite(now) ? now : Date.now())", ["M5"]],
+  ["the inspector draws the Video card", "shared/editschema.js", "groups.push({ group: 'video', label: 'video', types: ['video'], fields });", "", ["M8"]],
+  ["Add Video takes a source by value", "shared/editschema.js", "return { ops: [OP.set(id, 'video', n.video)], errors: [] };", "return { ops: [], errors: ['no'] };", ["M8"]],
+  ["near can't pass radius", "shared/protocol/authority/checks.js", "if ((comp === \"sound\" || comp === \"video\") && obj", "if ((comp === \"sound\") && obj", ["M6"]],
   ["a registry entry may not carry a credential in its URL", "server/videosources.ts", "&& !u.username && !u.password ? u.toString() : null", "? u.toString() : null", ["B1"]],
   ["the broker reads the sequencer's view (components on the record), not a fold record's c", "server/videosources.ts", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.video;", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.c?.video;", ["B3", "B4", "B5"]],
   ["the broker adds the operator's read credential", "server/videosources.ts", "headers: { \"content-type\": \"application/sdp\", ...(basic(src) ? { authorization: basic(src)! } : {}) }", "headers: { \"content-type\": \"application/sdp\" }", ["B3"]],
@@ -154,20 +154,20 @@ const cases: Case[] = [
       return { s: show(s.call("olive", "set", { id: "radio", component: "sound", value: { src: "store/audio/0123456789abcdef.ogg" } })), p: show(s.call("olive", "set", { id: "radio", component: "picture", value: { src: "store/images/0123456789abcdef.png" } })) }; },
     good: (o) => o.s === "ok" && o.p === "ok" },
 
-  // ---------------- V: the component ----------------
+  // ---------------- M: the component ----------------
   // first, before anything admits: a server that never said has admitted nothing
-  { id: "V3", what: "fail closed: before the server admits anything, every source is refused, and the fix says the operator lists them", run(s) { cast(s);
+  { id: "M3", what: "fail closed: before the server admits anything, every source is refused, and the fix says the operator lists them", run(s) { cast(s);
       s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
       const r = s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice" } });
       return { code: code(r), fix: r.refused?.fix, admitted: V.admittedSources?.() }; },
     good: (o) => o.code === "not-found" && /admits no video sources yet/.test(o.fix ?? "") && Array.isArray(o.admitted) && o.admitted.length === 0 },
-  { id: "V1", what: "a source is an id: a URL, a path, a dotted name, capitals and 41 characters are refused (shared and at the door); a plain id is accepted", run(s) {
+  { id: "M1", what: "a source is an id: a URL, a path, a dotted name, capitals and 41 characters are refused (shared and at the door); a plain id is accepted", run(s) {
       const bad = ["http://127.0.0.1:8889/screen/whep", "whep://appliance/screen", "screen/whep", "solstice.live", "Solstice", "a".repeat(41), "-x", ""];
       admit(["solstice"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
       return { shared: bad.map((x) => V.normalizeVideo?.({ source: x }).ok), door: bad.map((x) => code(s.call("olive", "set", { id: "screen", component: "video", value: { source: x } }))),
         good: V.normalizeVideo?.({ source: "solstice" }).ok, url: V.sourceIdProblem?.("https://x.example/whep") }; },
     good: (o) => o.shared.every((x: any) => x === false) && o.door.every((x: any) => x === "shape" || x === "schema") && o.good === true && /never a URL/.test(o.url ?? "") },
-  { id: "V2", what: "the door: an admitted source is accepted with the defaults written; an unadmitted one refused not-found with what IS admitted and a did-you-mean; a revoke refuses new writes and keeps the stored value", run(s) {
+  { id: "M2", what: "the door: an admitted source is accepted with the defaults written; an unadmitted one refused not-found with what IS admitted and a did-you-mean; a revoke refuses new writes and keeps the stored value", run(s) {
       admit(["solstice", "movie-night"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
       const ok = show(s.call("bob", "set", { id: "screen", component: "video", value: { source: "solstice", alt: "the solstice stage" } }));
       const stored = comp(s, "screen", "video");
@@ -177,13 +177,13 @@ const cases: Case[] = [
       return { ok, stored, miss: code(miss), fix: miss.refused?.fix, dym: miss.refused?.didYouMean, after: code(after), kept: comp(s, "screen", "video") }; },
     good: (o) => o.ok === "ok" && o.stored?.source === "solstice" && o.stored.volume === 0.8 && o.stored.width === 4 && o.stored.lit === "self" && o.stored.radius === 12 && !("playing" in o.stored) && !("t0" in o.stored)
       && o.miss === "not-found" && /movie-night/.test(o.fix ?? "") && o.dym?.[0] === "solstice" && o.after === "not-found" && o.kept?.source === "solstice" && o.kept.volume === 0.8 },
-  { id: "V4", what: "a fork's copy carries a source this server doesn't admit (the bag is kept, not lost); an ordinary write of the same is refused", run(s) {
+  { id: "M4", what: "a fork's copy carries a source this server doesn't admit (the bag is kept, not lost); an ordinary write of the same is refused", run(s) {
       admit([]); cast(s);
       const w = s.w(); let r; try { r = D.forkCopy(w, "olive", { ops: [{ verb: "create", args: { id: "old-screen", model: "crate", components: { video: { source: "elsewhere", alt: "a stage on another server" } } } }] }); } catch (e) { r = { crashed: String(e?.message) }; }
       const plain = s.call("olive", "create", { model: "crate", components: { video: { source: "elsewhere" } }, place: { at: [2, 0] } });
       return { fork: show(r), kept: comp(s, "old-screen", "video"), plain: code(plain) }; },
     good: (o) => o.fork === "ok" && o.kept?.source === "elsewhere" && o.plain === "not-found" },
-  { id: "V5", what: "look says the appliance's state and its age: live (fresh), unknown when stale or never observed; never a URL or a viewer's playback", run(s) {
+  { id: "M5", what: "look says the appliance's state and its age: live (fresh), unknown when stale or never observed; never a URL or a viewer's playback", run(s) {
       admit(["solstice", "movie-night"]); cast(s);
       s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } }); s.call("olive", "create", { id: "screen2", model: "crate", place: { at: [3, 0] } });
       s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice", alt: "the solstice stage" } });
@@ -197,17 +197,17 @@ const cases: Case[] = [
       && /its source's state is unknown \(last observed 12\d s ago\)/.test(o.stale?.find((l: string) => /video/.test(l)) ?? "")
       && /source "movie-night"\); its source's state is unknown \(never observed\)/.test(o.never?.find((l: string) => /video/.test(l)) ?? "")
       && ![...(o.live ?? []), ...(o.stale ?? [])].some((l: string) => /https?:|whep|playing/.test(l)) },
-  { id: "V6", what: "near past radius is refused, as sound's is; volume past 1 is refused by its range", run(s) {
+  { id: "M6", what: "near past radius is refused, as sound's is; volume past 1 is refused by its range", run(s) {
       admit(["solstice"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
       return { near: code(s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice", near: 20, radius: 10 } })),
         vol: code(s.call("olive", "set", { id: "screen", component: "video", value: { source: "solstice", volume: 1.5 } })) }; },
     good: (o) => o.near === "bounds" && o.vol === "bounds" },
-  { id: "V7", what: "what a viewer hears: authored volume × sound's distance law × their own gain (silent at radius)", run() {
+  { id: "M7", what: "what a viewer hears: authored volume × sound's distance law × their own gain (silent at radius)", run() {
       const v = { source: "solstice", volume: 0.5, near: 2, radius: 10 };
       return { at1: V.videoGain?.(v, 1), mine: V.videoGain?.(v, 1, 0.5), edge: V.videoGain?.(v, 10), mid: V.videoGain?.(v, 4), sound: (await_sound()).gainAt(4, 2, 10) }; },
     good: (o) => o.at1 === 0.5 && o.mine === 0.25 && o.edge === 0 && Math.abs(o.mid - 0.5 * o.sound) < 1e-12 },
 
-  { id: "V8", what: "the inspector draws the Video card from the registry (volume 0..1, this viewer's own state, mute, take down); its edits keep the door's rules; Add Video takes a source by value", run() {
+  { id: "M8", what: "the inspector draws the Video card from the registry (volume 0..1, this viewer's own state, mute, take down); its edits keep the door's rules; Add Video takes a source by value", run() {
       const E = (c: any) => ({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...c });
       const flat = (ops: any[]) => ops.flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
       const sc = ES.inspectSchema?.(E({ video: { source: "solstice", volume: 0.8 } }), "t1", { mutedForMe: false, videoState: "stalled" });
