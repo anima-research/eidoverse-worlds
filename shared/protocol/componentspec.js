@@ -281,6 +281,9 @@ export const COMPONENTS = {
   // shape audit 10-16 (physics-motion §6): tickMs's default lives here (the authority read a literal 33); its range is the
   // engine's (eidosim TICK_MS; tools/shape-physics-test holds them equal); build is the authority's stamp, a string. Gravity
   // is the engine's own, not in the log (eidosim: [0, −9.81, 0] m/s²): a field is an addition once an engine reads one
+  // recut B3 (house 22:03Z: "starter config, switched on"): two world settings the authority reads at decision time.
+  "body-default": { on: "world", type: "string", choices: ["accept", "ask", "refuse"], help: "the consent switch an untouched body has in this world: accept (the default when absent), ask or refuse. A person's own switch and their answers for someone always win (PROTOCOL §5, Body consent)" },
+  "keep-owner": { on: "world", type: "bool", help: "absent or true: the authority refuses a change that would leave this world with no owner ('last-owner'). false: an owner may leave it ownerless on purpose (the host operator can still mend it). Starter config, switched on" },
   "physics-engine": { on: "world", fields: { engine: "string", build: "string", tickMs: "int" }, required: ["engine"], nullable: ["build"], defaults: { tickMs: 33 },
     ranges: { tickMs: { min: 16, max: 1000 } }, units: { tickMs: "ms" },
     docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0)", build: "the exact build the authority stamps (16 hex: its source files' hash; null for an engine this server doesn't carry); never sent", tickMs: "milliseconds a step (33 = 30 steps a second)" },

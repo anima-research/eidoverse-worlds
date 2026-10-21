@@ -337,6 +337,22 @@ const cases: Case[] = [
       return { code: code(r), why: r?.refused?.reason ?? "", before, rank: ins?.lock?.rank }; },
     good: (o) => o.code === "shape" && /no level/.test(o.why) && o.before === undefined && o.rank === 200 },
 
+  // ---------------- B3 (recut B; house 22:03Z "starter config, switched on"): world settings that reach the authority ----------------
+  { id: "WS1", what: "(recut B3) an owner sets @world.body-default through the real set verb and it is stored (the decision reading it: switch-check W8)", run(s) { cast(s);
+      const r = set(s, "olive", "body-default", "refuse");
+      return { set: show(r), stored: s.w().state().entities["@world"].c["body-default"] }; },
+    good: (o) => o.set === "ok" && o.stored === "refuse" },
+  { id: "WS2", what: "(recut B3) body-default is accept | ask | refuse, nothing else; a builder (no editWorld) can't set it", run(s) { cast(s);
+      return { bad: code(set(s, "olive", "body-default", "maybe")), bob: code(set(s, "bob", "body-default", "ask")) }; },
+    good: (o) => o.bad === "shape" && o.bob === "rights" },
+  { id: "WS3", what: "(recut B3) keep-owner absent = on: removing the last owner is refused 'last-owner'", run(s) { cast(s);
+      return { c: code(role(s, "olive", { role: "builder" })) }; },
+    good: (o) => o.c === "last-owner" },
+  { id: "WS4", what: "(recut B3) keep-owner false: an owner may deliberately leave the world ownerless (main's behaviour); the operator can still mend it", run(s) { cast(s);
+      const k = show(set(s, "olive", "keep-owner", false)); const r = show(role(s, "olive", { role: "builder" }));
+      return { k, r, owners: Object.entries(s.w().state().entities["@world"].c).filter(([n, v]: any) => n.startsWith("roles:") && v?.role === "owner").length }; },
+    good: (o) => o.k === "ok" && o.r === "ok" && o.owners === 0 },
+
   // ---------------- M: S3 moderation tools ----------------
   { id: "M1", what: "ban: a moderator bans a visitor for 7 days; banning a moderator, an owner, themself, or a visitor for 31 days is refused", run(s) { cast(s);
       role(s, "mo2", { role: "moderator" });

@@ -307,6 +307,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   if (def.type && !TYPES[def.type](v)) refuse("shape", `${at} must be a ${def.type}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
   // a whole-value string (description): its length in graphemes and the words-everyone-reads check, as a field's
   if (def.type === "string" && typeof v === "string") {
+    if (def.choices && !def.choices.includes(v)) refuse("shape", `${at} is one of ${def.choices.join(", ")}, got ${JSON.stringify(v).slice(0, 40)}`, def.help ?? "");
     if (def.maxLen !== undefined && graphemes(v) > def.maxLen) refuse("bounds", `${at} is ${graphemes(v).toLocaleString("en")} characters; it must be ≤ ${def.maxLen}`, def.help ?? "");
     if (def.cleanAs) { const bad = cleanText(v, { lines: def.cleanAs === "lines" }); if (bad) refuse("shape", `${at} ${bad.why}`, bad.fix); } }
   // a socket's whole shape (shared/sockbody.js: closed keys, ranges, enums, one driver per thing), in its own words

@@ -173,7 +173,7 @@ function admit(w, st, who, ops) {
   if (!CTX.forking) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
-  if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
+  if (ownersOf(st).length && !ownersOf(s).length && s.entities["@world"]?.c?.["keep-owner"] !== false) refuse("last-owner", "that would leave this world with no owner", "§7: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
   return new Admitted(who, norm, s, vacate.length ? [...lifted.notes, ...vacate.map((u) => ({ who: u.who, vacated: true, socket: u.socket, why: vacateWhy(u) }))] : lifted.notes, vacate,
     norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
