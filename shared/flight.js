@@ -867,11 +867,16 @@ function groundContact(cfg, s, groundY, ragdoll) {
 export function foldDown(cfg, state) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {
-    s.events.push({ t: s.t, kind: 'fold.refused', reason: `airborne (${s.phase})` });
+    // Limp wings are a body down (LEAF, RAGDOLL, RECOVER), whether in the air
+    // or on the ground; open ones are a body flying.
+    const reason = s.wings === 'LIMP'
+      ? `you're not on your feet (${s.phase.toLowerCase()}); you can fold them once you're standing again`
+      : `airborne (${s.phase.toLowerCase()}); wings fold only on the ground, so land first`;
+    s.events.push({ t: s.t, kind: 'fold.refused', reason });
     return s;
   }
   if (s.wings === 'LIMP') {
-    s.events.push({ t: s.t, kind: 'fold.refused', reason: 'wings limp' });
+    s.events.push({ t: s.t, kind: 'fold.refused', reason: "your wings are limp; you can fold them once you're standing again" });
     return s;
   }
   if (s.wings === 'FOLDED') {
@@ -887,7 +892,10 @@ export function foldDown(cfg, state) {
 export function unfold(cfg, state) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   if (s.wings !== 'FOLDED') {
-    s.events.push({ t: s.t, kind: 'unfold.refused', reason: `wings are ${s.wings}` });
+    const reason = s.wings === 'LIMP'
+      ? "they're limp, not folded; they open again once you've recovered"
+      : 'already open';
+    s.events.push({ t: s.t, kind: 'unfold.refused', reason });
     return s;
   }
   s.wings = 'OPEN';
@@ -901,15 +909,15 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY 
   // is the single number the take-off and anything watching it both read.
   boost = boost ?? cfg.pilot?.launchBoost ?? 9.0;
   if (s.wings === 'FOLDED') {
-    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings folded' });
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'your wings are folded; unfold them first' });
     return s;
   }
   if (s.wings === 'LIMP') {
-    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings limp' });
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: "your wings are limp; they open again once you've recovered" });
     return s;
   }
   if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {
-    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: `already ${s.phase}` });
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: `already airborne (${s.phase.toLowerCase()})` });
     return s;
   }
   s.phase = 'PILOT'; s.mode = 'live';

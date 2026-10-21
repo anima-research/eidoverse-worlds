@@ -32,7 +32,8 @@ import { qApply } from "./motioneval.js";
 // ---- constants (versioned by derivation.toolVersion — change them, bump it) --
 
 export const SEAT_METHOD = "skinned-pelvis-contact-v1";
-export const SEAT_CLIP_FILE = "sitting_normal_chair"; // the library VRMA every chair profile binds to
+import { SEAT_CLIP_FILE } from "../../shared/clipdefs.js";
+export { SEAT_CLIP_FILE };
 export const CONTACT_MIN = 0.02;   // metres root-local; below this the "contact" is the root itself
 export const CONTACT_MAX = 1.0;    // above this no humanoid sit pose is plausible
 export const MIN_PATCH_VERTS = 8;  // fewer neighbours than this = the winner sits alone
@@ -141,11 +142,11 @@ export function socketAnchor(sock) {
 // ---- rider scale (B5) -------------------------------------------------------
 
 /** The named shared definition of riderEffectiveScale: the rider avatar
- *  root's world scalar scale at compose time. No current code path scales an
- *  avatar root, so this is 1 everywhere today — but the definition is stated
- *  here, once, so that if body scaling ever ships it plugs in at this seam
- *  instead of diverging per consumer. Nonuniform scale is an abstention,
- *  never an average. */
+ *  root's world scalar scale at compose time, times its chosen body size —
+ *  which shipped (bodyscale.js) and plugs in at this seam: seats.js passes
+ *  root scale × avatar.bodyScale(), and the text tier passes the rider's
+ *  presence `scale` (mcpl/effective.ts riderScale). Nonuniform scale is an
+ *  abstention, never an average. */
 export function riderScalar(scaleVec3) {
   if (scaleVec3 == null) return { ok: true, s: 1 };
   const [sx, sy, sz] = scaleVec3;

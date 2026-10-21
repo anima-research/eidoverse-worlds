@@ -64,18 +64,24 @@ export type Client = {
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
+  nameReserved?: boolean;  // …and that bearer makes the NAME authoritative (a tokens.json agent, an aid1 agent) — access.ts
+  trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
+  legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries
                        // Monotonic, never reused. Every rtc/attestation message is stamped with
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
                        // Deferred authored verbs capture it and recheck before committing.
+  presenceSession?: string; // `session` on arrive and snapshot.present: the joining page's id, else a token for this leg (server.ts presenceSession)
   surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
                        // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
                        // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
-  renderer?: boolean;  // donates rendering: can answer snap requests for its world
+  renderer?: boolean;  // legacy invisible browser renderer
+  roam?: boolean;      // a renderer the snapshot broker may send to any world that has none (snapshots.ts)
+  capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
@@ -240,9 +246,11 @@ export class WorldLog {
       if (want(e)) { out.push(e); seen.add(e.seq); }
     }
     // older than what is in memory — go to the file (flushed first, so a
-    // page can never miss an entry the memory tail has already dropped)
+    // page can never miss an entry the memory tail has already dropped).
+    // Memory holds every entry after the last fold, so an `after` at or past
+    // it has nothing to find there: a re-join's resync (chat.js) stays O(tail).
     const oldestInMemory = this.entries.length ? this.entries[0].seq : Infinity;
-    if (out.length < limit && before > 0 && oldestInMemory > 0 && existsSync(this.logPath)) {
+    if (out.length < limit && before > 0 && oldestInMemory > 0 && after < this.snapSeq && existsSync(this.logPath)) {
       this.flushLog();
       const lines = readFileSync(this.logPath, "utf8").split("\n");
       for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
@@ -250,6 +258,7 @@ export class WorldLog {
         if (!line.trim()) continue;
         let e: LogEntry;
         try { e = JSON.parse(line); } catch { continue; }
+        if (e.seq <= after) break;                   // the log is in seq order: nothing older qualifies
         if (seen.has(e.seq) || !want(e)) continue;
         out.push(e); seen.add(e.seq);
       }
@@ -417,9 +426,28 @@ export class World {
   private log: WorldLog;
   private session: WorldSession;
 
+  /** The log seq this sequencer opened the world at, and the legs admitted
+   *  since. A leg's GENERATION is `openSeq × 1e6 + count`: server-issued,
+   *  strictly increasing within an opening, and never lower than any
+   *  generation a previous opening issued — every caption entry that carried
+   *  one advanced the seq past the opening that issued it, so a later opening
+   *  reads a higher seq (Mica, #187 round 3: a process-local counter reset on
+   *  restart and stranded the first legitimate captioner behind a bag written
+   *  before the restart). Replay-safe by construction: the generation rides
+   *  the entry, and nothing about it is recomputed from a clock or a process.
+   *  A million admissions per opening is the bound; past it the opening
+   *  refuses further legs a generation rather than issuing an ambiguous one. */
+  readonly openSeq: number;
+  private legCount = 0;
+  legGen(): number {
+    if (this.legCount >= 1_000_000) throw new Error(`world "${this.name}": a million legs admitted since opening — restart the sequencer to open a new generation space`);
+    return this.openSeq * 1_000_000 + (++this.legCount);
+  }
+
   constructor(name: string) {
     this.name = name;
     this.log = new WorldLog(name);
+    this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
     this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
     // nobody connected (timers), which is the point of running server-side.

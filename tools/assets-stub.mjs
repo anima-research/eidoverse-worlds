@@ -15,3 +15,6 @@ export const loadDone = () => true;
 export const releaseVRM = () => {};
 export const vrmWarmed = () => true;
 export const markVrmWarmed = () => {};
+// boot.js (splash) reads the byte ledger — nothing to count in a stub world
+export const loadingItems = () => [];
+export const bootBytes = () => ({ done: 0, total: 0 });

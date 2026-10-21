@@ -51,7 +51,10 @@ export function seatCorrectionFor(rider, sock) {
   const name = nameFromAvatarPath(rider.path);
   if (!name) return { applied: false, reason: 'no rider context' };
   const verdict = cache.get(name);
-  const sc = riderScalar([rider.av.root.scale.x, rider.av.root.scale.y, rider.av.root.scale.z]);
+  // body scaling shipped (Profile › Avatar, bodyscale.js) — on vrm.scene, not the root (the root carries the
+  // screen-sized plate). The body's own multiplier × whatever the root may carry is the rider's effective scale.
+  const bs = rider.av.bodyScale?.() ?? 1;
+  const sc = riderScalar([rider.av.root.scale.x * bs, rider.av.root.scale.y * bs, rider.av.root.scale.z * bs]);
   if (!sc.ok) return { applied: false, reason: sc.why };
   const g = seatGate({
     sock, verdict,

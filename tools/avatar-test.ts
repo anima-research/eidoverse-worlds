@@ -29,7 +29,7 @@ plugin({
 });
 
 const { THREE } = await import('./core-stub.mjs');
-const { Avatar } = await import('../client/lib/avatar.js');
+const { Avatar, BLINK } = await import('../client/lib/avatar.js');
 const { DRIVEN_BONES } = await import('../client/lib/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -93,12 +93,13 @@ function stand({ constant = false } = {}) {
   // behaviour a rig without lids or wings needs anyway — but they have to be
   // real methods, or setLimp throws and the whole suite stops at test two.
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
-                   'clearPose', '_applyOverride', '_composeBegin', '_composeEnd',
+                   'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
+                   '_applyPoseSlot', '_applyAnimSlot', '_handBack', '_rawBegin', '_rawEnd', '_rawRelease', 'playAnimation', '_sampleTrack',
                    'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
-  self.tick = function (dt = 1 / 60) {
+  self.tick = function (dt = 1 / 60, now = 0) {
     this.mixer.update(dt);
     if (this._limp) this._park();
     if (this.head && !this._limp) {
@@ -109,7 +110,7 @@ function stand({ constant = false } = {}) {
       }
       this._composeEnd(this.head, r);
     }
-    if (this._override) this._applyOverride(dt, 0);
+    if (this._override || this._anims?.length) this._applyOverride(dt, now);
   };
   return { self, nodes, action };
 }
@@ -219,6 +220,78 @@ for (const constant of [false, true]) {
   }
 }
 
+// ---- eyelids: where "closed" comes from -------------------------------------
+// THREE sources, in descending authority, and the middle one failed silently.
+//
+// Janus removed the Limit Rotation constraints from the upper lids -- a
+// reasonable edit to a rig -- and the blink driver, which INFERRED the closing
+// angle from those constraints, found nothing and fell through to the generic
+// BLINK.closed of 1.2 rad (69 deg). His rig closes at 38-42. The lids swung
+// nearly 30 degrees too far and drove through the eye, and nothing anywhere
+// said so: a fallback that is reached by absence cannot announce itself.
+//
+// So: an authored POSE wins, a constraint is second, the dial is last. Each is
+// asserted here, including that the dial is still reached when a rig offers
+// neither -- the fallback is correct behaviour, it just must not be silent
+// about a rig that HAS an answer.
+{
+  const lidNode = (name: string, extras: Record<string, unknown>) => {
+    const o = new THREE.Object3D();
+    o.name = name;
+    o.userData = { gltfExtras: extras };
+    return o;
+  };
+  const lidsOf = (extras: Record<string, unknown>) => {
+    const scene = new THREE.Object3D();
+    scene.add(lidNode('L_Eyelid_Upper', extras));
+    const av = Object.create(Avatar.prototype) as any;
+    av.vrm = { scene };
+    av._findLids();
+    return av._lids?.[0] ?? null;
+  };
+
+  // 1. AUTHORED POSE: taken as-is, because it is already the angle from rest.
+  const posed = lidsOf({ blink_closed_src: 'pose', blink_closed_x: 0.6593 });
+  check('an authored closed pose is used verbatim',
+    posed?.exported !== null && Math.abs((posed?.exported ?? 0) - 0.6593) < 1e-4,
+    `exported=${posed?.exported}`);
+  check('...and it is nowhere near the generic 1.2 rad dial',
+    Math.abs((posed?.exported ?? 0) - BLINK.closed) > 0.4,
+    `pose ${posed?.exported} vs dial ${BLINK.closed}`);
+
+  // A pose wins even when constraints are ALSO present: the rig author stating
+  // the pose outranks a range that merely brackets it.
+  const both = lidsOf({
+    blink_closed_src: 'pose', blink_closed_x: 0.6593,
+    limit_min_x: 2.618, limit_max_x: 4.189,
+  });
+  check('an authored pose outranks the constraints beside it',
+    Math.abs((both?.exported ?? 0) - 0.6593) < 1e-4, `exported=${both?.exported}`);
+
+  // 2. CONSTRAINTS: absolute angles, so the delta is closed - centre.
+  //    150/240 deg bracketing a rest of ~195 gives 45 deg of closing.
+  const limited = lidsOf({ limit_min_x: 2.618, limit_max_x: 4.189, blink_closed_x: 4.189 });
+  const wantDelta = 4.189 - (2.618 + 4.189) / 2;
+  check('a Limit Rotation is read as closed MINUS the range centre',
+    Math.abs((limited?.exported ?? 0) - wantDelta) < 1e-3,
+    `exported=${limited?.exported} want ${wantDelta.toFixed(4)}`);
+  check('...which is a plausible lid sweep, not a 240-degree one',
+    Math.abs(limited?.exported ?? 9) < 1.0, `exported=${limited?.exported}`);
+
+  // 3. NEITHER: fall back to the dial. This is the state Janus's rig was in.
+  const bare = lidsOf({});
+  check('a rig with no closed angle falls back to the dial',
+    bare?.exported === null, `exported=${bare?.exported}`);
+
+  // and the guards: nonsense is refused rather than driven through the eye
+  const absurd = lidsOf({ blink_closed_src: 'pose', blink_closed_x: 2.9 });
+  check('an implausible pose angle is refused', absurd?.exported === null,
+    `exported=${absurd?.exported}`);
+  const inverted = lidsOf({ limit_min_x: 4.189, limit_max_x: 2.618, blink_closed_x: 4.189 });
+  check('an inverted constraint range is refused', inverted?.exported === null,
+    `exported=${inverted?.exported}`);
+}
+
 // ---- wings ------------------------------------------------------------------
 // The flap is geometry, and geometry is exactly the kind of thing that "runs
 // without throwing" while pointing the wrong way — the eyelids shipped rotating
@@ -308,6 +381,147 @@ function wingStand() {
     return nodes[n].getWorldPosition(new THREE.Vector3());
   };
   return { self, nodes, tipY, tipPos };
+}
+
+console.log('\nan animation over a held pose (wave while crouching):');
+{
+  // A clip that HOLDS STILL is the case that bit: nothing rewrites a bone
+  // the pose tilted, so whatever is left there stays.
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHips = nodes.hips.quaternion.clone(), clipArm = nodes.leftUpperArm.quaternion.clone();
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.54);
+  const wave = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -1.2);
+  const q = (x: any) => [x.x, x.y, x.z, x.w];
+  self.setPose({ hips: q(tilt) });
+  for (let i = 0; i < 60; i++) self.tick();
+  check('the pose holds the hips', nodes.hips.quaternion.angleTo(tilt) < 1e-3);
+
+  self.playAnimation({ dur: 1, tracks: { leftUpperArm: [{ t: 0, q: q(wave) }, { t: 1, q: q(wave) }] } });
+  self._anims[0].start = 0;
+  let now = 0;
+  for (let i = 0; i < 40; i++) self.tick(1 / 60, now += 1000 / 60);   // past the ~120ms ease-in, inside the 1s
+  check('while the wave plays, the crouch keeps its hips', nodes.hips.quaternion.angleTo(tilt) < 1e-3,
+    `${nodes.hips.quaternion.angleTo(tilt).toFixed(3)} rad off`);
+  check('...and the arm is the wave\'s', nodes.leftUpperArm.quaternion.angleTo(wave) < 1e-2,
+    `${nodes.leftUpperArm.quaternion.angleTo(wave).toFixed(3)} rad off`);
+  check('...in its own slot — the pose was not displaced', self._override?.kind === 'pose' && self._anims?.[0]?.kind === 'anim');
+
+  for (let i = 0; i < 120; i++) self.tick(1 / 60, now += 1000 / 60);
+  check('when the wave ends it lets go', self._anims.length === 0);
+  check('...the arm goes back to the clip, not the last frame of the wave', nodes.leftUpperArm.quaternion.angleTo(clipArm) < 1e-3,
+    `${nodes.leftUpperArm.quaternion.angleTo(clipArm).toFixed(3)} rad off`);
+  check('...and the crouch is still held', nodes.hips.quaternion.angleTo(tilt) < 1e-3);
+
+  self.clearPose();
+  for (let i = 0; i < 90; i++) self.tick(1 / 60, now += 1000 / 60);
+  check('releasing the pose leaves NO tilt on a still clip', nodes.hips.quaternion.angleTo(clipHips) < 1e-3,
+    `${nodes.hips.quaternion.angleTo(clipHips).toFixed(3)} rad off`);
+}
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHips = nodes.hips.quaternion.clone();
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.54);
+  self.setPose({ hips: [tilt.x, tilt.y, tilt.z, tilt.w] });
+  for (let i = 0; i < 60; i++) self.tick();
+  self.setPose({ leftUpperArm: [0, 0, 0.38, 0.92] });
+  for (let i = 0; i < 5; i++) self.tick();
+  check('a pose REPLACED by one without hips hands the hips back (the tilt that outlived the crouch)',
+    nodes.hips.quaternion.angleTo(clipHips) < 1e-3, `${nodes.hips.quaternion.angleTo(clipHips).toFixed(3)} rad off`);
+}
+
+console.log('\nanimation layers (merge) and replace:');
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHead = nodes.head.quaternion.clone();
+  const A = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -1.0);
+  const B = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.8);
+  const q = (x: any) => [x.x, x.y, x.z, x.w];
+  const hold = (x: any, d = 3) => [{ t: 0, q: q(x) }, { t: d, q: q(x) }];
+  let now = 0;
+  const run = (n: number) => { for (let i = 0; i < n; i++) self.tick(1 / 60, now += 1000 / 60); };
+  self.playAnimation({ dur: 3, replace: false, tracks: { leftUpperArm: hold(A), head: hold(B) } });
+  self._anims[0].start = now;
+  run(30);
+  const C = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1.0);
+  self.playAnimation({ dur: 3, replace: false, tracks: { leftUpperArm: hold(C) } });
+  self._anims.at(-1).start = now;
+  run(30);
+  check('a second animation takes only its bones: the arm is the new one', nodes.leftUpperArm.quaternion.angleTo(C) < 1e-2,
+    `${nodes.leftUpperArm.quaternion.angleTo(C).toFixed(3)} rad off`);
+  check('...and the first keeps playing on the rest (head)', nodes.head.quaternion.angleTo(B) < 1e-2,
+    `${nodes.head.quaternion.angleTo(B).toFixed(3)} rad off`);
+  check('...as two layers', self._anims.length === 2);
+  self.playAnimation({ dur: 3, replace: true, tracks: { leftUpperArm: hold(A) } });
+  self._anims.at(-1).start = now;
+  run(30);
+  check('replace ends every other layer', self._anims.length === 1);
+  check('...and hands the head back to the clip', nodes.head.quaternion.angleTo(clipHead) < 1e-3,
+    `${nodes.head.quaternion.angleTo(clipHead).toFixed(3)} rad off`);
+}
+
+console.log('\npose teardown and legacy animation compatibility:');
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const idle = nodes.leftUpperArm.quaternion.clone();
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1).toArray();
+  self.playAnimation({ dur: 1, loop: true, replace: false, tracks: { leftUpperArm: [{ t: 0, q }] } });
+  self._anims[0].start = 0;
+  for (let i = 0; i < 60; i++) self.tick(1 / 60, i * 1000 / 60);
+  // The mesh survives a same-avatar takeover; only unrelated UI seams are stubbed.
+  for (const name of ['setTyping', 'clearReach', 'setGazeTarget', 'setClip']) self[name] = () => {};
+  Avatar.prototype.resetTransients.call(self);
+  for (let i = 60; i < 300; i++) self.tick(1 / 60, i * 1000 / 60);
+  check('a takeover ends the predecessor’s looping animation', !self._anims?.length);
+  check('...and hands its bones back to the idle clip', nodes.leftUpperArm.quaternion.angleTo(idle) < 1e-3);
+}
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const idle = nodes.leftUpperArm.quaternion.clone();
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1).toArray();
+  const tracks = { leftUpperArm: [{ t: 0, q }] };
+  self.playAnimation({ dur: 1, loop: true, tracks }); // legacy wire: no replace flag
+  self._anims[0].start = 0;
+  for (let i = 0; i < 60; i++) self.tick(1 / 60, i * 1000 / 60);
+  self.playAnimation({ dur: 1, tracks: { head: [{ t: 0, q }] } });
+  check('an omitted wire replace flag ends older animation layers', self._anims.length === 1);
+  check('...including bones absent from the new animation', nodes.leftUpperArm.quaternion.angleTo(idle) < 1e-3);
+}
+{
+  // Drive setPose -> raw writes -> REAL dispose -> another wearer on the same
+  // nodes. Pool reset only knows humanoid rotations/positions, not these TRS.
+  const scene = new THREE.Group(), head = new THREE.Bone(), custom = new THREE.Bone();
+  head.name = 'Head'; custom.name = 'Custom'; scene.add(head); head.add(custom);
+  head.scale.set(1.2, 1.2, 1.2); custom.position.set(0, .2, 0);
+  custom.matrixAutoUpdate = false; custom.updateMatrix();
+  const rest = {};
+  scene.traverse((n: any) => { if (n.isBone) rest[n.name] = { p: n.position.toArray(), q: n.quaternion.toArray(), s: n.scale.toArray() }; });
+  const vrm = { scene, userData: { boneRest: rest }, humanoid: {
+    getNormalizedBoneNode: (n: string) => n === 'head' ? head : null,
+    getRawBoneNode: (n: string) => n === 'head' ? head : null,
+  } };
+  const wearer = () => Object.assign(Object.create(Avatar.prototype), {
+    vrm, root: scene, gaze: new THREE.Object3D(), label: new THREE.Sprite(),
+    mixer: new THREE.AnimationMixer(scene), _composed: new Map(),
+  });
+  const first = wearer();
+  first.setPose({ head: { s: 2 }, Custom: { q: [0, 0, Math.sin(.3), Math.cos(.3)], t: [.25, 0, 0] } });
+  first._override.weight = 1; first._applyRawPose();
+  check('fixture really scales and moves the raw bones', head.scale.x > 2 && custom.position.x > .1);
+  first.dispose();
+  check('dispose restores the authored scale before pooling', Math.abs(head.scale.x - 1.2) < 1e-9);
+  check('dispose restores custom translation and rotation', custom.position.distanceTo(new THREE.Vector3(0, .2, 0)) < 1e-9 && custom.quaternion.angleTo(new THREE.Quaternion()) < 1e-6);
+  check('dispose rebuilds manually updated bone matrices', new THREE.Vector3().setFromMatrixPosition(custom.matrix).distanceTo(custom.position) < 1e-9);
+  const second = wearer();
+  second.setPose({ head: { s: 2 } }); second._override.weight = 1; second._applyRawPose();
+  check('the next wearer scales from rest, without compounding the previous pose', Math.abs(head.scale.x - 2.4) < 1e-9);
+  first.dispose();
+  check('repeated disposal cannot clear the next wearer’s pose', Math.abs(head.scale.x - 2.4) < 1e-9);
+  second.dispose();
 }
 
 console.log('\nwings:');
@@ -686,6 +900,161 @@ console.log('\nwings:');
   self._findWings = (Avatar.prototype as any)._findWings;
   self._findWings();
   check('a wingless rig finds nothing and says so', self._wings === null);
+}
+
+console.log('\neased crossfade, interrupted (pre-review B2):');
+{
+  // walk → (eased, 0.5 s) jump → (linear) idle inside the ease: walk must NOT stay parked at a half weight
+  const { self } = stand();
+  const mk = (name: string) => { const c = new THREE.AnimationClip(name, 1, [new THREE.QuaternionKeyframeTrack('hips.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]); const a = self.mixer.clipAction(c); a.enabled = true; a.setEffectiveWeight(0); a.play(); return a; };
+  self.actions.walk = mk('walk'); self.actions.jump = mk('jump'); self.actions.idle = self.actions.idle;
+  for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+  self.update = function (dt: number) {   // the slice of update() that owns _xfade
+    if (this._xfade) { const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = u * u * (3 - 2 * u);
+      x.in.setEffectiveWeight(x.in0 + (1 - x.in0) * w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(x.out0 * (1 - w));
+      if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; } }
+    this.mixer.update(dt);
+  };
+  self.setClip('walk'); for (let i = 0; i < 30; i++) self.update(1 / 60);
+  self.setClip('jump', 0, { fade: 0.5, ease: true }); for (let i = 0; i < 12; i++) self.update(1 / 60);   // 0.2 s into the ease
+  const w = (a: any) => +a.getEffectiveWeight().toFixed(2);
+  const before = { walk: w(self.actions.walk), jump: w(self.actions.jump), idle: w(self.actions.idle) };
+  self.setClip('walk'); self.update(1 / 60);   // LANDED inside the ease, still holding forward — back into WALK, the clip mid-fade-out: one frame later nothing may jump by more than 0.1 and the weights still sum to ~1 (round 4 S1b)
+  const after = { walk: w(self.actions.walk), jump: w(self.actions.jump), idle: w(self.actions.idle) };
+  const maxMove = Math.max(...(['walk', 'jump', 'idle'] as const).map((k) => Math.abs(after[k] - before[k])));
+  const sum = after.walk + after.jump + after.idle;
+  check('a landing inside the ease moves no weight by more than 0.1 in one frame', maxMove <= 0.1, `before ${JSON.stringify(before)} after ${JSON.stringify(after)}`);
+  check('...and the weights still sum to ~1', sum > 0.95 && sum < 1.05, `sum ${sum.toFixed(2)}`);
+  for (let i = 0; i < 59; i++) self.update(1 / 60);                                                    // 1 s later
+  self.setClip('idle'); for (let i = 0; i < 60; i++) self.update(1 / 60);   // then stop: 1 s later
+  check('walk faded out after the ease was cut short', w(self.actions.walk) < 0.05, `walk ${w(self.actions.walk)} jump ${w(self.actions.jump)} idle ${w(self.actions.idle)}`);
+  check('idle owns the body', w(self.actions.idle) > 0.95, `idle ${w(self.actions.idle)}`);
+}
+
+console.log('\nthe capsule stand-in can be measured and reached (round 2 N1):');
+{
+  const { makeCapsuleVrm } = await import('../client/lib/capsulebody.js');
+  const v: any = makeCapsuleVrm(); v.scene.updateMatrixWorld(true);
+  const self: any = { vrm: v, root: v.scene, _reach: new Map(), _limp: false };
+  for (const m of ['setReach', '_measureChain', 'clearReach', 'reachStatus', 'restBonePositions', '_humanoidBones', '_resolveBones']) self[m] = (Avatar.prototype as any)[m];
+  let threw: any = null, got: any = null;
+  try { got = self.setReach('rightHand', [0.3, 1.2, 0.4]); } catch (e) { threw = e; }
+  check('setReach on the capsule does not throw', !threw, threw ? String(threw?.message).slice(0, 80) : 'no throw');
+  check('...and the chain measured (setReach returned true)', got === true, `returned ${got}`);
+  const chain: any = threw ? null : self._measureChain('rightHand');
+  check('upper/lower arm lengths read off the puppet', !!chain && chain.L1 > 0.2 && chain.L2 > 0.2, chain ? `L1 ${chain.L1?.toFixed(2)} L2 ${chain.L2?.toFixed(2)}` : 'no chain');
+}
+
+console.log('\nmeasured jump take-off (#196 review B2):');
+{
+  // The jump clip does not start at frame 0: it starts where the body actually LEAVES the ground —
+  // the hips coming back UP through rest height after the anticipation dip. Starting at 0 plays the
+  // squat while already airborne (the mid-air-squat bug). The measurement is read off the clip's own
+  // hips track, so it is bound here against synthetic tracks with known answers rather than constants.
+  //
+  // clipTakeoff is module-private; its consumer is setClip('jump') → `a.time = clipTakeoff(...)`,
+  // so driving the real setClip binds the measurement AND its wiring together.
+  // Each case needs its OWN clip object: the result is cached on clip.userData.takeoff.
+  //
+  // Red on: deleting the measurement (`a.time = 0`); clipTakeoff returning a constant — including
+  // 0.50, the CORRECT answer for the headline fixture, because the cases carry different shapes with
+  // different right answers; starting at the squat bottom instead of the rise; dropping the 1 cm
+  // noise guard; searching the whole clip instead of its first half; and removing the `slot ===
+  // 'jump'` gate so every clip gets re-timed.
+  // (An earlier header claimed the first-half restriction "would need a full landing clip to
+  // exercise". That was wrong — a synthetic 7-key track with a deeper landing crouch separates the
+  // two, and is the `withLanding` case below. Corrected rather than left standing.)
+  // ONE declared survivor: deleting the `clip.userData.takeoff` memo write. Without it the function
+  // recomputes and returns the same value, so it is a perf regression, not a behavioural one —
+  // genuinely equivalent. Poisoning the memo IS behavioural and is bound (the repeated-jump case).
+  const hips = (times: number[], ys: number[]) =>
+    new THREE.VectorKeyframeTrack('hips.position', times, ys.flatMap((y) => [0, y, 0]));
+  const jumpClip = (times: number[], ys: number[], name = 'jump') =>
+    new THREE.AnimationClip(name, 1, [hips(times, ys)]);
+
+  const timeFor = (clip: THREE.AnimationClip) => {
+    const { self } = stand();
+    for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+    const a = self.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play();
+    self.actions.jump = a;
+    self.setClip('jump');
+    return a.time;
+  };
+
+  // rest .864, dip to .494, back through rest at t=0.50 — the shape of the real jump.vrma
+  const real = timeFor(jumpClip([0, 0.33, 0.50, 0.75], [0.864, 0.494, 0.870, 1.20]));
+  check('the jump starts where the hips rise back through rest height, not at frame 0',
+    Math.abs(real - 0.50) < 1e-6, `a.time = ${real}`);
+  check('…and not at the bottom of the anticipation squat',
+    Math.abs(real - 0.33) > 1e-6);
+
+  const noDip = timeFor(jumpClip([0, 0.2, 0.4], [0.864, 0.9, 1.3]));
+  check('a clip that only rises has no take-off to find (starts at 0)', noDip === 0, `a.time = ${noDip}`);
+
+  // The dip is sought in the clip's FIRST HALF, so the track needs enough keys for the scan to
+  // reach the wobble at all: with 3 keys `half` is 1 and only index 0 is examined, which returned 0
+  // without ever consulting the 1 cm guard (a green from a measurement that never ran).
+  const noise = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.860, 0.858, 0.870, 1.10, 1.30]));
+  check('a sub-centimetre wobble is not a dip (the 1 cm guard, actually exercised)',
+    noise === 0, `a.time = ${noise}`);
+  // …and the same shape with a REAL dip is found, proving the case above fails on depth, not on shape
+  const realDip = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.700, 0.494, 0.870, 1.10, 1.30]));
+  check('…while the same track shape with a real dip does find the rise',
+    Math.abs(realDip - 0.3) < 1e-6, `a.time = ${realDip}`);
+
+  const noHips = (() => {
+    const c = new THREE.AnimationClip('jump', 1, [new THREE.QuaternionKeyframeTrack('hips.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]);
+    return timeFor(c);
+  })();
+  check('a clip with no hips track starts at 0 rather than throwing', noHips === 0, `a.time = ${noHips}`);
+
+  // A LATER, DEEPER dip (a landing crouch) must not be mistaken for the take-off: that is what
+  // restricting the search to the clip's first half buys. The crouch is deeper than the anticipation
+  // dip (.400 < .494), so a whole-clip search would return the landing instead of the launch.
+  const withLanding = timeFor(jumpClip(
+    [0, 0.33, 0.50, 0.75, 0.95, 1.10, 1.30],
+    [0.864, 0.494, 0.870, 1.20, 0.700, 0.400, 0.870]));
+  check('a deeper landing crouch later in the clip is not mistaken for the take-off',
+    Math.abs(withLanding - 0.50) < 1e-6, `a.time = ${withLanding}`);
+
+  // THE CACHE, which is what actually ships. Every fixture above uses a fresh clip, so the memo at
+  // avatar.js:485 is written and never read back — but production calls setClip('jump') against the
+  // SAME loaded jump.vrma object on every jump, so from the second jump onward the cached value is
+  // the only thing that reaches the mixer. Deleting the memo, or poisoning it, was invisible here.
+  {
+    const shared = jumpClip([0, 0.33, 0.50, 0.75], [0.864, 0.494, 0.870, 1.20]);
+    const first = timeFor(shared);
+    const second = timeFor(shared);   // same clip object, as a second jump does
+    const third = timeFor(shared);
+    check('a second jump on the same clip starts at the same measured take-off',
+      Math.abs(second - 0.50) < 1e-6, `first ${first}, second ${second}`);
+    check('…and a third, so a poisoned memo cannot ship a wrong time after the first jump',
+      Math.abs(third - 0.50) < 1e-6, `third ${third}`);
+  }
+
+  // A SHALLOW but real dip must still be found: the 1 cm guard was bound from below (0.6 cm rejected)
+  // but not from above, so raising it to 10 cm stayed green while silently reclassifying a real jump
+  // on a small or lightly-animated character as noise — the mid-air-squat bug, for that character.
+  const shallow = timeFor(jumpClip([0, 0.1, 0.2, 0.33, 0.50, 0.75], [0.864, 0.836, 0.820, 0.870, 1.10, 1.30]));
+  check('a shallow (4 cm) but real anticipation dip is still a take-off, not noise',
+    Math.abs(shallow - 0.33) < 1e-6, `a.time = ${shallow}`);
+
+  // The rise-scan stops at the FIRST key at or above rest. A baked clip whose keyframe lands exactly
+  // on the rest value must not advance one key past it (`<` vs `<=`).
+  const exact = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.700, 0.494, 0.864, 1.10, 1.30]));
+  check('a keyframe sitting exactly at rest height IS the take-off (no off-by-one)',
+    Math.abs(exact - 0.3) < 1e-6, `a.time = ${exact}`);
+
+  // only the jump slot is re-timed: idle/walk must still start at 0. The track needs enough keys for
+  // the dip search to actually FIND a dip — with 3 keys `half` is 1 and this passed no matter what
+  // the gate did (the same vacuity fixed for the noise case above, one fixture too few times).
+  const { self } = stand();
+  for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+  const wc = jumpClip([0, 0.1, 0.2, 0.33, 0.50, 0.75], [0.864, 0.700, 0.494, 0.500, 0.870, 1.20], 'walk');
+  const wa = self.mixer.clipAction(wc); wa.enabled = true; wa.setEffectiveWeight(0); wa.play();
+  self.actions.walk = wa; self.setClip('walk');
+  check('a non-jump clip is not re-timed, even with a findable dip in its hips track',
+    wa.time === 0, `walk time = ${wa.time}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

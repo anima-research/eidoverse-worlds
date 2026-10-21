@@ -1,9 +1,7 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { THREE, camera } from './core.js';
-import { CONFIG, report, bus } from './base.js';
-import { forgetBytes } from './assets.js';
+import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -15,19 +13,23 @@ import { pending, P } from './scheduler.js';
 // narration, live say) dispatch over the bus as 'live-entry' (causes.js
 // listens — emitted rather than imported so this file adds no lap around
 // the net → chat → net cycle). One writer per verb, always.
-import { remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } from './remotes.js';
-import { myReachBag } from './reachnet.js';
+
 import { wingFoldPresence } from '../../shared/wingpresence.js';
-import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
-import { composeFirstPerson } from './fp_view.js';
-import { captureFrame, captureFrom } from './capture.js';
+import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js';
+import { presence } from './presence.js';
+import { logChat, logWhisper, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
 import { markPhase } from './boot.js';
-import { toast } from './ui.js';
+// ui.js is the desktop shell and reaches the engine through its panels (videopanel,
+// profile). The wire only ever wanted to SAY something to the user, so it takes a
+// notifier instead of importing a whole UI. Default logs: a dropped connection notice
+// must not itself go missing in a client that wired nothing.
+let toast = (m, kind) => console.log(`[net:${kind ?? 'info'}] ${m}`);
 
 export const net = {
   ws: null,
   joined: false,
   myId: null,
+  mySub: null,
   status: 'connecting',   // connecting | live | retrying | rejected
   latency: null,
 };
@@ -47,8 +49,47 @@ let hooks = {
   me: () => null,
   onRestore: () => {},
   onSnapshotDone: () => {},
+  myVoice: () => null,   // { mic, hear } — main.js reads the HUD glyphs' own state (mictoggle.js)
 };
-export function wireNet(h) { hooks = { ...hooks, ...h }; }
+
+// The participant registry, the asset ledger and the snapshot renderer are INJECTED
+// for the same reason the hooks above are: this file is the wire, and the wire is the
+// one part of the client that a renderer-less client still needs in full. remotes.js
+// builds three.js bodies, assets.js and capture.js reach the GPU — importing any of
+// them here would drag the engine into lite.js through the side door and undo the
+// point of having a lite client at all.
+//
+// They are `let` bindings with the ORIGINAL names on purpose: every call site below
+// reads exactly as it did when these were imports, so this indirection costs the
+// protocol code nothing and leaves almost no diff for the next merge to fight over.
+//
+// Defaults are inert rather than lite: an unwired net should do nothing surprising.
+// Both entry points wire explicitly (main.js the real ones, lite.js the DOM-only
+// registry in participants_lite.js).
+let remotes = new Map();
+let ensureRemote = async () => null;
+let dropRemote = () => null;
+let pushPose = () => {};
+let noteServerTime = () => {};
+let noteSpeaking = () => {};
+let forgetBytes = () => {};
+// reachnet.js reaches the engine through landmarks.js. Only sendPose() reads this, and
+// a client with no body never sends a pose (hooks.myState is null, which returns early
+// above) — so undefined here is both safe and correct: absence means "let go".
+let myReachBag = () => undefined;
+// A client with no renderer must still ANSWER a snap — the asker is blocked on the
+// reply id — so the default is an honest error, not silence.
+let snapshot = async () => ({ error: 'this client has no renderer' });
+
+export function wireNet(h) {
+  const { participants, forgetBytes: fb, snapshot: snap, myReachBag: rb, toast: tf, ...rest } = h;
+  if (participants) ({ remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } = participants);
+  if (fb) forgetBytes = fb;
+  if (rb) myReachBag = rb;
+  if (tf) toast = tf;
+  if (snap) snapshot = snap;
+  hooks = { ...hooks, ...rest };
+}
 
 // ---------------------------------------------------------------- sending
 
@@ -67,10 +108,12 @@ export function sendAnim(data) {
     net.ws.send(JSON.stringify({ type: 'anim', ...data }));
   }
 }
-/** Ask another body to hold a pose or play an animation. */
-export function sendPuppet(target, { pose = null, anim = null, ragdoll = null } = {}) {
+/** Ask another body to hold a pose or play an animation. `merge`: pose only
+ *  the bones sent, over what they already hold (a null bone releases it);
+ *  without it the pose replaces theirs whole. */
+export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, anim, ragdoll }));
+    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
 
@@ -78,14 +121,17 @@ export function sendPuppet(target, { pose = null, anim = null, ragdoll = null } 
  *
  *  Folding bounds what a join costs, which necessarily means a joiner is not
  *  handed everything ever said. This is how the rest is reachable: scroll up
- *  and the client asks for what came before. */
+ *  and the client asks for what came before. A request that gets no answer,
+ *  because no socket is joined or nothing came back within 8 s, rejects, so
+ *  a caller can tell it from an empty page, which is an answer: there is
+ *  nothing there. */
 const pendingHistory = new Map();
 let histId = 0;
 export function requestHistory(opts = {}) {
-  if (!net.joined || net.ws?.readyState !== 1) return Promise.resolve({ entries: [], hasMore: false });
+  if (!net.joined || net.ws?.readyState !== 1) return Promise.reject(new Error('history: not connected'));
   const reqId = `h${++histId}`;
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { pendingHistory.delete(reqId); resolve({ entries: [], hasMore: false }); }, 8000);
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { pendingHistory.delete(reqId); reject(new Error('history: no answer within 8 s')); }, 8000);
     pendingHistory.set(reqId, (m) => { clearTimeout(t); resolve(m); });
     net.ws.send(JSON.stringify({ type: 'history', reqId, ...opts }));
   });
@@ -153,6 +199,13 @@ export function sendDrag(id, pos, yaw) {
   }
 }
 
+/** This page's presence session: one id for as long as the page lives, sent
+ *  with every join, so listeners can tell a reconnect (the same page, whose
+ *  utterance counter goes on) from a new page (whose counter starts again).
+ *  index.html's early socket sends the first join, with the same id. */
+const PAGE_SESSION = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
+  ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+
 export function sendJoin() {
   const id = CONFIG.renderer ? `renderer-${CONFIG.name}`
     : CONFIG.spectate ? `retina-${CONFIG.name}` : CONFIG.name;
@@ -161,7 +214,10 @@ export function sendJoin() {
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
+    ...(CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
+    session: PAGE_SESSION,
+    clock: true,   // the server's time just before the snapshot ('clock' below)
   }));
 }
 
@@ -182,16 +238,33 @@ export function sendLease(op, id, payload = {}) {
   }
 }
 
+// XR: the wire carries the AVATAR's actual yaw (root + its own chase of the head) and the look
+// pitch while presenting — porch-old sent head yaw (index.html:11066–11072); remotes turn with the head.
+let poseOverride = null;
+export const setPoseOverride = (fn) => { poseOverride = fn; };
 export function sendPose(now) {
   const s = hooks.myState;
   if (!net.joined || !hooks.me() || !s || now - lastPoseSent < 66) return;
   lastPoseSent = now;
+  const ov = poseOverride?.();
   const pose = {
     p: [s.pos.x, s.pos.y, s.pos.z],
-    yaw: s.yaw, speed: s.speed, clip: s.clip,
-    pitch: Math.round((s.pitch ?? 0) * 100) / 100,
+    yaw: ov?.yaw ?? s.yaw, speed: s.speed, clip: s.clip,
+    pitch: Math.round((ov?.pitch ?? s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
+    ...presenceWire(presence()),        // present / away / busy — for the Who panel (R, 09-05)
+    ...voiceWire(hooks.myVoice()),      // mic live / headphones on — the hover card, agents' look
   };
+  const avatar = hooks.me();
+  Object.assign(pose, bodyWire({ scale: avatar.userScale, plateY: avatar.plateY }));   // this body's size / plate lift — only when not default
+  if (!avatar.emote && !avatar._limp && Number.isFinite(avatar.current?.time)) {
+    pose.clipTime = avatar.current.time;
+    pose.clipTimeSlot = avatar.currentSlot;
+    pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
+  }
+  if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
+  if (s.q) pose.q = s.q;
+  if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
@@ -216,6 +289,27 @@ export function sendPose(now) {
  *  body they were talking to. What does NOT follow you is anything the world
  *  filed under the old name: your remembered sleeping place, and any whisper
  *  held for you while you were away. */
+/** Re-assert a KNOWN body verbatim, plus whatever one-shot rides along.
+ *
+ *  sendPose() above SAMPLES a live body: it reads position, clip, pitch, wings, held
+ *  pose and pins off myState and composes a packet. A client with no body has nothing
+ *  to sample, and composing one from defaults is how #188 B2 happened - a lite user
+ *  tapping `wave` stood up out of a sit, unfolded their wings and dropped their held
+ *  pose, because the composer emitted its own defaults for every field it did not know
+ *  to carry.
+ *
+ *  A pose is the resident's WHOLE public body, not a delta. So the renderer-free path
+ *  sends back the server's own settled pose (the join snapshot's `restore`) unchanged,
+ *  adding only the one-shot. Fields this client has never heard of survive by
+ *  construction, which is the property a field-by-field rebuild cannot have.
+ *
+ *  @returns {boolean} whether it went out. */
+export function sendPoseExact(pose) {
+  if (!net.joined || net.ws?.readyState !== 1) return false;
+  net.ws.send(JSON.stringify({ type: 'pose', pose }));
+  return true;
+}
+
 export function rejoin() {
   intentionalClose = true;
   try { net.ws?.close(); } catch { /* already gone */ }
@@ -316,9 +410,13 @@ export async function connect() {
       // message can slip between the two.
       while (early.buffered.length) {
         const raw = early.buffered.shift();
+        // When the boot script's message handler ran, so the server's `t` it
+        // carries is sampled then rather than after the wait for this drain. Undefined
+        // from a boot script older than `arrived`: the sample is taken now.
+        const at = early.arrived?.shift();
         let msg;
         try { msg = JSON.parse(raw); } catch { continue; }
-        try { await handle(msg); } catch (e) { report(`net ${msg.type}`, e); }
+        try { await handle(msg, at); } catch (e) { report(`net ${msg.type}`, e); }
       }
       wireSocket(net.ws);   // live delivery takes over (onopen stays the boot script's)
       return;
@@ -354,6 +452,17 @@ function wireSocket(ws) {
       net.status = 'rejected';
       bus.emit('net', net);
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+      return;
+    }
+    // 4010 = this world is not open to you: refused at the door (members
+    // only, watch only), or your access just ended or was changed. The server
+    // said why in an error toast just before closing. No retry — the door
+    // will not open on its own; coming back is a deliberate reload (or
+    // ?spectate, when the toast says you may watch).
+    if (ev.code === 4010) {
+      net.status = 'rejected';
+      bus.emit('net', net);
+      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
@@ -441,8 +550,17 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-async function handle(msg) {
+/** `at`: the performance.now() when the boot script's handler took an
+ *  early-socket message (the drain in connect()); undefined for a message
+ *  handled as its event runs. */
+async function handle(msg, at) {
   switch (msg.type) {
+    // The server's time, sent just before each snapshot to a join that asks
+    // (sendJoin's and the boot script's do): a sample for serverNow()'s
+    // estimate (remotes.js), taken before the snapshot's sounds are seeked
+    // or the editor stamps anything. How closely that estimate follows the
+    // server's clock is shared/clockoffset.js's to say.
+    case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 
     case 'your-rights': {
@@ -466,6 +584,7 @@ async function handle(msg) {
       // present — and ensureRemote resets the mesh's transient expressions
       // before transplanting it into a fresh record.
       if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
+      bus.emit('participant-session', { id: msg.id, session: msg.session });
       ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');
@@ -496,7 +615,7 @@ async function handle(msg) {
       // id. Same law as `pose`: update-only, never create — and with no
       // creation there is no fire-and-forget load whose completion could
       // deliver a departed generation's sample into a successor's buffer.
-      noteServerTime(msg.t);
+      noteServerTime(msg.t, at);
       for (const [id, pose] of Object.entries(msg.poses)) {
         if (id === net.myId) continue; // our own echo — local prediction owns this body
         if (remotes.has(id)) pushPose(id, pose, msg.t);
@@ -606,7 +725,20 @@ async function handle(msg) {
       }
       break;
 
-    case 'snap': return onSnapRequest(msg);
+    case 'renderer-travel':
+      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
+      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+        CONFIG.world = msg.world; rejoin();
+      }
+      return;
+
+    case 'snap':
+      // The reply is the snapshot's to produce and the wire's to send, so a client
+      // without a renderer answers with an error instead of going quiet on an id
+      // someone is waiting for. See net_snap.js (wired by main.js).
+      snapshot(msg).then((r) => net.ws?.send(JSON.stringify({ type: 'snap-result', id: msg.id, ...r })));
+      return;
 
     case 'avatar-updated': {
       // an avatar file was re-uploaded: drop stale bytes and hot-swap wearers
@@ -662,7 +794,24 @@ async function handle(msg) {
       for (const line of String(msg.text ?? '').split('\n')) logChat('*', line);
       break;
 
+    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
+    case 'access-directory':
+      bus.emit(msg.type, msg);
+      break;
+
+    case 'notice':
+      // The world telling YOU something that is not a refusal — today, that
+      // your access here ends soon. Toast (it matters now) and chat (so it is
+      // still there when you look). Not an `error`: that would also tell every
+      // optimistic preview its verb was refused.
+      toast(String(msg.text ?? ''), 'warn', 20000);
+      logChat('*', String(msg.text ?? ''));
+      break;
+
     case 'error':
+      // the world tells us it has no voice relay only when we try to use one —
+      // remember it, so the mic glyph can say WHY it stays off (R, 09-04)
+      if (/no voice relay/i.test(String(msg.error ?? ''))) window.__voiceRelayAbsent = true;
       // Server-side refusals are the user's problem to see, not the console's.
       toast(msg.error, 'warn');
       // ...and any module holding an optimistic preview needs to hear it: a
@@ -686,16 +835,29 @@ async function onSnapshot(msg) {
   net.joined = true;
   net.status = 'live';
   net.myId = msg.you;
+  net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
   // adopt it — and say so, a silently different nameplate is confusing.
-  if (msg.you && msg.you !== CONFIG.name) {
-    CONFIG.name = msg.you;
-    localStorage.setItem('ew-name', msg.you);
+  // Renderer/spectator clients join under a transport prefix ("renderer-" /
+  // "retina-", see sendJoin) that is part of the wire id, not the name. Strip
+  // it before comparing and storing, or ew-name grows one prefix per reload
+  // (renderer-renderer-…) — unless the ack is a verified identity, which the
+  // server named itself (base.js nameFromJoinAck).
+  const you = nameFromJoinAck(msg.you, { renderer: CONFIG.renderer, spectate: CONFIG.spectate, verified: !!msg.yourSub });
+  if (you && you !== CONFIG.name) {
+    CONFIG.name = you;
+    localStorage.setItem('ew-name', you);
     toast(`you're appearing as “${msg.you}”`, 'info', 8000);
   }
+  // a RE-join: lastSeq is still the last entry the old socket delivered, and
+  // what was said after it may be trimmed out of this snapshot's chat window
+  // (fair, not contiguous — shared/fold.js trimRecentChat). Fetch it before
+  // lastSeq moves on. A first join has rendered nothing and is a no-op.
+  if (lastSeq >= 0) void resyncChatAfter(lastSeq);
   if (typeof msg.throughSeq === 'number' && msg.throughSeq > lastSeq) lastSeq = msg.throughSeq;
   bus.emit('net', net);
+  bus.emit('participant-sessions', msg.present ?? []);
   // #57 matrix 7: who has which aux legs live NOW (surface-transition keeps it
   // current after this). Consumers key hold-then-fallback TTS on it.
   bus.emit('surfaces', [...(msg.present ?? []),
@@ -709,7 +871,13 @@ async function onSnapshot(msg) {
   // wake where you fell asleep — but never teleport a body that has already
   // moved this session (mid-session reconnects keep local truth)
   const s = hooks.myState;
-  if (msg.restore && !restoredPose && s && s.speed === 0) {
+  // `s &&` used to be part of this test, which quietly made the restore undeliverable to
+  // any client without a live body - and a renderer-free one has none by construction
+  // (#188 B2: its emote went out carrying defaults because the remembered body never
+  // arrived to carry instead). What the guard actually protects is a body that has
+  // ALREADY MOVED this session; no body cannot have moved, so it has nothing to protect
+  // and the restore should land.
+  if (msg.restore && !restoredPose && (!s || s.speed === 0)) {
     restoredPose = true;
     hooks.onRestore(msg.restore);
   }
@@ -792,47 +960,4 @@ async function onSnapshot(msg) {
   bus.emit('hydrated');
   bus.emit('roster');
   hooks.onSnapshotDone();
-}
-
-const _snapHead = new THREE.Vector3();
-const _snapBox = new THREE.Box3();
-async function onSnapRequest(msg) {
-  // The world asked us for a view of/from the target. Three framings:
-  //   first  — the target's own eyes: the eye anchors on their LIVE head bone
-  //            (mesh bounds when the rig has none) and their own body is
-  //            hidden for the frame, the same exclusion the local
-  //            first-person applies to `me` (#75). The root carries the
-  //            socket transform while mounted, so the eye rides the seat.
-  //   third  — chase cam over the shoulder: their body AND what it faces.
-  //   selfie — from in front, facing them: the avatar itself is the subject.
-  try {
-    const r = remotes.get(msg.follow);
-    if (!r?.avatar) throw new Error(`${msg.follow} not in local scene (still loading?)`);
-    const root = r.avatar.root;
-    const fwd = new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
-    let dataUrl;
-    if (msg.view === 'third') {
-      const eye = root.position.clone().add(new THREE.Vector3(0, 2.1, 0)).addScaledVector(fwd, -3.4);
-      dataUrl = captureFrom(eye,
-        root.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(fwd, 4));
-    } else if (msg.view === 'selfie') {
-      const eye = root.position.clone().add(new THREE.Vector3(0, 1.6, 0)).addScaledVector(fwd, 2.6);
-      dataUrl = captureFrom(eye, root.position.clone().add(new THREE.Vector3(0, 1.25, 0)));
-    } else {
-      const head = r.avatar.headWorldPosition(_snapHead);
-      const box = head ? null : r.avatar.visualBounds(_snapBox);
-      dataUrl = composeFirstPerson({
-        camera,
-        yaw: root.rotation.y,
-        head: head ? [head.x, head.y, head.z] : null,
-        bounds: box ? { min: box.min.toArray(), max: box.max.toArray() } : null,
-        name: msg.follow,
-        setOwnVisible: (v) => { root.visible = v; },
-        render: captureFrame,
-      });
-    }
-    net.ws.send(JSON.stringify({ type: 'snap-result', id: msg.id, dataUrl }));
-  } catch (e) {
-    net.ws.send(JSON.stringify({ type: 'snap-result', id: msg.id, error: e.message }));
-  }
 }

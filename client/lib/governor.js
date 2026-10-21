@@ -27,6 +27,8 @@
 //   slots     the light-slot cap drops (idle slots are uniform zeros)
 //   emitters  per-emitter instance counts thin (auto → med → low)
 //   grass     the meadow thins (instanced count — no rebuild)
+//   lod       far placed objects fetch their reduced tier sooner (#156: the
+//             policy's edge halves; swaps happen on the residency sweep)
 //   pixels    render scale, −0.25 steps to 0.7
 //   detail    LOD bias 2 (far bodies at half rate) + shadow map 1024
 //
@@ -50,17 +52,24 @@
 // not a second meter.
 
 import { renderer, sun, BASE_PIXEL_RATIO } from './core.js';
-import { CONFIG } from './base.js';
-import { warmStats } from './warmqueue.js';
-import { laneBusy } from './loadwork.js';
-import { promoteTailPending } from './realize/models.js';
+import { CONFIG, bus } from './base.js';
+import { busy as budgetBusy, setShare, budgetStats } from './framebudget.js';
+import { promoteTailPending, modelQuality } from './realize/models.js';
 import { setSlotCap, getSlotCap, maxSlots, litCount,
-  setCasterBudget, getCasterBudget, casterCount } from './lightrig.js';
+  setCasterBudget, getCasterBudget, casterCount, shadowsOn, shadowRes } from './lightrig.js';
 import { setEmitterQuality, emitterQuality, emitterCount } from './emitters.js';
 import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
 import { setLodBias } from './remotes.js';
 import { setSystemEvery, getSystemEvery } from './frame.js';
 import { toast } from './ui.js';
+import { statusChip, clearStatusChip } from './statuschips.js';
+
+// the governor's model-detail shed, as a status chip (statuschips.js) for exactly as long as it holds
+export const REDUCED_CHIP = {
+  id: 'quality-reduced', level: 'attn', label: 'reduced detail', title: 'Distant objects reduced',
+  body: 'The frame rate dipped, so objects at middle distance load a lighter version to keep it. ' +
+        'Full detail comes back on its own once the frame rate recovers — this chip goes with it.',
+};
 
 // ---- the resident's render-scale dial (§22k) --------------------------------
 // The §22j A/B proved pixel-bound machines exist; the cruise answers them
@@ -79,7 +88,23 @@ const residentBase = () =>
   renderScale === 'auto' ? BASE_PIXEL_RATIO : BASE_PIXEL_RATIO * Number(renderScale);
 
 let pixelRatio = BASE_PIXEL_RATIO;
-const setPR = (v) => { pixelRatio = v; renderer.setPixelRatio(v); };
+// A pixel-ratio change RESIZES THE CANVAS (three writes canvas.width), and resizing a canvas clears its drawing buffer.
+// The governor decides after the frame is drawn (the 1 Hz pulse runs after 'render'), so applying here wiped the frame
+// just drawn and the compositor showed it empty: the sporadic single black frames (owner, 09-27; ~9/min = the cruise's
+// shed/restore rhythm, only while compiles held fps in the 26–52 band). The change waits for the next frame's start
+// instead (applyPendingPixelRatio, registered just before 'render').
+let pendingPR = null;
+const setPR = (v) => { pixelRatio = v; pendingPR = v; };
+// VR exit resizes the canvas outside the governor (xr.js); its stored ratio is still the truth (a pinned render scale,
+// a cruise step), so it's re-asserted at the next frame start (final review, MED; the same stale ratio exists on main)
+bus.on('xr:exit-resized', () => { pendingPR = pixelRatio; });
+/** Apply a pixel-ratio change the governor made, BEFORE this frame renders. */
+export function applyPendingPixelRatio() {
+  if (pendingPR == null) return;
+  if (renderer.xr?.isPresenting) return;   // never mid-session (#32: the ratio scales each eye's viewport); lands after exit
+  const v = pendingPR; pendingPR = null;
+  renderer.setPixelRatio(v);
+}
 
 export const getRenderScale = () => renderScale;
 export function setRenderScale(v) {
@@ -92,6 +117,72 @@ export function setRenderScale(v) {
   return renderScale;
 }
 if (renderScale !== 'auto') setPR(residentBase());
+
+// ---- the resident's particle and avatar-detail dials (§22k siblings) --------
+// Same contract as render scale: 'auto' lets the governor drive; a pinned
+// value is a persisted preference the levers below leave alone — and going
+// back to 'auto' re-anchors outright rather than climbing the restore ladder,
+// as an explicit render-scale move does. Applied at
+// module init so a pin survives a reload — emitters created later inherit the
+// tier (emitters.js:157), remotes read lodBias live.
+const EP_KEY = 'ew-particles';
+export const PARTICLE_TIERS = ['auto', 'med', 'low'];
+let particleTier = PARTICLE_TIERS.includes(localStorage.getItem(EP_KEY)) ? localStorage.getItem(EP_KEY) : 'auto';
+export const getParticleTier = () => particleTier;
+export function setParticleTier(v) {
+  if (!PARTICLE_TIERS.includes(v)) return particleTier;
+  particleTier = v;
+  localStorage.setItem(EP_KEY, v);
+  setEmitterQuality(v);
+  return particleTier;
+}
+if (particleTier !== 'auto') setEmitterQuality(particleTier);
+
+const AD_KEY = 'ew-avatar-detail';
+// how often far bodies update: the lodBias multiplier remotes.js applies to its
+// distance bands (1 = every frame near, 2 = half rate, 4 = quarter)
+export const AVATAR_DETAILS = { auto: null, full: 1, half: 2, low: 4 };
+let avatarDetail = Object.hasOwn(AVATAR_DETAILS, localStorage.getItem(AD_KEY)) ? localStorage.getItem(AD_KEY) : 'auto';
+export const getAvatarDetail = () => avatarDetail;
+export function setAvatarDetail(v) {
+  if (!Object.hasOwn(AVATAR_DETAILS, v)) return avatarDetail;
+  avatarDetail = v;
+  localStorage.setItem(AD_KEY, v);
+  setLodBias(v === 'auto' ? (shedDetail ? 2 : 1) : AVATAR_DETAILS[v]);
+  return avatarDetail;
+}
+if (avatarDetail !== 'auto') setLodBias(AVATAR_DETAILS[avatarDetail]);
+
+// ---- the resident's master switch -------------------------------------------
+// 'keep full detail': the governor never sheds and the cruise never steps
+// pixels — a builder looking at the world wants it as it is, not smooth at
+// any cost. Turning it on hands back everything already shed, at once.
+// Persisted like the dials above; loading grace and the calm signal still run.
+// What it overrides today: all eight levers, INCLUDING the emergency pixels
+// rung below 26fps that a pinned render scale still yields to (§22k, "a
+// crisis outranks a preference, only while it lasts"). Whether this switch
+// should outrank that crisis rule is an open question for the maintainers;
+// record the decision here.
+const FD_KEY = 'ew-full-detail';
+let fullDetail = (() => { try { return localStorage.getItem(FD_KEY) === '1'; } catch { return false; } })();
+export const getFullDetail = () => fullDetail;
+export function setFullDetail(on) {
+  fullDetail = !!on;
+  try { localStorage.setItem(FD_KEY, fullDetail ? '1' : '0'); } catch { /* private mode */ }
+  if (fullDetail) {
+    for (let i = LEVERS.length - 1; i >= 0; i--) {
+      for (let n = 0; n < 16 && LEVERS[i].restore(); n++) { /* unwind this lever fully */ }
+    }
+    // two dials the levers' restore() guards can leave shed: pixels in a headset (restore declines while presenting;
+    // queued here, applyPendingPixelRatio lands it after exit and xr:exit-resized re-asserts this value), and a
+    // grass budget shed before the meadow was cleared (restore needs a live field; setGrass re-applies the budget)
+    if (pixelRatio < residentBase()) setPR(residentBase());
+    if (grassDial < 1) { grassDial = 1; setGrassDensity(1); }
+    slowFor = 0; goodFor = 0; midFor = 0;
+    if (history.length < 60) history.push(`✋ full detail @${Math.round(performance.now() / 1000)}s`);
+  }
+  return fullDetail;
+}
 
 const EMITTER_TIERS = ['auto', 'med', 'low'];
 const CASTER_STEPS = [12, 6, 2];
@@ -140,6 +231,7 @@ const LEVERS = [
   {
     name: 'emitters',
     shed() {
+      if (particleTier !== 'auto') return false;   // the resident's word
       if (!emitterCount()) return false;
       const i = EMITTER_TIERS.indexOf(emitterQuality());
       if (i < 0 || i >= EMITTER_TIERS.length - 1) return false;
@@ -148,6 +240,7 @@ const LEVERS = [
       return true;
     },
     restore() {
+      if (particleTier !== 'auto') return false;
       const i = EMITTER_TIERS.indexOf(emitterQuality());
       if (i <= 0) return false;
       return Boolean(setEmitterQuality(EMITTER_TIERS[i - 1]));
@@ -194,13 +287,38 @@ const LEVERS = [
     },
   },
   {
-    name: 'pixels',
+    name: 'lod',
+    // The tier policy's session dial (lod_policy.js shed): under load the
+    // reduce-at edge halves, so placed objects at middling distance fetch the
+    // reduced variant on their next sweep; restore widens it again. Nothing
+    // rebuilds — the swap rides the residency sweep's own retier path.
     shed() {
+      if (modelQuality.shed || modelQuality.quality !== 'auto') return false;
+      modelQuality.setShed(true);
+      // a STATE, not an event: the chip stays while the reduction is in effect and goes when restore() lifts it (a
+      // toast said it once and was gone while the world stayed reduced)
+      statusChip(REDUCED_CHIP);
+      return true;
+    },
+    restore() {
+      if (!modelQuality.shed) return false;
+      modelQuality.setShed(false);
+      clearStatusChip(REDUCED_CHIP.id);
+      return true;
+    },
+  },
+  {
+    name: 'pixels',
+    // #32: in a headset the ratio scales each EYE'S VIEWPORT, not the resolution (xrpixelratio.js). Not a lever there:
+    // return false so the ladder moves on to one that helps, instead of spending a rung on a deferred no-op.
+    shed() {
+      if (renderer.xr?.isPresenting) return false;
       if (pixelRatio <= 0.7) return false;
       setPR(Math.max(0.7, pixelRatio - 0.25));
       return true;
     },
     restore() {
+      if (renderer.xr?.isPresenting) return false;
       if (pixelRatio >= residentBase()) return false;
       setPR(Math.min(residentBase(), pixelRatio + 0.125));
       return true;
@@ -211,8 +329,8 @@ const LEVERS = [
     shed() {
       if (shedDetail) return false;
       shedDetail = true;
-      setLodBias(2);                    // far bodies animate at half rate
-      if (sun.shadow.mapSize.width > 1024) {
+      if (avatarDetail === 'auto') setLodBias(2);   // far bodies animate at half rate
+      if (shadowsOn() && sun.shadow.mapSize.width > 1024) {
         // mapSize is uniform + texture realloc, not pipeline shape (§12.1)
         // — which is exactly what makes this lever two-way at last
         sun.shadow.mapSize.set(1024, 1024);
@@ -224,9 +342,9 @@ const LEVERS = [
     restore() {
       if (!shedDetail) return false;
       shedDetail = false;
-      setLodBias(1);
-      if (sun.shadow.mapSize.width < 2048) {
-        sun.shadow.mapSize.set(2048, 2048);
+      if (avatarDetail === 'auto') setLodBias(1);
+      if (shadowsOn() && sun.shadow.mapSize.width < shadowRes()) {
+        sun.shadow.mapSize.set(shadowRes(), shadowRes());
         sun.shadow.map?.dispose();
         sun.shadow.map = null;
       }
@@ -256,7 +374,7 @@ let grassDial = 1;
 // oscillation. ?cruise=off disables the whole thing (the §17d A/B lever).
 const CRUISE = (CONFIG.params.get('cruise') ?? 'on') !== 'off';
 const cruiseFloor = () => Math.max(0.7, residentBase() * 0.7);
-const cruiseActive = () => CRUISE && renderScale === 'auto';   // a pinned scale is the resident's word
+const cruiseActive = () => CRUISE && renderScale === 'auto' && !fullDetail;   // a pinned scale is the resident's word
 let midFor = 0;
 
 let slowFor = 0;
@@ -265,13 +383,21 @@ const history = [];   // recent lever moves, for the debug surface
 
 // ---- loading grace + the calm signal (§16.2.D) ------------------------------
 
-/** The busy predicate: is the engine loading RIGHT NOW? Composed from the
- *  three places load work actually lives — the warm conductor (queued or
- *  mid-item), loadwork's cpu/gpu lanes, and the promote tail's pending
- *  boulders — each read through its own smallest honest export. */
+/** The busy predicate: is the engine loading RIGHT NOW? framebudget's busy() carries what its producers report —
+ *  the warm conductor (queued or mid-item) and loadwork's cpu/gpu lanes — and the promote tail's pending boulders
+ *  are read directly. (syncgate's deferred links are not loading in this sense: they link off-thread and cost no
+ *  frames.) */
 function loadingBusy() {
-  const w = warmStats();
-  return w.pending > 0 || w.running || laneBusy() || promoteTailPending() > 0;
+  return budgetBusy() || promoteTailPending() > 0;
+}
+
+// The share of each frame background work may use (framebudget), from the regime this pulse measured: smooth gets
+// the old 6 ms at 60 Hz; a slow machine gives loading less of a frame it is already missing; a headset's frames are
+// shorter and a missed one is felt, so it is capped lower.
+const XR_SHARE_CAP = 0.25;
+function backgroundShare(fps) {
+  const s = fps > 52 ? 0.36 : fps >= 26 ? 0.3 : 0.2;
+  return renderer.xr?.isPresenting ? Math.min(s, XR_SHARE_CAP) : s;
 }
 
 let grace = false;        // the last pulse was held by loading grace
@@ -292,6 +418,11 @@ export function whenCalm() {
 
 /** Feed once per second with the measured fps. */
 export function governPerformance(fps) {
+  // the share follows the machine, not the storm: a second that loading itself slowed must not shrink loading's slice
+  if (!loadingBusy()) setShare(backgroundShare(fps));
+  // …but the headset's cap holds while loading too (review 10a M3: entering VR mid-load, the usual cold entry, kept the
+  // desktop's 0.36 — ~4 ms of an 11 ms frame — for the heaviest stretch of the session). Only ever lowers it.
+  else if (renderer.xr?.isPresenting) setShare(Math.min(budgetStats().share, XR_SHARE_CAP));
   if (loadingBusy()) {
     // freeze BOTH directions and reset every streak: a storm-dip shed and a
     // splash-smooth restore are both answers to loading, not to the machine
@@ -314,7 +445,7 @@ export function governPerformance(fps) {
     calmFor = 0;
     midFor = 0;
     slowFor++;
-    if (slowFor > 2) {
+    if (slowFor > 2 && !fullDetail) {
       for (const lever of LEVERS) {
         if (lever.shed()) {
           slowFor = 0;   // one lever per slow window — a hitch cannot cascade
@@ -352,7 +483,7 @@ export function governPerformance(fps) {
     goodFor = 0;
     calmFor = 0;
     midFor++;
-    if (cruiseActive() && midFor > 7 && pixelRatio > cruiseFloor()) {
+    if (cruiseActive() && midFor > 7 && pixelRatio > cruiseFloor() && !renderer.xr?.isPresenting) {
       setPR(Math.max(cruiseFloor(), pixelRatio - 0.25));
       midFor = 0;
       if (history.length < 60) history.push(`− pixels (cruise) @${Math.round(performance.now() / 1000)}s`);
@@ -361,7 +492,7 @@ export function governPerformance(fps) {
 }
 
 export const governorDebug = () => ({
-  pixelRatio, slowFor, goodFor, midFor, renderScale,
+  pixelRatio, slowFor, goodFor, midFor, renderScale, fullDetail,
   grace, calmFor, calm: calmReached,
   casterBudget: getCasterBudget(), slotCap: getSlotCap(),
   emitters: emitterQuality(), grass: getGrassDensity(),

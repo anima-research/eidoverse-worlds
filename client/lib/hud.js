@@ -1,28 +1,19 @@
-// hud — the one status line: connection dot, name @ world, fps, who else is
-// here, the editing flag, the basic-sky note. Painted at 1Hz by the pulse
-// system; fps comes from perf.js so this module never touches the loop.
+// hud — now the ∃ mark. The status BAR is gone:
+// identity lives in Profile-to-be, fps lives in debug, the people list lives
+// behind the ∃ menu and the rail. What survives here is what must be ambient:
+// connection truth (mark dims + pulses when the socket is down) and the
+// editing flag (warn dot). The mic/ear glyphs anchor themselves to this
+// element's right edge (mictoggle.js) — inboard of the corner, per spec.
+// Painted at 1Hz by the pulse system.
 
-import { CONFIG } from './base.js';
-import { setHud } from './ui.js';
 import { net } from './net.js';
-import { remotes } from './remotes.js';
-import { isEditing } from './build.js';
-import { skyImpl } from './sky.js';
-import { perf } from './perf.js';
-
-const statusDot = {
-  live: '<span class="ok">●</span>', connecting: '<span>○</span>',
-  retrying: '<span class="bad">●</span>', rejected: '<span class="bad">✕</span>',
-};
 
 export function paintHud() {
-  const n = remotes.size;
-  // fps only, by tel0s's call — the honest frame ms + worst + per-system
-  // bill live in the F3 panel's pinned frame block (debug.js)
-  setHud(
-    `${statusDot[net.status] ?? ''} <b>${CONFIG.name}</b> @ ${CONFIG.world}   ` +
-    `${perf.fps}fps   ${n} other${n === 1 ? '' : 's'}` +
-    (isEditing() ? '   <span class="edit">✎ editing</span>' : '') +
-    (skyImpl() === 'skymesh' ? '   <span style="opacity:.6">basic sky</span>' : ''),
-  );
+  const hud = document.getElementById('hud');
+  if (!hud) return;
+  hud.classList.toggle('net-live', net.status === 'live');
+  hud.classList.toggle('net-wait', net.status === 'connecting' || net.status === 'retrying');
+  hud.title = net.status === 'live'
+    ? 'eidoverse — menu'
+    : `eidoverse — ${net.status}…`;
 }

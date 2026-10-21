@@ -374,5 +374,42 @@ console.log("\n━━ precision: mount chain wins over own motion ━━");
   a.close();
 }
 
+// ---- body size (pose.scale): a profiled seat's contact is measured at the
+// rider's AUTHORED size, so it multiplies the rider's chosen size — the
+// browser's seats.js riderScalar(root × avatar.bodyScale()) — and nothing else.
+console.log("\n━━ body size: a profiled seat lowers a scaled rider in proportion ━━");
+if (EFF) {
+  // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
+  // below the rider root at authored size → root y = 0.5 − 0.45·u
+  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1, comp: { sockets: { seat: { pos: [0, 0.5, 0], seatAnchor: "surface", pose: "sitchair" } } } };
+  const view = (riderScale?: (id: string) => number) => ({
+    entity: (id: string) => (id === "chair" ? chair : undefined),
+    mount: (id: string) => (id === "rider" ? { to: "chair", slot: "seat" } : undefined),
+    seatVerdict: () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 }),
+    ...(riderScale ? { riderScale } : {}),
+  });
+  for (const [u, y] of [[1, 0.05], [0.5, 0.275], [2, -0.4]] as const) {
+    const r = EFF.effectiveWorldTransform("rider", view(() => u), T0);
+    check(`a ${u}× rider's root sits at y = 0.5 − 0.45·${u} = ${y}`, r.ok && near3(r.pos, [0, y, 0]) && r.seat?.state === "profiled", JSON.stringify(r));
+  }
+  const absent = EFF.effectiveWorldTransform("rider", view(), T0);
+  check("a view without riderScale reads the rider as 1×", absent.ok && near3(absent.pos, [0, 0.05, 0]), JSON.stringify(absent));
+
+  // the agent's own view feeds riderScale from the rider's presence sample
+  // (clamped; absent = 1) — the seam the text tier's seated perception reads
+  const a = offlineAgent() as any;
+  a.entities.set("chair", { id: "chair", lib: "x.glb", actor: "t", ...chair });
+  a.mounts.set("rider", { to: "chair", slot: "seat" });
+  a.seatVerdictFor = () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 });
+  a.people.set("rider", { id: "rider", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });
+  const big = a.eff("rider", T0);
+  check("the agent seats a 2× rider (presence scale 2) at y = −0.4", big.ok && near3(big.pos, [0, -0.4, 0]), JSON.stringify(big));
+  a.people.get("rider").pose.scale = 9;
+  check("…and clamps an untrusted presence scale (9 → 2)", near3(a.eff("rider", T0).pos, [0, -0.4, 0]));
+  delete a.people.get("rider").pose.scale;
+  check("…and an absent presence scale is 1×", near3(a.eff("rider", T0).pos, [0, 0.05, 0]));
+  a.close();
+}
+
 console.log("");
 process.exit(failures ? 1 : 0);
