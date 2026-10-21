@@ -465,7 +465,15 @@ function duplicate(id) {
 
 // a lock's strength is its setter's rank now (recut B2): the authority's inspect says it (lock.rank); this only keeps
 // the padlock honest, the authority decides
-const lockStrengthOf = (id) => { const r = authorityInspect(id)?.lock?.rank; return Number.isFinite(r) ? r : RANK.builder; };
+// asked ONCE per lock, not per component change: authorityInspect keys on the whole bag, so a dragged locked thing
+// re-asked every frame and tripped the rate limit (client-check D1, 10-20). Dropped when the lock goes; a demotion
+// after that can leave it stale, which is fine: the authority decides, the padlock only asks.
+const lockStrength = new Map();
+const lockStrengthOf = (id) => {
+  if (!bagOf(id)?.lock) { lockStrength.delete(id); return RANK.builder; }
+  if (!lockStrength.has(id)) { lockStrength.set(id, null);
+    sendRequest('inspect', { id }).then((r) => { const k = r?.lock?.rank; if (r?.ok && Number.isFinite(k) && lockStrength.has(id)) { lockStrength.set(id, k); repaintAll(); } }).catch(() => lockStrength.delete(id)); }
+  return lockStrength.get(id) ?? RANK.builder; };
 const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : RANK[net.myRights?.role] ?? RANK.builder);
 const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
 const mayLiftLevel = (id) => myRank() >= lockStrengthOf(id);
