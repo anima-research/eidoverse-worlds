@@ -245,13 +245,13 @@ const cases: Case[] = [
       const { r } = install(s, "bob", "kiosk", "promo", onUse(`world.set("@world", "roles:bob", { role: "owner" });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
       return { install: r, stored: !!comp(s, "kiosk", "script:promo") }; },
     good: (o) => code(o.install) === "rights" && /roles:\*/.test(o.install.refused.reason) && !o.stored },
-  { id: "B2", what: "41 #2 demotion: the sponsor is demoted; the next use's write is refused, the visitor's use still logs, the status says dormant and why", run(s) { cast(s);
+  { id: "B2", what: "41 #2 demotion: the sponsor is demoted; the next use's write is refused, the player's use still logs, the status says dormant and why", run(s) { cast(s);
       const { u } = bell(s, "bob"); const first = useSteady(s, "vic", { id: "bell1", action: "ring" });
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } }); let n0 = s.entries().length;
       let after: any; for (let a = 0; a <= UNAVAILABLE_RETRIES; a++) { n0 = s.entries().length; after = s.call("vic", "use", { id: "bell1", action: "ring" }); if (after?.script?.code !== "unavailable") break; warmUp(); }   // what the last use logged
       const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { u: show(u), first: st(s, first), after: st(s, after), newKinds: kinds(s.entries().slice(n0)), status: sv?.status, why: sv?.why }; },
-    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(visitor now.*bell1\.t\/bell/.test(o.why) },
+    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(player now.*bell1\.t\/bell/.test(o.why) },
   { id: "B3", what: "41 #3 confused deputy: an OWNER uses a script installed by bob (owner then, builder now) that writes roles:mal; the trigger adds no rights", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
       s.call("bob", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });

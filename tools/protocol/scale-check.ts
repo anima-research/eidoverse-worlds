@@ -524,7 +524,9 @@ async function sameAsBase() {
   const CONSENT_WORD: Record<string, string> = { everyone: "allow", nobody: "deny" };
   const shieldToday = (sh: any) => Object.fromEntries(Object.entries(sh).map(([k, row]: any) => [k === "strangers" ? "everyone" : k,
     row && typeof row === "object" && !Array.isArray(row) ? Object.fromEntries(Object.entries(row).map(([c, m]: any) => [c === "move" ? "displace" : c, CONSENT_WORD[m] ?? m])) : row]));
+  // R 10-21: the base rung's old word (visitor) is the same rung today's tree spells player (roles.js RENAMED_ROLES)
   const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (k === "shield" && v && typeof v === "object" && !Array.isArray(v)) v = shieldToday(v);
+    if ((k === "who" || k === "role") && v === "visitor") return "player";
     if (!v || typeof v !== "object" || Array.isArray(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
   // R 10-07: look and inspect read a thing as its name, description, what it can do and its state (shared/a11y.js): those
@@ -544,7 +546,10 @@ async function sameAsBase() {
   // 2026-10-14 (sockets → child entities, feat/sockets-entities LS4): a create that lands a model with sockets also mints
   // the socket children, and `after` carries them; the base minted none. Compared without any `after` entry that IS a
   // socket (a minted id, a `socket` component) — the host's own record still has to match the base's exactly.
-  const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" || k === "sockets" || (k === "order" && v === "a0") ? undefined   // parent.order: cut by the shape audit 10-16 (nothing read it)
+  // R 10-21: the scenario writes who: visitor (the base knows no other word); today's door stores player and says so in a
+  // rename note the base never wrote. That note is the only addition, so it's left out, on both sides
+  const roleRename = (n: any) => n && n.why === "renamed before release (R 10-21): visitor is player";
+  const noA11y = (x: any) => JSON.stringify(x, (k, v) => k === "notes" && Array.isArray(v) && v.some(roleRename) ? v.filter((n: any) => !roleRename(n)) : (k === "can" || k === "state" || k === "description" || k === "sockets" || (k === "order" && v === "a0") ? undefined   // parent.order: cut by the shape audit 10-16 (nothing read it)
       // `sockets` on a look row: the children, listed (same addition)
     : k === "after" && v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, e]: any) => !(e && typeof e === "object" && "socket" in e)))
     : k === "notes" && Array.isArray(v) ? v.filter((e: any) => !(e && typeof e === "object" && "legacy" in e))   // the note saying it minted them

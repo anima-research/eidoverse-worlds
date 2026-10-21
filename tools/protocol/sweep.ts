@@ -212,6 +212,8 @@ function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v
   if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }
 const IMP = "imported:", BANS = "imported-bans:", BEHAVIOR = "imported-behavior:";   // what translate-v1 carries (@7)
 const NSP = "imported/";   // @8: a v1 world's own (unregistered) component comes across as imported/<name> (PROTOCOL §4)
+// v1's word for the base rung was visitor (translate-v1@17 writes player): the inverse speaks v1
+const v1Role = (r: any) => (r && r.role === "player" ? { ...r, role: "visitor" } : r);
 function unproject(ents0: any) {
   const ents: any = {}, world: any = {};
   for (const [id, comps] of Object.entries<any>(ents0)) {
@@ -220,8 +222,9 @@ function unproject(ents0: any) {
         if (["sky", "terrain", "grass", "water"].includes(k)) world[k] = v;
         else if (k === "physics-engine") world.epoch = { sim: v.engine, tickMs: v.tickMs };   // translate-v1@10: a dialect-3 epoch
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
-        else if (k === "default-role") (world.roles ??= {})["*"] = fromCan(v); // DROPPED: roles['*']
-        else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = fromCan(v);
+        else if (k === "default-role") (world.roles ??= {})["*"] = v1Role(fromCan(v)); // DROPPED: roles['*']
+        else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = v1Role(fromCan(v));
+        else if (k.startsWith("imported-roles:")) (world.roles ??= {})[dec(k.slice("imported-roles:".length))] = v;   // @17: a grant with no v4 rung, carried as it was
         else if (k.startsWith(BANS)) (world.bans ??= {})[dec(k.slice(BANS.length))] = v;
         else if (k.startsWith(BEHAVIOR)) (world.behaviors ??= {})[dec(k.slice(BEHAVIOR.length))] = v;
         else if (k.startsWith(IMP) && ["sky", "terrain", "grass", "epoch"].includes(dec(k.slice(IMP.length)))) {}   // folded back below
