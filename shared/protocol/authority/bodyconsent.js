@@ -141,7 +141,7 @@ const BODY_VERBS = {
       // friendship is mutual, so an unfriend changes the ex-friend's effective table too: re-check grants on THEIR body (r12 M1)
       const ended = [...revokeAfter(w, r.target, before), ...(ex ? revokeAfter(w, ex, beforeEx) : [])]; w.presenceDirty = true; return { ok: true, recorded: false, of: r.target, ...(ended.length ? { ended } : {}), table: C.tableOf(P, r.target) }; }
     const t = C.tableOf(P, actor);
-    return { ok: true, table: { preset: t.preset, everyone: t.everyone, friends: t.friends, paused: t.paused, friendsList: t.friendsList, delegates: t.delegates }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
+    return { ok: true, table: { switch: P.consent?.[actor]?.switch ?? null, preset: t.preset, everyone: t.everyone, friends: t.friends, paused: t.paused, friendsList: t.friendsList, delegates: t.delegates }, asks: Object.values(P.asks ?? {}).filter((k) => k.to === actor),
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
   // one shape for every act on a body (42 §4.4): pose, anim, shove, drag. Waits for nothing in the lab; says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to); expireAsks(w);

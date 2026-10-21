@@ -1,4 +1,4 @@
-// My whole consent table (every class × everyone/friends), as the authority takes it (consent.js bodyTable: one `set`
+// My body's switch (recut A2; it was the whole table), as the authority takes it (consent.js bodyTable: one `set`
 // per cell, and no preset, which would empty the server's cells first; each sync reads what the authority holds and
 // sends only the cells that differ, in order on one socket): the
 // server checks it before it forwards anyone's knock-over, pose, grab or touch, so a table that never lands leaves me on
@@ -19,17 +19,12 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
   }
   async function syncOnce() {
     if (!enabled()) return;
-    const { sets } = table();
-    // what the authority holds for me now (consent {} reads, changing nothing): only the cells that differ are sent, so a
-    // sync is as large as what changed, never all 16 at once (the per-connection message rate, 10-19)
+    const want = table().switch;
     const failed = (e) => ({ ok: false, refused: { reason: String(e?.message ?? e) } });
-    const read = await send('consent', {}).then((r) => r, failed);
+    const read = await send('consent', {}).then((r) => r, failed);   // reads, changes nothing: send only if it differs
     let results;
-    if (!read?.ok || !read.table) results = [['your table, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]];
-    else {
-      const asks = sets.filter((set) => read.table[set.tier]?.[set.class] !== set.mode).map((set) => [`${set.class}${set.tier === 'friends' ? ' (friends)' : ''}: ${set.mode}`, { set }]);
-      results = await Promise.all(asks.map(([what, args]) => send('consent', args).then((r) => [what, r], (e) => [what, failed(e)])));
-    }
+    if (!read?.ok || !read.table) results = [['your switch, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]];
+    else results = read.table.switch === want ? [] : [[`switch: ${want}`, await send('consent', { switch: want }).then((r) => r, failed)]];
     const bad = results.find(([, r]) => !r?.ok);
     if (!bad) { failing = false; return; }
     const [what, r] = bad;

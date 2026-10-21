@@ -31,7 +31,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
-import { posable, pushable, bodyTable, onConsentChange } from './consent.js';
+import { pushable, bodyTable, onConsentChange } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';

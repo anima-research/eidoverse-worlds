@@ -17,8 +17,7 @@ import { net, identities, guests, sendRequest, replica, identityOf } from './net
 import { contextMenu, closeContextMenu } from './panels.js';
 import * as R from '../../shared/protocol/roles.js';
 import { makeConsentInbox } from './consentinbox.js';
-import { CLASSES, CLASS_WORDS, cell, setCell } from './consent.js';
-import { PRESETS as CONSENT_PRESETS, DEFAULT_PRESET } from '../../shared/protocol/consent.js';
+import { SWITCHES, SWITCH_WORDS, CLASS_WORDS, mySwitch, setSwitch } from './consent.js';
 
 let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
 export function initPeople(d) { deps = { ...deps, ...d }; }
@@ -187,22 +186,12 @@ async function answerAsk(item, display, askId) {
   else deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
   return r;
 }
-/** My table's everyone tier as a checklist: ✓ when a class is `allow`; a press toggles allow ↔ Normal's cell for it
- *  (ask or deny, shown on the row), through consent.js setCell → consentsync (the one sender). All at the top. The
- *  client can't tell a friend from anyone else (consent.js: friendship is the authority's), so it is the everyone row
- *  this edits — the row the client's own last word reads. */
-const TIER = 'everyone';
+/** My body's one switch as three choices (recut A2): ✓ on the current one; a press sets it (consent.js → consentsync). */
+const TIER = 'switch';
 export function consentItems() {
-  const base = CONSENT_PRESETS[DEFAULT_PRESET][TIER];
-  const all = CLASSES.every((c) => cell(TIER, c) === 'allow');
-  return [{ k: 'all', label: `${all ? '✓ ' : ''}All (anyone may do any of these)` },
-    ...CLASSES.map((c) => { const m = cell(TIER, c); return { k: c, label: `${m === 'allow' ? '✓ ' : ''}${CLASS_WORDS[c]}${m === 'allow' ? '' : ` · ${m}`}`, title: `anyone: ${m}; off = ${base[c]} (Normal)` }; })];
+  return SWITCHES.map((v) => ({ k: v, label: `${mySwitch() === v ? '✓ ' : ''}${v} — ${SWITCH_WORDS[v]}` }));
 }
-export function toggleConsent(k) {
-  const base = CONSENT_PRESETS[DEFAULT_PRESET][TIER];
-  if (k === 'all') { const all = CLASSES.every((c) => cell(TIER, c) === 'allow'); for (const c of CLASSES) setCell(TIER, c, all ? base[c] : 'allow'); return; }
-  if (CLASSES.includes(k)) setCell(TIER, k, cell(TIER, k) === 'allow' ? base[k] : 'allow');
-}
+export function toggleConsent(k) { setSwitch(k); }
 function consentMenu(display, surface) {
   const items = consentItems();
   if (surface === 'card') { const r = document.querySelector('.sp-ctx')?.getBoundingClientRect();
