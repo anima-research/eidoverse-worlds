@@ -1,18 +1,25 @@
 // Body perception: observations first, optional CPU geometry second. Reads
 // never publish a pose, touch a body, or mutate the live reach solver.
 import * as THREE from "three";
-import { glbJson, humanBones, worldPositions, isVrm0 } from "./rig.ts";
+import { glbJson, humanBones, worldPositions, worldRotations, isVrm0 } from "./rig.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeReachBag, TOUCH_GAP, sameReach } from "../shared/reachwire.js";
 import { ReachBody } from "./physics.ts";
 import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
+import { swimTargets, SWIM_CLIPS } from "../shared/swimpose.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
+import { clampBodyScale } from "../shared/presencewire.js";
+import { poseChannels } from "../shared/humanoid.js";
+import { shown } from "../shared/shown.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
   pose?: Record<string, number[]> | null; wingsFolded?: boolean; reach?: unknown;
   clipTime?: number; clipRate?: number; clipTimeSlot?: string; pitch?: number;
+  /** The wearer's chosen body size (shared/presencewire.js bodyWire): sent only
+   *  when not 1, so absent = 1; untrusted, read through clampBodyScale. */
+  scale?: number;
 };
 export type BodyObservation = {
   who: string; avatar: string; generation: number; self: boolean;
@@ -24,43 +31,62 @@ export const BODY_STALE_MS = 5000;
 const finite3 = (v: unknown): v is number[] => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const hasClipPhase = (p: PublicPose) => Number.isFinite(p.clipTime) && p.clipTime! >= 0 && (!p.clipTimeSlot || p.clipTimeSlot === p.clip);
+/** Whose body a sentence is about: "your" when the reader reads itself. */
+const whose = (o: BodyObservation) => o.self ? "your" : `${o.who}'s`;
+/** The clause for published data that only the body's own client can mend. */
+const CLIENT_DATA = "it's in what its client publishes, so calling again changes nothing until that client publishes a usable one";
+const DETAILS = ["summary", "bones", "contacts", "all"];
+const detailRefused = (detail: unknown) => ({ ok: false, error: `detail must be summary, bones, contacts or all, so nothing was read; you sent ${shown(detail)}` });
 type Rig = { P: Record<string, any>; parent: Record<string, string | null> };
+
+/** parseRig's own refusals, each written as a failed load's clause; anything else it throws is the parser's. */
+class RigRefusal extends Error {}
 
 /** Preserve every humanoid bone and its actual nearest humanoid ancestor,
  * including shoulders/fingers/upperChest. A ragdoll's collapsed 19-bone
  * hierarchy cannot read an authored shoulder or finger rotation faithfully. */
 function parseRig(bytes: Uint8Array): Rig {
   const g = glbJson(bytes), bones = humanBones(g);
-  if (!bones || !Number.isInteger(bones.hips)) throw new Error("avatar has no humanoid skeleton");
-  const wp = worldPositions(g), P: Record<string, any> = {};
+  if (!bones || !Number.isInteger(bones.hips)) throw new RigRefusal("the avatar's model has no humanoid skeleton, so calling again won't change that");
   const nodeParent = new Map<number, number>();
   g.nodes.forEach((n: any, i: number) => (n.children ?? []).forEach((j: number) => nodeParent.set(j, i)));
-  const names = new Map<number, string>();
-  for (const [name, index] of Object.entries(bones)) {
-    if (!Number.isInteger(index) || !g.nodes[index as number]) continue;
-    names.set(index as number, name);
-    P[name] = wp(index);
+  const humanoid = Object.entries(bones).filter(([, index]) => Number.isInteger(index) && g.nodes[index as number]) as [string, number][];
+  // One name per node for the hierarchy; two bones on one node each keep their position below.
+  const names = new Map<number, string>(humanoid.map(([name, index]) => [index, name]));
+  // A loop in the nodes above a bone is found before any position is worked out from that
+  // chain, which would recurse around it.
+  for (const index of names.keys()) {
+    for (let p = nodeParent.get(index), depth = 0; p != null; p = nodeParent.get(p)) {
+      if (++depth > g.nodes.length) throw new RigRefusal("the avatar's model has a bone hierarchy that loops back on itself, so calling again won't change that");
+    }
   }
+  const wp = worldPositions(g), wr = worldRotations(g), P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
+  for (const [name, index] of humanoid) { P[name] = wp(index); restAxes[name] = wr(index).toArray(); }
   const parent: Record<string, string | null> = {};
   for (const [index, name] of names) {
-    let p = nodeParent.get(index), depth = 0;
-    while (p != null && !names.has(p)) {
-      if (++depth > g.nodes.length) throw new Error("cyclic skeleton");
-      p = nodeParent.get(p);
-    }
+    let p = nodeParent.get(index);
+    while (p != null && !names.has(p)) p = nodeParent.get(p);
     parent[name] = p == null ? null : names.get(p)!;
   }
   Object.defineProperty(P, "__vrm0", { value: isVrm0(g) });
+  Object.defineProperty(P, "__restAxes", { value: restAxes });
   return { P, parent };
 }
 
 function validate(o: BodyObservation) {
   if (o.error) return o.error;
-  if (!o.pose || !finite3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return "position or orientation is unknown";
+  if (!o.pose) return "no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work";
+  // Your own pose is this door's state, which clear_pose and the world's
+  // restore write; anyone else's is their client's.
+  if (!finite3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return o.self
+    ? "your published position or facing isn't a finite number, so nothing of your body was read"
+    : `this body's published position or facing isn't a finite number, so nothing of it was read; ${CLIENT_DATA}`;
+  // One bone the reader can't use costs that bone (unreadableBones), never
+  // the body; only a pose that isn't a map of bones is unusable whole.
   const bag = o.pose.pose;
-  if (bag != null && (typeof bag !== "object" || Array.isArray(bag)
-    || Object.values(bag).some(q => !Array.isArray(q) || q.length !== 4 || !q.every(Number.isFinite)
-      || Math.hypot(...q) < 1e-9))) return "published bone rotations are malformed";
+  if (bag != null && (typeof bag !== "object" || Array.isArray(bag))) return o.self
+    ? "your published pose isn't a map of bones, so nothing of your body was read; clear_pose drops it"
+    : `this body's published pose isn't a map of bones, so nothing of it was read; ${CLIENT_DATA}`;
   return null;
 }
 
@@ -77,16 +103,43 @@ function freshness(o: BodyObservation, now = Date.now()) {
  * pose remain supported. The actual posture evaluator is tracked by #179. */
 function postureUnavailable(o: BodyObservation) {
   const p = o.pose;
-  return !CLIP_SLOTS.includes(p?.clip) && p?.clip !== "sitchair" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
+  return !CLIP_SLOTS.includes(p?.clip) && !SWIM_CLIPS.includes(p?.clip) && p?.clip !== "sitchair" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
 }
 
-function missingPosture(out: any, o: BodyObservation) {
-  return { ...out, ok: false, publishedRotations: structuredClone(o.pose?.pose ?? {}),
-    error: `current-body geometry unavailable: posture '${o.pose?.clip ?? "unknown"}' is not evaluated`,
+/** The swim stroke (or treading, m = 0) at full weight, over whatever the clip left — the browser's
+ *  _swimLayer once it has eased in. Its bones only; the published pose still wins any it names. */
+function applySwim(body: any, m: number, t: number) {
+  const e = new THREE.Euler();
+  for (const [name, x, y, z] of swimTargets(m, t) as [string, number, number, number][]) {
+    const node = body.av.nodes[name];
+    if (node) node.quaternion.setFromEuler(e.set(x, y, z, "YZX"));
+  }
+}
+
+/** The postures postureUnavailable lets through, for a refusal to name. */
+const EVALUATED = [...CLIP_SLOTS, "sitchair", ...SWIM_CLIPS].join(", ");
+const unevaluated = (o: BodyObservation) => `${whose(o)} joints and contacts weren't read: the posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates (it evaluates ${EVALUATED}, and ragdoll with published bones)`;
+/** Why a body the reaches lead to went unread for its posture: a limp one is read from the bones it publishes. */
+const passedOver = (o: BodyObservation) => o.pose?.clip === "ragdoll"
+  ? "it's limp with no published bones, and body_state reads a limp body from its bones"
+  : `its posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates`;
+
+/** Geometry withheld, the published pose kept. `error` says why: an
+ * unevaluated posture, a posture that changed during the load, or a load
+ * that failed. */
+function missingPosture(out: any, o: BodyObservation, error: string) {
+  return { ...out, ok: false, publishedRotations: structuredClone(o.pose?.pose ?? {}), error,
     geometry: { status: "incomplete", basis: "rest_pose_estimate", clip: o.pose?.clip ?? null,
       reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
 
+// The ROOT frame is unscaled metres in every tier. A chosen body size lives
+// below the root (browser: vrm.scene; here: the stand-in's pivot, applied by
+// ReachBody.poseAt), so joints and contacts grow about the root position while
+// a root-frame point — reach `space: 'self' | <id>`, a selfPosition — means the
+// same metres at any size, exactly as reachnet.js's root.localToWorld. These
+// two are inverses; neither may apply scale, or a selfPosition handed back as a
+// `space: 'self'` target would miss the joint it came from.
 function rootPoint(p: number[], pose: PublicPose) {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
   return [pose.p[0] + p[0] * c + p[2] * s, pose.p[1] + p[1], pose.p[2] - p[0] * s + p[2] * c];
@@ -113,10 +166,17 @@ export class BodyStateReader {
     const old = this.rigs.get(o.who);
     if (old?.key === key) return old.load;
     const entry = { key, load: (async () => {
-      if (!o.avatar) throw new Error("avatar identity is unknown");
-      const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
-      if (!r.ok) throw new Error(`avatar fetch failed (${r.status})`);
-      return parseRig(new Uint8Array(await r.arrayBuffer()));
+      if (!o.avatar) throw new Error("the world hasn't said which avatar this body wears");
+      // The download is the request, its status and its body, under one sentence.
+      const bytes = await (async () => {
+        const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+        if (!r.ok) throw new Error(`the world server answered ${r.status} for ${shown(o.avatar)}`);
+        return new Uint8Array(await r.arrayBuffer());
+      })().catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
+      try { return parseRig(bytes); } catch (e) {
+        if (e instanceof RigRefusal) throw e;
+        throw new Error(`the avatar's model file couldn't be read as a model (${e instanceof Error ? e.message : String(e)}), so calling again won't change that`);
+      }
     })() };
     this.rigs.set(o.who, entry);
     entry.load.catch(() => { if (this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
@@ -127,10 +187,10 @@ export class BodyStateReader {
    * Samples only this query's reconstructed skeleton; no background timer. */
   async readWindow(who: string, detail: string, points: unknown, windowMs: unknown, observe: (who: string) => BodyObservation | null) {
     if (!Number.isInteger(windowMs) || (windowMs as number) < 0 || (windowMs as number) > 5000) {
-      return { ok: false, error: "window_ms must be an integer between 0 and 5000" };
+      return { ok: false, error: `window_ms must be a whole number of milliseconds from 0 to 5000, so nothing was read; you sent ${shown(windowMs)}` };
     }
     if (!windowMs) return this.read(who, detail, points, observe);
-    if (!["summary", "bones", "contacts", "all"].includes(detail)) return { ok: false, error: "detail must be summary, bones, contacts or all" };
+    if (!DETAILS.includes(detail)) return detailRefused(detail);
     let last = await this.read(who, "all", points, observe);
     if (!last.ok) return last;
     const start = Date.now(), generation = last.bodyGeneration.value;
@@ -146,7 +206,8 @@ export class BodyStateReader {
       await new Promise(r => setTimeout(r, Math.min(100, (windowMs as number) - (Date.now() - start))));
       last = await this.read(who, "all", points, observe);
       if (!last.ok || last.bodyGeneration.value !== generation) return { ...last, ok: false,
-        error: last.error ?? "body changed during observation window", stability: { status: "interrupted", samples } };
+        error: last.error ?? `the body changed during the window (a new avatar or model, or a rejoin), so the measurement stopped after ${samples} sample${samples === 1 ? "" : "s"}; reading again measures it as it is now`,
+        stability: { status: "interrupted", samples } };
       const at = Date.now(), dt = (at - previousAt) / 1000;
       for (const [name, joint] of Object.entries(last.joints) as [string, any][]) {
         const a = previous.joints[name]?.rotation, b = joint.rotation;
@@ -170,30 +231,42 @@ export class BodyStateReader {
   }
 
   async read(who: string, detail: string, requestedPoints: unknown, observe: (who: string) => BodyObservation | null): Promise<any> {
-    if (!["summary", "bones", "contacts", "all"].includes(detail)) return { ok: false, error: "detail must be summary, bones, contacts or all" };
+    if (!DETAILS.includes(detail)) return detailRefused(detail);
     let points = Object.keys(CONTACT_POINTS);
     if (requestedPoints != null) {
-      if (!Array.isArray(requestedPoints) || requestedPoints.length > points.length || requestedPoints.some(p => typeof p !== "string" || !points.includes(canonicalPoint(p)))) {
-        return { ok: false, error: "points must be a list of named body contacts", availablePoints: points };
+      // Name the first problem, since the list alone doesn't say which entry is wrong.
+      const list: unknown[] | null = Array.isArray(requestedPoints) ? requestedPoints : null;
+      const bad = list ? list.findIndex(p => typeof p !== "string" || !points.includes(canonicalPoint(p))) : -1;
+      const problem = !list ? `you sent ${shown(requestedPoints)}`
+        : list.length > points.length ? `it can name at most ${points.length}, and you sent ${list.length}`
+        : bad >= 0 ? `${shown(list[bad])} isn't one` : null;
+      if (problem || !list) {
+        return { ok: false, error: `points must be a list of contact point names, as availablePoints has them, so nothing was read; ${problem}`, availablePoints: points };
       }
-      points = [...new Set(requestedPoints.map(p => canonicalPoint(p)!))];
+      points = [...new Set(list.map(p => canonicalPoint(p)!))];
     }
     const initial = observe(who);
-    if (!initial) return { ok: false, error: `${who} is not present` };
+    if (!initial) return { ok: false, error: `nobody called ${shown(who)} is here, so nothing was read; look lists who is present, and leaving who out reads your own body` };
     const base = (o: BodyObservation): any => {
       const f = freshness(o), p = o.pose, valid = !validate(o);
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
+      const unreadable = valid ? Object.entries(bones).filter(([, v]) => !poseChannels(v)).map(([n]) => n) : [];
       const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
+        scale: clampBodyScale(p?.scale),
         posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
+        // Published bones with nothing the stand-in can use: they cost
+        // themselves, never the body, and every reply built from a reading
+        // of the body names them.
+        unreadableBones: valid ? unreadable : null,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },
         ...(f.status !== "current" ? { error: validate(o) ?? "body observation is stale; wait for a fresh presence sample" } : {}),
@@ -202,7 +275,7 @@ export class BodyStateReader {
     };
     let out = base(initial);
     if (detail === "summary" || !out.ok) return out;
-    if (postureUnavailable(initial)) return missingPosture(out, initial);
+    if (postureUnavailable(initial)) return missingPosture(out, initial, unevaluated(initial));
 
     // Load the requested body and any body its public reach descriptors target.
     // Each query gets private nodes, so solving for readback cannot move the
@@ -211,28 +284,45 @@ export class BodyStateReader {
     const loadBody = async (o: BodyObservation) => {
       const rig = await this.rig(o);
       const body = await ReachBody.fromSkeleton(rig.P, rig.parent);
-      if (!body) throw new Error("CPU skeleton evaluator is unavailable");
+      if (!body) throw new Error("this door couldn't load its skeleton solver, so it can evaluate no body, and calling again won't change that; if you need joints and contacts, ask whoever runs this door");
       let animation = null;
       if (o.pose?.clip !== "ragdoll") {
-        animation = await this.clips.load(o.pose?.clip ?? "idle");
+        // a swimmer is the idle clip under the procedural stroke (shared/swimpose.js), as the browser draws it
+        const swimming = SWIM_CLIPS.includes(o.pose?.clip), slot = swimming ? "idle" : o.pose?.clip ?? "idle";
+        // The clip library's own words go in parentheses, after which clip it was.
+        const which = swimming ? "the idle animation a swimmer is drawn over" : `the ${slot} animation`;
+        animation = await this.clips.load(slot)
+          .catch((e) => { throw new Error(`${which} couldn't be loaded (${e instanceof Error ? e.message : String(e)})`); });
       }
       loaded.set(o.who, { observation: o, body, animation, clip: o.pose?.clip ?? "idle", rigKey: rig });
     };
     try {
       const deps = new Map<string, BodyObservation>([[who, initial]]);
       for (const [owner, source] of deps) {
-        if (deps.size > 64) throw new Error("reach dependency scene exceeds 64 bodies");
+        if (deps.size > 64) throw new Error("the reaches around this body link more than 64 bodies, and one reading follows at most 64");
         for (const e of Object.values(normalizeReachBag(source.pose?.reach) ?? {}) as any[]) {
           const id = e.t.who ?? (e.t.space === "self" ? owner : e.t.space);
           if (id && !deps.has(id)) { const o = observe(id); if (o) deps.set(id, o); }
         }
       }
+      // Why a body the reaches lead to wasn't loaded or kept, for a reach toward it to say: why
+      // it isn't read now, and what a load that failed said.
+      const skipped = new Map<string, string>(), unloaded = new Map<string, string>();
+      const failed = new Map<string, { observation: BodyObservation; cause: string }>();
       const pendingBodies = deps.values();
       await Promise.all(Array.from({ length: Math.min(4, deps.size) }, async () => {
         for (let next = pendingBodies.next(); !next.done; next = pendingBodies.next()) {
           const o = next.value;
+          // A posture body_state doesn't evaluate has no clip to load, so it's passed over here, with
+          // the posture's reason. A limp body loads no clip, and a body with no sample has no posture
+          // yet, so each loads and is judged after the loads, when its bones or its first sample may
+          // have come.
+          if (o.who !== who && o.pose && o.pose.clip !== "ragdoll" && postureUnavailable(o)) { skipped.set(o.who, passedOver(o)); continue; }
           // Bound parallel VRM downloads even when a relation spans a crowd.
-          try { await loadBody(o); } catch (e) { if (o.who === who) throw e; }
+          try { await loadBody(o); } catch (e) {
+            if (o.who === who) throw e;
+            failed.set(o.who, { observation: o, cause: e instanceof Error ? e.message : String(e) });
+          }
         }
       }));
       const latest = observe(who);
@@ -241,27 +331,51 @@ export class BodyStateReader {
       }
       out = base(latest);
       if (!out.ok) return out;
-      if (postureUnavailable(latest)) return missingPosture(out, latest);
-      if (loaded.get(who)?.clip !== latest.pose?.clip) return missingPosture(out, latest);
-      for (const [id, item] of loaded) {
+      if (postureUnavailable(latest)) return missingPosture(out, latest, unevaluated(latest));
+      if (loaded.get(who)?.clip !== latest.pose?.clip) return missingPosture(out, latest,
+        `${whose(latest)} joints and contacts weren't read: the posture changed from ${shown(loaded.get(who)?.clip)} to ${shown(latest.pose?.clip)} while the skeleton loaded, so calling again can get them`);
+      // A load's cause stands only for the body it was loading.
+      for (const [id, { observation: was, cause }] of failed) {
         const o = observe(id);
-        if (!o || o.generation !== item.observation.generation || o.avatar !== item.observation.avatar || freshness(o).status !== "current" || postureUnavailable(o) || item.clip !== o.pose?.clip) {
-          loaded.delete(id); continue;
-        }
+        if (!o) skipped.set(id, "it left");
+        else if (o.generation !== was.generation || o.avatar !== was.avatar) skipped.set(id, "it changed while its skeleton loaded");
+        // A new posture body_state doesn't evaluate is named, as for a loaded body. A body with no
+        // sample loads as idle (loadBody), so a first idle sample is no change.
+        else if ((o.pose?.clip ?? "idle") !== (was.pose?.clip ?? "idle"))
+          skipped.set(id, o.pose && postureUnavailable(o) ? passedOver(o) : "it changed while its skeleton loaded");
+        else unloaded.set(id, cause);
+      }
+      for (const [id, item] of loaded) {
+        const o = observe(id), unread = o && validate(o);
+        // What it publishes that can't be read is its own reason, which waiting alone may not change.
+        if (unread) { unloaded.set(id, unread); loaded.delete(id); continue; }
+        // A posture body_state doesn't evaluate is named before a changed clip: a later read would pass it over for that posture too.
+        const gone = !o ? "it left"
+          : o.generation !== item.observation.generation || o.avatar !== item.observation.avatar ? "it changed while its skeleton loaded"
+          : freshness(o).status !== "current" ? "its reading is stale"
+          : postureUnavailable(o) ? passedOver(o)
+          : item.clip !== o.pose?.clip ? "it changed while its skeleton loaded" : "";
+        if (gone) { skipped.set(id, gone); loaded.delete(id); continue; }
         item.observation = o;
         const mapped = Object.fromEntries(Object.entries(o.pose!.pose ?? {}).filter(([name]) => Object.hasOwn(item.body.av.nodes, name)));
-        item.body.poseAt(o.pose!.p, o.pose!.yaw, null);
+        item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale);
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
-        if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
+        if (SWIM_CLIPS.includes(o.pose!.clip)) applySwim(item.body, o.pose!.clip === "swim" ? 1 : 0, Date.now() / 1000);
+        // A limp body draws no head pitch (avatar.js update: not while limp).
+        if (Number.isFinite(o.pose!.pitch) && o.pose!.clip !== "ragdoll" && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
-        for (const [name, q] of Object.entries(mapped)) item.body.av.nodes[name].quaternion.fromArray(q);
+        // A limp body draws no raw layer (remotes.js sets a ragdoll limp).
+        item.body.holdPose(mapped, { raw: o.pose!.clip !== "ragdoll" });
         item.body.av.root.updateMatrixWorld(true);
       }
       const own = loaded.get(who)!;
       const pose = own.observation.pose!;
       out.publishedRotations = structuredClone(pose.pose ?? {});
-      out.poseEvaluation = { clip: pose.clip, source: own.animation ? "vrma" : pose.clip === "ragdoll" ? "published_physics" : "rest_pose_estimate",
-        time: hasClipPhase(pose) ? pose.clipTime : 0, phase: hasClipPhase(pose) ? "published" : "initial_frame_estimate" };
+      out.poseEvaluation = SWIM_CLIPS.includes(pose.clip)
+        // the stroke's shape is shared; its beat runs on each viewer's clock, so the phase is this reader's own
+        ? { clip: pose.clip, source: "procedural_swim", time: Date.now() / 1000, phase: "reader_clock" }
+        : { clip: pose.clip, source: own.animation ? "vrma" : pose.clip === "ragdoll" ? "published_physics" : "rest_pose_estimate",
+          time: hasClipPhase(pose) ? pose.clipTime : 0, phase: hasClipPhase(pose) ? "published" : "initial_frame_estimate" };
       out.unmappedBones = Object.keys(pose.pose ?? {}).filter(n => !Object.hasOwn(own.body.av.nodes, n));
       out.reachEvaluation = {};
       const entries: any[] = [];
@@ -278,20 +392,31 @@ export class BodyStateReader {
         const { owner, limb, entry: e } = task;
         const actor = loaded.get(owner)!;
         const actorPose = actor.observation.pose!;
-        let target: any = null;
-        if (e.t.who) target = loaded.get(e.t.who)?.body.contact(e.t.point, e.t.standoff ?? 0.02);
+        // No target says which of three it is: a rig without the point, a body
+        // whose load failed (its cause), or a body not read now (why).
+        let target: any = null, why = "";
+        if (e.t.who) {
+          const body = loaded.get(e.t.who)?.body;
+          target = body?.contact(e.t.point, e.t.standoff ?? 0.02);
+          if (!target) why = body
+            ? `${e.t.who}'s rig has no usable ${e.t.point}, so this reach can't be solved; body_state {who: ${JSON.stringify(e.t.who)}, detail: "contacts"} shows the points it has`
+            : unloaded.has(e.t.who) ? `${e.t.who}'s body can't be read here, so this reach can't be checked: ${unloaded.get(e.t.who)}`
+            : `${e.t.who}'s body can't be read here now (${skipped.get(e.t.who) ?? "it isn't present"}), so this reach can't be checked`;
+        }
         else if (!e.t.space) target = e.t.p;
         else {
           // A root-relative point does not depend on the target's posture
           // clip or on loading its skeleton. Only named body contacts do.
-          const other = e.t.space === "self" ? null : observe(e.t.space);
+          const other = e.t.space === "self" ? null : observe(e.t.space), unread = other && validate(other);
           const frame = e.t.space === "self" ? actorPose : other && freshness(other).status === "current" ? other.pose : null;
           if (frame) target = rootPoint(e.t.p, frame);
+          else why = unread ? `${e.t.space}'s body can't be read here, so a point in their frame can't be placed: ${unread}`
+            : `${e.t.space}'s body has no current reading on this door, so a point in their frame can't be placed now`;
         }
         const key = reachKey(owner, limb), prior = this.solveHistory.get(key), at = Date.now();
         const history = prior?.generation === actor.observation.generation && sameReach(prior.entry, e) ? prior : null;
         const r: any = target ? actor.body.solve(limb, target, { palm: e.palm, apply: true, history: history?.history,
-          dt: history ? Math.min(.1, Math.max(0, (at - history.at) / 1000)) : undefined }) : { ok: false, why: "target has no current usable body observation" };
+          dt: history ? Math.min(.1, Math.max(0, (at - history.at) / 1000)) : undefined }) : { ok: false, why };
         if (r.ok) this.solveHistory.set(key, { generation: actor.observation.generation, entry: e, history: r.history, at });
         const { history: _privateHistory, ...receipt } = r;
         evaluations.set(key, { ...receipt, target: Array.isArray(target) ? target : target?.pos, held: true, tracking: "requested", reached: r.ok && r.gap <= TOUCH_GAP });
@@ -300,10 +425,13 @@ export class BodyStateReader {
       Object.defineProperty(out, "body", { value: own.body, enumerable: false });
       own.body.av.root.updateMatrixWorld(true);
       const incomplete = Object.values(out.reachEvaluation).some((r: any) => !r.ok);
-      if (incomplete) { out.ok = false; out.error = "some held reaches could not be evaluated; geometry is incomplete"; }
-      out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published rotations + limb IK",
+      if (incomplete) {
+        out.ok = false;
+        out.error = `some of ${whose(own.observation)} held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb${own.observation.self ? ", and clear_reach releases one" : ""}`;
+      }
+      out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published pose + limb IK",
         inputs: [...loaded.values()].map(({ observation: o }) => ({ who: o.who, observedAt: o.receivedAt, bodyGeneration: o.generation })),
-        limitations: ["Base VRMA posture, pitch, published rotations and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
+        limitations: ["Base VRMA posture, pitch, the published pose (rotation, translation and scale) and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
           "Contact surfaces are bone-bound anatomical estimates, not mesh measurements. Reach producers are evaluated before dependants; cyclic dependencies are reported as incomplete."] };
       if (detail === "bones" || detail === "all") {
         out.joints = Object.fromEntries(Object.entries(own.body.av.nodes).map(([name, raw]) => {
@@ -317,7 +445,7 @@ export class BodyStateReader {
           const c = own.body.contact(point, 0); // report the surface, not reach's default 2cm standoff
           return [point, c ? { position: c.pos, normal: c.normal, selfPosition: selfPoint(c.pos, pose), quality: "anatomical_estimate",
             ...(!incomplete ? { reachTarget: { who, point } } : {}), bone: (CONTACT_POINTS as any)[point].bone }
-            : { position: null, normal: null, quality: "unavailable", reason: "required bones are missing" }];
+            : { position: null, normal: null, quality: "unavailable", reason: "this rig can't place it: it lacks the point's bone, or its bones don't form a body frame to place it in" }];
         }));
       }
       return out;
@@ -328,10 +456,17 @@ export class BodyStateReader {
         return { ok: false, who, error: "body changed or left while its skeleton loaded; read again" };
       }
       out = base(latest);
-      if (latest.pose?.clip !== "ragdoll") return { ...missingPosture(out, latest), detail: e instanceof Error ? e.message : String(e) };
+      // The load's own cause, not a posture's. The throws above are written
+      // to read as a clause after this colon, a model file the parser can't
+      // read and a posture's clip that can't be loaded among them. It's what
+      // this read met, whatever posture the body has taken since.
+      const cause = e instanceof Error ? e.message : String(e);
+      const error = `${whose(latest)} joints and contacts weren't read: ${cause}`;
+      if (latest.pose?.clip !== "ragdoll") return { ...missingPosture(out, latest, error), detail: cause };
       out.ok = false;
+      out.error = error;
       out.publishedRotations = structuredClone(latest.pose?.pose ?? {});
-      out.geometry = { status: "unavailable", error: e instanceof Error ? e.message : String(e) };
+      out.geometry = { status: "unavailable", error: cause };
       return out;
     }
   }

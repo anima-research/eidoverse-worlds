@@ -33,7 +33,10 @@ const STRIKES = Number(process.env.STRIKES ?? 3);           // consecutive bad c
 const BOOT_GRACE_SEC = Number(process.env.BOOT_GRACE_SEC ?? 45);
 const VERSION_URL = `${SHOW_URL}/client-version`;
 
-const URL = `${SHOW_URL}/?world=${WORLD}&renderer&name=mac-gpu-${WORLD}` + (KEY ? `&key=${KEY}` : "");
+// ROAM=1: a roaming renderer — it starts in WORLD and the server sends it to any world a snapshot is asked of
+// where no renderer is serving (server/snapshots.ts). Its name says so: mac-gpu-roam-<WORLD>.
+const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
+const URL = `${SHOW_URL}/?world=${WORLD}&renderer&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (m: string) => console.log(`[watchdog ${new Date().toISOString().slice(11, 19)}] ${m}`);
 const sh = async (cmd: string) => (await new Response(Bun.spawn(["bash", "-c", cmd]).stdout).text()).trim();

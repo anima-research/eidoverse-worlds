@@ -82,7 +82,7 @@ export const xrSimGrip = (side, pos, quat) => { if (CONFIG.params.has('xrsim')) 
 // a 0.2 s dwell (hysteresis: no flicker between two elbows); the chosen angle is smoothed 0.08 s at
 // ≤720°/s, reset outright on a teleport (>0.6·chain). Reach is SOFT at the end (exponential, s=0.02),
 // so full extension never pops. The wrist twist is SPLIT: the forearm rolls (keep ≤15°/15% on the
-// hand, fade 155–178°, cap 120°) and the hand takes the remainder — the grip orientation still
+// hand, cap 120°) and the hand takes the remainder — the grip orientation still
 // lands exactly. Joint-limit costs (humeral/pronation/wrist) are NOT ported: they need Basis's per-
 // joint limit tables; a later rung. Emotes trump IK. Lost tracking: hold 0.5 s, then relax to the
 // clip at 3 Hz (Basis's tracker-loss rule) instead of snapping in one frame.
@@ -91,14 +91,15 @@ const WRIST_L = new THREE.Quaternion(-WRIST_R.x, WRIST_R.y, WRIST_R.z, -WRIST_R.
 const ARM = { SAMPLES: 36, REFINE: 8, MIN_ELBOW: 22 * Math.PI / 180, MIN_REACH_FRAC: 0.05, SOFT: 0.02, PRIOR_W: 0.5, PREV_W: 0.25,
   TORSO_W: 1.5, LOCAL_BASIN: 60 * Math.PI / 180, BASIN_JUMP: 100 * Math.PI / 180, SWITCH_MARGIN: 0.12, DWELL: 0.2, SMOOTH: 0.08, MAX_RATE: 720 * Math.PI / 180,
   TELEPORT: 0.6, HEAD_FADE: [0.15, 0.45], REST_OUT: 0.35, REST_BACK: 0.25,
-  WRIST_KEEP_FRAC: 0.15, WRIST_KEEP_MAX: 15 * Math.PI / 180, ROLL_MAX: 120 * Math.PI / 180, WRAP_FADE: [155 * Math.PI / 180, 178 * Math.PI / 180],
-  HOLD: 0.5, RELAX_HZ: 3 };
+  WRIST_KEEP_FRAC: 0.15, WRIST_KEEP_MAX: 15 * Math.PI / 180, ROLL_MAX: 120 * Math.PI / 180, TWIST_CENTER: 45 * Math.PI / 180, TWIST_WINDOW: 240 * Math.PI / 180,
+  HOLD: 0.5, RELAX_HZ: 3, TWIST_GAP: 0.25 };
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _d = new THREE.Vector3(), _u = new THREE.Vector3(), _elbow = new THREE.Vector3(), _rest = new THREE.Vector3();
 // solver scratch — these run per side, per body (remotes too since C18), per frame: nothing here may allocate
 const _uPos = new THREE.Vector3(), _toT = new THREE.Vector3(), _axis = new THREE.Vector3(), _up = new THREE.Vector3(), _fwd = new THREE.Vector3(), _out = new THREE.Vector3();
 const _et = new THREE.Vector3(), _er = new THREE.Vector3(), _ex = new THREE.Vector3(), _ey = new THREE.Vector3(), _ctr = new THREE.Vector3(), _dir = new THREE.Vector3();
 const _prior = new THREE.Vector3(), _hp = new THREE.Vector3(), _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tq = new THREE.Vector3(), _fa = new THREE.Vector3();
 const _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _qU = new THREE.Quaternion(), _qL = new THREE.Quaternion(), _qH = new THREE.Quaternion();
+const _lPos = new THREE.Vector3(), _jPos = new THREE.Vector3();
 const _pole = new THREE.Vector3(), _fq2 = new THREE.Quaternion(), _e2 = new THREE.Euler();   // solveLeg's scratch — dropped with the old arm solver's line on 09-19 and the whole XR tick died at feetTick (owner: 'one leg stayed straight out… hands weren't IKing')
 const smoothstep = (a, b, v) => { const t = THREE.MathUtils.clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrapA = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
@@ -116,7 +117,7 @@ function twistAbout(q, axis) {
 }
 function armState(vrm, side) {
   const ud = vrm.userData = vrm.userData || {}; const a = ud._arm = ud._arm || {};
-  return a[side] = a[side] || { seeded: false, swivel: 0, switchT: 0, lastT: new THREE.Vector3(), lastAxis: new THREE.Vector3(), lost: 0, held: null };
+  return a[side] = a[side] || { seeded: false, swivel: 0, switchT: 0, lastT: new THREE.Vector3(), lastAxis: new THREE.Vector3(), lost: 0, held: null, twist: null };
 }
 // Basis Frame(): a circle basis that stays continuous as the reach axis swings around the body
 function swivelFrame(axis, up, fwd, out) {
@@ -145,10 +146,17 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
   const U = h.getNormalizedBoneNode(side + 'UpperArm'), L = h.getNormalizedBoneNode(side + 'LowerArm'), H = h.getNormalizedBoneNode(side + 'Hand');
   if (!U || !L || !H) return false;
   const st = armState(vrm, side), dt = opts.dt > 0 ? opts.dt : 1 / 60;
+  // THE TWIST RESEEDS AFTER ANY GAP (review 10a M1). It unwraps against last frame's value, which is only meaningful if
+  // last frame was just now: across a VR exit/entry, an emote that took the arms, a remote leaving VR, or a tracking
+  // loss shorter than the relax, the stale value put a fresh grip on the far 360° branch (palm-up at exit, pronated at
+  // entry → a candy-wrapper wrist) and it stuck, since the unwrap only moves continuously. `opts.now` (ms) for tests.
+  const now = opts.now ?? performance.now();
+  if (st.twist != null && st.solvedAt != null && now - st.solvedAt > ARM.TWIST_GAP * 1000) st.twist = null;
   U.quaternion.identity(); L.quaternion.identity(); H.quaternion.identity();
   vrm.scene.updateMatrixWorld(true);
   const uPos = U.getWorldPosition(_uPos);
-  const upper = L.position.length(), lower = H.position.length(), chain = upper + lower;
+  // WORLD lengths: targets are world, and vrm.scene wears size × the VR fit, so local offsets are not (review 09-30 B1)
+  const lPos = L.getWorldPosition(_lPos), upper = lPos.distanceTo(uPos), lower = H.getWorldPosition(_jPos).distanceTo(lPos), chain = upper + lower;
   if (upper < 1e-5 || lower < 1e-5) return false;
   // torso frame (world): the model faces +Z at hips identity; its left arm is +X
   const chest = h.getNormalizedBoneNode('upperChest') || h.getNormalizedBoneNode('chest') || h.getNormalizedBoneNode('spine');
@@ -202,7 +210,7 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
   }
   const target = wrapA(f1 < f2 ? x1 : x2);
   const teleport = st.seeded && targetPos.distanceToSquared(st.lastT) > ARM.TELEPORT * ARM.TELEPORT * chain * chain;
-  if (!st.seeded || teleport) st.swivel = target;
+  if (!st.seeded || teleport) { st.swivel = target; st.twist = null; }
   else { const alpha = 1 - Math.exp(-dt / ARM.SMOOTH); let s = wrapA(target - st.swivel) * alpha; const m = ARM.MAX_RATE * dt; s = THREE.MathUtils.clamp(s, -m, m); st.swivel = wrapA(st.swivel + s); }
   st.seeded = true; st.lastT.copy(targetPos); st.lastAxis.copy(_axis);
   angToDir(st.swivel, _dir); _elbow.copy(_ctr).addScaledVector(_dir, radius);
@@ -214,8 +222,23 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
     H.parent.getWorldQuaternion(_q).invert();
     _qH.copy(_q).multiply(targetQuat).multiply(side === 'left' ? WRIST_L : WRIST_R);
     _fa.copy(H.position).normalize();   // forearm axis in the lower arm's local frame
-    const demand = twistAbout(_qH, _fa), mag = Math.abs(demand);
-    let roll = (mag - Math.min(ARM.WRIST_KEEP_FRAC * mag, ARM.WRIST_KEEP_MAX)) * (1 - smoothstep(ARM.WRAP_FADE[0], ARM.WRAP_FADE[1], mag));
+    // CONTINUOUS twist (owner, 09-23, tigerbee: thumb-down/palm-out → thumb-out/palm-up and the forearm 'tries to
+    // flip the other way'). The twist was wrapped to ±180° about the REST hand (palm down) and faded 155–178°; but
+    // a forearm's range isn't centred on rest — palm-up is ~170° of supination, thumb-down ~100° of pronation — so
+    // full supination sat on the wrap, and the forearm unwound +120° → 0 → −120° over ~60° of wrist
+    // (armsolve-test 6: 9.4° of forearm per degree of grip). Now: (a) the twist is measured about the forearm's
+    // ANATOMICAL middle (45° of supination; supination is + on the right, − on the left in the normalized rig), so
+    // the one ambiguous angle a seed can land on is 135° of pronation past palm-down, not palm-up; (b) it unwraps
+    // against last frame, continuous through ±180°; (c) it SATURATES 240° either side of that middle — past it the
+    // forearm holds its cap and the hand takes the rest. A twist must change branch once per 360° somewhere; this
+    // puts it ~420° from the middle. Reseeded wherever the swivel is (first frame, teleport, tracking lost), and after any
+    // solve gap over ARM.TWIST_GAP (session start, emotes, short tracking losses: review 10a M1).
+    const raw = twistAbout(_qH, _fa), mid = side === 'left' ? -ARM.TWIST_CENTER : ARM.TWIST_CENTER;
+    const demand = st.twist == null ? mid + wrapA(raw - mid)
+      : THREE.MathUtils.clamp(st.twist + wrapA(raw - st.twist), mid - ARM.TWIST_WINDOW, mid + ARM.TWIST_WINDOW);
+    st.twist = demand;
+    const mag = Math.abs(demand);
+    let roll = mag - Math.min(ARM.WRIST_KEEP_FRAC * mag, ARM.WRIST_KEEP_MAX);
     roll = Math.min(roll, ARM.ROLL_MAX); if (demand < 0) roll = -roll;
     if (Math.abs(roll) > 1e-4) {
       L.quaternion.multiply(_q2.setFromAxisAngle(_fa, roll)); L.updateWorldMatrix(false, false);
@@ -226,7 +249,7 @@ export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
   }
   st.held = st.held || { U: new THREE.Quaternion(), L: new THREE.Quaternion(), H: new THREE.Quaternion(), pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
   st.held.U.copy(U.quaternion); st.held.L.copy(L.quaternion); st.held.H.copy(H.quaternion); st.held.pos.copy(targetPos); if (targetQuat) st.held.quat.copy(targetQuat);
-  st.lost = 0;
+  st.lost = 0; st.solvedAt = now;
   return true;
 }
 /** Tracking lost this frame: hold the last solve for 0.5 s, then relax toward the clip pose at 3 Hz.
@@ -239,7 +262,7 @@ export function relaxArm(vrm, side, dt) {
   st.lost += dt > 0 ? dt : 1 / 60;
   if (st.lost <= ARM.HOLD) { U.quaternion.copy(st.held.U); L.quaternion.copy(st.held.L); H.quaternion.copy(st.held.H); return true; }
   const w = Math.exp(-ARM.RELAX_HZ * (st.lost - ARM.HOLD));   // 1 → 0 after the hold
-  if (w < 0.01) { st.seeded = false; return false; }
+  if (w < 0.01) { st.seeded = false; st.twist = null; return false; }
   _qU.copy(U.quaternion); _qL.copy(L.quaternion); _qH.copy(H.quaternion);   // the clip's pose
   U.quaternion.copy(_qU).slerp(st.held.U, w); L.quaternion.copy(_qL).slerp(st.held.L, w); H.quaternion.copy(_qH).slerp(st.held.H, w);
   return true;
@@ -390,9 +413,10 @@ export function solveLeg(vrm, side, targetPos, footYaw) {
   U.quaternion.identity(); L.quaternion.identity(); F.quaternion.identity();
   vrm.scene.updateMatrixWorld(true);
   const uPos = U.getWorldPosition(_uPos);
-  const l1 = L.position.length(), l2 = F.position.length();
+  const lPos = L.getWorldPosition(_lPos), l1 = lPos.distanceTo(uPos), l2 = F.getWorldPosition(_jPos).distanceTo(lPos);   // world, as solveArm
+  const ws = l1 / Math.max(L.position.length(), 1e-6);   // the clamp margins were metres on an unscaled body
   const toT = _toT.subVectors(targetPos, uPos);
-  let d = THREE.MathUtils.clamp(toT.length(), Math.abs(l1 - l2) + 0.02, l1 + l2 - 0.01);
+  let d = THREE.MathUtils.clamp(toT.length(), Math.abs(l1 - l2) + 0.02 * ws, l1 + l2 - 0.01 * ws);
   const K = Math.acos(THREE.MathUtils.clamp((l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), -1, 1));
   const Kc = THREE.MathUtils.clamp(K, 25 * Math.PI / 180, 178 * Math.PI / 180);   // no hyperextension snap
   if (Kc !== K) d = Math.sqrt(Math.max(1e-6, l1 * l1 + l2 * l2 - 2 * l1 * l2 * Math.cos(Kc)));
@@ -472,8 +496,12 @@ export function tickXRBody(dt) {
   // DeviceScale, Basis's way: the PUPPET wears the scale (vrm.scene.scale = 1/k), tracking stays 1:1 —
   // hands land on the controllers by construction. A change re-measures the legs (ankle height and
   // hip width are read in world units) and is announced once.
+  // The chosen size (Profile › Avatar, bodyscale.js) composes ON TOP: vrm.scene wears userScale × 1/k and xr.js scales
+  // the rig by userScale, so eyes stay at the HMD and hands on the controllers at any size. The legs are re-measured
+  // on ANY change of the body's world size (either factor), since the size slider can move mid-session.
   { const ps = simHead ? 1 : puppetScale(); const ud = vrm.userData = vrm.userData || {};
-    if (Math.abs(vrm.scene.scale.x - ps) > 1e-4) { vrm.scene.scale.setScalar(ps); ud.ankleH = null; ud._gait = null; tee(`[xr] puppet scale ${ps.toFixed(3)} (avatar sized to you; targets 1:1)`); } }
+    if (av.setPuppetScale) av.setPuppetScale(ps); else if (Math.abs(vrm.scene.scale.x - ps) > 1e-4) vrm.scene.scale.setScalar(ps);
+    if (Math.abs((ud._bodyS ?? -1) - vrm.scene.scale.x) > 1e-4) { ud._bodyS = vrm.scene.scale.x; ud.ankleH = null; ud._gait = null; tee(`[xr] puppet scale ${ps.toFixed(3)} × size ${(av.userScale ?? 1).toFixed(2)} = body ${vrm.scene.scale.x.toFixed(3)} (avatar sized to you; targets 1:1)`); } }
 
   // 1. distributed look-at
   // facing = the body's TRUE world yaw. The controller already turns the body to
@@ -535,7 +563,7 @@ export function tickXRBody(dt) {
   vrm.scene.position.set(0, 0, 0); vrm.scene.updateMatrixWorld(true);
   const le = h.getNormalizedBoneNode('leftEye'), re = h.getNormalizedBoneNode('rightEye'), hd = h.getNormalizedBoneNode('head');
   if (le && re) eyeW.copy(le.getWorldPosition(v1)).add(re.getWorldPosition(tmpS)).multiplyScalar(0.5);
-  else if (hd) eyeW.copy(hd.getWorldPosition(v1)).add(tmpS.set(0, 0.06, 0.10).applyQuaternion(hd.getWorldQuaternion(rigQ)));
+  else if (hd) eyeW.copy(hd.getWorldPosition(v1)).add(tmpS.set(0, 0.06, 0.10).multiplyScalar(vrm.scene.scale.x).applyQuaternion(hd.getWorldQuaternion(rigQ)));
   else return;
   delta.copy(hmdPos).sub(eyeW);
   av.root.getWorldQuaternion(rigQ).invert();          // root-local: the controller owns the root; we offset the VRM inside it

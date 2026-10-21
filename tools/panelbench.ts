@@ -42,7 +42,7 @@ for (const [id, probe, what] of [
   ['ground', `document.querySelectorAll('#sec-ground .body select').length >= 4 && document.querySelectorAll('#sec-ground .body button').length >= 5`, '4 selects + the grow/mow/shape buttons'],
   ['sky', `document.querySelectorAll('#sec-sky .body input[type=range]').length >= 8 && document.querySelectorAll('#sec-sky .body select').length >= 6`, '8 sliders + 6 selects'],
 ] as const) {
-  await evalJson(`document.querySelector('#sec-${id} .head')?.click(), true`);
+  await evalJson(`document.querySelector('#sec-${id}-tab')?.click(), true`);
   await sleep(id === 'avatar' || id === 'build' ? 900 : 400);   // fetches
   const ok = await evalJson(probe);
   check(`${id} section paints (${what})`, !!ok);

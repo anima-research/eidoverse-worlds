@@ -14,6 +14,8 @@ import { CONFIG } from './base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
   isHushed, setHush, pttMode } from './voiceconsent.js';
 import { bus } from './base.js';
+import { register as registerAction } from './actions.js';
+import { pathData } from './icons.js';
 
 // three states: off = grey + slash · live = clean bright white ·
 // hot (picking up your voice for STT) = warm yellow glow. No rings.
@@ -60,15 +62,18 @@ const MIC_SVG = (on, hot) => {
 // you set once, not a thing you toggle situationally. That split is the
 // convention everywhere it matters (Discord's deafen, VRChat's voice
 // controls) and it is the one people already have hands for.
+// The glyph lives in icons.js ('headphonesOff' = the phones + the slash), shared with the nameplate mark and the
+// hover card; drawn here on its 24 grid at 1.35 wide, which is the old 32-grid 1.8 to the pixel.
 const EAR_SVG = (on) => {
   const c = on ? INK.on : INK.off;
+  const [band, cupL, cupR, slash] = pathData('headphonesOff');
   return `
-<svg viewBox="0 0 32 32" width="26" height="26">
-  <g fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round">
-    <path d="M6 19 v-3 a10 10 0 0 1 20 0 v3"/>
-    <rect x="4" y="18" width="6" height="9" rx="3"/>
-    <rect x="22" y="18" width="6" height="9" rx="3"/>
-    ${on ? '' : `<line x1="7" y1="4" x2="25" y2="28" stroke="${INK.slash}"/>`}
+<svg viewBox="0 0 24 24" width="26" height="26">
+  <g fill="none" stroke="${c}" stroke-width="1.35" stroke-linecap="round">
+    <path d="${band}"/>
+    <path d="${cupL}"/>
+    <path d="${cupR}"/>
+    ${on ? '' : `<path d="${slash}" stroke="${INK.slash}"/>`}
   </g>
 </svg>`;
 };
@@ -131,6 +136,9 @@ const micIsOn = () => {
     return window.relayDiag?.().micPublished ?? micOn();
   } catch { return micOn(); }
 };
+// Mic and hearing state ride the pose packet to everyone in this world, agents included (the owner's decision,
+// 2026-10-02, docs/pose-wire.md "Voice state — who sees it"); the tooltip says so rather than leaving it to the docs.
+const SHARED = '\nmic and hearing on/off are visible to everyone in this world';
 function paint() {
   if (!micBtn) return;
   const on = micIsOn();
@@ -146,6 +154,7 @@ function paint() {
                              : 'push-to-talk armed — hold V to speak')
     : deaf ? 'mic LIVE — but you are not hearing the room (Shift+V to listen)'
     : 'mic LIVE — the world hears you (V)';
+  micBtn.title += SHARED;
   if (xrBtn) {
     const live = xrLive();
     xrBtn.innerHTML = xrAbsent && !live ? XR_SVG(false).replace(new RegExp(INK.off.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), INK.absent) : XR_SVG(live);
@@ -167,6 +176,7 @@ function paint() {
       : isHushed()
         ? 'hushed — voices still arriving, click to listen again mid-sentence'
         : 'hearing voices — click to hush (Audio panel revokes entirely)';
+    earBtn.title += SHARED;
   }
 }
 // hot = your voice is actually registering: a tiny analyser on the mic track,
@@ -216,6 +226,11 @@ function applyPairVisibility() {
 export const micLive = () => { try { return micIsOn(); } catch { return false; } };
 export const earOn = () => { try { return receivingVoice() && !isHushed(); } catch { return false; } };
 export { flipMic, flipEar };
+// the glyphs' two acts, findable by name (the key is V's voice-activation meaning; in PTT mode V holds to talk)
+registerAction({ id: 'voice:mic', title: 'microphone on / off', group: 'voice', key: 'V', icon: 'mic',
+  keywords: ['mic', 'mute', 'unmute', 'talk', 'speak', 'voice'], run: () => flipMic() });
+registerAction({ id: 'voice:ear', title: 'hear voices on / off', group: 'voice', icon: 'headphones',
+  keywords: ['ear', 'hush', 'deafen', 'headphones', 'listen', 'voice'], run: () => flipEar() });
 /** the menu wears the SAME glyphs as the floating pair */
 export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" height="26"', `width="${size}" height="${size}"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);

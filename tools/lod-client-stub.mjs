@@ -13,6 +13,8 @@
 //   world.js     its maps only (entities, mounts, edit holds, findPart)
 //
 // Every side effect the test asserts on is a plain array or Map here.
+import { KTX2_KEY } from '../shared/ktx2.js';   // the stub publishes the REAL generation — a literal here went stale on the 3→4 bump
+import { LOD_RECIPE } from '../server/store-variants.ts';   // …and the REAL recipe: the literal here went stale when #205 derived it
 import * as THREE_ from '../client/node_modules/three/build/three.module.js';
 import { askFor, tierOf } from '../client/lib/lod_policy.js';
 
@@ -31,7 +33,7 @@ export const CONFIG = {};
 /** The pretend sequencer + browser: what /version published, whether this
  *  "browser" transcodes KTX2, and which libs have a baked variant. Mutable —
  *  a section flips them and spawns fresh placements. */
-export const server = { key: '3', recipe: 'lod1-r25e01-texel1024', capable: true, variants: new Set() };
+export const server = { key: KTX2_KEY, recipe: LOD_RECIPE, capable: true, variants: new Set() };
 /** Every loadGLB call, in order: { lib, tier (what crossed the wire), url }. */
 export const loads = [];
 /** Loads held open while `hold` is on: { lib, tier, url, release() }. */
@@ -100,6 +102,8 @@ renderer.getPixelRatio = () => 1;
 // warmqueue.js / loadwork.js: never loading — the governor's grace never holds
 export const warmStats = () => ({ pending: 0, running: false });
 export const warm = (label, fn) => Promise.resolve().then(fn);
+export const warmDepth = () => Promise.resolve();
+export const P_GATE = 0, P_MODEL = 1, P_AMBIENT = 2;
 export const laneBusy = () => false;
 // lightrig.js / emitters.js / terrain.js / frame.js / remotes.js: every lever
 // BELOW 'lod' in the ladder answers "nothing to shed", so a slow window
@@ -124,6 +128,10 @@ export const getSystemEvery = (k) => every[k] ?? 1;
 // ui.js: toasts recorded
 export const toasts = [];
 export const toast = (msg, kind, ms) => { toasts.push({ msg, kind, ms }); };
+// statuschips.js: the chips on show, by id (the governor's model-detail shed posts one and lifts it)
+export const chips = new Map();
+export const statusChip = (spec) => { chips.set(spec.id, spec); };
+export const clearStatusChip = (id) => { chips.delete(id); };
 
 // ---- world.js (its maps) ----------------------------------------------------
 export const entities = new Map();

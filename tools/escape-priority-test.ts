@@ -24,6 +24,8 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 // (see tools/core-stub.mjs) — a bare specifier only resolves with a root copy.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 GlobalRegistrator.register({ url: 'https://renderer.example/' });
+// base.js tees the console to POST /clientlog; there is no server here
+globalThis.fetch = (async () => new Response('')) as any;
 
 const base = `${import.meta.dir}/../client/lib/`;
 const scene = new THREE.Scene();
@@ -36,6 +38,14 @@ const hints: string[] = [];
 const entities = new Map<string, any>([['lamp', new THREE.Group()]]);
 
 mock.module(base + 'core.js', () => ({ THREE, scene, camera, canvas }));
+// The controller's water and climbing imports pull the sky/renderer chain in at
+// load; none of it is on the Escape path, so a dry world with no ladders.
+mock.module(base + 'water.js', () => ({ waterLevel: () => null, waterAt: () => null, waveTime: () => 0 }));
+mock.module(base + 'watervolumes.js', () => ({ waterAt: () => null, waterTime: () => 0, movementBounds: () => null }));
+mock.module(base + 'traversal.js', () => ({
+  nearbyTraversal: () => null, startTraversal: () => false, stepTraversal: () => null,
+  traversing: () => false, cancelTraversal() {},
+}));
 mock.module(base + 'terrain.js', () => ({ heightAt: () => 0 }));
 mock.module(base + 'colliders.js', () => ({
   resolveColliders: (p: any) => p, lastBlockedTop: () => null, findSeat: () => null,

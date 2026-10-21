@@ -31,19 +31,33 @@ const STEP = 0.55;   // max mantle-less step-up, metres — one comfortable stai
 const HIP = 0.95;    // wall-probe height: floors stay > r away, walls don't
 const TALL = 1.9;    // default body height above `pos` — an avatar on its feet
 
+// A model whose every mesh opts out of collision (glTF extras collision:false) is NOT solid — distinct from
+// "no exact collider available", which falls back to a box/pillar.
+const NON_SOLID = Object.freeze({ nonSolid: true });
 function buildExact(obj) {
   obj.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
   const geoms = [];
+  let meshes = 0;
   obj.traverse((o) => {
     if (!o.isMesh || !o.geometry?.attributes?.position) return;
-    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    const clean = new THREE.BufferGeometry(); // position-only: BVH wants no skinning/uv baggage
-    clean.setAttribute('position', g.getAttribute('position'));
-    geoms.push(clean);
+    meshes++;
+    // glTF extras preserve non-solid panes, pool surfaces, and decorative parts.
+    for(let parent=o;parent&&parent!==obj.parent;parent=parent.parent)
+      if(parent.userData?.collision===false)return;
+    const relative = new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld);
+    const instance = new THREE.Matrix4(), transform = new THREE.Matrix4();
+    for(let i=0;i<(o.isInstancedMesh?o.count:1);i++){
+      transform.copy(relative);
+      if(o.isInstancedMesh){o.getMatrixAt(i,instance);transform.multiply(instance);}
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      g.applyMatrix4(transform);
+      const clean = new THREE.BufferGeometry();
+      clean.setAttribute('position',g.getAttribute('position'));
+      geoms.push(clean);
+    }
   });
-  if (!geoms.length) return null;
+  if (!geoms.length) return meshes ? NON_SOLID : null;
   return { bvh: new MeshBVH(mergeGeometries(geoms, false)) };
 }
 
@@ -102,8 +116,13 @@ function localBox(obj) {
     if (!g) return;
     if (g.boundingBox === null) g.computeBoundingBox();
     if (!g.boundingBox || g.boundingBox.isEmpty()) return;
-    _lbBox.copy(g.boundingBox).applyMatrix4(_lbRel.multiplyMatrices(_lbInv, o.matrixWorld));
-    box.union(_lbBox);
+    _lbRel.multiplyMatrices(_lbInv,o.matrixWorld);
+    const instance=new THREE.Matrix4(),transform=new THREE.Matrix4();
+    for(let i=0;i<(o.isInstancedMesh?o.count:1);i++){
+      transform.copy(_lbRel);
+      if(o.isInstancedMesh){o.getMatrixAt(i,instance);transform.multiply(instance);}
+      _lbBox.copy(g.boundingBox).applyMatrix4(transform);box.union(_lbBox);
+    }
   });
   return box;
 }
@@ -270,7 +289,8 @@ function decide(entry, s, fresh = false) {
     if (shared?.exact) entry.exact = shared.exact;
     else {
       const built = buildExact(entry.obj);
-      if (built) {
+      if (built === NON_SOLID) { if (shared && fresh) shared.exact = built; }
+      else if (built) {
         // hasFloor reads only the local bvh + local box (its `s` is unused):
         // the verdict rides the shared product instead of re-raycasting 16
         // times per clone — same inputs, same boolean, computed once
@@ -280,7 +300,8 @@ function decide(entry, s, fresh = false) {
       entry.exact = built;
     }
   }
-  if (!exact) entry.exact = null;         // small/solid: use pillar/box, no trimesh
+  entry.nonSolid = exact && entry.exact === NON_SOLID;   // every mesh opted out: nothing to stand on or bump
+  if (!exact || entry.nonSolid) entry.exact = null;         // small/solid: use pillar/box, no trimesh
   entry.pillar = !entry.exact && (box.max.y - box.min.y) * s > 2.4;
   // Clearing is a SEPARATE question from collision: a palm is now exact (you
   // walk under the fronds and bump the trunk, which is right), but stamping its
@@ -308,13 +329,19 @@ export function fitCollider(id, obj, { collide, scale = 1, lib = null, localFram
     libCache.set(lib, c);
   }
   decide(entry, scale, Boolean(lib));
+  if (entry.nonSolid) {   // decorative throughout: register nothing (and give back the lib ref taken above)
+    if (lib) { const c = libCache.get(lib); if (c && --c.refs <= 0) libCache.delete(lib); }
+    return;
+  }
   colliders.set(id, entry);
   bucketAdd(id, entry);
 }
 
 /** Register a support collider from DATA rather than a loaded mesh — the
- *  headless door (issue #17). An agent process has no geometry to fit, but the
- *  server's /geom summary gives it bboxes and floor decks; this turns one of
+ *  headless door (issue #17), for a model an agent process could not decode
+ *  (when it can, it fits the real triangles through fitCollider like any
+ *  browser — mcpl/physics.ts registerMeshSupport). The server's /geom summary
+ *  gives it bboxes and floor decks; this turns one of
  *  those into the same entry shape resolveColliders already walks, minus
  *  everything that needs triangles. Deliberately NOT decide(): the exact and
  *  uneven-top probes raycast real meshes. A data box is always pref 'box' —
@@ -512,6 +539,17 @@ export function entityWorldCenter(id, out = new THREE.Vector3()) {
   return out;
 }
 
+// ---- scope: whose world a query is about -----------------------------------
+// A browser holds one world's colliders. An agent process can hold several —
+// agents in different worlds share one module — so its entries carry the
+// world they belong to (`entry.scope`, set by mcpl/physics.ts), and while a
+// scope is active every neighbourhood query sees only that world's entries
+// and unscoped ones. A browser never sets one: nothing changes there.
+let activeScope = null;
+export function setColliderScope(s) { activeScope = s ?? null; }
+export const colliderScope = () => activeScope;
+const inScope = (e) => activeScope === null || e.scope == null || e.scope === activeScope;
+
 function* near(x, z) {
   const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
   for (let i = -1; i <= 1; i++) {
@@ -520,7 +558,7 @@ function* near(x, z) {
       if (!s) continue;
       for (const id of s) {
         const e = colliders.get(id);
-        if (e) yield e;
+        if (e && inScope(e)) yield e;
       }
     }
   }
@@ -545,7 +583,7 @@ export function* nearColliders(x, z, r = CELL) {
         if (_seen.has(id)) continue;
         _seen.add(id);
         const e = colliders.get(id);
-        if (e) yield [id, e];
+        if (e && inScope(e)) yield [id, e];
       }
     }
   }
@@ -587,9 +625,8 @@ function slabT(o, d, box, far) {
 }
 
 /** Nearest blocking distance along origin+dir, within `far`; null = clear.
- *  camGhost entries never block. Contextual-use rays can exclude their target's
- *  own collider (never its structure walls); camera rays omit that argument. */
-export function raySegment(origin, dir, far, excludeId = null) {
+ *  camGhost entries (gizmos, placeholders) never block. */
+export function raySegment(origin, dir, far, ignoreId = null) {
   let bestT = Infinity;
   const ex = origin.x + dir.x * far, ez = origin.z + dir.z * far;
   const x0 = Math.floor(Math.min(origin.x, ex) / CELL) - 1;
@@ -602,10 +639,10 @@ export function raySegment(origin, dir, far, excludeId = null) {
       const set = buckets.get(`${cx},${cz}`);
       if (!set) continue;
       for (const id of set) {
-        if (id === excludeId || _rsSeen.has(id)) continue;
+        if (id === ignoreId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || e.camGhost || e.mask || !e.box) continue;
+        if (!e || e.camGhost || e.mask || !e.box || !inScope(e)) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const yaw = o.rotation?.y ?? 0;
@@ -660,7 +697,10 @@ const _ray = new THREE.Ray();
 const _hip = new THREE.Vector3();
 const _cp = {};
 
-export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
+// `climbs`: may this body mantle what blocks it (sets lastBlockedTop)? Defaults to "a full-height body", which is what
+// the old `tall >= TALL` test meant; the walking avatar passes true explicitly, so a SMALLER chosen size (bodyscale.js
+// colliderFor: tall = 1.9 × size) keeps its mantle while a ragdoll joint still never climbs.
+export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs = tall >= TALL) {
   blockedTop = null;
   let ground = terrainAt(pos.x, pos.z);
   // Everything below is written for a body of SOME height standing at `pos`.
@@ -803,7 +843,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
     // holding whichever wrist last brushed a crate. That is harmless only
     // because updateMe does not run while you are down, which is not a
     // guarantee worth resting on.
-    if (!pillar && tall >= TALL) blockedTop = topY;
+    if (!pillar && climbs) blockedTop = topY;
   }
   return ground;
 }

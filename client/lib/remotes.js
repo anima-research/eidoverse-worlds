@@ -14,8 +14,10 @@ import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
-import { applyPresenceWire } from '../../shared/presencewire.js';
+import { poseChannels } from '../../shared/humanoid.js';
+import { applyPresenceWire, applyVoiceWire, applyBodyWire } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
+import { foldOffset } from '../../shared/clockoffset.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -27,14 +29,26 @@ const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new
 const INTERP_MS = 110;
 const BUF_MAX = 12;
 
-// Server-to-local clock offset, smoothed. Frames carry the server's `t`.
-let clockOffset = null;
-export function noteServerTime(t) {
+// Server-to-local clock offset, kept by shared/clockoffset.js's rule: the
+// least-delayed sample wins, so a message handled late moves it by no more
+// than that rule's leak. The
+// `clock` message ahead of each snapshot of a join that asks carries the
+// server's `t`, and so does every frame.
+let clock = null;
+// `at` is the performance.now() when `t`'s message event ran, for a message
+// that waited to be handled (the early socket's drain, net.js connect());
+// otherwise now.
+export function noteServerTime(t, at = performance.now()) {
   if (typeof t !== 'number') return;
-  const sample = t - performance.timeOrigin - performance.now();
-  clockOffset = clockOffset === null ? sample : clockOffset * 0.92 + sample * 0.08;
+  clock = foldOffset(clock, t - performance.timeOrigin - at, at);
 }
-export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
+export const serverNow = () => performance.timeOrigin + performance.now() + (clock?.offset ?? 0);
+/** The server's clock as the frames arrive, about one mean delay behind it
+ *  (serverNow() is the least delay behind): the time remote bodies are
+ *  interpolated at and a pose without a `t` is stamped with, so INTERP_MS
+ *  stays a buffer behind the frames as they come (shared/clockoffset.js, the
+ *  stream offset). */
+export const streamNow = () => performance.timeOrigin + performance.now() + (clock?.stream ?? 0);
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity
@@ -197,7 +211,7 @@ export function dropRemote(id, expected) {
 export function pushPose(id, pose, t) {
   const r = remotes.get(id);
   if (!r || !pose) return;
-  const stamp = typeof t === 'number' ? t : serverNow();
+  const stamp = typeof t === 'number' ? t : streamNow();
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
   r.buf.push({ t: stamp, ...pose });
@@ -211,11 +225,14 @@ function applyImmediate(r) {
   const s = r.buf[r.buf.length - 1];
   if (!r.avatar || !s) return;
   r.avatar.root.position.set(...s.p);
-  r.avatar.root.rotation.y = s.yaw ?? 0;
+  if (s.q) r.avatar.root.quaternion.fromArray(s.q).normalize();
+  else r.avatar.root.rotation.set(0,s.yaw ?? 0,0);
+  r.avatar.locomotion = s.locomotion ?? null;
 }
 
 // Bone blending scratch. This runs per bone, per remote, per frame — nothing
 // on that path may allocate.
+const _up = new THREE.Vector3(0,1,0);
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qk = new THREE.Quaternion();
 /** Marks "the bones are mid-blend": non-null so a later release still clears,
  *  and never `===` a sample's pose so a held pose always re-applies. */
@@ -242,14 +259,13 @@ function applyPose(r, a, b, k) {
   // and its output arrays outlive every frame of the span.
   if (r.poseA !== pa || r.poseB !== pb) planPoseBlend(r, pa, pb);
   for (const s of r.poseSlots) {
-    _qa.fromArray(s.a); _qb.fromArray(s.b);
-    _qk.slerpQuaternions(_qa, _qb, k).toArray(s.out);
+    if (s.a) { _qa.fromArray(s.a); _qb.fromArray(s.b); _qk.slerpQuaternions(_qa, _qb, k).toArray(s.q); }
+    if (s.ta) for (let i = 0; i < 3; i++) s.t[i] = s.ta[i] + (s.tb[i] - s.ta[i]) * k;
+    if (s.sa) for (let i = 0; i < 3; i++) s.s[i] = s.sa[i] + (s.sb[i] - s.sa[i]) * k;
   }
   r.lastPose = POSE_BLEND;
   r.avatar.setPose(r.poseOut);
 }
-
-const isQuat = (q) => Array.isArray(q) && q.length === 4;
 
 // ---- C18: a tracked (VR) body's head + hands. The sample rides presence as `xr`
 // (see xrbody.js for the frame); here it is blended a→b like the root, handed to
@@ -291,13 +307,27 @@ function applyXRPresence(r, a, b, k) {
 function planPoseBlend(r, pa, pb) {
   r.poseA = pa; r.poseB = pb;
   r.poseSlots = []; r.poseOut = {};
+  // Per channel (shared/humanoid.js poseChannels): rotation slerps, translation
+  // and scale lerp. A channel only one side has is held, not blended from
+  // nothing — the same rule the bare-quaternion form always followed.
   for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) {
-    const qa = isQuat(pa[n]) ? pa[n] : pb[n], qb = isQuat(pb[n]) ? pb[n] : pa[n];
-    if (!isQuat(qa) || !isQuat(qb)) continue;
-    const out = [0, 0, 0, 1];
-    r.poseSlots.push({ a: qa, b: qb, out });
-    r.poseOut[n] = out;
+    const ca = poseChannels(pa[n]), cb = poseChannels(pb[n]);
+    if (!ca && !cb) continue;
+    const pick = (ch) => { const x = ca?.[ch] ?? cb?.[ch], y = cb?.[ch] ?? ca?.[ch]; return x ? [x, y] : [null, null]; };
+    const [qa, qb] = pick('q'), [ta, tb] = pick('t'), [sa, sb] = pick('s');
+    const slot = { a: qa, b: qb, q: qa && [0, 0, 0, 1], ta, tb, t: ta && [0, 0, 0], sa, sb, s: sa && [1, 1, 1] };
+    r.poseSlots.push(slot);
+    r.poseOut[n] = !ta && !sa ? slot.q : { ...(qa ? { q: slot.q } : {}), ...(ta ? { t: slot.t } : {}), ...(sa ? { s: slot.s } : {}) };
   }
+}
+
+/** A remote's chosen size and plate lift (shared/presencewire.js bodyWire: clamped, absence = default). Written onto
+ *  the record every sample and onto the Avatar — idempotent, and a body swap (a fresh Avatar at 1) picks it up on the
+ *  very next sample. Exported for tools/bodyscale-test.ts (a stand-in avatar) and tools/bodyscale-probe.mjs (the real one). */
+export function applyRemoteBody(r, s) {
+  applyBodyWire(r, s);
+  r.avatar?.setUserScale?.(r.scale);
+  r.avatar?.setPlateY?.(r.plateY);
 }
 
 /** Presence extras that aren't position or bones: emotes and the locomotion
@@ -307,6 +337,8 @@ function planPoseBlend(r, pa, pb) {
 function applyPresenceExtras(r, s) {
   applyWingFoldPresence(r.avatar, s);
   applyPresenceWire(r, s);            // present / away / busy, for the Who panel
+  applyVoiceWire(r, s);              // mic / hear, for the hover card
+  applyRemoteBody(r, s);             // their chosen size / plate lift (absence = default)
   const clip = s.clip ?? 'idle';
   if (s.emote && s.emote !== r.lastEmote) {
     r.lastEmote = s.emote;
@@ -353,8 +385,12 @@ export function setLodBias(v) { lodBias = v; }
 // owns root and bones; springs/expressions still tick.
 export const draggedLocal = new Set();
 
+const _eye = new THREE.Vector3();
 export function updateRemotes(dt, now = performance.now()) {
-  const renderAt = serverNow() - INTERP_MS;
+  const renderAt = streamNow() - INTERP_MS;
+  // animation LOD by distance from the camera's WORLD position (in XR camera.position is the head's offset inside the
+  // rig: remotes near the world origin animated at full rate, the ones beside you at a quarter; review 10a M4)
+  const eye = camera.getWorldPosition(_eye);
 
   for (const r of remotes.values()) {
     if (!r.avatar) continue;
@@ -370,7 +406,8 @@ export function updateRemotes(dt, now = performance.now()) {
       const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
       if (sw) {
         r.avatar.root.position.copy(_a);
-        r.avatar.root.rotation.y = sw.yaw;
+        r.avatar.root.rotation.set(0,sw.yaw,0);
+        r.avatar.locomotion = null;
         // Declared seat state (#101): the ≈ marker and one console line per
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
@@ -388,6 +425,8 @@ export function updateRemotes(dt, now = performance.now()) {
           // still visibly folded through the same rig-local renderer path.
           applyWingFoldPresence(r.avatar, s);
           applyPresenceWire(r, s);
+          applyVoiceWire(r, s);
+          applyRemoteBody(r, s);
           if (s.emote && s.emote !== r.lastEmote) {
             r.lastEmote = s.emote;
             r.avatar.playEmote(s.emote);
@@ -399,7 +438,7 @@ export function updateRemotes(dt, now = performance.now()) {
         if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }
         r.avatar.setClip(sw.pose, 0);   // emote-aware: no-ops while a gesture owns the body
         if ((s?.clipTimeSlot ?? s?.clip) === sw.pose) syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
-        const d = r.avatar.root.position.distanceTo(camera.position);
+        const d = r.avatar.root.position.distanceTo(eye);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;
         r.lodTick = (r.lodTick + 1) % Math.max(1, every);
@@ -423,7 +462,12 @@ export function updateRemotes(dt, now = performance.now()) {
 
       _a.set(...a.p); _b.set(...b.p);
       r.avatar.root.position.copy(_a).lerp(_b, k);
-      r.avatar.root.rotation.y = a.yaw + angleDelta(a.yaw, b.yaw ?? a.yaw) * k;
+      if(a.q || b.q){
+        if(a.q)_qa.fromArray(a.q).normalize();else _qa.setFromAxisAngle(_up,a.yaw??0);
+        if(b.q)_qb.fromArray(b.q).normalize();else _qb.setFromAxisAngle(_up,b.yaw??0);
+        r.avatar.root.quaternion.copy(_qa).slerp(_qb,k);
+      } else r.avatar.root.rotation.set(0,(a.yaw??0)+angleDelta(a.yaw??0,b.yaw??a.yaw??0)*k,0);
+      r.avatar.locomotion = b.locomotion ?? null;
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt
       while (buf.length > 2 && buf[1].t < renderAt - 400) buf.shift();
@@ -441,7 +485,7 @@ export function updateRemotes(dt, now = performance.now()) {
       applyPresenceExtras(r, buf[0]);
     }
 
-    const d = r.avatar.root.position.distanceTo(camera.position);
+    const d = r.avatar.root.position.distanceTo(eye);
     const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
     r.lodAcc += dt;
     r.lodTick = (r.lodTick + 1) % Math.max(1, every);

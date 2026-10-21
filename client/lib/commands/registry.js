@@ -31,14 +31,17 @@ export const COMMANDS = [
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — boot an object into flight; a person\'s name is the ragdoll shove (their client decides)' },
   { name: 'epoch', help: '/epoch [tickMs] — owner: hand this world\'s punt flights to the deterministic sim (replayed bit-identically everywhere)' },
   { name: 'who', help: 'list everyone present' },
-  { name: 'panels', help: '/panels <0.3–1> — panel opacity, for when glass fails over a bright scene' },
+  { name: 'panels', help: '/panels <0.3–1> — desktop panel opacity, for when glass fails over a bright scene' },
   // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
   // on a phone with no console, and stayed unregistered for the rest of that
   // session — a diagnostic nobody can find is one nobody uses, and the next
   // person with a silent mic is exactly who needs it.
   { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>)' },
-  { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly] — owner only' },
+  { name: 'grant', help: '/grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever] — owner only' },
+  { name: 'revoke', help: '/revoke <name> — take back a grant; they get this world\'s default again (owner)' },
+  { name: 'access', help: '/access members|watch|visitors|open — who may come into this world (owner); /access alone shows it. The World panel\'s 🔒 access tab does all of this with buttons' },
+  { name: 'members', help: 'who can come into this world, and until when' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world (owner)' },
   { name: 'unban', help: '/unban <name> — lift a ban here (owner)' },
   { name: 'bans', help: 'who is banned from this world' },
