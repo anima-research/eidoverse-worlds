@@ -171,7 +171,7 @@ check('a socket riding a part reads that part\'s motion; input is clamped; param
 
 // describeBody: one line for people and agents
 const line = describeBody('driver', bodyOf(FULL));
-check('describeBody says the action, how it drives and how to leave', /driver: drive/.test(line) && /throttle\/steer/.test(line) && /jump or get up/.test(line) && /builders only/.test(line), line);
+check('describeBody says the action, how it drives and how to leave', /driver: drive/.test(line) && /throttle\/steer/.test(line) && /jump or get up/.test(line) && /builders and up only/.test(line), line);
 
 // the door: the station's core through a real door (the rest of the research shape is reserved), the attach answer
 W.call('create', { id: 'car', model: 'crate' });

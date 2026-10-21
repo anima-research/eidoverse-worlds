@@ -42,7 +42,7 @@ import { REACH_CHAINS } from './joints.js';
 import { HUMANOID_BONES } from './humanoid.js';
 import { checkAccepts } from './grab.js';
 import { isReservedAnimName } from './animdefs.js';
-import { BUILTIN_IDS, isRoleId } from './protocol/roles.js';
+import { BUILTIN_IDS, isWhoValue, whoWords } from './protocol/roles.js';
 import { COMPONENTS, materialize } from './protocol/componentspec.js';
 
 // surface (D14, R 10-12): the seat authors its support plane; a body's profiled seat contact lands on it (client/lib/seatcore.js)
@@ -55,7 +55,7 @@ export const VR_POLICIES = ['snap', 'track', 'near'];
 export const TIMES = ['loop', 'phase'];
 export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
-const isWho = isRoleId;
+const isWho = isWhoValue;   // a role id, {permission} or {roles} (recut item 8)
 /** The closed set of signals a pose may blend by. Every client computes each one the same way: speed/turn/phase/swing
  *  from the thing's motion component (closed forms, client/lib/socksignals.js), throttle/steer/aimYaw/aimPitch from the
  *  occupant's input (riding their presence), and param.<name> from the thing's `params` component (scripts write it). */
@@ -334,7 +334,7 @@ function checkBody(b, at) {
   }
   if (b.leaveBy !== undefined && !LEAVE_BY.includes(b.leaveBy)) return bad('shape', `${at}.leaveBy is ${LEAVE_BY.join(', ')} (leave it out: moving, jumping or getting up all leave)`);
   if (b.fromSeat !== undefined && typeof b.fromSeat !== 'boolean') return bad('shape', `${at}.fromSeat is true or false`);
-  if (b.who !== undefined && !isWho(b.who)) return bad('shape', `${at}.who is inhabitant, builder or owner`);
+  if (b.who !== undefined && !isWho(b.who)) return bad('shape', `${at}.who is a role (inhabitant, builder, owner or this world's own), {permission: '<name>'} or {roles: [...]}`);
   return null;
 }
 
@@ -442,6 +442,6 @@ export function describeBody(slot, b, { door = false } = {}) {
   if (door) bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (detach {escape: true} gets you up anyway)' : 'detach, or a move, gets you off');
   else bits.push(b.leaveBy === 'script' ? 'lets you go when the world does (hold X to get up anyway)' : b.leaveBy === 'menu' ? 'get up explicitly to leave' : b.leaveBy === 'jump' ? 'jump or get up to leave' : 'walk or get up to leave');
   if (b.fromSeat) bits.push('you can move here from another seat');
-  if (b.who) bits.push(`${b.who}s only`);
+  if (b.who) bits.push(`${whoWords(b.who)} only`);
   return `${slot}: ${b.action} (${bits.join('; ')})`;
 }

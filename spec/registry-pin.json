@@ -498,7 +498,7 @@
    "anchor": "string",
    "exit": "array",
    "leaveBy": "string",
-   "who": "string"
+   "who": "any"
   },
   "defaults": {
    "action": "sit",
@@ -699,7 +699,7 @@
   "status": "trial",
   "fields": {
    "kind": "string",
-   "who": "string",
+   "who": "any",
    "shape": "any",
    "mass": "number",
    "density": "number"
@@ -809,7 +809,7 @@
   "status": "trial",
   "fields": {
    "enabled": "bool",
-   "who": "string",
+   "who": "any",
    "steal": "bool",
    "range": "number",
    "priority": "int",

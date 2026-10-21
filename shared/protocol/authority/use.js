@@ -13,7 +13,8 @@ import { refuse, said } from "./refuse.js";
 import { delOp, isE, lockedC, setOp } from "./storage.js";
 import { aabb, ancestors, qrot, worldT } from "./math.js";
 import { implicitOpens, isSocketC, socketsOf, toggleOf } from "./sockets.js";
-import { rankOf, whoRank } from "./rights.js";
+import { admits } from "./rights.js";
+import { whoWords } from "../roles.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actOf = (...a) => UP.actOf(...a);
@@ -58,7 +59,7 @@ function buildUse(ctx, a) {
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
-    const may = (x) => !x.body.who || rankOf(ctx.st, ctx.actor) >= whoRank(ctx.st, x.body.who);
+    const may = (x) => !x.body.who || admits(ctx.st, ctx.actor, x.body.who);
     const socket = a.args?.socket;
     if (socket != null) { const named = socks.find((x) => x.slot === socket);
       if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${socket}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(socket), socks.map((x) => x.slot)) });
@@ -83,7 +84,7 @@ function buildUse(ctx, a) {
     return { presence: true, near, attach: { to: pick.id, host: pick.host, socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = handlerOf(e, action);
-  if (h?.who && rankOf(ctx.st, ctx.actor) < whoRank(ctx.st, h.who)) refuse("rights", `only a ${h.who} may ${action} ${a.id}`, "ask someone who can");
+  if (h?.who && !admits(ctx.st, ctx.actor, h.who)) refuse("rights", `only ${whoWords(h.who)} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
   if (h?.kind === "reset") {
     reactionCap(ctx, a.id, "transform", action); ctx.refs.add(a.id);
@@ -172,7 +173,7 @@ function offersFor(st, id, actor) {
   for (const act of actionsOf(st, id)) { const h = handlerOf(e, act);
     // a seat's action is its stations', which buildUse admits through any one that seats you: offered unless none would
     const socks = h ? [] : bodySockets(st, id).filter((x) => x.body.action === act);
-    const may = (who) => !who || rankOf(st, actor) >= whoRank(st, who);
+    const may = (who) => !who || admits(st, actor, who);
     const who = h ? h.who : socks.length && !socks.some((x) => may(x.body.who)) ? socks[0].body.who : undefined;
     if (who && !may(who)) notForYou.push({ action: act, why: `needs ${who}` });
     else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });

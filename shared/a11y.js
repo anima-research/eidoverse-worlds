@@ -9,7 +9,7 @@
 // reading is what non-visual readers get, and a thing with no description still reads by its name and its components.
 // Author text (label, description) is quoted «…» as data (shared/text.js quoted), never an instruction to the reader.
 import { quoted } from './text.js';
-import { isBase } from './protocol/roles.js';
+import { isBase, whoWords } from './protocol/roles.js';
 import { grabOf } from './grab.js';
 import { bodyOf } from './sockbody.js';
 import { describeParticles } from './particles.js';
@@ -37,7 +37,7 @@ export function readOut(c, { name = null, heldBy = null, lookup = () => null, so
   const open = openAction(c);
   if (isObj(c.openable)) out.can.push(open ? `opens and shuts (use '${open}')` : 'opens and shuts (nothing here opens it)');
   const gr = grabOf(c);
-  if (gr) out.can.push(!gr.enabled ? "can't be picked up now" : isBase(gr.who) ? 'can be picked up' : `${gr.who}s can pick it up`);
+  if (gr) out.can.push(!gr.enabled ? "can't be picked up now" : isBase(gr.who) ? 'can be picked up' : `${whoWords(gr.who)} can pick it up`);
   // its seats are its socket children ([{name, sock}], the caller's socketsOf / socketsIn: switched-off ones aren't offered)
   if (Array.isArray(sockets)) {
     const seats = sockets.map((x) => [x.name, bodyOf(x.station)]).filter(([, b]) => b);

@@ -595,6 +595,26 @@ const cases: Case[] = [
       const before = code(set(s, "guest-1", "label", "g", "crate")); const give = show(role(s, "guest-1", { role: "builder" }));
       return { before, give, g1: eff(s, "guest-1")?.role, after: show(set(s, "guest-1", "label", "g", "crate")), g2: eff(s, "guest-2")?.role }; },
     good: (o) => o.before === "rights" && o.give === "ok" && o.g1 === "builder" && o.after === "ok" && o.g2 === "inhabitant" },
+  // ---- W: `who` names what it admits (recut item 8; house: "who as rank is a corner"): a role id (that rank or above, as
+  // before), {permission} (anyone holding it, whatever the role is called) or {roles} (exactly those roles) ----
+  { id: "W1", what: "who {permission: build} on a grabbable: a crew holder with build picks it up, a moderator holds build too, an inhabitant can't", run(s) { cast(s, { crew: true });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: { permission: "build" } } }, place: { at: [0, 0] } });
+      const g = (who: string) => { s.call(who, "move", { to: [0, 0, 0.5] }); const r = s.call(who, "grab", { id: "ball" }); if (r?.ok) s.call(who, "drop", { id: "ball" }); return show(r); };
+      return { stored: s.w().state().entities.ball?.c?.grabbable?.who, cy: g("cy"), mo: g("mo"), vic: (s.call("vic", "move", { to: [0, 0, 0.5] }), code(s.call("vic", "grab", { id: "ball" }))) }; },
+    good: (o) => JSON.stringify(o.stored) === '{"permission":"build"}' && o.cy === "ok" && o.mo === "ok" && o.vic === "rights" },
+  { id: "W2", what: "who {roles: [crew]} on a reaction handler: exactly crew may use it (a moderator ranks above crew and still can't; the owner can)", run(s) { cast(s, { crew: true });
+      s.call("olive", "create", { id: "lever", model: "crate", components: { reactions: { pull: { kind: "toggle", component: "t/on", who: { roles: ["crew"] } } } }, place: { at: [0, 0] } });
+      return { cy: show(s.call("cy", "use", { id: "lever", action: "pull" })), mo: code(s.call("mo", "use", { id: "lever", action: "pull" })), olive: show(s.call("olive", "use", { id: "lever", action: "pull" })) }; },
+    good: (o) => o.cy === "ok" && o.mo === "rights" && o.olive === "ok" },
+  { id: "W3", what: "a who that names nothing real is refused at the door: an unknown permission, an empty roles list, a role this world doesn't define", run(s) { cast(s);
+      const mk = (who: any) => code(s.call("olive", "create", { model: "ball", components: { grabbable: { who } }, place: { at: [1, 1] } }));
+      return { perm: mk({ permission: "teleport" }), empty: mk({ roles: [] }), ghostRole: mk({ roles: ["nosuch"] }), both: mk({ permission: "build", roles: ["builder"] }) }; },
+    good: (o) => !!o.perm && !!o.empty && !!o.ghostRole && !!o.both },
+  { id: "W4", what: "a plain role id keeps meaning that rank or above (nothing stored changes meaning)", run(s) { cast(s);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "builder" } }, place: { at: [0, 0] } });
+      s.call("bob", "move", { to: [0, 0, 0.5] }); s.call("vic", "move", { to: [0, 0, 0.5] });
+      return { bob: show(s.call("bob", "grab", { id: "ball" })), vic: code(s.call("vic", "grab", { id: "ball" })) }; },
+    good: (o) => o.bob === "ok" && o.vic === "rights" },
   { id: "PL7", what: "the doors: open (newcomers build) · public (newcomers play) · invite-only · watch", async run() {
       const A = await import(TREE + "shared/protocol/access.js");
       return { doors: Object.keys(A.DOORS ?? {}).sort(), open: A.doorWrites?.("open")?.find((x: any) => x.component === "default-role")?.value?.role, pub: A.doorWrites?.("public")?.find((x: any) => x.component === "default-role")?.value?.role,

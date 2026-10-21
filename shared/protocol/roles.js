@@ -89,6 +89,23 @@ export const RESERVED_IDS = Object.freeze(new Set(["owner", "banned"]));
  *  this world defines it is the authority's to say (roleDef). */
 export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x));
 
+/** A `who` (recut item 8): what a thing admits. A role id (that rank or above), {permission: <name>} (anyone holding it,
+ *  whatever their role is called) or {roles: [<id>…]} (exactly those roles; an owner always). The SHAPE is checked here;
+ *  whether this world defines a named role is the authority's (checks.js). */
+export function isWhoValue(x) {
+  if (typeof x === "string") return isRoleId(x);
+  if (!isObj(x)) return false; const ks = Object.keys(x);
+  if (ks.length === 1 && ks[0] === "permission") return Object.hasOwn(PERMISSIONS, x.permission);
+  if (ks.length === 1 && ks[0] === "roles") return Array.isArray(x.roles) && x.roles.length >= 1 && x.roles.length <= 16 && x.roles.every((r) => isRoleId(r));
+  return false;
+}
+/** A who in words: "anyone" (the base rung), "builders" (that rank and up), "anyone who may build", "crew or dj". */
+export function whoWords(who) {
+  if (typeof who === "string") return isBase(who) ? "anyone" : `${who}s and up`;
+  if (isObj(who) && typeof who.permission === "string") return `anyone who may ${who.permission}`;
+  if (isObj(who) && Array.isArray(who.roles)) return who.roles.join(" or ");
+  return "anyone";
+}
 /** A world's role definitions: @world.role-defs (or {} ). */
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
 

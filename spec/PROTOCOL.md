@@ -969,6 +969,11 @@ grant stands. `until` is never on `owner` (an ownerless world would open), and
 a new one is in the future and at most a year away. The holder is told five
 minutes before (`notice`, presence).
 
+**What a thing admits.** A `who` (on `grabbable`, `physics`, `station` and each `reactions` handler) is a role id
+(that rank or above), `{permission: <name>}` (anyone who holds that permission, whatever their role is called) or
+`{roles: [<id>, …]}` (exactly those roles); an owner is always admitted, and absent means anyone who may use the thing.
+Every role it names must be one the world defines.
+
 **Who may come in** is the world's own `access` on `@world` (an owner's,
 never a script's): `join` is `anyone` (absent), `signed-in`, or `listed` (only
 people the world has granted a role, unexpired); whoever `join` turns away

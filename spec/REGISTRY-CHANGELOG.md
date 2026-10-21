@@ -243,3 +243,7 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - grabbable.who: its meaning of absence "player" → "inhabitant"
   - roles.rank: vocabulary {"player":0,"builder":100,"moderator":200,"owner":255} → {"inhabitant":0,"builder":100,"moderator":200,"owner":255}
   - roles.builtin: vocabulary ["player","builder","moderator","owner"] → ["inhabitant","builder","moderator","owner"]
+- 2026-10-21: who names what it admits (recut item 8; house: 'who as rank is a corner'): grabbable.who, physics.who and station.who widen from a role id to a role id | {permission} | {roles: [...]}. A widening: every stored value (a role id) keeps its meaning, so no translator
+  - station.who: type string → any
+  - physics.who: type string → any
+  - grabbable.who: type string → any

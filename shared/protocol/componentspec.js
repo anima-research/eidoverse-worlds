@@ -158,7 +158,7 @@ export const COMPONENTS = {
   // as additions. Materialized on write: the action table fills anim, so editing the table never re-poses a stored seat.
   // anim (R 10-17 15:09/15:11; was pose): an OPEN name, of a pose (one frame) or a clip (more than one key): a built-in
   // name today, a world's anim-pose/anim-clip later; one the body doesn't know is its default, never a refusal.
-  station:   { on: "thing", fields: { action: "string", anim: "any", anchor: "string", exit: "array", leaveBy: "string", who: "string" },
+  station:   { on: "thing", fields: { action: "string", anim: "any", anchor: "string", exit: "array", leaveBy: "string", who: "any" },
                defaults: { action: "sit", anchor: "root" },
                when: [{ if: { action: "sit" }, set: { anim: "sitchair" } }, { if: { action: "ride" }, set: { anim: "sitchair" } }, { if: { action: "drive" }, set: { anim: "sitchair" } },
                  { if: { action: "lie" }, set: { anim: "lie" } }, { if: { action: "kneel" }, set: { anim: "sit" } }, { if: { action: "stand" }, set: { anim: "idle" } }, { absent: ["anim"], set: { anim: "sitchair" } }],
@@ -222,7 +222,7 @@ export const COMPONENTS = {
   // come back as named groups, KHR's collisionSystems; ccd is a solver knob no format maps). `material` is renamed
   // `surface` (it names a surface:<name>; `material` means appearance). Angular velocity everywhere (acts, launches, state
   // samples) is w: [x, y, z] rad/s in the world frame.
-  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any", mass: "number", density: "number" }, required: ["kind"],
+  physics:   { on: "thing", fields: { kind: "string", who: "any", shape: "any", mass: "number", density: "number" }, required: ["kind"],
     grammar: { shape: "shape" },   // `any` is the pinned type of every value ever stored; the grammar narrows what may be written
     enums: { kind: ["dynamic", "static", "none", "kinematic"] },
     when: [{ if: { kind: "dynamic" }, set: { who: "inhabitant" } }],   // shared/grab.js DEFAULT_WHO, written down
@@ -256,7 +256,7 @@ export const COMPONENTS = {
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
-  grabbable: { on: "thing", fields: { enabled: "bool", who: "string", steal: "bool", range: "number", priority: "int", hold: "string", anim: "string", grips: "object", twoHanded: "bool", carries: "bool",
+  grabbable: { on: "thing", fields: { enabled: "bool", who: "any", steal: "bool", range: "number", priority: "int", hold: "string", anim: "string", grips: "object", twoHanded: "bool", carries: "bool",
                  throw: "number", release: "string", returnAfter: "number", fits: "array", use: "any", prompt: "string" },
     // shape audit 10-16: the shape lives here now (grab.js derives its enums from these). Gone: home (the home component is
     // the one home), a grip's bone overrides (hold). Reserved: fx (refused; presence-only particles while use is held)
