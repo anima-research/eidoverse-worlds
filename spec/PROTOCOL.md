@@ -575,19 +575,19 @@ copy that was updated and is published again keeps its parts' keys.
   the same closed-form IK. The server relays the bag after one check: a
   limb aimed at another body (a named point on them, a point in their
   frame, or a world point inside their capsule) relays only if that body's
-  consent table admits it as `touch`, or `intimate` for `chest_front`, the
+  consent admits it as `touch`, or `intimate` for `chest_front`, the
   waist and the hips. Otherwise the limb is stripped from the packet and
   from the pose kept for late joiners, and the reacher is told only that
   it was refused, in one sentence whatever the cause (`<them> isn't taking
-  <class> right now`: a tier at `nobody`, a per-person deny, a pause, an ask
-  answered no or left to expire all read the same; a cell at `ask` says to
-  ask). The cause goes only to the target's own attempt ring, which
+  <class> right now`: a switch at `refuse`, a per-person deny, an ask
+  answered no or left to expire all read the same; a switch at `ask` says
+  to ask). The cause goes only to the target's own attempt ring, which
   `consent {}` shows them as `attempts` (server/reachgate.ts → the
   authority's `reachAdmits`; shared/protocol/consent.js `refusalWords`).
-  A table is its person's own: `look` shows each viewer their own table and
+  Consent is its person's own: `look` shows each viewer their own switch and
   who poses, drags or touches them, and of anyone else only where they
-  stand (and what the viewer is doing to them); another body's cells or
-  pause would undo the uniform words. **Sitting is consent; standing up
+  stand (and what the viewer is doing to them); another body's switch
+  would undo the uniform words. **Sitting is consent; standing up
   is the exit** (Second Life's sit, VRChat's station): a seat carries its
   occupant through whatever moves it, and an edit is never refused because a
   body is on the thing. An edit by anyone but the occupant that would move a
@@ -739,27 +739,21 @@ copy that was updated and is published again keeps its parts' keys.
   to rest stamps its absolute state into the log (a put's transform, a
   rest caused by its launch). The log never depends on reconstructing where
   a live motion was.
-- **Body consent.** Every body has one table of act classes (near, follow,
-  social touch, intimate touch, pose, shove, displace — someone else dragging,
-  carrying or occupying-with you, never your own `move` — and voice; `carry` is
-  reserved, PHYSICS §4.1), each set to
-  `allow`, `ask`, or `deny`, separately for two tiers: `everyone` and
-  `friends` (mutual: both named each other in their `friends` list) — the same
-  table for every participant, and its defaults are one preset for every body
-  (`shared/protocol/consent.js` `DEFAULT_PRESET`). A separate `delegates` list
-  names who may close your table for you (pause, deny), never open it; only you
-  open it, and only you add or remove a delegate or a friend (`consent
-  {delegate}` / `{undelegate}`, `{friend}` / `{unfriend}`; a delegate's removal
-  closes nothing for you, so it is never one of their closings). Removing a
-  friend takes them off your list, and the mutual tier ends at once: what only
-  the friends tier allowed them ends as any closing of your table does, on
-  both bodies: the tier is mutual, so what only it allowed *you* on theirs
-  ends too.
-  Silence is no. For touch, pose, shove and
-  displace the authority refuses before delivery (a reach at the relay, above),
-  and the target's own client has the final word. *Near, follow and voice
-  are in the table and the settings, but nothing enforces them yet.* Consent is
-  presence: it is never logged and is not a grant.
+- **Body consent.** Every act on someone else's body (social touch, intimate
+  touch, pose, shove, displace — someone else dragging, carrying or
+  occupying-with you, never your own `move`) is one request to that body's
+  owner, and the authority alone decides it, the same way for every kind of
+  body. The answer comes, in this order, from: the owner's answer for that
+  one person (`consent {allow|deny: <who>, class?}`; an allow stands until
+  revoked, or for `for` ms), else the owner's **switch** (`consent {switch:
+  accept|ask|refuse}`), else the world's `body-default` (`@world`), else
+  `accept`. `ask` files an ask the owner answers (silence is no, after 20 s).
+  Only the owner changes their own answers. A world or a person may close
+  this further; nothing here opens it. Near, follow and voice are classes an
+  ask or a per-person answer may name, but nothing enforces them yet. The
+  table this replaced (presets, tiers, pause, delegates) is kept as a record
+  in `docs/CONSENT-TABLE-RECORD.md`; a stored table is read once as a switch
+  that is never wider than it was.
 
 ### Private attention metadata
 
@@ -808,7 +802,7 @@ program, or a program someone is steering.
 
 1. **One gate for everyone.** The authority MUST NOT read what is behind a
    participant (a browser, a headset, a program). Rights, roles, locks, rates, refusal
-   codes and words, consent tables and their defaults, and every request verb
+   codes and words, the consent switch and its default, and every request verb
    are the same for every identity. The only distinctions the authority MAY
    draw between identities are the world's own grants (roles, §7) and whether
    the identity holds an account (a guest, §7a).
@@ -1069,10 +1063,9 @@ person's own word tell them no over people); it has a documented override
 **4. The body: what the affected participant permits.** A request that
 reaches another person's body — standing close, following, touching
 (plainly or intimately), posing, knocking over, carrying, speaking into the
-ear — is decided by **their** consent table (§5): per class, per tier
-(`everyone` / `friends`), `allow` | `ask` | `deny`, with `ask` filing a
-20-second question they answer or let lapse (silence is no), and a per-person
-`deny` that outlasts the answer for the stay. No role, including owner,
+ear — is decided by **their** consent (§5): their switch, `accept` | `ask` |
+`refuse`, with `ask` filing a 20-second question they answer or let lapse
+(silence is no), and their per-person answers, which win over it. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
 invoker's. Sitting is not on the table: it is consent to the seat's own

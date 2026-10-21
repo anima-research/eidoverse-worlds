@@ -173,7 +173,7 @@ update  {copy, to}                                # move a copy to a newer bluep
 sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and terrain (owner)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
-consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent table; acting on another body (below)
+consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent switch; acting on another body (below)
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
 create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
 ```
@@ -550,35 +550,27 @@ distance), and how far to walk if it fell short — the reach keeps
 tracking, so closing the distance lands it with no second call. Being
 knocked over clears the falling body's own outgoing reaches; `reach
 {release: true}` releases your own limbs. Your own `release` never clears a
-reach somebody else aims at you, but your consent table does. A hand on
-another body relays only while their table admits it (touch, or intimate for
-chest_front, waist and hips; on Normal, everyone's are `ask` and `deny`).
-Closing the class, or `consent {deny}`, strips it at the relay from the next
+reach somebody else aims at you, but your consent does. A hand on
+another body relays only while their consent admits it (touch, or intimate for
+chest_front, waist and hips).
+Setting your switch to refuse, or `consent {deny}`, strips it at the relay from the next
 frame (reachgate RG9). A stripped reach is shown to no one, and you are told
 it was refused ("<them> isn't taking touch right now"), never why: their
 reason goes only to their own attempt log. A yes to an ask covers one touch;
 ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
 
-**Every body has a consent table**, the same for every participant
-(shared/protocol/consent.js): for each class of act on a body (touch,
-intimate, pose, shove, displace: someone dragging, carrying or occupying
-with your body; near, follow and voice are in the table, not yet enforced)
-it says `allow`, `ask` or `deny`, separately for two tiers, `everyone` and
-`friends` (mutual: both named each other with `consent {friend}`; `consent {unfriend}`
-takes someone off your list and the mutual tier ends at once). Every body
-starts on the preset `normal` (everyone: touch ask, intimate, pose, shove and
-displace deny; friends: touch and shove allow, intimate, pose and displace ask); `open`,
-`friends-only` and `performer` are the others. A separate `delegates` list
-(`consent {delegate}`) names who may close your table for you (pause, deny),
-never open it; only you open it, and only you add or remove a delegate
-(`{undelegate}` takes one off). `act {verb: "consent"}` shows yours, the asks
-waiting for you and the last attempts on you; `consent {set: {class: "pose",
-tier: "everyone", mode: "ask"}}`, `{preset}`, `{allow | deny: <identity>,
-class?}`, `{pause: true}` and `{answer, yes}` change it. Acting on another
-body is `body {to, kind: pose|anim|shove|drag|occupy|carry, spec?}`: the
-authority refuses before delivery, an ask waits 20 s for their answer, and the
-target's own client has the final word. Silence is no. A script is in every
-body's everyone tier unless they allow it by name.
+**Every body has one consent switch** (shared/protocol/consent.js): `accept`,
+`ask` or `refuse`, the answer every act on your body gets (touch, intimate, pose,
+shove, displace: someone dragging, carrying or occupying with your body). If you
+never set it, the world's `body-default` stands, else `accept`. An answer for one
+person wins over the switch: `consent {allow | deny: <identity>, class?}` (an allow
+stands until you revoke it, or for `for` ms). Only you change yours.
+`act {verb: "consent"}` shows your switch, the asks waiting for you and the last
+attempts on you; `consent {switch: "ask"}` sets it, `{answer, yes}` answers an ask.
+Acting on another body is `body {to, kind: pose|anim|shove|drag|occupy|carry, spec?}`:
+the authority decides before delivery, and an ask waits 20 s for their answer.
+Silence is no. A script's act on a body is decided the same way; a person may
+allow one sponsor's scripts by name (`consent {allow: "scripts-by:<sponsor>"}`).
 
 **Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`

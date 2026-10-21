@@ -681,10 +681,10 @@ const cases: Case[] = [
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
-  { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent, §7a rule 4)", run() {
+  { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the switch since recut A2, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
       return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`", "`{stop: true}`", "`live`"].every((w) => vh.includes(w)),
-        body: /`allow`, `ask`, or `deny`/.test(body) && /\(`everyone` \/ `friends`\), `allow` \| `ask` \| `deny`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
+        body: /`consent \{switch:\s*\n?\s*accept\|ask\|refuse\}`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },
 ];
 
