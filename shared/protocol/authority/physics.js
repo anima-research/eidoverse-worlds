@@ -115,6 +115,12 @@ function settleSim(w) {
 //     it is in flight; a purged launch (readback null) is a flight whose body is unknown, counted, not named.
 // Otherwise it does nothing and the world stays foreign (the owner can still restamp by hand, force: true). Checked once
 // per world object and spec (a heartbeat doesn't re-read the log), except while a hold is what blocks it.
+// What only the world's engine computes, refused when this server doesn't carry it (house answer, #260 10-21): never quietly
+// replaced by a settlement, and named, so the person knows what to change.
+export function refuseForeign(spec, what) {
+  refuse("foreign-engine", `this world runs ${spec.engine}, which this server doesn't carry: ${what}, and only that engine computes it`,
+    `put it down or leave it be; an owner can set one this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${engineName(spec.engine)}'}}`);
+}
 const restampTried = new WeakMap();
 function restampEngine(w) {
   const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const today = spec && typeof spec.engine === "string" ? stampOf(engineName(spec.engine)) : null;

@@ -17,7 +17,7 @@ import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
-import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
+import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, refuseForeign, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 import * as R from "../roles.js";
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
@@ -129,7 +129,8 @@ const EMBODIED_VERBS = {
     // dynamic thing parented elsewhere that TOUCHES one of its tops (its oriented box meets the thin slab just over that top)
     // loses its support too, and falls from rest; the engine decides whether the support it keeps still holds it. A thing a
     // hand rule fixes (locked, or under a lock) or someone holds is no sleeper (simlayer fixedSet) and stays.
-    const physW = !!(st.entities["@world"]?.c["physics-engine"] && carried(st.entities["@world"].c["physics-engine"]));
+    // the world HAS an engine (carried here or not): what would fall is the same set either way; an uncarried one refuses it below
+    const physW = !!st.entities["@world"]?.c["physics-engine"];
     if (physW && !live) for (const k of over) { const c = st.entities[k]?.c;
       if (!c || fam.has(k) || dependents.includes(k) || !c.parent || c.physics?.kind !== "dynamic" || w.presence.holds[k] || [k, ...ancestors(st, k)].some((x) => lockedC(st.entities[x]?.c))) continue;
       if ((spatial(st).rec.get(a.id)?.surfs ?? []).some((s) => hitsIx(st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) dependents.push(k); }
@@ -156,7 +157,8 @@ const EMBODIED_VERBS = {
       if (ops.length) plan = admit(w, st, { actor, cap: { kind: "system", ids: carriedUp, comps: ["transform", "parent"] } }, ops);
       dependents.length = 0;
     }
-    if (dependents.length && !(spec && carried(spec))) {
+    if (dependents.length && spec && !carried(spec)) refuseForeign(spec, `picking that up would set ${dependents.join(", ")} falling (they rest on it)`);
+    if (dependents.length && !spec) {   // no physics in this world: what rested on it is set down on what's below (a settlement, no engine)
       const ops = dependents.map((k) => { const b = aabb(st, k); const below = supportUnder(st, b, new Set([k, ...fam, ...descendants(st, k)])); const tk = worldT(st, k);
         return setOp(k, "transform", { ...tk, pos: [tk.pos[0], r3(tk.pos[1] - (b.min[1] - below.y)), tk.pos[2]] }); });
       plan = admit(w, st, { actor, cap: { kind: "system", ids: dependents, comps: ["transform"] } }, ops);

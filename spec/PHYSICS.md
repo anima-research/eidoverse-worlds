@@ -106,6 +106,12 @@ versioned in the log itself:
   carries the old version has no rest to check it against. A lift on the record
   outlives the cut; only a hold in presence defers it, to the next act. A server
   that can't sign for the world doesn't cut it.
+- **A version the owner named, or an engine of a name this server doesn't carry,**
+  is the owner's to change. The server serves what doesn't need the engine and
+  refuses what only the engine computes (a throw, or a grab or delete that would
+  set a resting thing falling), with `foreign-engine`, naming the engine's version
+  and what would have fallen, and saying an owner can set one this server
+  carries. It never quietly substitutes a settlement for the engine's result.
 - **A reader that doesn't carry the named version MUST NOT recompute the
   flights.** It folds the log (the rests are there) and shows nothing in
   flight, rather than guessing. A wrong answer is worse than a missing

@@ -426,8 +426,8 @@
    "when": "setting physics-engine to an engine not in ENGINES"
   },
   "foreign-engine": {
-   "meaning": "the world runs a build this server doesn't carry",
-   "when": "a launch in a world whose physics build is another server's"
+   "meaning": "the world runs an engine version this server doesn't carry",
+   "when": "what only that engine computes: a launch, or a grab or delete that would set a resting thing falling"
   },
   "no-shape": {
    "meaning": "nothing to collide with",
