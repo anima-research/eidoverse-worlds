@@ -986,6 +986,9 @@ async function handle(msg, at) {
     case 'sfu-offer': bus.emit('sfu-offer', msg); break;
     case 'sfu-ice':   bus.emit('sfu-ice', msg);   break;
     case 'sfu-route': bus.emit('sfu-route', msg); break;
+    // video screens (client/lib/videos.js; server/videosources.ts): the brokered WHEP answer, a refusal in words, a
+    // session the sequencer closed, and what the appliance observed of each source (an age, never a timestamp)
+    case 'video-answer': case 'video-error': case 'video-closed': case 'video-state': bus.emit(msg.type, msg); break;
     case 'relay-cred':          // #104: the minted media credential (voicerelay.js)
       window.__voiceRelayAbsent = false;   // a relay answered: an earlier "no relay" (a server restarted without voice) is over
       bus.emit('relay-cred', msg);
