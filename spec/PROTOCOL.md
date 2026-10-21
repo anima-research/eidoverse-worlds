@@ -1377,12 +1377,9 @@ argument will be short.
   at least every write it commits. Two signed heads for one seq are published
   evidence.
 - **The client's head check is RESERVED.** It is the one defence against a
-  sequencer rewriting its own history, and its final shape is fixed here: a
-  client asks for a **signed head on request** (`seq`, `head`, `sig`), keeps
-  the last one it saw for each world, and on its next visit checks that the
-  log it is served extends it. No client can keep that promise today, because
-  the wire strips `head` and `sig` from every entry it sends; until a server
-  answers the request, no client is held to the check.
+  sequencer rewriting its own history. Its shape is not fixed by this
+  protocol: no client can make the check today, because the wire strips
+  `head` and `sig` from every entry it sends, and no client is held to it.
 - **Purge** (`kind: "purge"`, `body {values: [{seq, op?}, …]}`) is the one
   rule that changes the record. **Who decides:** the host operator, outside the
   request path. No request writes a purge, and the reference server has no verb
