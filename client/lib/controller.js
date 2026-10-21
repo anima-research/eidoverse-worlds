@@ -299,10 +299,13 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
   keys.add(e.code);
-  if (!e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey) {
-    if (e.code === 'KeyE' && !document.activeElement?.closest('button, a')) requestAction('use');
-  }
   bus.emit('key', e);
+  // E is shared: a ladder (traversal, below) and a helm (vehicles.js) claim
+  // the press on the bus first and mark it `worldHandled`; only a press
+  // neither of them took becomes the contextual `use`. Dispatched before the
+  // emit, one press both climbed a ladder AND rang the bell beside it.
+  if (e.code === 'KeyE' && !e.worldHandled && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+      && !document.activeElement?.closest('button, a')) requestAction('use');
   // Escape LAST, and only for a press nobody else wanted. build.js runs its
   // own Escape chain on this same event (armed placement → ghost → seat →
   // selection → edit mode) and declines the default for the one it consumes;

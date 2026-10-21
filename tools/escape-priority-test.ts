@@ -14,6 +14,11 @@
 //  6. `input-device` fires on every SWITCH, so a mouse-for-UI, pad-for-play
 //     session re-read the same six-second banner on every swap.
 //
+//  E is shared the same way: main's ladders (traversal) and helms
+//  (vehicles.js) claim the press on the key bus and mark it `worldHandled`,
+//  and only an unclaimed press becomes the contextual `use`. Dispatched
+//  before the bus, one press climbed a ladder AND rang the bell beside it.
+//
 // Real controller.js and real build.js, on the real bus and the real
 // input.js: the whole point is the seam between the two key handlers, and a
 // stub of either end would test the stub.
@@ -42,8 +47,9 @@ mock.module(base + 'core.js', () => ({ THREE, scene, camera, canvas }));
 // load; none of it is on the Escape path, so a dry world with no ladders.
 mock.module(base + 'water.js', () => ({ waterLevel: () => null, waterAt: () => null, waveTime: () => 0 }));
 mock.module(base + 'watervolumes.js', () => ({ waterAt: () => null, waterTime: () => 0, movementBounds: () => null }));
+let ladder = false;   // a ladder foot in reach: E starts the climb
 mock.module(base + 'traversal.js', () => ({
-  nearbyTraversal: () => null, startTraversal: () => false, stepTraversal: () => null,
+  nearbyTraversal: () => null, startTraversal: () => ladder, stepTraversal: () => null,
   traversing: () => false, cancelTraversal() {},
 }));
 mock.module(base + 'terrain.js', () => ({ heightAt: () => 0 }));
@@ -144,4 +150,16 @@ noteInput('keyboard'); noteInput('gamepad');
 noteInput('keyboard'); noteInput('gamepad');
 assert.equal(legends(), 1, 'reaching for the mouse and back does not re-teach it');
 
-console.log('Escape priority and pad-hint checks passed');
+// ---- E: a ladder's press is not also a use ---------------------------------
+
+const pressE = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'KeyE', key: 'e' }));
+  window.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, code: 'KeyE', key: 'e' }));
+};
+actions.length = 0;
+ladder = true; pressE();
+assert.deepEqual(actions, [], 'E at a ladder climbs and does not also use');
+ladder = false; pressE();
+assert.deepEqual(actions, ['use'], 'E with no ladder or helm is the contextual use');
+
+console.log('Escape priority, E arbitration and pad-hint checks passed');
