@@ -42,7 +42,8 @@ const posOf = (s, id) => JSON.stringify(s.call("olive", "inspect", { id }).world
 // owner olive, builders bob and ann, visitor vic
 function cast(s) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "player" } });   // strangers can't build here (R 10-21: a new world's newcomers do)
 }
 const publishCrate = (s, who) => { s.call(who, "create", { id: `${who}-crate`, model: "crate", place: { at: [3, 3] } });
   const p = s.call(who, "publish", { from: `${who}-crate`, name: `${who}'s crate` }); return p.notes?.find((n) => n.record)?.record; };
@@ -234,16 +235,16 @@ const cases = [
       s.call("vic", "wait", {}, 8000); const w = s.call("vic", "wait", {}, 100);
       return { g, t, pin, rests: restIds(s), unsettled: (w.unsettled ?? []).map((u) => u.id) }; },
     baseBad: (o) => ok(o.t) && ok(o.pin) && !o.rests.includes("cup") && !o.rests.includes("ball-3"), nowGood: (o) => ok(o.t) && ok(o.pin) && o.rests.includes("cup") && o.rests.includes("ball-3") && !o.unsettled.length },
-  { id: "R3", what: "33 F3: a holder demoted to `none` still throws a builder-only ball (launch skipped admit)", run(s) { phys(s);
-      s.call("olive", "set", { id: "ball-2", component: "physics", value: { kind: "dynamic" } });
-      s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "none" } });
+  { id: "R3", what: "33 F3: a holder demoted to player still throws a builder-only ball (launch skipped admit)", run(s) { phys(s);
+      s.call("olive", "set", { id: "ball-2", component: "physics", value: { kind: "dynamic", who: "builder" } });
+      s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "player" } });
       const put = s.call("bob", "put", { id: "ball-2" }); const thr = s.call("bob", "throw", { id: "ball-2", v: [3, 2, 0] }); const drop = s.call("bob", "drop", { id: "ball-2" });
       s.call("olive", "wait", {}, 6000);
       return { put, thr, drop, rests: restIds(s) }; },
     baseBad: (o) => refused(o.put) && ok(o.thr), nowGood: (o) => code(o.put) === "rights" && code(o.thr) === "rights" && code(o.drop) === "rights" && !o.rests.includes("ball-2") },
   { id: "R3b", guard: true, what: "…and when that demoted holder leaves, the thing settles at the last ACCEPTED state, not in their hand (L6)", run(s) { phys(s);
-      s.call("olive", "set", { id: "ball-2", component: "physics", value: { kind: "dynamic" } });
-      s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "none" } });
+      s.call("olive", "set", { id: "ball-2", component: "physics", value: { kind: "dynamic", who: "builder" } });
+      s.call("bob", "move", { to: [0, 0, 0.3] }); s.call("bob", "grab", { id: "ball-2" }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "player" } });
       const left = s.call("bob", "leave", {}); s.call("olive", "wait", {}, 3000);
       const w = s.world(); const ret = w.entries.filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").length;
       return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now()).checks.disagree.length }; },

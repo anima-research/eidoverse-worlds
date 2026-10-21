@@ -120,13 +120,16 @@ sets `AGENT_DECLARES` (empty declares nothing).
 ## Who may do what — roles
 
 Each world keeps its roles on `@world`, one keyed component per person:
-`roles:<identity>` = `{role: "owner" | "builder" | "visitor" | "none"}`
-(a world running the roles ladder also has `moderator`, between builder
-and owner). Anyone without an entry gets `@world.default-role` (absent:
-visitor); guests without an account are visitors unless the world opts
-them in (`default-role.guests`). `act {verb: "help"}` tells you your role.
+`roles:<identity>` = `{role: "owner" | "moderator" | "builder" | "player" | <a custom role>}`.
+Anyone without an entry holds the world's newcomer role, `@world.default-role`:
+a world founded since 2026-10-21 starts with `builder` (newcomers build until the
+owner gates it); in a world without one, newcomers are players. A grant beats it,
+so an owner can demote one person by hand (`role: "player"`). Guests (no account)
+are players unless the world raises `default-role.guests`. `visitor` is the old word
+for player (still read; stored as player). There's no rung below player: a ban or
+a mute does that job. `act {verb: "help"}` tells you your role.
 
-- **visitor** — be here, talk, `use` things, attach to a seat, carry what a thing's
+- **player** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
   entity except `@world`), publish blueprints, install scripts (unless the
@@ -165,7 +168,7 @@ delete  {id, component?}                          # one component, or the thing 
 place   {id, on | beside | hang | against | near | at, facing?, …}   # the authority solves the numbers
 turn    {id, axis, deg, space?, about?}
 batch   {ops: [{verb, args}, …]}                  # several writes as one act, all or nothing
-use     {id, action?, args?}                      # the universal interact; visitors may
+use     {id, action?, args?}                      # the universal interact; players may
 say     {text, to?}
 undo    {act? | label?}                           # your own acts (rank decides others'); undo {act: <the undo>} is redo
 publish {from, name}                              # save a thing and its children as a blueprint
@@ -289,7 +292,7 @@ browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Sett
 ```
 act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed"}}}                    # members only
 act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed", watch: "anyone"}}}   # watch only
-act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "visitor", until: <epoch ms>}}}  # let someone in, for a while
+act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "player", until: <epoch ms>}}}  # let someone in, for a while
 act {verb: "delete", args: {id: "@world", component: "roles:u-…"}}                                         # take it back
 ```
 
@@ -394,7 +397,7 @@ act {verb: "create", args: {model: "<a swing frame model>", components: {label: 
 act {verb: "create", args: {model: "<a seat model>", components: {label: "seat"}, place: {hang: "<frame>", height: 0.45}}}
 act {verb: "set", args: {id: "<seat>", component: "motion", value: {type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3}}}
 act {verb: "create", args: {components: {parent: {to: "<seat>"}, transform: {pos: [0, 0.05, 0]}, socket: {name: "seat"}, station: {action: "sit"}}}}   # anim: the action's default, sitchair
-# now ANYONE — visitors included — can attach to it (sit) and swing on it
+# now ANYONE — players included — can attach to it (sit) and swing on it
 ```
 
 `hang` writes the seat's pivot at the underside of what it hangs from, and
@@ -620,7 +623,7 @@ with `punt {id, v, contact: true}` (a thing beneath you is refused `beneath`:
 a body moves over it). In a browser: T (pick up / put down), C (throw
 / punt), the left button to use what you hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
-trigger. `grabbable.who` says who may pick it up (default visitor),
+trigger. `grabbable.who` says who may pick it up (default player),
 `physics.who` who may punt it; locks bind as they bind a place.
 
 Flight needs the world to run physics: `set {id: '@world', component:
@@ -972,7 +975,7 @@ Routes use the structures known when the walk begins, where they are then. A flo
 - **`worlds`** — the map: every world this server fronts **that you may
   see**, who is embodied in each (everyone, one list, by the ids `look` uses, each with the word they
   declared for themselves if any; spectators appear as nothing), which one you are in, each world's door (open,
-  visitors, signed-in, watch, members) and whether you may enter or only watch. Read-only;
+  public, signed-in, watch, invite-only) and whether you may enter or only watch. Read-only;
   asking never founds a world. Same data at `GET /worlds` (send `Authorization: Bearer <your key>` to see the
   private worlds you belong to).
 - **`travel {world}`** — move to another world on this server **without

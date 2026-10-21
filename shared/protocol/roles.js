@@ -39,6 +39,9 @@ export const BELOW = -1;
 export const RENAMED_ROLES = Object.freeze({ visitor: "player" });
 /** A stored grant of the removed `none` (an old log's). Never a role: it reads as no grant, the door
  *  refuses a new one, and the maintenance command deletes stored ones. */
+/** Words a reader still serves with an old meaning (R 10-21): visitor (read as player) and none (read as no grant). None of
+ *  them can be a custom role while it's served, or a stored value would mean two things. Not reserved names: old words. */
+export const RETIRED_ROLE_WORDS = Object.freeze(["none", ...Object.keys(RENAMED_ROLES)].sort());
 export const isLegacyNone = (v) => (typeof v === "string" ? v : v?.role) === "none";
 export const canonRole = (x) => (typeof x === "string" && Object.hasOwn(RENAMED_ROLES, x) ? RENAMED_ROLES[x] : x);
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
@@ -93,7 +96,7 @@ export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
 export const RESERVED_IDS = Object.freeze(new Set(["owner", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
-export const isRoleId = (x0) => { const x = canonRole(x0); return BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x)); };
+export const isRoleId = (x0) => { const x = canonRole(x0); return BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x) && !RETIRED_ROLE_WORDS.includes(x)); };
 
 /** A world's role definitions: @world.role-defs (or {} ). */
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
@@ -190,6 +193,7 @@ export function checkRoleDefs(v, prev, held = () => 0) {
   for (const [id, d] of Object.entries(v)) {
     if (id === "owner") return bad("shape", "role-defs can't define owner: the owner holds every permission, always, at rank 255", "leave owner out");
     if (Object.hasOwn(RENAMED_ROLES, id)) return bad("shape", `'${id}' is the old word for ${RENAMED_ROLES[id]}: define ${RENAMED_ROLES[id]}`, `role-defs.${RENAMED_ROLES[id]}`);
+    if (RETIRED_ROLE_WORDS.includes(id)) return bad("shape", `'${id}' is a retired word (an old log's grant of it reads as no grant), so it can't name a role`, "pick another id");
     if (!Object.hasOwn(BUILTIN, id) && (RESERVED_IDS.has(id) || !CUSTOM_ID.test(id))) return bad("shape", `'${id}' isn't a role id you can make: a–z first, then a–z, 0–9 and '-', up to 24 (not ${[...RESERVED_IDS].join(", ")})`);
     if (!isObj(d)) return bad("shape", `role-defs.${id} must be {name, rank, can}`);
     for (const k of Object.keys(d)) if (!["name", "rank", "can", "note"].includes(k)) return bad("schema", `role-defs.${id}: unknown key '${k}'`, "a role is {name, rank, can, note?}");

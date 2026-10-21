@@ -62,8 +62,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the importer: rpm → degPerSec", "tools/protocol/import-v1/translate-v1.js", "k === \"motion\" || k.startsWith(\"motion:\") ? newMotion(v) : v;", "v;", ["M4"]],
   ["the editor's rate drops the period", "shared/editschema.js", "if (param === 'degPerSec') { delete next.rpm; delete next.period; }", "if (param === 'degPerSec') { delete next.rpm; }", ["M5"]],
   ["Add Path starts where it stands", "shared/editschema.js", "Path: { type: 'path', points: [p0, [p0[0], p0[1], round(p0[2] + 2, 4)]], speed: 1 } };", "Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };", ["M5"]],
-  ["help: physics.who's default", "shared/protocol/componentspec.js", "when it has no grabbable; default visitor)", "when it has no grabbable; default builder)", ["H1"]],
-  ["help: punt's default", "shared/protocol/verbspec.js", "who may is physics.who (default visitor)", "who may is physics.who (default builder)", ["H1"]],
+  ["help: physics.who's default", "shared/protocol/componentspec.js", "when it has no grabbable; default player)", "when it has no grabbable; default builder)", ["H1"]],
+  ["help: punt's default", "shared/protocol/verbspec.js", "who may is physics.who (default player)", "who may is physics.who (default builder)", ["H1"]],
   ["an open door is out of the way", "shared/protocol/authority/physics.js", "except.has(id) || openNow(st, id)) continue;", "except.has(id)) continue;", ["O8"]],
   ["a person's refusal drops tool syntax", "shared/protocol/refusal.js", "const fix = typeof r.fix === \"string\" && r.fix && !TOOLISH.test(r.fix) ? r.fix : \"\";", "const fix = r.fix ?? \"\";", ["P1"]],
   ["a person's refusal names things", "shared/protocol/refusal.js", "const n = nameOf(id); if (!n) return m;", "const n = null; if (!n) return m;", ["P1", "P2"]],
@@ -312,10 +312,10 @@ await C("M5", "the editor: a rate typed on an orbit drops its period (one speed)
 });
 
 // ---- H: help text ----
-await C("H1", "what agents read says physics.who and grabbable.who default to visitor (3b3ad8e2), never builder", () => {
+await C("H1", "what agents read says physics.who and grabbable.who default to player (3b3ad8e2; visitor until R 10-21), never builder", () => {
   const texts = [CAT.COMPONENTS.physics.help, CAT.COMPONENTS.grabbable.help, JSON.stringify(TS), fs.readFileSync(path.join(T, "AGENTS.md"), "utf8").split("Humans have T")[1]?.slice(0, 400) ?? ""];
   const bad = texts.filter((t) => /default builder/.test(t)).map((t) => t.slice(0, 80));
-  return [!bad.length && /default visitor/.test(texts[0]) && /default visitor/.test(texts[1]), bad];
+  return [!bad.length && /default player/.test(texts[0]) && /default player/.test(texts[1]), bad];
 }).catch(() => {});
 
 // ---- P: people ----

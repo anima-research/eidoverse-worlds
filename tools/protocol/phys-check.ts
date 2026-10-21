@@ -33,6 +33,7 @@ function playground(name) {
   fresh(name);
   call(name, "rowan", "create-world", { title: name });
   call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  call(name, "rowan", "set", { id: "@world", component: "default-role", value: { role: "player" } });   // kit and friends are players here (R 10-21: a new world's newcomers build)
   call(name, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
   call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
   call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "builder" } }, place: { at: [2, 0] } });
@@ -211,13 +212,13 @@ function playground(name) {
   const act = log(W).at(-2); ok(act.kind === "act" && act.verb === "put" && act.body.handled?.includes("rowan"), "E the act records who handled it", act.body);
 }
 
-// F — rights per component: a visitor may pick up the ball (physics.who) but not the crate.
+// F — rights per component: a player may pick up the ball (physics.who) but not the crate.
 {
   const W = playground("pc-f");
   call(W, "rowan", "set", { id: "@world", component: "roles:rowan", value: { role: "owner" } });
   call(W, "kit", "move", { to: [0, 0, 0.5] }); call(W, "kit", "move", { to: [1.8, 0, 0.5] });
   const c = call(W, "kit", "grab", { id: "crate-1" });
-  ok(!c.ok && c.refused.code === "rights", "F a visitor can't pick up a builder-only crate", c.refused);
+  ok(!c.ok && c.refused.code === "rights", "F a player can't pick up a builder-only crate", c.refused);
   call(W, "kit", "move", { to: [0, 0, 0.5] }); const b = call(W, "kit", "grab", { id: "ball" });
   ok(b.ok, "F a visitor may pick up the ball", b);
   const t = call(W, "kit", "throw", { id: "ball", v: [1, 2, 0] }); ok(t.ok, "F and throw it", t);
@@ -225,7 +226,7 @@ function playground(name) {
   const r = rests(log(W)).at(-1);
   ok(r && r.handled.includes("kit"), "F the rest result is attributed to who handled it (its launch says so)", r);
   const set = call(W, "kit", "set", { id: "ball", component: "transform", value: { pos: [0, 0, 0] } });
-  ok(!set.ok && set.refused.code === "rights", "F …but a visitor still can't author its transform directly", set.refused);
+  ok(!set.ok && set.refused.code === "rights", "F …but a player still can't author its transform directly", set.refused);
 }
 
 // G — a catch: grabbing a flying thing goes through the log; no rest result follows.

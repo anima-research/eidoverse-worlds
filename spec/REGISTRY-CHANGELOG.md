@@ -233,3 +233,4 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - roles.rank: vocabulary {"none":-1,"visitor":0,"builder":100,"moderator":200,"owner":255} → {"player":0,"builder":100,"moderator":200,"owner":255}
   - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["player","builder","moderator","owner"]
   - roles.reserved: vocabulary ["banned","everyone","guest","none","owner"] → ["banned","owner"]
+- 2026-10-21: roles.vocab.retired: none and visitor are retired words (a stored value in either still reads with its old meaning), so neither can name a custom role; found by role-grammar: none had become a valid custom id

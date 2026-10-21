@@ -131,7 +131,7 @@ await tryRow('PH', () => {
   const W = scratchWorld('w2p-physics').seed({ ball: { model: 'crate', pos: [0, 0, 0] } });
   check('PH2 physics {} is refused: kind is required', code(W.call('set', { id: 'ball', component: 'physics', value: {} })) === 'schema');
   const ok = W.call('set', { id: 'ball', component: 'physics', value: { kind: 'dynamic' } });
-  check('PH2 …{kind: dynamic} is taken, who materialized', ok.ok && W.state().entities.ball.c.physics.who === 'visitor', [ok.refused, W.state().entities.ball.c.physics]);
+  check('PH2 …{kind: dynamic} is taken, who materialized', ok.ok && W.state().entities.ball.c.physics.who === 'player', [ok.refused, W.state().entities.ball.c.physics]);
   check('PH3 …mass is taken (the shove reads it)', W.call('set', { id: 'ball', component: 'physics', value: { kind: 'dynamic', mass: 2 } }).ok);
   check('PH3 a reserved field is refused as reserved: friction, surface, centerOfMass', ['centerOfMass', 'friction', 'surface'].every((k) => code(W.call('set', { id: 'ball', component: 'physics', value: { kind: 'dynamic', [k]: k === 'surface' ? 'ice' : k === 'centerOfMass' ? [0, 0, 0] : 1 } })) === 'reserved'));
   check('PH4 layers, mask, ccd are refused (cut)', ['layers', 'mask', 'ccd'].every((k) => code(W.call('set', { id: 'ball', component: 'physics', value: { kind: 'dynamic', [k]: k === 'ccd' ? true : 1 } })) === 'schema'));

@@ -1626,7 +1626,11 @@
    ],
    "renamed": {
     "visitor": "player"
-   }
+   },
+   "retired": [
+    "none",
+    "visitor"
+   ]
   },
   "keyed": true,
   "on": "world"
