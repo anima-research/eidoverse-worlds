@@ -908,7 +908,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); const n0 = s.entries().length;
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); const n0 = s.entries().length;
       const r1 = s.call("vic", "use", { id: "trap", action: "step" }); const scripted1 = s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length;
       s.call("vic", "consent", { allow: "script:trap", class: "shove" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
@@ -918,14 +918,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { preset: "performer" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "accept" });
       return { r: st(s, s.call("vic", "use", { id: "trap", action: "step" })) }; },
     good: (o) => o.r === "refused scope" },
   { id: "C3", what: "§3d M4: a person may allow a sponsor's behaviours by name (scripts-by:<sponsor>): every one of bob's scripts may then pose them; ann's still may not", run(s) { cast(s);
       for (const [who, id] of [["bob", "pad1"], ["bob", "pad2"], ["ann", "pad3"]]) { s.call(who, "create", { id, model: "crate", place: { at: [0, 0] } });
         install(s, who, id, "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
         s.call(who, "set", { id, component: "reactions", value: { go: { kind: "script", script: "p" } } }); }
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       return { rs: ["pad1", "pad2", "pad3"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => JSON.stringify(o.rs) === '["ran","ran","refused consent"]' },
   { id: "B20b", what: "a script that throws a falsy value (0, \"\", null, undefined, false) fails, and the writes it made first are not kept", run(s) { cast(s);
@@ -946,7 +946,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = !!s.w().presence.bodies.vic?.pose;
       s.call("vic", "consent", { set: { class: "touch", tier: "everyone", mode: "deny" } });
       return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
@@ -955,7 +955,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
-      s.call("vic", "move", { to: [0, 0, 1] });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" });
       s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
       const one = s.call("vic", "consent", { allow: "script:pad1", class: "pose", for: 60000 });
       const during = st(s, s.call("vic", "use", { id: "pad1", action: "go" }));

@@ -1,7 +1,7 @@
 // normative-check — spec/NORMATIVE.md is the closed set, and its tables say what the reference does.
 //   N1 every file the normative set lists exists; nothing outside spec/ is listed as normative
-//   N2 the consent preset table equals shared/protocol/consent.js PRESETS, cell for cell (both tiers)
-//   N3 the consent numbers in the prose (20 s ask, 10 min, 30 days, the intimate points) equal the code's
+//   N2 the consent switch row equals consent.js SWITCHES (recut A2: one switch replaced the preset table)
+//   N3 the default and the ask window in the prose equal the code's; N3b the old table is kept in docs/
 //   N4 the roles ladder, permission list and built-in roles equal shared/protocol/roles.js
 //   N5 PROTOCOL.md never calls a code file normative (code is informative: NORMATIVE.md says so)
 // A failing row means one of the two moved: change the other in the same commit, or mark the row's status.
@@ -26,33 +26,14 @@ const listed = rows(section("## The normative set")).slice(1).map((r) => r[0].re
 const missing = listed.filter((f) => !existsSync(ROOT + f));
 check("N1", `the normative set's ${listed.length} files exist, all under spec/`, listed.length >= 8 && !missing.length && listed.every((f) => f.startsWith("spec/")), { missing, outside: listed.filter((f) => !f.startsWith("spec/")) });
 
-// N2
-const presetRows = rows(doc.slice(doc.indexOf("**Presets**"))).filter((r) => C.CLASSES.includes(r[0]) || r[0] === "class");
-const head = presetRows.find((r) => r[0] === "class") ?? [];
-const names = head.slice(1, -1), diffs: string[] = [];
-if (names.join() !== Object.keys(C.PRESETS).join()) diffs.push(`columns ${names.join()} vs presets ${Object.keys(C.PRESETS).join()}`);
-for (const cls of C.CLASSES) {
-  const r = presetRows.find((x) => x[0] === cls); if (!r) { diffs.push(`no row ${cls}`); continue; }
-  names.forEach((p, i) => { if (C.PRESETS[p]?.everyone[cls] !== r[i + 1]) diffs.push(`${p}.everyone.${cls}: doc ${r[i + 1]}, code ${C.PRESETS[p]?.everyone[cls]}`); });
-  for (const p of Object.keys(C.PRESETS)) if (C.PRESETS[p].friends[cls] !== r.at(-1)) diffs.push(`${p}.friends.${cls}: doc ${r.at(-1)}, code ${C.PRESETS[p].friends[cls]}`);
-}
-check("N2", "the preset table equals consent.js PRESETS, every cell of both tiers", !diffs.length, diffs.join("; "));
-
-// N3
-const consent = section("### Body consent");
-const n3 = [
-  ["classes", C.CLASSES.every((c) => consent.includes("`" + c + "`")) && (consent.match(/^\| Classes \|(.*)\|/m)?.[1].match(/`[a-z-]+`/g) ?? []).length === C.CLASSES.length],
-  ["enforced", (consent.match(/^\| Enforced today \|([^|]*)/m)?.[1].split(".")[0].match(/`[a-z]+`/g) ?? []).map((x) => x.slice(1, -1)).join() === C.ENFORCED.join()],
-  ["default preset", C.DEFAULT_PRESET === "normal" && /the `normal` preset, for every body/.test(consent)],
-  ["ask timeout", C.ASK_MS === 20_000 && /\*\*20 s\*\*/.test(consent)],
-  ["cool-down after a no", C.COOL_MS === 600_000 && /\*\*10 min\*\*, doubling/.test(consent)],
-  ["a yes held", C.REACH_GRANT_MS === 600_000 && /held at most \*\*10 min\*\*/.test(consent)],
-  ["allow until revoked", !("MAX_ALLOW_MS" in C) && /stands \*\*until you revoke it\*\*/.test(consent)],
-  ["intimate points", [...C.INTIMATE_POINTS].every((p) => (consent.match(/^\| Intimate points \|([^|]*)/m)?.[1] ?? "").includes("`" + p + "`")) && (consent.match(/^\| Intimate points \|([^|;]*)/m)?.[1].match(/`[a-z_]+`/g) ?? []).length === C.INTIMATE_POINTS.size],
-  ["refusal words", C.refusalWords("<name>", "<class>") === "<name> isn't taking <class> right now" && consent.includes("`\"<name> isn't taking <class> right now\"`")],
-] as const;
-const bad3 = n3.filter(([, ok]) => !ok).map(([k]) => k);
-check("N3", "the consent prose's values equal consent.js (classes, enforced, default, 20 s, 10 min ×2, 10 min yes, until revoked, intimate points, the refusal)", !bad3.length, bad3.join(", "));
+// N2 (recut A2): the switch row names exactly consent.js SWITCHES, and the default row names DEFAULT_SWITCH
+{ const row = (k: string) => (doc.split("\n").find((l) => l.startsWith(`| ${k} |`)) ?? "");
+  const sw = [...row("The answer").matchAll(/`([a-z]+)`/g)].map((m) => m[1]);
+  check("N2", "the switch row lists consent.js SWITCHES, in order", JSON.stringify(sw) === JSON.stringify(C.SWITCHES), { sw, code: C.SWITCHES });
+// N3: the default and the ask window equal the code
+  const def = row("Default").match(/`([a-z]+)`/)?.[1];
+  check("N3", "the default row equals DEFAULT_SWITCH and the ask row says 20 s (ASK_MS)", def === C.DEFAULT_SWITCH && C.ASK_MS === 20000 && /20 s/.test(row("Ask")), { def, code: C.DEFAULT_SWITCH, ask: row("Ask") });
+  check("N3b", "the retired table is kept as a record in docs/", existsSync(ROOT + "docs/CONSENT-TABLE-RECORD.md")); }
 
 // N4
 const roles = section("### World roles");

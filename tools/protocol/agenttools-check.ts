@@ -221,9 +221,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 // ---- AT3: a refused shove is an error ----
 { const vic = await sock("Vic"); await sleep(200);
   vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // in reach (shove: 3 m)
+  const sw = await vic.req("consent", { switch: "refuse" }); ok(sw?.ok, "(AT3 setup) Vic sets her body to refuse (recut A2: the default accepts)", sw);
   const no = await call("act", { verb: "shove", args: { target: "Vic" } });
-  ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body is Normal: act shove is refused, and the tool says so as an error naming the class", T(no));
-  ok((await vic.req("consent", { set: { class: "shove", tier: "everyone", mode: "allow" } })).ok, "(AT3 setup) Vic opens shove to strangers");
+  ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body refuses: act shove is refused, and the tool says so as an error naming the class", T(no));
+  ok((await vic.req("consent", { switch: "accept" })).ok, "(AT3 setup) Vic sets her body back to accept");
   const k = vic.msgs.length; const yes = await call("act", { verb: "shove", args: { target: "Vic" } }); await sleep(300);
   ok(!yes.isError && vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), "AT3b once Vic allows it, the shove goes through and reports no error", [T(yes), vic.msgs.slice(k).map((m) => m.type)]);
 

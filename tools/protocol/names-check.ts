@@ -61,7 +61,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the old tier is the tier", "shared/protocol/consent.js", "export const TIERS = [\"everyone\", \"friends\"];", "export const TIERS = [\"strangers\", \"friends\"];", ["C1", "C2"]],
   ["no old words on the wire", "shared/protocol/consent.js", "const tierOf = (t) => (Object.hasOwn(LEGACY_TIER, t) ? LEGACY_TIER[t] : t);", "const tierOf = (t) => t;", ["C2"]],
   ["drag is move again", "shared/protocol/consent.js", "drag: \"displace\", occupy: \"displace\", carry: \"displace\"", "drag: \"move\", occupy: \"displace\", carry: \"displace\"", ["C1"]],
-  ["a friend may close the table", "shared/protocol/consent.js", "!(t.delegates ?? []).includes(actor)", "!(t.friends ?? []).includes(actor)", ["C3"]],
+  // "a friend may close the table" mutant RETIRED with C3 (recut A2)
   ["the old list isn't the delegates", "shared/protocol/consent.js", "if (Array.isArray(t.friends) && !Array.isArray(t.delegates)) t.delegates = t.friends.slice(); }", "}", ["C4"]],
   ["no presence migration at load", "shared/protocol/authority/storage.js", "if (migratePresence(w.presence)) w.presenceDirty = true;", "", ["C5"]],
   ["the reply says strangers", "shared/protocol/authority/bodyconsent.js", "table: { preset: t.preset, everyone: t.everyone,", "table: { preset: t.preset, strangers: t.everyone,", ["C6"]],
@@ -341,14 +341,7 @@ const cases: Case[] = [
       const c = C.setConsent(P, "u-a", { set: { class: "pose", tier: "friends", mode: "everyone" } }, now);
       return { ok: [a.ok, b.ok, c.ok], cells: JSON.parse(JSON.stringify(P.consent["u-a"].cells)), d: C.decide(P, "u-b", "u-a", "touch", now).mode, d2: C.decide(P, "u-b", "u-a", "displace", now).mode }; },
     good: (o) => o.ok.every(Boolean) && o.cells.everyone?.touch === "allow" && o.cells.everyone?.displace === "deny" && o.cells.friends?.pose === "allow" && !o.cells.strangers && o.d === "allow" && o.d2 === "deny" },
-  { id: "C3", what: "…delegates apart from friends: a friend (mutual) gets the friends tier but can't close the table; a delegate closes it and never opens it", run() {
-      const P: any = {}; const now = 1e12;
-      C.setConsent(P, "u-a", { friend: "u-f" }, now); C.setConsent(P, "u-f", { friend: "u-a" }, now); C.setConsent(P, "u-a", { delegate: "u-d" }, now);
-      const tier = C.decide(P, "u-f", "u-a", "touch", now).tier;
-      const fClose = C.setConsent(P, "u-f", { of: "u-a", pause: true }, now), dOpen = C.setConsent(P, "u-d", { of: "u-a", preset: "open" }, now), dClose = C.setConsent(P, "u-d", { of: "u-a", pause: true }, now);
-      const t = C.tableOf(P, "u-a");
-      return { tier, fClose: fClose.ok, dOpen: dOpen.ok, dClose: dClose.ok, paused: t.paused, delegates: t.delegates, friends: t.friendsList, vs: Object.keys(VS.VERBSPEC.consent.args) }; },
-    good: (o) => o.tier === "friends" && o.fClose === false && o.dOpen === false && o.dClose === true && o.paused && JSON.stringify(o.delegates) === '["u-d"]' && JSON.stringify(o.friends) === '["u-f"]' && o.vs.includes("delegate") },
+  // C3 RETIRED (recut A2, 10-20): friends tier and delegates are gone (house K5); the switch has one owner.
   { id: "C4", what: "…migratePresence rewrites a table in the old shape (strangers/everyone/nobody/move) and makes the old friends list the delegates too; marked once, so a delegates list emptied since stays empty", run() {
       const P: any = { consent: { "u-a": { preset: "normal", cells: { strangers: { move: "everyone", touch: "nobody" }, friends: { shove: "nobody" } }, friends: ["u-f"], over: { "u-x": { move: { mode: "deny" } } } } } };
       const n = C.migratePresence?.(P); const t = JSON.parse(JSON.stringify(P.consent["u-a"]));
