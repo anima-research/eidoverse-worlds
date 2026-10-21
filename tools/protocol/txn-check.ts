@@ -170,8 +170,11 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const r = t.replies[0];
   ok(r?.reply?.refused?.code === "superseded" && /door/.test(r?.reply?.refused?.reason ?? "") && r?.txn === "rolled-back" && !said(X, "from-the-banned"),
     "T4 banned while the request waited: refused at the seam by the door (superseded), nothing written", r);
-  // re-roled while waiting: a visitor made a builder mid-request is refused (admitted under the old role), never silently promoted
-  const bea = idOf("local:bea", "bea"); const b = tab(X, bea, { account: "local:bea" });
+  // re-roled while waiting: an inhabitant made a builder mid-request is refused (admitted under the old role), never silently promoted
+  const bea = idOf("local:bea", "bea");
+  // she starts an inhabitant (a new world's newcomers are builders, R 10-21: promoting a builder to builder changes nothing)
+  ok(ownerDo(X, "set", { id: "@world", component: `roles:${bea}`, value: { role: "inhabitant" } })?.ok === true, "(T4b setup) the asker starts an inhabitant");
+  const b = tab(X, bea, { account: "local:bea" });
   X.g.hold(); e0 = X.g.entered; send(b, "create", { components: { description: "under-the-old-role" } }); await until(() => X.g.entered > e0);
   ok(ownerDo(X, "set", { id: "@world", component: `roles:${bea}`, value: { role: "builder" } })?.ok === true, "(T4b setup) the owner makes the asker a builder while its request waits");
   X.g.release(); await until(() => b.replies.length);
