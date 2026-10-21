@@ -130,8 +130,10 @@ physics-engine `build` (whether the owner chose it: a deploy restamps only a
 build the server stamped), a launch's, lift's or catch's `id`, and a
 founding's `shapes` or a translation's `from.translator` (the shape repair's
 older markers, §4). The full
-list, with what each reader does, is the reference authority's `READBACK`
-table (shared/protocol/verbclasses.js); a new readback is a new row there.
+list, with what each reader does, is pinned in `spec/readback.json` (each
+row's fields and what an unknown means; the reference keeps it as `READBACK`
+in shared/protocol/verbclasses.js, a pointer, not the contract). A new readback
+is a new row; a changed or removed one needs an acknowledged re-pin.
 §12 lets the whole body of an act be purged, so every one of these reads
 treats a purged body as **unknown**, never as a default: an unknown chooser
 of an engine build is the owner's (no restamp), unknown rights match nobody,
@@ -885,9 +887,11 @@ refusal of what a body does or says about itself (`move`, `body`, `reach`,
 the authority doesn't have is recorded as `unknown-verb`, because its name is
 the visitor's own text; one the protocol had and removed (`whisper`) is refused
 and recorded by name as `removed`. **Every
-code is registered** (shared/protocol/refusalcodes.js: code, meaning, when):
-a code is written into signed entries, so it never changes meaning, and a
-new one is a new row. **Every appended `change` passes the gate** (`admit`), except that the
+code is registered** in `spec/refusal-codes.json` (code, meaning, when, and
+the words renamed before release; the reference keeps it in
+shared/protocol/refusalcodes.js, a pointer): a code is written into signed
+entries, so a removal or a changed meaning needs an acknowledged re-pin, and
+a new one is a new row. A file named inside a `when` is a pointer too. **Every appended `change` passes the gate** (`admit`), except that the
 authority's own follow-ups inside a write pass it without the asker's rights, locks, keys or in-flight
 check (shape and value checks still apply) and are named in the entry's `followUps` (§3); a `say` passes its own
 checks (length, rate, the sayer's rights), and a `sim` entry is written by the authority itself from a grab, a launch

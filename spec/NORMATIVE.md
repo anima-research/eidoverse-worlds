@@ -14,13 +14,15 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/PHYSICS.md` | Bodies, motion, flight, the clock a sample carries. |
 | `spec/EIDO-URIS.md` | How a thing, a world, an asset is named. |
 | `spec/NORMATIVE.md` | This file: the set itself, and the tables below. |
-| `spec/kernel-pin.json` | The kernel: the log envelope, the fold, and `model`, `roles` and `access`. Machine-checked. |
+| `spec/kernel-pin.json` | The kernel: the log envelope, the fold, the identity grammar, the version, and the shapes of `transform`, `parent`, `model`, `roles` and `access`. Machine-checked. |
 | `spec/registry-pin.json` | The registry: every bare component name and its shape. Machine-checked. |
+| `spec/refusal-codes.json` | Every code the authority refuses with: what it means and when (and the words renamed before release). Machine-checked. |
+| `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs with the state they must fold to. Where the prose and a vector disagree, that is a bug in one of them. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
-prose names a file as the place to look), `spec/history/`, `spec/fixtures/`, and every `docs/` file. Where the
+prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, and every `docs/` file. Where the
 reference implementation and this set disagree, the implementation is wrong.
 
 ## The control plane

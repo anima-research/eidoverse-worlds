@@ -1,0 +1,79 @@
+{
+ "act:undo": {
+  "fields": [
+   "undoes",
+   "rollback.acts"
+  ],
+  "unknown": "undoes nothing we can name: the chain ends there and its target isn't counted undone"
+ },
+ "act:use": {
+  "fields": [
+   "capability.author",
+   "capability.reaction",
+   "request.id"
+  ],
+  "unknown": "rights null (matches nobody); undo falls back to your own rights"
+ },
+ "act:script": {
+  "fields": [
+   "sponsor"
+  ],
+  "unknown": "no sponsor: nothing runs on nobody's rights"
+ },
+ "act:sculpt": {
+  "fields": [
+   "request.brush",
+   "clamped"
+  ],
+  "unknown": "not exact: restore-before (refused if changed since)"
+ },
+ "act:*": {
+  "fields": [
+   "request.label",
+   "request.id",
+   "request.component",
+   "request (a physics-engine build it typed)"
+  ],
+  "unknown": "no label match; an unknown chooser of an engine build is the owner's: never restamped"
+ },
+ "act:system": {
+  "fields": [
+   "rest",
+   "id",
+   "onto",
+   "home"
+  ],
+  "unknown": "no rest link; no `onto` in the view; a lost body whose return names no home reads as back where it was picked up"
+ },
+ "act:create-world": {
+  "fields": [
+   "shapes"
+  ],
+  "unknown": "marked: a purged founding never re-runs the repair"
+ },
+ "act:translated": {
+  "fields": [
+   "from.translator"
+  ],
+  "unknown": "marked: a purged translation never re-runs the repair"
+ },
+ "sim:launch": {
+  "fields": [
+   "id",
+   "handled"
+  ],
+  "unknown": "maybe in flight: no restamp; handled falls back to the launch's actor"
+ },
+ "sim:lift": {
+  "fields": [
+   "id"
+  ],
+  "unknown": "maybe held: no restamp"
+ },
+ "sim:catch": {
+  "fields": [
+   "id"
+  ],
+  "unknown": "maybe held: no restamp"
+ }
+}
