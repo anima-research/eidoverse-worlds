@@ -334,37 +334,12 @@ const cases: Case[] = [
       const words = (p: any) => Object.keys(p).sort().join() === "everyone,friends" && Object.values(p).every((row: any) => Object.keys(row).every((c) => C.CLASSES.includes(c)) && Object.values(row).every((m) => ["allow", "ask", "deny"].includes(m as string)));
       return { tiers: C.TIERS ?? null, modes: C.MODES ?? null, cls: C.CLASSES, kinds: [C.KIND_CLASS.drag, C.KIND_CLASS.occupy, C.KIND_CLASS.carry], presets: Object.values(C.PRESETS).every(words) }; },
     good: (o) => JSON.stringify(o.tiers) === '["everyone","friends"]' && JSON.stringify(o.modes) === '["allow","ask","deny"]' && o.cls.includes("displace") && !o.cls.includes("move") && o.kinds.every((k: string) => k === "displace") && o.presets },
-  { id: "C2", what: "…set {tier: everyone, mode: allow} is stored and read back; the old words (strangers, everyone|nobody, move) are still taken and stored in today's", run() {
-      const P: any = {}; const now = 1e12;
-      const a = C.setConsent(P, "u-a", { set: { class: "touch", tier: "everyone", mode: "allow" } }, now);
-      const b = C.setConsent(P, "u-a", { set: { class: "move", tier: "strangers", mode: "nobody" } }, now);
-      const c = C.setConsent(P, "u-a", { set: { class: "pose", tier: "friends", mode: "everyone" } }, now);
-      return { ok: [a.ok, b.ok, c.ok], cells: JSON.parse(JSON.stringify(P.consent["u-a"].cells)), d: C.decide(P, "u-b", "u-a", "touch", now).mode, d2: C.decide(P, "u-b", "u-a", "displace", now).mode }; },
-    good: (o) => o.ok.every(Boolean) && o.cells.everyone?.touch === "allow" && o.cells.everyone?.displace === "deny" && o.cells.friends?.pose === "allow" && !o.cells.strangers && o.d === "allow" && o.d2 === "deny" },
-  // C3 RETIRED (recut A2, 10-20): friends tier and delegates are gone (house K5); the switch has one owner.
-  { id: "C4", what: "…migratePresence rewrites a table in the old shape (strangers/everyone/nobody/move) and makes the old friends list the delegates too; marked once, so a delegates list emptied since stays empty", run() {
-      const P: any = { consent: { "u-a": { preset: "normal", cells: { strangers: { move: "everyone", touch: "nobody" }, friends: { shove: "nobody" } }, friends: ["u-f"], over: { "u-x": { move: { mode: "deny" } } } } } };
-      const n = C.migratePresence?.(P); const t = JSON.parse(JSON.stringify(P.consent["u-a"]));
-      P.consent["u-a"].delegates = []; C.migratePresence?.(P);
-      return { n, t, again: P.consent["u-a"].delegates, mark: P.consentShape }; },
-    good: (o) => o.n === 1 && o.t.cells.everyone?.displace === "allow" && o.t.cells.everyone?.touch === "deny" && o.t.cells.friends?.shove === "deny" && !o.t.cells.strangers && JSON.stringify(o.t.friends) === '["u-f"]' && JSON.stringify(o.t.delegates) === '["u-f"]' && o.t.over["u-x"]?.displace?.mode === "deny" && !o.t.over["u-x"].move && JSON.stringify(o.again) === "[]" && o.mark === 2 },
-  { id: "C5", what: "…the authority's load (worldOf) reads a presence file in the old shape and holds today's", run(s) {
+  // C2, C4, C6, C7 RETIRED (recut A2, 10-20): tiers, cells, the client table and delegates are gone; r11 C4 pins the migration.
+  { id: "C5", what: "…the authority's load (worldOf) reads a presence file in the old shape and holds today's: a switch, narrowed", run(s) {
       s.call("olive", "create-world", { title: s.name });
       const w = s.reopen({ bodies: {}, holds: {}, consent: { "u-a": { cells: { strangers: { pose: "everyone" } }, friends: ["u-f"] } } });
-      const t = C.tableOf(w.presence, "u-a"); return { pose: t.everyone?.pose ?? null, delegates: t.delegates ?? null, raw: JSON.stringify(w.presence.consent["u-a"]) }; },
-    good: (o) => o.pose === "allow" && JSON.stringify(o.delegates) === '["u-f"]' && !/strangers/.test(o.raw) },
-  { id: "C6", what: "…consent {} answers in today's words: table.everyone, friends, friendsList, delegates (no strangers, no trusted); look's own shield says everyone", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "move", { to: [0, 0, 0] });
-      const r = s.call("olive", "consent", {}); const l = s.call("olive", "look", {});
-      return { keys: Object.keys(r.table ?? {}), lk: JSON.stringify(l).match(/"shield":\{[^}]*\{[^}]*\}/)?.[0] ?? JSON.stringify(l).slice(0, 200) }; },
-    good: (o) => ["everyone", "friends", "friendsList", "delegates"].every((k) => o.keys.includes(k)) && !o.keys.includes("strangers") && !o.keys.includes("trusted") && /"everyone":/.test(o.lk) && !/strangers/.test(o.lk) },
-  { id: "C7", what: "…a browser's saved table in the old words (ew-consent) is read as today's and saved back; cells, presets and the switches speak allow/deny", async run() {
-      const store: Record<string, string> = { "ew-consent": JSON.stringify({ strangers: { move: "everyone", pose: "nobody" }, friends: { touch: "nobody" } }) };
-      globalThis.localStorage = { getItem: (k: string) => store[k] ?? null, setItem: (k: string, v: string) => { store[k] = v; } } as any;
-      const CC = await import(TREE + "client/lib/consent.js");
-      return { t: CC.table(), saved: JSON.parse(store["ew-consent"]), push: CC.pushable(), tiers: CC.TIERS }; },
-    good: (o) => o.t.everyone?.displace === "allow" && o.t.everyone?.pose === "deny" && o.t.friends?.touch === "deny" && !o.t.strangers && o.saved.everyone?.displace === "allow" && !o.saved.strangers && JSON.stringify(o.tiers) === '["everyone","friends"]' },
-  // ---------------- W: people ----------------
+      return { sw: w.presence.consent["u-a"]?.switch ?? null, raw: JSON.stringify(w.presence.consent["u-a"]) }; },
+    good: (o) => o.sw === "refuse" && !/strangers|friends|cells/.test(o.raw) },
   { id: "W1", what: "(R 14:41) /worlds answers ONE people list of {id, declares?} (no agents list)", run() {
       const src = readText("server/routes.ts"); const h = src.slice(src.indexOf('u.pathname === "/worlds"'), src.indexOf('u.pathname === "/worlds"') + 2000);
       return { one: /people: present\.map\(\(c\) => \(\{ id: c\.id, \.\.\.\(c\.declares \? \{ declares: c\.declares \} : \{\}\) \}\)\)/.test(h), agents: /agents:/.test(h) }; },

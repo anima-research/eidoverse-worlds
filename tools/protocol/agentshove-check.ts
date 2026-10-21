@@ -231,8 +231,8 @@ try {
     for (let i = 0; i < 40 && !sent.length; i++) await sleep(50); await sleep(500);
     const after = await orig("consent", {});
     ag.request = orig;
-    ok(closed?.ok && ag.joined && sent.length > 0 && sent.every((a) => a.preset === undefined) && after?.table?.everyone?.touch === "deny",
-      "AS15 a rejoin resends the agent's consent table with no preset (which would empty its cells first): what it closed stays closed", { closed, joined: ag.joined, sent, touch: after?.table?.everyone?.touch }); }
+    ok(closed?.ok && ag.joined && sent.length > 0 && after?.table?.switch === "refuse",
+      "AS15 (recut A2) a rejoin keeps the agent's switch: what it closed stays closed", { closed, joined: ag.joined, sent, sw: after?.table?.switch }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {
       const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });

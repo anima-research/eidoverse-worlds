@@ -92,9 +92,10 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
     // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
     // (review of #260). The arrival is the block under its comment, up to the seat cache, with comment lines left out.
-    const at = agentSrc.indexOf("my consent table, as a person's client sends it"), end = agentSrc.indexOf("this.seatCache.init", at);
-    const arrival = at < 0 || end < 0 ? "" : agentSrc.slice(agentSrc.lastIndexOf("\n", at) + 1, end).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-    ok(/consentTable[^=\n]*= \{ preset: DEFAULT_PRESET, sets: \[\] \}/.test(agentSrc) && /this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", \{ set \}\)/.test(arrival) && !/\bpreset\b/.test(arrival) && /import \{[^}]*\bDEFAULT_PRESET\b[^}]*\} from "\.\.\/shared\/protocol\/consent\.js"/.test(agentSrc), "AT7b agent.ts's table starts at DEFAULT_PRESET (the server's name for it); an arrival reads the authority's table and sets the cells that differ, never sending a preset");
+    const at = agentSrc.indexOf("my body's switch (recut A2), as a person's client sends it"), end = agentSrc.indexOf("this.seatCache.init", at);
+    const arrival = at < 0 || end < 0 ? "" : agentSrc.slice(at, end);
+    ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", \{ switch: want \}\)/.test(arrival) && !/\bpreset\b|\{ set \}/.test(arrival) && !/DEFAULT_PRESET/.test(agentSrc),
+      "AT7b (recut A2) an arrival reads the authority and sends the agent's switch only if it differs; no preset, no cells", arrival.slice(0, 300));
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
