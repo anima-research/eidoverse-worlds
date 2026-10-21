@@ -460,10 +460,11 @@ if (argv.includes("--control")) {
 }
 
 // I4 needs the engine's catalogue (it measures GLBs asynchronously): run before the synchronous cases
-// the G3 scenario: every reply, with what differs between runs by design (chain heads, salts) left out
+// the G3 scenario: every reply, with what differs between runs by design (chain heads, salts) left out; and the
+// viewer's own consent shield, whose shape recut A2 changed on purpose (a switch, not a preset): G3 is about the index
 function scenario() {
   // (and log positions: a refused move is no longer recorded, so the seqs after one shift by design)
-  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause", "recorded", "blocker"].includes(k) ? undefined : v)));   // recorded: an arrival isn't logged now (review 10-07 M3); blocker: a solid move refusal names what is in the way (body shove, 10-12), additive
+  const s = session(); const out: any[] = []; const strip = (r: any) => JSON.parse(JSON.stringify(r ?? null, (k, v) => (["head", "seq", "act", "born", "cause", "recorded", "blocker", "shield"].includes(k) ? undefined : v)));   // recorded: an arrival isn't logged now (review 10-07 M3); blocker: a solid move refusal names what is in the way (body shove, 10-12), additive
   const c = (who: string, verb: string, args: any = {}, step = 200) => { const r = s.call(who, verb, args, step); out.push([who, verb, strip(r)]); return r; };
   cast(s); c("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
   fill(s, 100, (i) => [(i % 10) * 2.5 - 12, 0, Math.floor(i / 10) * 2.5 - 12]);
