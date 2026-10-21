@@ -1276,8 +1276,12 @@ away from it.
   not a resolution (shared/protocol/assetref.js `atWrite`): the first
   protocol's makeGrass knobs → the flora spelling, noted in the reply; an
   unknown grass preset is refused.
-- **An enum member a reader doesn't know** makes the reader treat the whole
-  component as absent (never as a guessed member).
+- **An enum member a reader doesn't know** drops that field: the reader reads
+  the component as if the field were absent, at its stated meaning of absence.
+  A field that says what the component IS (a required field, or the one its
+  other fields depend on, such as a light's `kind`, a motion's `type`, a
+  mesh's `shape`) is the exception: an unknown member there makes the whole
+  component absent, never a guessed member.
 - **Policy numbers** (capacity, script settings, access limits): an absent
   field means *this server's current default*, which `schema` reports and
   which may change. Ceilings are the server's policy, not the registry's

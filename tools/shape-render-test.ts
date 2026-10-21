@@ -51,6 +51,7 @@ await tryRow('LI', async () => {
   check('LI6 lightOf reads decay and daytime', Lo?.decay === 1.7 && Lo?.daytime === 'full', Lo);
   check('LI6 …an older value without decay reads 1.7 (the rig\'s old constant), without daytime as dim', lightOf({ light: {} })?.decay === 1.7 && lightOf({ light: { day: false } })?.daytime === 'full' && lightOf({ light: {} })?.daytime === 'dim', [lightOf({ light: {} }), lightOf({ light: { day: false } })]);
   check('LI7 an unknown kind is that light absent (one rule with isMeshBag)', lightOf({ light: { kind: 'area' } }) === null && !isMeshBag({ shape: 'torus' }), lightOf({ light: { kind: 'area' } }));
+  check('LI7b …but an unknown daytime drops only daytime: the light is there, at its meaning of absence (dim), with the rest read (PROTOCOL §9.2: a field that says what the component is goes whole; any other unknown member drops the field)', lightOf({ light: { daytime: 'twilight', intensity: 5 } })?.daytime === 'dim' && lightOf({ light: { daytime: 'twilight', intensity: 5 } })?.intensity === 5, lightOf({ light: { daytime: 'twilight', intensity: 5 } }));
   check('LI8 the realizer passes decay and daytime to the rig', /decay: L\.decay/.test(read('client/lib/realize/models.js')) && /L\.daytime/.test(read('client/lib/realize/models.js')), '');
   const { repairComps } = await repairMod();
   const R = repairComps({ light: { kind: 'point', color: 1, intensity: 16, range: 10, shadows: false, important: false, day: false } }).c;
