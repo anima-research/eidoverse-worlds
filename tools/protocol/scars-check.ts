@@ -133,6 +133,12 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
     good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
+  { id: "L6", what: "a consented pose keeps who posed you (poseBy: the 'who posed me' answer and the revoke read it), never the pose itself: the authority sends no body's pose, so a copy of it was write-only (recut A4, house plan #260 10-20)", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });   // recut A2: default is accept
+      const r = s.call("vic", "body", { to: "bob", kind: "pose", spec: { head: [0, 0, 0, 1] } });
+      const b = s.w().presence.bodies.bob ?? {};
+      return { r: show(r), poseBy: b.poseBy, hasPose: "pose" in b }; },
+    good: (o) => o.r === "ok" && o.poseBy === "vic" && !o.hasPose },
   { id: "L5", what: "a refused touch, body effect or consent write is never logged (presence: consent is never appended, scars r8 M3); a refused edit still is", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });   // recut A2: default is accept
       const n0 = s.entries().length;
