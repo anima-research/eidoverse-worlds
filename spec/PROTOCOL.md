@@ -46,8 +46,8 @@ Folding produces, at minimum:
                            "comp": { "<type>": <opaque data> }?,      // §4
                            "parent": { "to", "slot"?, "offset"?, "yaw"? }? } },
   "mounts": { "<body-id>": { "to", "slot"?, "offset"?, "yaw"? } }?,   // §5
-  "roles":  { "<id>": { "role": "owner|builder|visitor", "gen"?: true,
-                         "sub"?: "durable id" } },                    // §7
+  "roles":  { "<id>": { "role": "owner|builder|visitor|spectator|none", "gen"?: true,
+                         "sub"?: "durable id", "until"?: <epoch ms> } },  // §7
   "behaviors": { "<id>": { "src", "attach"?, "caps"?, "knobs"?,
                             "author", "ts", "state"? } }?             // §8
 }
@@ -63,7 +63,7 @@ measured on the fields above (see `fixtures/README.md`).
 | `genesis` | `{v, dialect}` | nothing (version marker) |
 | `spawn` | `{id, lib, pos?, yaw?, scale?, collide?}` | create **or replace** entity (see §3.1) |
 | `place` | `{id, pos?, yaw?, scale?}` | update transform; re-stamps rest pose |
-| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
+| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1). A sequencer refuses new `light` intent whose `id` isn't a string with at least one non-whitespace character; the fold reads history as it always has: an entry whose id is missing or falsy folds to nothing, and any other id folds under its text, so `5` and `"5"` are one light |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + yaw-rotated offset), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
@@ -146,6 +146,23 @@ Everything else in a bag is somebody's annotation. Preserve it.
   server relays the bag opaquely. Semantic rig state travels the same way:
   `pose.wingsFolded` is a boolean intent, never implementation-specific wing
   quaternions; each renderer applies it through the worn rig's own fold path.
+  The same packet carries a body's size and a person's voice state, each
+  optional, absence meaning the default (or, for voice, *unknown*):
+  - `pose.scale` — the wearer's chosen size multiplier for the whole body
+    (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
+  - `pose.plateY` — metres the nameplate hangs above the body's measured
+    crown, at its authored size (it grows with `scale`); absent = 0 (auto).
+    Range −0.3…+0.8.
+  - `pose.mic` — this person's microphone is live; `pose.hear` — they are
+    hearing voices. Booleans; absent = unknown, never "off".
+
+  Receivers MUST clamp `scale`/`plateY` to their ranges and read a
+  non-number as absent; a non-boolean `mic`/`hear` is absent
+  (shared/presencewire.js holds the clamps; the sequencer's pose fence
+  applies the same ones). `scale`/`plateY` are body state and ride the
+  settled pose a sequencer keeps for late joiners, as `wingsFolded` does;
+  `mic`/`hear` are a live reading re-sent with every packet and are never
+  part of it.
 - **The plane-transition invariant**: anything returning from live motion to
   rest MUST stamp its absolute pose into the verb that ends the ride
   (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never
@@ -156,6 +173,12 @@ Everything else in a bag is somebody's annotation. Preserve it.
   The plane-transition invariant is enforced BY the sequencer for entity
   leases: release, disconnect, and staleness all commit the last transform.
 
+### Private attention metadata
+
+An `arrive` packet and each `snapshot.present` record carry an optional opaque `session` string for the participant's current primary connection. It is the id the joining page sent in its `join` (`session`, 8–64 characters of `A-Za-z0-9_-`), so a reconnect of the same page keeps it and a new page changes it; a join without a usable id gets a fresh random token for that connection. The same connection keeps the same value in later snapshots. Clients can use it to scope sender-local utterance counters. It is observational presence metadata, not an identity credential or an authority grant. On older servers without this field, the attention client preserves an existing utterance cache through snapshots and clears it on an observed arrival. A sender rejoin missed while the receiver was disconnected cannot be distinguished without the session field.
+
+A held private `whisper` delivered on rejoin carries `replay: true`. A live whisper omits the field. The sequencer sets it on delivery; client-authored whisper fields cannot override it. Attention sounds stay local to the receiver and suppress replay. Neither these packets nor attention preferences become log entries.
+
 ## 6. Actors
 
 - `actor` is the durable attribution ink of the permanent record.
@@ -165,14 +188,26 @@ Everything else in a bag is somebody's annotation. Preserve it.
 
 ## 7. Authority
 
-Rights ladder per world: `visitor` (say, use, mount **yourself**) <
+Rights ladder per world: `none` (may not enter) < `spectator` (may watch,
+no body) < `visitor` (say, use, mount **yourself**) <
 `builder` (+ spawn/place/remove/light/comp/motion/behavior/cargo-mount) <
-`owner` (+ terrain/grass/sky/weather/grant). `gen` is an orthogonal spend
+`owner` (+ terrain/grass/sky/weather/grant). Ranks: none −2, spectator −1,
+visitor 0, builder 1, owner 2. `gen` is an orthogonal spend
 capability (introducing new assets). A world with no owner is open
 (everyone builds); the first embodied joiner of a brand-new world becomes
 its owner. Grants are log entries like everything else. A grant carrying a
 `sub` is worn only by that durable identity; a display name is a nameplate,
-not a deed.
+not a deed. The wildcard `*` is everyone not named; in an owned world with
+no `*` record it reads as `builder`.
+
+Entry is the same ladder: a door MUST refuse an embodied join below
+`visitor` and any join below `spectator`. A grant MAY carry `until` (epoch
+ms): a reader evaluating rights at time `t` treats a record with
+`until <= t` as absent. The fold records `until` and never reads a clock;
+records for `owner` and for `*` never carry one (a fold drops it). `grant
+{id, revoke: true, sub?}` removes the record for `id` and every record
+carrying `sub`; a sequencer settles an expiry by writing such a revoke
+(with `expired: true`) once `until` passes.
 
 ## 8. Runtime scripts
 

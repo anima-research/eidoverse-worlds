@@ -11,6 +11,7 @@
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
+import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
@@ -20,6 +21,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint } from './ui.js';
+import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
 import { posable, pushable } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
@@ -102,9 +104,11 @@ export function updateMountedMe(dt) {
   myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
+  myState.q = undefined; myState.locomotion = undefined;
   if (me) {
     me.root.position.copy(_seatP);
-    me.root.rotation.y = sw.yaw;
+    me.root.rotation.set(0,sw.yaw,0);
+    me.locomotion = null;
     me.setClip(sw.pose, 0);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it
@@ -163,8 +167,8 @@ export function updateSeatHint(dt) {
   _hintAcc = 0;
   if (CONFIG.renderer || CONFIG.spectate) return;
   let hint = null;
-  if (avatarMounts.has(CONFIG.name)) hint = '<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off';
-  else if (!downed && nearestSeat(null, 3.5)) hint = '<kbd>X</kbd> — sit';
+  if (avatarMounts.has(CONFIG.name)) hint = html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`;
+  else if (!downed && nearestSeat(null, 3.5)) hint = html`<kbd>X</kbd> — sit`;
   setAmbientHint(hint);
 }
 
@@ -359,7 +363,7 @@ export function initLocalBody({ logChat: logChatFn }) {
     removePin,
   });
 
-  bus.on('puppet', ({ by, pose, anim, ragdoll: rag }) => {
+  bus.on('puppet', ({ by, pose, merge, anim, ragdoll: rag }) => {
     // A ragdoll request runs the sim on MY body — I own it, so I simulate and
     // stream. That is the sync guarantee: the requester never simulates me.
     if (rag) {
@@ -377,8 +381,19 @@ export function initLocalBody({ logChat: logChatFn }) {
       toast(`${by} tried to pose you — enable it in settings to allow`, 'warn', 6000);
       return;
     }
-    if (pose) { myState.pose = pose; flashHint(`${by} posed you`); }
-    if (anim) { getMe()?.playAnimation(anim); sendAnim(anim); }
+    // merge: only the bones they sent (null releases one); otherwise their
+    // pose replaces mine whole — and an EMPTY one is a release. It used to
+    // become an empty held pose, which setPose ignores: `clear_pose target`
+    // never let a human go.
+    if (pose) {
+      myState.pose = merge ? mergePose(myState.pose, pose) : (Object.keys(pose).length ? pose : null);
+      flashHint(myState.pose ? `${by} posed you` : `${by} released your pose`);
+    }
+    if (anim) {
+      const data = { ...anim, replace: anim.replace !== false }; // legacy puppets replace
+      if (data.replace) myState.pose = null;          // a replacing animation ends the held pose too
+      getMe()?.playAnimation(data); sendAnim(data);
+    }
   });
 
   // A force verb reaching us live: an instantaneous radial CAUSE (blast, gust).

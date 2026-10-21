@@ -10,14 +10,17 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
+import { canEnter, whoOf, foundingRefusal, noteFounding, notePrincipal, sweepAccess, worldForAccess, ACCESS_CLOSE, NOT_YET_CLOSE, type AccessWorld, type Expel } from "./access.ts";
+import { entryRestrictedIn } from "../shared/rightsfold.js";
+import { emptyState } from "../shared/fold.js";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
-import { resolveLibFile } from "./lint.ts";
+import { resolveLibFile, lintSpawn } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
-// linters, reactions, and the behavior cap itself; server.ts keeps only what
-// the presence plane and HTTP surface still touch directly.
+// motion/particle linters, reactions, and the behavior cap itself; spawn lint
+// subscribes to all live commits below, including script-authored spawns.
 import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
@@ -27,8 +30,9 @@ import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.t
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
-// snapshot, pendingSnaps for the renderer's snap-result replies.
+// snapshot; the separate ephemeral broker owns renderer capture requests.
 import { route, avatarRoster } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -52,6 +56,7 @@ import { OPT_DIR, PATCH_DIR } from "./config.ts";
 // Relay-floor (#104): transport selection + durable voice-service identity.
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
+import { nameAtDoor } from "./names.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
@@ -118,6 +123,23 @@ wireBehaviorStore(OPT_DIR);
 wireBehaviorGate((w, author, verb, args, authorSub) => {
   const needs = VERB_NEEDS[verb];
   if (!needs) return `verb not allowed: ${verb}`;
+  // WORLD ACCESS is changed by owners directly, never by a script: a script's
+  // emit skips the grant validator and the settle pass (access.ts), so a
+  // script closing a world would leave everyone inside it, and a script
+  // writing an expiry would skip the guards. Ordinary role grants stay open
+  // to an owner's scripts, as before.
+  // In a CLOSED world a script may not grant at all: demoting the last owner,
+  // or a grant whose sub merges away an owner's record, would leave it
+  // ownerless — and an ownerless world is open (review). Nor may a script
+  // bind a grant to a durable sub anywhere: that is the door's to resolve.
+  if (verb === "grant") {
+    const a = (args ?? {}) as Record<string, unknown>;
+    const rank = a.role != null ? ROLE_RANK[String(a.role)] : undefined;
+    if (a.id === "*" || a.revoke != null || a.until !== undefined || a.for !== undefined || a.sub !== undefined
+      || (rank != null && rank < ROLE_RANK.visitor) || entryRestrictedIn((w as unknown as World).state as any)) {
+      return "who may come into a world is changed by its owners directly, not by scripts";
+    }
+  }
   const rights = rightsOf((w as unknown as World).state, author, authorSub);
   if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
     return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
@@ -146,7 +168,9 @@ wireBehaviorGate((w, author, verb, args, authorSub) => {
  *  Held bones (pose.pose) survive both: an enacted pose is a place. */
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, ...still } = pose as Record<string, unknown>;
+  // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
+  // client replayed a voice state its new session never had (review 09-30 S2)
+  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -161,6 +185,10 @@ wireSettledPose(settledPose);
 // subscribe here instead of teaching another append site to fan out.
 onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
 onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
+// Live commits only: includes script-authored spawns, never replay or joins.
+onEntryCommitted("spawn-lint", (w, entry) => {
+  if (entry.verb === "spawn") lintSpawn(w as World, entry);
+});
 
 // ------------------------------------------------------------------ presence
 
@@ -200,6 +228,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
+      snapshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -207,9 +236,10 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   }
 }
 
-function expel(w: World, target: Client, why: string) {
+function expel(w: World, target: Client, why: string, code = 4006) {
   try { target.ws.send(JSON.stringify({ type: "error", error: why })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
+  snapshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
@@ -221,7 +251,7 @@ function expel(w: World, target: Client, why: string) {
   w.clients.delete(target);
   clients.delete(target.ws);
   target.world = null;
-  target.ws.close?.(4006, "removed by moderation");
+  target.ws.close?.(code, code === ACCESS_CLOSE ? "access ended" : "removed by moderation");
   if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id); }
 }
 
@@ -241,6 +271,13 @@ function describe(w: World): string {
 // the running server notices here: reload, diff, and push the same
 // generation-bearing event a proposal gets. Late profile arrival is
 // event-driven for every consumer, not wishful polling.
+// World access expiry (access.ts): warn five minutes out, then settle each
+// passed `until` into history and remove whoever lost entry with it.
+// Every second: between `until` and the sweep an expired member's verbs are
+// already refused (rightsIn reads the clock), but their poses still flow.
+registerSystem({ name: "access-sweep", everyMs: Math.max(250, Number(process.env.ACCESS_SWEEP_MS ?? 1000)),
+  fn: (now) => sweepAccess(worlds.values() as unknown as Iterable<AccessWorld>, expel as unknown as Expel, now) });
+
 registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   const ext = seatStore.pollExternalChange();
   if (!ext) return;
@@ -327,10 +364,21 @@ try {
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
+snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
+// …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
+snapshots.setAdmission((w, c) => canEnter(w, whoOf(c), "watch").ok);
+snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
 let GEN = 0;
+// The sender lifetime presence consumers scope a speaker's utterance counter
+// by (`session` on arrive and snapshot.present): the joining page's own id,
+// which outlives a reconnect as its counter does, else a fresh token for this
+// leg. Opaque and observational: authority still uses the credential and leg
+// checks, and nothing here reveals the process's connection count.
+const PAGE_SESSION_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID());
 
 /** The placeholder tier's bbox side-channel, sent AFTER the snapshot as its
  *  own message: summaries are async, and the join handler's synchronous
@@ -376,12 +424,32 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
+    if (auth?.nativeWorld && auth.nativeWorld !== "*" && wname !== auth.nativeWorld) {
+      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to its approved world; sign in again for multi-world access" }));
+      ws.close(4003, "native session world restriction");
+      return null;
+    }
     if (!/^[a-z0-9_-]{1,64}$/i.test(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `"${wname}" is not a world name — check the link that brought you here` }));
       c.ws.close?.(4005, "bad world name");
       return null;
     }
-    const w = getWorld(wname);
+    // IDENTITY IS PER JOIN. A socket can join again (travel), and nothing a
+    // previous join established may ride along: a credential matched the
+    // name it was presented WITH, and a session that has since lapsed vouches
+    // for nothing. (Found by review: a credentialed socket re-joining under a
+    // member's typed name was treated as verified — and its sub then bound
+    // that member's grant to itself.)
+    c.tokenVerified = false;
+    c.nameReserved = false;
+    c.sub = auth ? auth.sub : undefined;
+    // The world's DOOR, if the world exists: the loaded world, or its roles
+    // and bans read from disk (access.ts worldForAccess) — so a refused join
+    // neither loads an idle world into memory for good nor founds a new one.
+    // getWorld runs only once every check below has passed (it writes the
+    // genesis entry the moment it meets a new name).
+    const door = worldForAccess(wname, worlds);
+    const loaded = worlds.get(wname);
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).
@@ -393,6 +461,17 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // (Hesperus finding #3: an unauthenticated join as "world" produced
     // entries indistinguishable from the sequencer's own.)
     c.id = c.id.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+    // ...and no markup characters (< > "): a typed name carrying them is refused in words; in a name the identity
+    // service gave, each becomes a look-alike (‹ › ″; server/names.ts). Names are shown everywhere; none should ever parse as a tag.
+    {
+      const door = nameAtDoor(c.id, { typed: !auth });
+      if (door.refused) {
+        ws.send(JSON.stringify({ type: "error", error: door.refused }));
+        ws.close(4004, "bad name");
+        return null;
+      }
+      c.id = door.name;
+    }
     if (!c.id || /^(world|\*)$/i.test(c.id) || /^bhv:/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
@@ -426,13 +505,19 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
+    if (typeof msg.session === "string" && PAGE_SESSION_RE.test(msg.session)) c.presenceSession = msg.session;
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
+    c.roam = c.renderer && Boolean(msg.roam);
+    // re-derived on every join, like the rest of identity: the renderers' own
+    // credential, presented WITH the renderer flag on this very join
+    c.trustedRenderer = c.renderer && Boolean(RENDERER_TOKEN) && String(msg.token ?? "") === RENDERER_TOKEN;
+    snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // Same display name, different PERSON (two guild members can share a
     // nick): suffix the newcomer rather than letting takeover fight.
     if (auth && !c.spectator) {
-      for (const other of w.clients) {
+      for (const other of loaded?.clients ?? []) {
         if (other !== c && !other.spectator && other.id === c.id && other.sub && other.sub !== c.sub) {
           c.id = `${c.id}-${c.sub!.replace(/\D/g, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN);
           break;
@@ -451,8 +536,19 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       // identity the home node vouches for satisfies the reservation
       // exactly like a tokens.json bearer — same slug derivation as the
       // MCPL door, so the two doors agree on who "fable" is.
-      if (!tokId) tokId = aid1JoinIdentity(tokStr)?.slug;
-      if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) c.tokenVerified = true;
+      const aid = tokId ? null : aid1JoinIdentity(tokStr);
+      if (!tokId) tokId = aid?.slug;
+      if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) {
+        c.tokenVerified = true;
+        // The NAME is authoritative only when the credential is an agent's:
+        // tokens.json names are operator-assigned, aid1 agent names are
+        // enrolled uniquely. A human's aid1 slug is a display name.
+        c.nameReserved = !aid || aid.payload.kind !== "human";
+        // …and the agent's DURABLE subject rides that credential. Carry it,
+        // so grants, bans, guards and world access bind to the principal and
+        // not to the name (a browser session already carries its sub).
+        if (aid && !c.sub) c.sub = aid.payload.sub;
+      }
       if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
         console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
@@ -460,22 +556,55 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         return null;
       }
     }
-    // Bans — checked once identity is SETTLED (id/sub/reserved names all
-    // resolved above), before the body enters. A global ban closes every
-    // door; a per-world ban closes this one. Spectating counts: a ban is
-    // exclusion, not just silencing. WORLD_ADMIN passes everywhere — an
-    // operator can never be locked out, which is also the unban path of
-    // last resort.
+    // ENTRY — checked once identity is SETTLED (id/sub/reserved names all
+    // resolved above), before the body enters. One decision, access.ts
+    // canEnter, the same one every other door asks: bans first (a global ban
+    // closes every door, a world ban this one; spectating counts — a ban is
+    // exclusion, not just silencing), then the world's own ladder (`none`
+    // may not come in, `spectator` may only watch). WORLD_ADMIN passes
+    // everywhere — an operator can never be locked out, which is also the
+    // unban path of last resort.
+    const who = whoOf(c);
     {
-      const gb = findBan(globalBans, c.id, c.sub);
-      const ban = gb ?? findBan(w.state.bans, c.id, c.sub);
-      if (ban && !isAdminId(c.id, c.sub)) {
-        console.log(`[world:${w.name}] join refused: ${c.id} is banned ${gb ? "globally" : "here"} (by ${ban.by})`);
-        ws.send(JSON.stringify({ type: "error", error: `you are banned from ${gb ? "these worlds" : `"${w.name}"`}${ban.reason ? ` — ${ban.reason}` : ""} (by ${ban.by})` }));
-        c.ws.close?.(4006, "banned");
+      const v = canEnter(door ?? { name: wname, state: emptyState() }, who, c.spectator ? "watch" : "embody");
+      if (!v.ok) {
+        console.log(`[world:${wname}] join refused: ${c.id} — ${v.reason}`);
+        ws.send(JSON.stringify({ type: "error", error: v.why }));
+        c.ws.close?.(v.code, v.reason === "banned" ? "banned" : "no access");
         return null;
       }
     }
+    // FOUNDING — a name nobody has used yet. Every member may found worlds, a
+    // few a day (access.ts foundingRefusal). Watching a world that does not
+    // exist founds nothing: there is nothing to watch, and an ownerless world
+    // nobody stepped into would be open to everyone.
+    if (!door) {
+      // An aux leg (voice, captions…) for a world that does not exist yet is
+      // an orphan exactly as it is anywhere else: same answer as the orphan
+      // gate below (4008), which its sidecar knows how to wait out.
+      if (c.surface !== "world") {
+        ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
+        ws.close(4008, "aux without primary");
+        clients.delete(ws);
+        return null;
+      }
+      // Nothing to watch YET is not a refusal (4011, retried): an observer
+      // started before the world is founded gets in once someone founds it.
+      if (c.spectator) {
+        ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" yet — nothing to watch` }));
+        c.ws.close?.(NOT_YET_CLOSE, "no such world yet");
+        return null;
+      }
+      const why = foundingRefusal(who);
+      if (why) {
+        console.log(`[world:${wname}] founding refused: ${c.id} — ${why}`);
+        ws.send(JSON.stringify({ type: "error", error: why }));
+        c.ws.close?.(ACCESS_CLOSE, "no founding");
+        return null;
+      }
+      noteFounding(who);
+    }
+    const w = loaded ?? getWorld(wname);
     c.world = w;
     // ADMISSION BEFORE TAKEOVER (review finding 2): every check that can
     // refuse this join runs before the takeover kick. The old order let
@@ -565,6 +694,7 @@ function installJoin(c: Client, w: World) {
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
+          snapshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -581,6 +711,9 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
+    // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
+    // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
+    if (c.agent && !c.spectator) snapshots.prewarm(w);
     // eidosim@0.3.0: know the world's standing geometry before anyone spawns
     // or epochs into it (boxes.ts — the sync validators read a warm cache).
     // AFTER admission, never before: a rejected or invalid join must not
@@ -621,6 +754,7 @@ function buildSnapshot(w: World, c: Client) {
     const jp = w.joinPayload();
     return {
       type: "snapshot",
+      renderSceneVersion: 1,
       world: w.name,
       you: c.id,
       // your durable subject, when the door vouched for one — the principal
@@ -655,7 +789,7 @@ function buildSnapshot(w: World, c: Client) {
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent, session: presenceSession(o),
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
         surfaces: [...w.clients]
@@ -667,7 +801,17 @@ function buildSnapshot(w: World, c: Client) {
 
 const server = Bun.serve({
   port: PORT,
-  hostname: "0.0.0.0",
+  hostname: process.env.HOST ?? "0.0.0.0",
+  // Bun closes a connection after 10s with no bytes moving (its default
+  // idleTimeout) — and that includes a response mid-stream. Over a relayed or
+  // transcontinental link a big download (a VRM, an unoptimized library glb)
+  // routinely stalls longer than that, so the transfer was cut short and the
+  // client saw a truncated body. 255s is Bun's maximum: a stalled transfer
+  // rides it out, and an HTTP connection that stays silent is still closed
+  // after 255s (by this same timer; TCP alone would take far longer to
+  // notice). A WebSocket has its own idle timer, websocket.idleTimeout, which
+  // the websocket block below leaves at Bun's default of 120s.
+  idleTimeout: 255,
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
@@ -696,6 +840,7 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
+        snapshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -775,7 +920,10 @@ const server = Bun.serve({
           // JOIN_TOKEN as before. Both may be live at once — invite links for
           // the show, Discord login for everyone with the role.
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;
-          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN) {
+          // …and a renderer may come through on the RENDERERS' credential
+          // instead (config.ts RENDERER_TOKEN) — only as a renderer
+          const rendererKey = Boolean(RENDERER_TOKEN) && Boolean(msg.renderer) && String(msg.token ?? "") === RENDERER_TOKEN;
+          if (!auth && JOIN_TOKEN && String(msg.token ?? "") !== JOIN_TOKEN && !rendererKey) {
             ws.send(JSON.stringify({ type: "error", error: "bad or missing join token" }));
             c.ws.close?.(4003, "bad token");
             return;
@@ -794,6 +942,7 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
+            snapshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
@@ -804,17 +953,31 @@ const server = Bun.serve({
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
+          // the directory of identities this instance has seen (access.ts) —
+          // what lets an owner grant someone who is not here right now
+          if (c.sub) notePrincipal(c.sub, auth ? auth.name : c.id, c.agent ? "agent" : "human");
           installJoin(c, w);
+          // The server's clock, just before the snapshot, for a join that asks
+          // (`clock: true`). A browser seeks shared sounds and stamps their
+          // start in server time, and an agent evaluates motion in it
+          // (serverNow in client/lib/remotes.js and mcpl/agent.ts); both learn
+          // it from a message's `t`. The snapshot's own transfer time would
+          // bias the first sample, so a small message carries it first. A join
+          // that doesn't ask gets the messages it always did, so a client that
+          // takes the first message after a join as the snapshot still works.
+          if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: Date.now() }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
-          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent }, c);
+          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, session: presenceSession(c) }, c);
           if (!c.spectator) w.bhv.onPresence("enter", c.id);
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.
           if (!c.spectator) {
             const held = pendingWhispers.get(whisperKey(w.name, c.id));
             if (held?.length) {
-              for (const m of held) ws.send(JSON.stringify(m));
+              // The client must distinguish catch-up from a live addressed event
+              // for private attention UI. This flag is server-authored, never logged.
+              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
               pendingWhispers.delete(whisperKey(w.name, c.id));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }
@@ -1132,7 +1295,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.log(`eidoverse-worlds sequencer on http://0.0.0.0:${PORT}`);
+console.log(`eidoverse-worlds sequencer on http://${process.env.HOST ?? "0.0.0.0"}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");

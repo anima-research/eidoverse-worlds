@@ -26,13 +26,23 @@
 // THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION (Covenant II):
 // this law is pinned by eidosim@0.2.0 — editing anything here that moves a
 // bit is an epoch bump of the SIM, never a patch.
+//
+// SHAPING (features, heightmap — shared/terrainshape.js) rides on top and is
+// carried ONLY when the args use it: for every world that does not, the
+// params object and every height are exactly what they were, so no existing
+// epoch's ground moves. A shaped world's sim grounds bodies on the same
+// shaped law the mesh and the agents use — through the same function.
+
+import { shapeParams, shapeHeight } from './terrainshape.js';
 
 /** Normalize terrain-verb args to the canonical parameter set, with the
  *  TOOLKIT's own defaults — the sim must assume exactly what the mesh
  *  builder assumes. @param {Record<string, unknown>} a */
 export function terrainParams(a) {
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const shape = shapeParams(a);
   return {
+    ...(shape ? { shape } : {}),
     size: num(a?.size, 80),
     amplitude: num(a?.amplitude, 3),
     seed: Number.isFinite(a?.seed) ? Math.trunc(/** @type {number} */(a.seed)) : 1,
@@ -79,7 +89,7 @@ export function makeHeightField(P) {
     return v / norm;
   };
   const { size, amplitude, frequency, flatRadius, flatHeight } = P;
-  return (x, z) => {
+  const base = (x, z) => {
     const u = (x / size + 0.5) * frequency, v = (z / size + 0.5) * frequency;
     let h = (fbm(u, v) - 0.5) * 2 * amplitude;
     if (flatRadius > 0) {
@@ -89,4 +99,5 @@ export function makeHeightField(P) {
     }
     return h;
   };
+  return P.shape ? shapeHeight(base, P.shape, size) : base;
 }

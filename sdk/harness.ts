@@ -9,7 +9,11 @@
 // This runs your script in PLAIN Bun (not the QuickJS sandbox), which is
 // fine for logic: the API surface is identical (sdk/behavior.d.ts). What it
 // does NOT check: the 25ms gas ceiling, the memory cap, or rights — the
-// world checks those, and tells you via /debug when they bite.
+// world checks those, and tells you via /debug when they bite. It does
+// refuse a light the world would refuse (lightArgsError), by throwing, as
+// world.emit does there.
+
+import { lightArgsError } from "../server/verb-shapes.ts";
 
 const [, , scriptPath, ...rest] = process.argv;
 if (!scriptPath) {
@@ -35,6 +39,10 @@ const world = {
   on: (ev: string, fn: (e: unknown) => void) => { (handlers[ev] ??= []).push(fn); },
   every: (sec: number, fn: () => void) => { timers.push({ sec, fn }); },
   emit: (verb: string, a: Record<string, unknown> = {}) => {
+    if (verb === "light") {
+      const why = lightArgsError(a);
+      if (why) throw new Error(why);
+    }
     emits++;
     console.log(`  ⚡ emit ${verb} ${JSON.stringify(a)}`);
   },
