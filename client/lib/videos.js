@@ -44,12 +44,16 @@ import { normalizeVideo, videoGain, noteSourceState, SOURCE_STATES } from '../..
 export const MAX_SCREENS = 4;
 export const STALL_MS = 2_000;
 export const ICE_GATHER_MS = 2_000;
+/** A connection that hasn't shown a frame this long after its offer went out is retried: an answer that never came, or
+ *  ICE that never connected, must not leave a screen saying connecting forever. */
+export const CONNECT_WATCHDOG_MS = 15_000;
 const BACKOFF = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const NO_RETRY = /changed|revoked|ended|isn't admitted|has no video|closed by the viewer/;
 
 // id → the screen: { video, rev, state, why, pc, el, tex, plate, quad, aspect, session, req, lastFrame, attempt, timer, audio }
 const screens = new Map();
 export const _screens = screens;   // probes
+export const _builds = [];         // probes: why each screen was (re)built, in order
 const revision = new Map();
 const bump = (id) => { const r = (revision.get(id) ?? 0) + 1; revision.set(id, r); return r; };
 const current = (id, r) => revision.get(id) === r;
@@ -101,14 +105,18 @@ function closeConn(s, { tell = true } = {}) {
   try { s.pc?.close(); } catch { /* closed */ } s.pc = null;
   if (s.audio) { try { s.audio.src.disconnect(); s.audio.gain.disconnect(); s.audio.panner.disconnect(); } catch { /* fine */ } s.audio = null; }
   if (s.el) { try { s.el.srcObject = null; s.el.remove(); } catch { /* fine */ } s.el = null; }
-  s.tex?.dispose?.(); s.tex = null; s.lastFrame = 0;
+  s.tex?.dispose?.(); s.tex = null; s.lastFrame = 0; s.frames = 0;
 }
 async function connect(s, rev) {
   if (typeof RTCPeerConnection !== 'function') { setState(s, 'blocked', 'this browser has no WebRTC'); return; }
   closeConn(s, { tell: true }); setState(s, 'connecting');
   const pc = new RTCPeerConnection({}); s.pc = pc;
   pc.addTransceiver('video', { direction: 'recvonly' }); pc.addTransceiver('audio', { direction: 'recvonly' });
-  const el = document.createElement('video'); el.muted = true; el.playsInline = true; el.autoplay = true; el.style.display = 'none'; document.body.appendChild(el); s.el = el;
+  // rendered, 1×1 and invisible, never display:none: a video the page doesn't render may be decoded and presented at a
+  // throttled rate, and the texture reads whatever it last presented
+  const el = document.createElement('video'); el.muted = true; el.playsInline = true; el.autoplay = true;
+  el.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none;';
+  document.body.appendChild(el); s.el = el;
   const stream = new MediaStream();
   pc.ontrack = (ev) => {
     if (!current(s.id, rev) || s.pc !== pc) return;
@@ -133,20 +141,29 @@ async function connect(s, rev) {
   s.req = `v${++reqN}`;
   if (net.ws?.readyState !== 1) { retry(s, rev, 'not connected to the world'); return; }
   net.ws.send(JSON.stringify({ type: 'video-offer', id: s.id, sdp: pc.localDescription.sdp, req: s.req }));
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => { if (current(s.id, rev) && s.pc === pc && !s.frames) retry(s, rev, 'no picture arrived'); }, CONNECT_WATCHDOG_MS);
 }
 function retry(s, rev, why) {
   if (!current(s.id, rev)) return;
+  (s.retries ??= []).push({ at: Math.round(performance.now()), why });   // probes: why each reconnect happened
   closeConn(s, { tell: true }); setState(s, 'error', why);
   const wait = BACKOFF[Math.min(s.attempt, BACKOFF.length - 1)]; s.attempt++;
   s.timer = setTimeout(() => { if (current(s.id, rev)) void connect(s, rev); }, wait);
 }
 function watchFrames(s, el, rev) {
-  const seen = () => { if (!current(s.id, rev) || s.el !== el) return false; s.lastFrame = performance.now(); s.attempt = 0;
+  // a NEW frame is the evidence of playing: requestVideoFrameCallback's mediaTime moving on (or currentTime, where that
+  // callback doesn't exist). A callback that re-presents the same frame is a held frame, and the stall check sees it as one
+  let lastMedia = -1;
+  const seen = (mediaTime) => { if (!current(s.id, rev) || s.el !== el) return false;
+    if (!(mediaTime > lastMedia)) return true;
+    lastMedia = mediaTime; s.lastFrame = performance.now(); s.attempt = 0; s.frames = (s.frames ?? 0) + 1;
+    if (s.timer) { clearTimeout(s.timer); s.timer = null; }
     if (el.videoWidth && el.videoHeight) { const a = el.videoHeight / el.videoWidth; if (Math.abs(a - s.aspect) > 1e-3) { s.aspect = a; if (s.quad) { s.quad.parent?.remove(s.quad); s.quad.userData.dispose(); s.quad = null; } } }
     if (!s.tex) { s.tex = new THREE.VideoTexture(el); s.tex.colorSpace = THREE.SRGBColorSpace; }
     if (s.state !== 'playing') setState(s, 'playing'); else show(s); return true; };
-  if (typeof el.requestVideoFrameCallback === 'function') { const f = () => { if (seen()) el.requestVideoFrameCallback(f); }; el.requestVideoFrameCallback(f); }
-  else { let t = -1; const poll = () => { if (!current(s.id, rev) || s.el !== el) return; if (el.currentTime !== t) { t = el.currentTime; seen(); } setTimeout(poll, 100); }; poll(); }
+  if (typeof el.requestVideoFrameCallback === 'function') { const f = (_now, meta) => { if (seen(meta?.mediaTime ?? el.currentTime)) el.requestVideoFrameCallback(f); }; el.requestVideoFrameCallback(f); }
+  else { const poll = () => { if (!current(s.id, rev) || s.el !== el) return; seen(el.currentTime); setTimeout(poll, 100); }; poll(); }
 }
 
 bus.on('video-answer', async (m) => {
@@ -177,12 +194,13 @@ function takeDown(id) {
   if (s.quad) { s.quad.parent?.remove(s.quad); s.quad.userData.dispose(); }
   s.plate?.dispose?.();
 }
-function applyFrom(id, data, { fresh = false } = {}) {
+function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
   const n = data == null ? null : normalizeVideo(data);
   const prev = screens.get(id);
   // a volume, distance or alt change: the same stream on the same quad, adjusted in the tick (no new intent, no bump)
   if (!fresh && prev && n?.ok && prev.video.source === n.video.source && prev.video.width === n.video.width && prev.video.lit === n.video.lit && prev.video.spatial === n.video.spatial) { prev.video = n.video; return; }
   const rev = bump(id);
+  _builds.push({ id, why: n == null ? `${why}: down` : why, at: Math.round(performance.now()) });
   takeDown(id);
   if (n == null) return;
   const s = { id, video: n.ok ? n.video : { width: 4, lit: 'self' }, state: 'connecting', why: null, aspect: 9 / 16, attempt: 0 };
@@ -217,7 +235,7 @@ bus.on('comp', ({ id, type, data }) => { if (type === 'video') applyFrom(id, dat
 // is closed under a bump, and a spawn plays the bag again from the start, as picture's host re-hangs (Mica, #186 round 2)
 bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove' || kind === 'demote') { if (screens.has(id)) { bump(id); takeDown(id); } }
-  else if (kind === 'spawn') { const c = bagOf(id); if (c?.video) applyFrom(id, c.video, { fresh: true }); }
+  else if (kind === 'spawn') { const c = bagOf(id); if (c?.video) applyFrom(id, c.video, { fresh: true, why: 'spawn' }); }
 });
 bus.on('world-reset', () => clearVideos());
 

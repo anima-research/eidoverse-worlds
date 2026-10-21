@@ -84,6 +84,9 @@ webrtcIPsFromInterfaces: ${WEBRTC_IPS_FROM_INTERFACES}
 webrtcAdditionalHosts: ${WEBRTC_HOSTS}
 
 srt: false
+# MoQ (mediamtx 1.21+) is on by default and binds :8892 on EVERY interface, whatever the bind above says: a loopback
+# appliance must not listen anywhere else, and nothing here reads MoQ. Every face this file doesn't name is off
+moq: false
 
 paths:
   "${STREAM_PATH}":
