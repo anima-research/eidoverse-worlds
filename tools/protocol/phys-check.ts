@@ -404,6 +404,7 @@ function playground(name) {
   const deployed = (fn) => { delete ENGINES[NEW]; ENGINES[OLD] = E; try { return fn(); } finally { delete ENGINES[OLD]; ENGINES[NEW] = E; } };   // the old server
   const restamps = (W) => log(W).filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "restamp-engine");
   const specOf = (W) => fold(log(W)).entities["@world"].c["physics-engine"];
+  const E2rest = (e, L) => { const c = L[e.cause]; return !!c && c.kind === "sim" && c.verb === "launch"; };
   // R1 — stamped by the old server, nothing in flight: restamped at the first act after load, and physics runs
   const W = deployed(() => playground("pc-r1"));
   ok(specOf(W).engine === OLD, "R1 setup: the old server stamped its own build", specOf(W));
@@ -422,23 +423,34 @@ function playground(name) {
   at(25000); settle(openWorld(root, W));
   const ck = log(W).filter((e) => e.kind === "sim" && e.verb === "checkpoint").at(-1);
   ok(ck?.body?.engine?.engine === NEW, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
-  // R2 — a body in flight when the deploy came: no restamp, the world stays foreign (the owner can still restamp by hand)
+  // R2 — a body in flight when the deploy came (house answer, #260 10-21): this server can't compute that flight, so a cut
+  // that waited for its rest would never come. The cut ends it, leaving it where the fold has it: the cut's change, not a rest
   const W2 = deployed(() => { const n = playground("pc-r2"); call(n, "rowan", "grab", { id: "ball" }); call(n, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); return n; });
+  const before2 = JSON.stringify(fold(log(W2)).entities.ball.c.transform);
   call(W2, "rowan", "look", {});
-  ok(!restamps(W2).length && specOf(W2).engine === OLD, "R2 a launch with no rest on the record: no restamp", specOf(W2));
+  const r2 = restamps(W2);
+  ok(r2.length === 1 && specOf(W2).engine === NEW && JSON.stringify(r2[0]?.body?.ended) === '["ball"]', "R2 a launch with no rest on the record: the cut doesn't wait; it's restamped, and the act names the flight it ended", { r2: r2.map((e) => e.body), spec: specOf(W2) });
+  ok(JSON.stringify(fold(log(W2)).entities.ball.c.transform) === before2 && !log(W2).some((e) => e.kind === "change" && E2rest(e, log(W2))), "R2 …the ball stays where the fold had it, and no rest is written for it", { before2, after: fold(log(W2)).entities.ball.c.transform });
   call(W2, "rowan", "move", { to: [2, 0, -0.5] }); call(W2, "rowan", "grab", { id: "crate-1" });
   const t2 = call(W2, "rowan", "throw", { id: "crate-1", v: [0, 1, 1] });
-  ok(!t2.ok && t2.refused.code === "foreign-engine" && !restamps(W2).length, "R2 …the world stays foreign", t2);
+  ok(t2.ok, "R2 …and the world flies again under the version this server carries", t2.refused);
+  // R2e — a launch whose body was purged (readback null): its body is unknown, so the cut can't name it; it counts it, and goes ahead
+  const W2e = deployed(() => { const n = playground("pc-r2e"); call(n, "rowan", "grab", { id: "ball" }); call(n, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); return n; });
+  { const w = openWorld(root, W2e); const ls = w.entries.findLastIndex((e) => e.kind === "sim" && e.verb === "launch"); at(100);
+    w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ls }] } }); }
+  call(W2e, "rowan", "look", {});
+  const r2e = restamps(W2e);
+  ok(r2e.length === 1 && specOf(W2e).engine === NEW && r2e[0]?.body?.endedUnknown === 1 && !r2e[0]?.body?.ended, "R2e a purged launch doesn't hold the cut back: counted as ended, unnamed", r2e.map((e) => e.body));
   // R2b — something held (lifted out of the engine, not put back): no restamp either
   const W2b = deployed(() => { const n = playground("pc-r2b"); call(n, "rowan", "grab", { id: "ball" }); return n; });
   call(W2b, "rowan", "look", {});
   ok(!restamps(W2b).length && specOf(W2b).engine === OLD, "R2b a thing held when the deploy came: no restamp", specOf(W2b));
   // R2c — the hold is gone from presence (a host that keeps it in memory restarted) but the log's lift was never put back:
-  // still in flight by the log's word, so no restamp (the load's settleOrphans returns it first on a real server)
+  // a lift outlives an epoch (the sim layer keeps it across the cut), so it doesn't hold the cut back
   const W2c = deployed(() => { const n = playground("pc-r2c"); call(n, "rowan", "grab", { id: "ball" }); return n; });
   const pp = `${root}worlds/${W2c}.presence.json`; const pres = JSON.parse(fs.readFileSync(pp, "utf8")); const realHold = pres.holds.ball; pres.holds = {}; fs.writeFileSync(pp, JSON.stringify(pres));
   call(W2c, "rowan", "look", {});
-  ok(!restamps(W2c).length && specOf(W2c).engine === OLD, "R2c a lift on the record with nothing after it: no restamp", specOf(W2c));
+  ok(restamps(W2c).length === 1 && specOf(W2c).engine === NEW, "R2c a lift on the record with nothing after it doesn't block the cut (it outlives the epoch)", specOf(W2c));
   // R2d — held in presence only (no lift on the record): no restamp while the hold lasts
   const W2d = deployed(() => playground("pc-r2d"));
   const pd = `${root}worlds/${W2d}.presence.json`; const pr2 = fs.existsSync(pd) ? JSON.parse(fs.readFileSync(pd, "utf8")) : { bodies: {}, holds: {} };

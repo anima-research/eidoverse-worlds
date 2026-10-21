@@ -93,13 +93,19 @@ versioned in the log itself:
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
 - **A version the authority stamped is the authority's to restamp.** When a world
-  names an engine this server carries under a version it doesn't, the version was
-  stamped (no version typed in the request that set the engine), and nothing is in flight (by the
-  log's word: no launch without its rest, nothing lifted and not yet put
-  back) or held in presence, the authority writes the cut itself, as `system`
-  (act `restamp-engine`), at the next request or heartbeat. A server that
-  can't sign for the world doesn't. Otherwise the world stays foreign until an
-  owner restamps it.
+  names an engine this server carries under a version it doesn't, and the version
+  was stamped (no version typed in the request that set the engine), the authority
+  cuts the world to the version it would stamp today, itself, as `system` (act
+  `restamp-engine`), at the next request or heartbeat. The owner never chose the
+  old version, so the cut overrides no choice of theirs, and the log shows where
+  the world's law changed. **A flight doesn't hold the cut back**: this server
+  can't compute it, so a cut that waited for its rest would never come. The cut
+  ends each flight itself, leaving the thing where the fold has it (only a rest
+  moves it), and names what it ended (`ended`; a purged launch's unknown body is
+  counted, `endedUnknown`). That is the cut's change, not a rest, so a reader that
+  carries the old version has no rest to check it against. A lift on the record
+  outlives the cut; only a hold in presence defers it, to the next act. A server
+  that can't sign for the world doesn't cut it.
 - **A reader that doesn't carry the named version MUST NOT recompute the
   flights.** It folds the log (the rests are there) and shows nothing in
   flight, rather than guessing. A wrong answer is worse than a missing

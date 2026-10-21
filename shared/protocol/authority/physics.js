@@ -109,9 +109,10 @@ function settleSim(w) {
 //   - this server carries an engine of that NAME, under another version (stampOf: the one it would stamp today);
 //   - that version was STAMPED (no version typed: by an authority, or by this restamp), never named by the owner: a
 //     version the owner chose is the owner's word (phys-check pc-k, R5), and stays foreign;
-//   - nothing is in flight (P6: then the cut is free, and real). A foreign world has no engine state (out.sim is null,
-//     out.launched {}), so the log is read instead, from the epoch's start: a launch whose body has no rest under it, or a
-//     lift or catch nothing put back (orphanLifts' lifecycle), is in flight; and so is anything held now (presence).
+//   - nothing is held in presence right now (a hand lets go soon; the cut tries again at the next act). A flight does NOT
+//     hold it back (house answer, #260 10-21): this server can't compute it, so the cut ends it where the fold has it, and
+//     the act names what it ended. The log is read from the epoch's start for those: a launch whose body has no rest under
+//     it is in flight; a purged launch (readback null) is a flight whose body is unknown, counted, not named.
 // Otherwise it does nothing and the world stays foreign (the owner can still restamp by hand, force: true). Checked once
 // per world object and spec (a heartbeat doesn't re-read the log), except while a hold is what blocks it.
 const restampTried = new WeakMap();
@@ -145,21 +146,28 @@ function restampEngine(w) {
     if (o.verb !== "set") break;
     const c = chose(e); if (c === "named") return; if (c === "stamped") break; }
   if (from < 0) return;
+  // what the cut ends (house answer, #260 10-21): this server can't compute the old version's flights, so a cut that waited
+  // for their rests would never come. Each flight is ended by the cut itself, left where the fold has it (the fold never
+  // moved it: only a rest would), and named in the act; that's the cut's change, not a rest. A lift on the record outlives
+  // an epoch (the sim layer keeps it), so it doesn't hold the cut back either. Only a hold in presence does, below.
   const out = new Map();   // id → the launch seq it flies under, or "held"
+  let unknownFlights = 0;
   for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
-    if (e.kind === "sim") { const b = readback(w, s); if (b === null && ["launch", "lift", "catch"].includes(e.verb)) return;   // READBACK: a purged flight names no body: unknown, so maybe in flight: no restamp
+    if (e.kind === "sim") { const b = readback(w, s); if (b === null && ["launch", "lift", "catch"].includes(e.verb)) { if (e.verb === "launch") unknownFlights++; continue; }   // READBACK: a purged flight names no body: unknown, so counted as ended by the cut
       if (b?.id) { if (e.verb === "launch") out.set(b.id, s); else if (e.verb === "lift" || e.verb === "catch") out.set(b.id, "held"); } continue; }
     if (e.kind !== "change") continue;
     const c = E[e.cause]; const rest = isE(c) && c.kind === "sim" && c.verb === "launch";
     for (const o of opsQuiet(e)) { const f = out.get(o.id); if (f === undefined) continue;
       if (rest ? f === e.cause : (f === "held" && (o.verb === "create" || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)))) out.delete(o.id);
       else if (o.verb === "delete" && o.comp === undefined) out.delete(o.id); } }
-  if (out.size) return;
+  const ended = [...out].filter(([, f]) => f !== "held").map(([id]) => id).sort();
   const next = { engine: today, ...(spec.tickMs !== undefined ? { tickMs: spec.tickMs } : {}) };   // declared fields only: an older value's build goes
   let plan; try { plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ["physics-engine"] } }, [setOp("@world", "physics-engine", next)]); }
   catch (x) { if (!(x instanceof Refusal)) throw x; return; }
   changeEntry(w, plan, w.append(actEntry(w, "system", "restamp-engine", { id: "@world", component: "physics-engine", from: spec.engine, to: next.engine,
-    why: `engine ${spec.engine} → ${next.engine}: restamped by the server; bodies at rest` })));
+    ...(ended.length ? { ended } : {}), ...(unknownFlights ? { endedUnknown: unknownFlights } : {}),
+    why: ended.length || unknownFlights ? `engine ${spec.engine} → ${next.engine}: restamped by the server; ${ended.length + unknownFlights} flight(s) it can't compute ended by the cut, where the log has them`
+      : `engine ${spec.engine} → ${next.engine}: restamped by the server; bodies at rest` })));
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
 function buildEpoch(ctx, v, a) {
