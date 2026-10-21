@@ -944,16 +944,24 @@ request with nothing written, and nothing after the commit may refuse. A thing t
 that write puts it (it has no pose before it).
 
 **Roles** are components on `@world`: `roles:<identity>` = `{role}`, and
-`default-role` for everyone without one (absent: visitor). The reference
-authority's ladder is `visitor` < `builder` < `owner` (a `moderator` rank sits
-between builder and owner where the roles ladder is enabled): changing any
+`default-role`, the **newcomer role**, for everyone without one. Absent, it is
+`inhabitant`; a world founded since 2026-10-21 starts with `builder` (written at
+founding, as starter config), so no world founded before opens up by surprise.
+A grant beats it: an owner holds one person back with a grant of `inhabitant`.
+The reference authority's ladder is `inhabitant` < `builder` < `moderator` <
+`owner`, with a world's custom roles at free ranks between; there is no rung
+below `inhabitant` (a ban or a mute does that job). A rung is named for what it
+lets you do. A **guest** (a person with no account) is not a rung: guest says
+whether the world knows you across visits, a role says what you may do here. A
+guest holds a role like anyone else; it lasts as long as their connection,
+since there is no identity to keep it on. Changing any
 component of an entity needs builder; changing `@world` needs owner, except
 `blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
 world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused while `@world.keep-owner` is absent or true (starter config, on); an
 owner who sets it false may leave the world ownerless on purpose. A world with
-no owner gives nobody more than visitor; its host operator can mend it. A role
+no owner gives nobody more than inhabitant; its host operator can mend it. A role
 MAY carry `until` (epoch ms, the authority's clock): the grant ends then. The
 authority writes the end itself, as the system's act `expire-roles {ids}` and
 its change deleting each `roles:<id>` whose `until` has passed, within a second
@@ -964,8 +972,7 @@ minutes before (`notice`, presence).
 
 **Who may come in** is the world's own `access` on `@world` (an owner's,
 never a script's): `join` is `anyone` (absent), `signed-in`, or `listed` (only
-people the world has granted a role, unexpired; a `none` grant is how a world
-says "not you", so it lists nobody); whoever `join` turns away
+people the world has granted a role, unexpired); whoever `join` turns away
 may still watch, with no body, when `watch: "anyone"`, and otherwise a
 listed-only world is invisible to them (not in a listing, every read of it
 answering as for no world). `minAccountDays` and `max` refine it. Bans (the
@@ -974,9 +981,13 @@ moderation power always get in. One function decides for every door (a join,
 a listing, an HTTP read, the re-check after any change to `access`,
 `default-role` or a role): a reference authority removes whoever may no
 longer be in the world, with close code 4010, and a client doesn't redial it.
-Joining never founds a world. (The first protocol's sequencer wrote the same
-doors as rungs below visitor, `none` and `spectator`, and `*` for everyone
-not named; §14 translates them to `access`.) **Two
+Joining never founds a world, and a guest can't found one (it would have no
+one to own it). A client offers four doors, presets that write `access` and the
+newcomer role: open (newcomers build), public (newcomers are inhabitants),
+invite-only, and watch. (The first protocol's sequencer wrote the same doors as
+rungs below visitor, `none` and `spectator`, and `*` for everyone not named;
+§14 translates them to `access`, its `visitor` to `inhabitant`, and a person's
+`spectator` or `none` grant to `imported-roles:<id>`, carried as it was.) **Two
 owner lists, never confused:** governance keys in genesis (§13) are reserved for
 governance (who may move the writer role, once it exists); roles decide rights inside the world.
 
@@ -1054,7 +1065,7 @@ edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
 sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, up to the ban limit; owners any
 length), `grantRoles` (give or take roles below yours, with only permissions
 you hold). Captions are granted per screen (`captioners`), not by role. An owner holds all
-of them. A guest (no account) is at most the world's `default-role`.
+of them. A guest (no account) starts as `inhabitant`, even where newcomers build; a world may raise all guests to at most its newcomer role (`default-role.guests`), and an owner may give one guest any role.
 
 **2. The thing: who made it.** For a change to an entity the authority asks,
 in order (`lacks()`; below a body root the body rule B2 comes first, below): an owner may; else the verb's own need (`owner`,
