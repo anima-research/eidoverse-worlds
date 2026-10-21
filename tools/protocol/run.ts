@@ -280,10 +280,15 @@ for (const [name, file] of SUITES) {
   if (laneOf(name) !== "browser") for (const d of localImports(f)) if (BROWSER_MARK.test(fs.readFileSync(d, "utf8"))) { problems.push(`${name} launches a Chromium (${path.relative(ENGINE, d).split(path.sep).join("/")}) but is not in the BROWSER lane`); break; }
 }
 if (!partial) { const d = manifestDrift(); if (d) problems.push(d); }
-for (const [dir, , commit] of SIBLINGS) { const h = siblingHead(dir);
+// the siblings are mcpl's: refuse their absence only when a selected suite reaches mcpl/ (C13: conformance, the kernel and the
+// pins must run from this checkout alone, with nothing beside it)
+const reachesMcpl = (file: string) => { const f = suitePath(file); if (/[\\/]mcpl[\\/]/.test(f)) return true;
+  return [...localImports(f)].some((x) => /(?:from|import\(|import)\s*["'`][^"'`]*\bmcpl\//.test(fs.readFileSync(x, "utf8"))); };
+const needSiblings = SUITES.some(([n, file]) => selected(n) && reachesMcpl(file));
+if (needSiblings) for (const [dir, , commit] of SIBLINGS) { const h = siblingHead(dir);
   if (h === commit && SIBLINGS.find(([d]) => d === dir)![3] && !fs.existsSync(path.join(siblingAt(dir), "dist"))) problems.push(`mcpl's sibling ${dir} is unbuilt (no dist/): run \`bun tools/protocol/run.ts --siblings\``);
   if (h !== commit) problems.push(`mcpl's sibling ${dir} ${h ? `is at ${h.slice(0, 12)}, not the pinned ${commit.slice(0, 12)}` : `is missing at ${siblingAt(dir)}`}: run \`bun tools/protocol/run.ts --siblings\`, which also installs mcpl/`); }
-for (const dir of ["", "client/", "mcpl/"]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
+for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
 const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
