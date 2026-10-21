@@ -1301,8 +1301,13 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     const made = ["gn-0", "gn-1"].map((id, i) => Rn("g1", "create", { id, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
     const swap = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-0" } }, { verb: "create", args: { id: "gn-2", model: "crate", components: { transform: { pos: [4, 0, 0] } } } }] });
     const grow = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, ...["gn-3", "gn-4"].map((id, i) => ({ verb: "create", args: { id, model: "crate", components: { transform: { pos: [6 + i * 2, 0, 0] } } } }))] });
-    ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? ""),
-      "SR2d a guest's write that deletes as many of the guests' things as it makes is never refused full; one that grows the pool past its limit is, saying by how much, and its fix names a delete", { made: made.map((x) => x.ok), swap: swap.refused ?? swap.ok, grow: grow.refused }); }
+    // a pool already past a lowered cap still takes a delete-and-make; a make is refused against the lowered cap
+    Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 1 } });
+    const swap2 = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, { verb: "create", args: { id: "gn-5", model: "crate", components: { transform: { pos: [10, 0, 0] } } } }] });
+    const over = Rn("g1", "create", { id: "gn-6", model: "crate", components: { transform: { pos: [12, 0, 0] } } });
+    ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? "")
+      && swap2.ok && code(over) === "full" && /lets them have 1 \(/.test(over.refused?.reason ?? "") && /1 more won't fit/.test(over.refused?.reason ?? ""),
+      "SR2d a guest's write that deletes as many of the guests' things as it makes is never refused full, even past a lowered cap; one that grows the pool past its limit is, saying how many it adds, and its fix names a delete", { made: made.map((x) => x.ok), swap: swap.refused ?? swap.ok, grow: grow.refused, swap2: swap2.refused ?? swap2.ok, over: over.refused }); }
   // the world's own budget: a socket meets it like a thing, and deleting frees room
   const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
@@ -1468,6 +1473,10 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const un = call("olive", "undo", { label: "spin" });
   ok(tr.ok && turned && acts === 1 && un.ok && JSON.stringify(q()) === q0 && ents().lamp?.c?.description === "a lamp",
     "BT4 a batch takes turn: the turn and a set are one act, and one undo takes both back", { tr: tr.refused ?? tr.ok, q: q(), acts, un: un.refused ?? un.ok });
+  // a turn reads the batch's working copy: a thing made earlier in the same batch is found and turned
+  const ct = call("olive", "batch", { ops: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
+  const cq = ents()["crate-bt"]?.c?.transform?.q;
+  ok(ct.ok && Math.abs(Math.abs(cq?.[1] ?? 0) - Math.SQRT1_2) < 1e-6, "BT4b a batch's turn finds a thing made earlier in the same batch and turns it", { ct: ct.refused ?? ct.ok, q: cq });
   // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
   const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
     turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };

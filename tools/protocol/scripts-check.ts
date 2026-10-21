@@ -34,7 +34,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor's role NOW", "authority/scripts.js", "const need = lacks(w, st, cap.sponsor, op,", "const need = null && lacks(w, st, cap.sponsor, op,", ["B2", "B3", "B24"]],
   ["scope narrowing", "authority/scripts.js", "if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp))", "if (false && (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)))", ["B4"]],
   ["sponsor = latest write (not creator)", "authority/scripts.js", "const W = scriptWrites(w, id, key);\n  for (let k = 0; k < W.length; k++)", "const W = scriptWrites(w, id, key).slice(-1);\n  for (let k = 0; k < W.length; k++)", ["B18"]],
-  ["no-op elision", "authority/scriptrun.js", "const ops = SR.elide(st, res.ops);", "const ops = res.ops;", ["B16", "B5"]],
+  ["no-op elision", "authority/scriptrun.js", "const ops = SR.elide(st, SR.stampMotions(st, res.ops, now));", "const ops = SR.stampMotions(st, res.ops, now);", ["B16", "B5"]],
   ["timers sleep with nobody present", "authority/scriptrun.js", "if (!present && v.always !== true) { rt.sleepingSince ??= now;", "if (false) { rt.sleepingSince ??= now;", ["B5", "E4"]],
   ["world hourly budget", "authority/scriptrun.js", ": B.all + cost > cfg.budget ?", ": false ?", ["B6"]],
   ["sponsor's fair share", "authority/scriptrun.js", ": B.bySponsor + cost > B.share ?", ": false ?", ["B6b"]],
@@ -642,9 +642,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("olive", "create", { id: "fan", model: "crate", place: { at: [0, 0] } });
       install(s, "olive", "fan", "spin", onUse(`world.set("self", "motion", { type: "spin", axis: [0, 1, 0], degPerSec: 30 });`), { scope: { ids: "self", comps: ["motion"] }, on: ["use"] });
       s.call("olive", "set", { id: "fan", component: "reactions", value: { go: { kind: "script", script: "spin" } } });
-      const a = s.call("vic", "use", { id: "fan", action: "go" }); const m1 = comp(s, "fan", "motion");
+      const a = useSteady(s, "vic", { id: "fan", action: "go" }); const m1 = comp(s, "fan", "motion");
       const act = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:fan").at(-1);
-      const n1 = s.entries().length; const b = s.call("vic", "use", { id: "fan", action: "go" }); const m2 = comp(s, "fan", "motion");
+      const n1 = s.entries().length; const b = useSteady(s, "vic", { id: "fan", action: "go" }); const m2 = comp(s, "fan", "motion");
       const A = AU ? AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }) : null;
       return { a: st(s, a), b: st(s, b), t0: m1?.t0 ?? null, actTs: act?.ts ?? null, kept: m2?.t0 === m1?.t0, written: kinds(s.entries().slice(n1)), flags: A ? A.flags.length : "no auditor" }; },
     good: (o) => o.a === "ran" && typeof o.t0 === "number" && o.t0 === o.actTs && o.b === "nothing" && o.kept && JSON.stringify(o.written) === '{"act":1}' && o.flags === 0 },

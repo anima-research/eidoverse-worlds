@@ -112,8 +112,8 @@ for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as 
     "pos" in where ? "face turns to a child's world point" : "face whose thing's point can't be worked out turns nowhere and says why", { faced, out: out.content[0].text }); }
 
 // act {verb: "use"}: the visitor's use is logged (ok), but when the script it sets off didn't run (refused, failed, …) the
-// tool says so with isError, as for any refusal; a script that ran, or ran and changed nothing, is no error
-for (const [status, err] of [["ran", false], ["nothing", false], ["refused", true], ["failed", true], ["unavailable", true], ["paused", true]] as [string, boolean][]) {
+// tool says so with isError, as for any refusal; a script that ran, ran and changed nothing, or would run (a dry use) is no error
+for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", false], ["refused", true], ["failed", true], ["unavailable", true], ["paused", true]] as [string, boolean][]) {
   const ag: any = { thingRef: (v: string) => ({ id: v }), request: async () => ({ ok: true, act: 7, recorded: true, script: { script: "script:bell", id: "bell", status, ...(err ? { code: "scope", why: "no" } : {}) } }) };
   const out: any = await handleTool({ agent: ag } as any, "act", { verb: "use", args: { id: "bell", action: "ring" } });
   ok(!!out.isError === err && /"status": "/.test(out.content[0].text), `act use whose script ${status}: ${err ? "isError" : "no error"}`, out); }

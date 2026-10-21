@@ -699,7 +699,7 @@ const copy = (x) => (x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) 
 export function unitTransform(v) {
   const q = v && typeof v === "object" && !Array.isArray(v) ? v.q : undefined;
   if (!Array.isArray(q) || q.length !== 4 || !q.every(Number.isFinite)) return v;
-  const n = Math.hypot(...q); return n > 1e-6 && Math.abs(n - 1) > 1e-9 ? { ...v, q: q.map((x) => x / n) } : v;
+  const n = Math.hypot(...q); return n >= 1e-6 && Math.abs(n - 1) > 1e-9 ? { ...v, q: q.map((x) => x / n) } : v;
 }
 /** A value with its definition's defaults written in: `defaults`, then each `when` rule that holds, never over a field
  *  that's there. {value, filled: [fields written]}. A non-object value, or a name with no definition, comes back as it is. */
