@@ -29,6 +29,19 @@ for (const f of files) {
     if (KNOWN[f]) console.log(`      why: ${KNOWN[f]}`); }
 }
 console.log(`${files.length} logs, ${diffs} unexplained differences`);
+// recut C13b: the set says what each log must fold to, so ANY implementation checks itself against spec/ alone, not only
+// against these two readers. spec/conformance/expected.json: {<log>: {status, digest, codes}}. Both readers must equal it;
+// --write-expected writes it from the JS fold, only when both readers already agree on every log (never from a diff)
+{ const EXP = here + "expected.json"; let want: any = fs.existsSync(EXP) ? JSON.parse(fs.readFileSync(EXP, "utf8")) : null;
+  const got: Record<string, any> = Object.fromEntries(files.map((f) => { const js = fold(readLog(fs.readFileSync(here + f)));
+    return [f, { status: js.status, digest: js.status === "ok" ? digest(js) : null, codes: js.diagnostics.map(([s, c]: any) => `${s}:${c}`) }]; }));
+  if (process.argv.includes("--write-expected")) {
+    if (diffs) { console.log("FAIL --write-expected refused: the readers disagree, so neither is the answer"); process.exit(1); }
+    fs.writeFileSync(EXP, JSON.stringify(got, null, 1) + "\n"); console.log(`wrote ${Object.keys(got).length} expected results to spec/conformance/expected.json`); want = got; }
+  const miss = want ? files.filter((f) => JSON.stringify(want[f]) !== JSON.stringify(got[f])) : files;
+  const extra = want ? Object.keys(want).filter((f) => !files.includes(f)) : [];
+  if (!want || miss.length || extra.length) { diffs++; console.log(`FAIL expected.json: ${!want ? "missing (spec/conformance/expected.json: what each log must fold to)" : `${miss.length} log(s) fold to something else (${miss.slice(0, 5).join(", ")}), ${extra.length} listed log(s) gone`}`); }
+  else console.log(`ok   expected.json: every log folds to what the set says (${files.length})`); }
 
 // the reference reader's own suites. test_reader.py regenerates logs/ from its builders: they must come out byte-identical
 const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
