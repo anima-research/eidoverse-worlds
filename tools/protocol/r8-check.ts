@@ -140,7 +140,7 @@ const cases: Case[] = [
   { id: "R2", what: "vic's lever is locked and looks at bob's door2: bob's delete goes through (a lock on the referrer isn't a veto)", run(s) { cast(s);
       s.call("bob", "create", { id: "door2", model: "crate", place: { at: [6, 0] } });
       s.call("vic", "create", { id: "lever2", model: "crate", components: { "look-at": { target: "door2" } }, place: { at: [9, 0] } });
-      const lk = s.call("vic", "set", { id: "lever2", component: "lock", value: { rank: "builder" } });
+      const lk = s.call("vic", "set", { id: "lever2", component: "lock", value: true });
       const d = s.call("bob", "delete", { id: "door2" });
       return { lk: show(lk), d: show(d), look: comp(s, "lever2", "look-at") ?? null, lock: !!comp(s, "lever2", "lock") }; },
     good: (o) => o.lk === "ok" && o.d === "ok" && o.look === null && o.lock },
@@ -153,7 +153,7 @@ const cases: Case[] = [
   { id: "R4", what: "…and bob's undo of his delete of door2 (vic's locked lever looked at it) brings the door back and its reference with it", run(s) { cast(s);
       s.call("bob", "create", { id: "door2", model: "crate", place: { at: [6, 0] } });
       s.call("vic", "create", { id: "lever2", model: "crate", components: { "look-at": { target: "door2" } }, place: { at: [9, 0] } });
-      s.call("vic", "set", { id: "lever2", component: "lock", value: { rank: "builder" } });
+      s.call("vic", "set", { id: "lever2", component: "lock", value: true });
       const d = s.call("bob", "delete", { id: "door2" });
       const u = s.call("bob", "undo", {});
       return { d: show(d), u: show(u), door: !!s.w().state().entities.door2, look: comp(s, "lever2", "look-at")?.target ?? null }; },

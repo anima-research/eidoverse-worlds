@@ -273,10 +273,10 @@ const cases: Case[] = [
   { id: "F2", what: "(scars M3) builder vic deletes his crate with owner olive's locked vase resting on it (unparented): the delete lands, the vase is set down as the authority's follow-up (named in followUps), and the vase stays olive's", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder" });
       s.call("vic", "create", { id: "crate", components: { mesh: { shape: "box", size: [1, 1, 1] }, transform: { pos: [3, 0, 0] } } });
-      const v = s.call("olive", "create", { id: "vase", components: { mesh: { shape: "box", size: [0.3, 0.4, 0.3] }, transform: { pos: [3, 1, 0] }, lock: { rank: "owner" } } });
+      const v = s.call("olive", "create", { id: "vase", components: { mesh: { shape: "box", size: [0.3, 0.4, 0.3] }, transform: { pos: [3, 1, 0] }, lock: true } });
       const d = s.call("vic", "delete", { id: "crate" });
-      return { v: show(v), d: show(d), y: comp(s, "vase", "transform")?.pos?.[1], fu: d.ok ? FU(s, d.seq) : null, lock: comp(s, "vase", "lock")?.rank, creator: RT.creatorOf(s.w(), "vase")?.by ?? null }; },
-    good: (o) => o.v === "ok" && o.d === "ok" && Math.abs(o.y) < 1e-6 && JSON.stringify(o.fu) === '["set vase.transform"]' && o.lock === "owner" && o.creator === "olive" },
+      return { v: show(v), d: show(d), y: comp(s, "vase", "transform")?.pos?.[1], fu: d.ok ? FU(s, d.seq) : null, lock: comp(s, "vase", "lock"), creator: RT.creatorOf(s.w(), "vase")?.by ?? null }; },
+    good: (o) => o.v === "ok" && o.d === "ok" && Math.abs(o.y) < 1e-6 && JSON.stringify(o.fu) === '["set vase.transform"]' && o.lock === true && o.creator === "olive" },
   // ---------------- U: vacated ----------------
   { id: "U1", what: "(holes L6) olive removes the seat vic sits on: vic gets `vacated {socket, at}` in his inbox (as for an edit), and his track restarts at the seat", run(s) {
       s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "visitor" });

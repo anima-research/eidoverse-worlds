@@ -168,7 +168,7 @@ const cases: Case[] = [
       s.call("vic", "create", { id: "x", model: "crate", place: { at: [0, 0] } }); s.call("vic", "create", { id: "z", model: "crate", place: { at: [8, 0] } });
       s.call("vic", "create", { id: "rr", model: "crate", components: { "look-at": { target: "x" } }, place: { at: [3, 0] } });
       const b = s.call("vic", "batch", { ops: [{ verb: "set", args: { id: "rr", component: "look-at", value: { target: "z" } } }, { verb: "delete", args: { id: "x" } }] });
-      const lk = s.call("olive", "set", { id: "rr", component: "lock", value: { rank: "owner" } });
+      const lk = s.call("olive", "set", { id: "rr", component: "lock", value: true });
       const u = s.call("vic", "undo", {});
       return { b: show(b), lk: show(lk), u: show(u), target: comp(s, "rr", "look-at")?.target, x: !!s.w().state().entities.x }; },
     good: (o) => o.b === "ok" && o.lk === "ok" && /locked/.test(o.u) && o.target === "z" && !o.x },

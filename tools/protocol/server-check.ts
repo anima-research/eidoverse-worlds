@@ -138,7 +138,7 @@ ok(vic.of("log").length >= 2 && vic.of("log").every((m: any) => Array.isArray(m.
 { const m = heldBy(vic)?.view()?.entities?.[IDS.of("cup")]?.parent; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")))).entities[IDS.of("cup")].c.transform.pos;
   ok(m?.to === IDS.of("tbl") && Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 in that client's own fold the cup hangs from the table at the authority's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m, loc]); }
 
-ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
+ok((await bob.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Bob locks the table (a builder's lock: recut B2, an owner's would be owners-only)");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
 ok(mv.ok === false && mv.refused?.code === "locked" && /throughLock/.test(mv.refused.fix), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
 const headBefore = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl"))).length;
