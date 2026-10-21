@@ -55,7 +55,7 @@ const M: Mutant[] = [
   { id: "M4", what: "speech privacy: everyone reads the master log's say bodies, not only admins (the floor is null for all)", file: "server/world.ts",
     find: "  sayFloorFor(c: Client): number | null {\n    if (this.isAdmin(c)) return null;", repl: "  sayFloorFor(c: Client): number | null {\n    if (true) return null;", suite: "identity", rows: ["RS10"], expect: 42 },
   { id: "M5", what: "the kernel's scope shrinks (access leaves it): the pin and the code disagree, the registry's five aren't the kernel's", file: "shared/protocol/kernelspec.js",
-    find: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);', repl: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles"]);', suite: "kernel", rows: ["K1", "K3"], expect: 1 },
+    find: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);', repl: 'export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles"]);', suite: "kernel", rows: ["K1", "K3", "K12", "K13"], expect: 1 },   // K3 via the C11 trim record; K12/K13 build their bases from access
   { id: "M6a", what: "the approval isn't bound to the report: a hash that doesn't match the report as it stands is accepted", file: "tools/protocol/world.ts",
     find: "  if (hash !== approved) die(`the dry-run report of", repl: "  if (false) die(`the dry-run report of", suite: "inplace", rows: ["IP21"], expect: 20 },
   { id: "M6b", what: "the countersignature isn't checked by the writer (a bad operator countersignature writes the log)", file: "tools/protocol/import-v1/world.ts",

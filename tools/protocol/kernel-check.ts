@@ -117,8 +117,9 @@ await C("K3", "the pin's recorded companions hold: the changelog line is in REGI
   const r = changed ? await runVectors(c.vectors?.dir ?? "") : { ran: null, why: "no kernel change recorded (a scope extension only)" }; const names = (c.vectors?.names ?? []);
   const vec = !changed || (!!r.ran && r.ran.length >= 1 && r.ran.every((x: any) => x.old !== "ok" && x.new === "ok") && names.every((n: string) => r.ran.some((x: any) => x.name === n)));
   // a scope trim recorded (C11): every key it says the registry holds is still in the registry pin's vocab, and still out of the kernel
-  const trim = !c.trim || (Object.entries(c.trim.held ?? {}).every(([n, ks]: [string, any]) => Array.isArray(ks) && ks.every((k: string) => rp[n]?.vocab && Object.hasOwn(rp[n].vocab, k)) && !now[n]?.grammar)
-    && Object.entries(c.trim.dropped ?? {}).every(([k, w]) => typeof w === "string" && w.trim() && !now[k.split(".")[0]]?.grammar));
+  // (and every name it trims is still a kernel component: a name leaving the kernel since is a scope change, not this trim)
+  const trim = !c.trim || (Object.entries(c.trim.held ?? {}).every(([n, ks]: [string, any]) => KS.KERNEL_COMPONENTS.includes(n) && Array.isArray(ks) && ks.every((k: string) => rp[n]?.vocab && Object.hasOwn(rp[n].vocab, k)) && !now[n]?.grammar)
+    && Object.entries(c.trim.dropped ?? {}).every(([k, w]) => KS.KERNEL_COMPONENTS.includes(k.split(".")[0]) && typeof w === "string" && w.trim() && !now[k.split(".")[0]]?.grammar));
   return [line && tr && vec && scope && trim && (changed || !!c.scope || !!c.trim), { line, tr, vec, scope: c.scope ?? null, trim: c.trim ?? null, vectors: r.ran ?? r.why }]; });
 
 // ---- the verdict itself, on a mutated kernel (the proof the gate carries: red without the companions, green with them) ----
