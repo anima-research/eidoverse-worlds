@@ -289,7 +289,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   shared/terrainshape.js (`worldWater`, `waterParams`), and the mover's water
   law (shared/mover.js `waterStance`: wading, swimming, the haul-out) takes its
   level. A write of `terrain.water` is refused with where it went; a stored one
-  is moved at load (below), and the readers read it until then.
+  is moved by the maintenance command's repair (below; a load never writes), and
+  the readers read it until then.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
@@ -1077,7 +1078,8 @@ written by no one but an owner; a screen's captions are written only by the
 caption request; a `paused` write needs `pauseScripts`, not edit rights.
 
 **3. The lock: what the owner has nailed down.** `lock` (§4) binds
-*everyone*, owners included, until lifted by someone the lock's level names.
+*everyone*, owners included, until lifted by someone at its setter's rank or above
+(a lock's strength is its setter's rank, read at check time: Locks, above).
 It is the one rule *over things* that tells an owner no (rule 4 and a
 person's own word tell them no over people); it has a documented override
 (lifting it) and no silent one.
@@ -1220,8 +1222,9 @@ verified. A sponsor reader skips the authority's follow-ups (§3). The reference
 Metres. Y-up. Right-handed. Forward = +Z; a heading `yaw` is the angle about
 +Y, `atan2(x, z)` of the facing vector. Colors are integers (`0xffd9a0`).
 Times are epoch milliseconds on the authority's clock (`ts`). Entity ids are
-opaque; asset paths are content-addressed under `store/` (`<hash>.glb`) and
-blobs are named `sha256:<64 hex>` — a reference pins exact bytes.
+opaque. An asset reference is stored as written (a library path, an Essential's
+or a preset's name: §9.2), and the bytes ride beside it as a content address,
+`sha256:<64 hex>`, which pins exact bytes; a blob is named by its content address.
 
 ### 9.1 Orientation: `q`
 

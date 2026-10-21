@@ -1,5 +1,8 @@
 # eido: URIs — content references that survive leaving the host (first draft)
 
+**Status: informative** (recut C14, 2026-10-21). No reader resolves an `eido:` URI today, so this file isn't part of the
+normative set (spec/NORMATIVE.md). It becomes normative when a world needs portable blobs.
+
 **License: CC0 1.0 (public domain)**, same terms as `PROTOCOL.md` beside it.
 Status: DRAFT for review against the store's actual shapes. The words
 MUST/SHOULD/MAY are used in the RFC-2119 sense.

@@ -12,7 +12,6 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 |---|---|
 | `spec/PROTOCOL.md` | The log, the fold, components, rights, presence, speech, actors, the door. |
 | `spec/PHYSICS.md` | Bodies, motion, flight, the clock a sample carries. |
-| `spec/EIDO-URIS.md` | How a thing, a world, an asset is named. |
 | `spec/NORMATIVE.md` | This file: the set itself, and the tables below. |
 | `spec/kernel-pin.json` | The kernel: the log envelope, the fold, the identity grammar, the version, and the shapes of `transform`, `parent`, `model`, `roles` and `access`. Machine-checked. |
 | `spec/registry-pin.json` | The registry: every bare component name and its shape. Machine-checked. |
@@ -22,7 +21,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/conformance/` | Logs with the state they must fold to. Where the prose and a vector disagree, that is a bug in one of them. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
-prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, and every `docs/` file. Where the
+prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, `spec/EIDO-URIS.md` (informative until a world needs portable blobs: no reader resolves an `eido:` URI today), and every `docs/` file. Where the
 reference implementation and this set disagree, the implementation is wrong.
 
 ## The control plane
