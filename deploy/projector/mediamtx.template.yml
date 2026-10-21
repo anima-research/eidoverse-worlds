@@ -16,8 +16,12 @@
 #   out  WHEP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whep      (sub-second; phase 3 with the presentation delay)
 #   out  RTSP  rtsp://127.0.0.1:${RTSP_PORT}/${STREAM_PATH}       (the caption bot's audio tap — loopback ALWAYS)
 #
-# Publishing needs the key; reading needs nothing — what a screen may point
-# at is the WORLD's decision (its comp allow-list), not the appliance's.
+# Publishing needs the publish key. Reading from another machine needs the READ
+# key, which only the sequencer holds (VIDEO_SOURCES): a viewer's browser never
+# learns it, because the sequencer brokers every WHEP session (server/
+# videosources.ts). Reading from this machine needs nothing, so the caption
+# bot's RTSP tap keeps working. The API answers on loopback only: the sequencer
+# reads each source's state there (is a publisher there; are bytes arriving).
 #
 # Every ${…} an environment value fills is quoted: YAML types a plain scalar
 # by its whole value, so an unquoted user `true`, key `0000000000000000` or
@@ -26,7 +30,8 @@
 # list there itself.
 
 logLevel: info
-api: false
+api: true
+apiAddress: "127.0.0.1:${API_PORT}"
 metrics: false
 pprof: false
 playback: false
@@ -39,12 +44,19 @@ authInternalUsers:
     permissions:
       - action: publish
         path: "${STREAM_PATH}"
-  - user: any
-    pass:
+  - user: "${READ_USER}"
+    pass: "${READ_KEY}"
     ips: []
     permissions:
       - action: read
         path: "${STREAM_PATH}"
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: read
+        path: "${STREAM_PATH}"
+      - action: api
 
 rtsp: true
 rtspTransports: [tcp]
