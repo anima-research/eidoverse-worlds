@@ -90,7 +90,7 @@ function playground() {
   const x = live(); const { call } = x;
   call("rowan", "create-world", { title: "pg" });
   call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
   call("rowan", "move", { to: [0, 0, -0.5] });
   return x;
 }

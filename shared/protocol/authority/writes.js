@@ -26,7 +26,7 @@ import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
-import { renameFields, renameRoleWords } from "../shaperepair.js";
+import { renameFields } from "../shaperepair.js";
 import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -174,8 +174,6 @@ function resolve(ctx, id, comp, value, prev) {
   // grabbable.pose / station.pose are anim, a grip's fingers its grasp (R 10-17 15:09/15:11): a write in the old spelling is
   // taken and stored in the new (shaperepair.js renameFields: the load renames a stored one the same way)
   if (comp === "grabbable" || comp === "station") { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): pose is anim, fingers is grasp" }); } }
-  // a role's old word (R 10-21: visitor is player) in a grant, the newcomer role, role-defs or a who: taken, stored in the new
-  { const r = renameRoleWords(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-21): visitor is player" }); } }
   // a motion's type bob is oscillate (R 10-17 21:40): the old spelling is taken for one release and stored in the new (the
   // load renames a stored one the same way: renameFields)
   if (comp === "motion" || comp.startsWith("motion:")) { const r = renameFields(comp, value); if (r.renamed.length) { value = r.value; for (const n of r.renamed) ctx.notes.push({ id, component: comp, ...n, why: "renamed before release (R 10-17): a motion's bob is oscillate" }); } }

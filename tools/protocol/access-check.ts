@@ -329,7 +329,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     const s = await sock(s4.port); const j = await s.join("door", name, { agentToken: tok }); who[name] = you(j); s.close(); }
   { const s = await sock(s4.port); const j = await s.join("door", "Pip"); who.Pip = you(j); s.close(); }   // a typed-name account here (TRUST_NAMES)
   await sleep(150);
-  const set = [["Pip", "visitor"], ["Rowan", "visitor"], ["Wren", "visitor"], ["Fen", "owner"]];
+  const set = [["Pip", "player"], ["Rowan", "player"], ["Wren", "player"], ["Fen", "owner"]];
   const listed = [];
   for (const [w, role] of set) listed.push((await ann.req("set", { id: "@world", component: `roles:${who[w]}`, value: { role } })).ok);
   const closed = await ann.req("set", { id: "@world", component: "access", value: { join: "listed" } });

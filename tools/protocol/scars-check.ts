@@ -102,7 +102,7 @@ const lastAct = (s: any) => s.entries().findLast((e: any) => e.kind === "act");
 // owner olive, builder bob, visitor vic
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 const SEAT = { sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } };
 const read = (p: string) => fs.readFileSync(path.join(TREE, p), "utf8");
@@ -151,7 +151,7 @@ const cases: Case[] = [
       return { me, him }; },
     good: (o) => o.me?.shield && "switch" in o.me.shield && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("refuse") },
   { id: "K2", what: "look: who touches whom is the toucher's and the touched's own: a third person sees none of it", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
+      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "player" } });
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("ann", "move", { to: [3, 0, 0] });
       s.call("bob", "consent", { allow: "vic", class: "touch" }); const t = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
       const seen = (who: string) => s.call(who, "look", {}).bodies?.find((b: any) => b.id === "bob")?.touchedBy ?? [];

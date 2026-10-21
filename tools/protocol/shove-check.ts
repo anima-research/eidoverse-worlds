@@ -115,9 +115,9 @@ const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
 const launches = (s: any) => s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").length;
 // owner olive, builder bob, visitor vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
-function cast(s: any, phys: any = { kind: "dynamic", who: "visitor" }) {
+function cast(s: any, phys: any = { kind: "dynamic", who: "player" }) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
   s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" } });
   s.call("olive", "create", { id: "crate", model: "crate", components: { physics: phys }, place: { at: [0, 0] } });
 }
@@ -151,7 +151,7 @@ const cases: Case[] = [
       return { r: code(r), launches: launches(s) }; },
     good: (o) => o.r === "wrong-way" && o.launches === 0 },
   { id: "S5", what: "what is under the feet (a dynamic rug) is refused beneath", run(s) { cast(s);
-      s.call("olive", "create", { id: "rug", model: "rug", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [3, 0] } });
+      s.call("olive", "create", { id: "rug", model: "rug", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [3, 0] } });
       s.call("vic", "move", { to: [3, 0, 0.2] }); const r = s.call("vic", "punt", { id: "rug", v: [0, 0, 1.5], contact: true });
       return { r: code(r), launches: launches(s) }; },
     good: (o) => o.r === "beneath" && o.launches === 0 },
@@ -177,21 +177,21 @@ const cases: Case[] = [
       return { p: code(p), d: code(d), up: code(up), launches: launches(s) }; },
     good: (o) => o.p === "shape" && o.d === "shape" && o.up === "shape" && o.launches === 0 },
   { id: "S10", what: "a long crate is shoved from its end though its origin is past a kick's reach (measured to the box)", run(s) { cast(s);
-      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [6, 0, 0], scale: [5, 1, 1] } } });
+      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos: [6, 0, 0], scale: [5, 1, 1] } } });
       s.call("vic", "move", { to: [7.85, 0, 0] });
       const k = s.call("vic", "punt", { id: "big", power: 2 }); const r = s.call("vic", "punt", { id: "big", v: [-0.4, 0.1, 0], contact: true });
       return { kick: code(k), r: show(r) }; },
     good: (o) => o.kick === "out-of-reach" && o.r === "ok" },
   { id: "S11", what: "something in a hand is refused held", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [3, 3] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [3, 3] } });
       s.call("bob", "move", { to: [3, 0, 2.6] }); s.call("bob", "grab", { id: "ball" });
       s.call("vic", "move", { to: [3.2, 0, 2.6] }); const r = s.call("vic", "punt", { id: "ball", v: [0, 0.1, 1], contact: true });
       return { r: code(r) }; },
     good: (o) => o.r === "held" },
   { id: "S12", what: "bob sits on a chair (use sit): vic's shove, kick and grab are refused occupied, and so is a shove of the cart under it; once bob walks off the stool, vic's shove of the cart goes", run(s) { cast(s);
-      const seat = { physics: { kind: "dynamic", who: "visitor" }, grabbable: {}, sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } };
+      const seat = { physics: { kind: "dynamic", who: "player" }, grabbable: {}, sockets: { seat: { pos: [0, 0.45, 0], body: { action: "sit" } } } };
       s.call("olive", "create", { id: "chair", model: "chair", components: seat, place: { at: [4, 0] } });
-      s.call("olive", "create", { id: "cart", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [8, 0] } });
+      s.call("olive", "create", { id: "cart", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [8, 0] } });
       s.call("olive", "create", { id: "stool", model: "chair", components: seat, place: { on: "cart" } });
       s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" });
       s.call("vic", "move", { to: [4, 0, -0.62] });
@@ -202,7 +202,7 @@ const cases: Case[] = [
       return { sit: !!sit.ok, sit2: !!sit2.ok, sh: code(sh), kick: code(kick), grab: code(grab), cart: code(cart), after: show(after), launches: launches(s) }; },
     good: (o) => o.sit && o.sit2 && o.sh === "occupied" && o.kick === "occupied" && o.grab === "occupied" && o.cart === "occupied" && o.after === "ok" && o.launches === 1 },
   { id: "S13", what: "bob stands on a dynamic deck: vic's shove and kick are refused occupied; once bob steps off, vic's shove goes", run(s) { cast(s);
-      s.call("olive", "create", { id: "deck", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [8, 0, 0], scale: [3, 0.5, 3] } } });
+      s.call("olive", "create", { id: "deck", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos: [8, 0, 0], scale: [3, 0.5, 3] } } });
       s.call("bob", "move", { to: [8, 0.3, 0], teleport: true }); s.call("vic", "move", { to: [8, 0, -1.22] });
       const sh = s.call("vic", "punt", { id: "deck", v: [0, 0.1, 0.5], contact: true }), kick = s.call("vic", "punt", { id: "deck", power: 2 });
       s.call("bob", "move", { to: [8, 0, 3], teleport: true }, 4000); const after = s.call("vic", "punt", { id: "deck", v: [0, 0.1, 0.5], contact: true });
@@ -220,14 +220,14 @@ const cases: Case[] = [
       return { at: code(at), side: show(side) }; },
     good: (o) => o.at === "in-the-way" && o.side === "ok" },
   { id: "S16", what: "a plank turned 45°: from its axis-aligned box's empty corner the shove is out-of-reach; against its long face it goes", run(s) { cast(s);
-      const h = Math.SQRT1_2; s.call("olive", "create", { id: "plank", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [10, 0, 0], q: [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)], scale: [8, 1, 0.5] } } });
+      const h = Math.SQRT1_2; s.call("olive", "create", { id: "plank", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos: [10, 0, 0], q: [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)], scale: [8, 1, 0.5] } } });
       s.call("vic", "move", { to: [12.05, 0, 2.05] }); const corner = s.call("vic", "punt", { id: "plank", v: [-0.28, 0.05, -0.28], contact: true });
       s.call("vic", "move", { to: [10 + 0.45 * h, 0, 0.45 * h], teleport: true }, 4000); const face = s.call("vic", "punt", { id: "plank", v: [-0.4 * h, 0.05, -0.4 * h], contact: true });
       return { corner: code(corner), face: show(face) }; },
     good: (o) => o.corner === "out-of-reach" && o.face === "ok" },
   { id: "S17", what: "by mass (BODY_MASS 70 kg, elastic): a ball (11 kg) takes 3 m/s, the 216 kg crate is refused at 2.5 m/s and takes 1.9, physics.mass 1000 kg is refused at 1 m/s", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [3, 0] } });
-      s.call("olive", "create", { id: "anvil", model: "crate", components: { physics: { kind: "dynamic", who: "visitor", mass: 1000 } }, place: { at: [6, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [3, 0] } });
+      s.call("olive", "create", { id: "anvil", model: "crate", components: { physics: { kind: "dynamic", who: "player", mass: 1000 } }, place: { at: [6, 0] } });
       s.call("vic", "move", { to: AGAINST }); const c25 = s.call("vic", "punt", { id: "crate", v: [0, 0.3, 2.5], contact: true }), c19 = s.call("vic", "punt", { id: "crate", v: [0, 0.3, 1.9], contact: true });
       s.call("vic", "move", { to: [3, 0, -0.44], teleport: true }, 4000); const b3 = s.call("vic", "punt", { id: "ball", v: [0, 0.3, 3], contact: true });
       s.call("vic", "move", { to: [6, 0, -0.62], teleport: true }, 4000); const a1 = s.call("vic", "punt", { id: "anvil", v: [0, 0.1, 1], contact: true });
@@ -241,19 +241,19 @@ const cases: Case[] = [
     good: (o) => o.shoves === 0 && o.kick === 1 && o.unrecorded === 5 },
   { id: "S19", what: "not through a wall: a wide crate behind a wall is out of a shove's reach though its near face is within it", run(s) { cast(s);
       s.call("olive", "create", { id: "wall", model: "crate", components: { lock: true, transform: { pos: [5, 0, 0], scale: [0.5, 4, 8] } } });
-      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [6.65, 0, 0], scale: [5, 1, 5] } } });
+      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos: [6.65, 0, 0], scale: [5, 1, 5] } } });
       s.call("vic", "move", { to: [4.4, 0, 0] }); const r = s.call("vic", "punt", { id: "big", v: [0.08, 0.01, 0], contact: true });
       return { r: code(r), reason: r?.refused?.reason }; },
     good: (o) => o.r === "out-of-reach" && /wall/.test(o.reason ?? "") },
   { id: "S20", what: "a socket is part of its host, never a thing: a shove or kick of a chair's seat socket is not-a-thing, naming its host, and the log gains no launch", run(s) { cast(s);
-      s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [4, 0] } });
+      s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [4, 0] } });
       s.call("olive", "create", { id: "chair-seat", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0] }, socket: { name: "seat", body: { action: "sit" } } } });
       s.call("vic", "move", { to: [4, 0, -0.6] });
       const sh = s.call("vic", "punt", { id: "chair-seat", v: [0, 0.2, 1.5], contact: true }), kick = s.call("vic", "punt", { id: "chair-seat", power: 3 });
       return { sh: code(sh), kick: code(kick), why: sh?.refused?.reason, launches: launches(s) }; },
     good: (o) => o.sh === "not-a-thing" && o.kick === "not-a-thing" && /chair/.test(o.why ?? "") && o.launches === 0 },
   { id: "S21", what: "S12 on socket children: bob sits on the chair's seat child, and the authority records his seat as {to: <the socket>}; vic's shove, kick and grab of the chair are refused occupied; once bob walks off, the shove goes", run(s) { cast(s);
-      s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, grabbable: {} }, place: { at: [4, 0] } });
+      s.call("olive", "create", { id: "chair", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, grabbable: {} }, place: { at: [4, 0] } });
       s.call("olive", "create", { id: "chair-seat", components: { parent: { to: "chair" }, transform: { pos: [0, 0.45, 0] }, socket: { name: "seat", body: { action: "sit" } } } });
       s.call("bob", "move", { to: [4, 0, -0.6] }); const sit = s.call("bob", "use", { id: "chair", action: "sit" }); const rec = JSON.stringify(s.w().presence.occupants?.bob ?? null);
       s.call("vic", "move", { to: [4, 0, -0.62] });
@@ -262,7 +262,7 @@ const cases: Case[] = [
       return { sit: sit.attach?.to, rec, sh: code(sh), kick: code(kick), grab: code(grab), after: show(after) }; },
     good: (o) => o.sit === "chair-seat" && JSON.parse(o.rec).to === "chair-seat" && Number.isInteger(JSON.parse(o.rec).since) && o.sh === "occupied" && o.kick === "occupied" && o.grab === "occupied" && o.after === "ok" },
   { id: "S22", what: "one body per socket: with bob in the sofa's left seat, vic's use takes the free right seat, ann's is refused occupied naming who sits there; a switched-off seat is no seat (bob's is let go)", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "visitor" } });
+      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "player" } });
       s.call("olive", "create", { id: "sofa", model: "crate", place: { at: [6, 0] } });
       s.call("olive", "create", { id: "sofa-l", components: { parent: { to: "sofa" }, transform: { pos: [-0.4, 0.5, 0] }, socket: { name: "left", body: { action: "sit" } } } });
       s.call("olive", "create", { id: "sofa-r", components: { parent: { to: "sofa" }, transform: { pos: [0.4, 0.5, 0] }, socket: { name: "right", body: { action: "sit" } } } });
@@ -275,7 +275,7 @@ const cases: Case[] = [
   { id: "S23", what: "snap passes over a socket someone sits in: a key let go by a hook bob sits on is set down, and the reply says who sits there", run(s) { cast(s);
       s.call("olive", "create", { id: "post", model: "crate", place: { at: [0, 4] } });
       s.call("olive", "create", { id: "post-hook", components: { parent: { to: "post" }, transform: { pos: [0, 0.8, 0] }, socket: { name: "hook", accepts: ["key"], radius: 0.3, body: { action: "sit" } } } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 4] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 4] } });
       s.call("bob", "move", { to: [0, 0, 3.3] }); const sit = s.call("bob", "use", { id: "post" });
       s.call("vic", "move", { to: [0.8, 0, 4.6] }); s.call("vic", "grab", { id: "key" }); const d = s.call("vic", "drop", { id: "key", pos: [0.05, 0.8, 4.05] });
       return { sit: sit.attach?.to, d: show(d), parent: s.w().state().entities.key.c.parent ?? null, why: d.notes?.find((n: any) => n.passedOver)?.why }; },
@@ -283,7 +283,7 @@ const cases: Case[] = [
   { id: "S24", what: "a thing in a socket occupies it: with a key snapped onto the hook, bob's use of that seat is refused occupied, naming the key", run(s) { cast(s);
       s.call("olive", "create", { id: "post", model: "crate", place: { at: [0, 4] } });
       s.call("olive", "create", { id: "post-hook", components: { parent: { to: "post" }, transform: { pos: [0, 0.8, 0] }, socket: { name: "hook", accepts: ["key"], radius: 0.3, body: { action: "sit" } } } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 4] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 4] } });
       s.call("vic", "move", { to: [0.8, 0, 4.6] }); s.call("vic", "grab", { id: "key" }); const d = s.call("vic", "drop", { id: "key", pos: [0.05, 0.8, 4.05] });
       s.call("bob", "move", { to: [0, 0, 3.3] }); const sit = s.call("bob", "use", { id: "post" });
       return { snapped: d.settled?.in, sit: code(sit), thing: sit.refused?.thing }; },

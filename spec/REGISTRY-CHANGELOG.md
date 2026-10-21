@@ -234,3 +234,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["player","builder","moderator","owner"]
   - roles.reserved: vocabulary ["banned","everyone","guest","none","owner"] → ["banned","owner"]
 - 2026-10-21: roles.vocab.retired: none and visitor are retired words (a stored value in either still reads with its old meaning), so neither can name a custom role; found by role-grammar: none had become a valid custom id
+- 2026-10-21: visitor and none are released (R 10-21): no stored v4 world outside this PR's own tests carries them (#260 is unmerged; v1 worlds come in through translate-v1@17, which still maps v1's visitor to player and carries spectator/none as imported-roles), so nothing reads the old words: no rename table, no retired words. A dev world built on #260 before today keeps grabbables whose who says visitor, an undefined role there (owners only until recreated)
+  - roles.renamed: vocabulary {"visitor":"player"} → gone
+  - roles.retired: vocabulary ["none","visitor"] → gone

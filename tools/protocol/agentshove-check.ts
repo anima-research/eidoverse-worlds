@@ -94,7 +94,7 @@ try {
   // authority mints its id (ID[name]); N(name) reads the scene name as that id
   const N = (n) => IDS.of(n);
   const mk = (name, args) => ann.req("create", { ...args, id: `$${name}`, components: { label: name, ...(args.components ?? {}) } });
-  const crate = (id, model, pos, extra = {}, mass = 20) => mk(id, { model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "visitor", mass }, ...extra } });
+  const crate = (id, model, pos, extra = {}, mass = 20) => mk(id, { model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "player", mass }, ...extra } });
   for (const [id, model, pos, extra, mass] of [["low", "test/lowcrate.glb", [0, 0, 2]], ["tall", "test/tallcrate.glb", [6, 0, 2], {}, 30], ["still", "test/lowcrate.glb", [12, 0, 2]], ["locked", "test/lowcrate.glb", [18, 0, 2], { lock: true }]] as any) {
     const r = await crate(id, model, pos, extra, mass); ok(r.ok, `(setup) ${id} crate`, r); }
   for (let i = 0; i < 80 && !["low", "tall", "still", "locked"].every((id) => ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape); i++) await sleep(50);

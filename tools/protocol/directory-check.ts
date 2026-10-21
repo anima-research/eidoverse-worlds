@@ -42,7 +42,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const w: any = openLive(path.join(tmp, "worlds", "w"), "w", { now: () => (T += 100), custodyFile: path.join(tmp, "custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const owner = d.resolve({ sub: "human:discord:111", name: "Annie" });
   ok(request(w, owner, "create-world", { title: "w" }).ok, "I1 the owner founds a world as their id");
-  ok(request(w, owner, "set", { id: "@world", component: "default-role", value: { role: "visitor" } }).ok, "I1b …strangers are visitors");
+  ok(request(w, owner, "set", { id: "@world", component: "default-role", value: { role: "player" } }).ok, "I1b …strangers are visitors");
   const imp = d.resolve({ name: "Annie" });   // someone typing the owner's display name, no account
   const r = request(w, imp, "set", { id: "@world", component: "about", value: { name: "mine now", text: "" } });
   ok(!r.ok && r.refused?.code === "rights", "I2 typing the owner's name (no account) gets a fresh identity with no rights", r.refused);
@@ -162,7 +162,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const ann = P("ann"), dee = P("dee"), bob = P("bob"), cy = P("cy"), vic = P("vic");
   const q = (who: string, verb: string, a: any = {}) => request(w, who, verb, a) as any;
   q(ann, "create-world", { title: "u" });
-  for (const [id, role] of [[dee, "owner"], [bob, "builder"], [cy, "builder"], [vic, "visitor"]]) q(ann, "set", { id: "@world", component: `roles:${id}`, value: { role } });
+  for (const [id, role] of [[dee, "owner"], [bob, "builder"], [cy, "builder"], [vic, "player"]]) q(ann, "set", { id: "@world", component: `roles:${id}`, value: { role } });
   const actOf = (r: any) => r.act ?? r.seq - 1;
   const b1 = q(bob, "create", { id: "bench", model: "crate", place: { at: [1, 1] } });
   ok(q(vic, "undo", { act: actOf(b1) }).refused?.code === "rank", "U1 a visitor can't undo someone else's act");
@@ -192,7 +192,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
 { let T = 1800000000000; const d = directoryAt(file); const { worldEditOps } = await import("../../shared/worldentity.js");
   const w: any = openLive(path.join(tmp, "worlds", "wx"), "wx", { now: () => (T += 1000), custodyFile: path.join(tmp, "wx-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:w1", name: "Wyn" }), vis = d.resolve({ sub: "human:discord:w2", name: "Val" });
-  request(w, own, "create-world", { title: "wx" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
+  request(w, own, "create-world", { title: "wx" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "player" } });
   const panel = { hours: 18, rate: 2, clouds: "cumulus", weather: "clear", azimuth: 1.2 };   // sun/fill/world/clock cut 10-16; the panel strips them (skypanel.js:114)
   const m: any = { verb: "sky", args: panel };   // what the sky panel sends (client/lib/skypanel.js)
   const we: any = worldEditOps({ sky: null, terrain: null, grass: null }, { "weather.state": "rain" }, { now: T });
@@ -255,7 +255,7 @@ const file = path.join(tmp, "worlds", ".directory.json");
 { let T = 1800000000000; const d = directoryAt(file);
   const w: any = openLive(path.join(tmp, "worlds", "vu"), "vu", { now: () => (T += 1000), custodyFile: path.join(tmp, "vu-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const own = d.resolve({ sub: "human:discord:vu1", name: "Oda" }), vis = d.resolve({ sub: "human:discord:vu2", name: "Vee" });
-  request(w, own, "create-world", { title: "vu" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "visitor" } });
+  request(w, own, "create-world", { title: "vu" }); request(w, own, "set", { id: "@world", component: `roles:${vis}`, value: { role: "player" } });
   request(w, own, "create", { id: "gate", model: "door", components: { openable: { open: false }, reactions: { open: { kind: "toggle", component: "openable", field: "open" } } }, place: { at: [0, 4] } });
   const u: any = request(w, vis, "use", { id: "gate", action: "open" });
   ok(u.ok && w.state().entities.gate.c.openable.open === true, "V1 a visitor opens the gate through its handler", u.refused);

@@ -310,7 +310,7 @@ try {
 
   // ---- V: a visitor (who can't lift locks) gets the refusal, no buttons ----
   { const r0 = await evalJson(`__refused.length`);
-    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', rank: 0, permissions: [] };
+    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'player', rank: 0, permissions: [] };
       const t = (await import('/lib/editwrites.js')).compsOf('${crate}').transform;
       globalThis.__vis = (await import('/lib/editwrites.js')).send({ verb: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
       return true; })()`);
@@ -318,7 +318,7 @@ try {
     const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
     check("V1 a visitor's move of a locked thing: the refusal, in a person's words (the agents' beside them), and no dialog", refusedV && !dialogV && /^Couldn't move/.test(await evalJson(`__refused.at(-1).text`)) && (await evalJson(`__refused.at(-1).agentText`))?.startsWith(`move ${crate} refused by the authority (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
     if (dialogV) await dlgClick("Cancel");
-    await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'visitor', rank: 0, permissions: [] }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
+    await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'player', rank: 0, permissions: [] }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V2 …and its Hierarchy lock icons can't be clicked", await waitFor(`${lockBtn(crate)}?.disabled === true`), await evalJson(`${lockBtn(crate)}?.outerHTML ?? null`));
     await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V3 an owner's are clickable again", await waitFor(`${lockBtn(crate)}?.disabled === false`)); }
@@ -823,7 +823,7 @@ try {
       // the world has written no capacity: what the panel shows is this server's defaults (schema's, asked once)
       const fresh = !disk().entities["@world"]?.c.capacity;
       // CW1 a visitor sees no dials; the owner sees them with the world's values
-      await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', permissions: [] }; return true;`);
+      await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'player', permissions: [] }; return true;`);
       await paint(); await waitFor(`${W}?.textContent.includes('Entities in this world 10,000')`, 4000);
       const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), entities: ${W}.textContent.includes('Entities in this world 10,000'), guests: ${W}.textContent.includes("Guests' entities, together 500"), avatar: ${W}.textContent.includes('Largest avatar (entities) 2,000') })`);
       await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
@@ -878,8 +878,8 @@ try {
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.can?.pauseScripts === true);
       await page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__rk')?.remove(); const b = document.createElement('div'); b.id = '__rk'; document.body.append(b); m._test.paintRoles(b); return true;`);
       await sleep(800);
-      const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'visitor'; s.onchange(); return true; })()`);
-      const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "visitor");
+      const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'player'; s.onchange(); return true; })()`);
+      const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "player");
       const after = disk().entities["@world"]?.c[`roles:${BOB}`];
       check("RK1 Roles › picking a role from the panel keeps the person's `can` exceptions (merge when the entry exists)", grant && picked === true && moved && after?.can?.pauseScripts === true, { picked, after });
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`);   // restore for the rows below

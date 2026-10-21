@@ -44,13 +44,13 @@ check("roles.js exports isRoleId", typeof (R as any).isRoleId === "function");
 const isRoleId = (R as any).isRoleId ?? (() => null);
 const grabTakes = (who: any) => checkGrabbable({ who }) === null;
 const seatTakes = (who: any) => checkSockets({ seat: { pos: [0, 0.5, 0], body: { who } } }) === null;
-const CORPUS = ["visitor", "builder", "moderator", "owner", "dj", "stage-crew", "a", "a".repeat(24), "a".repeat(25), "none", "guest", "everyone", "ghost", "banned",
+const CORPUS = ["player", "builder", "moderator", "owner", "dj", "stage-crew", "a", "a".repeat(24), "a".repeat(25), "none", "guest", "everyone", "ghost", "banned",
   "Builder", "9lives", "-x", "", "with space", 3, null];
 for (const id of CORPUS) {
   const want = isRoleId(id);
   check(`${JSON.stringify(id)}: isRoleId ${want} = a grabbable's who ${grabTakes(id)} = a seat's who ${seatTakes(id)}`, typeof want === "boolean" && grabTakes(id) === want && seatTakes(id) === want);
 }
-check("the built-in ids are roles; a custom role's id is roles.js's grammar", R.BUILTIN_IDS.every((x: string) => isRoleId(x)) && isRoleId("dj") && !isRoleId("none"));
+check("the built-in ids are roles; a custom role's id is roles.js's grammar", R.BUILTIN_IDS.every((x: string) => isRoleId(x)) && isRoleId("dj") && isRoleId("none") /* released R 10-21 */ && !isRoleId("banned") /* reserved */);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

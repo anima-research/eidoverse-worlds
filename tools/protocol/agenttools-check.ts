@@ -151,7 +151,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { rol
 const ID: Record<string, string> = {};
 const make = async (name: string, args: any) => { const r = await ann.req("create", { ...args, id: `$${name}`, components: { ...(args.components ?? {}), label: name } }); if (r?.ids?.[`$${name}`]) ID[name] = r.ids[`$${name}`]; return r; };
 ok((await make("wall", { model: "test/wall.glb", components: { transform: { pos: [0, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } })).ok, "(setup) Ann builds a wall across z = 3");
-ok((await make("mug", { model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
+ok((await make("mug", { model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "player" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
 for (let i = 0; i < 60 && !(ag.entities.has(ID.wall) && ag.entities.has(ID.mug)); i++) await sleep(50);
 ok(/^[a-z2-7]{26}$/.test(ID.mug ?? ""), "(setup) the authority minted the mug an opaque id", ID);
 const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name, a);   // through the door a host uses (aliases included)

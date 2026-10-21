@@ -45,7 +45,7 @@ function playground(clock = "pinned") {
   call("rowan", "create-world", { title: "pg" });
   call("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
-  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
   call("rowan", "move", { to: [0, 0, -0.5] });
   return x;
 }
@@ -96,7 +96,7 @@ function playground(clock = "pinned") {
 {
   const { call, w, L, walk } = playground();
   call("vic", "move", { to: [0, 0, -3] });
-  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
+  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
   ok(code(call("rowan", "punt", { id: "table-1" })) === "not-dynamic", "K1 a static thing can't be punted");
   ok(code(call("vic", "punt", { id: "ball" })) === "out-of-reach", "K2 punting needs the thing at your feet");
   const p = call("rowan", "punt", { id: "ball", power: 4 });
@@ -138,7 +138,7 @@ function playground(clock = "pinned") {
   call("rowan", "put", { id: "ball" }, 100);
   const b3 = w.state().entities.ball.c.transform.pos;
   walk("rowan", [b3[0], 0, b3[2] - 0.4]); walk("vic", [b3[0] + 0.4, 0, b3[2]]);
-  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
+  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
   ok(call("rowan", "punt", { id: "ball", v: [0, 3, 0] }).ok, "K16 rowan pops it straight up");
   ok(code(call("vic", "punt", { id: "ball" }, 20)) === "rights", "K17 a visitor can't volley a builder's ball in the air either (physics.who)");
   // a lock on what it rests on binds a punt, as it binds a grab

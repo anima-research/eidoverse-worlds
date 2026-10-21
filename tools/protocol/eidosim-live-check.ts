@@ -22,8 +22,8 @@ function pg(name) {
   call(name, "rowan", "create-world", { title: name });
   call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call(name, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [2, 0] } });
-  call(name, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 2.2] } });
+  call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [2, 0] } });
+  call(name, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 2.2] } });
   return name;
 }
 function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 at tgt
@@ -44,7 +44,7 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
 { const W = pg("k3"); call(W, "rowan", "create", { id: "vase", model: "crate", components: { lock: true, parent: { to: "tgt" }, transform: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [0.5, 0.5, 0.5] } } });
   const v0 = wpos(W, "vase"), p0 = pos(W, "tgt"); const s = shoot(W);
   ok(s && J(wpos(W, "vase")) === J(v0) && J(pos(W, "tgt")) === J(p0), "K3 carrying something locked: not knocked (as a hand can't lift it)", { s, vase: [v0, wpos(W, "vase")], tgt: [p0, pos(W, "tgt")] }); }
-{ const W = pg("k4"); call(W, "rowan", "create", { id: "top", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "tgt" }, transform: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [0.5, 0.5, 0.5] } } });
+{ const W = pg("k4"); call(W, "rowan", "create", { id: "top", model: "crate", components: { physics: { kind: "dynamic", who: "player" }, parent: { to: "tgt" }, transform: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [0.5, 0.5, 0.5] } } });
   const t0 = wpos(W, "top"); const s = shoot(W, "vic", [0, -1, 8]); const L = log(W), v = view(W), R = restsOf(L);
   const rt = R.find((r) => r.id === "top"), rg = R.find((r) => r.id === "tgt");
   ok(s && !!rt && !!rg && rt.cause === rg.cause && v.checks.agree >= 3 && !v.checks.disagree.length && J(wpos(W, "top")) !== J(t0),
@@ -54,7 +54,7 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const w = openLive(dir, "lv", { now: () => now, custodyFile: root + "custody.json", nameOf: () => null, kindOf: () => "human" });
   const c = (a, v, args = {}, step = 100) => { now += step; return request(w, a, v, args); };
   c("rowan", "create-world", { title: "lv" }); c("rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
-  c("rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  c("rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
   c("rowan", "move", { to: [0, 0, -0.5] }); const g = c("rowan", "grab", { id: "rb" }), t = c("rowan", "throw", { id: "rb", v: [0, 1, 3] });
   const flying = !!w.sim().sim.bodies.rb; c("rowan", "wait", {}, 15000);
   const R = restsOf(readLog(fs.readFileSync(dir + "world.jsonl"))), p = w.state().entities.rb.c.transform.pos;
@@ -101,7 +101,7 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const c = (a, v, args = {}, step = 1000) => { now += step; return request(w, a, v, args); };
   c("rowan", "create-world", { title: "r6" });
   c("rowan", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
-  c("rowan", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+  c("rowan", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 0] } });
   c("rowan", "move", { to: [0.8, 0, 0.6] }); c("rowan", "grab", { id: "key" }); const d = c("rowan", "drop", { id: "key", pos: [0.1, 0.75, 0.05] });
   const kq = w.state().entities.key?.c.transform?.q; const kp = w.state().entities.key?.c.parent?.to;
   // sockets are child entities (10-14): a snapped thing's parent is the SOCKET, whose parent is the host

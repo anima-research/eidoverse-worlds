@@ -425,7 +425,7 @@ if (M) {
     ok(call("hm", "olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }).ok, "(GH4 setup) the world runs eidosim");
     ok(call("hm", "olive", "move", { to: [0, 0, 2] }).ok, "(GH4 setup) olive arrives");
     for (const [id, model, pos, extra] of [["hb", "ball", [0.5, 1, 2.4], {}], ["hk", "ball", [-0.5, 0.2, 2.4], {}], ["hp", "crate", [0.5, 0, 1.4], { grabbable: {} }]] as any)
-      ok(call("hm", "olive", "create", { id, model, components: { transform: { pos }, ...(model === "ball" ? { physics: { kind: "dynamic", who: "visitor" } } : {}), ...extra } }).ok, `(GH4 setup) ${id}`);
+      ok(call("hm", "olive", "create", { id, model, components: { transform: { pos }, ...(model === "ball" ? { physics: { kind: "dynamic", who: "player" } } : {}), ...extra } }).ok, `(GH4 setup) ${id}`);
     const n4 = openWorld(root, "hm").entries.length;
     ok(call("hm", "olive", "grab", { id: "hb" }).ok, "(GH4 setup) olive holds a ball");
     const loading = (r) => !r.ok && r.refused?.code === "ground-loading" && /still loading/.test(r.refused.reason ?? "");
@@ -440,8 +440,8 @@ if (M) {
     ok(loading(pf) && near(openWorld(root, "hm").state().entities.hp.c.transform.pos[1], 0), "GH4 put {pos} 1.4 m up with the grid missing: refused ground-loading (no ground to judge floating on), nothing logged", { refused: pf.refused, pos: openWorld(root, "hm").state().entities.hp.c.transform.pos });
     // GH4 (review r5 F2): a grab whose occupants would fall. Picking up the crate a dynamic thing rests on (its rest attached
     // it) launches the occupant from v 0 under a carried engine: with the grid missing it would land on the noise law
-    ok(call("hm", "olive", "create", { id: "pt", model: "crate", components: { transform: { pos: [0.6, 0, 0.6] }, grabbable: { who: "visitor" } } }).ok, "(GH4 setup) a crate");
-    ok(call("hm", "olive", "create", { id: "pk", model: "ball", components: { transform: { pos: [0, 0.6, 0] }, parent: { to: "pt" }, physics: { kind: "dynamic", who: "visitor" } } }).ok, "(GH4 setup) a ball rests on it");
+    ok(call("hm", "olive", "create", { id: "pt", model: "crate", components: { transform: { pos: [0.6, 0, 0.6] }, grabbable: { who: "player" } } }).ok, "(GH4 setup) a crate");
+    ok(call("hm", "olive", "create", { id: "pk", model: "ball", components: { transform: { pos: [0, 0.6, 0] }, parent: { to: "pt" }, physics: { kind: "dynamic", who: "player" } } }).ok, "(GH4 setup) a ball rests on it");
     { const n5 = openWorld(root, "hm").entries.length;
       const g = call("hm", "ann", "grab", { id: "pt" });
       const sims = openWorld(root, "hm").entries.slice(n5).filter((e) => e.kind === "sim").map((e) => `${e.verb}:${e.body?.id}`);
@@ -450,7 +450,7 @@ if (M) {
     // GH5 (review r5 F6): a host's shape changes with the grid missing: its occupants are kept (no launch, nothing written for
     // them), and the note says they are left as they are on it (a scaled host carries them with it: they don't stay put)
     ok(call("hm", "olive", "create", { id: "pu", model: "crate", components: { transform: { pos: [-2, 0, -2] } } }).ok, "(GH5 setup) a crate");
-    ok(call("hm", "olive", "create", { id: "pv", model: "ball", components: { transform: { pos: [0, 0.6, 0] }, parent: { to: "pu" }, physics: { kind: "dynamic", who: "visitor" } } }).ok, "(GH5 setup) a ball rests on it");
+    ok(call("hm", "olive", "create", { id: "pv", model: "ball", components: { transform: { pos: [0, 0.6, 0] }, parent: { to: "pu" }, physics: { kind: "dynamic", who: "player" } } }).ok, "(GH5 setup) a ball rests on it");
     { const n6 = openWorld(root, "hm").entries.length;
       const sc = call("hm", "olive", "set", { id: "pu", component: "transform", value: { pos: [-2, 0, -2], scale: [1.5, 1.5, 1.5] } });
       const kept = (sc.notes ?? []).find((n) => Array.isArray(n.kept));

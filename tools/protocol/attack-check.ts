@@ -72,17 +72,17 @@ const attacks = [
   { id: "H1f", what: "a handler outlives its author's rights (bob demoted, vic still uses bob's handler on a thing bob can't touch now)", run(s) { cast(s);
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [4, 0] } });
       s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked" } } });
-      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
+      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "player" } });
       return { bobSet: s.call("bob", "set", { id: "lever", component: "label", value: "mine" }), attack: s.call("vic", "use", { id: "lever", action: "yank" }) }; },
     baseBad: (o) => refused(o.bobSet) && ok(o.attack), nowGood: (o) => refused(o.bobSet) && o.attack.refused?.code === "rights" },
   { id: "H1g", what: "undo ignores rank and locks: demoted bob undoes his move of a crate olive has since locked", run(s) { cast(s);
       s.call("bob", "create", { id: "crate-1", model: "crate", place: { at: [0, 0] } }); s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [3, 0, 3] } });
-      s.call("olive", "set", { id: "crate-1", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
+      s.call("olive", "set", { id: "crate-1", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "player" } });
       const set = s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [0, 0, 0] } });
       return { set, attack: s.call("bob", "undo", {}), pos: look(s, "crate-1").components?.transform?.pos }; },
     baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && refused(o.attack) && JSON.stringify(o.pos) === "[3,0,3]" },
   { id: "H1h", what: "put checks rank and locks only at grab (time-of-check/time-of-use)", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
       s.call("olive", "set", { id: "ball", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
       return { grab, attack: s.call("vic", "put", { id: "ball" }), pos: look(s, "ball").components?.transform?.pos }; },
@@ -94,7 +94,7 @@ const attacks = [
       return { attack: s.call("vic", "put", { id: "ball" }) }; },
     baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "rights" },
   { id: "H1h3", what: "…and only the lock changes between grab and put", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "set", { id: "ball", component: "lock", value: true });
       return { attack: s.call("vic", "put", { id: "ball" }) }; },
     baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "locked" },
@@ -105,7 +105,7 @@ const attacks = [
       return { attack: s.call("bob", "create", { from: hash, id: "@x/../y" }), dry, wrote }; },
     baseBad: (o) => ok(o.attack) && o.wrote > 0, nowGood: (o) => o.attack.refused?.code === "shape" && ok(o.dry) && o.wrote === 0 },
   { id: "L1low", what: "put of a thing that was deleted while held (an unhandled 500)", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "delete", { id: "ball" });
       return { attack: s.call("vic", "put", { id: "ball" }) }; },
     baseBad: (o) => crashed(o.attack), nowGood: (o) => o.attack.refused?.code === "gone" },
@@ -145,7 +145,7 @@ const attacks = [
   // PROTOCOL §7a, "Revoke and the past": taking a permission away stops future acts, an undo through a handler included
   { id: "L7b", what: "undoing your own use through a handler whose who no longer admits you is refused", run(s) { cast(s);
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [-3, 3] } });
-      s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "visitor" } } });
+      s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "player" } } });
       const use = s.call("vic", "use", { id: "lever", action: "yank" });
       const raise = s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "set", component: "label", value: "yanked", who: "builder" } } });
       return { use, raise, attack: s.call("vic", "undo", {}) }; },
@@ -158,7 +158,7 @@ function ownerless(d) {
   const s = session(d, name); s.call("olive", "create-world", { title: name }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   // rewrite the log so that olive's owner role was never there (same entries otherwise)
   const p = `${d.root}worlds/${name}.jsonl`; const lines = fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  for (const e of lines) { for (const o of [e.args, ...(e.args?.ops ?? []).map((x) => x.args), e.body, ...(e.body?.ops ?? [])]) if (o) { if (o.components) delete o.components["roles:olive"]; if ((o.component ?? o.comp) === "roles:olive") { o.value = { role: "visitor" }; } } }
+  for (const e of lines) { for (const o of [e.args, ...(e.args?.ops ?? []).map((x) => x.args), e.body, ...(e.body?.ops ?? [])]) if (o) { if (o.components) delete o.components["roles:olive"]; if ((o.component ?? o.comp) === "roles:olive") { o.value = { role: "player" }; } } }
   fs.writeFileSync(p, lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
   return { bob: s.call("bob", "create", { model: "crate", place: { at: [1, 1] } }), zed: s.call("zed", "create", { model: "crate", place: { at: [2, 2] } }) };
 }
@@ -170,7 +170,7 @@ attacks.push({ id: "H4f", what: "a log with no owner at all: roles:bob says buil
 function physLog(d) {
   const s = session(d, "atk-phys"); T = 1800000000000;
   s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-  s.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+  s.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
   s.call("rowan", "move", { to: [0, 0, -0.5] }); s.call("rowan", "grab", { id: "ball" }); s.call("rowan", "throw", { id: "ball", v: [0, 2, 3] });
   T += 6000; s.call("rowan", "wait", {});
   return s.world();

@@ -37,7 +37,6 @@ import { grassAtWrite } from "./assetref.js";
 import { eidoHex } from "../eido.js";
 import { COMPONENTS } from "./componentspec.js";
 import { partSlot, motionType } from "./names.js";
-import { RENAMED_ROLES, canonRole, isLegacyNone } from "./roles.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
 export const OLD_LIGHT_DECAY = 1.7;
@@ -209,36 +208,16 @@ export function renameFields(comp0, v) {
       return [k, { ...r, ...(r.grasp === undefined && fingers !== null ? { grasp: fingers } : {}) }]; })); }
   return { value: out, renamed };
 }
-/** A role id renamed before release (R 10-21: visitor → player, roles.js RENAMED_ROLES), wherever a value stores one: a grant
- *  (roles:<id>.role), the newcomer role (default-role.role, .guests), a built-in's edits under its old key (role-defs), and a
- *  `who` (grabbable, physics, station, each reactions handler). One pure function for the door (writes.js: an old word is
- *  taken and stored in the new) and the maintenance command (renameOps). Idempotent. {value, renamed: [{field, from, to}]} */
-export function renameRoleWords(comp, v) {
-  if (!bag(v)) return { value: v, renamed: [] };
-  const renamed = []; let out = v; const edit = () => (out === v ? (out = { ...v }) : out);
-  const word = (field, x) => { const y = canonRole(x); if (y !== x) { renamed.push({ field, from: x, to: y }); return y; } return x; };
-  const fields = comp.startsWith("roles:") ? ["role"] : comp === "default-role" ? ["role", "guests"] : ["grabbable", "physics", "station"].includes(comp) ? ["who"] : [];
-  for (const f of fields) if (typeof out[f] === "string") { const y = word(f, out[f]); if (y !== out[f]) edit()[f] = y; }
-  if (comp === "reactions") for (const [k, h] of Object.entries(out)) if (bag(h) && typeof h.who === "string") { const y = word(`${k}.who`, h.who); if (y !== h.who) edit()[k] = { ...h, who: y }; }
-  if (comp === "role-defs") for (const [old, now] of Object.entries(RENAMED_ROLES)) if (Object.hasOwn(out, old)) {
-    edit(); const kept = out[now] ?? out[old]; const { [old]: _gone, ...rest } = out; out = { ...rest, [now]: kept };
-    renamed.push({ field: old, from: old, to: now }); }
-  return { value: out, renamed };
-}
-/** The ops that rename stored components (RENAMED_COMPONENTS), fields (RENAMED_FIELDS) and role words (renameRoleWords),
- *  [{verb, id, comp, value?, renamed?}], [] when nothing needs it. A stored grant of `none` (R 10-21: gone; an old log's)
- *  is deleted: the person then holds what anyone without a grant holds. */
+/** The ops that rename stored components (RENAMED_COMPONENTS) and fields (RENAMED_FIELDS): [{verb, id, comp, value?}], []
+ *  when nothing needs it. */
 export function renameOps(st, purged = null) {
   const ops = [];
   for (const [id, map] of Object.entries(RENAMED_COMPONENTS)) { const c = st?.entities?.[id]?.c; if (!bag(c)) continue;
     for (const [from, to] of Object.entries(map)) { if (!(from in c) || c[from] === purged) continue;
       ops.push({ verb: "delete", id, comp: from }); if (!(to in c)) ops.push({ verb: "set", id, comp: to, value: c[from] }); } }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (!bag(c)) continue;
-    for (const comp of Object.keys(c).sort()) { if (!bag(c[comp]) || c[comp] === purged) continue;
-      if (id === "@world" && comp.startsWith("roles:") && isLegacyNone(c[comp])) { ops.push({ verb: "delete", id, comp, renamed: [{ field: "role", from: "none", to: null }] }); continue; }
-      const a = Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(comp)) ? renameFields(comp, c[comp]) : { value: c[comp], renamed: [] };
-      const b = renameRoleWords(comp, a.value); const renamed = [...a.renamed, ...b.renamed];
-      if (renamed.length) ops.push({ verb: "set", id, comp, value: b.value, renamed }); } }
+    for (const comp of Object.keys(c).filter((k) => Object.hasOwn(RENAMED_FIELDS, renamedFieldsKey(k))).sort()) { if (!bag(c[comp]) || c[comp] === purged) continue;
+      const r = renameFields(comp, c[comp]); if (r.renamed.length) ops.push({ verb: "set", id, comp, value: r.value, renamed: r.renamed }); } }
   return ops;
 }
 

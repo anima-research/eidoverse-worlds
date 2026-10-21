@@ -5,7 +5,7 @@
 //
 // THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
 //   player 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
-// (R 10-21: the base rung is `player`, named for what it does, as builder and moderator are; `visitor` was its old word.
+// (R 10-21: the base rung is `player`, named for what it does, as builder and moderator are.
 // A guest is not a rung: it's a person without an account, who holds a role like anyone else.)
 // "Below you" is a total order on it (ranks are unique), and every rank comparison compares two members.
 // Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
@@ -33,17 +33,6 @@ export const REASON_MAX = 500;
 export const RANK = Object.freeze({ player: 0, builder: 100, moderator: 200, owner: 255 });
 /** What an id the world doesn't define stands at: below every rung, so it is never "more". Not a role. */
 export const BELOW = -1;
-/** Role ids renamed before release (R 10-21), {old: new}: a stored value in the old word READS as the new one (served), the
- *  door stores the new one, and the maintenance command rewrites stored ones (shaperepair renameOps). An old word can't be a
- *  custom role while it's served. */
-export const RENAMED_ROLES = Object.freeze({ visitor: "player" });
-/** A stored grant of the removed `none` (an old log's). Never a role: it reads as no grant, the door
- *  refuses a new one, and the maintenance command deletes stored ones. */
-/** Words a reader still serves with an old meaning (R 10-21): visitor (read as player) and none (read as no grant). None of
- *  them can be a custom role while it's served, or a stored value would mean two things. Not reserved names: old words. */
-export const RETIRED_ROLE_WORDS = Object.freeze(["none", ...Object.keys(RENAMED_ROLES)].sort());
-export const isLegacyNone = (v) => (typeof v === "string" ? v : v?.role) === "none";
-export const canonRole = (x) => (typeof x === "string" && Object.hasOwn(RENAMED_ROLES, x) ? RENAMED_ROLES[x] : x);
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
 // SETTER holds now, read from the log at check time (a setter who's demoted takes their locks down with them). Anyone at
 // that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
@@ -74,7 +63,7 @@ export const PERMISSION_NAMES = Object.freeze(LIST.map(([k]) => k));
 export const OWNER = "owner";
 /** The base rung (R 10-21: player), through one test like owner: "anyone here" for a who, the badge that isn't shown. */
 export const BASE = "player";
-export const isBase = (x) => canonRole(typeof x === "string" ? x : x?.role) === BASE;
+export const isBase = (x) => (typeof x === "string" ? x : x?.role) === BASE;
 export const isOwner = (x) => (typeof x === "string" ? x : x?.role) === OWNER;   // a role string, a grant or effective rights
 export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
 /** The powers that may warn (research §2: warn isn't a permission; the gentlest act comes with any of these). */
@@ -96,19 +85,16 @@ export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
 export const RESERVED_IDS = Object.freeze(new Set(["owner", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
-export const isRoleId = (x0) => { const x = canonRole(x0); return BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x) && !RETIRED_ROLE_WORDS.includes(x)); };
+export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x));
 
 /** A world's role definitions: @world.role-defs (or {} ). */
 export const defsOf = (wc) => (isObj(wc?.["role-defs"]) ? wc["role-defs"] : {});
 
 /** A role by id in a world (its @world components `wc`): {id, name, rank, can, builtin, custom} or null if the world
  *  doesn't define it. Who may install scripts is each role's `scripts` permission (script-settings.install is gone, 10-16). */
-export function roleDef(wc, id0) {
-  const id = canonRole(id0);
+export function roleDef(wc, id) {
   if (id === "owner") return { id, ...BUILTIN.owner, builtin: true };
-  // a built-in's edits stored under its old word (role-defs.visitor) are read as the new one's until repair renames them
-  const defs = defsOf(wc); const key = Object.hasOwn(defs, id) ? id : Object.keys(RENAMED_ROLES).find((o) => RENAMED_ROLES[o] === id && Object.hasOwn(defs, o));
-  const d = key && isObj(defs[key]) ? defs[key] : null;
+  const defs = defsOf(wc); const d = Object.hasOwn(defs, id) && isObj(defs[id]) ? defs[id] : null;
   if (Object.hasOwn(BUILTIN, id)) {
     const b = BUILTIN[id]; const can = { ...b.can, ...(isObj(d?.can) ? pickPermissions(d.can) : {}) };
     return { id, name: typeof d?.name === "string" ? d.name : b.name, rank: b.rank, can, builtin: true, ...(d?.note ? { note: d.note } : {}) };
@@ -146,10 +132,8 @@ export function brokenNeed(can) {
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   if (!wc) return "player";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
-  const base = roleDef(wc, dr?.role) ? canonRole(dr.role) : "player";   // a stored default of none (an old log) reads as player
-  const own = isObj(wc[`roles:${id}`]) ? canonRole(wc[`roles:${id}`].role) : null;
-  // a stored grant of none (an old log's) is no grant: the person holds what anyone without one holds
-  let r = own && !isLegacyNone(own) ? own : anon ? guestRoleOf(wc) : base;
+  const base = roleDef(wc, dr?.role) ? dr.role : "player";
+  let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
   if (typeof r !== "string" || !roleDef(wc, r)) r = "player";
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
   return !hasOwner && rankOfRole(wc, r) > RANK.player ? "player" : r;
@@ -160,8 +144,8 @@ export function guestRoleOf(wc) {
   const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null; const g = dr?.guests;
   const base = roleDef(wc, dr?.role) ? dr.role : "player";
   const above = (r) => GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, r) > rankOfRole(wc, base);
-  if (typeof g !== "string" || canonRole(g) === "owner" || !roleDef(wc, g) || above(g)) return "player";
-  return canonRole(g);
+  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g) || above(g)) return "player";
+  return g;
 }
 
 /** A person's effective rights: {role, name, rank, can: {<permission>: bool}, permissions: [names on]}.
@@ -192,8 +176,6 @@ export function checkRoleDefs(v, prev, held = () => 0) {
   const ranks = new Map();
   for (const [id, d] of Object.entries(v)) {
     if (id === "owner") return bad("shape", "role-defs can't define owner: the owner holds every permission, always, at rank 255", "leave owner out");
-    if (Object.hasOwn(RENAMED_ROLES, id)) return bad("shape", `'${id}' is the old word for ${RENAMED_ROLES[id]}: define ${RENAMED_ROLES[id]}`, `role-defs.${RENAMED_ROLES[id]}`);
-    if (RETIRED_ROLE_WORDS.includes(id)) return bad("shape", `'${id}' is a retired word (an old log's grant of it reads as no grant), so it can't name a role`, "pick another id");
     if (!Object.hasOwn(BUILTIN, id) && (RESERVED_IDS.has(id) || !CUSTOM_ID.test(id))) return bad("shape", `'${id}' isn't a role id you can make: a–z first, then a–z, 0–9 and '-', up to 24 (not ${[...RESERVED_IDS].join(", ")})`);
     if (!isObj(d)) return bad("shape", `role-defs.${id} must be {name, rank, can}`);
     for (const k of Object.keys(d)) if (!["name", "rank", "can", "note"].includes(k)) return bad("schema", `role-defs.${id}: unknown key '${k}'`, "a role is {name, rank, can, note?}");
@@ -270,6 +252,6 @@ export function grantableRoles(wc, me) {
 export function badgeOf(p) {
   if (!p) return null;
   if (p.anon) return { text: "guest", tone: "guest" };
-  if (!p.role || canonRole(p.role) === "player") return null;
+  if (!p.role || isBase(p)) return null;
   return { text: (p.name ?? p.role).toLowerCase(), tone: isOwner(p) ? "owner" : p.role === "moderator" ? "mod" : "role" };
 }

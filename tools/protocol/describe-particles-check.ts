@@ -125,7 +125,7 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 const thing = (s: any, id: string, components: any = {}) => s.call("olive", "create", { id, components: { transform: { pos: [0, 0, 0] }, ...components } });
 const lookOf = (s: any, id: string, who = "olive") => (s.call(who, "look", {}).things ?? []).find((t: any) => t.id === id) ?? null;

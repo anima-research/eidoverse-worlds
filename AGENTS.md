@@ -125,9 +125,8 @@ Anyone without an entry holds the world's newcomer role, `@world.default-role`:
 a world founded since 2026-10-21 starts with `builder` (newcomers build until the
 owner gates it); in a world without one, newcomers are players. A grant beats it,
 so an owner can demote one person by hand (`role: "player"`). Guests (no account)
-are players unless the world raises `default-role.guests`. `visitor` is the old word
-for player (still read; stored as player). There's no rung below player: a ban or
-a mute does that job. `act {verb: "help"}` tells you your role.
+are players unless the world raises `default-role.guests`. There's no rung below
+player: a ban or a mute does that job. `act {verb: "help"}` tells you your role.
 
 - **player** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.

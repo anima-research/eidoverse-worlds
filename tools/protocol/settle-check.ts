@@ -14,7 +14,7 @@ const ok = (c, name, info) => { if (c) pass++; else { fail++; console.log("FAIL"
 const root = scratch("settle"); let T = 1800000000000;
 const call = (W, a, v, args = {}) => { T += 1500; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, W), a, v, args); };
 const st = (W) => fold(openWorld(root, W).entries);
-const box = (W, id, pos, scale = [1, 1, 1]) => call(W, "rowan", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos, q: [0, 0, 0, 1], scale } } });
+const box = (W, id, pos, scale = [1, 1, 1]) => call(W, "rowan", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos, q: [0, 0, 0, 1], scale } } });
 { const W = "gap"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   // a low slab under the gap, two crates either side of it, and a crate across the two (the test crate is 0.6 m)
   const made = [box(W, "slab", [0, 0, 0], [0.15, 0.2, 1]), box(W, "l", [-0.36, 0, 0]), box(W, "r", [0.36, 0, 0]), box(W, "top", [0, 0.6, 0])].map((r) => r.ok);
@@ -69,7 +69,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
 // R 10-11 23:36/23:47: a domino that came to rest on a FALLEN domino was parented under it — a child of a rotated,
 // non-uniformly scaled parent is sheared ("splortched"). A rest never parents under a non-uniform host unless the child
 // sits square on its axes.
-{ const W = "shear"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "open", build: "visitor" } });
+{ const W = "shear"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "open", build: "player" } });
   const h = Math.sin(Math.PI / 12), c = Math.cos(Math.PI / 12);   // a wide flat slab turned 30° about up, static
   call(W, "rowan", "create", { id: "slab", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [0, 0, 0], q: [0, h, 0, c], scale: [2, 0.3, 1] } } });
   box(W, "chip", [0, 1.2, 0], [0.3, 0.3, 0.3]); call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "chip", v: [0, 0.3, 0] }); T += 6000; call(W, "vic", "look", {});
@@ -78,7 +78,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
 // R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box dropped from a height
 // falls and rests on the floor; a crate thrown onto a static mesh box rests on it and is parented to it
 { const W = "mesh"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  call(W, "rowan", "create", { id: "fall", components: { mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [4, 0, 4] } } });
+  call(W, "rowan", "create", { id: "fall", components: { mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, physics: { kind: "dynamic", who: "player" }, transform: { pos: [4, 0, 4] } } });
   call(W, "vic", "move", { to: [4, 0, 3.3] }); const p = call(W, "vic", "punt", { id: "fall", v: [0, 2, 0] }); T += 8000; call(W, "vic", "look", {});
   const f = st(W).entities.fall.c; const rested = restsOf(openWorld(root, W).entries).some((x) => x.id === "fall");
   ok(p.ok && rested && Math.abs(f.transform.pos[1]) < 0.02 && !f.parent, "SE9 a dynamic mesh box punted up has a body: it flies, comes back down and its rest is logged on the floor", { punt: p.ok ?? p.refused, rested, pos: f.transform.pos, parent: f.parent ?? null });
@@ -107,7 +107,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const ws = c4.parent?.to === "mp" ? (c4.transform.scale ?? [1, 1, 1]).map((v, i) => v * [2.5, 0.5, 2.5][i]) : (c4.transform.scale ?? [1, 1, 1]);
   // r2 S2.1/S2.2/S2.3 under an engine: a no-op write re-drops nothing; a socketed child rides its socket; a deleted body frees the occupants
   call(W, "rowan", "set", { id: "plinth", component: "sockets", value: { perch: { pos: [0.5, 0.3, 0.5] } } });
-  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
+  call(W, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "player" }, parent: { to: "plinth", socket: "perch" }, transform: { pos: [0, 0, 0] } } });
   const n1 = openWorld(root, W).entries.length; const same = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); T += 8000; call(W, "vic", "look", {});
   ok(same.ok && openWorld(root, W).entries.length - n1 === 2 && !(same.notes ?? []).some((n) => n.fell), "SE14 re-asserting the plinth's mesh value re-drops nothing: 2 rows, no fell note (r2 S2.1)", { rows: openWorld(root, W).entries.length - n1, notes: same.notes });
   const grow = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.5, 1.5] } }); T += 8000; call(W, "vic", "look", {});

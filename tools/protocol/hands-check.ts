@@ -18,7 +18,7 @@ const held = (W) => Object.keys(openWorld(root, W).presence.holds);
 const code = (r) => (r.ok ? "ok" : r.refused?.code);
 // a (at x=0), b (x=3), c (x=1.5): 0.5 m crates, 0.6 tall, loose; physics on unless asked
 const mk = (W, physics = true) => { call(W, "rowan", "create-world", { title: W }); if (physics) call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  for (const [id, x] of [["a", 0], ["b", 3], ["c", 1.5]]) call(W, "rowan", "create", { id, model: "crate", components: { ...(physics ? { physics: { kind: "dynamic", who: "visitor" } } : { grabbable: { who: "visitor" } }) }, place: { at: [x, 0] } }); };
+  for (const [id, x] of [["a", 0], ["b", 3], ["c", 1.5]]) call(W, "rowan", "create", { id, model: "crate", components: { ...(physics ? { physics: { kind: "dynamic", who: "player" } } : { grabbable: { who: "player" } }) }, place: { at: [x, 0] } }); };
 const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); return call(W, "vic", "grab", { id }); };
 
 { const W = "ghost"; mk(W); take(W, "a", 0); take(W, "b", 3); call(W, "vic", "move", { to: [0.4, 0, -0.8] });

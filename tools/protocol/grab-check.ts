@@ -214,7 +214,7 @@ const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
 // owner olive (the founder), builder bob, visitors vic and ann
 function cast(s: any, sim = false) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "visitor"], ["ann", "visitor"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "player"], ["ann", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
   if (sim) s.call("olive", "set", { id: "@world", component: "physics-engine", value: ENG });
 }
 const tail = (s: any, n: number) => s.entries().slice(-n).map((e: any) => `${e.kind}:${e.verb}`);
@@ -233,7 +233,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   // ---------------- M: migration (green at base AND now) ----------------
   { id: "M1", what: "a dynamic thing with no grabbable is picked up by physics.who, carried, put down and thrown, as before", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const g = s.call("vic", "grab", { id: "ball" }), p = s.call("vic", "put", { id: "ball" });
       const g2 = s.call("vic", "grab", { id: "ball" }), t = s.call("vic", "throw", { id: "ball", v: [0, 2, 2] });
@@ -246,7 +246,7 @@ const cases: Case[] = [
       return { vic: show(s.call("vic", "grab", { id: "crate" })) }; },
     good: (o) => o.vic === "ok" },
   { id: "M3", what: "…and the latest grab wins (taken from a holder, who is told)", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.4, 0, 0.5] });
       s.call("vic", "grab", { id: "ball" }); const a = s.call("ann", "grab", { id: "ball" });
       return { a: show(a), by: held(s, "ball")?.by, taken: a.notes?.some((n: any) => n.takenFrom === "vic") }; },
@@ -258,7 +258,7 @@ const cases: Case[] = [
       return { help: sch?.help ?? null, on: sch?.on }; },
     good: (o) => /carryable/.test(o.help ?? "") && o.on === "thing" },
   { id: "G2", what: "a thing with grabbable and no physics (a lantern) is picked up, carried and put down in a world with no physics", run(s) { cast(s);
-      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const g = s.call("vic", "grab", { id: "lantern" }); const w1 = s.call("vic", "move", { to: [0, 0, 2.5] }, 1000);
       const p = s.call("vic", "put", { id: "lantern" });
@@ -269,7 +269,7 @@ const cases: Case[] = [
   // relayed pose's yaw (w.present, as server/world.ts gives it); qYaw of the landed rotation is the turn about up.
   { id: "Y1", what: "a put lands a carried thing turned by as far as its holder turned while carrying it (yaw only), not back as it was taken", run(s) { cast(s);
       const Q = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)].map((n) => +n.toFixed(6));
-      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "player" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
       let face = 0.25; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "box1" });
       face = 0.25 + Math.PI / 2; s.call("vic", "move", { to: [0, 0, 1.5] }, 1000);   // turned a quarter left, and walked
@@ -277,7 +277,7 @@ const cases: Case[] = [
       return { g: show(g), p: show(p), q, yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null, tilt: q ? +Math.hypot(q[0], q[2]).toFixed(6) : null }; },
     good: (o) => o.g === "ok" && o.p === "ok" && Math.abs(o.yaw - (0.3 + Math.PI / 2)) < 1e-3 && o.tilt < 1e-5 },
   { id: "Y2", what: "…and a drop in a world that runs physics launches it as carried (the launch's yaw), not as taken", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       let face = 0; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
       s.call("vic", "move", { to: [0, 0, 0.5] }); const y0 = (() => { const q = tf(s, "ball").q; return 2 * Math.atan2(q[1], q[3]); })();
       const g = s.call("vic", "grab", { id: "ball" }); face = -1; const n0 = s.entries().length;
@@ -286,7 +286,7 @@ const cases: Case[] = [
     good: (o) => o.g === "ok" && o.d === "ok" && o.yaw !== null && Math.abs(o.yaw - (o.y0 - 1)) < 1e-3 },
   { id: "Y3", what: "…and taken from one hand into another, it starts as the first hand had turned it (the taker's put turns by the taker's turn only)", run(s) { cast(s);
       const faces: any = { vic: 0, ann: 2 };
-      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor", steal: true }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "player", steal: true }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
       s.w().present = () => Object.entries(faces).map(([id, yaw]) => ({ id, at: null, yaw }));
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.4, 0, 0.5] });
       s.call("vic", "grab", { id: "box1" }); faces.vic = 0.5;            // vic turns half a radian with it
@@ -295,7 +295,7 @@ const cases: Case[] = [
       return { a: show(a), p: show(p), yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null }; },
     good: (o) => o.a === "ok" && o.p === "ok" && Math.abs(o.yaw - 0.75) < 1e-3 },
   { id: "Y4", what: "…and a launch refused after it turned the hold (a let-go point out of reach) leaves it turned once: the put after it isn't turned twice", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       let face = 0; s.w().present = () => [{ id: "vic", at: null, yaw: face }];
       s.call("vic", "move", { to: [0, 0, 0.5] }); const y0 = (() => { const q = tf(s, "ball").q; return 2 * Math.atan2(q[1], q[3]); })();
       s.call("vic", "grab", { id: "ball" }); face = 0.7;
@@ -305,12 +305,12 @@ const cases: Case[] = [
     good: (o) => o.t === "out-of-reach" && o.p === "ok" && Math.abs(o.yaw - (o.y0 + 0.7)) < 1e-3 },
   { id: "M4", what: "…and with no relayed pose to turn by (no facing known), a put lands it as it was taken, as before", run(s) { cast(s);
       const Q = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)].map((n) => +n.toFixed(6));
-      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
+      s.call("olive", "create", { id: "box1", model: "book", components: { grabbable: { who: "player" }, transform: { pos: [0, 0, 0], q: Q(0.3), scale: [1, 1, 1] } } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "box1" }); const p = s.call("vic", "put", { id: "box1" }); const q = tf(s, "box1")?.q;
       return { p: show(p), yaw: q ? +(2 * Math.atan2(q[1], q[3])).toFixed(4) : null }; },
     good: (o) => o.p === "ok" && Math.abs(o.yaw - 0.3) < 1e-3 },
   { id: "G3", what: "…and in a world that runs physics: the grab lifts it out of the engine, a drop sets it down (it isn't dynamic, so it doesn't fly), a carrier agrees", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const n0 = s.entries().length;
       const g = s.call("vic", "grab", { id: "lantern" }); const lift = since(s, n0);
       s.call("vic", "move", { to: [0, 0, 2] }, 1000); const n1 = s.entries().length;
@@ -318,39 +318,39 @@ const cases: Case[] = [
       return { g: show(g), lift, d: show(d), after, at: tf(s, "lantern")?.pos, launches: s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").length, carrier: carrier(s) }; },
     good: (o) => o.g === "ok" && o.lift.includes("sim:lift") && o.d === "ok" && JSON.stringify(o.after) === '["act:put","change:set"]' && o.at[1] === 0 && o.launches === 0 && !o.carrier.disagree },
   { id: "G4", what: "a throw in a world with no physics is a drop that says so (a VR hand lets go with its velocity; it was refused and stuck in the hand)", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
       const t = s.call("vic", "throw", { id: "ball", v: [0, 1.5, 3], pos: [0, 1.1, 0.7] });
       return { t: show(t), note: t.notes?.find((n: any) => n.thrown)?.why ?? null, held: held(s, "ball"), at: tf(s, "ball")?.pos }; },
     good: (o) => o.t === "ok" && /doesn't run physics/.test(o.note ?? "") && o.held === null && o.at?.[1] === 0 && Math.abs(o.at[2] - 0.7) < 1e-6 },
   { id: "G5", what: "nothing to grab: a plain thing is refused not-grabbable; grabbable {enabled: false} makes a dynamic ball kick-only (punt still works)", run(s) { cast(s, true);
       s.call("olive", "create", { id: "rock", model: "crate", place: { at: [3, 3] } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, grabbable: { enabled: false } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" }, grabbable: { enabled: false } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, -0.5] }); s.call("olive", "move", { to: [3, 0, 2.5] }); const plain = s.call("olive", "grab", { id: "rock" });
       return { plain: code(plain), g: show(s.call("vic", "grab", { id: "ball" })), p: show(s.call("vic", "punt", { id: "ball", power: 3 })) }; },
     good: (o) => o.plain === "not-grabbable" && o.g.startsWith("refused not-grabbable") && o.p === "ok" },
   { id: "G6", what: "who: grabbable.who wins over physics.who for the hand; a punt still asks physics.who", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "builder" }, grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "builder" }, grabbable: { who: "player" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "builder" } }, place: { at: [0.5, 0] } });
       s.call("vic", "move", { to: [0, 0, -0.5] });
       const punt = s.call("vic", "punt", { id: "ball", power: 3 }); const g = s.call("vic", "grab", { id: "ball" }); s.call("vic", "put", { id: "ball" });
       const k = s.call("vic", "grab", { id: "key" });
       // and the other way round: anyone may kick it, only a builder carry it. The punt's admission must read physics.who,
       // not fall through to the hand's settlement (grabbable.who): with the punt branch gone the kick is refused (F4 10-12)
-      s.call("olive", "create", { id: "kickball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" }, grabbable: { who: "builder" } }, place: { at: [-1, 0] } });
+      s.call("olive", "create", { id: "kickball", model: "ball", components: { physics: { kind: "dynamic", who: "player" }, grabbable: { who: "builder" } }, place: { at: [-1, 0] } });
       s.call("vic", "move", { to: [-1, 0, -0.5] });
       const kick = s.call("vic", "punt", { id: "kickball", power: 3 }); const carry = s.call("vic", "grab", { id: "kickball" });
       return { punt: code(punt), g: show(g), key: code(k), kick: show(kick), carry: code(carry) }; },
     good: (o) => o.punt === "rights" && o.g === "ok" && o.key === "rights" && o.kick === "ok" && o.carry === "rights" },
   { id: "G7", what: "steal: false: nobody takes it from a holder's hand (refused 'held'); an owner may", run(s) { cast(s);
-      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor", steal: false } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "player", steal: false } }, place: { at: [0, 0] } });
       for (const [p, x] of [["vic", 0], ["ann", 0.4], ["olive", -0.4]]) s.call(p, "move", { to: [x, 0, 0.5] });
       s.call("vic", "grab", { id: "flag" }); const a = s.call("ann", "grab", { id: "flag" }); const o = s.call("olive", "grab", { id: "flag" });
       return { ann: code(a), olive: show(o), by: held(s, "flag")?.by }; },
     good: (o) => o.ann === "held" && o.olive === "ok" && o.by === "olive" },
   { id: "G8", what: "range: 0.4 m means close; 4 m reaches past an arm (granted as a pull, said so)", run(s) { cast(s);
-      s.call("olive", "create", { id: "near", model: "book", components: { grabbable: { who: "visitor", range: 0.4 } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "far", model: "book", components: { grabbable: { who: "visitor", range: 4 } }, place: { at: [0, 3.2] } });
+      s.call("olive", "create", { id: "near", model: "book", components: { grabbable: { who: "player", range: 0.4 } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "far", model: "book", components: { grabbable: { who: "player", range: 4 } }, place: { at: [0, 3.2] } });
       s.call("vic", "move", { to: [0, 0, 0.8] });
       const n = s.call("vic", "grab", { id: "near" }); const f = s.call("vic", "grab", { id: "far" });
       return { near: code(n), far: show(f), pulled: f.notes?.some((x: any) => x.pulled) }; },
@@ -359,13 +359,13 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } });
       const set = (v: any) => s.call("olive", "set", { id: "cup", component: "grabbable", value: v });
       const typo = set({ realease: "stay" }); const grip = set({ grips: { handle: { q: [0, 0, 0, 1] } } }); const en = set({ release: "fly" }); const th = set({ throw: 9 });
-      const good = set({ who: "visitor", grips: { handle: { pos: [0, 0.1, 0], hand: "right", grasp: "pinch" } }, fits: ["cup"], use: { down: "sip" } });
+      const good = set({ who: "player", grips: { handle: { pos: [0, 0.1, 0], hand: "right", grasp: "pinch" } }, fits: ["cup"], use: { down: "sip" } });
       return { typo: code(typo), dym: typo.refused?.didYouMean, grip: code(grip), en: code(en), th: code(th), good: show(good) }; },
     good: (o) => o.typo === "schema" && o.dym?.[0] === "release" && o.grip === "shape" && o.en === "shape" && o.th === "bounds" && o.good === "ok" },
   // ---------------- R: release modes (slice 2) ----------------
   { id: "R1", what: "throw: grabbable.throw scales the launch velocity (said in a note); throw: 0 lets go instead (a drop: it falls)", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "dart", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", throw: 2 } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "anvil", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", throw: 0 } }, place: { at: [0.4, 0] } });
+      s.call("olive", "create", { id: "dart", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", throw: 2 } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "anvil", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", throw: 0 } }, place: { at: [0.4, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "dart" });
       const t = s.call("vic", "throw", { id: "dart", v: [0, 1, 1.5] }); const L = s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch").at(-1);
       const act = s.entries().filter((e: any) => e.kind === "act" && e.verb === "throw").at(-1);
@@ -374,8 +374,8 @@ const cases: Case[] = [
       return { t: show(t), v: L?.body?.v, sent: act?.body?.request?.v, note: t.notes?.some((n: any) => /grabbable\.throw/.test(n.why)), t0: show(t0), after: since(s, n0), v0: s.entries().at(-1)?.body?.v, why: t0.notes?.find((n: any) => n.thrown)?.why, carrier: carrier(s) }; },
     good: (o) => o.t === "ok" && JSON.stringify(o.v) === "[0,2,3]" && JSON.stringify(o.sent) === "[0,1,1.5]" && o.note && o.t0 === "ok" && JSON.stringify(o.after) === '["act:drop","sim:launch"]' && JSON.stringify(o.v0) === "[0,0,0]" && /can't be thrown/.test(o.why ?? "") && !o.carrier.disagree },
   { id: "R2", what: "release: stay hangs where the hand lets go: a put with no pos isn't set down, a floating put isn't refused; a plain thing still is", run(s) { cast(s);
-      s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "visitor", release: "stay" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "rock", model: "ball", components: { grabbable: { who: "visitor" } }, place: { at: [0.4, 0] } });
+      s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "player", release: "stay" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "rock", model: "ball", components: { grabbable: { who: "player" } }, place: { at: [0.4, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       s.call("vic", "grab", { id: "balloon" }); const p = s.call("vic", "put", { id: "balloon" }); const at1 = tf(s, "balloon").pos;
       s.call("vic", "grab", { id: "balloon" }); const p2 = s.call("vic", "put", { id: "balloon", pos: [0, 0.8, 1] });
@@ -383,7 +383,7 @@ const cases: Case[] = [
       return { p: show(p), at1, p2: show(p2), at2: tf(s, "balloon").pos, rock: code(r) }; },
     good: (o) => o.p === "ok" && o.at1[1] === 1.1 && o.p2 === "ok" && o.at2[1] === 0.8 && o.rock === "implausible" },
   { id: "R3", what: "release: return: let go, it goes home at once (the holder's act, then the authority's return-home caused by it); its home was stamped at create", run(s) { cast(s, true);
-      const c = s.call("olive", "create", { id: "torch", model: "table-lamp", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
+      const c = s.call("olive", "create", { id: "torch", model: "table-lamp", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", release: "return" } }, place: { at: [0, 0] } });
       const home = comp(s, "torch", "home");   // the one home (shape audit 10-16: grabbable.home is gone)
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       const n0 = s.entries().length; const d = s.call("vic", "drop", { id: "torch" }); const L = s.entries(); const after = since(s, n0);
@@ -393,7 +393,7 @@ const cases: Case[] = [
       return { home, stampNote: c.notes?.some((n: any) => n.component === "home"), d: show(d), after, cause: ret ? L[ret.cause]?.verb : null, at, held: held(s, "torch"), t: show(t), thrown: since(s, n1), carrier: carrier(s) }; },
     good: (o) => JSON.stringify(o.home?.pos) === "[0,0,0]" && o.stampNote && o.d === "ok" && JSON.stringify(o.after) === '["act:put","act:return-home","change:set"]' && o.cause === "put" && JSON.stringify(o.at) === "[0,0,0]" && o.held === null && o.t === "ok" && JSON.stringify(o.thrown) === '["act:put","act:return-home","change:set"]' && !o.carrier.disagree },
   { id: "R4", what: "returnAfter: unheld that long after a hand moved it, the next request sends it home, once; not while held; an edit's move doesn't count", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "player", returnAfter: 30 } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       s.call("vic", "put", { id: "ball" }); s.advance(20000); s.call("vic", "look", {});
       const early = tf(s, "ball").pos;
@@ -414,7 +414,7 @@ const cases: Case[] = [
     good: (o) => o.early[2] > 2 && JSON.stringify(o.back) === "[0,0,0]" && JSON.stringify(o.first) === '["act:return-home","change:set"]' && !o.again.length && !o.whileHeld.length && JSON.stringify(o.home2) === "[2,0,2]" && !o.afterEdit.length && JSON.stringify(o.at) === "[2,0,2]" },
   { id: "R5", what: "fits + sockets.accepts: let go within the socket's radius, it snaps in (parent {to, socket}, the socket's pose); undo takes it back out", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("bob", "move", { to: [0.8, 0, 0.6] }); s.call("bob", "grab", { id: "key" });
       const far = s.call("bob", "drop", { id: "key", pos: [0.65, 0.8, 0.1] }); const farPar = comp(s, "key", "parent") ?? null; s.call("bob", "grab", { id: "key" }); const n0 = s.entries().length;
       const d = s.call("bob", "drop", { id: "key", pos: [0.1, 0.75, 0.05] }); const slot = slotOf(s, "key"), host = hostOf(s, "key"); const t = tf(s, "key");
@@ -424,7 +424,7 @@ const cases: Case[] = [
   { id: "R5s", what: "a socket child: a key let go within its radius snaps in with parent {to: <the socket>} and an identity transform; settled says in: <the socket>", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", place: { at: [0, 0] } });
       s.call("olive", "create", { id: "rack-hook", components: { parent: { to: "rack" }, transform: { pos: [0, 0.8, 0], q: [0, 0.7071068, 0, 0.7071068] }, socket: { name: "hook", accepts: ["key"], radius: 0.3 } } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("bob", "move", { to: [0.8, 0, 0.6] }); s.call("bob", "grab", { id: "key" });
       const far = s.call("bob", "drop", { id: "key", pos: [0.65, 0.8, 0.1] }); const farPar = comp(s, "key", "parent") ?? null; s.call("bob", "grab", { id: "key" });
       const d = s.call("bob", "drop", { id: "key", pos: [0.1, 0.75, 0.05] });
@@ -435,7 +435,7 @@ const cases: Case[] = [
   { id: "R6", what: "…an occupied socket, one on a locked thing and a key that doesn't fit are passed over (it's set down, and the reply says why)", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "safe", model: "crate", components: { lock: true, sockets: { slot: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [3, 0] } });
-      for (const [id, x, fits] of [["k1", 1, ["key"]], ["k2", 1.2, ["key"]], ["coin", 1.4, ["coin"]], ["k3", 2.2, ["key"]]]) s.call("olive", "create", { id, model: "book", components: { grabbable: { who: "visitor", fits } }, place: { at: [x, 0] } });
+      for (const [id, x, fits] of [["k1", 1, ["key"]], ["k2", 1.2, ["key"]], ["coin", 1.4, ["coin"]], ["k3", 2.2, ["key"]]]) s.call("olive", "create", { id, model: "book", components: { grabbable: { who: "player", fits } }, place: { at: [x, 0] } });
       s.call("vic", "move", { to: [0.8, 0, 0.6] });
       const go = (id: string, pos: number[]) => { s.call("vic", "grab", { id }); return s.call("vic", "drop", { id, pos }); };
       const c = go("coin", [-0.2, 0.8, -0.15]); const a = go("k1", [0, 0.8, 0.1]); const b = go("k2", [0, 0.8, 0.1]);   // the coin first: the hook is free when it doesn't fit
@@ -444,14 +444,14 @@ const cases: Case[] = [
     good: (o) => o.a === "hook" && o.b[0] === "ok" && o.b[1] === null && /already sits/.test(o.b[2] ?? "") && o.c[0] === "ok" && o.c[1] === null && o.d[0] === "ok" && o.d[1] === null && /locked/.test(o.d[2] ?? "") },
   { id: "R7", what: "taken back out of its socket, it's an ordinary grab, and the put that follows deletes the parent", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"] } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("vic", "move", { to: [0.5, 0, 0.6] }); s.call("vic", "grab", { id: "key" }); s.call("vic", "drop", { id: "key", pos: [0, 0.8, 0.05] });
       const inIt = slotOf(s, "key"); const g = s.call("vic", "grab", { id: "key" }); s.call("vic", "move", { to: [0.5, 0, 2] }, 1000); const p = s.call("vic", "put", { id: "key" });
       return { inIt, g: show(g), p: show(p), parent: comp(s, "key", "parent") ?? null }; },
     good: (o) => o.inIt === "hook" && o.g === "ok" && o.p === "ok" && o.parent === null },
   { id: "R9", what: "in a world that runs physics, a dynamic key dropped near its hook snaps in (no flight); dropped away from it, it falls (a launch)", run(s) { cast(s, true);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "key", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", fits: ["key"] } }, place: { at: [1, 0] } });
       s.call("vic", "move", { to: [0.8, 0, 0.6] }); s.call("vic", "grab", { id: "key" }); const n0 = s.entries().length;
       const d = s.call("vic", "drop", { id: "key", pos: [0.1, 0.8, 0.1] }); const near = since(s, n0); const par = slotOf(s, "key");
       s.call("vic", "grab", { id: "key" }); const n1 = s.entries().length; const f = s.call("vic", "drop", { id: "key", pos: [0.9, 1, 0.9] }); s.call("vic", "wait", {}, 6000);
@@ -466,15 +466,15 @@ const cases: Case[] = [
     good: (o) => o.a === "shape" && o.b === "shape" && o.c === "ok" },
   // ---------------- H: the hold record (slice 3) ----------------
   { id: "H1", what: "the hold record says which hand (default right; grab {hand: 'left'}); holdWire is what every client is told", run(s) { cast(s);
-      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "player" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "mug", model: "book", components: { grabbable: { who: "player" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const a = s.call("vic", "grab", { id: "cup" }); const b = s.call("vic", "grab", { id: "mug", hand: "left" }); const bad = s.call("vic", "grab", { id: "cup", hand: "up" });
       return { a: a.hand, b: b.hand, rec: G.holdWire?.(held(s, "mug")), bad: code(bad), logged: s.entries().filter((e: any) => e.kind === "act" && e.verb === "grab" && !e.body?.refused).length }; },
     good: (o) => o.a === "right" && o.b === "left" && JSON.stringify(o.rec) === '{"by":"vic","hand":"left"}' && o.bad === "shape" && o.logged === 0 },
   { id: "H2", what: "grips: a hand takes the first grip that suits it; a named grip must exist (did you mean) and suit the hand; a thing with none has no grip to name", run(s) { cast(s);
-      s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "visitor", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", grasp: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "sword", model: "book", components: { grabbable: { who: "player", grips: { hilt: { pos: [0, 0.05, 0], hand: "right", grasp: "fist" }, offhand: { pos: [0, 0.15, 0], hand: "left" } } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "player" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const r = s.call("vic", "grab", { id: "sword" }); s.call("vic", "put", { id: "sword" });
       const l = s.call("vic", "grab", { id: "sword", hand: "left" }); s.call("vic", "put", { id: "sword" });
@@ -484,8 +484,8 @@ const cases: Case[] = [
       return { r: [r.hand, r.grip], l: [l.hand, l.grip], typo: [code(typo), typo.refused?.didYouMean], wrong: code(wrong), named: [named.hand, named.grip], none: code(none) }; },
     good: (o) => JSON.stringify(o.r) === '["right","hilt"]' && JSON.stringify(o.l) === '["left","offhand"]' && o.typo[0] === "no-grip" && o.typo[1]?.[0] === "hilt" && o.wrong === "wrong-hand" && JSON.stringify(o.named) === '["left","offhand"]' && o.none === "no-grip" },
   { id: "H3", what: "offset: with no grips, a hand sends where it took hold and the record keeps it; with grips the grip wins; a malformed one is refused", run(s) { cast(s);
-      s.call("olive", "create", { id: "rock", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "axe", model: "book", components: { grabbable: { who: "visitor", grips: { haft: { pos: [0, 0.1, 0] } } } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "rock", model: "book", components: { grabbable: { who: "player" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "axe", model: "book", components: { grabbable: { who: "player", grips: { haft: { pos: [0, 0.1, 0] } } } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] });
       const OFF = { pos: [0.01, -0.02, 0.05], q: [0, 0, 0, 1] };
       const bad = s.call("vic", "grab", { id: "rock", offset: { pos: [0, 0, 9], q: [0, 0, 0, 1] } });
@@ -493,8 +493,8 @@ const cases: Case[] = [
       return { bad: code(bad), a: a.offset, rec: held(s, "rock")?.offset, b: [b.grip, b.offset ?? null] }; },
     good: (o) => o.bad === "shape" && JSON.stringify(o.a?.pos) === "[0.01,-0.02,0.05]" && JSON.stringify(o.rec?.q) === "[0,0,0,1]" && o.b[0] === "haft" && o.b[1] === null },
   { id: "H4", what: "a second hand: twoHanded takes it in both (secondary grip); one hand letting go leaves it in the other; not twoHanded, the other hand swaps", run(s) { cast(s);
-      s.call("olive", "create", { id: "rifle", model: "book", components: { grabbable: { who: "visitor", twoHanded: true, grips: { stock: { pos: [0, 0, 0], hand: "right" }, fore: { pos: [0, 0.15, 0], role: "secondary" } } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "rifle", model: "book", components: { grabbable: { who: "player", twoHanded: true, grips: { stock: { pos: [0, 0, 0], hand: "right" }, fore: { pos: [0, 0.15, 0], role: "secondary" } } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { grabbable: { who: "player" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const n0 = s.entries().length;
       s.call("vic", "grab", { id: "rifle" }); const two = s.call("vic", "grab", { id: "rifle", hand: "left" }); const both = JSON.stringify(G.holdWire?.(held(s, "rifle")));
       const one = s.call("vic", "drop", { id: "rifle", hand: "left" }); const after1 = JSON.stringify(G.holdWire?.(held(s, "rifle")));
@@ -505,9 +505,9 @@ const cases: Case[] = [
       && o.after1 === '{"by":"vic","hand":"right","grip":"stock"}' && o.prim === "ok" && o.after2 === '{"by":"vic","hand":"left","grip":"fore"}' && o.sw === "left" && o.cup === "left" && !o.logged.length },
   // ---------------- O: orphaned holds after the host stopped (R 10-06: a server killed while someone holds a thing) ----------------
   { id: "O1", what: "presence kept on disk: a hold whose holder isn't here at load is settled as leave settles it (a drop as the holder: set down; a stay stays; a return goes home)", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "visitor", release: "stay" } }, place: { at: [0.3, 0] } });
-      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [-0.3, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "player" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "player", release: "stay" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "player", release: "return" } }, place: { at: [-0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); for (const id of ["ball", "balloon", "torch"]) s.call("vic", "grab", { id }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
       const r = D.settleOrphans?.(w2, []);
@@ -515,9 +515,9 @@ const cases: Case[] = [
         ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
     good: (o) => o.r >= 1 && !o.holds.length && !o.body && o.by.includes("vic") && o.ball[1] === 0 && Math.abs(o.ball[2] - 2) < 1e-6 && o.balloon[1] === 1.1 && JSON.stringify(o.torch) === "[-0.3,0,0]" },
   { id: "O2", what: "presence kept in memory: in a physics world the log's lift is settled at load (door return-held, cause the lift; a return goes home), once, and a carrier agrees", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
-      s.call("olive", "create", { id: "kept", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "kept", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [-0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [-0.3, 0, 0.5] });
       s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("ann", "grab", { id: "kept" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const annHold = s.w().presence.holds.kept;
@@ -529,15 +529,15 @@ const cases: Case[] = [
   // ---------------- RA: a log changed outside the purge rule (review of #260): the system's own sweeps still run, but
   // a thing whose value the record lost is skipped, never moved from a place or scale derived from nothing ----------------
   { id: "RA2", what: "a stripped transform: returnAfter's sweep leaves the thing where the record lost it", run(s) { cast(s);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "player", returnAfter: 30 } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000); s.call("vic", "put", { id: "ball" });
       const k = stripLast(s, "ball", "transform"); const w2 = s.reopen(s.w().presence);
       s.advance(40000); const n0 = s.entries().length; D.settle?.(w2); const look = s.call("vic", "look", {});
       return { k, lost: tf(s, "ball") === F.PURGED, after: since(s, n0), look: show(look), diag: w2.state().diagnostics.some((d: any) => d[0] === k && d[1] === "commit-unpurged") }; },
     good: (o) => o.k > 0 && o.diag && o.lost && !o.after.includes("act:return-home") && o.look === "ok" },
   { id: "RA3", what: "a stripped transform: settling an orphaned lift at load leaves the thing where the record lost it", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", release: "return" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const kb = stripLast(s, "ball", "transform"), kt = stripLast(s, "torch", "transform");
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
@@ -554,7 +554,7 @@ const cases: Case[] = [
     good: (o) => o.k > 0 && o.before && !o.shelf && !o.box },
   // ---------------- U: use while held, and the grab / release events (slice 5) ----------------
   { id: "U1", what: "use while held: the holder's use with no action fires grabbable.use's down, with phase up its up (each one act, the act saying held/hand/phase); held: true from someone not holding is refused", run(s) { cast(s);
-      s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },
+      s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "player", use: { down: "on", up: "off" } },
         reactions: { on: { kind: "set", component: "t/burning", value: true }, off: { kind: "set", component: "t/burning", value: false }, poke: { kind: "set", component: "t/poked", value: true } } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.4, 0, 0.5] });
       const before = s.call("vic", "use", { id: "torch" }); const litBefore = comp(s, "torch", "t/burning") ?? null;   // not holding: several actions → it asks which (Commons audit CP3), nothing fires
@@ -569,7 +569,7 @@ const cases: Case[] = [
     good: (o) => /^refused no-action: torch offers \d+ things to do/.test(o.before) && o.litBefore === null && o.d === "ok" && o.lit1 === true && JSON.stringify(o.held) === '{"held":true,"hand":"right","phase":"down"}' && o.action === "on" && JSON.stringify(o.sent) === '{"id":"torch","args":{"phase":"down"}}'
       && o.u === "ok" && o.lit2 === false && o.named[0] === "ok" && o.named[1] === true && o.thief === "not-holding" },
   { id: "U2", what: "…a script reached by that use hears held, hand and phase (and its act records them: an auditor re-runs it)", run(s) { cast(s);
-      s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "spray", up: "spray" } } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "player", use: { down: "spray", up: "spray" } } }, place: { at: [0, 0] } });
       const r = install(s, "olive", "hose", "spray", `world.on("use", (e) => world.set("self", "t/flow", { on: e.phase === "down", hand: e.hand, held: e.held }));\n`, { scope: { ids: "self", comps: ["t/flow"] }, on: ["use"] });
       s.call("olive", "set", { id: "hose", component: "reactions", value: { spray: { kind: "script", script: "spray" } } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "hose", hand: "left" });
@@ -580,7 +580,7 @@ const cases: Case[] = [
     good: (o) => o.r === "ok" && o.d === "ran" && JSON.stringify(o.f1) === '{"on":true,"hand":"left","held":true}' && o.u === "ran" && o.f2?.on === false && o.ev?.phase === "up" && o.ev?.hand === "left" },
   { id: "U3", what: "grab and release are script events: a script whose scope covers the thing hears who took it (hand) and how it was let go (drop, snap with its socket); a script that doesn't cover it hears nothing", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["flag"], radius: 0.3 } } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor", fits: ["flag"] } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "player", fits: ["flag"] } }, place: { at: [1, 0] } });
       s.call("olive", "create", { id: "bystander", model: "book", place: { at: [3, 3] } });
       const LOG = `world.on("grab", (e) => world.set("self", "t/log", [...(world.get("self", "t/log") ?? []), "grab " + e.by + " " + e.hand]));\nworld.on("release", (e) => world.set("self", "t/log", [...(world.get("self", "t/log") ?? []), "release " + e.how + (e.socket ? " " + e.to + "/" + e.socket : "")]));\n`;
       const r1 = install(s, "olive", "flag", "watch", LOG, { scope: { ids: "self", comps: ["t/log"] }, on: ["grab", "release"] });
@@ -593,7 +593,7 @@ const cases: Case[] = [
     good: (o) => o.r.every((x: string) => x === "ok") && JSON.stringify(o.log) === '["grab vic right","release drop","grab vic left","release snap rack/hook"]' && o.bystander === null
       && JSON.stringify(o.acts.map((x: any) => x[0])) === '["grab","release","grab","release"]' && o.acts[1][1] === "put" && o.acts[0][1] !== "put" },
   { id: "U4", what: "…in a physics world a throw's release says throw, caused by the throw act; install refuses an event that doesn't exist", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("olive", "create", { id: "board", model: "book", place: { at: [3, 3] } });   // (a thrown ball is the engine's: L6, no write touches it in flight)
       install(s, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "t/how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["t/how"] }, on: ["release"] });
       const bad = install(s, "olive", "ball", "bad", `world.on("grabbed", () => {});\n`, { scope: { ids: "self", comps: ["t/x"] }, on: ["grabbed"] });
@@ -602,7 +602,7 @@ const cases: Case[] = [
       return { how: comp(s, "board", "t/how"), cause: s.entries()[sact?.cause]?.verb, bad: code(bad) }; },
     good: (o) => o.how === "throw" && o.cause === "throw" && o.bad === "shape" },
   { id: "U6", what: "a refused throw leaves the hold where it was: its release point isn't written before the throw is admitted", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "ball" });
       const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });
       const before = JSON.stringify(s.w().presence.holds?.ball?.pose?.pos ?? null);
@@ -611,7 +611,7 @@ const cases: Case[] = [
     good: (o) => o.g === "ok" && o.lock === "ok" && o.t === "locked" && o.before !== "null" && o.after === o.before },
   { id: "U7", what: "a return its plan refuses (here, its home parent now rides inside it: a loop) is told to the operator once per thing and release, not at every request", run(s) { cast(s);
       s.call("olive", "create", { id: "tbl", model: "crate", place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "visitor", returnAfter: 30 } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "player", returnAfter: 30 } }, place: { at: [1, 0] } });
       const hs = s.call("olive", "set", { id: "ball", component: "home", value: { pos: [0, 0.6, 0], q: [0, 0, 0, 1], parent: { to: "tbl" } } });
       s.call("vic", "move", { to: [1, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "move", { to: [0, 0, 3] }, 1000);
       s.call("vic", "put", { id: "ball" }); const loop = s.call("olive", "set", { id: "tbl", component: "parent", value: { to: "ball" } });
@@ -621,7 +621,7 @@ const cases: Case[] = [
       return { hs: show(hs), loop: show(loop), n: mine.length, line: mine[0] ?? null }; },
     good: (o) => o.hs === "ok" && o.loop === "ok" && o.n === 1 && /refused/.test(o.line ?? "") },
   { id: "U8", what: "a script that moves a thing in someone's hand takes it out of the hand, as an edit does: the authority no longer holds what the engine let go", run(s) { cast(s);
-      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "player" } }, place: { at: [1, 0] } });
       const r = install(s, "olive", "flag", "away", `world.on("grab", () => world.set("self", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: "self", comps: ["transform"] }, on: ["grab"] });
       s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
       const moved = s.entries().some((e: any) => e.kind === "change" && e.actor === "script:flag" && e.body?.comp === "transform");
@@ -629,7 +629,7 @@ const cases: Case[] = [
       return { r: show(r), g: show(g), moved, held: s.w().presence.holds?.flag ?? null, pos: s.w().state().entities.flag?.c.transform?.pos, drop: show(drop) }; },
     good: (o) => o.r === "ok" && o.g === "ok" && o.moved && o.held === null && JSON.stringify(o.pos) === "[4,0,4]" && /^refused /.test(o.drop) },
   { id: "U8b", what: "…and so does a timer script's move, whose release the thing's scripts hear (how: edited), as they hear a request's", run(s) { cast(s);
-      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "player" } }, place: { at: [1, 0] } });
       const r = install(s, "olive", "flag", "away", `world.on("tick", () => world.set("self", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: "self", comps: ["transform"] }, every: 5, always: true });
       const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
       s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
@@ -637,7 +637,7 @@ const cases: Case[] = [
       return { r: show(r), h: show(h), g: show(g), ticks, held: s.w().presence.holds?.flag ?? null, how: s.w().state().entities.flag?.c["t/how"] ?? null }; },
     good: (o) => o.r === "ok" && o.h === "ok" && o.g === "ok" && o.ticks.includes("ran") && o.held === null && o.how === "edited" },
   { id: "U8c", what: "…and so does a changed: script's move during a request (set off by another thing's change), whose release the thing's scripts hear too", run(s) { cast(s);
-      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "player" } }, place: { at: [1, 0] } });
       s.call("olive", "create", { id: "sign", model: "book", place: { at: [3, 3] } });
       const r = install(s, "olive", "sign", "away", `world.on("changed:label", () => world.set("flag", "transform", { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] }));\n`, { scope: { ids: ["self", "flag"], comps: ["transform"] }, on: ["changed:label"] });
       const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
@@ -646,22 +646,22 @@ const cases: Case[] = [
       return { r: show(r), h: show(h), g: show(g), l: show(l), held: s.w().presence.holds?.flag ?? null, pos: s.w().state().entities.flag?.c.transform?.pos, how: s.w().state().entities.flag?.c["t/how"] ?? null }; },
     good: (o) => o.r === "ok" && o.h === "ok" && o.g === "ok" && o.l === "ok" && o.held === null && JSON.stringify(o.pos) === "[4,0,4]" && o.how === "edited" },
   { id: "U9", what: "a returning thing's own lock binds its put as it binds a plain one: locked while held, the put is refused, it doesn't go home, and the hand keeps it", run(s) { cast(s);
-      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "player", release: "return" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0.3, 0, 0.6] }); const g = s.call("vic", "grab", { id: "torch" });
       const lock = s.call("olive", "set", { id: "torch", component: "lock", value: true });
       const n0 = s.entries().length; const p = s.call("vic", "put", { id: "torch" });
       const home = s.entries().slice(n0).some((e: any) => e.kind === "act" && e.verb === "return-home");
       // …as a plain put of a thing locked while held is (the control)
-      s.call("olive", "create", { id: "book2", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("olive", "create", { id: "book2", model: "book", components: { grabbable: { who: "player" } }, place: { at: [-0.3, 0] } });
       s.call("vic", "grab", { id: "book2", hand: "left" }); s.call("olive", "set", { id: "book2", component: "lock", value: true });
       const plain = s.call("vic", "put", { id: "book2" });
       return { g: show(g), lock: show(lock), p: code(p) ?? show(p), home, held: s.w().presence.holds?.torch?.by ?? null, plain: code(plain) ?? show(plain) }; },
     good: (o) => o.g === "ok" && o.lock === "ok" && o.p === "locked" && !o.home && o.held === "vic" && o.plain === "locked" },
   { id: "U10", what: "a grab or punt a lock stops says who may lift that lock (review of #260, protocol core I73): an owner's lock says owners only and names its locker, and a builder's says builders and up (recut B2: strength = the setter's rank)", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "tome", model: "book", components: { grabbable: { who: "visitor" }, physics: { kind: "dynamic" } }, place: { at: [0.3, 0] } });
+      s.call("olive", "create", { id: "tome", model: "book", components: { grabbable: { who: "player" }, physics: { kind: "dynamic" } }, place: { at: [0.3, 0] } });
       s.call("olive", "set", { id: "tome", component: "lock", value: true });
       s.call("bob", "move", { to: [0.3, 0, 0.6] }); const g = s.call("bob", "grab", { id: "tome" }), p = s.call("bob", "punt", { id: "tome", power: 2 });
-      s.call("bob", "create", { id: "slate", model: "book", components: { grabbable: { who: "visitor" } }, place: { at: [-0.3, 0] } });
+      s.call("bob", "create", { id: "slate", model: "book", components: { grabbable: { who: "player" } }, place: { at: [-0.3, 0] } });
       s.call("bob", "set", { id: "slate", component: "lock", value: true });
       s.call("vic", "move", { to: [-0.3, 0, 0.6] }); const v = s.call("vic", "grab", { id: "slate" });
       return { g: [code(g), g.refused?.fix], p: [code(p), p.refused?.fix], v: [code(v), v.refused?.fix] }; },
@@ -684,22 +684,22 @@ const cases: Case[] = [
   { id: "I2", what: "its card edits the common fields (who, let go, fits, use down / up) into one value, and refuses what the authority would (a malformed use)", run(s) {
       const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const sch = ES.inspectSchema(ent, "b1"); const card = sch.sections.list.find((x: any) => x.type === "Grabbable");
-      const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "visitor", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.anim": "torch" });
+      const ok1 = ES.editOps(ent, "b1", { "grabbable.who": "player", "grabbable.release": "stay", "grabbable.fits": "key, hook", "grabbable.use": "fire / cease", "grabbable.anim": "torch" });
       const bad = ES.editOps(ent, "b1", { "grabbable.use": "not an action!" });
       return { card: card?.fields ?? null, value: ok1.ops.find((o: any) => o.args?.component === "grabbable")?.args?.value ?? ok1.ops, errors: ok1.errors, bad: bad.errors }; },
     good: (o) => Array.isArray(o.card) && o.card.includes("grabbable.who") && o.card.includes("grabbable.release") && !o.errors.length
-      && JSON.stringify(o.value) === JSON.stringify({ who: "visitor", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, anim: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
+      && JSON.stringify(o.value) === JSON.stringify({ who: "player", release: "stay", fits: ["key", "hook"], use: { down: "fire", up: "cease" }, anim: "torch" }) && /grabbable\.use: .*names a reactions action/.test(o.bad.join(" ")) },
   { id: "I3", what: "…its JSON hatch reaches grips (and is refused, like the authority, when a grip has no pos)", run(s) {
       const ent = { model: "book", pos: [0, 0, 0], grabbable: { who: "builder" } };
       const hatch = ES.inspectSchema(ent, "b1").groups.find((g: any) => g.group === "grabbable")?.fields.find((f: any) => f.t === "json")?.commit;
-      const good = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ who: "visitor", grips: { h: { pos: [0, 0.1, 0] } } }) });
+      const good = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ who: "player", grips: { h: { pos: [0, 0.1, 0] } } }) });
       const bad = ES.editOps(ent, "b1", { "comp.grabbable": JSON.stringify({ grips: { h: {} } }) });
       return { hatch, good: good.ops[0]?.args?.value?.grips, bad: bad.errors }; },
     good: (o) => o.hatch === "comp.grabbable" && JSON.stringify(o.good) === '{"h":{"pos":[0,0.1,0]}}' && /grips\.h\.pos/.test(o.bad.join(" ")) },
   // ---------------- A: what an agent reads ----------------
   { id: "A1", what: "look and inspect say what a hand may do with a thing (and in which hand it's held); help names the hand and grip arguments", run(s) { cast(s);
-      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [2, 2] } });
+      s.call("olive", "create", { id: "lantern", model: "table-lamp", components: { grabbable: { who: "player", use: { down: "light" }, release: "return", prompt: "Take the lantern" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [2, 2] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "lantern", hand: "left" });
       const lk = s.call("vic", "look", {}).things ?? []; const ins = s.call("vic", "inspect", { id: "lantern" }); const help = s.call("vic", "help", { verb: "grab" });
       return { lantern: lk.find((t: any) => t.id === "lantern")?.grab ?? null, ball: lk.find((t: any) => t.id === "ball")?.grab ?? null, heldIn: ins.heldIn, args: Object.keys(help.args ?? {}) }; },
@@ -707,13 +707,13 @@ const cases: Case[] = [
   // ---------------- F: the independent review's findings (each red before its fix) ----------------
   { id: "F1", what: "a put's pos is checked (shape, reach) before snapping: a far or malformed pos never snaps into a socket across the world", run(s) { cast(s);
       s.call("olive", "create", { id: "rack", model: "crate", components: { sockets: { hook: { pos: [0, 0.8, 0], accepts: ["key"], radius: 0.3 } } }, place: { at: [20, 20] } });
-      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "visitor", fits: ["key"] } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "player", fits: ["key"] } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "key" });
       const far = s.call("vic", "put", { id: "key", pos: [20, 0.8, 20] }); const bad = s.call("vic", "put", { id: "key", pos: ["x"] });
       return { far: code(far), bad: code(bad), parent: comp(s, "key", "parent") ?? null }; },
     good: (o) => o.far === "out-of-reach" && o.bad === "shape" && o.parent === null },
   { id: "F2", what: "an orphaned hold of a holder banned since is still settled at load (the hold ends; in a physics world the lift is settled too)", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "ban", { who: "vic" });
       const w2 = s.reopen(s.w().presence); T += 100; process.env.PROTOCOL_NOW = String(T); D.settleOrphans?.(w2, []);
       const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => e.verb);
@@ -723,14 +723,14 @@ const cases: Case[] = [
   // A leave IS refused for a holder the authority can't stamp (a presence file from before today's identity rule, or
   // hand-edited): that hold must still end, or it pins the thing to nobody forever.
   { id: "F2b", what: "an orphaned hold whose holder the authority refuses a leave for (not a stampable identity) still ends at load", run(s) { cast(s, true);
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
       const pres = JSON.parse(JSON.stringify(s.w().presence)); pres.holds.ball.by = "Vic Old!"; pres.bodies["Vic Old!"] = pres.bodies.vic; delete pres.bodies.vic;
       const w2 = s.reopen(pres); T += 100; process.env.PROTOCOL_NOW = String(T); const out = D.settleOrphans?.(w2, []);
       return { holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies["Vic Old!"], left: out?.find((x: any) => x.holder === "Vic Old!")?.left, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && !o.body && o.left === false && !o.carrier.disagree },
   { id: "F3", what: "use.up from whoever pressed down is taken after the thing left their hand (taken by someone else): the hose turns off", run(s) { cast(s);
-      s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "visitor", use: { down: "on", up: "off" } },
+      s.call("olive", "create", { id: "hose", model: "table-lamp", components: { grabbable: { who: "player", use: { down: "on", up: "off" } },
         reactions: { on: { kind: "set", component: "t/burning", value: true }, off: { kind: "set", component: "t/burning", value: false } } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [0.3, 0, 0.5] });
       s.call("vic", "grab", { id: "hose" }); s.call("vic", "use", { id: "hose", args: { held: true, phase: "down" } }); const on = comp(s, "hose", "t/burning");
@@ -740,16 +740,16 @@ const cases: Case[] = [
     good: (o) => o.on === true && o.up === "ok" && o.off === false && o.again === "not-holding" },
   { id: "F9", what: "a thing that CARRIES (a tray) takes what rests over it along as its children when picked up; nothing falls (R 10-11 23:19)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) } });
-      s.call("olive", "create", { id: "tray9", model: "crate", components: { grabbable: { who: "visitor", carries: true }, physics: { kind: "dynamic", who: "visitor" } }, place: { at: [4, 4] } });
+      s.call("olive", "create", { id: "tray9", model: "crate", components: { grabbable: { who: "player", carries: true }, physics: { kind: "dynamic", who: "player" } }, place: { at: [4, 4] } });
       const top = s.call("olive", "lint", { id: "tray9" }); const box = top.box ?? top.bounds; const y = (box?.max?.[1] ?? 1) + 0.001;
-      s.call("olive", "create", { id: "cup9", model: "book", components: { physics: { kind: "dynamic", who: "visitor" }, transform: { pos: [4, y, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+      s.call("olive", "create", { id: "cup9", model: "book", components: { physics: { kind: "dynamic", who: "player" }, transform: { pos: [4, y, 4], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
       const before = comp(s, "cup9", "parent")?.to ?? null;
       s.call("vic", "move", { to: [4, 0, 4.6] }); const g = s.call("vic", "grab", { id: "tray9" });
       const launched = s.w().entries.filter((e) => e.kind === "sim" && e.verb === "launch" && e.body?.id === "cup9").length;
       return { before, g: show(g), carried: g.notes?.find((n) => n.carried)?.carried ?? null, parent: comp(s, "cup9", "parent")?.to ?? null, launched }; },
     good: (o) => o.before === null && o.g === "ok" && Array.isArray(o.carried) && o.carried.includes("cup9") && o.parent === "tray9" && o.launched === 0 },
   { id: "F10", what: "reach is to the nearest point of a thing's box, not its origin: standing against a big crate is in reach (R 10-11 23:27, a barrel)", run(s) { cast(s);
-      s.call("olive", "create", { id: "big", model: "crate", components: { grabbable: { who: "visitor" }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [4, 4, 4] } } });
+      s.call("olive", "create", { id: "big", model: "crate", components: { grabbable: { who: "player" }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [4, 4, 4] } } });
       const m = s.call("olive", "measure", { id: "big" }); const b = m.bounds; if (!b) return { measure: show(m), keys: Object.keys(m) };
       const x = b.max[0] + 0.35, cy = (b.min[1] + b.max[1]) / 2;   // 35 cm from its face; the origin is further than the hand reaches
       s.call("vic", "move", { to: [x, 0, 0] }); const g = s.call("vic", "grab", { id: "big" });
@@ -757,20 +757,20 @@ const cases: Case[] = [
       return { g: show(g), why: g.refused?.reason, originDist: +originDist.toFixed(2), half: +((b.max[0] - b.min[0]) / 2).toFixed(2), cy }; },
     good: (o) => o.g === "ok" && o.originDist > 1.5 },
   { id: "F4", what: "a copy of a returning thing goes home to where the copy stands, not to the original's home", run(s) { cast(s);
-      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "player", release: "return" } }, place: { at: [0, 0] } });
       const c = s.call("olive", "create", { from: "torch", id: "torch-2", at: { pos: [5, 0, 5] } });
       return { c: show(c), home: comp(s, "torch-2", "home")?.pos, at: tf(s, "torch-2")?.pos }; },
     good: (o) => o.c === "ok" && JSON.stringify(o.home) === JSON.stringify(o.at) },
   { id: "F5", what: "a returning put is the holder's act under their rank NOW (demoted below grabbable.who: refused, like any put)", run(s) { cast(s);
-      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "visitor", release: "return" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "player", release: "return" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "torch" });
       s.call("olive", "set", { id: "torch", component: "grabbable", value: { ...comp(s, "torch", "grabbable"), who: "owner" } });
       return { put: code(s.call("vic", "put", { id: "torch" })) }; },
     good: (o) => o.put === "rights" },
   { id: "F6", what: "one hand of two letting go hands it to the other without the first hand's offset; picking a thing up off what rests on it respects that thing's enabled", run(s) { cast(s);
-      s.call("olive", "create", { id: "log", model: "book", components: { grabbable: { who: "visitor", twoHanded: true } }, place: { at: [0, 0] } });
-      s.call("olive", "create", { id: "tray", model: "crate", components: { grabbable: { who: "visitor" } }, place: { at: [2, 0] } });
-      s.call("olive", "create", { id: "cup", model: "book", components: { transform: { pos: [2, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "visitor", enabled: false } } });   // resting on it, not its child
+      s.call("olive", "create", { id: "log", model: "book", components: { grabbable: { who: "player", twoHanded: true } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "tray", model: "crate", components: { grabbable: { who: "player" } }, place: { at: [2, 0] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { transform: { pos: [2, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "player", enabled: false } } });   // resting on it, not its child
       s.call("vic", "move", { to: [0, 0, 0.5] });
       s.call("vic", "grab", { id: "log", hand: "right", offset: { pos: [0.1, 0, 0], q: [0, 0, 0, 1] } }); s.call("vic", "grab", { id: "log", hand: "left" });
       s.call("vic", "drop", { id: "log", hand: "right" }); const rec = G.holdWire?.(held(s, "log"));

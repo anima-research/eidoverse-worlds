@@ -55,7 +55,7 @@ does, and no role overrides it).
 
 | Choice | Value | Status · source |
 |---|---|---|
-| The ladder | `player` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do; `visitor` is the old word for `player` (read as it, stored as `player`, rewritten by the maintenance command) | trial · lead (research 10-06; R 10-21) |
+| The ladder | `player` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · lead (research 10-06; R 10-21) |
 | States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · lead |
 | Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `player` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `player` included, beats it: an owner demotes one person by hand | default · lead (R 10-21) |
 | Guests | a person without an account: an account state, never a rung. A guest starts as `player` even where newcomers build, unless the world raises `default-role.guests` | trial · lead (R 10-21) |

@@ -25,7 +25,7 @@ for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "av
 const { _dispatch } = (await import("../client/lib/net.js")) as any;
 const say = (seq: number) => ({ seq, ts: Date.now(), actor: "cairn", verb: "say", args: { text: `#${seq}` } });
 const snapshot = (throughSeq: number, entries: any[]) => ({ type: "snapshot", you: "tester",
-  yourRights: { role: "visitor" }, present: [], state: null, entries, throughSeq });
+  yourRights: { role: "player" }, present: [], state: null, entries, throughSeq });
 
 console.log("a re-join's snapshot resyncs chat from the last delivered seq");
 await _dispatch(snapshot(100, [say(101), say(102)]));

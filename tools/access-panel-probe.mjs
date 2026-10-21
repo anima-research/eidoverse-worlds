@@ -97,7 +97,7 @@ try {
   const added = await panel();
   check('bob is listed, and the search is cleared', /listed by name \(2\)/i.test(added) && /^Bob$/m.test(added) && !/human · /.test(added), added);
   const B2 = await joinAs(bob, W);
-  check('…and gets in, as a visitor', B2.snap?.yourRights?.role === 'visitor', `code=${B2.closedWith} ${JSON.stringify(B2.snap?.yourRights)}`);
+  check('…and gets in, as a visitor', B2.snap?.yourRights?.role === 'player', `code=${B2.closedWith} ${JSON.stringify(B2.snap?.yourRights)}`);
 
   // his row: role and time
   const setRow = (name, idx, value) => pg.evaluate(([n, i, v]) => {

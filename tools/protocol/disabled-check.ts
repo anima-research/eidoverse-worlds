@@ -19,9 +19,9 @@ const st = (W) => fold(openWorld(root, W).entries);
 const bodies = (W) => { const w = openWorld(root, W); const sf = simFold(w.entries, w.now()); return Object.keys({ ...(sf?.sim?.bodies ?? {}), ...(sf?.sim?.statics ?? {}) }); };
 // a crate `base` at x=0 with a crate `top` placed on it; `door` with a reaction; a loose crate `c` at x=3
 const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  call(W, "rowan", "create", { id: "base", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
-  call(W, "rowan", "create", { id: "top", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { on: "base" } });
-  call(W, "rowan", "create", { id: "c", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [3, 0] } }); };
+  call(W, "rowan", "create", { id: "base", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "top", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { on: "base" } });
+  call(W, "rowan", "create", { id: "c", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [3, 0] } }); };
 
 { const W = "off"; mk(W);
   const t0 = st(W).entities.top.c.parent?.to;
@@ -31,7 +31,7 @@ const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "row
   const g = call(W, "vic", "grab", { id: "base" }), g2 = call(W, "vic", "grab", { id: "top" }), p = call(W, "vic", "punt", { id: "base" });
   ok(code(g) === "disabled" && code(g2) === "disabled" && code(p) === "disabled", "D1 a switched-off thing, and what hangs under it, can't be grabbed or punted", { g: code(g), top: code(g2), punt: code(p), topParent: t0 });
   const b = bodies(W); ok(!b.includes("base") && !b.includes("top") && b.includes("c"), "D2 neither has a body in the engine (the loose crate does)", b);
-  call(W, "rowan", "create", { id: "probe", model: "crate", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0.02, 0] } });
+  call(W, "rowan", "create", { id: "probe", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0.02, 0] } });
   const py = st(W).entities.probe.c.transform.pos[1];
   ok(Math.abs(py) < 1e-6, "D3 a thing placed where it stands lands on the ground: nothing stands on a switched-off thing", { probeY: py });
   const on = call(W, "rowan", "delete", { id: "base", component: "disabled" }); call(W, "rowan", "delete", { id: "probe" });
@@ -49,7 +49,7 @@ const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "row
 const engineHas = (W, id) => { const w = openWorld(root, W); const sf = simFold(w.entries, w.now()); return !!(sf?.sim?.bodies?.[id] || sf?.sim?.statics?.[id]); };
 const holds = (W) => Object.keys(openWorld(root, W).presence.holds);
 { const W = "held-physics"; mk(W); call(W, "vic", "move", { to: [0, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
-  call(W, "rowan", "set", { id: "top", component: "physics", value: { kind: "dynamic", who: "visitor", restitution: 0.2 } });
+  call(W, "rowan", "set", { id: "top", component: "physics", value: { kind: "dynamic", who: "player", restitution: 0.2 } });
   ok(g.ok && holds(W).includes("top") && !engineHas(W, "top"), "L1 an edit to a held thing's physics leaves it in the hand and out of the engine (no ghost collider)", { held: holds(W), engine: engineHas(W, "top") }); }
 { const W = "held-terrain"; mk(W); call(W, "vic", "move", { to: [0, 0, -0.8] }); call(W, "vic", "grab", { id: "top" });
   call(W, "rowan", "set", { id: "@world", component: "terrain", value: { seed: 3, size: 40, amplitude: 0 } });

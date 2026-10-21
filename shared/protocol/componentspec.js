@@ -16,7 +16,7 @@
 
 // how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
-import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS, RENAMED_ROLES, RETIRED_ROLE_WORDS } from "./roles.js";
+import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS } from "./roles.js";
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
@@ -463,7 +463,7 @@ export const COMPONENTS = {
   roles:     { status: "trial-kernel", on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", until: "int" },
     // the ladder's vocabulary (recut C11: out of the kernel pin, which holds what the fold reads): a grant names one of these ids, a
     // role-def keys on these permissions, so any change is a break needing --ack (pinBreakList `vocab`), an addition too
-    vocab: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort(), renamed: { ...RENAMED_ROLES }, retired: [...RETIRED_ROLE_WORDS] },
+    vocab: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort() },
     absentMeans: { until: "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80), until? (epoch ms: when the grant ends; the authority ends it then, warning the holder 5 min before; never on owner)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
   // guests isn't written down: absent means player whatever the newcomer role (roles.js guestRoleOf, R 10-21: guests start
   // as players even where newcomers build). Pinned as a known gap (pretrans D7)

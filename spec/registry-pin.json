@@ -1623,13 +1623,6 @@
    "reserved": [
     "banned",
     "owner"
-   ],
-   "renamed": {
-    "visitor": "player"
-   },
-   "retired": [
-    "none",
-    "visitor"
    ]
   },
   "keyed": true,

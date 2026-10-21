@@ -277,7 +277,7 @@ console.log("\nthe JSON escape hatch: every typed group, addressed to its comp, 
 
 console.log("\nphysics as fields (R 10-10: 'hard to interact with unless you know code'):");
 {
-  const box = { model: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], physics: { kind: "dynamic", who: "visitor", shape: [[-1, 0, -1], [1, 2, 1]] } };
+  const box = { model: "eidoverse/assets/models/crate_large_blue.glb", pos: [0, 0, 0], physics: { kind: "dynamic", who: "player", shape: [[-1, 0, -1], [1, 2, 1]] } };
   const m = inspectSchema(box, "pb1"); const g = m.groups.find((x: any) => x.group === "physics");
   // shape audit 10-16: friction and bounciness are reserved (no engine reads them) and ccd is cut: said, never offered
   check("a physics component gets its own card of fields (body, pushed by, mass; the reserved ones said, not offered) and its JSON hatch",

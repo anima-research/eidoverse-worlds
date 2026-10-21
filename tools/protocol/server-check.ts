@@ -115,7 +115,7 @@ await sleep(200);
 const idSeen = (name: string) => ann.msgs.find((m: any) => m.type === "arrive" && m.id === name)?.actorId;
 const BOB = idSeen("Bob"), VIC = idSeen("Vic");
 ok(BOB && BOB === bob.snapshot?.cut?.you && VIC === vic.snapshot?.cut?.you, "S1 an arrival carries the person's identity, the same one they're told", [BOB, VIC]);
-for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "visitor"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
+for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "player"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
 // SB: a door ban (moderator log, by id) also closes the authority at JOIN — it only refused requests, so a banned person
 // could still walk in, be seen and look around (old-vs-new review 10-06 #1: two sources of truth for bans)
 { const mal = await client(srv.port, "garden", "Mal", REPLICA); await sleep(150);
@@ -234,7 +234,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*lets you go when the world does \(detach \{escape: true\} gets you up anyway\)/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage|throne:|box:|rumble:/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
-  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "visitor", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
+  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "player", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
   for (let i = 0; i < 40 && !ag.entities.get(IDS.of("lantern"))?.grabbable; i++) await sleep(50);
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   const lh = ag.handle(IDS.of("lantern"));   // look reads a thing by its handle (R 10-17)
@@ -490,7 +490,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", REPLICA); await sleep(100);
   ok((await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "SP Ann turns physics on");
-  ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
+  ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
   const b = await client(srv.port, "pitch", "Bob", REPLICA); await sleep(150); const B = b.snapshot?.cut?.you;
   ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
   await sleep(200);
@@ -602,8 +602,8 @@ srv.proc.kill();
   const srvA = await startServer(ENGINE, W4, OPT, "sk");
   const a = await client(srvA.port, "crash", "Ann", REPLICA); await sleep(100);
   await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-  await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 1] } });
-  await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "visitor", release: "return" } }, place: { at: [0.4, 1] } });
+  await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 1] } });
+  await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", release: "return" } }, place: { at: [0.4, 1] } });
   const b = await client(srvA.port, "crash", "Bob", REPLICA); await sleep(150);
   await b.req("move", { to: [0, 0, 0.5] }); const g1 = await b.req("grab", { id: "ball" }); const g2 = await b.req("grab", { id: "torch" });
   ok(g1.ok && g2.ok, "SK Bob holds the ball and the torch", [g1.refused, g2.refused]);

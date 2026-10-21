@@ -156,7 +156,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(jw.snapshot?.yourRights?.role === "builder", "H4 …while a proven account does get it (builder)", jw.snapshot?.yourRights);
   // …unless the world's owner opts guests in (R 10-06: whether strangers without an account may build is the world's
   // choice; the Commons does). Explicit, default off, and never above the world's default role.
-  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "visitor", guests: "builder" } })).refused?.code === "shape", "H4g guests can't be given more than everyone else (guests ≤ the default role)");
+  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "player", guests: "builder" } })).refused?.code === "shape", "H4g guests can't be given more than everyone else (guests ≤ the default role)");
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } })).ok, "(H4g setup) meadow lets guests build");
   { const g2 = await sock(S3.port); const jg2 = await g2.join("meadow", "drifter2"); await sleep(100);
     const made = await g2.req("create", { id: "guestbox", model: "crate_large_red.glb" });
@@ -169,7 +169,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");
-  const demote = await wren.req("set", { id: "@world", component: `roles:${you(jo)}`, value: { role: "visitor" } });
+  const demote = await wren.req("set", { id: "@world", component: `roles:${you(jo)}`, value: { role: "player" } });
   ok(demote.refused?.code === "rights" && /longer than you/.test(demote.refused.reason), "H5 the junior owner can't demote the founder", demote.refused);
   ok((await wren.req("ban", { who: you(jo) })).refused?.code === "rights", "H5 an owner can't be banned");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } })).ok, "H5 …but the senior owner can demote the junior one");
@@ -185,17 +185,16 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // a live drag is presence gated on the AUTHORITY's role for the person's directory identity (it looked up their name).
   // Proven accounts only here: this world now bans every guest from this address (H4 above)
   { const moss = await sock(S3.port); const jm = await moss.join("meadow", "Moss", { agentToken: "tok-moss" });
-    await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "visitor" } }); await sleep(100);
+    await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "player" } }); await sleep(100);
     const k = own.msgs.length;
     moss.raw({ type: "drag", id: "x", pos: [1, 0, 1] }); wren.raw({ type: "drag", id: "x", pos: [2, 0, 2] }); await sleep(300);
     const drags = own.msgs.slice(k).filter((m) => m.type === "drag").map((m) => m.pos[0]);
     ok(!!jm.snapshot && JSON.stringify(drags) === "[2]", "a visitor's live drag isn't relayed; a builder's is (the authority's role for their identity)", [drags, jm.errors]);
     moss.close(); }
   // muting someone for EVERYONE is the owner's (it read v1 rights by typed name, and a role the v1 table didn't know,
-  // `none`, compared undefined < 2 → false: it passed). A listed visitor and an unlisted stranger under default-role
-  // none both try; the owner's own mute is the control that the gate is reachable at all.
-  { await own.req("set", { id: "@world", component: "default-role", value: { role: "none" } });
-    const fern = await sock(S3.port); const jf = await fern.join("meadow", "Fern", { agentToken: "tok-fern" });
+  // `none`, compared undefined < 2 → false: it passed). A listed player and an unlisted stranger (meadow's newcomer role,
+  // builder) both try; the owner's own mute is the control that the gate is reachable at all.
+  { const fern = await sock(S3.port); const jf = await fern.join("meadow", "Fern", { agentToken: "tok-fern" });
     const vis = await sock(S3.port); const jv = await vis.join("meadow", "Moss", { agentToken: "tok-moss" });
     const k = own.msgs.length;
     fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true }); await sleep(300);
