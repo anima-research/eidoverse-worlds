@@ -310,7 +310,7 @@ try {
 
   // ---- V: a visitor (who can't lift locks) gets the refusal, no buttons ----
   { const r0 = await evalJson(`__refused.length`);
-    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor' };
+    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor', rank: 0, permissions: [] };
       const t = (await import('/lib/editwrites.js')).compsOf('${crate}').transform;
       globalThis.__vis = (await import('/lib/editwrites.js')).send({ verb: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
       return true; })()`);
