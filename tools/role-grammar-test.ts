@@ -44,7 +44,7 @@ check("roles.js exports isRoleId", typeof (R as any).isRoleId === "function");
 const isRoleId = (R as any).isRoleId ?? (() => null);
 const grabTakes = (who: any) => checkGrabbable({ who }) === null;
 const seatTakes = (who: any) => checkSockets({ seat: { pos: [0, 0.5, 0], body: { who } } }) === null;
-const CORPUS = ["player", "builder", "moderator", "owner", "dj", "stage-crew", "a", "a".repeat(24), "a".repeat(25), "none", "guest", "everyone", "ghost", "banned",
+const CORPUS = ["inhabitant", "builder", "moderator", "owner", "dj", "stage-crew", "a", "a".repeat(24), "a".repeat(25), "none", "guest", "everyone", "ghost", "banned",
   "Builder", "9lives", "-x", "", "with space", 3, null];
 for (const id of CORPUS) {
   const want = isRoleId(id);

@@ -241,9 +241,9 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const code = (r: any) => (r?.ok ? "ok" : r?.refused?.code ?? (r?.crashed ? "CRASH" : "?"));
 // owner olive, visitor vic; a world running eidosim; loose crates anyone may punt or pick up
 function cast(s: any) {
-  s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
+  s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
   s.call("olive", "set", { id: "@world", component: "physics-engine", value: ENG });
-  for (const [id, x] of [["crate", 0], ["b", 3], ["c", 1.5]]) s.call("olive", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [x, 0] } });
+  for (const [id, x] of [["crate", 0], ["b", 3], ["c", 1.5]]) s.call("olive", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [x, 0] } });
 }
 const AGAINST = [0, 0, -0.62];   // vic against the crate's -z face (0.3 m half-width + a 0.32 m body)
 const lastAct = (s: any, verb: string, actor: string) => s.entries().findLast((e: any) => e.kind === "act" && e.verb === verb && e.actor === actor) ?? null;
@@ -420,7 +420,7 @@ const cases: Case[] = [
       s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie" } } });
       const L = s.entries(); const wid = L[1]?.world ?? L[0]?.world; const ts = L.at(-1).ts; const n = L.length;
       const E0 = s.w().state().entities; const kid = Object.keys(E0).find((k) => E0[k].c.socket?.name === "bunk");
-      const gv = { who: "player", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
+      const gv = { who: "inhabitant", pose: "pistol", grips: { h: { pos: [0, 0.1, 0], fingers: "point" } } }, sv = { action: "lie", anchor: "root", pose: "lie" };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable", value: gv } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
@@ -533,7 +533,7 @@ const cases: Case[] = [
       const r = [BM.bodyModeOf({ flying: true, chosen: "sit" }), BM.bodyModeOf({ swimming: true }), BM.bodyModeOf({ falling: true }), BM.bodyModeOf({ chosen: "lie" })];
       const { call: c2, sent } = await animAgent2(ag); const d = await c2("anim", { bodyMode: "fly" }); ag.clip = "walk"; ag.joined = true; ag.tick(); ag.joined = false;
       const pk = sent.filter((m: any) => m.type === "pose").at(-1)?.pose ?? null;
-      ag.myRights = { role: "player", fly: false }; const t = (await ag.takeOff()).text;
+      ag.myRights = { role: "inhabitant", fly: false }; const t = (await ag.takeOff()).text;
       const md = readText("spec/PROTOCOL.md");
       return { r, declared: pk?.bodyMode ?? null, clip: pk?.clip ?? null, t: t.slice(0, 120), flying: !!ag.flight, spec: /self-declared\s+description/.test(md) && /MUST\s+NOT\s+grant or relax/.test(md.slice(md.indexOf("pose.bodyMode"), md.indexOf("pose.bodyMode") + 1600)) }; },
     good: (o) => JSON.stringify(o.r) === '["fly","swim","fall","lie"]' && o.declared === "fly" && o.clip === "walk" && !o.flying && /cannot fly|not granted|no wings/.test(o.t) && o.spec },

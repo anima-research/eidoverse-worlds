@@ -9,7 +9,7 @@
 //     join    who may come in with a body: anyone; people with an account; or only people LISTED here (a roles:<id> grant).
 //     watch   "anyone": whoever `join` turns away may still WATCH (a spectator: no body, no voice, nothing written). Absent,
 //             watching follows `join`: a listed-only world is then invisible to everyone it doesn't list.
-//   default-role {role}   the NEWCOMER role: what everyone without a grant holds once inside. Absent: player (every world
+//   default-role {role}   the NEWCOMER role: what everyone without a grant holds once inside. Absent: inhabitant (every world
 //             founded before R 10-21 keeps that meaning); a world founded since starts with builder (starter config).
 //   roles:<id> {role, can?, note?, until?}   `until` (epoch ms): when the grant ends. The authority writes its end
 //             (`expire-roles`, a system act) within a second of it, and warns the holder five minutes before.
@@ -22,7 +22,7 @@ import * as R from "./roles.js";
 /** The four doors an owner picks between (upstream's World › access buttons), in this protocol's components. */
 export const DOORS = Object.freeze({
   open:          "anyone may come in, and build (newcomers are builders)",
-  public:        "anyone may come in and play; building is for builders and above (newcomers are players)",
+  public:        "anyone may come in and play; building is for builders and above (newcomers are inhabitants)",
   watch:         "anyone may watch; only people listed here may come in",
   "invite-only": "only people listed here may come in or watch; the world is invisible to everyone else",
 });
@@ -75,7 +75,7 @@ export function doorWrites(door, wc = {}) {
   if (door === "invite-only") return [{ component: "access", value: { ...keep, join: "listed" } }];
   if (door === "watch") return [{ component: "access", value: { ...keep, join: "listed", watch: "anyone" } }];
   return [{ component: "access", value: { ...keep, join: "anyone" } },
-    { component: "default-role", value: { ...dr, role: door === "open" ? "builder" : "player" } }];
+    { component: "default-role", value: { ...dr, role: door === "open" ? "builder" : "inhabitant" } }];
 }
 
 /** A duration as people type it ("30m", "2h", "1d", "1w", "90 min") → ms, or null. At most a year. */

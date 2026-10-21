@@ -17,8 +17,8 @@ const st = (W) => fold(openWorld(root, W).entries);
 const pos = (W, id) => st(W).entities[id]?.c.transform.pos;
 const code = (r) => (r.ok ? "ok" : r.refused?.code);
 const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  for (const [id, x] of [["a", 0], ["b", 3]]) call(W, "rowan", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [x, 0] } });
-  call(W, "rowan", "create", { id: "dom", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [6, 0] } });
+  for (const [id, x] of [["a", 0], ["b", 3]]) call(W, "rowan", "create", { id, model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [x, 0] } });
+  call(W, "rowan", "create", { id: "dom", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [6, 0] } });
   call(W, "rowan", "create", { id: "btn", model: "crate", place: { at: [0, 4] } }); };
 const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", component: "reactions", value: { reset: { kind: "reset", targets, ...extra } } });
 

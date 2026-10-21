@@ -397,7 +397,7 @@ export function applyAssetState(args) {
 export function applyGrantState(id, rec) {
   // a role taken away: back to the world's default (the authority reads @world default-role)
   if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: null }); return; }
-  worldRoles.set(id, { role: rec.role ?? 'player', gen: rec.can?.generate === true, fly: rec.can?.fly === true || Boolean(rec.fly) });
+  worldRoles.set(id, { role: rec.role ?? 'inhabitant', gen: rec.can?.generate === true, fly: rec.can?.fly === true || Boolean(rec.fly) });
   bus.emit('roles', { id, ...worldRoles.get(id) });
   // (What I MAY DO is the server's answer, `your-rights`, re-sent whenever a role changes; this mirror is the HUD's.)
 }

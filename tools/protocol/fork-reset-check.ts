@@ -55,7 +55,7 @@ const bobId = jb.snapshot?.cut?.you;
 // a world worth copying: a parent with a locked child, a light, sockets, @world settings and roles, and a chat line
 for (const r of [
   await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { role: "builder" } }),
-  await ann.req("set", { id: "@world", component: "default-role", value: { role: "player" } }),
+  await ann.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } }),
   await ann.req("create", { id: "table1", model: MODEL, components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }),
   await ann.req("create", { id: "lamp1", components: { label: "lamp1", parent: { to: "table1" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { kind: "spot", angle: 0.5, intensity: 12 } } }),
   await ann.req("set", { id: "lamp1", component: "lock", value: true }),
@@ -88,7 +88,7 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   const a = thingsOf(src), b = thingsOf(cp); delete a["@world"].about; delete b["@world"].about;
   ok(JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && ["table1", "lamp1", "chair1"].every((id) => canon(a[id]) === canon(b[id])),
     "FK5 every thing is copied component for component (the parent, the locked child, the spot light, the sockets)", [Object.keys(b)]);
-  ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "player", "FK5 roles and the default role travel", b["@world"]);
+  ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "inhabitant", "FK5 roles and the default role travel", b["@world"]);
   ok(Number.isFinite(b["@world"].sky?.ts) && canon(a["@world"].sky) === canon(b["@world"].sky), "FK5b a sky an act stamped travels as it stands, its stamped ts with it", [a["@world"].sky, b["@world"].sky]);
   // FK12 (training consent's per-person keys staying out of a fork) went with training-consent itself (R 10-16 14:16)
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");

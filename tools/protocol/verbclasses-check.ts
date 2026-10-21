@@ -16,7 +16,7 @@ const sub = (a: Set<string>, b: Set<string>) => [...a].every((v) => b.has(v));
 
 // the classes as of 2026-10-12 (behaviour pinned; a change here is a decision, with R)
 const READ_ONLY_PIN = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
-// LOOK_ONLY (what a role-less `none` might still do) left with none (R 10-21): no rung sits below player
+// LOOK_ONLY (what a role-less `none` might still do) left with none (R 10-21): no rung sits below inhabitant
 const WIRE_READS_PIN = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans", "scripts", "effect"]);
 const PERSON_ACTS_PIN = new Set(["warn", "mute", "unmute", "kick", "ban", "unban"]);
 

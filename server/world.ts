@@ -71,7 +71,7 @@ export type Client = {
   capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
-  anonymous?: boolean; // no account: a guest (a player unless the world raises guests; named as one)
+  anonymous?: boolean; // no account: a guest (an inhabitant unless the world raises guests; named as one)
   actorId?: string;      // a world's actor: this connection's opaque id from the authority directory (server/directory.ts)
   replica?: boolean;    // the client said it folds the log stream itself (every current client does; one that doesn't is refused at join)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close

@@ -60,16 +60,16 @@ function rig() {
 
 {
   const { ag, acts, T0, pings } = rig();
-  ag.notePose("player", pose(15, 0), T0);       // first seen far — baseline, armed
+  ag.notePose("inhabitant", pose(15, 0), T0);       // first seen far — baseline, armed
   check("first observation far away pings nothing", pings().length === 0);
-  ag.notePose("player", pose(6, 0, "walk"), T0 + 100);
-  ag.notePose("player", pose(2.0, 0, "walk"), T0 + 200);
+  ag.notePose("inhabitant", pose(6, 0, "walk"), T0 + 100);
+  ag.notePose("inhabitant", pose(2.0, 0, "walk"), T0 + 200);
   // Note the clip is still "walk" and the pose's own `speed` is 0 — neither is
   // consulted. Stillness is the distance WE watched them not cover.
-  ag.notePose("player", pose(2.0, 0, "walk"), T0 + 200 + APPROACH_DWELL_MS + 50);
+  ag.notePose("inhabitant", pose(2.0, 0, "walk"), T0 + 200 + APPROACH_DWELL_MS + 50);
   check("a live walk-up still pings approach", pings().length === 1);
   const before = acts.length;
-  ag.notePose("player", pose(2.0, 0, "sitchair"), T0 + 400 + APPROACH_DWELL_MS);
+  ag.notePose("inhabitant", pose(2.0, 0, "sitchair"), T0 + 400 + APPROACH_DWELL_MS);
   check("a live posture TRANSITION still narrates", acts.length === before + 1 && /sits down/.test(acts.at(-1)?.text),
     JSON.stringify(acts.at(-1)));
 }

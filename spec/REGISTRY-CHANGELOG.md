@@ -226,14 +226,20 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - access.doors: leaves every pin: client presets that write access fields; no stored byte names a door
 - 2026-10-21: 'ghost' is no longer a reserved role id (R 10-21): it was a sanction, removed entirely in recut B4, never a role a grant named; the future neutral role is 'spectator' (wishlisted), so nothing needs the old name held
   - roles.reserved: vocabulary ["banned","everyone","ghost","guest","none","owner"] → ["banned","everyone","guest","none","owner"]
-- 2026-10-21: the base rung is player (R 10-21: rungs named for what they let you do; 'everyone' read as inclusive, 'participant' is already the code's noun for anyone present); visitor is its old word (read as player, stored as player, rewritten by the maintenance command; pinned as roles.vocab.renamed). none is gone (a ban or a mute does its job; a stored grant reads as no grant). guest and everyone are no longer reserved: guest is an account state, everyone a consent tier. grabbable.who and physics.who default to player (the same rung, the new word)
+- 2026-10-21: the base rung is inhabitant (R 10-21: rungs named for what they let you do; 'everyone' read as inclusive, 'participant' is already the code's noun for anyone present); visitor is its old word (read as inhabitant, stored as inhabitant, rewritten by the maintenance command; pinned as roles.vocab.renamed). none is gone (a ban or a mute does its job; a stored grant reads as no grant). guest and everyone are no longer reserved: guest is an account state, everyone a consent tier. grabbable.who and physics.who default to inhabitant (the same rung, the new word)
   - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"visitor"}}
-  - grabbable.who: default "visitor" → "player"
-  - grabbable.who: its meaning of absence "visitor" → "player"
-  - roles.rank: vocabulary {"none":-1,"visitor":0,"builder":100,"moderator":200,"owner":255} → {"player":0,"builder":100,"moderator":200,"owner":255}
-  - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["player","builder","moderator","owner"]
+  - grabbable.who: default "visitor" → "inhabitant"
+  - grabbable.who: its meaning of absence "visitor" → "inhabitant"
+  - roles.rank: vocabulary {"none":-1,"visitor":0,"builder":100,"moderator":200,"owner":255} → {"inhabitant":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["inhabitant","builder","moderator","owner"]
   - roles.reserved: vocabulary ["banned","everyone","guest","none","owner"] → ["banned","owner"]
 - 2026-10-21: roles.vocab.retired: none and visitor are retired words (a stored value in either still reads with its old meaning), so neither can name a custom role; found by role-grammar: none had become a valid custom id
-- 2026-10-21: visitor and none are released (R 10-21): no stored v4 world outside this PR's own tests carries them (#260 is unmerged; v1 worlds come in through translate-v1@17, which still maps v1's visitor to player and carries spectator/none as imported-roles), so nothing reads the old words: no rename table, no retired words. A dev world built on #260 before today keeps grabbables whose who says visitor, an undefined role there (owners only until recreated)
-  - roles.renamed: vocabulary {"visitor":"player"} → gone
+- 2026-10-21: visitor and none are released (R 10-21): no stored v4 world outside this PR's own tests carries them (#260 is unmerged; v1 worlds come in through translate-v1@17, which still maps v1's visitor to inhabitant and carries spectator/none as imported-roles), so nothing reads the old words: no rename table, no retired words. A dev world built on #260 before today keeps grabbables whose who says visitor, an undefined role there (owners only until recreated)
+  - roles.renamed: vocabulary {"visitor":"inhabitant"} → gone
   - roles.retired: vocabulary ["none","visitor"] → gone
+- 2026-10-21: the base rung is inhabitant, not player (R 10-21): neutral and lasting (you belong here and may make it home), where player read casual; not visitor, which sat too close to guest (the conventional word for no account, a different axis). grabbable.who and physics.who default to inhabitant
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"player"}}
+  - grabbable.who: default "player" → "inhabitant"
+  - grabbable.who: its meaning of absence "player" → "inhabitant"
+  - roles.rank: vocabulary {"player":0,"builder":100,"moderator":200,"owner":255} → {"inhabitant":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["player","builder","moderator","owner"] → ["inhabitant","builder","moderator","owner"]

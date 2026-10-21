@@ -117,7 +117,7 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (player, builder,
+  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (inhabitant, builder,
   // moderator, owner, or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly,
   // research roles S5); `for <duration>` ends the grant then (roles:<id>.until; 30m, 2h, 1d, 1w), `forever` clears an end
   // (upstream #258). The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own,
@@ -134,12 +134,12 @@ register('grant', (arg) => {
   const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
   const gen = flag('gen'), fly = flag('fly');
   if (!id || (!role && gen === undefined && fly === undefined && !dur && !forever)) {
-    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: player, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
+    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: inhabitant, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
   }
   const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
-  // * = the world's newcomer role for people who signed in (guests stay players unless the world opts in)
+  // * = the world's newcomer role for people who signed in (guests stay inhabitants unless the world opts in)
   if (id === '*') {
-    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * player');
+    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * inhabitant');
     if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access invite-only|watch closes a world instead');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
@@ -175,7 +175,7 @@ register('access', (arg) => {
   const a = (arg || '').trim().toLowerCase();
   if (!a) return showMembers();
   const door = { 'invite-only': 'invite-only', invite: 'invite-only', private: 'invite-only', closed: 'invite-only', listed: 'invite-only', watch: 'watch', spectators: 'watch',
-                 public: 'public', players: 'public', open: 'open', builders: 'open' }[a];
+                 public: 'public', inhabitants: 'public', open: 'open', builders: 'open' }[a];
   if (!door) return logChat('*', 'usage: /access invite-only|watch|public|open — or /access to see who can come in');
   const ws = doorWrites(door, worldComponents());
   const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));

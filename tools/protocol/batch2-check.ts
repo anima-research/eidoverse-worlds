@@ -155,7 +155,7 @@ const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `re
 const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c];
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 const IMG = "store/images/0123456789abcdef.png", AUD = "store/audio/0123456789abcdef.ogg";
 const ZWJ = "👨‍👩‍👧‍👦";

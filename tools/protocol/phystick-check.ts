@@ -25,8 +25,8 @@ function world(name, N) {
   const call = (actor, verb, args = {}, step = 100) => { T += step; return request(w, actor, verb, args); };
   call("rowan", "create-world", { title: name });
   call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: TICK } });
-  for (let i = 0; i < N; i++) call("rowan", "create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 3] } });
-  call("rowan", "create", { id: "ball", model: "crate", components: { physics: { kind: "dynamic", who: "player" } }, place: { at: [0, 0] } });
+  for (let i = 0; i < N; i++) call("rowan", "create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 3] } });
+  call("rowan", "create", { id: "ball", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
   const beat = (ms, maxTicks) => { T += ms; return NO_TICK ? 0 : settle(w, maxTicks ? { maxTicks } : {}); };
   return { w, call, beat, now };

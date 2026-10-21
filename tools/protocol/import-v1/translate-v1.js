@@ -102,9 +102,9 @@ function newReactions(rx) {
 }
 
 export const TRANSLATOR = "eidoverse/translate-v1@17";
-// @17 (R 10-21): the base rung is player (v1's visitor is written player), and there's no rung below it: a person's v1
+// @17 (R 10-21): the base rung is inhabitant (v1's visitor is written inhabitant), and there's no rung below it: a person's v1
 // spectator or none grant is CARRIED as imported-roles:<id> (never dropped, R10), with no roles:<id>, so they hold the
-// world's newcomer role (absent default-role: player). The door's own words (`*` none/spectator) still become access.
+// world's newcomer role (absent default-role: inhabitant). The door's own words (`*` none/spectator) still become access.
 // @16 (review of #260): no account subject is written wherever it sits. A property named `sub` or ending in
 // `Sub` whose string has an account's shape is one, at any depth (withoutAccounts, below): in an imported act's args it
 // becomes the person's id when a mapper is given and is dropped when none is; in a value it is always dropped. Any other
@@ -206,7 +206,7 @@ export const DROPPED = {
   "mounts": "bodies sitting: presence in v4, never history (00:50 ruling 1); their old entries survive as acts",
   "recentChat / chatTotal": "the chat window: a reader of `say` entries does this in v4, not world state",
   "placer": "who placed it: a view over the log in v4 (L2: no stored derived values); the old value survives in the old entry",
-  "roles.<person> spectator / none": "there is no rung below player (@17, R 10-21): the grant is carried as @world imported-roles:<id> as it was, and the person holds the world's newcomer role; v1's visitor is written player",
+  "roles.<person> spectator / none": "there is no rung below inhabitant (@17, R 10-21): the grant is carried as @world imported-roles:<id> as it was, and the person holds the world's newcomer role; v1's visitor is written inhabitant",
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3); a `*` of none / spectator (upstream world access) becomes @world `access` {join: listed (, watch: anyone)}",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
@@ -388,10 +388,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // already past).
   const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
   for (const [k, v] of Object.entries(st.roles ?? {})) {
-    if (k === "*") { if (DOOR_OF[v?.role]) { w.access = { ...DOOR_OF[v.role] }; const { role: _r, until: _u, ...rest } = toCan(v); if (Object.keys(rest).length) w["default-role"] = { role: "player", ...rest }; } else { const { until: _u, ...dr } = toCan(v) ?? {}; w["default-role"] = dr.role === "visitor" ? { ...dr, role: "player" } : dr; } }
+    if (k === "*") { if (DOOR_OF[v?.role]) { w.access = { ...DOOR_OF[v.role] }; const { role: _r, until: _u, ...rest } = toCan(v); if (Object.keys(rest).length) w["default-role"] = { role: "inhabitant", ...rest }; } else { const { until: _u, ...dr } = toCan(v) ?? {}; w["default-role"] = dr.role === "visitor" ? { ...dr, role: "inhabitant" } : dr; } }
     else { const r = toCan(unsub(v)); const id = person(k, v);
-      if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below player (@17): carried, not granted
-      else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "player" } : r; }
+      if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
+      else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
   }
   for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given

@@ -261,7 +261,7 @@ check('…and a default: leaveBy any leaves the key out; the anchor is written d
   check('LS3 a batch of parent {to, socket} then a transform (the old planner\'s gesture): the transform is read in the host\'s frame, and lands the same', rb.ok && st2.entities.mug.c.parent.to === perch && close(a2.pos, b2.pos), [rb.refused, a2, b2]);
   check('LS3 a socket the host doesn\'t have is refused not-found', L.call('set', { id: 'mug', component: 'parent', value: { to: 'rock', socket: 'nope' } }).refused?.code === 'not-found');
   const hm0 = L.call('create', { id: 'pin', model: 'ball', components: { home: { pos: [0.05, 0.1, 0.02], parent: { to: 'rock', socket: 'perch' } } } });
-  const gh = L.call('set', { id: 'pin', component: 'grabbable', value: { who: 'player', release: 'return', home: { pos: [0.05, 0.1, 0.02], q: [0, 0, 0, 1], parent: { to: 'rock', socket: 'perch' } } } });
+  const gh = L.call('set', { id: 'pin', component: 'grabbable', value: { who: 'inhabitant', release: 'return', home: { pos: [0.05, 0.1, 0.02], q: [0, 0, 0, 1], parent: { to: 'rock', socket: 'perch' } } } });
   check('LS3 a grabbable home is refused (home is its own component now: shape audit 10-16)', gh.refused?.code === 'schema', gh.refused);
   const hm = hm0;
   const pin = L.state().entities.pin?.c;

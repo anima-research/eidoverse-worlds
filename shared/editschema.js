@@ -608,7 +608,7 @@ export function inspectSchema(ent, id, live = {}) {
     const shapeWords = box ? `a box ${box.map((v) => v.toFixed(2)).join(' × ')} m` : sh == null ? 'none yet: measured when its model loads' : (typeof sh === 'object' && sh.kind ? `${sh.kind}` : 'measured');
     groups.push({ group: 'physics', label: 'physics', types: ['physics'], fields: [
       { t: 'enum', k: 'kind', label: 'body', value: ph.kind ?? 'dynamic', def: 'dynamic', options: SPEC.physics.enums.kind.map((v) => ({ v, label: v })), hint: SPEC.physics.docs.kind },
-      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'player', def: 'player', options: [['player', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
+      ...((ph.kind ?? 'dynamic') === 'dynamic' ? [{ t: 'enum', k: 'who', label: 'pushed by', value: ph.who ?? 'inhabitant', def: 'inhabitant', options: [['inhabitant', 'anyone'], ['builder', 'builders'], ['owner', 'owners']].map(([v, label]) => ({ v, label })), hint: SPEC.physics.docs.who }] : []),
       { t: 'text', k: 'mass', label: `mass (${SPEC.physics.units.mass})`, value: opt(ph.mass), placeholder: 'from its size', hint: SPEC.physics.docs.mass },
       // friction, bounciness and the rest are reserved until an engine reads them (shape audit 10-16): said, never offered
       { t: 'info', label: 'friction, bounce', value: 'the engine\'s own', hint: `reserved: ${SPEC.physics.reservedFields.join(', ')} are named but no engine here reads them yet, so none can be written` },

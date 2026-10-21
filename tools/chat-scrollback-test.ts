@@ -88,7 +88,7 @@ const day: any[] = [];
   const t0 = Date.now() - 86_400_000;
   const speak = (actor: string) => day.push(say(day.length + 1, actor, t0 + (day.length + 1) * 30_000));
   for (let i = 0; i < 20; i++) speak(i % 2 ? "cairn" : "mythos");
-  speak("player"); speak("cairn"); speak("player");
+  speak("inhabitant"); speak("cairn"); speak("inhabitant");
   for (let i = 0; i < 177; i++) speak(["cairn", "mythos", "apricot"][i % 3]);
 }
 const all = day.map((e) => e.args.text);
@@ -229,7 +229,7 @@ console.log("lines the log trimmed off the top come back when paging");
   const { logChat, logEl } = await freshChat();
   const t0 = Date.now() - 3_600_000;
   const log: any[] = [];
-  for (let s = 1; s <= 1200; s++) log.push(say(s, s === 650 ? "player" : s % 2 ? "cairn" : "mythos", t0 + s * 1000));
+  for (let s = 1; s <= 1200; s++) log.push(say(s, s === 650 ? "inhabitant" : s % 2 ? "cairn" : "mythos", t0 + s * 1000));
   setLog(log);
   for (const e of log.slice(600)) logChat(e.actor, e.args.text, "", { seq: e.seq, ts: e.ts });
   check("precondition: the log trimmed to #801–#1200", shownIn(logEl)[0] === "#801" && rowsOf(logEl).length === 400,

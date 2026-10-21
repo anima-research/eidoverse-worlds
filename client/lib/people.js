@@ -1,7 +1,7 @@
 // people.js — who someone is here and what you may do to them (research roles 10-06, S6; PLAN decisions 10-06).
 //
 // ONE function decides the menu: personActions(me, them) in shared/protocol/roles.js (pure, tested in tools/protocol/roles-check.ts
-// P1–P3). It shows only what you may do to that one person, so a player sees "Mention" and nothing else, and when rank
+// P1–P3). It shows only what you may do to that one person, so an inhabitant sees "Mention" and nothing else, and when rank
 // is the only reason nothing more shows, one dim line says so. This file draws it on three surfaces, and the authority
 // decides every act again (the menu is a courtesy, never the gate):
 //   desktop  right-click a row in Chat › People, or the ⋯ on a nameplate card: the house context menu; an act with
@@ -11,7 +11,7 @@
 //   VR       no popups and no long-presses in a headset (audiopanel.js): a trigger on a row expands an inline strip of
 //            rows under it, choices are rows of chips, and kick and ban take a second trigger on a "confirm" row
 // The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only permissions you hold).
-// The badge: none for a player, "guest" for someone without an account, else the role's name (badgeOf).
+// The badge: none for an inhabitant, "guest" for someone without an account, else the role's name (badgeOf).
 import { CONFIG, bus, report } from './base.js';
 import { net, identities, guests, sendRequest, replica, identityOf } from './net.js';
 import { contextMenu, closeContextMenu } from './panels.js';
@@ -43,9 +43,9 @@ const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 export function personOf(display) {
   const me = display === CONFIG.name;
   if (me) { const r = net.myRights ?? {};
-    return { display, me, id: net.you ?? null, anon: !!r.guest, role: r.role ?? 'player', name: r.roleName ?? r.role, rank: r.rank ?? 0, permissions: r.permissions ?? [], muted: !!r.muted }; }
+    return { display, me, id: net.you ?? null, anon: !!r.guest, role: r.role ?? 'inhabitant', name: r.roleName ?? r.role, rank: r.rank ?? 0, permissions: r.permissions ?? [], muted: !!r.muted }; }
   const id = identities.get(display) ?? null, anon = guests.has(display);
-  const e = id ? R.effectiveOf(wc(), id, { anon }) : { role: 'player', name: 'Player', rank: 0, permissions: [] };
+  const e = id ? R.effectiveOf(wc(), id, { anon }) : { role: 'inhabitant', name: 'Inhabitant', rank: 0, permissions: [] };
   return { display, me: false, id, anon, ...e, muted: !!(id && net.modMuted?.[id]) };
 }
 export const myself = () => personOf(CONFIG.name);

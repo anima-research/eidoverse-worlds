@@ -29,7 +29,7 @@ import { SIM_ID } from '../../shared/sim.js';
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'player', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
+const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'inhabitant', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const has = (k) => R.isOwner(me()) || me().permissions.includes(k);
 const isOwner = () => R.isOwner(me());
 const nameOf = (id) => { for (const [n, v] of identities) if (v === id) return n; return net.names?.[id] ?? replica.nameOf?.(id) ?? id; };
@@ -213,7 +213,7 @@ function deleteRole(rid, body) {
 function paintAccess(body) {
   const a = wc().access ?? {}, dr = wc()['default-role'] ?? {}; const edit = isOwner();
   const roles = R.rolesOf(wc()).filter((r) => r.id !== 'owner');
-  const def = R.roleDef(wc(), dr.role ?? 'player');
+  const def = R.roleDef(wc(), dr.role ?? 'inhabitant');
   const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
   const sel = (k, opts, v) => `<select data-k="${k}" ${edit ? '' : 'disabled'}>${opts.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   // the four doors (upstream #258's World › access buttons; shared/protocol/access.js DOORS), the current one marked; closing
@@ -223,7 +223,7 @@ function paintAccess(body) {
     + `<p class="rp-dim">${esc(door === 'signed-in' ? 'anyone signed in may come in' : DOORS[door])}</p>`
     + `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
     + (a.join === 'listed' ? `<label class="rp-field">Everyone else ${sel('watch', [['', 'can\'t see this world'], ['anyone', 'may watch (no body)']], a.watch ?? '')}</label>` : '')
-    + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'player')}</label>`
+    + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'inhabitant')}</label>`
     + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), dr.guests ?? 'visitor')}</label>`
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
     + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`

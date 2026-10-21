@@ -710,7 +710,7 @@
      "kind": "dynamic"
     },
     "set": {
-     "who": "player"
+     "who": "inhabitant"
     }
    }
   ],
@@ -827,7 +827,7 @@
   },
   "defaults": {
    "enabled": true,
-   "who": "player",
+   "who": "inhabitant",
    "steal": true,
    "range": 1.5,
    "priority": 0,
@@ -875,7 +875,7 @@
   },
   "absentMeans": {
    "enabled": "true: it can be picked up",
-   "who": "player",
+   "who": "inhabitant",
    "steal": "true",
    "range": "1.5 m",
    "priority": "0",
@@ -1595,13 +1595,13 @@
   },
   "vocab": {
    "rank": {
-    "player": 0,
+    "inhabitant": 0,
     "builder": 100,
     "moderator": 200,
     "owner": 255
    },
    "builtin": [
-    "player",
+    "inhabitant",
     "builder",
     "moderator",
     "owner"

@@ -186,7 +186,7 @@ await C("K6", "the import README documents the Commons translation (no founder k
 await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper the translation's roles:janus has no sub and the imported grant act's args don't either; the door refuses roles {sub}", () => {
   const r = TV1.translate(v1commons()); const w = r.final.translated["@world"];
   const acts = r.out.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "grant");
-  const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "player", sub: "human:discord:9" } });
+  const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "inhabitant", sub: "human:discord:9" } });
   return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"
     && /@1[4-9]$/.test(TV1.TRANSLATOR) && /@1[4-9]$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
 await C("K8", "no account subject is written wherever it sits (PROTOCOL §9.2): a v1 placer's sub and a behaviour binding's bySub reach neither an imported act nor @world's state, with a mapper or without one; with a mapper, the placer and the binding are the same identity as the person's grant; a sub or *Sub that isn't an account (a comp's own data) is kept as it was, and the mapper is never asked about it", () => {
@@ -312,9 +312,9 @@ await C("D2", "an openable's turn is written (angle π/2, axis [0,1,0], time 1, 
   W.call("set", { id: "d", component: "openable", value: { open: false } }); W.call("set", { id: "s", component: "openable", value: { open: false, slide: [1, 0, 0] } });
   const d = stored(W, "d", "openable"), sl = stored(W, "s", "openable");
   return [d?.angle === Math.PI / 2 && JSON.stringify(d.axis) === "[0,1,0]" && d.time === 1 && d.locked === false && sl && !("angle" in sl) && !("axis" in sl) && sl.time === 1, [d, sl]]; });
-await C("D3", "a grabbable's defaults are written (range 1.5, who player, steal, throw, release…) and the authority still takes it", () => {
+await C("D3", "a grabbable's defaults are written (range 1.5, who inhabitant, steal, throw, release…) and the authority still takes it", () => {
   const W = world(); mk(W, "g"); const r = W.call("set", { id: "g", component: "grabbable", value: {} }); const g = stored(W, "g", "grabbable");
-  return [r.ok && g?.range === 1.5 && g.who === "player" && g.steal === true && g.throw === 1 && g.release === "drop" && g.hold === "auto" && g.enabled === true, [why(r), g]]; });
+  return [r.ok && g?.range === 1.5 && g.who === "inhabitant" && g.steal === true && g.throw === 1 && g.release === "drop" && g.hold === "auto" && g.enabled === true, [why(r), g]]; });
 await C("D4", "a motion's per-type defaults are written: spin's axis and rate, orbit's radius and rate, oscillate's amp and period, path's speed and loop", () => {
   const W = world(); for (const id of ["sp", "sp2", "or", "bo", "pa"]) mk(W, id);
   W.call("set", { id: "sp", component: "motion", value: { type: "spin" } }); W.call("set", { id: "sp2", component: "motion", value: { type: "spin", period: 10 } });
@@ -323,15 +323,15 @@ await C("D4", "a motion's per-type defaults are written: spin's axis and rate, o
   const m = (id: string) => stored(W, id, "motion");
   return [JSON.stringify(m("sp").axis) === "[0,1,0]" && m("sp").degPerSec === 36 && m("sp").phase === 0 && !("degPerSec" in m("sp2")) && m("or").radius === 3 && m("or").degPerSec === 12 && m("or").face === true
     && m("bo").amp === 0.3 && m("bo").period === 4 && m("pa").speed === 1 && m("pa").loop === "loop" && m("pa").face === true, ["sp", "sp2", "or", "bo", "pa"].map(m)]; });
-await C("D5", "a physics thing that flies says who may punt it (player); world settings set in part store ONLY what was written, even a value equal to today's default (capacity, script-settings: policy numbers, PROTOCOL §9.2)", () => {
+await C("D5", "a physics thing that flies says who may punt it (inhabitant); world settings set in part store ONLY what was written, even a value equal to today's default (capacity, script-settings: policy numbers, PROTOCOL §9.2)", () => {
   const W = world(); mk(W, "p"); W.call("set", { id: "p", component: "physics", value: { kind: "dynamic" } });
   W.call("set", { id: "@world", component: "capacity", value: { entities: 100 } }); W.call("set", { id: "@world", component: "script-settings", value: { max: 3 } });
   const cap1 = W.state().entities["@world"].c.capacity;
   const same = W.call("set", { id: "@world", component: "capacity", value: { guestEntities: CAPACITY.guestEntities } });
   W.call("set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const w = W.state().entities["@world"].c, ss = w["script-settings"];
-  return [stored(W, "p", "physics")?.who === "player" && JSON.stringify(cap1) === '{"entities":100}' && same.ok && JSON.stringify(w.capacity) === JSON.stringify({ guestEntities: CAPACITY.guestEntities }) && JSON.stringify(ss) === '{"max":3}'
-    && W.call("set", { id: "@world", component: "default-role", value: { role: "player" } }).ok, [stored(W, "p", "physics"), cap1, w.capacity, ss]]; });
+  return [stored(W, "p", "physics")?.who === "inhabitant" && JSON.stringify(cap1) === '{"entities":100}' && same.ok && JSON.stringify(w.capacity) === JSON.stringify({ guestEntities: CAPACITY.guestEntities }) && JSON.stringify(ss) === '{"max":3}'
+    && W.call("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } }).ok, [stored(W, "p", "physics"), cap1, w.capacity, ss]]; });
 await C("D6", "policy numbers pin no default: the registry holds none for capacity or script-settings; schema reports this server's defaults and ceilings, the ones the authority enforces", () => {
   const W = world(); const r = W.call("schema", { component: "capacity" }); const sv = r.server ?? {};
   return [!CAT.COMPONENTS.capacity.defaults && !CAT.COMPONENTS["script-settings"].defaults && JSON.stringify(sv.defaults?.capacity) === JSON.stringify(D.CAPACITY) && JSON.stringify(sv.ceilings?.capacity) === JSON.stringify(D.CAPACITY_CEILING)

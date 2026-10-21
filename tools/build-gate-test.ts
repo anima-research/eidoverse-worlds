@@ -40,7 +40,7 @@ asRole('builder');
 check('builder: permitted', build.mayEdit() === true);
 asRole('owner');
 check('owner: permitted', build.mayEdit() === true);
-asRole('player');
+asRole('inhabitant');
 check('visitor: REFUSED', build.mayEdit() === false);
 asRole('spectator');
 check('any other known role: refused', build.mayEdit() === false);
@@ -49,7 +49,7 @@ console.log('\nBUILD GATE — the gate is applied at the chokepoint, not the key
 
 // Every entry point funnels through setEditMode: toggleEditMode, the dock
 // action, KeyB, and the two quiet callers (holdGhost, armSocketPlacement).
-asRole('player');
+asRole('inhabitant');
 build.setEditMode(false);                       // settle
 const h0 = stub.hints.length;
 build.setEditMode(true);
@@ -72,7 +72,7 @@ console.log('\nBUILD GATE — leaving is never gated');
 asRole('builder');
 build.setEditMode(true);
 check('a builder enters', build.isEditing() === true);
-asRole('player');                              // demoted while editing
+asRole('inhabitant');                              // demoted while editing
 build.setEditMode(false);
 check('demoted mid-session: LEAVING still works (never trapped)', build.isEditing() === false);
 build.setEditMode(true);

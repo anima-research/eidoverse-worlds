@@ -109,7 +109,7 @@ check("4k a value stripped to its commit with no purge naming it is detected, th
 r = strip_unnamed(lambda t: chain.purge_line(t[6]))
 check("4l a say body stripped to its commit with no purge naming it is detected", r["status"] == "broken" and r["at"] == 6, r)
 def roles_stripped(t):
-    t.append({"world": t[1]["world"], "kind": "change", "ts": 2, "actor": "system", "cause": 1, "verb": "set", "body": {"id": "@world", "comp": "roles:u-bbbbbbbbbbbbbbbbbbbb", "value": {"role": "player"}}})
+    t.append({"world": t[1]["world"], "kind": "change", "ts": 2, "actor": "system", "cause": 1, "verb": "set", "body": {"id": "@world", "comp": "roles:u-bbbbbbbbbbbbbbbbbbbb", "value": {"role": "inhabitant"}}})
     chain.purge_line(t[-1])
     t.append({"world": t[1]["world"], "kind": "purge", "ts": 3, "actor": "system", "verb": "purge", "body": {"values": [{"seq": len(t) - 1}]}})
 r = strip_unnamed(roles_stripped)

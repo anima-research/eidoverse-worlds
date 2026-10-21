@@ -38,9 +38,9 @@ function playground(name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${root}worlds/${f}`, { force: true });
   call(name, "rowan", "create-world", { title: name });
   call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-  call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "player", throw: 2 } }, place: { at: [0, 0] } });
-  call(name, "rowan", "create", { id: "tray", model: "crate", components: { physics: { kind: "dynamic" }, grabbable: { who: "player" } }, place: { at: [2, 0] } });
-  call(name, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "player" } }, place: { on: "tray" } });
+  call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", throw: 2 } }, place: { at: [0, 0] } });
+  call(name, "rowan", "create", { id: "tray", model: "crate", components: { physics: { kind: "dynamic" }, grabbable: { who: "inhabitant" } }, place: { at: [2, 0] } });
+  call(name, "rowan", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic" }, grabbable: { who: "inhabitant" } }, place: { on: "tray" } });
   call(name, "rowan", "move", { to: [0, 0, -0.5] });
   return name;
 }

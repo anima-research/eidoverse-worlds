@@ -212,8 +212,8 @@ function fromCan(v: any) { if (!v || typeof v !== "object" || !v.can || typeof v
   if (fly === true) out.fly = true; if (generate === true) out.gen = true; if (Object.keys(left).length) out.can = left; return out; }
 const IMP = "imported:", BANS = "imported-bans:", BEHAVIOR = "imported-behavior:";   // what translate-v1 carries (@7)
 const NSP = "imported/";   // @8: a v1 world's own (unregistered) component comes across as imported/<name> (PROTOCOL §4)
-// v1's word for the base rung was visitor (translate-v1@17 writes player): the inverse speaks v1
-const v1Role = (r: any) => (r && r.role === "player" ? { ...r, role: "visitor" } : r);
+// v1's word for the base rung was visitor (translate-v1@17 writes inhabitant): the inverse speaks v1
+const v1Role = (r: any) => (r && r.role === "inhabitant" ? { ...r, role: "visitor" } : r);
 function unproject(ents0: any) {
   const ents: any = {}, world: any = {};
   for (const [id, comps] of Object.entries<any>(ents0)) {

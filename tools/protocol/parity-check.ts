@@ -240,7 +240,7 @@ const cases: Case[] = [
     good: (o) => o.a === "account" && o.h === "account" },
   // ---------------- O: occupy is the one word family (R 10-17 13:46) ----------------
   { id: "O1", what: "(R 13:46) a socket removed under vic: his inbox has `vacated {socket, by, why, at}` (no `unseated`, no `seat`), the reply's note says `vacated: true, socket`-free of seat words, and presence keeps `occupants` (no `seats`)", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
       s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const pres = Object.keys(s.w().presence); const occ = s.w().presence.occupants?.vic?.to ?? null;
@@ -250,7 +250,7 @@ const cases: Case[] = [
       return { sit: show(sit), occ, pres, mv: show(mv), notes: JSON.stringify(mv.notes ?? []), m, types: inbox.map((x: any) => x.type) }; },
     good: (o) => o.sit === "ok" && !!o.occ && o.pres.includes("occupants") && !o.pres.includes("seats") && o.mv === "ok" && !!o.m && o.m.socket === o.occ && typeof o.m.why === "string" && Array.isArray(o.m.at) && !("seat" in o.m) && !o.types.includes("unseated") && /"vacated":true/.test(o.notes) && /"socket":/.test(o.notes) && !/unseated|"seat":/.test(o.notes) },
   { id: "O1b", what: "…a dry run of that move says who it would stand up (vacates), and changes nothing: vic stays seated", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
       s.call("olive", "create", { id: "chair", model: "chair", components: { sockets: { a: { pos: [0, 0.45, 0], body: { action: "sit" } } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" }); const occ = s.w().presence.occupants?.vic?.to ?? null;
       const dry = s.call("olive", "set", { id: "chair", component: "transform", value: { pos: [6, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, dry: true });
@@ -274,7 +274,7 @@ const cases: Case[] = [
     good: (o) => o.mine && o.at === "[1,2,3]" && o.lb && o.ag && o.docs && o.vh },
   // ---------------- M: move {client} is gone ----------------
   { id: "M1", what: "(research #14) move takes no `client`: arriving leaves no client kind on the authority's track, and `move {client}` is refused unknown-arg; VERBSPEC.move lists no client", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
       const a = s.call("vic", "move", { to: [0, 0, 0.5] }); const body = s.w().presence.bodies.vic ?? null;
       const c = s.call("olive", "move", { to: [1, 0, 0.5], client: "agent" });
       return { a: show(a), keys: body ? Object.keys(body) : null, c: show(c), spec: Object.keys(VS.VERBSPEC?.move?.args ?? {}) }; },
@@ -285,7 +285,7 @@ const cases: Case[] = [
     good: (o) => !o.tp && !o.ag && o.tpMoves >= 2 },
   // ---------------- V: the spoken trio is anyone's ----------------
   { id: "V1", what: "(R 10-17: TTS is anyone's) a say marked spoken by a participant who declared nothing keeps its trio (no kind gate, guard); the say doc names any participant, a person using TTS included", run(s) {
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "player" } });
+      s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
       const r = s.call("vic", "say", { text: "read aloud", spoken: true, utt: 3 }); const e = s.entries().findLast((x: any) => x.kind === "say");
       const doc = String(VS.VERBSPEC?.say?.args?.spoken?.doc ?? "");
       return { r: show(r), body: e?.body ?? null, doc }; },

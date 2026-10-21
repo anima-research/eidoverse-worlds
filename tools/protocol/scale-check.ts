@@ -137,8 +137,8 @@ function open(name: string, o: any = {}) {
 }
 // G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass
 const AT_BASE = path.resolve(TREE) !== path.resolve(ENGINE);
-// the base rung's name in the tree under test (R 10-21: player; the base commit says visitor): G3 speaks each tree's own word
-const BASE_RUNG = AT_BASE ? "visitor" : "player";
+// the base rung's name in the tree under test (R 10-21: inhabitant; the base commit says visitor): G3 speaks each tree's own word
+const BASE_RUNG = AT_BASE ? "visitor" : "inhabitant";
 const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };
 // …and its batch ops were {tool, args}
 const baseArgs = (verb: string, args: any) => (verb === "batch" && Array.isArray(args?.ops) ? { ...args, ops: args.ops.map((o: any) => (o && "verb" in o ? (({ verb: v, ...r }) => ({ tool: BASE_VERB[v] ?? v, ...r }))(o) : o)) } : args);
@@ -159,7 +159,7 @@ const r1 = (x: number) => Math.round(x * 10) / 10;
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-500, 0, -500], max: [500, 50, 500] } });
-  for (const [who, role] of [["bob", "builder"], ["vic", "player"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 // n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: the authority's rate window)
 function fill(s: any, n: number, at = (i: number, side: number) => [(i % side) * 2 - side, 0, Math.floor(i / side) * 2 - side]) {
@@ -181,8 +181,8 @@ function scaleCase(n: number) {
     for (let k = 0; k < 5; k++) { s.call("olive", "create", { id: `base-${k}`, model: "crate", components: { transform: T0([X - 20 - 2 * k, 0, 30]) } });
       s.call("olive", "create", { id: `top-${k}`, model: "crate", components: { transform: T0([X - 20 - 2 * k, 0.6, 30]) } });
       const tx = X - 20.7 + [-0.7, 0, 0.7, -0.35, 0.35][k], tz = k < 3 ? 40 : 38.8;   // all within reach of one spot
-      s.call("olive", "create", { id: `tray-${k}`, model: "crate", components: { transform: T0([tx, 0, tz]), grabbable: { who: "player" } } });
-      s.call("olive", "create", { id: `cup-${k}`, model: "book", components: { transform: T0([tx, 0.6, tz]), grabbable: { who: "player" } } }); }
+      s.call("olive", "create", { id: `tray-${k}`, model: "crate", components: { transform: T0([tx, 0, tz]), grabbable: { who: "inhabitant" } } });
+      s.call("olive", "create", { id: `cup-${k}`, model: "book", components: { transform: T0([tx, 0.6, tz]), grabbable: { who: "inhabitant" } } }); }
     s.call("vic", "move", { to: [0.9, 0, 0.9] });
     const ms: any = {}, codes: any = {};
     const op = (k: string, f: (i: number) => any) => { const x = best(5, f); ms[k] = r1(x.ms); codes[k] = code(x.r); };
@@ -261,7 +261,7 @@ const cases: Case[] = [
     good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
   { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);
       const holds: any = {}, bodies: any = {};
-      for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "player" } } } });
+      for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "inhabitant" } } } });
         s.call("olive", "batch", { ops }, 20000); }
       for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: T, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: T, tokens: 4 }; }
       s.call("olive", "look", {}, 20000);
@@ -352,7 +352,7 @@ const cases: Case[] = [
   { id: "I2", what: "a house measured from its triangles: a body walks in through the doorway (not through a wall), arrives inside, and a thing is put down on its floor", run(s) {
       s = session({ catalogue: withLab({ house: houseEntry() }) }); cast(s);
       s.call("olive", "create", { id: "home", model: "house", components: { transform: T0([0, 0, 0]) } });
-      s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([1, 0.1, 1]), grabbable: { who: "player" } } });
+      s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([1, 0.1, 1]), grabbable: { who: "inhabitant" } } });
       const r: any = {};
       r.arrive = code(s.call("vic", "move", { to: [0, 0, 5] }));
       r.door = code(s.call("vic", "move", { to: [0, 0.1, 1.6] }, 1000)); r.inside = code(s.call("vic", "move", { to: [1.5, 0.1, 0.5] }, 1000));
@@ -372,9 +372,9 @@ const cases: Case[] = [
 
   // ---------------- R: re-entrancy ----------------
   { id: "R1", what: "a request nested in another (a host callback re-entering the authority with a leave, whose drops are requests too) leaves the outer call's queued events alone: the outer put's changed: event is still queued after it, and its release event too", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "player" } });
-      s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([0, 0, 0]), grabbable: { who: "player" } } });
-      s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "player" } } });
+      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "inhabitant" } });
+      s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([0, 0, 0]), grabbable: { who: "inhabitant" } } });
+      s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "inhabitant" } } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [3, 0, 0.5] });
       s.call("vic", "grab", { id: "mug" }); s.call("ann", "grab", { id: "ball" });
       const w = s.w(); const save = w.savePresence; let nested: any = null, fired = false; const seen: any = {};
@@ -385,9 +385,9 @@ const cases: Case[] = [
       return { put: show(put), nested: show(nested), annLeft: !w.presence.bodies.ann, before: seen.before, after: seen.after }; },
     good: (o) => o.put === "ok" && o.nested === "ok" && o.annLeft && o.before?.length === 1 && JSON.stringify(o.after) === JSON.stringify(o.before) },
   { id: "R2", what: "…and a leave nested in another leave (a host callback during its drops) doesn't end the outer leave's settlement: its later drops are still never rate-refused", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "player" } });
-      for (let k = 0; k < 2; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "player", ...(k < 1 ? { release: "return" } : {}) } } });   // one goes home: the second lands alone (two hands: MAX_HELD, 10-10; it was three)
-      s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "player" } } });
+      s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "inhabitant" } });
+      for (let k = 0; k < 2; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "inhabitant", ...(k < 1 ? { release: "return" } : {}) } } });   // one goes home: the second lands alone (two hands: MAX_HELD, 10-10; it was three)
+      s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "inhabitant" } } });
       s.call("ann", "move", { to: [3, 0, 0.5] }); s.call("ann", "grab", { id: "ball" });
       for (let i = 0; i < 64; i++) s.call("vic", "move", { to: [0, 0, 0.5 + (i % 2) * 0.1], teleport: true }, 10);   // vic's budget for this window is spent (each an act)
       for (let k = 0; k < 2; k++) s.call("vic", "grab", { id: `b-${k}` }, 10);
@@ -526,9 +526,9 @@ async function sameAsBase() {
   const CONSENT_WORD: Record<string, string> = { everyone: "allow", nobody: "deny" };
   const shieldToday = (sh: any) => Object.fromEntries(Object.entries(sh).map(([k, row]: any) => [k === "strangers" ? "everyone" : k,
     row && typeof row === "object" && !Array.isArray(row) ? Object.fromEntries(Object.entries(row).map(([c, m]: any) => [c === "move" ? "displace" : c, CONSENT_WORD[m] ?? m])) : row]));
-  // R 10-21: the base commit's word for the base rung (visitor) is the rung this tree calls player
+  // R 10-21: the base commit's word for the base rung (visitor) is the rung this tree calls inhabitant
   const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (k === "shield" && v && typeof v === "object" && !Array.isArray(v)) v = shieldToday(v);
-    if ((k === "who" || k === "role") && v === "visitor") return "player";
+    if ((k === "who" || k === "role") && v === "visitor") return "inhabitant";
     if (!v || typeof v !== "object" || Array.isArray(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });
   // R 10-07: look and inspect read a thing as its name, description, what it can do and its state (shared/a11y.js): those

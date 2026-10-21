@@ -237,13 +237,13 @@ console.log("\n=== H5: owners unprotected → founder/seniority rank; cap defaul
   await sleep(100);
 
   // Now Bob tries to demote Alice (should fail: Alice is founder, Bob is junior)
-  const demoResult = await bob.req("set", { id: "@world", component: `roles:${alice.snapshot?.cut?.you}`, value: { role: "player" } });
+  const demoResult = await bob.req("set", { id: "@world", component: `roles:${alice.snapshot?.cut?.you}`, value: { role: "inhabitant" } });
   ok(demoResult.refused?.code === "rank" || demoResult.ok === false, "H5 junior owner cannot demote founder (rank check)", demoResult);
 
   // Check that joining anon doesn't automatically grant owner role
   const guest = await client(srv.port, "sec-test", "Guest", { replica: true });
   const guestRole = guest.snapshot?.yourRights?.role;
-  ok(guestRole === "player" || !guestRole?.includes("owner"), "H5 guest/anon default-role is capped at visitor (not owner)", guestRole);
+  ok(guestRole === "inhabitant" || !guestRole?.includes("owner"), "H5 guest/anon default-role is capped at visitor (not owner)", guestRole);
   guest.close();
   alice.close();
   bob.close();

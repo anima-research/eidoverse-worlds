@@ -84,7 +84,7 @@ for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}]
   const s = await sock(srv.port); const j = await s.join("keep", name, extra); ids[name] = you(j); s.close(); }
 await sleep(150);
 ok(Object.values(ids).every(Boolean), "(setup) Rowan, Pip and Moss have identities here", ids);
-ok((await own.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "player" } })).ok, "(setup) Rowan is listed (a player)");
+ok((await own.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value: { role: "inhabitant" } })).ok, "(setup) Rowan is listed (an inhabitant)");
 
 // ---- A4: closing the door removes whoever isn't listed, now ----
 const bob = await sock(srv.port); const jb = await bob.join("keep", "Bob");
@@ -124,13 +124,13 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   await own.req("set", { id: "@world", component: "access", value: { join: "listed" } }); }
 
 // ---- A6: until's rules ----
-{ const past = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "player", until: Date.now() - 1000 } });
+{ const past = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "inhabitant", until: Date.now() - 1000 } });
   const onOwner = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "owner", until: Date.now() + 60_000 } });
   ok(!past.ok && past.refused?.code === "bounds" && !onOwner.ok && /ownership never expires/.test(onOwner.refused?.reason ?? ""),
     "A6 until is refused in the past, and on an owner", [past.refused, onOwner.refused]); }
 
 // ---- A5: a timed grant ----
-{ const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "player", until: Date.now() + 2500 } });
+{ const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "inhabitant", until: Date.now() + 2500 } });
   const p = await sock(srv.port); const jp = await p.join("keep", "Pip");
   const told = await waitFor(() => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), 2000);
   const gone = await waitFor(() => p.closed != null, 6000);
@@ -150,7 +150,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "player", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  ok(access?.join === "listed" && rowan?.role === "inhabitant", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
   const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
@@ -166,8 +166,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 
 // ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked for 30 min; the loaded door refuses both ----
 const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
-{ const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "player" } });
-  const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "player" } });
+{ const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "inhabitant" } });
+  const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "inhabitant" } });
   const bm = await own.req("ban", { who: ids.Moss, reason: "A8" }), kw = await own.req("kick", { who: ids.Wren, minutes: 30, reason: "A8" });
   const gm = await geomAs(srv.port, "keep", "tok-moss"), gw = await geomAs(srv.port, "keep", "tok-wren"), gr = await geomAs(srv.port, "keep", "tok-rowan");
   ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 404 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses both (404), a member still reads it",
@@ -175,7 +175,7 @@ const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${p
 
 // (A14 setup) Fen is listed for 2.5 s; the server is stopped BEFORE that ends, so no sweep can write the end: the log keeps the grant
 const fenUntil = Date.now() + 2500;
-{ const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "player", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
+{ const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "inhabitant", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
 own.close();
 try { srv.proc.kill(); } catch {}
 await sleep(300);
@@ -234,7 +234,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     await waitFor(() => s.msgs.some((m) => m.type === "reply" && m.id === id), 4000); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
   const plain = await fen.req("set", { id: "@world", component: `roles:${fenId}`, value: { role: "owner" } });
   const unban = await repair(fen, "unban", { who: ids.Moss });
-  const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "player" } });
+  const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "inhabitant" } });
   const wide = await repair(fen, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   const row = await sock(s3.port); const jr = await row.join("keep", "Rowan", { agentToken: "tok-rowan" });
   const notOp = await repair(row, "unban", { who: ids.Moss });
@@ -309,9 +309,9 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
   const cases = [
-    ["default-role {can:{kick}}", { ...base, "default-role": { role: "player", can: { kick: true } } }],
+    ["default-role {can:{kick}}", { ...base, "default-role": { role: "inhabitant", can: { kick: true } } }],
     ["default-role {role: moderator}", { ...base, "default-role": { role: "moderator" } }],
-    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "player" }, "role-defs": { visitor: { can: { mute: true } } } }],
+    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "inhabitant" }, "role-defs": { visitor: { can: { mute: true } } } }],
   ];
   const got = cases.map(([n, wc]) => [n, entryFor({ name: "m1", wc, label: "members" }, { account: "acct-stranger", actorId: "u-stranger00000000000000", addr: "1.2.3.4" }, "embody")?.code ?? "admitted"]);
   ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in a members-only world stays out even when the default role (or a role-def) carries a moderation power", got);
@@ -329,7 +329,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     const s = await sock(s4.port); const j = await s.join("door", name, { agentToken: tok }); who[name] = you(j); s.close(); }
   { const s = await sock(s4.port); const j = await s.join("door", "Pip"); who.Pip = you(j); s.close(); }   // a typed-name account here (TRUST_NAMES)
   await sleep(150);
-  const set = [["Pip", "player"], ["Rowan", "player"], ["Wren", "player"], ["Fen", "owner"]];
+  const set = [["Pip", "inhabitant"], ["Rowan", "inhabitant"], ["Wren", "inhabitant"], ["Fen", "owner"]];
   const listed = [];
   for (const [w, role] of set) listed.push((await ann.req("set", { id: "@world", component: `roles:${who[w]}`, value: { role } })).ok);
   const closed = await ann.req("set", { id: "@world", component: "access", value: { join: "listed" } });

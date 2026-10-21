@@ -189,7 +189,7 @@ const MIN = 60_000, DAY = 86_400_000;
 function cast(s: any, { crew = false } = {}) {
   s.call("olive", "create-world", { title: s.name });
   if (crew) set(s, "olive", "role-defs", { crew: { name: "Crew", rank: 150, can: { build: true, editOthers: true, editWorld: true } } });
-  for (const [who, r] of [["mo", "moderator"], ["bob", "builder"], ["bea", "builder"], ["vic", "player"], ["ann", "player"], ...(crew ? [["cy", "crew"]] : [])]) role(s, who, { role: r });
+  for (const [who, r] of [["mo", "moderator"], ["bob", "builder"], ["bea", "builder"], ["vic", "inhabitant"], ["ann", "inhabitant"], ...(crew ? [["cy", "crew"]] : [])]) role(s, who, { role: r });
 }
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
@@ -197,7 +197,7 @@ const cases: Case[] = [
   // B1 (recut B, house: "new code would check permissions rather than role names, with owner-only powers going through one
   // function"): no source outside roles.js compares a role to a built-in name; owner goes through R.isOwner.
   { id: "B1", what: "(recut B1) no role-name comparison outside shared/protocol/roles.js: permissions decide, owner goes through isOwner", run() {
-      const hits: string[] = []; const RX = /\brole\s*[!=]==?\s*["'](owner|builder|moderator|player|visitor|none)["']|["'](owner|builder|moderator|player|visitor)["']\s*[!=]==?\s*[\w.?]*role\b|\[[^\]]*["'](builder|owner)["'][^\]]*\]\.includes\([\w.?]*role\)/;
+      const hits: string[] = []; const RX = /\brole\s*[!=]==?\s*["'](owner|builder|moderator|inhabitant|visitor|none)["']|["'](owner|builder|moderator|inhabitant|visitor)["']\s*[!=]==?\s*[\w.?]*role\b|\[[^\]]*["'](builder|owner)["'][^\]]*\]\.includes\([\w.?]*role\)/;
       const walk = (d: string) => { for (const e of fs.readdirSync(TREE + d, { withFileTypes: true })) { const rel = d + "/" + e.name;
         if (e.isDirectory()) { if (!["node_modules", "vendor", "dist"].includes(e.name)) walk(rel); continue; }
         if (!/\.(js|ts)$/.test(e.name) || /-test\.ts$|\.test\.ts$/.test(e.name) || rel === "shared/protocol/roles.js") continue;
@@ -208,7 +208,7 @@ const cases: Case[] = [
 
   // ---------------- K: kept (green at base AND now) ----------------
   { id: "K1", what: "kept: a builder changes anyone's thing; a visitor changes nothing; only an owner sets the sky or roles", run(s) {
-      s.call("olive", "create-world", { title: s.name }); role(s, "bob", { role: "builder" }); role(s, "vic", { role: "player" });
+      s.call("olive", "create-world", { title: s.name }); role(s, "bob", { role: "builder" }); role(s, "vic", { role: "inhabitant" });
       s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
       return { bob: show(set(s, "bob", "label", "b", "crate")), vic: code(set(s, "vic", "label", "v", "crate")), bobSky: code(s.call("bob", "sky", { hours: 3 })),
         bobRole: code(role({ call: (_o: string, t: string, a: any) => s.call("bob", t, a) }, "vic", { role: "builder" })) }; },
@@ -232,19 +232,19 @@ const cases: Case[] = [
       return { own: code(set(s, "olive", "role-defs", { owner: { name: "Boss", rank: 255 } })), r255: code(set(s, "olive", "role-defs", { crew: { name: "Crew", rank: 255 } })),
         bld: code(set(s, "olive", "role-defs", { builder: { rank: 120 } })) }; },
     good: (o) => o.own === "shape" && o.r255 === "rank" && o.bld === "rank" },
-  { id: "R5", what: "a crew holder stands at 150 with crew's permissions; a moderator at 200; a player at 0 with nothing", run(s) { cast(s, { crew: true });
+  { id: "R5", what: "a crew holder stands at 150 with crew's permissions; a moderator at 200; an inhabitant at 0 with nothing", run(s) { cast(s, { crew: true });
       const e = (x: string) => { const v = eff(s, x); return v && { role: v.role, rank: v.rank, sw: v.permissions }; };
       return { cy: e("cy"), mo: e("mo"), vic: e("vic") }; },
     good: (o) => o.cy?.rank === 150 && o.cy.sw.includes("editWorld") && !o.cy.sw.includes("mute") && o.mo?.rank === 200 && ["mute", "kick", "ban", "grantRoles", "pauseScripts"].every((k) => o.mo.sw.includes(k))
-      && o.vic?.rank === 0 && o.vic.role === "player" && o.vic.sw.length === 0 },
+      && o.vic?.rank === 0 && o.vic.role === "inhabitant" && o.vic.sw.length === 0 },
   { id: "R6", what: "default-role may name a custom role (crew) but never owner; guests stay at or below it", run(s) { cast(s, { crew: true });
       return { crew: show(set(s, "olive", "default-role", { role: "crew" })), own: code(set(s, "olive", "default-role", { role: "owner" })),
         up: code(set(s, "olive", "default-role", { role: "builder", guests: "moderator" })), ok: show(set(s, "olive", "default-role", { role: "moderator", guests: "builder" })),
         guest: eff(s, "guest-1")?.role, stranger: eff(s, "zed")?.role }; },
     good: (o) => o.crew === "ok" && o.own === "shape" && o.up === "shape" && o.ok === "ok" && o.guest === "builder" && o.stranger === "moderator" },
   { id: "R7", what: "per-person can: exceptions both ways, refused with did-you-mean, and checked for dependencies at write", run(s) { cast(s);
-      const up = role(s, "vic", { role: "player", can: { fly: true } }), down = role(s, "mo", { role: "moderator", can: { ban: false } });
-      const typo = role(s, "ann", { role: "player", can: { flie: true } }), dep = role(s, "ann", { role: "player", can: { editOthers: true } });
+      const up = role(s, "vic", { role: "inhabitant", can: { fly: true } }), down = role(s, "mo", { role: "moderator", can: { ban: false } });
+      const typo = role(s, "ann", { role: "inhabitant", can: { flie: true } }), dep = role(s, "ann", { role: "inhabitant", can: { editOthers: true } });
       return { up: show(up), vic: eff(s, "vic")?.permissions, down: show(down), mo: eff(s, "mo")?.permissions, typo: code(typo), dym: typo.refused?.didYouMean, dep: code(dep) }; },
     good: (o) => o.up === "ok" && o.vic?.includes("fly") && o.down === "ok" && !o.mo?.includes("ban") && o.mo?.includes("kick") && o.typo === "schema" && o.dym?.[0] === "fly" && o.dep === "needs" },
   { id: "R8", what: "a custom role somebody holds can't be deleted (refused with the count); moving them off and deleting it in one batch lands", run(s) { cast(s, { crew: true });
@@ -388,8 +388,8 @@ const cases: Case[] = [
   { id: "M7", what: "the grant rule: a moderator gives builder; giving crew (it carries editWorld, which moderators lack), moderator or owner, can.generate, or changing a peer's or their own role is refused", run(s) { cast(s, { crew: true });
       return { builder: show(set(s, "mo", "roles:vic", { role: "builder" })), crew: code(set(s, "mo", "roles:ann", { role: "crew" })),
         mod: code(set(s, "mo", "roles:ann", { role: "moderator" })), own: code(set(s, "mo", "roles:ann", { role: "owner" })),
-        gen: code(set(s, "mo", "roles:bob", { role: "builder", can: { generate: true } })), peer: code(set(s, "mo", "roles:mo2", { role: "player" }) && set(s, "olive", "roles:mo2", { role: "moderator" }) && set(s, "mo", "roles:mo2", { role: "player" })),
-        self: code(set(s, "mo", "roles:mo", { role: "builder" })), bob: code(set(s, "bob", "roles:vic", { role: "player" })) }; },
+        gen: code(set(s, "mo", "roles:bob", { role: "builder", can: { generate: true } })), peer: code(set(s, "mo", "roles:mo2", { role: "inhabitant" }) && set(s, "olive", "roles:mo2", { role: "moderator" }) && set(s, "mo", "roles:mo2", { role: "inhabitant" })),
+        self: code(set(s, "mo", "roles:mo", { role: "builder" })), bob: code(set(s, "bob", "roles:vic", { role: "inhabitant" })) }; },
     good: (o) => o.builder === "ok" && o.crew === "rights" && o.mod === "rank" && o.own === "rank" && o.gen === "rights" && o.peer === "rank" && o.self === "rights" && o.bob === "rights" },
   { id: "M8", what: "script pauses: a moderator pauses a builder's script (the sponsor is unchanged); a pause by an owner can't be resumed by the moderator or the builder", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -428,11 +428,11 @@ const cases: Case[] = [
     good: (o) => o.b === "ok" && o.o === "rank" && o.label === "rights" },
   // ---------------- G: ghost (outside society) ----------------
   { id: "T1", what: "translation: a v1 {builder, fly, gen} grant becomes roles:<id> {role, can: {fly, generate}}, and the effective set holds fly and generate", run() {
-      const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "player", fly: false } } });
+      const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "inhabitant", fly: false } } });
       const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
       return { v: w["@world"][key], bo: w["@world"][bo], imported: Object.keys(w["@world"]).filter((k) => k.startsWith("imported:roles")), sw: RL.effectiveOf?.(w["@world"], id)?.permissions, tag: TV1.TRANSLATOR }; },
     good: (o) => o.v?.role === "builder" && o.v.can?.fly === true && o.v.can?.generate === true && !("gen" in o.v) && !("fly" in o.v) && !("fly" in (o.bo ?? {})) && o.imported.length === 0 && o.sw?.includes("fly") && o.sw?.includes("generate") && o.tag?.startsWith("eidoverse/translate-v1@") && +o.tag.split("@")[1] >= 7 },   // @4 brought fly → can.fly, @7 gen → can.generate
-  { id: "T2", what: "the Commons (its v1 governance lines, the repo fixture or V1_COMMONS=<a v1 Commons log>, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is a player", run() {
+  { id: "T2", what: "the Commons (its v1 governance lines, the repo fixture or V1_COMMONS=<a v1 Commons log>, translated here): a stranger is still a builder and now builds and generates by its default-role can.generate; a guest is an inhabitant", run() {
       // PROTOCOL_COMMONS: an already-translated world log; else the v1 Commons translated in process (R 10-07: the Commons is
       // re-translated from its latest v1 log at merge time, so a saved translation would only test an older importer)
       // With neither, the repo's own fixture: the Commons' governance lines alone (its founder's grant, a builder's, and
@@ -443,7 +443,7 @@ const cases: Case[] = [
         : F.fold(TV1.translate(fs.readFileSync(v1f, "utf8").split("\n").filter((l: string) => l.trim()).map((l: string) => JSON.parse(l))).out);
       const e = D.effectiveIn?.(st, "u-aaaaaaaaaaaaaaaaaaaa"), g = D.effectiveIn?.(st, "u-bbbbbbbbbbbbbbbbbbbb", { anon: true });
       return { role: D.roleIn(st, "u-aaaaaaaaaaaaaaaaaaaa"), sw: e?.permissions, guest: g?.role }; },
-    good: (o) => (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "player") },
+    good: (o) => (o.role === "builder" && ["build", "editOthers", "scripts", "generate"].every((k) => o.sw?.includes(k)) && o.guest === "inhabitant") },
 
   // ---------------- P: S6 the person menu (pure) ----------------
   { id: "P1", what: "personActions: a visitor sees only Mention (a public @name; Message opened a DM tab until whisper was removed, R 10-18), for anyone", run() { const A = RL.personActions;
@@ -459,13 +459,13 @@ const cases: Case[] = [
       return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },
     good: (o) => Array.isArray(o) && o.map((x: any) => x.id).join() === "mention,rank-line,history" && /moderator; you can't act on equal or higher ranks/.test(o[1].label) && o[1].dim },
   { id: "P4", what: "badges: none for a visitor, 'guest' for someone without an account, the role's name otherwise", run() { const B = RL.badgeOf;
-      return { v: B?.({ role: "player" }), g: B?.({ role: "builder", anon: true }), o: B?.({ role: "owner", name: "Owner" }), c: B?.({ role: "crew", name: "Crew" }) }; },
+      return { v: B?.({ role: "inhabitant" }), g: B?.({ role: "builder", anon: true }), o: B?.({ role: "owner", name: "Owner" }), c: B?.({ role: "crew", name: "Crew" }) }; },
     good: (o) => o.v === null && o.g?.text === "guest" && o.o?.text === "owner" && o.o.tone === "owner" && o.c?.text === "crew" && o.c.tone === "role" },
 
   // ---------------- F: the top-down review's findings (10-06), each red before its fix ----------------
   { id: "F1", what: "a junior owner can't re-affirm the founder to reset their seniority, then demote and ban them (review S0-1)", run(s) { cast(s);
       role(s, "jun", { role: "owner" });
-      const reaff = set(s, "jun", "roles:olive", { role: "owner" }), demote = set(s, "jun", "roles:olive", { role: "player" }), ban = s.call("jun", "ban", { who: "olive" });
+      const reaff = set(s, "jun", "roles:olive", { role: "owner" }), demote = set(s, "jun", "roles:olive", { role: "inhabitant" }), ban = s.call("jun", "ban", { who: "olive" });
       const self = set(s, "jun", "roles:jun", { role: "owner", note: "me" }), down = set(s, "olive", "roles:jun", { role: "builder" });
       return { reaff: code(reaff), demote: code(demote), ban: code(ban), olive: eff(s, "olive")?.role, self: show(self), down: show(down) }; },
     good: (o) => o.reaff === "rights" && o.demote === "rights" && o.ban === "rights" && o.olive === "owner" && o.self === "ok" && o.down === "ok" },
@@ -475,16 +475,16 @@ const cases: Case[] = [
       return { a2demotesA1: show(set(s, "a2", "roles:a1", { role: "builder" })), a1demotesA2: code(set(s, "a1", "roles:a2", { role: "builder" })) }; },
     good: (o) => o.a2demotesA1 === "ok" || o.a1demotesA2 === "rights" },
   { id: "F4", what: "an owner in a fresh world generates (the world's assets) and flies; fly can be granted per person (review: gen/fly came from v1 by name)", run(s) { cast(s);
-      return { pal: show(set(s, "olive", "assets:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.permissions.includes("fly"), give: show(role(s, "vic", { role: "player", can: { fly: true } })), vic: eff(s, "vic")?.permissions }; },
+      return { pal: show(set(s, "olive", "assets:a", { name: "a", path: "store/a.glb" })), fly: eff(s, "olive")?.permissions.includes("fly"), give: show(role(s, "vic", { role: "inhabitant", can: { fly: true } })), vic: eff(s, "vic")?.permissions }; },
     good: (o) => o.pal === "ok" && o.fly === true && o.give === "ok" && o.vic?.includes("fly") },
   { id: "F5", what: "the founder editing their own entry (a note) doesn't make them junior: a co-owner still can't demote them", run(s) { cast(s);
       role(s, "jun", { role: "owner" }); const note = set(s, "olive", "roles:olive", { role: "owner", note: "founder" });
-      return { note: show(note), demote: code(set(s, "jun", "roles:olive", { role: "player" })), olive: eff(s, "olive")?.role }; },
+      return { note: show(note), demote: code(set(s, "jun", "roles:olive", { role: "inhabitant" })), olive: eff(s, "olive")?.role }; },
     good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" },
 
   // ---------------- V: the independent review's findings (10-07), each red before its fix ----------------
   { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban, 1-minute voice mute or kick under an owner's leaves the owner's in force", run(s) { cast(s);
-      role(s, "ann2", { role: "player" }); role(s, "kk", { role: "player" });
+      role(s, "ann2", { role: "inhabitant" }); role(s, "kk", { role: "inhabitant" });
       s.call("olive", "ban", { who: "vic" }); const b = s.call("mo", "ban", { who: "vic", days: 0.0001 });
       s.call("olive", "mute", { who: "ann", minutes: 10080 }); const m = s.call("mo", "mute", { who: "ann", minutes: 1, channels: ["voice"] });
       s.call("olive", "kick", { who: "kk", minutes: 60 }); s.call("mo", "kick", { who: "kk", minutes: 0.01 });
@@ -505,7 +505,7 @@ const cases: Case[] = [
       return { to: code(s.call("vic", "say", { text: "why?", to: "mo" })) }; },
     good: (o) => o.to === "muted" },
   { id: "V5", what: "nobody lifts their own sanction (a muted builder holding mute can't unmute themself)", run(s) { cast(s);
-      role(s, "bob", { role: "builder", can: { mute: true } }); s.call("mo", "mute", { who: "bob", minutes: 60 }); role(s, "mo", { role: "player" });
+      role(s, "bob", { role: "builder", can: { mute: true } }); s.call("mo", "mute", { who: "bob", minutes: 60 }); role(s, "mo", { role: "inhabitant" });
       return { self: code(s.call("bob", "unmute", { who: "bob" })), still: !!D.muteOf(s.w(), "bob") }; },
     good: (o) => o.self === "rank" && o.still },
   { id: "K5", what: "kept: a kicked or banned person's leave still settles (the server's departure sends it): their body is gone from presence", run(s) { cast(s);
@@ -521,9 +521,9 @@ const cases: Case[] = [
     good: (o) => o.r === null },
   { id: "V10", what: "a junior owner's script can't write a senior owner's role (seniority binds a capability by its holder)", run(s) { cast(s);
       role(s, "jun", { role: "owner" });
-      const up = s.call("jun", "upload", { text: "export default (world, e) => { world.set('@world', 'roles:olive', { role: 'player' }); }" });
+      const up = s.call("jun", "upload", { text: "export default (world, e) => { world.set('@world', 'roles:olive', { role: 'inhabitant' }); }" });
       const ins = s.call("jun", "set", { id: "@world", component: "script:coup", value: { src: up.src, scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] } });
-      s.call("jun", "set", { id: "@world", component: "reactions", value: { coup: { kind: "set", component: "roles:olive", value: { role: "player" } } } });
+      s.call("jun", "set", { id: "@world", component: "reactions", value: { coup: { kind: "set", component: "roles:olive", value: { role: "inhabitant" } } } });
       const use = s.call("vic", "use", { id: "@world", action: "coup" });
       return { use: code(use) ?? show(use), olive: eff(s, "olive")?.role }; },
     good: (o) => o.olive === "owner" },
@@ -534,16 +534,16 @@ const cases: Case[] = [
     good: (o) => o.r === "ok" && JSON.stringify(o.can) === '{"generate":true}' && o.note === "keep me" && !o.sw?.includes("fly") && o.sw?.includes("generate") }
 ,
   // review of #260: the guests' ceiling holds for the fallback too, and a role entry's delete counts the default role's own `can`
-  { id: "V12", what: "a guest with no guests field is a player: plain, under a newcomer role of builder, and under a stored default of the removed none (an old log)", run() {
+  { id: "V12", what: "a guest with no guests field is an inhabitant: plain, under a newcomer role of builder, and under a stored default of the removed none (an old log)", run() {
       return { plain: RL.guestRoleOf?.({}), build: RL.guestRoleOf?.({ "default-role": { role: "builder" } }), old: RL.guestRoleOf?.({ "default-role": { role: "none" } }) }; },
-    good: (o) => o.plain === "player" && o.build === "player" && o.old === "player" },
+    good: (o) => o.plain === "inhabitant" && o.build === "inhabitant" && o.old === "inhabitant" },
   { id: "V13", what: "deleting a person's role entry gives them the default role's `can` too, so a grantor who lacks one of those is refused", run(s) { cast(s);
-      const d = set(s, "olive", "default-role", { role: "player", can: { build: true, editWorld: true } });   // editWorld needs build
+      const d = set(s, "olive", "default-role", { role: "inhabitant", can: { build: true, editWorld: true } });   // editWorld needs build
       const r = s.call("mo", "delete", { id: "@world", component: "roles:vic" });
       return { d: show(d), r: code(r) ?? show(r), vic: eff(s, "vic")?.permissions }; },
     good: (o) => o.d === "ok" && o.r === "rights" && !o.vic?.includes("editWorld") },
-  { id: "V14", what: "…but with a newcomer role of player and no `can`, the default role gives nothing, so the same delete stands", run(s) { cast(s);
-      const d = set(s, "olive", "default-role", { role: "player" });
+  { id: "V14", what: "…but with a newcomer role of inhabitant and no `can`, the default role gives nothing, so the same delete stands", run(s) { cast(s);
+      const d = set(s, "olive", "default-role", { role: "inhabitant" });
       const r = s.call("mo", "delete", { id: "@world", component: "roles:vic" });
       return { d: show(d), r: show(r), vic: eff(s, "vic")?.permissions }; },
     good: (o) => o.d === "ok" && o.r === "ok" && o.vic?.length === 0 },
@@ -561,24 +561,24 @@ const cases: Case[] = [
       s.call("mo", "mute", { who: "vic", minutes: 5 }); s.advance(6 * MIN);
       return { ...r, ended: lift("unmute"), before, after: n() }; },
     good: (o) => o.unban === "unchanged" && o.unmute === "unchanged" && o.ended === "unchanged" && typeof o.before === "number" && o.after === o.before + 1 },
-  // ---- PL: the player rung (R 10-21): visitor → player, none gone, newcomers build in NEW worlds, guests start as players ----
-  { id: "PL1", what: "the ladder's words: player 0 · builder · moderator · owner; no visitor, no none (released, R 10-21: nothing reserves them now, so a world may name a custom role either); reserved ids are owner and banned", run(s) {
+  // ---- PL: the inhabitant rung (R 10-21): visitor → inhabitant, none gone, newcomers build in NEW worlds, guests start as inhabitants ----
+  { id: "PL1", what: "the ladder's words: inhabitant 0 · builder · moderator · owner; no visitor, no none (released, R 10-21: nothing reserves them now, so a world may name a custom role either); reserved ids are owner and banned", run(s) {
       s.call("olive", "create-world", { title: s.name });
       return { rank: RL.RANK, builtin: RL.BUILTIN_IDS, reserved: [...(RL.RESERVED_IDS ?? [])].sort(), freeV: RL.isRoleId?.("visitor"), freeN: RL.isRoleId?.("none"),
         custom: show(set(s, "olive", "role-defs", { visitor: { name: "Visitor", rank: 5 } })) }; },
-    good: (o) => o.rank?.player === 0 && !("visitor" in (o.rank ?? {})) && !("none" in (o.rank ?? {})) && JSON.stringify(o.builtin) === '["player","builder","moderator","owner"]'
+    good: (o) => o.rank?.inhabitant === 0 && !("visitor" in (o.rank ?? {})) && !("none" in (o.rank ?? {})) && JSON.stringify(o.builtin) === '["inhabitant","builder","moderator","owner"]'
       && JSON.stringify(o.reserved) === '["banned","owner"]' && o.freeV === true && o.freeN === true && o.custom === "ok" },
-  { id: "PL2", what: "a NEW world's newcomers are builders (founding writes default-role builder: starter config); a guest there is a player; an owner demotes one person by hand with a grant of player", run(s) {
+  { id: "PL2", what: "a NEW world's newcomers are builders (founding writes default-role builder: starter config); a guest there is an inhabitant; an owner demotes one person by hand with a grant of inhabitant", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
       const dr = s.w().state().entities["@world"].c["default-role"]; const zed = eff(s, "zed")?.role, guest = eff(s, "guest-1")?.role;
-      const zedBuild = show(set(s, "zed", "label", "z", "crate")); const demote = show(role(s, "vic", { role: "player" }));
+      const zedBuild = show(set(s, "zed", "label", "z", "crate")); const demote = show(role(s, "vic", { role: "inhabitant" }));
       return { dr, zed, guest, zedBuild, demote, vic: eff(s, "vic")?.role, vicBuild: code(set(s, "vic", "label", "v", "crate")) }; },
-    good: (o) => o.dr?.role === "builder" && o.zed === "builder" && o.guest === "player" && o.zedBuild === "ok" && o.demote === "ok" && o.vic === "player" && o.vicBuild === "rights" },
-  { id: "PL3", what: "a world with NO default-role (every world founded before today) keeps its meaning: newcomers are players, never builders by surprise", run(s) {
+    good: (o) => o.dr?.role === "builder" && o.zed === "builder" && o.guest === "inhabitant" && o.zedBuild === "ok" && o.demote === "ok" && o.vic === "inhabitant" && o.vicBuild === "rights" },
+  { id: "PL3", what: "a world with NO default-role (every world founded before today) keeps its meaning: newcomers are inhabitants, never builders by surprise", run(s) {
       s.call("olive", "create-world", { title: s.name }); const del = show(s.call("olive", "delete", { id: "@world", component: "default-role" }));
       s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
       return { del, zed: eff(s, "zed")?.role, zedBuild: code(set(s, "zed", "label", "z", "crate")) }; },
-    good: (o) => o.del === "ok" && o.zed === "player" && o.zedBuild === "rights" },
+    good: (o) => o.del === "ok" && o.zed === "inhabitant" && o.zedBuild === "rights" },
   { id: "PL4", what: "visitor is just a word now: a grant of it, a default-role of it and a grabbable's who naming it are refused where the world defines no such role, as any unknown role is", run(s) {
       s.call("olive", "create-world", { title: s.name });
       const g = code(role(s, "vic", { role: "visitor" })), d = code(set(s, "olive", "default-role", { role: "visitor" }));
@@ -586,14 +586,20 @@ const cases: Case[] = [
       return { g, d, b }; },
     good: (o) => !!o.g && !!o.d && !!o.b },
   { id: "PL5", what: "none is gone: a grant of none is refused (a ban or a mute does that job); a person with no grant is the world's newcomer role, never a silent look-only body", run(s) {
-      s.call("olive", "create-world", { title: s.name }); set(s, "olive", "default-role", { role: "player" });
+      s.call("olive", "create-world", { title: s.name }); set(s, "olive", "default-role", { role: "inhabitant" });
       return { none: code(role(s, "nn", { role: "none" })), dnone: code(set(s, "olive", "default-role", { role: "none" })), say: show(s.call("zed", "say", { text: "hi" })) }; },
     good: (o) => !!o.none && !!o.dnone && o.say === "ok" },
+  { id: "PL8", what: "guest is orthogonal to role (R 10-21): an owner may give a guest any role, builder included, for as long as that connection lasts; a world gated to inhabitant still holds an ungranted guest there", run(s) {
+      s.call("olive", "create-world", { title: s.name }); set(s, "olive", "default-role", { role: "inhabitant" });
+      s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
+      const before = code(set(s, "guest-1", "label", "g", "crate")); const give = show(role(s, "guest-1", { role: "builder" }));
+      return { before, give, g1: eff(s, "guest-1")?.role, after: show(set(s, "guest-1", "label", "g", "crate")), g2: eff(s, "guest-2")?.role }; },
+    good: (o) => o.before === "rights" && o.give === "ok" && o.g1 === "builder" && o.after === "ok" && o.g2 === "inhabitant" },
   { id: "PL7", what: "the doors: open (newcomers build) · public (newcomers play) · invite-only · watch", async run() {
       const A = await import(TREE + "shared/protocol/access.js");
       return { doors: Object.keys(A.DOORS ?? {}).sort(), open: A.doorWrites?.("open")?.find((x: any) => x.component === "default-role")?.value?.role, pub: A.doorWrites?.("public")?.find((x: any) => x.component === "default-role")?.value?.role,
         inv: A.doorWrites?.("invite-only")?.[0]?.value?.join, doorOpen: A.doorOf?.({ "default-role": { role: "builder" } }), doorPub: A.doorOf?.({}) }; },
-    good: (o) => JSON.stringify(o.doors) === '["invite-only","open","public","watch"]' && o.open === "builder" && o.pub === "player" && o.inv === "listed" && o.doorOpen === "open" && o.doorPub === "public" },
+    good: (o) => JSON.stringify(o.doors) === '["invite-only","open","public","watch"]' && o.open === "builder" && o.pub === "inhabitant" && o.inv === "listed" && o.doorOpen === "open" && o.doorPub === "public" },
 ];
 
 // ---------------- run ----------------
