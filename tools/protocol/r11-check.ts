@@ -126,7 +126,7 @@ const cases: Case[] = [
       s.reopen({ bodies: {}, holds: {}, consent: {
         alice: { cells: { strangers: { touch: "everyone" } }, friends: ["carol"] },
         dora: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } }, over: { bob: { touch: { mode: "deny" } } } },
-        eve: { preset: "open", paused: true } } });
+        eve: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } }, paused: true } } });   // only the pause closes eve
       C.migratePresence(s.w().presence); C.migratePresence(s.w().presence);   // idempotent
       const P = s.w().presence.consent;
       return { a: P.alice.switch, d: P.dora.switch, e: P.eve.switch, gone: ["alice", "dora", "eve"].every((k) => !("friends" in P[k]) && !("delegates" in P[k]) && !("cells" in P[k]) && !("preset" in P[k]) && !("paused" in P[k])),
