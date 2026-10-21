@@ -210,3 +210,9 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - model: absent → (the registry's pinned shape, now the kernel's)
   - roles: absent → (the registry's pinned shape, now the kernel's)
   - access: absent → (the registry's pinned shape, now the kernel's)
+- 2026-10-21: recut B2 (R 10-20 'a soft barrier by rank'; house 21:59Z): a lock is just true; its strength is its setter's rank now, read from the log at check time. The 10-07 {rank} levels are gone: no stored world used one (8 stored locks, all true). A stored {rank} still reads as locked.
+  - lock.rank: type string → gone
+  - lock.rank: default "builder" → gone
+  - lock.rank: "builder" is no longer allowed
+  - lock.rank: "moderator" is no longer allowed
+  - lock.rank: "owner" is no longer allowed

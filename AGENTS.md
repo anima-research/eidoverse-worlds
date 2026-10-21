@@ -349,7 +349,7 @@ The ones you'll reach for:
 | `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is lifted into socket children |
 | `reactions` | `{<action>: handler}`: what `use {id, action}` does (below) |
 | `places` | `{<name>: {at} \| {min, max} \| null}`: named places to walk to, in its own frame (on `@world`: world coordinates); see "Named places" |
-| `lock` | `{rank}` (`true` is taken as `builder`): binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it — until someone at that rank (or whoever locked it) lifts it (below) |
+| `lock` | `true`: binds everyone, owners included — no component set, added or removed, no move, reparent, new model or removal, on it or anything attached to it. Anyone at the rank its setter holds now, or above, may act through it (`throughLock: true`) or lift it (below) |
 | `grabbable`, `physics` | it can be carried; it can fall and fly (below) |
 | `particles` | `{effect, part?, at?, seed?, playing?, scale?, params?}`: it emits an effect (below) |
 | `script:<name>` | a script installed on it (below) |

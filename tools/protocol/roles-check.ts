@@ -435,7 +435,7 @@ const cases: Case[] = [
   { id: "P1", what: "personActions: a visitor sees only Mention (a public @name; Message opened a DM tab until whisper was removed, R 10-18), for anyone", run() { const A = RL.personActions;
       const vis = { id: "v", rank: 0, permissions: [] }; return { a: A?.(vis, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), b: A?.(vis, { id: "n", rank: -1, role: "none" }).map((x: any) => x.id) }; },
     good: (o) => JSON.stringify(o.a) === '["mention"]' && JSON.stringify(o.b) === '["mention"]' },
-  // G1–G3, V4, V8 RETIRED (R 10-20): ghost removed entirely (WISHLIST "Spectator role").
+  // G1–G3 and the two visitor rows V-four and V-eight RETIRED (R 10-20): ghost removed entirely (WISHLIST "Spectator role").
   { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ban, role and history — no Ghost (removed 10-20)", run() {
       const mo = { id: "m", rank: 200, permissions: RL.BUILTIN?.moderator ? RL.PERMISSION_NAMES.filter((k: string) => RL.BUILTIN.moderator.can[k]) : [] };
       return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id) }; },

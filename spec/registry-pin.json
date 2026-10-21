@@ -91,6 +91,11 @@
   },
   "on": "thing"
  },
+ "lock": {
+  "status": "trial",
+  "type": "bool",
+  "on": "thing"
+ },
  "hidden": {
   "status": "trial",
   "type": "bool",
@@ -452,23 +457,6 @@
    "points": "fewer than 2 points: it stands still"
   },
   "keyed": "optional",
-  "on": "thing"
- },
- "lock": {
-  "status": "trial",
-  "fields": {
-   "rank": "string"
-  },
-  "defaults": {
-   "rank": "builder"
-  },
-  "enums": {
-   "rank": [
-    "builder",
-    "moderator",
-    "owner"
-   ]
-  },
   "on": "thing"
  },
  "sockets": {

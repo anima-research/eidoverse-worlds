@@ -971,7 +971,7 @@ not named; §14 translates them to `access`.) **Two
 owner lists, never confused:** governance keys in genesis (§13) are reserved for
 governance (who may move the writer role, once it exists); roles decide rights inside the world.
 
-**Locks.** `lock {rank}` on an entity (a write of `true` is stored as `{rank: 'builder'}`) binds everyone, its locker and owners
+**Locks.** `lock: true` on an entity binds everyone, its locker and owners
 included: no write may change it or anything attached to it — no component
 set, added or removed, no move, no new parent, no new model, no removal —
 except the lock itself (by someone who may lift it). Use stays open: a
@@ -979,13 +979,15 @@ handler's own writes may change a locked thing's state (an `openable`, a
 `label`, and `disabled`: a handler may switch a locked thing off, by
 design, since that is a state and not a relocation) but never its
 `transform`, `parent` or `model`; sitting, scripts' reads and a new thing
-placed on top are open too. Anyone who may delete the `lock` component
-(builders and owners) may instead send a request with `throughLock: true`;
-the log records only the edit. A lock binds authoring, not motion. A lock
-has a level: `true` is builder level, and `{rank: "builder" | "moderator" |
-"owner"}` names one. Only someone at that rank or above, or whoever set the
-lock, may change or remove it or act through it; nobody sets a lock above
-their own rank.
+placed on top are open too. A lock binds authoring, not motion. A lock's
+strength is the rank its setter holds **now**, read from the log when it is
+checked: anyone at that rank or above who may delete the `lock` component may
+lift it, re-set it, or send a request with `throughLock: true` (the log
+records only the edit); anyone lower is refused. A setter who is demoted takes
+their locks' strength down with them; a lock whose setter is unknown is
+builder strength. It is a soft barrier, not ownership: clients ask before
+acting through one. A lock has no level of its own; a stored `{rank}` (an
+older log) reads as locked and its rank is ignored.
 
 **Ids are the authority's.** The authority mints every entity id (§3.1). A
 create (`create`, `create {from}`, a `batch`'s create) that names an id is
