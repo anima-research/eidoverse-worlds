@@ -165,7 +165,6 @@ function resolve(ctx, id, comp, value, prev) {
   }
   if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
   // one spelling per meaning (shape audit 10-16): what a write may say the short way is stored the one way
-  if (comp === "lock" && value === true) { ctx.notes.push({ id, component: "lock", sent: true, kept: { rank: "builder" }, why: "a lock is {rank}; true is the builder level" }); value = { rank: "builder" }; }
   if (comp === "home" && value && typeof value === "object" && !Array.isArray(value) && typeof value.scale === "number") value = { ...value, scale: [value.scale, value.scale, value.scale] };
   // a reference is stored as written (R 10-17: a model's library path, an Essential's name, a grass preset's name;
   // shared/protocol/assetref.js): grass's first-protocol knobs are mapped to the flora spelling, and a preset is checked

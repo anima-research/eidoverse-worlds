@@ -36,7 +36,6 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
-import { LOCK_LEVELS, lockLevel } from './protocol/roles.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
@@ -426,10 +425,6 @@ export function inspectSchema(ent, id, live = {}) {
   const flags = [];
   groups.push({ group: 'flags', label: 'Flags', fields: [...flags,
     { t: 'check', k: 'lock', label: 'locked in place', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts can move, replace or remove it (server-enforced); sitting on it and content edits stay open. Not a door\'s lock (that is Openable\'s "door locked")' },
-    // lock levels (R, 10-07): who may lift it — builders and up (a plain lock), moderators and up, or owners only ("not this
-    // piece"). Nobody locks above their own rank; whoever set it may always lift it (the authority's rule)
-    ...(locked ? [{ t: 'enum', k: 'lockLevel', label: 'lock level', value: LOCK_LEVEL(c.lock), def: 'builder', options: LOCK_LEVEL_OPTIONS,
-      hint: 'who may unlock it, change it, or move it anyway: builders and up (the default), moderators and up, or owners only. You can set it up to your own rank; whoever locked it can always unlock it' }] : []),
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
     { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it (R 10-11)' },
     { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
@@ -810,10 +805,6 @@ const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Oscillate: 1, Path: 1 };
 // agent's add.LookAt already worked while this list still hid it from people: audit 10-07). tools/protocol/shiplist-check.ts
 // R1 sends every offered entry to the real door: all must be accepted.
 const NOT_OFFERED = new Set();
-// a lock's level as the inspector reads it: true (a plain lock) is builder level
-const LOCK_LEVEL = lockLevel;
-const LOCK_LEVEL_WORDS = { builder: 'builders and up', moderator: 'moderators and up', owner: 'owners only' };
-const LOCK_LEVEL_OPTIONS = LOCK_LEVELS.map((v) => ({ v, label: LOCK_LEVEL_WORDS[v] }));
 /** The words people search Add Component with that aren't in a component's name or summary (review 10-07 S9: "seat"
  *  found nothing; the seat is Sockets). Shared so an agent's surface can use the same words. */
 export const ADD_WORDS = Object.freeze({
@@ -898,7 +889,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
         sec.removable = inst.key != null;
         break;
       case 'Label': case 'Hidden': case 'Description': continue;       // the header's, like Unity's name and active box
-      case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key || f.k === 'lockLevel'); sec.removable = true; break;
+      case 'Lock': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
       case 'Sockets': sec.fields = refs('sockets'); sec.removable = true; break;
       case 'Grabbable': sec.fields = claims('Grabbable', 'grabbable'); sec.removable = true; break;
       case 'Openable': sec.fields = claims('Openable', 'openable'); sec.removable = true; break;
@@ -1338,8 +1329,7 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'flags': {
-        if (k === 'lock') flagsComp('lock', bool(raw) ? (c.lock && c.lock !== true ? c.lock : true) : null);   // re-checking keeps its level
-        else if (k === 'lockLevel') { const v = String(raw ?? ''); if (!LOCK_LEVELS.includes(v)) { errors.push(`flags.lockLevel: ${LOCK_LEVELS.join(', ')} (got ${JSON.stringify(raw)})`); break; } flagsComp('lock', v === 'builder' ? true : { rank: v }); }
+        if (k === 'lock') flagsComp('lock', bool(raw) ? true : null);
         else if (k === 'hidden') flagsComp('hidden', bool(raw) ? true : null);
         else if (k === 'clickthrough') flagsComp('clickthrough', bool(raw) ? true : null);
         else if (k === 'disabled') flagsComp('disabled', bool(raw) ? true : null);
@@ -1583,7 +1573,7 @@ export function editOps(ent, id, edits, live = {}) {
   // one whole transform (§2.3): local to the parent for a child, which is the pose the channels edit (pv)
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
-  for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' && data !== true && !(data && typeof data === 'object' && LOCK_LEVEL(data) === data.rank) ? true : data)); }
+  for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
   return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), };
 }
 

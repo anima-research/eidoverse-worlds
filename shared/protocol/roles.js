@@ -30,12 +30,13 @@ export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
 export const REASON_MAX = 500;
 
 export const RANK = Object.freeze({ none: -1, visitor: 0, builder: 100, moderator: 200, owner: 255 });
-// lock levels (R, 10-07): a lock is `true` or {rank: builder|moderator|owner}; only that rank and above — or whoever set it
-// — may lift it, change it or act through it. A plain `true` is builder-level: what every lock meant before levels.
-// The authority decides; the inspector and the padlock read the same two functions (C9, 10-12) so none restates the ladder.
+// A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
+// SETTER holds now, read from the log at check time (a setter who's demoted takes their locks down with them). Anyone at
+// that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
+// kernel-pinned (kernelspec roles.grammar); nothing reads it since recut B2; leaves in recut C's kernel trim (one re-pin)
 export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
-export const lockLevel = (v) => (v && typeof v === "object" && LOCK_LEVELS.includes(v.rank) ? v.rank : "builder");
-export const lockRank = (v) => RANK[lockLevel(v)];
+/** The words for a lock's strength: who may lift it (display only). */
+export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
 export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "owner"]);
 
 // ---------------- the closed permission list ----------------

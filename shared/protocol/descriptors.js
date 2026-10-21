@@ -131,7 +131,7 @@ const CARDS = {
   LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range'], writeDp: 3, extra: ['target@'],
     editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } },
       speed: { ui: { t: 'num', step: 30, dp: 0, deg: true } }, /* stored rad/s (shape audit 10-16), shown in degrees */ range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
-  Lock: { key: 'lock', whole: 'value', show: [] },   // true | {rank}: the whole value is the row; its level is the Flags card's lockLevel
+  Lock: { key: 'lock', whole: 'value', show: [] },   // true: the whole value is the row (recut B2: no levels)
   Hidden: { key: 'hidden', whole: 'value' },
   Label: { key: 'label', whole: 'text' },
   Description: { key: 'description', whole: 'text' },

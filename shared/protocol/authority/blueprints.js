@@ -15,11 +15,11 @@ import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { modelOf } from "./catalogue.js";
-import { readback, clone, createOps, delOp, isE, lockedC, setOp, versionOf, lockLevel } from "./storage.js";
+import { readback, clone, createOps, delOp, isE, lockedC, setOp, versionOf } from "./storage.js";
 import { aabb, descendants, qrot, surfacesOf, worldT } from "./math.js";
 import { kidsMap } from "./spatial.js";
 import { isSocketC, socketsOf, socketRole, modelSocketNames } from "./sockets.js";
-import { backward, creatorOf, effective, madeBy, roleOf } from "./rights.js";
+import { backward, creatorOf, effective, lockStrength, madeBy, roleOf } from "./rights.js";
 import { shieldOf } from "./bodyconsent.js";
 import { actionsOf, offersFor, pivotOf } from "./use.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -246,7 +246,7 @@ const thingSaid = (st, id) => { const l = st?.entities?.[id]?.c?.label; return t
 // mcpl's look and the inspector share
 // a surface's size as a placement reads it: a turned top's own rectangle (with its x axis on the ground), else its box
 const surfaceSize = (s) => (s.rect ? { size: [r3(2 * s.rect.hx), r3(2 * s.rect.hz)], xAxis: s.rect.u.map(r3) } : { size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] });
-function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
+function describe(st, id, live = {}, holds = {}, { full = false, w = null } = {}) {
   const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
   const ax = readOut(e.c, { name, heldBy: holds[id] ? said(holds[id].by) : null, sockets: socketsOf(st, id) });
   const desc = ax.description == null ? null : full || graphemes(ax.description) <= 200 ? ax.description : `${[...ax.description].slice(0, 200).join("")}… (inspect for all)`;
@@ -255,7 +255,7 @@ function describe(st, id, live = {}, holds = {}, { full = false } = {}) {
     // stopped, its rest not logged yet: where the engine has it, said so (the record still has where it was thrown from)
     ...(live[id]?.resting ? { at: live[id].pos.map((n) => Math.round(n * 100) / 100), atRest: "where it came to rest; not yet on the record" } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100), ...(holds[id].hand ? { heldIn: holds[id].hand } : {}) } : {}),
     ...(g ? { grab: describeGrab(g, typeof name === "string" ? name : id) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...socketsLine(st, id), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: e.c.lock === true ? true : { rank: lockLevel(e.c.lock) } } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...socketsLine(st, id), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: w ? { rank: lockStrength(w, st, id) } : true } : {}), ...(e.c.openable && typeof e.c.openable === "object" ? { openable: e.c.openable } : {}),
     ...sayOf(st, e.c) };
 }
 const socketsLine = (st, id) => { const socks = socketsOf(st, id).filter((x) => x.id); return socks.length ? { sockets: socks.map((x) => ({ id: x.id, name: x.name, as: socketRole(st.entities[x.id].c) })) } : {}; };
@@ -289,7 +289,7 @@ const READ_VERBS = {
     // a socket is listed with its host (describe's sockets), not as a thing; what sits in it shows at its place
     const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; const sock = isSocketC(st.entities[id]?.c); if (!sock) order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, sock ? d : d + 1, n + 1); };
     ids.forEach((id) => tree(id, 0));
-    const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
+    const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds, { w }), depth: d })); const total = order.length;
     // consent is each person's own (consent gaps 6a, R 10-17 02:45): a viewer sees THEIR table, and who poses, drags or touches
     // them; of anyone else only where they stand, plus what the viewer is doing to them. Another body's stranger cells and
     // pause would undo the uniform refusal words (a stranger who reads touch: everyone and is then refused learns they
@@ -304,7 +304,7 @@ const READ_VERBS = {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, enginePoses(w.sim()), w.presence.holds, { full: true }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
+    return { ok: true, ...describe(st, a.id, enginePoses(w.sim()), w.presence.holds, { full: true, w }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },

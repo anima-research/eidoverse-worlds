@@ -8,13 +8,14 @@ import { cowState, applyCow, checkIJSON, isEntityId, isComponent, jcs, PURGED } 
 import { PERSON_ID } from "../ids.js";
 import { COMPONENTS, defOf, baseOf, statusOf, canonicalName } from "../componentspec.js";
 import * as R from "../roles.js";
+const { lockWord } = R;
 import { unNegZero } from "../round.js";
 import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
-import { FOLLOW_UP, IMPORTED_ONLY, isE, lockedC, opsQuiet, lockLevel, lockRank } from "./storage.js";
+import { FOLLOW_UP, IMPORTED_ONLY, isE, lockedC, opsQuiet } from "./storage.js";
 import { ancestors } from "./math.js";
 import { socketRules, actionRules, liftOps } from "./sockets.js";
-import { RANK, backward, creatorOf, effective, lastSetterOf, may, ownersOf, rankOf, roleOf, wcOf, whoRank } from "./rights.js";
+import { RANK, backward, creatorOf, effective, lastSetterOf, lockStrength, may, ownersOf, rankOf, roleOf, wcOf, whoRank } from "./rights.js";
 import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponsorOf } from "./scripts.js";
 import { vacateWhy, vacatesFor } from "./occupants.js";
 import { capacityCheck } from "./capacity.js";
@@ -178,43 +179,35 @@ function admit(w, st, who, ops) {
     norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
 }
 // A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
-// remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
-// all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the authority's own follow-ups) never
-// acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
+// lift that lock act through it, and the log records only the edit (the act carries the request as sent, flag and all).
+// It covers the asker's OWN writes: a capability (a handler's author, a hand, the authority's own follow-ups) never acts
+// through a lock. Who may lift it (recut B2, R 10-20): anyone at its setter's rank NOW or above, who may also delete the
+// component (L7 rights) — a soft barrier by rank; the padlock asks before it acts.
 function lockCheck(w, st, who, role, k, op, at) {
-  const level = lockLevel(st.entities[k]?.c.lock);
-  const below = !who.cap && !mayLiftLock(w, st, who.actor, k);   // a level above you, and not yours
+  const strength = lockStrength(w, st, k);
+  const below = !who.cap && rankOf(st, who.actor) < strength;
   const mayUnlock = !who.cap && !lacks(w, st, who.actor, { verb: "delete", id: k, comp: "lock" }) && !below;
   if (CTX.through && mayUnlock) return;
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
-  const lv = level === "builder" ? "" : ` at ${level} level`;
-  const what = k === op.id ? `${op.id} is locked${lv}${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${lv}${whose}, so ${at} can't change`;
+  const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
   const fix = CTX.through && who.cap ? `throughLock covers only your own edits, not a handler, a held thing or a script acting for you, so the lock stands for this route; someone who may unlock it can (delete {id: '${k}', component: 'lock'})`
-    : below ? `only ${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} may unlock it or act through it; you are ${role}`
-    : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift a builder-level lock, and history shows who did`
-    : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
-  refuse("locked", what, fix, { lock: k, rank: level, ...(by && !by.deleted ? { by: by.by } : {}), ...(below ? { mayLift: false } : {}) });
+    : below ? `this lock is ${lockWord(strength)} (its setter's rank); you are ${role}`
+    : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; history shows who lifted it`
+    : `someone who may build here at its setter's rank can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
+  refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), ...(below ? { mayLift: false } : {}) });
 }
-/** May `holder` lift k's lock (or act through it)? At its level or above, or whoever set it (R, 10-07: "whoever locked it,
- *  or anyone at the lock's rank"). Rights to delete the component are checked apart (L7: lacks). */
-function mayLiftLock(w, st, holder, k) {
-  if (rankOf(st, holder) >= lockRank(st.entities[k]?.c.lock)) return true;
-  const by = lastSetterOf(w, k, "lock"); return !!by && !by.deleted && by.rights === holder;
-}
-// A write to a lock itself: changing or removing a lock is lifting it (its level or its locker), and nobody sets one above
-// their own rank. A capability is judged by its holder (a handler's author, a script's sponsor); the authority's own
-// follow-ups never touch a lock.
+// A write to a lock itself: setting, re-setting or removing a lock on a locked thing is lifting it, so it needs the
+// lock's strength (a re-set by someone lower would otherwise move its setter down: recut B2). A capability is judged by
+// its holder (a handler's author, a script's sponsor); the authority's own follow-ups never touch a lock.
 function lockLevelCheck(w, st, s, who, op, at) {
   if (op.comp !== "lock" || op.id === "@world") return;
   const { actor, cap } = who; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : actor;
   const cur = st.entities[op.id]?.c.lock;
-  if (cur !== undefined && cur !== PURGED && !(op.verb === "set" && jcs(op.value) === jcs(cur)) && !mayLiftLock(w, st, holder, op.id)) {
-    const by = lastSetterOf(w, op.id, "lock"); const level = lockLevel(cur);
-    refuse("rank", `${op.id} is locked at ${level} level${by && !by.deleted ? ` by ${said(by.by)}` : ""}; only ${level === "owner" ? "an owner" : `a ${level} or above`} or whoever locked it may ${op.verb === "delete" ? "unlock" : "change"} it`,
-      `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: level, needs: "rank" }); }
-  if (op.verb === "set" && rankOf(st, holder) < lockRank(op.value))
-    refuse("rank", `${at}: a lock at ${lockLevel(op.value)} level is above your rank (${roleOf(st, holder)})`, "lock at your own level or below: true (builder) or {rank: 'builder'}", { needs: "rank" });
+  if (cur !== undefined && cur !== PURGED && rankOf(st, holder) < lockStrength(w, st, op.id)) {
+    const by = lastSetterOf(w, op.id, "lock"); const strength = lockStrength(w, st, op.id);
+    refuse("rank", `${op.id} is locked${by && !by.deleted ? ` by ${said(by.by)}` : ""}: ${lockWord(strength)} may ${op.verb === "delete" ? "unlock" : "change"} it`,
+      `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: strength, needs: "rank" }); }
 }
 function shapeOneOrRefuse(verb, op, i) {
   if (!["create", "set", "delete"].includes(verb)) refuse("shape", `op ${i}: '${verb}' isn't a state operation`, "create, set and delete (batches are flat)");

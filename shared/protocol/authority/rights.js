@@ -124,6 +124,9 @@ export function lastSetterOf(w, id, comp) {
       return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
   return null;
 }
+/** A lock's strength (recut B2): the rank its setter holds NOW; a lock nobody set by hand (translated, or its setter
+ *  unknown) is builder-strength. */
+export function lockStrength(w, st, id) { const by = lastSetterOf(w, id, "lock"); return by && !by.deleted && by.rights ? Math.max(R.RANK.builder, rankOf(st, by.rights)) : R.RANK.builder; }
 // Who made a thing: the view inspect shows (no stored `placer`).
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 

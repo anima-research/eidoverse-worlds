@@ -59,7 +59,7 @@ import * as Edits from './editwrites.js';
 import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './myview.js';
 import { agoWords, touchWords } from '../../shared/protocol/refusal.js';
 import { recordComponents } from '../../shared/protocol/view.js';
-import { RANK, lockLevel, lockRank } from '../../shared/protocol/roles.js';
+import { RANK, lockWord } from '../../shared/protocol/roles.js';
 import { KEYHINTS, withKeys } from './keyhints.js';   // slice 3b: these panels' writes are requests
 import { called } from './plainwords.js';
 
@@ -318,8 +318,8 @@ function hierarchyFields() {
     // the row says the name; the rest is on hover (and in the row with 'show ids' / 'show kinds')
     const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
     return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: id !== sel && Sel.isSelected(id), badges, locked: !!bag.lock, mine: isMineHidden(id),
-      ...(bag.lock ? { lockLevel: lockLevelOf(bag.lock) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
-      lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id, bag.lock)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
+      ...(bag.lock ? { lockLevel: lockWord(lockStrengthOf(id)) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
+      lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
       enabled: !selfOff, ...(off ? { off: true } : {}),
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
@@ -463,20 +463,20 @@ function duplicate(id) {
     const out = Edits.idOut(nid); flashHint(html`<b>${called(out)}</b> — a copy of ${called(id)}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
 }
 
-// lock levels (R, 10-07): who may lift a lock is its level and up, or whoever set it (the authority decides; this only
-// keeps the padlock honest about it)
-const lockLevelOf = lockLevel;
+// a lock's strength is its setter's rank now (recut B2): the authority's inspect says it (lock.rank); this only keeps
+// the padlock honest, the authority decides
+const lockStrengthOf = (id) => { const r = authorityInspect(id)?.lock?.rank; return Number.isFinite(r) ? r : RANK.builder; };
 const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : RANK[net.myRights?.role] ?? RANK.builder);
 const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
-const mayLiftLevel = (id, v) => myRank() >= lockRank(v) || (!!net.you && lockerOf(id) === net.you);
+const mayLiftLevel = (id) => myRank() >= lockStrengthOf(id);
 async function toggleLock(id) {
   const lk = bagOf(id)?.lock;
   if (!Edits.mayLift()) { flashHint('only builders and owners can lock or unlock things here'); return; }
   if (!lk) { Edits.lock(id, true); return; }
   // unlocking someone else's lock is a click-through, as moving a locked thing is: say whose it is and at what level
-  const by = lockerOf(id), level = lockLevelOf(lk);
+  const by = lockerOf(id), word = lockWord(lockStrengthOf(id));
   if (by && by !== net.you) {
-    const yes = await confirmCenter({ title: 'Unlock it?', body: `${Edits.nameOf(by)} locked this${level === 'builder' ? '' : ` at ${level} level`}. Unlocking lets anyone who may build here move or remove it; History shows who unlocked it.`, ok: 'Unlock', cancel: 'Keep it locked' });
+    const yes = await confirmCenter({ title: 'Unlock it?', body: `${Edits.nameOf(by)} locked this (${word} may lift it). Unlocking lets anyone who may build here move or remove it; History shows who unlocked it.`, ok: 'Unlock', cancel: 'Keep it locked' });
     if (!yes) return;
   }
   Edits.lock(id, false);

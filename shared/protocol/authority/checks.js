@@ -19,7 +19,6 @@ import { shapeError } from "../shapes.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse } from "./refuse.js";
 import { modelOf } from "./catalogue.js";
-import { LOCK_LEVELS } from "./storage.js";
 import { ancestors } from "./math.js";
 import { toggleOf } from "./use.js";
 import { scriptCeiling } from "./scripts.js";
@@ -106,8 +105,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     if (ancestors(s, id).length >= 32) refuse("deep", `${id} is already 32 deep; a parent chain stops there`, "attach it higher up, or flatten part of the chain", { depth: ancestors(s, id).length }); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CTX.cat.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
-  if (comp === "lock" && v !== true && !(obj && Object.keys(v).length === 1 && LOCK_LEVELS.includes(v.rank)))
-    refuse("shape", `${at} is true (a builder-level lock) or {rank: 'builder' | 'moderator' | 'owner'}; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
+  if (comp === "lock" && v !== true)
+    refuse("shape", `${at} is true; to unlock, delete it${obj && v.rank !== undefined ? " (a lock has no level any more: its strength is your rank)" : ""}`, `set {id: '${id}', component: 'lock', value: true} or delete {id: '${id}', component: 'lock'}`);
   if (comp === "openable" && obj) {
     if (v.angle !== undefined && v.slide !== undefined) refuse("shape", `${at} turns (angle) or slides (slide), not both`, "give one: angle (rad) to swing about its pivot, or slide [x, y, z] (m) to slide");
     if (v.slide !== undefined && !nums(v.slide, 3, 10)) refuse("bounds", `${at}.slide is [x, y, z] in metres, each within 10`, "e.g. [0.9, 0, 0]: a sliding door moves its own width sideways"); }
@@ -330,7 +329,6 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     if (def.keyPattern) { const re = new RegExp(def.keyPattern); const bad = Object.keys(v).find((k) => !re.test(k)); if (bad !== undefined) refuse("shape", `${at}: '${bad}' isn't a name here (${def.keyPattern})`, def.help ?? ""); }
     if (def.maxKeys !== undefined && Object.keys(v).length > def.maxKeys) refuse("bounds", `${at} has ${Object.keys(v).length} entries; at most ${def.maxKeys}`, def.help ?? ""); }
   if (!def.fields) return;
-  if (name === "lock" && v === true) return;   // a plain lock is true (builder level); its {rank} form is checked as an object below
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
   // shape audit 10-16: a reserved field (physics' unread properties) is refused in its own words, and a field the alpha cut

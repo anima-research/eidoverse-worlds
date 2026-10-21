@@ -8,10 +8,10 @@ import { REACH, HAND_Y, MAX_HELD, KICK } from "../physconst.js";
 import { r3, noNeg0 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
-import { delOp, lockLevel, lockedC, scratch, setOp } from "./storage.js";
+import { delOp, lockedC, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
-import { lastSetterOf, may, rankOf, roleOf, whoRank } from "./rights.js";
+import { lastSetterOf, lockStrength, may, rankOf, roleOf, whoRank } from "./rights.js";
 import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
@@ -21,8 +21,8 @@ import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnH
 import * as R from "../roles.js";
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
 // owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
-const unlockFix = (w, st, k) => { const level = lockLevel(st.entities[k]?.c.lock), by = lastSetterOf(w, k, "lock");
-  return `${level === "owner" ? "an owner" : `a ${level} or above`}${by && !by.deleted ? `, or ${said(by.by)} who locked it,` : ""} can unlock it first: delete {id: '${k}', component: 'lock'}`; };
+const unlockFix = (w, st, k) => { const by = lastSetterOf(w, k, "lock");
+  return `${R.lockWord(lockStrength(w, st, k))}${by && !by.deleted ? ` (it was locked by ${said(by.by)})` : ""} can unlock it first: delete {id: '${k}', component: 'lock'}`; };
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const actEntry = (...a) => UP.actEntry(...a);

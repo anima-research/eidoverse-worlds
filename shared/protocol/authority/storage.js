@@ -241,13 +241,10 @@ function versionSeq(w, v, what) {
 const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 // PROTOCOL §5 (locks: decided): `lock` keeps the first protocol's meaning, so an imported log's locks carry over
-// untranslated. A lock is on when its value is truthy; the authority writes it as a rank object ({rank}), storing a
-// write of `true` as {rank: 'builder'} (PROTOCOL §7).
+// untranslated. A lock is on when its value is truthy; the authority stores `true` (recut B2: an old log's {rank} still
+// reads as on, its rank ignored: strength is the setter's rank, gate.js).
 // A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
-// lock levels live beside the rank ladder they index (roles.js); re-exported for the door's readers
-export { LOCK_LEVELS, lockLevel, lockRank } from "../roles.js";
-const { LOCK_LEVELS, lockLevel, lockRank } = R;
 // a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
 // and a reader composing it through a parent drifts off unit: review of b398d7e3 #1)
 const qr3 = (q) => { const r = q.map(r3); const n = Math.hypot(r[0], r[1], r[2], r[3]); return n > 0 ? r.map((v) => v / n) : [0, 0, 0, 1]; };
