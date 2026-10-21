@@ -224,3 +224,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - roles.reserved: leaves the kernel; the registry pin holds it (roles.vocab.reserved)
   - roles.lockLevels: leaves every pin: unread since recut B2 (a lock is true; its strength is its setter's rank); LOCK_LEVELS deleted
   - access.doors: leaves every pin: client presets that write access fields; no stored byte names a door
+- 2026-10-21: 'ghost' is no longer a reserved role id (R 10-21): it was a sanction, removed entirely in recut B4, never a role a grant named; the future neutral role is 'spectator' (wishlisted), so nothing needs the old name held
+  - roles.reserved: vocabulary ["banned","everyone","ghost","guest","none","owner"] → ["banned","everyone","guest","none","owner"]

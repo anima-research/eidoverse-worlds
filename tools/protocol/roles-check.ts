@@ -411,7 +411,7 @@ const cases: Case[] = [
       s.call("mo", "mute", { who: "ann", minutes: 30 }); s.call("mo", "ban", { who: "vic", days: 2 });
       const log = s.call("mo", "modlog", {}), bob = s.call("bob", "modlog", {}), bans = s.call("mo", "bans", {});
       return { w0: code(w0), w1: show(w1), w2: code(w2), first: log.records?.[0]?.verb, verbs: log.records?.map((r: any) => r.verb), bob: code(bob),
-        now: bans.now?.map((x: any) => [x.who, Object.keys(x).filter((k) => ["ban", "mute", "kick", "ghost"].includes(k))]).sort() }; },
+        now: bans.now?.map((x: any) => [x.who, Object.keys(x).filter((k) => ["ban", "mute", "kick"].includes(k))]).sort() }; },
     good: (o) => o.w0 === "rights" && o.w1 === "ok" && (o.w2 === "missing-arg" || o.w2 === "shape") && o.first === "ban" && o.verbs?.includes("warn") && o.verbs?.includes("role") && o.bob === "rights"
       && JSON.stringify(o.now) === JSON.stringify([["ann", ["mute"]], ["vic", ["ban"]]]) },
   { id: "M10", what: "a guest's rank comes from the guests role: a moderator may act on a guest builder; a builder default doesn't make guests outrank anyone", run(s) { cast(s);

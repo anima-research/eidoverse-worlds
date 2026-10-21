@@ -78,9 +78,8 @@ export const BUILTIN = Object.freeze({
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
-// "ghost" stays reserved though ghost itself is gone (R 10-20): a name is never recycled for a different concept (devchat 10-21),
-// so no world can define a custom role that reuses a sanction's name. The list is the registry's (roles.vocab, recut C11).
-export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]));
+// The list is the registry's (roles.vocab, recut C11): a change to it is a trial break needing --ack.
+export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
 export const isRoleId = (x) => BUILTIN_IDS.includes(x) || (typeof x === "string" && CUSTOM_ID.test(x) && !RESERVED_IDS.has(x));

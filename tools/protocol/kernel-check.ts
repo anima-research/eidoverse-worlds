@@ -97,7 +97,7 @@ await C("K1", "the kernel's shapes carry status trial-kernel: envelope, fold, id
     && ["transform", "parent:x", "model", "roles:u-1", "access"].every((n) => CAT.statusOf(n) === "trial-kernel") && CAT.statusOf("light") === "trial" && CAT.statusOf("default-role") === "trial"
     && p.envelope.fields.includes("actor") && p.envelope.kinds.includes("purge") && p.fold.ops.set.includes("commit") && p.version.v === 4 && p.identity.identity === "[a-z0-9-]{1,64}"
     && p.model.type === "string" && p.roles.fields.until === "int" && !("grammar" in p.roles) && !("vocab" in p.roles) && !("grammar" in p.access) && JSON.stringify(p.access.enums.join) === '["anyone","signed-in","listed"]'
-    && CAT.pinOf().roles.vocab?.rank?.owner === 255 && CAT.pinOf().roles.vocab.permissions.includes("grantRoles") && CAT.pinOf().roles.vocab.reserved.includes("ghost") && !("lockLevels" in CAT.pinOf().roles.vocab),
+    && CAT.pinOf().roles.vocab?.rank?.owner === 255 && CAT.pinOf().roles.vocab.permissions.includes("grantRoles") && CAT.pinOf().roles.vocab.reserved.includes("banned") && !CAT.pinOf().roles.vocab.reserved.includes("ghost") && !("lockLevels" in CAT.pinOf().roles.vocab),
     Object.fromEntries(names.map((n) => [n, p[n]?.status]))]; });
 
 await C("K2", "the code's kernel is what spec/kernel-pin.json pins (a difference is THE change: red until `kernel-check.ts --pin` with its companions)", () => {
@@ -157,12 +157,12 @@ await C("K10", "the registry pin agrees: transform, parent, model, roles and acc
 
 // ---- the three that joined (reviewer item 5: model, roles, access): a mutated shape of each is a kernel change, red without the companions ----
 const mut = (f: (now: any) => void) => { const now = KS.kernelPinOf(); f(now); return now; };
-await C("K11", "a mutated model, roles or access SHAPE is a kernel change (model's type, a roles field dropped, access's join enum narrowed: refused without the three companions); the ladder's VOCABULARY is the registry's since C11: a permission dropped, a reserved id freed (\"ghost\" too), a rank moved, each is a registry break (pinBreaks) refused a re-pin without --ack, and NOT a kernel diff", () => {
+await C("K11", "a mutated model, roles or access SHAPE is a kernel change (model's type, a roles field dropped, access's join enum narrowed: refused without the three companions); the ladder's VOCABULARY is the registry's since C11: a permission dropped, a reserved id freed, a rank moved, each is a registry break (pinBreaks) refused a re-pin without --ack, and NOT a kernel diff", () => {
   const ms: [string, any][] = [["model.type", mut((n) => { n.model.type = "object"; })], ["roles.fields.until", mut((n) => { delete n.roles.fields.until; })], ["access.enums.join", mut((n) => { n.access.enums.join = ["anyone", "listed"]; })]];
   const got = ms.map(([at, now]) => { const d = KS.kernelDiff(pinned.kernel, now); const v = KS.kernelVerdict(pinned, now, null); const vs = KS.kernelVerdict(pinned, now, { ack: "x", scope: { names: [at.split(".")[0]], registryPinned: true } });
     return { at, red: d.some((x: string) => x.startsWith(at)) && !v.ok && /translator/.test(v.why) && /--vectors/.test(v.why) && !vs.ok && /translator/.test(vs.why) }; });
   const reg = CAT.pinOf(); const vm = (f: (v: any) => void) => { const n = JSON.parse(JSON.stringify(reg)); f(n.roles.vocab); return n; };
-  const vs: [string, any][] = [["permissions", vm((v) => { v.permissions = v.permissions.filter((p: string) => p !== "ban"); })], ["reserved", vm((v) => { v.reserved = v.reserved.filter((p: string) => p !== "ghost"); })],
+  const vs: [string, any][] = [["permissions", vm((v) => { v.permissions = v.permissions.filter((p: string) => p !== "ban"); })], ["reserved", vm((v) => { v.reserved = v.reserved.filter((p: string) => p !== "banned"); })],
     ["rank", vm((v) => { v.rank.owner = 254; })], ["customId", vm((v) => { v.customId = "^[a-z]{1,8}$"; })]];
   const vgot = vs.map(([k, now]) => { const br = CAT.pinBreaks(reg, now); const bare = CAT.pinVerdict(reg, now, null); const acked = CAT.pinVerdict(reg, now, "x", "2026-10-21");
     return { k, red: br.some((t: string) => t.startsWith(`roles.${k}: vocabulary`)) && !bare.ok && /--ack/.test(bare.why) && acked.ok, kernel: KS.kernelDiff(KS.kernelPinOf(), KS.kernelPinOf()).length === 0 }; });

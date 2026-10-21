@@ -1619,7 +1619,6 @@
    "reserved": [
     "banned",
     "everyone",
-    "ghost",
     "guest",
     "none",
     "owner"
