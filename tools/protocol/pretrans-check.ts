@@ -81,7 +81,7 @@ await C("S1", "`by` is in the envelope table as a legacy field readers ignore", 
 await C("S2", "the spec carries the alpha note (no guarantee, we try not to break, repair paths) and §9.2's component conventions", () => {
   const alpha = SPEC.slice(SPEC.indexOf("**Alpha.**"), SPEC.indexOf("## 0."));
   const conv = SPEC.slice(SPEC.indexOf("### 9.2 Component conventions"), SPEC.indexOf("## 10."));
-  const need = ["metres, kilograms, seconds", "epoch milliseconds", "radians", "[x, y, z, w]", "3-vectors", "names its frame", "sRGB", "content addresses", "treat the whole", "current default", "never written whole", "No person data", "refPaths", "role id", "falloff", "required"];
+  const need = ["metres, kilograms, seconds", "epoch milliseconds", "radians", "[x, y, z, w]", "3-vectors", "names its frame", "sRGB", "content addresses", "drops that field", "current default", "never written whole", "No person data", "refPaths", "role id", "falloff", "required"];
   return [/about a year/.test(alpha) && /no guarantee/i.test(alpha) && /repair/.test(alpha) && need.every((n) => conv.includes(n)), need.filter((n) => !conv.includes(n))]; });
 
 // ---- C: citations (M5) ----
