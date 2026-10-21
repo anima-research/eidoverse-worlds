@@ -910,7 +910,6 @@
   "status": "trial",
   "fields": {
    "engine": "string",
-   "build": "string",
    "tickMs": "int"
   },
   "defaults": {
@@ -1807,7 +1806,7 @@
    "heightmap": "no image: the noise is the base",
    "segments": "the renderer's own mesh resolution (a drawing choice, not part of the height law)",
    "layers": "one plain layer, 0x4a5d33 repeated 16 times across its size",
-   "law": "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)"
+   "law": "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)"
   },
   "on": "world",
   "reservedKinds": [

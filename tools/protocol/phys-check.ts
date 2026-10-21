@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
-import { simFold, restsOf, ENGINES, EIDOSIM_BUILD } from "../../shared/protocol/simlayer.js";
+import { simFold, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT, yawQ, qrot } from "../../shared/protocol/authority/math.js";
 import { supportBelow } from "../../shared/protocol/authority/spatial.js";
@@ -24,7 +24,7 @@ const copyOf = (L) => readLog(L.map((e) => JSON.stringify(e)).join("\n") + "\n")
 // insert an entry at position i: later entries move up one, and every cause at or after i follows them
 const insertAt = (L, i, e) => { const C = copyOf(L).map((x) => (typeof x.cause === "number" && x.cause >= i ? { ...x, cause: x.cause + 1 } : x)); C.splice(i, 0, e); return copyOf(C); };
 const rests = (L) => restsOf(L);
-const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
+const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim" };   // no version named: stamped by the authority (so a deploy may restamp it, R)
 // a rigid-body engine rests things inside its contact slop (eidosim: 5 mm) and a box doesn't slide far (the first eidosim
 // slid things like pucks and stood them exactly on their support; these bars were exact for it)
 const RIGID = true, ON = 0.005;
@@ -277,13 +277,29 @@ function playground(name) {
 }
 {
   const W = fresh("pc-k"); call(W, "rowan", "create-world", { title: W });
-  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "deadbeefdeadbeef" } });
-  ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a foreign build is accepted with a note", s);
+  // an owner may name a version this server doesn't carry (house, #260 10-21): accepted with a note; what only the engine computes is refused
+  const s = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@2.0.0" } });
+  ok(s.ok && s.notes?.some((n) => /isn't carried/.test(n.why)), "K a version this server doesn't carry is accepted with a note", s);
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, 0.5] }); call(W, "rowan", "grab", { id: "ball" });
   const t = call(W, "rowan", "throw", { id: "ball", v: [0, 1, 1] });
   ok(!t.ok && t.refused.code === "foreign-engine", "K throwing is refused, honestly", t.refused);
   const d = call(W, "rowan", "put", { id: "ball" }); ok(d.ok, "K putting it down still works (a settlement needs no engine)", d);
+}
+
+// EV — an engine is named by its version; the authority stamps one when the owner names none (house answer, #260 10-21)
+{
+  const W = fresh("pc-v"); call(W, "rowan", "create-world", { title: W });
+  const pe = () => fold(log(W)).entities["@world"].c["physics-engine"];
+  const s1 = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } });
+  ok(s1.ok && pe().engine === "eidosim@1.0.0" && s1.notes?.some((n) => /stamped/.test(n.why ?? "")), "EV1 no version named: the authority stamps the one it carries, and says so", { s1, pe: pe() });
+  ok(!("build" in pe()), "EV1b the stored value names no build: a version is the engine's identity", pe());
+  const s2 = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+  ok(s2.ok && pe().engine === "eidosim@1.0.0" && !s2.notes?.some((n) => /stamped/.test(n.why ?? "")), "EV2 a version named is kept as named, with no stamp note", { s2, pe: pe() });
+  const s3 = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "nosuchphys" } });
+  ok(!s3.ok && s3.refused?.code === "unknown-engine", "EV3 an engine name this server has never heard of is refused (a typo shouldn't set a world's physics)", s3);
+  const s4 = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim", build: "deadbeefdeadbeef" } });
+  ok(!s4.ok, "EV4 build is no longer a field: a value naming one is refused at the door", s4);
 }
 
 // L — playtest 22 fixes
@@ -383,19 +399,20 @@ function playground(name) {
 // itself, as system, once: when the engine is one it carries, the build was stamped by an authority (not named by the
 // owner), and nothing is in flight (P6: the cut is then free). A "deploy" here is ENGINES' build swapped under the world.
 {
-  const OLD = "be543899cfedf430", E = ENGINES["eidosim@1.0.0"];
-  const deployed = (fn) => { E.build = OLD; try { return fn(); } finally { E.build = EIDOSIM_BUILD; } };   // the old server
+  // a deploy is the carried set changing: the old server carried eidosim@0.9.0, this one carries eidosim@1.0.0
+  const OLD = "eidosim@0.9.0", NEW = "eidosim@1.0.0", E = ENGINES[NEW];
+  const deployed = (fn) => { delete ENGINES[NEW]; ENGINES[OLD] = E; try { return fn(); } finally { delete ENGINES[OLD]; ENGINES[NEW] = E; } };   // the old server
   const restamps = (W) => log(W).filter((e) => e.kind === "act" && e.actor === "system" && e.verb === "restamp-engine");
   const specOf = (W) => fold(log(W)).entities["@world"].c["physics-engine"];
   // R1 — stamped by the old server, nothing in flight: restamped at the first act after load, and physics runs
   const W = deployed(() => playground("pc-r1"));
-  ok(specOf(W).build === OLD, "R1 setup: the old server stamped its own build", specOf(W));
+  ok(specOf(W).engine === OLD, "R1 setup: the old server stamped its own build", specOf(W));
   call(W, "rowan", "look", {});
   const rs = restamps(W), L = log(W), ai = L.findIndex((e) => e.kind === "act" && e.verb === "restamp-engine"), ch = L.findIndex((e) => e.kind === "change" && e.cause === ai);
-  ok(rs.length === 1 && specOf(W).build === EIDOSIM_BUILD && specOf(W).engine === "eidosim@1.0.0" && specOf(W).tickMs === 33,
+  ok(rs.length === 1 && specOf(W).engine === NEW && specOf(W).tickMs === 33,
     "R1 the authority restamped @world.physics-engine with the build it carries, same engine and tickMs", { rs, spec: specOf(W) });
   ok(ch > 0 && L[ch].actor === "system" && L[ch].body.id === "@world" && L[ch].body.comp === "physics-engine", "R1 …as a system change on @world.physics-engine", L[ch]);
-  ok(rs[0]?.body?.why === `engine build ${OLD} → ${EIDOSIM_BUILD}: restamped by the server; bodies at rest`, "R1 …and the log keeps why", rs[0]?.body);
+  ok(rs[0]?.body?.why === `engine ${OLD} → ${NEW}: restamped by the server; bodies at rest`, "R1 …and the log keeps why", rs[0]?.body);
   call(W, "rowan", "look", {}); ok(restamps(W).length === 1, "R1 once: the next act writes nothing more", restamps(W).length);
   call(W, "rowan", "grab", { id: "ball" }); const d = call(W, "rowan", "drop", { id: "ball" });
   ok(d.ok, "R1 a drop is accepted (the world isn't foreign any more)", d); call(W, "rowan", "wait", {}, 3000);
@@ -404,69 +421,69 @@ function playground(name) {
   // R1c — the next checkpoint carries the new build
   at(25000); settle(openWorld(root, W));
   const ck = log(W).filter((e) => e.kind === "sim" && e.verb === "checkpoint").at(-1);
-  ok(ck?.body?.engine?.build === EIDOSIM_BUILD, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
+  ok(ck?.body?.engine?.engine === NEW, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
   // R2 — a body in flight when the deploy came: no restamp, the world stays foreign (the owner can still restamp by hand)
   const W2 = deployed(() => { const n = playground("pc-r2"); call(n, "rowan", "grab", { id: "ball" }); call(n, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); return n; });
   call(W2, "rowan", "look", {});
-  ok(!restamps(W2).length && specOf(W2).build === OLD, "R2 a launch with no rest on the record: no restamp", specOf(W2));
+  ok(!restamps(W2).length && specOf(W2).engine === OLD, "R2 a launch with no rest on the record: no restamp", specOf(W2));
   call(W2, "rowan", "move", { to: [2, 0, -0.5] }); call(W2, "rowan", "grab", { id: "crate-1" });
   const t2 = call(W2, "rowan", "throw", { id: "crate-1", v: [0, 1, 1] });
   ok(!t2.ok && t2.refused.code === "foreign-engine" && !restamps(W2).length, "R2 …the world stays foreign", t2);
   // R2b — something held (lifted out of the engine, not put back): no restamp either
   const W2b = deployed(() => { const n = playground("pc-r2b"); call(n, "rowan", "grab", { id: "ball" }); return n; });
   call(W2b, "rowan", "look", {});
-  ok(!restamps(W2b).length && specOf(W2b).build === OLD, "R2b a thing held when the deploy came: no restamp", specOf(W2b));
+  ok(!restamps(W2b).length && specOf(W2b).engine === OLD, "R2b a thing held when the deploy came: no restamp", specOf(W2b));
   // R2c — the hold is gone from presence (a host that keeps it in memory restarted) but the log's lift was never put back:
   // still in flight by the log's word, so no restamp (the load's settleOrphans returns it first on a real server)
   const W2c = deployed(() => { const n = playground("pc-r2c"); call(n, "rowan", "grab", { id: "ball" }); return n; });
   const pp = `${root}worlds/${W2c}.presence.json`; const pres = JSON.parse(fs.readFileSync(pp, "utf8")); const realHold = pres.holds.ball; pres.holds = {}; fs.writeFileSync(pp, JSON.stringify(pres));
   call(W2c, "rowan", "look", {});
-  ok(!restamps(W2c).length && specOf(W2c).build === OLD, "R2c a lift on the record with nothing after it: no restamp", specOf(W2c));
+  ok(!restamps(W2c).length && specOf(W2c).engine === OLD, "R2c a lift on the record with nothing after it: no restamp", specOf(W2c));
   // R2d — held in presence only (no lift on the record): no restamp while the hold lasts
   const W2d = deployed(() => playground("pc-r2d"));
   const pd = `${root}worlds/${W2d}.presence.json`; const pr2 = fs.existsSync(pd) ? JSON.parse(fs.readFileSync(pd, "utf8")) : { bodies: {}, holds: {} };
   (pr2.holds ??= {}).ball = realHold; fs.writeFileSync(pd, JSON.stringify(pr2));
   call(W2d, "rowan", "look", {});
-  ok(!restamps(W2d).length && specOf(W2d).build === OLD, "R2d a hold in presence: no restamp", specOf(W2d));
+  ok(!restamps(W2d).length && specOf(W2d).engine === OLD, "R2d a hold in presence: no restamp", specOf(W2d));
   // R3 — an engine this server doesn't carry at all: no restamp
-  ENGINES["oldsim@0.9.0"] = { ...E, build: "0123456789abcdef" };
+  ENGINES["oldsim@0.9.0"] = { ...E };
   let W3; try { W3 = fresh("pc-r3"); call(W3, "rowan", "create-world", { title: W3 }); call(W3, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "oldsim@0.9.0" } }); }
   finally { delete ENGINES["oldsim@0.9.0"]; }
   call(W3, "rowan", "look", {});
   ok(specOf(W3).engine === "oldsim@0.9.0" && !restamps(W3).length, "R3 an engine this server doesn't carry: no restamp", specOf(W3));
-  // R4 — the current build: nothing written
+  // R4 — the version this server carries: nothing written
   const W4 = playground("pc-r4"); const n4 = log(W4).length; call(W4, "rowan", "look", {});
-  ok(!restamps(W4).length && log(W4).length === n4, "R4 a world on the carried build: no entry written", log(W4).length - n4);
-  // R5 — a build the OWNER named (pc-k's choice, kept): never overridden by the server
+  ok(!restamps(W4).length && log(W4).length === n4, "R4 a world on the carried version: no entry written", log(W4).length - n4);
+  // R5 — a version the OWNER named (pc-k's choice, kept): never overridden by the server
   const W5 = fresh("pc-r5"); call(W5, "rowan", "create-world", { title: W5 });
-  call(W5, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } }); call(W5, "rowan", "look", {});
-  ok(!restamps(W5).length && specOf(W5).build === OLD, "R5 an owner-named build is the owner's: no restamp", specOf(W5));
+  call(W5, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } }); call(W5, "rowan", "look", {});
+  ok(!restamps(W5).length && specOf(W5).engine === OLD, "R5 an owner-named version is the owner's: no restamp", specOf(W5));
   // R6 — a fork of a physics world (review r2 F4): the copy's fork-copy act carries the source's stamped spec, build and all.
   // That's inherited, not chosen, so after a deploy the fork is restamped like its source (forkWorld writes exactly this act)
   const W6 = fresh("pc-r6"); call(W6, "rowan", "create-world", { title: W6 }); at(100);
-  const fc = forkCopy(openWorld(root, W6), "rowan", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD, tickMs: 33 } } }], throughLock: true });
-  ok(fc.ok && specOf(W6).build === OLD && log(W6).some((e) => e.kind === "act" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped build", [fc.refused, specOf(W6)]);
+  const fc = forkCopy(openWorld(root, W6), "rowan", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { engine: OLD, tickMs: 33 } } }], throughLock: true });
+  ok(fc.ok && specOf(W6).engine === OLD && log(W6).some((e) => e.kind === "act" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped build", [fc.refused, specOf(W6)]);
   call(W6, "rowan", "look", {});
-  ok(restamps(W6).length === 1 && specOf(W6).build === EIDOSIM_BUILD, "R6 a forked physics world is restamped at its first act (an inherited build isn't the owner's choice)", specOf(W6));
+  ok(restamps(W6).length === 1 && specOf(W6).engine === NEW, "R6 a forked physics world is restamped at its first act (an inherited build isn't the owner's choice)", specOf(W6));
   // R7 — the owner names a build, then changes only tickMs by merge (review r2 F7): the build is still the one they named
   const W7 = fresh("pc-r7"); call(W7, "rowan", "create-world", { title: W7 });
-  call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } });
+  call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
   const m7 = call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true });
   call(W7, "rowan", "look", {});
-  ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).build === OLD, "R7 an owner-named build survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
+  ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).engine === OLD, "R7 an owner-named build survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
   // R7b — …but a stamped build stays stamped through a merge: the old server stamped it, the owner merged tickMs, a deploy restamps
   const W7b = deployed(() => { const n = fresh("pc-r7b"); call(n, "rowan", "create-world", { title: n });
-    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true }); return n; });
   call(W7b, "rowan", "look", {});
-  ok(restamps(W7b).length === 1 && specOf(W7b).build === EIDOSIM_BUILD && specOf(W7b).tickMs === 20, "R7b a stamped build merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
+  ok(restamps(W7b).length === 1 && specOf(W7b).engine === NEW && specOf(W7b).tickMs === 20, "R7b a stamped build merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
   // R7c — an older named build doesn't outlive a later stamp: the owner named one, then re-set the engine without a build
   // (the old server stamped its own), a deploy restamps (the walk stops at the change that brought the stamped build in)
   const W7c = deployed(() => { const n = fresh("pc-r7c"); call(n, "rowan", "create-world", { title: n });
-    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: "1111111111111111" } });
-    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }); return n; });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
+    call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } }); return n; });
   call(W7c, "rowan", "look", {});
-  ok(restamps(W7c).length === 1 && specOf(W7c).build === EIDOSIM_BUILD, "R7c a build named before a later stamped set doesn't count: restamped", specOf(W7c));
+  ok(restamps(W7c).length === 1 && specOf(W7c).engine === NEW, "R7c a build named before a later stamped set doesn't count: restamped", specOf(W7c));
 }
 
 // review of #260: an engine name that is an inherited property of the engine table

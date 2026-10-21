@@ -5,7 +5,7 @@
 // authority/bodyverbs.js). The gate and manipulate's returnPlan are above it, reached through UP.
 import { MOVER, bodyBox, bodyScale, floorStep, sweep } from "../../mover.js";
 import { COMPONENTS } from "../componentspec.js";
-import { livePoses, digestOf, restEta, ENGINES, carried, TICK_MS } from "../simlayer.js";
+import { livePoses, digestOf, restEta, ENGINES, carried, TICK_MS, engineName, stampOf } from "../simlayer.js";
 import { HAND_Y } from "../physconst.js";
 import { r3, noNeg0 } from "../round.js";
 import { qFromYaw, qMul } from "../../rot.js";
@@ -102,13 +102,13 @@ function settleSim(w) {
     }
   }
 }
-// A deploy changes the engine's build (REVIEW-design-2026-10-15 "Deploying switches physics off"): a world the old server
-// stamped names the old build, carried() calls it foreign (rightly: determinism is per binary), and nothing would fly
-// until an owner rewrote physics-engine. The authority restamps it itself, as system, at the first act or heartbeat after
-// load, when all of these hold:
-//   - the engine is one this server carries, under another build;
-//   - that build was STAMPED (by an authority, or by this restamp), never named by the owner: a build the owner chose is
-//     the owner's word (phys-check pc-k), and stays foreign;
+// A deploy changes the versions a server carries (REVIEW-design-2026-10-15 "Deploying switches physics off"): a world the old
+// server stamped names a version this one may not carry, carried() calls it foreign, and nothing would fly until an owner
+// rewrote physics-engine. The authority restamps it itself, as system, at the first act or heartbeat after load, when all
+// of these hold:
+//   - this server carries an engine of that NAME, under another version (stampOf: the one it would stamp today);
+//   - that version was STAMPED (no version typed: by an authority, or by this restamp), never named by the owner: a
+//     version the owner chose is the owner's word (phys-check pc-k, R5), and stays foreign;
 //   - nothing is in flight (P6: then the cut is free, and real). A foreign world has no engine state (out.sim is null,
 //     out.launched {}), so the log is read instead, from the epoch's start: a launch whose body has no rest under it, or a
 //     lift or catch nothing put back (orphanLifts' lifecycle), is in flight; and so is anything held now (presence).
@@ -116,31 +116,34 @@ function settleSim(w) {
 // per world object and spec (a heartbeat doesn't re-read the log), except while a hold is what blocks it.
 const restampTried = new WeakMap();
 function restampEngine(w) {
-  const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const known = spec && Object.hasOwn(ENGINES, spec.engine) && ENGINES[spec.engine];
-  if (!known || carried(spec)) return;
+  const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const today = spec && typeof spec.engine === "string" ? stampOf(engineName(spec.engine)) : null;
+  if (!today || carried(spec)) return;   // an engine of a name this server doesn't carry is never restamped: there's nothing to cut to
   const key = JSON.stringify(spec); if (restampTried.get(w) === key) return;
   if (w.custody?.()?.sign && w.custody().sequencer() !== w.entries[0]?.body?.sequencer) return;   // a server that can't sign for the world doesn't write to it
   if (Object.keys(w.presence?.holds ?? {}).length) return;   // held right now: try again at the next act
   restampTried.set(w, key);
-  // Named by the owner? Each change's cause act carries the request as sent (L4). The CURRENT build is named when, walking
-  // back from the epoch's change through the run of physics-engine changes that kept this same build, one was caused by a
-  // person's act whose request typed a build (review r2 F7: a later merge of tickMs names no build, but leaves the named one
-  // in place). The change that brought the build in ends the walk: past it, the build was another. A fork-copy is inherited,
-  // not chosen (review r2 F4: forkWorld's copy carries the source's stamped build), and system acts (restamps) never name.
-  const named = (v) => !!v && typeof v === "object" && (Array.isArray(v) ? v.some(named) : (v.component === "physics-engine" && v.value?.build !== undefined) || Object.values(v).some(named));
+  // Named by the owner? Each change's cause act carries the request as sent (L4). A later merge of tickMs types no engine,
+  // and leaves the named one in place (review r2 F7). A fork-copy is inherited, not chosen (review r2 F4: forkWorld's copy
+  // carries the source's stamped value), and system acts (restamps) never name.
+  // the engine word a request typed for physics-engine, or undefined when it typed none (a merge of tickMs alone)
+  const word = (v) => { if (!v || typeof v !== "object") return undefined; if (Array.isArray(v)) { for (const x of v) { const r = word(x); if (r !== undefined) return r; } return undefined; }
+    if (v.component === "physics-engine" && typeof v.value?.engine === "string") return v.value.engine;
+    for (const x of Object.values(v)) { const r = word(x); if (r !== undefined) return r; } return undefined; };
   // READBACK: the cause act's request is read back; a purged one (readback null) is an UNKNOWN chooser, and unknown means
-  // the owner may have chosen it: never restamped (engine-scars 4/6c: a purge made an owner's build look stamped)
-  const chose = (e) => { const c = E[e.cause]; if (!(isE(c) && c.kind === "act") || c.actor === "system" || c.verb === "fork-copy") return false;
-    const b = readback(w, e.cause); if (b === null) return true;   // a purged cause: unknown chooser, so never restamped
-    return named(b.request); };
-  const E = w.entries; let from = -1, after = null;
+  // the owner may have chosen it: never restamped (engine-scars 4/6c: a purge made an owner's choice look stamped)
+  // → "named" (the owner's word), "stamped" (an authority's), or "skip" (this change didn't touch the engine: look further back)
+  const chose = (e) => { const c = E[e.cause]; if (!(isE(c) && c.kind === "act") || c.actor === "system" || c.verb === "fork-copy") return "stamped";
+    const b = readback(w, e.cause); if (b === null) return "named";
+    const t = word(b.request); return t === undefined ? "skip" : t.includes("@") ? "named" : "stamped"; };
+  // Walking back from the newest physics-engine change, the first whose act typed an engine decides: a version typed is the
+  // owner's, the engine alone is stamped (10-21: compared VALUES ended the walk when a stamp equalled an earlier named
+  // version — R7c — and the stamp read as the owner's). A delete ends it: the epoch before is another world's physics.
+  const E = w.entries; let from = -1;
   for (let s = E.length - 1; s >= 0; s--) { const e = E[s]; if (!(isE(e) && e.kind === "change")) continue;
     const o = opsQuiet(e).filter((x) => x.id === "@world" && x.comp === "physics-engine").at(-1); if (!o) continue;
-    if (after && (o.verb !== "set" || o.value?.build !== after.value?.build)) break;   // `after` brought the build in, naming none
     if (from < 0) from = s;
     if (o.verb !== "set") break;
-    if (chose(e)) return;
-    after = o; }
+    const c = chose(e); if (c === "named") return; if (c === "stamped") break; }
   if (from < 0) return;
   const out = new Map();   // id → the launch seq it flies under, or "held"
   for (let s = from + 1; s < E.length; s++) { const e = E[s]; if (!isE(e)) continue;
@@ -152,11 +155,11 @@ function restampEngine(w) {
       if (rest ? f === e.cause : (f === "held" && (o.verb === "create" || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)))) out.delete(o.id);
       else if (o.verb === "delete" && o.comp === undefined) out.delete(o.id); } }
   if (out.size) return;
-  const next = { ...spec, build: known.build };
+  const next = { engine: today, ...(spec.tickMs !== undefined ? { tickMs: spec.tickMs } : {}) };   // declared fields only: an older value's build goes
   let plan; try { plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: ["@world"], comps: ["physics-engine"] } }, [setOp("@world", "physics-engine", next)]); }
   catch (x) { if (!(x instanceof Refusal)) throw x; return; }
-  changeEntry(w, plan, w.append(actEntry(w, "system", "restamp-engine", { id: "@world", component: "physics-engine", from: spec.build, to: next.build,
-    why: `engine build ${spec.build} → ${next.build}: restamped by the server; bodies at rest` })));
+  changeEntry(w, plan, w.append(actEntry(w, "system", "restamp-engine", { id: "@world", component: "physics-engine", from: spec.engine, to: next.engine,
+    why: `engine ${spec.engine} → ${next.engine}: restamped by the server; bodies at rest` })));
 }
 // P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
 function buildEpoch(ctx, v, a) {
@@ -170,15 +173,16 @@ function buildEpoch(ctx, v, a) {
   if (v === null) return [...ops, delOp("@world", "physics-engine")];
   if (!v || typeof v.engine !== "string") refuse("shape", "sim needs {engine, tickMs?}", `engines this server carries: ${Object.keys(ENGINES).join(", ")}`);
   unknownKeys("@world.physics-engine", v, Object.keys(COMPONENTS["physics-engine"].fields), "physics-engine"); // the authority builds the value from these keys: a typo would vanish silently
-  const known = Object.hasOwn(ENGINES, v.engine) ? ENGINES[v.engine] : undefined;   // an engine of its own, never an inherited name (toString): review of #260
-  const spec = { engine: v.engine, build: v.build ?? known?.build ?? null, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : COMPONENTS["physics-engine"].defaults.tickMs };   // the registry's default (shape audit 10-16)
-  if (!known) refuse("unknown-engine", `this server doesn't carry '${v.engine}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
+  // a version named is the owner's word; no version named, the authority stamps the one it carries (house answer, #260 10-21)
+  const versioned = v.engine.includes("@"), stamp = stampOf(engineName(v.engine));
+  const spec = { engine: versioned ? v.engine : stamp, tickMs: Number.isInteger(v.tickMs) ? v.tickMs : COMPONENTS["physics-engine"].defaults.tickMs };   // the registry's default (shape audit 10-16)
+  if (!stamp) refuse("unknown-engine", `this server carries no engine named '${engineName(v.engine)}'`, `it carries: ${Object.keys(ENGINES).join(", ")}`, { didYouMean: guess(v.engine, Object.keys(ENGINES)) });
   // the engine never starts an epoch outside its tick range, so a throw would be logged and then fly nowhere, forever
   // (review of b398d7e3 #3)
   if (v.tickMs !== undefined && !(Number.isInteger(v.tickMs) && v.tickMs >= TICK_MS.min && v.tickMs <= TICK_MS.max))
     refuse("bounds", `tickMs is ${JSON.stringify(v.tickMs)}; the engine steps at a whole number of ms from ${TICK_MS.min} to ${TICK_MS.max}`, `leave it out for ${COMPONENTS["physics-engine"].defaults.tickMs} (30 steps a second), or e.g. tickMs: 16`);
-  if (v.build === undefined) ctx.notes.push({ component: "physics-engine", field: "build", kept: spec.build, why: "stamped: determinism belongs to one exact build, so the epoch names it" });
-  if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: "that build isn't carried here: nothing will be thrown in this world until a server that carries it runs it" });
+  if (!versioned) ctx.notes.push({ component: "physics-engine", field: "engine", kept: spec.engine, why: "stamped: no version named, so the authority names the one it carries (a version is what its conformance digests say it computes)" });
+  if (!carried(spec)) ctx.notes.push({ component: "physics-engine", why: `${spec.engine} isn't carried here (this server carries ${stamp}): nothing will be thrown in this world until a server that carries it runs it, or an owner sets one this server carries` });
   // what is in a hand as the engine starts stays out of its world. A grab without a carried engine logged no lift, and holds are
   // presence, which no reader replays: so the epoch write logs one lift per such thing (commit appends them after the change),
   // and every reader folds the same engine world from the log alone. Older logs without these stay as they are.

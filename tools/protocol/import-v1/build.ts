@@ -4,7 +4,7 @@
 // the importer's fold.js and every module it imports (followed through relative imports), in a fixed order, first 16
 // hex. NOTE: most of those modules are shared runtime modules (forecast, captions, blueprint, components…), so the stamp
 // moves whenever they change, not only when the old fold does; the importer is temporary (README.md), so this stays.
-// the same scheme as EIDOSIM_BUILD.
+// (a hash of its source files).
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import path from "node:path";

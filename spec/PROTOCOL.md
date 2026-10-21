@@ -126,8 +126,8 @@ act, but the *authority* reads a few act fields back for meaning: an undo's
 `undoes` and a rollback's `acts` (the undo chain), a `use`'s `capability`
 (whose rights admitted its writes), a script act's `sponsor`, a sculpt's
 `request.brush` and `clamped`, a request's `label`, the request that typed a
-physics-engine `build` (whether the owner chose it: a deploy restamps only a
-build the server stamped), a launch's, lift's or catch's `id`, and a
+physics-engine `engine` (whether the owner typed a version: a deploy restamps only a
+version the server stamped), a launch's, lift's or catch's `id`, and a
 founding's `shapes` or a translation's `from.translator` (the shape repair's
 older markers, §4). The full
 list, with what each reader does, is pinned in `spec/readback.json` (each
@@ -136,7 +136,7 @@ in shared/protocol/verbclasses.js, a pointer, not the contract). A new readback
 is a new row; a changed or removed one needs an acknowledged re-pin.
 §12 lets the whole body of an act be purged, so every one of these reads
 treats a purged body as **unknown**, never as a default: an unknown chooser
-of an engine build is the owner's (no restamp), unknown rights match nobody,
+of an engine version is the owner's (no restamp), unknown rights match nobody,
 an unknown undo names no target, an unknown flight may still be in the air,
 and an unknown marker counts as marked (the shape repair never re-runs).
 

@@ -223,9 +223,9 @@ const cases: Case[] = [
       return { sit: show(sit), r: show(r), at: s.w().state().entities.chair.c.transform?.pos, seated: !!s.w().presence.occupants?.bob }; },
     good: (o) => o.sit === "ok" && o.r === "ok" && o.at?.[0] === 4 && !o.seated },
   // ---------------- Q: purge vs readback ----------------
-  { id: "Q1", what: "an owner named the engine's build; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
-      const OLD = "be543899cfedf430";
-      const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } });
+  { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
+      const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
+      const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
       const actSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "set");
       const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
@@ -233,8 +233,8 @@ const cases: Case[] = [
       const w2 = s.reopen(); w2.entries[actSeq].body = { commit: "0".repeat(64) }; s.call("olive", "look", {});
       const restamp2 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
       const spec = s.w().state().entities["@world"].c["physics-engine"];
-      return { set: show(set), restamp1, restamp2, build: spec.build }; },
-    good: (o) => o.set === "ok" && o.restamp1 === 0 && o.restamp2 === 0 && o.build === "be543899cfedf430" },
+      return { set: show(set), restamp1, restamp2, engine: spec.engine }; },
+    good: (o) => o.set === "ok" && o.restamp1 === 0 && o.restamp2 === 0 && o.engine === "eidosim@0.9.0" },
   { id: "Q2", what: "a thing a use handler wrote is its author's (creatorOf.rights); with the use act's body purged the rights are unknown (null), never the visitor who pulled the lever", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { reactions: { on: { kind: "set", component: "t/lit", value: { on: true } } } }, place: { at: [0, 0] } });
       const u = s.call("vic", "use", { id: "lamp", action: "on" });

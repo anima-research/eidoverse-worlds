@@ -78,27 +78,29 @@ re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
-- `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
-  sets `engine`; the **authority stamps `build`** when the owner's request names
-  none: the hash of the exact files that implement it (determinism is per
-  binary). A build the owner names is kept, and a server that doesn't carry it
-  treats the world as foreign. The reference authority carries
-  `eidosim@1.0.0` (`EIDOSIM_BUILD` in `shared/protocol/simlayer.js`;
-  `bun run test:protocol` recomputes it from the files and fails if they changed
-  without a new build).
+- `@world.physics-engine` = `{engine: "<name>@<semver>", tickMs?}`. An engine is
+  named by its **version**, and a server **carries** a version when its
+  implementation reproduces that version's conformance digests
+  (`spec/conformance/physics/`: throw scenarios and what each comes to rest as).
+  A change that still reproduces them is the same version; a change meant to alter
+  results is a new version with its own digests. The owner may name the engine
+  alone (`eidosim`) or a version (`eidosim@1.0.0`); when no version is named, the
+  **authority stamps** the one it carries. A version the owner names is kept, and
+  a server that doesn't carry it treats the world as foreign. The reference
+  authority carries `eidosim@1.0.0`.
 - **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
-- **A build the authority stamped is the authority's to restamp.** When a world
-  names a carried engine under a build this server doesn't carry, the build was
-  stamped (not named in the owner's request), and nothing is in flight (by the
+- **A version the authority stamped is the authority's to restamp.** When a world
+  names an engine this server carries under a version it doesn't, the version was
+  stamped (no version typed in the request that set the engine), and nothing is in flight (by the
   log's word: no launch without its rest, nothing lifted and not yet put
   back) or held in presence, the authority writes the cut itself, as `system`
   (act `restamp-engine`), at the next request or heartbeat. A server that
   can't sign for the world doesn't. Otherwise the world stays foreign until an
   owner restamps it.
-- **A reader that doesn't carry the named build MUST NOT recompute the
+- **A reader that doesn't carry the named version MUST NOT recompute the
   flights.** It folds the log (the rests are there) and shows nothing in
   flight, rather than guessing. A wrong answer is worse than a missing
   animation.
@@ -449,7 +451,8 @@ version; it reads only what is stamped in entries; it advances by ticks; it
 reads the shapes (§3.1) and properties (§3.2) it declares, with their stated
 meanings of absence, and refuses honestly what it can't carry. To
 be carried, it registers beside eidosim in the authority's engine table
-(`ENGINES` in `shared/protocol/simlayer.js`) with its build hash, and passes the
+(`ENGINES` in `shared/protocol/simlayer.js`) under its version, with that version's
+digests in `spec/conformance/physics/`, and passes the
 same conformance (§8). An engine only the server carries would need the
 server to stream its state to clients as presence — never folded — while
 the log stays exact for everyone.

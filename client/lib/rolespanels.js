@@ -274,7 +274,7 @@ function paintWorld(body) {
     + CAP_FIELDS.map(capRow).join('') + `<p class="rp-cap-note rp-warn" hidden></p>`
     + `<h4 class="rp-h">Physics</h4>`
     + (edit ? `<label class="rp-field"><input type="checkbox" data-phys ${pe ? 'checked' : ''}> things fly and fall (${esc(SIM_ID)})</label>` : `<div class="rp-row"><div class="rp-main">${pe ? `on: ${esc(pe.engine)}` : 'off'}</div></div>`)
-    + `<p class="rp-dim">${pe ? `running ${esc(pe.engine)}${pe.tickMs ? ` at a ${pe.tickMs} ms tick` : ''}${pe.build ? ` · build ${esc(pe.build)}` : ''}` : 'off: nothing moves on its own'}${edit ? ' · turning it off is refused while anything is in flight' : ''}</p>`
+    + `<p class="rp-dim">${pe ? `running ${esc(pe.engine)}${pe.tickMs ? ` at a ${pe.tickMs} ms tick` : ''}` : 'off: nothing moves on its own'}${edit ? ' · turning it off is refused while anything is in flight' : ''}</p>`
     + (edit ? '' : ro());
   if (!edit) return;
   const note = body.querySelector('.rp-cap-note'); const say = (t) => { note.textContent = t; note.hidden = !t; };

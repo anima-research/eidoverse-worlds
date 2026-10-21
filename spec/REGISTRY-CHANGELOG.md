@@ -247,3 +247,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - station.who: type string → any
   - physics.who: type string → any
   - grabbable.who: type string → any
+- 2026-10-21: engine identity (house answer, #260 2026-10-21): an engine is named by its version, held to its conformance digests (spec/conformance/physics/), so physics-engine.build (a source-file hash) leaves; the terrain law now says the digests hold it, not the hash
+  - physics-engine.build: type string → gone
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" → "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)"

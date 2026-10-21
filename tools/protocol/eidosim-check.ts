@@ -122,11 +122,11 @@ const schedules = (mkf: () => any, T: number) => {
 { // S7 (audit FIX-2): a joiner decides for itself whether it carries the cut's engine build
   const name = Object.keys(ENGINES).find((k) => k.startsWith("eidosim@"))!;
   const rep: any = makeReplica();
-  rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
-  ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
+  rep.adopt({ state: {}, head: 0, sim: { spec: { engine: `${name.split("@")[0]}@0.0.1`, tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
+  ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a version this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
   const rep2: any = makeReplica();   // review of 8377ec52 #10: a carried build but no engine state in the cut can't fly here either
-  rep2.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: (ENGINES as any)[name].build, tickMs: 33 }, foreign: true, sim: null, clock: 0, launches: {}, launched: {} } });
-  ok(rep2.sim?.foreign === true, "S7 …and a cut of a carried build with no engine state is foreign too (a mid-epoch sim only starts from a cut)", { foreign: rep2.sim?.foreign });
+  rep2.adopt({ state: {}, head: 0, sim: { spec: { engine: name, tickMs: 33 }, foreign: true, sim: null, clock: 0, launches: {}, launched: {} } });
+  ok(rep2.sim?.foreign === true, "S7 …and a cut of a carried version with no engine state is foreign too (a mid-epoch sim only starts from a cut)", { foreign: rep2.sim?.foreign });
 }
 { // S8 stage 2: what flies knocks what rests. A dynamic thing at rest is a sleeping body the engine wakes on contact; it
   // flies under the launch that woke it and rests as that launch's. A static-kind one is a collider and never moves.

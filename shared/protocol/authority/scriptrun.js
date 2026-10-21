@@ -184,7 +184,7 @@ function checkpointSim(w) {
   // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
   const cut = simCutOf(sf, E);
   const state = w.putBlob({ cutJson: JSON.stringify(cut) });
-  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine, build: sf.spec.build }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];

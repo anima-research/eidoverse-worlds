@@ -24,8 +24,8 @@
 // replay, bit for bit) holds because ALL sim consumers use THIS law.
 //
 // THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION (Covenant II):
-// this law is pinned by eidosim's build (EIDOSIM_BUILD) — editing anything here that moves a
-// bit is an epoch bump of the SIM, never a patch.
+// this law is held by eidosim's conformance digests (engine-check: the onto-hills scenario): editing anything here that
+// moves a digest is a new engine version, never a patch.
 //
 // SHAPING (features, heightmap — shared/terrainshape.js) rides on top and is
 // carried ONLY when the args use it: for every world that does not, the

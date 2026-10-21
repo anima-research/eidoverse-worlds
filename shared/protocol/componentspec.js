@@ -285,11 +285,11 @@ export const COMPONENTS = {
   // recut B3 (house 22:03Z: "starter config, switched on"): two world settings the authority reads at decision time.
   "body-default": { on: "world", type: "string", choices: ["accept", "ask", "refuse"], help: "the consent switch an untouched body has in this world: accept (the default when absent), ask or refuse. A person's own switch and their answers for someone always win (PROTOCOL §5, Body consent)" },
   "keep-owner": { on: "world", type: "bool", help: "absent or true: the authority refuses a change that would leave this world with no owner ('last-owner'). false: an owner may leave it ownerless on purpose (the host operator can still mend it). Starter config, switched on" },
-  "physics-engine": { on: "world", fields: { engine: "string", build: "string", tickMs: "int" }, required: ["engine"], nullable: ["build"], defaults: { tickMs: 33 },
+  "physics-engine": { on: "world", fields: { engine: "string", tickMs: "int" }, required: ["engine"], defaults: { tickMs: 33 },
     ranges: { tickMs: { min: 16, max: 1000 } }, units: { tickMs: "ms" },
-    docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0)", build: "the exact build the authority stamps (16 hex: its source files' hash; null for an engine this server doesn't carry); never sent", tickMs: "milliseconds a step (33 = 30 steps a second)" },
+    docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0); a request may name the engine alone (eidosim), and the authority stamps the version it carries. A version is what its conformance digests say it computes (spec/conformance/physics/)", tickMs: "milliseconds a step (33 = 30 steps a second)" },
     absentMeans: { gravity: "not a field: the engine's own (eidosim: [0, −9.81, 0] m/s², world frame)" },
-    help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs? (ms a step, default 33)}. The authority stamps the exact build. Gravity is the engine's own (eidosim: [0, −9.81, 0] m/s²). Delete it to turn physics off (refused while things are in flight)" },
+    help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim' or 'eidosim@1.0.0', tickMs? (ms a step, default 33)}. Name no version and the authority stamps the one it carries. Gravity is the engine's own (eidosim: [0, −9.81, 0] m/s²). Delete it to turn physics off (refused while things are in flight)" },
   // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
   // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.surface names one. Reserved with
   // physics' reserved fields (shape audit 10-16): no engine reads either, so neither is written yet; both open together.
@@ -482,7 +482,7 @@ export const COMPONENTS = {
                absentMeans: { radius: "2 m" }, docs: { pos: "where visitors arrive, [x, y, z] world metres", radius: "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)" },
                help: "on @world: where visitors arrive {pos: [x, y, z], radius? (m, 0..100; absent, 2 m): a visitor's arrival must lie within radius of pos}" },
   // research 40 §6.1, trimmed by the shape audit 10-16 (render-media-env §15): the noise ground. Its defaults ARE the sim's law
-  // (shared/terrainmath.js terrainParams, pinned by EIDOSIM_BUILD), written into every stored value, so the sim, the mesh and
+  // (shared/terrainmath.js terrainParams, held by eidosim's conformance digests (engine-check)), written into every stored value, so the sim, the mesh and
   // the inspector read one ground. raster had no reader anywhere: reserved (refused) until one exists, its fields
   // unregistered. Layer colours are ints (sRGB), like every colour here ("#rrggbb" is taken at write). Water is its own
   // component (everyone separates water from ground): terrain.water is refused with where it went
@@ -497,7 +497,7 @@ export const COMPONENTS = {
                          amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, features: { maxItems: 64 }, layers: { maxItems: 8 } },
                nullable: ["features", "heightmap"],   // null = removed (a merge patch can take one away)
                absentMeans: { features: "no placed shapes: the base alone is the ground", heightmap: "no image: the noise is the base", segments: "the renderer's own mesh resolution (a drawing choice, not part of the height law)", layers: "one plain layer, 0x4a5d33 repeated 16 times across its size",
-                 law: "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" },
+                 law: "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)" },
                units: { size: "m", amplitude: "m", flatRadius: "m", flatHeight: "m" },
                docs: { seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side (the drawn mesh's resolution)", flatRadius: "flat within this many metres of the centre", flatHeight: "the height of that flat centre, metres", octaves: "noise octaves (1–8)", frequency: "noise frequency", layers: "its colour layers, at most 8: [{color: 0xRRGGBB (sRGB), repeat: tiles across its size}]", features: "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)", heightmap: "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)" },
                help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, segments, layers? [{color: 0xRRGGBB, repeat}], features?, heightmap?} (absent numbers are the sim's: seed 1, size 80 m, amplitude 3 m, octaves 4, frequency 2.5, flat radius 0); a raster kind is reserved; water is its own component" },
