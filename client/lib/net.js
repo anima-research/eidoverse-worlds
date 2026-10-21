@@ -988,9 +988,9 @@ async function handle(msg, at) {
       break;
     case 'moderated':
       // someone was removed or banned here (or a ban lifted): what everyone else is told (names only).
-      // `you`: the act was on you (a mute, a ghost): said to you, with how long
+      // `you`: the act was on you (a mute): said to you, with how long
       if (msg.you) { const until = msg.until ? ` until ${new Date(msg.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
-        const what = msg.verb === 'mute' ? `muted your ${(msg.channels ?? ['voice', 'chat']).join(' and ')}` : msg.verb === 'ghost' ? 'made you a ghost (unseen; you can look and walk, not act or talk)' : msg.verb;
+        const what = msg.verb === 'mute' ? `muted your ${(msg.channels ?? ['voice', 'chat']).join(' and ')}` : msg.verb;
         logChat('*', `${msg.by} ${what}${until}${msg.reason ? ` — ${msg.reason}` : ''}`); bus.emit('moderated-me', msg); }
       else logChat('*', String(msg.text ?? ''));
       break;

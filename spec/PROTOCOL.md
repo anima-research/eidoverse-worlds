@@ -773,7 +773,7 @@ Speech in a world is public and **arrival-only** (decided 2026-10-18):
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
 - Only an **admin** reads the master log's speech back: the world's owner, or a server operator (`WORLD_ADMIN`). An
   admin's join says how many lines the log holds (`state.chatTotal`); everyone else's says 0. A moderator is not an
-  admin for this. A ghost (the moderation sanction) reads no chat at all, admin or not.
+  admin for this.
 - There is no private channel in world chat. **`whisper` was removed**: a client that still sends one is refused with
   the registered code `removed` (as the ws error's `refused`, and as the authority's refusal of a request named
   `whisper`), and its text goes nowhere: not delivered, not held, not logged. `say {text, to}` addresses one person in

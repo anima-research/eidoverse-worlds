@@ -23,7 +23,6 @@ export const REFUSAL_CODES = Object.freeze({
   "removed":        { meaning: "the protocol had that request and removed it", when: "a request named in verbspec.js REMOVED_VERBS (whisper, removed 2026-10-18: speech is public and arrival-only)" },
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },
   "kicked":         { meaning: "the actor was removed and may come back later", when: "any request but help/leave inside a kick's cooldown" },
-  "ghost":          { meaning: "ghosts don't interact or talk", when: "a non-ghost verb from someone ghosted (by choice or by sanction)" },
   "muted":          { meaning: "the actor is muted here", when: "a say (or voice) while a mute is in force" },
   "rate":           { meaning: "too much, too fast", when: "an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent" },
   "cool-down":      { meaning: "wait before asking this again", when: "a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)" },

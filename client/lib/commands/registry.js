@@ -47,14 +47,12 @@ export const COMMANDS = [
   { name: 'members', help: 'who can come into this world, and until when' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world, here or not (owner)' },
   { name: 'unban', help: '/unban <name> — lift a ban here (owner)' },
-  { name: 'bans', help: 'who is banned, muted or a ghost here right now (moderators)' },
+  { name: 'bans', help: 'who is banned or muted here right now (moderators)' },
   // the moderation handlers (handlers.js moderate) were registered with no row here, so chat answered "unknown command"
   // (audit 10-07): a handler with no row is unreachable — the table is the dispatch
   { name: 'mute', help: '/mute <name> [minutes, default 60] [voice|chat] [reason] — quiet someone ranked below you' },
   { name: 'unmute', help: '/unmute <name> — lift a mute' },
   { name: 'warn', help: '/warn <name> <reason> — a warning they see, kept in the moderation log' },
-  { name: 'ghost', help: '/ghost <name> [minutes, default 60] [reason] — others stop seeing and hearing them; /ghost alone: become one yourself' },
-  { name: 'unghost', help: '/unghost <name> — bring a ghost back' },
   { name: 'gban', help: '/gban <name> [reason] — ban from ALL worlds (operator)' },
   { name: 'gunban', help: '/gunban <name> — lift a global ban (operator)' },
   { name: 'gbans', help: 'list global bans (operator)' },

@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
@@ -57,8 +57,6 @@ export type LogHost = {
   /** who is here (embodied, not spectating): their identity and last known position. Scripts' timers sleep when this
    *  is empty, and world.near(r) reads it (research 41 §3.5, §3.8) */
   present?(): { id: string; at: number[] | null }[];
-  /** the log stream: `msg` to everyone, `ghostMsg` (says emptied) to a ghost (PLAN 10-06: a ghost can't read chat) */
-  broadcastLog?(msg: unknown, ghostMsg: unknown): void;
   /** send to one identity's embodied leg(s); false when they aren't here */
   toActor?(actor: string, msg: unknown): boolean;
   /** speech is arrival-only (R 10-18): the seq at or below which this identity may not read a say back (null = an admin:
@@ -330,9 +328,7 @@ export class WorldLog {
     for (const e of fresh) { if (e?.kind !== "change") continue; let ops: Any[] = []; try { ops = opsOf(e); } catch { /* malformed: nothing to name */ }
       for (const o of ops) if (o?.id === "@world" && String(o.comp ?? "").startsWith("roles:")) named.add(String(o.comp).slice(6)); }
     const msg = { type: "log", world: this.name, from, entries: fresh.map(wireEntry), ...(named.size ? { names: this.names(named) } : {}) };
-    // a ghost gets every entry (the fold must stay contiguous) but each say's body and speaker emptied
-    if (this.host?.broadcastLog) this.host.broadcastLog(msg, { ...msg, entries: msg.entries.map((e: Any) => (e?.kind === "say" ? { ...e, actor: "world", body: {} } : e)) });
-    else this.host?.broadcast(msg);
+    this.host?.broadcast(msg);
     for (const e of fresh) if (e?.kind === "say") this.hearSay(e);
     this.stale = true;
     // anything that can change what someone may do: a role, the definitions, the default role, access
@@ -384,8 +380,7 @@ export class WorldLog {
   /** A kick whose cooldown still runs: {until, by, reason?} or null (join refuses it). */
   kickedHere(actor: string): Any { return kickOf(this.live, actor); }
   mutedHere(actor: string, channel?: "voice" | "chat"): Any { return muteOf(this.live, actor, channel); }
-  ghostHere(actor: string): Any { return ghostOf(this.live, actor); }
-  /** Everything in force now, per identity (the sweep that re-applies voice mutes and ghost hiding reads it). */
+  /** Everything in force now, per identity (the sweep that re-applies voice mutes reads it). */
   sanctions(): Record<string, Any> { return sanctionsNow(this.live); }
   /** The most senior owner (reset is theirs alone: review 10-06; research §owner-only). */
   seniorOwner(): string | null { return seniorOwnerOf(this.live); }

@@ -49,8 +49,8 @@ export type Client = {
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
-  // roles S4 / ghost: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
-  sfuMuted?: boolean; sfuDeaf?: boolean; ghostHidden?: boolean; sanctionKey?: string;
+  // roles S4: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
+  sfuMuted?: boolean; sanctionKey?: string;
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
@@ -128,10 +128,8 @@ export class World {
     return this.openSeq * 1_000_000 + (++this.legCount);
   }
 
-  /** Is this connection a ghost here (PLAN 10-06: in the world, outside society)? A sanction or a chosen mode. */
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
-  sfuDeafIds?: Set<string>;    // display ids the sweep has deafened at the SFU (ghosts; released likewise)
   /** Hold every standing pose that carries a reach to the tables as they are now (review of #260): after each
    *  request, and on the sanctions tick, since a timed allow can end with no request at all. Quiet: no attempt recorded,
    *  nothing said to a reacher for a packet they didn't send. */
@@ -143,7 +141,6 @@ export class World {
       c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
     }
   }
-  isGhost(c: Client): boolean { return !!(this.log && c.actorId && this.log.ghostHere(c.actorId)); }
   /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
    *  present, and only an ADMIN reads the master log's speech back: this world's owner, or a server operator (WORLD_ADMIN). */
   isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.roleOf(c.actorId) === "owner"); }
@@ -159,17 +156,13 @@ export class World {
     if (this.isAdmin(c)) return null;
     return c.actorId ? this.sayFloor(c.actorId) : (Number.isInteger(c.arrivedSeq) ? c.arrivedSeq! : Infinity);
   }
-  /** The hooks a log needs from the world around it. A ghost is left out of `present` (scripts don't sense them) and
-   *  is sent the log with every say emptied (it can't read chat). */
+  /** The hooks a log needs from the world around it. */
   private logHost(log: WorldLog) {
     return {
       broadcast: (msg: unknown) => this.broadcast(msg),
-      broadcastLog: (msg: unknown, ghostMsg: unknown) => { const d = JSON.stringify(msg), g = JSON.stringify(ghostMsg);
-        const S = log.sanctions();   // once per broadcast, not a moderator-log scan per client (review 10-07)
-        for (const c of this.clients) { try { c.ws.send(c.actorId && (S[c.actorId] as any)?.ghost ? g : d); } catch { /* gone */ } } },
       rightsChanged: () => onRightsChanged(this),
       debug: (kind: string, detail: Record<string, unknown>) => this.debug(kind, detail),
-      present: () => [...this.clients].filter((c) => !c.spectator && c.actorId && (c.surface ?? "world") === "world" && !log.ghostHere(c.actorId)).map((c) => ({ id: c.actorId!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null, ...(Number.isFinite(c.lastPose?.yaw) ? { yaw: c.lastPose!.yaw as number } : {}) })),   // yaw: the facing a carried thing turns by (heldQ)
+      present: () => [...this.clients].filter((c) => !c.spectator && c.actorId && (c.surface ?? "world") === "world").map((c) => ({ id: c.actorId!, at: Array.isArray(c.lastPose?.p) ? c.lastPose!.p! : null, ...(Number.isFinite(c.lastPose?.yaw) ? { yaw: c.lastPose!.yaw as number } : {}) })),   // yaw: the facing a carried thing turns by (heldQ)
       toActor: (actor: string, msg: unknown) => { const d = JSON.stringify(msg); let n = 0;
         for (const c of this.clients) if (c.actorId === actor && !c.spectator && (c.surface ?? "world") === "world") { try { c.ws.send(d); n++; } catch { /* gone */ } }
         return n > 0; },

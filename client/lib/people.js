@@ -53,7 +53,7 @@ export const myself = () => personOf(CONFIG.name);
 export function menuFor(display) {
   const me = myself(), them = personOf(display);
   if (!them.id && !them.me) return [{ id: 'mention', label: 'Mention' }];   // not known to the authority yet (an old client)
-  const items = R.personActions(me, them, { muted: them.muted, ghosted: false });
+  const items = R.personActions(me, them, { muted: them.muted });
   if (them.me) return items;
   // an ask waiting from this person comes first: it has 20 s to live (consentinbox.js)
   const k = consentInbox.askFrom(them.id);
@@ -75,9 +75,9 @@ const DURATIONS = [[10, '10 min'], [60, '1 hour'], [1440, '1 day'], [10080, '7 d
 const LIMIT = { mute: [5, 10080], kick: [1, 60], ban: [1440, Infinity] };
 const PRESETS = Object.fromEntries(Object.entries(LIMIT).map(([v, [lo, hi]]) => [v, DURATIONS.filter(([m]) => m >= lo && m <= hi)]));
 const REASONS = ['spam', 'harassment', 'other'];
-const VERB = { warn: 'Warn', mute: 'Mute', kick: 'Kick', ghost: 'Ghost', ban: 'Ban' };
+const VERB = { warn: 'Warn', mute: 'Mute', kick: 'Kick', ban: 'Ban' };
 const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears them on the chosen channels until it ends.',
-  kick: "They're removed now and can't come back until it ends.", ghost: "They stay, unseen: they can look and walk, but not act or talk.", ban: "They're removed and kept out until it ends." };
+  kick: "They're removed now and can't come back until it ends.", ban: "They're removed and kept out until it ends." };
 
 async function run(verb, args, what) {
   const r = await sendRequest(verb, args);
@@ -92,7 +92,6 @@ export function act(item, display, surface = 'card', ask = null) {
     case 'mention': return deps.mentionPerson(display);
     case 'history': return deps.openModLog(them.id);
     case 'unmute': return run('unmute', { who: them.id }, `unmute ${display}`);
-    case 'unghost': return run('unghost', { who: them.id }, `bring ${display} back`);
     case 'role': return roleMenu(display, surface);
     case 'consent': return consentMenu(display, surface);
     case 'ask-allow': case 'ask-no': case 'ask-never': return answerAsk(item, display, ask);
@@ -104,7 +103,7 @@ export function act(item, display, surface = 'card', ask = null) {
 /** Desktop: the house context menu at (x, y). */
 export function menuAt(display, x, y) {
   const items = menuFor(display);
-  contextMenu(x, y, items.map((it) => ({ k: it.id, label: it.label, ...(it.dim ? { title: it.label } : {}), ...(it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? { danger: true } : {}) })),
+  contextMenu(x, y, items.map((it) => ({ k: it.id, label: it.label, ...(it.dim ? { title: it.label } : {}), ...(it.danger || ['kick', 'ban'].includes(it.id) ? { danger: true } : {}) })),
     (k) => { if (k !== 'rank-line') act(k, display, 'card', items.find((it) => it.id === k)?.ask); });
   const m = document.querySelector('.sp-ctx'); m?.setAttribute('data-person', display);
   for (const b of m?.querySelectorAll('.sp-ctx-item') ?? []) if (b.textContent.startsWith("they're")) { b.classList.add('dim'); b.disabled = true; }
@@ -118,7 +117,7 @@ export function sheetFor(display) {
   sh.title.textContent = display;
   for (const it of items) {
     if (it.dim) { const p = document.createElement('p'); p.className = 'pm-dim'; p.textContent = it.label; sh.body.append(p); continue; }
-    const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
+    const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
     b.onclick = () => { if (!sh.armed) return; if (!VERB[it.id] && it.id !== 'role' && it.id !== 'consent') closeSheet(); act(it.id, display, 'sheet', it.ask); };
     sh.body.append(b);
   }
@@ -134,7 +133,7 @@ export function stripFor(display, host) {
   host.innerHTML = ''; host.className = 'pm-strip';
   for (const it of menuFor(display)) {
     if (it.dim) { const p = document.createElement('div'); p.className = 'pm-dim'; p.textContent = it.label; host.append(p); continue; }
-    const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban', 'ghost'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
+    const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
     b.onclick = (e) => { e.stopPropagation(); act(it.id, display, { strip: host }, it.ask); };
     host.append(b);
   }
@@ -204,11 +203,11 @@ function consentMenu(display, surface) {
   return host;
 }
 
-// ---------------------------------------------------------------- the one form (warn, mute, kick, ghost, ban)
+// ---------------------------------------------------------------- the one form (warn, mute, kick, ban)
 let card = null;
 function closeCard() { card?.remove(); card = null; }
 /** The form: who (name + identity, small: homoglyphs), how long (preset chips), channels (mute), why (chips + text),
- *  confirm. In a strip (VR), kick/ban/ghost confirm with a second press on a confirm row. */
+ *  confirm. In a strip (VR), kick/ban confirm with a second press on a confirm row. */
 export function openForm(verb, display, surface = 'card') {
   const them = personOf(display), me = myself(); const owner = R.isOwner(me);
   const st = { len: (PRESETS[verb] ?? [])[0]?.[0], forever: false, ch: new Set(['voice', 'chat']), reason: '', why: '' };
@@ -230,7 +229,7 @@ export function openForm(verb, display, surface = 'card') {
     const t = document.createElement('input'); t.type = 'text'; t.maxLength = R.REASON_MAX; t.placeholder = 'in your own words (optional)'; t.className = 'pm-text';
     t.addEventListener('keydown', (e) => e.stopPropagation()); t.oninput = () => { st.why = t.value; }; r.append(t); }
   const btns = row('pm-btns'); const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'pm-cancel'; cancel.textContent = 'Cancel';
-  const go = document.createElement('button'); go.type = 'button'; go.className = `pm-go${['kick', 'ban', 'ghost'].includes(verb) ? ' danger' : ''}`; go.textContent = VERB[verb];
+  const go = document.createElement('button'); go.type = 'button'; go.className = `pm-go${['kick', 'ban'].includes(verb) ? ' danger' : ''}`; go.textContent = VERB[verb];
   btns.append(cancel, go);
   const done = () => { if (surface === 'card') closeCard(); else if (surface === 'sheet') closeSheet(); else surface.strip.innerHTML = ''; };
   cancel.onclick = (e) => { e.stopPropagation(); done(); };
@@ -240,7 +239,7 @@ export function openForm(verb, display, surface = 'card') {
     e.stopPropagation();
     const reason = [st.reason, st.why.trim()].filter(Boolean).join(': ');
     if (verb === 'warn' && !reason) { go.textContent = 'say why first'; return; }
-    if (strip && ['kick', 'ban', 'ghost'].includes(verb) && !armed) { armed = true; go.textContent = `confirm: ${VERB[verb].toLowerCase()} ${display}`; go.classList.add('armed'); return; }   // VR: a second trigger, never a centred dialog
+    if (strip && ['kick', 'ban'].includes(verb) && !armed) { armed = true; go.textContent = `confirm: ${VERB[verb].toLowerCase()} ${display}`; go.classList.add('armed'); return; }   // VR: a second trigger, never a centred dialog
     const args = { who: them.id, ...(reason ? { reason } : {}) };
     if (verb === 'mute') Object.assign(args, { minutes: st.len, channels: [...st.ch] });
     if (verb === 'kick') args.minutes = st.len;

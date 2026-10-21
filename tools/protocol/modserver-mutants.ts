@@ -1,4 +1,4 @@
-// tools/protocol/modserver-mutants.ts — the server half of roles + moderation (research roles S4; PLAN ghost), proven by
+// tools/protocol/modserver-mutants.ts — the server half of roles + moderation (research roles S4), proven by
 // mutation: each server-side gate is removed in a copy of the tree, identity-check runs there, and the RS case that
 // names the gate must go red (the rest must stay green: a mutant that breaks everything proves nothing). A no-op
 // control must leave every case green. Not covered here: releasing a gone person's SFU mute (server.ts sanctionSweep)
@@ -9,17 +9,12 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 
 const M: [string, string, string, string, string[]][] = [
-  ["your-rights from the authority", "server/server.ts", "const e = w.log.rightsOf(c.actorId); const g =", "const e = { role: w.log.roleOf(c.actorId), name: \"\", rank: 0, permissions: [] as string[] }; const g =", ["RS1"]],
+  ["your-rights from the authority", "server/server.ts", "const e = w.log.rightsOf(c.actorId); const m =", "const e = { role: w.log.roleOf(c.actorId), name: \"\", rank: 0, permissions: [] as string[] }; const m =", ["RS1"]],
   ["voice-moderate names a present identity", "server/server.ts", "const target = typeof msg.actorId === \"string\" ? msg.actorId : [...w.clients].find((t) => t.id === String(msg.id ?? \"\") && (t.surface ?? \"world\") === \"world\" && !t.spectator)?.actorId;", "const target = String(msg.id ?? \"\");", ["RS2"]],
-  ["a ghost is deafened at the SFU", "server/server.ts", "try { setSfuDeafened(w.name, c.id, ghost); }", "try { void 0; }", ["RS4"]],
   ["a voice mute is applied at the SFU", "server/server.ts", "try { setSfuModeratorMute(w.name, c.id, voice); }", "try { void 0; }", ["RS2"]],
   ["a voice mute is re-applied on join", "server/server.ts", "if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join", "if (false) sanctionSweep(w);   // a voice mute in force is re-applied on join", ["RS2"]],
   ["a kick's cooldown at join", "server/server.ts", "      if (k) { const mins = Math.max(1,", "      if (false) { const mins = Math.max(1,", ["RS3"]],
-  ["a ghost's frames are withheld", "server/server.ts", "poses: Object.fromEntries(hidden?.size ? [...w.dirty].filter(([id]) => !hidden.has(id)) : w.dirty)", "poses: Object.fromEntries(w.dirty)", ["RS4"]],
-  ["a ghost leaves others' view", "server/server.ts", "if (ghost) { for (const t of w.clients) if (t !== c) { try { t.ws.send(JSON.stringify({ type: \"leave\", id: c.id })); } catch { /* gone */ } } w.scripts.onPresence(\"leave\", c.id, c.actorId); }", "if (ghost) { }", ["RS4"]],
-  ["a ghost reads no chat (the log)", "server/world.ts", "c.ws.send(c.actorId && (S[c.actorId] as any)?.ghost ? g : d);", "c.ws.send(d);", ["RS4"]],
-  ["no backscroll on join (a ghost's window included)", "server/server.ts", "state: { recentChat: [], chatTotal:", "state: { recentChat: w.state.recentChat ?? [], chatTotal:", ["RS4", "RS10"]],
-  ["a ghost isn't listed to joiners", "server/server.ts", "filter(o => o !== c && !o.spectator && !w.isGhost(o))", "filter(o => o !== c && !o.spectator)", ["RS4"]],
+  ["no backscroll on join", "server/server.ts", "state: { recentChat: [], chatTotal:", "state: { recentChat: w.state.recentChat ?? [], chatTotal:", ["RS10"]],
   ["a warning reaches its person", "server/requestwire.ts", "const notice = tool === \"warn\" ?", "const notice = false ?", ["RS5"]],
   ["mod-state badges", "server/server.ts", "if (w.modStateKey !== key) {", "if (false) {", ["RS5"]],
   ["access: listed", "server/server.ts", "acc.join === \"listed\" && !w.log.listedHere(c.actorId)", "false", ["RS6"]],
@@ -33,17 +28,16 @@ const M: [string, string, string, string, string[]][] = [
   ["the authority's history has an arrival floor", "shared/protocol/authority/blueprints.js", "const floor = typeof w.sayFloor === \"function\" ? w.sayFloor(actor) : null;", "const floor = null;", ["RS10"]],
   ["a moderator is not an admin", "server/world.ts", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.roleOf(c.actorId) === \"owner\"); }", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && [\"owner\", \"moderator\"].includes(this.log.roleOf(c.actorId))); }", ["RS10"]],
   ["an owner reads the master log", "server/world.ts", "if (this.isAdmin(c)) return null; if (Number.isInteger", "if (false) return null; if (Number.isInteger", ["RS10"]],
-  ["a ghost's history message is empty", "server/messages.ts", "if (c.world.log && c.world.isGhost(c)) { ws.send(JSON.stringify({ type: \"history\"", "if (false) { ws.send(JSON.stringify({ type: \"history\"", ["RS9"]],
-  ["presence messages from a ghost are dropped", "server/server.ts", "if (h && !gagged(c, String(msg.type)))", "if (h)", ["RS9"]],
-  ["the ban list is for moderation holders", "server/messages.ts", "if (!e || !(e.role === \"owner\" ||", "if (false && !(e.role === \"owner\" ||", ["RS9"]],
+  // RETIRED 10-20: "presence messages from a role-less (none) person are dropped" — RS9's ghost half tested it; no row does now (BUG-HUNT gap)
+  ["the ban list is for moderation holders", "server/messages.ts", "if (!e || !(isOwner(e) ||", "if (false && !(isOwner(e) ||", ["RS9"]],
   ["a guest's kick names its address", "server/requestwire.ts", "          if (t.anonymous && t.addr) {", "          if (false) {", ["RS9"]],
   ["reset is the most senior owner's", "server/requestwire.ts", "if (w.log.seniorOwner() !== actorOf(c)) return err(", "if (false) return err(", ["RS7"]],
   ["forks are rate-limited", "server/requestwire.ts", "if (now - last < FORK_GAP_MS) return err(", "if (false) return err(", ["RS7"]],
-  // a guest's mute and ghost by address; minimum account age (R 10-07)
-  ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG3"]],
-  ["a guest's mute or ghost is filed against the address", "server/requestwire.ts", "for (const addr of addrs) fileAddrSanction(", "for (const addr of [] as string[]) fileAddrSanction(", ["GG1", "GG3", "GG5"]],
+  // a guest's mute by address; minimum account age (R 10-07)
+  ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG5"]],
+  ["a guest's mute is filed against the address", "server/requestwire.ts", "for (const addr of addrs) fileAddrSanction(", "for (const addr of [] as string[]) fileAddrSanction(", ["GG1", "GG5"]],
   ["the voice control's mute files it too", "server/server.ts", "guestSanctionByAddress(w, actorIdOf(c), c.id, muted ?", "void (w, actorIdOf(c), c.id, muted ?", ["GG5"]],
-  ["unmute / unghost lift the address record", "server/requestwire.ts", "if (verb.startsWith(\"un\")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }", "if (verb.startsWith(\"un\")) { return; }", ["GG2", "GG4"]],
+  ["unmute lifts the address record", "server/requestwire.ts", "if (verb.startsWith(\"un\")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }", "if (verb.startsWith(\"un\")) { return; }", ["GG2", "GG5"]],
   ["access: minimum account age", "server/server.ts", "accountAgeRefusal({ world: w.name, minDays: acc.minAccountDays,", "accountAgeRefusal({ world: w.name, minDays: 0 && acc.minAccountDays,", ["AG3", "AG4"]],
   ["minAccountDays: a guest is refused", "server/accountage.ts", "if (anonymous || !account) return rule;", "if (false) return rule;", ["AG2", "AG4"]],
   ["minAccountDays: agents are exempt", "server/accountage.ts", "if (/^(agent:|aid1:|local:)/.test(account)) return null;", "", ["AG2", "AG4"]],

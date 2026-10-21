@@ -24,7 +24,7 @@ import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
 import { capture, recheck, type ReqCap } from "./reqcap.ts";
-import { isOwner } from "../shared/protocol/roles.js";
+import { isNone, isOwner } from "../shared/protocol/roles.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -41,7 +41,7 @@ export function whois(w: World, args: Any) {
   if (!q || q.length > 128) return { ok: false, refused: { code: "shape", reason: "whois {name} (or {id: 'u-…'})", fix: "the name someone goes by here, as their nameplate shows it" } };
   const log = w.log!; const dir = directoryFor(WORLDS_DIR);
   const here = new Map<string, string>(), said = new Map<string, string>();
-  for (const c of w.clients) if (c.actorId && !c.spectator && !w.isGhost(c)) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
+  for (const c of w.clients) if (c.actorId && !c.spectator) { here.set(c.actorId, c.id); if (c.declares) said.set(c.actorId, c.declares); }
   const known = new Set<string>([...here.keys(), ...log.knownIds()]);
   const want = foldName(q);
   if (!want && !/^u-[a-z2-7]{20}$/.test(q)) return { ok: false, refused: { code: "shape", reason: `"${q.slice(0, 40)}" has no letters or digits to look up`, fix: "the name someone goes by here, as their nameplate shows it" } };
@@ -73,27 +73,26 @@ function modLine(w: World, by: string, verb: string, who: string) {
 }
 /** The identity the authority stamps for this connection: its opaque directory id, set at join (server.ts admitJoin). A
  *  connection without one (it never joined a world) has no identity here: a request from it is a server bug. */
-/** Presence messages a ghost or a role-less person doesn't send (they'd show them, or act on someone), and the one a
+/** Presence messages a role-less person doesn't send (they'd show them, or act on someone), and the one a
  *  muted person doesn't (a caption is a speech bubble). Applied by server.ts before any handler runs (review 10-07). */
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
   const w = c.world; if (!w?.log || !c.actorId || !QUIET.has(type)) return false;
-  // ghostHidden is the sweep's own flag (set at join and on every change): no moderator-log scan per typing packet
-  if (c.ghostHidden || w.log.roleOf(c.actorId) === "none") return true;
+  if (isNone(w.log.roleOf(c.actorId))) return true;
   return type === "caption" && !!w.log.mutedHere(c.actorId);
 }
-/** A guest has no account: a fresh connection is a fresh identity, so a mute or ghost on one would be shed by
- *  reconnecting (R 10-07). When a mute or ghost lands on a guest present here, it is also filed against their
+/** A guest has no account: a fresh connection is a fresh identity, so a mute on one would be shed by
+ *  reconnecting (R 10-07). When a mute lands on a guest present here, it is also filed against their
  *  connection's hashed address in this world (moderation.ts: at most a day, never past its own end), and server.ts gives
- *  it to every new guest from that address at join. Lifting one (unmute, unghost) lifts that record. A signed-in
+ *  it to every new guest from that address at join. Lifting one (unmute) lifts that record. A signed-in
  *  person's identity already carries; nothing is filed for them. `verb` is the authority's act; `actor` the identity that did it. */
 export function guestSanctionByAddress(w: World, actor: string, by: string, verb: string, who: string, reason?: string) {
-  const kind = verb === "mute" || verb === "unmute" ? "mute" : verb === "ghost" || verb === "unghost" ? "ghost" : null;
+  const kind = verb === "mute" || verb === "unmute" ? "mute" : null;
   if (!kind || !w.log) return;
   const addrs = [...new Set([...w.clients].filter((t) => t.actorId === who && t.anonymous && t.addr).map((t) => t.addr as string))];
   if (verb.startsWith("un")) { liftAddrSanction(kind, w.name, who, addrs[0]); return; }
-  const now = kind === "mute" ? w.log.mutedHere(who) : w.log.ghostHere(who);   // in force now (a mute: every channel muted)
-  if (!now || now.chosen) return;
+  const now = w.log.mutedHere(who);   // in force now (every channel muted)
+  if (!now) return;
   for (const addr of addrs) fileAddrSanction({ kind, world: w.name, addr, actor, by, who, until: now.until ?? null,
     ...(kind === "mute" ? { channels: now.channels } : {}), ...(reason ? { reason: reason.slice(0, 280) } : {}) });
 }
@@ -163,21 +162,19 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
           line: cap(`${c.id}'s ${verb}${id ? ` ${id}` : ""} was refused (${r.refused.code}): ${r.refused.reason ?? ""}${r.refused.fix ? ` — ${r.refused.fix}` : ""}`, 300) }); }
       // bystanders see a removal ("A removed B"), from the server (the moderator log is never a world entry)
       // — only when something happened: a kick that took someone out, a ban or unban that changed whether they're banned
-      // a person-act applies now: voice mutes and ghosts take effect at once (the sweep), a warning reaches its person as a
-      // notice they dismiss, a mute or a ghost is told to its person; a ghost is never named to bystanders (unseen)
+      // a person-act applies now: voice mutes take effect at once (the sweep), a warning reaches its person as a
+      // notice they dismiss, a mute is told to its person
       if (r?.ok && PERSON_ACTS.has(verb)) { sweep?.(w);
         const who = String(args.who ?? ""); const notice = verb === "warn" ? { type: "warned", by: c.id, reason: String(args.reason ?? "") }
-          : verb === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) }
-          : verb === "ghost" && args.who ? { type: "moderated", verb: "ghost", by: c.id, you: true, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
+          : verb === "mute" ? { type: "moderated", verb: "mute", by: c.id, you: true, channels: r.channels, until: r.until, ...(args.reason ? { reason: String(args.reason) } : {}) } : null;
         if (notice) for (const t of w.clients) if (t.actorId === who) { try { t.ws.send(JSON.stringify(notice)); } catch { /* gone */ } } }
-      // a guest's mute or ghost also names their address here, and its lift lifts that (R 10-07)
-      if (r?.ok && ["mute", "unmute", "ghost", "unghost"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
+      // a guest's mute also names their address here, and its lift lifts that (R 10-07)
+      if (r?.ok && ["mute", "unmute"].includes(verb) && typeof args.who === "string" && args.who !== cap.actorId)
         guestSanctionByAddress(w, cap.actorId, c.id, verb, String(args.who), typeof args.reason === "string" ? args.reason : undefined);
       if (r?.ok && (verb === "ban" || verb === "kick" || verb === "unban" || verb === "mute" || verb === "unmute") && typeof args.who === "string") {
         const who = String(args.who);
         const happened = verb === "kick" || verb === "mute" || verb === "unmute" ? [...w.clients].some((t) => t.actorId === who && !t.spectator) : wasBanned !== isBanned(w.log.live, who);
-        const ghostHere = [...w.clients].some((t) => t.actorId === who && w.isGhost(t));   // unseen: never named to bystanders
-        if (happened && !ghostHere) { const text = modLine(w, c.id, verb, who);
+        if (happened) { const text = modLine(w, c.id, verb, who);
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
       // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left

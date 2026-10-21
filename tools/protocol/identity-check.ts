@@ -265,27 +265,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     for (let i = 0; i < 100 && !jm4.snapshot && !jm4.errors.length && m4.closed == null; i++) { await sleep(100); jm4.snapshot = m4.msgs.find((m) => m.type === "snapshot"); }
     ok(kk.ok && m2.closed === 4006 && !!said && !jm3.snapshot && /may come back/.test(jm3.errors.join(" ")) && !!jm4.snapshot, "RS3 a kick: removed now (4006, with until), refused while the cooldown runs, admitted after it", [kk, m2.closed, said, jm3.errors, !!jm4.snapshot, jm4.errors]);
     m3.close();
-    // RS4: ghost: unseen by others (leave, no frames), no chat (says arrive emptied), and back (arrive) when lifted
-    const gk = own.msgs.length;
-    const gh = await fern.req("ghost", { who: you(jm4), minutes: 5, reason: "trolling" }); await sleep(500);
-    const deafDiag = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).deafened ?? [];
-    const left = own.msgs.slice(gk).some((m) => m.type === "leave" && m.id === "Moss");
-    m4.raw({ type: "pose", pose: { p: [1, 0, 1], r: 0 } }); await sleep(400);
-    const framed = own.msgs.slice(gk).some((m) => m.type === "frame" && m.poses && "Moss" in m.poses);
+    // RS4 RETIRED (R 10-20: ghost removed). Its setup stays: RS10 reads back the line said here, RS5 uses the rejoin
     await own.req("say", { text: "the secret word is heron" }); await sleep(400);
-    const heard = m4.msgs.filter((m) => m.type === "log").flatMap((m) => m.entries).filter((e) => e?.kind === "say");
-    const leak = JSON.stringify(heard).includes("heron");
-    const mSay = await m4.req("say", { text: "boo" });
-    const rejoin = await sock(S4.port); const jr = await rejoin.join("heath", "Moss", { agentToken: "tok-moss" }); await sleep(300);   // a takeover: the same ghost, fresh snapshot
-    const window = JSON.stringify(jr.snapshot?.state?.recentChat ?? []);
-    const seen = (jo2) => (jo2.snapshot?.present ?? []).some((x) => x.id === "Moss");
-    const late = await sock(S4.port); const jl = await late.join("heath", "Late", { agentToken: mint({ kind: "agent", name: "Late", sub: "agent:late@home.test" }) });
-    ok(gh.ok && left && !framed && heard.length >= 1 && !leak && mSay.refused?.code === "ghost" && !window.includes("heron") && jr.snapshot?.yourRights?.ghost && !seen(jl),
-      "RS4 a ghost is hidden server-side: others get leave and no frames, a late joiner doesn't list them; their log has says emptied, their chat window is empty, and they can't talk", [gh.ok, left, framed, heard.length, leak, mSay.refused?.code, window.slice(0, 80), jr.snapshot?.yourRights?.ghost, seen(jl)]);
-    const bk = own.msgs.length; const ug = await fern.req("unghost", { who: you(jm4) }); await sleep(2500);
-    const undeaf = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).deafened ?? [];
-    ok(deafDiag.includes("Moss") && !undeaf.includes("Moss"), "RS4 a ghost hears nobody: deafened at the SFU (overriding their own consent), and hears again when unghosted (R 10-07)", [deafDiag, undeaf]);
-    ok(ug.ok && own.msgs.slice(bk).some((m) => m.type === "arrive" && m.id === "Moss"), "RS4 …and unghosting brings them back (arrive)", [ug, own.msgs.slice(bk).map((m) => m.type)]);
+    const rejoin = await sock(S4.port); const jr = await rejoin.join("heath", "Moss", { agentToken: "tok-moss" }); await sleep(300);
     // RS5: warn reaches its person as a notice; a mute is told to its person and the muted badge set goes to everyone
     const wn = await fern.req("warn", { who: you(jm4), reason: "keep it kind" }); await sleep(300);
     const mt = await fern.req("mute", { who: you(jw), minutes: 10, channels: ["chat"] }); await sleep(2500);
@@ -301,7 +283,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     // the words (upstream #258's decision 4): a refusal says only that the world isn't open to you, nothing about who is listed
     ok(!js.snapshot && /isn't open to you/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
       "RS6 access: 'listed' refuses someone with no role here; past max a moderator still gets in, a stranger doesn't", [js.errors, !!jfz.snapshot, jfull.errors]);
-    for (const x of [st, fz, full, rejoin, late]) x.close(); }
+    for (const x of [st, fz, full, rejoin]) x.close(); }
   // RS7 (review 10-06): erasing is the most senior owner's; a fork can't run in a loop
   { await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } }); await sleep(200);
     const k = wren.msgs.length; wren.raw({ type: "world-reset", name: "heath" }); await sleep(500);
@@ -320,23 +302,14 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const fernGot = mo.msgs.some((m) => m.type === "whisper" || JSON.stringify(m).includes("why was I muted") || JSON.stringify(m).includes("psst"));
     ok(vyRef?.refused?.code === "removed" && /removed/.test(vyRef?.error ?? "") && rq.ok === false && rq.refused?.code === "removed" && !fernGot,
       "RS8 whisper is removed: the message is refused as `removed` in words, the request of that name likewise, and nothing reaches the person named", [vyRef, rq.refused, fernGot]);
-    await own.req("ghost", { who: you(jv), minutes: 10 }); await sleep(300);
-    const VOLE = jv.snapshot?.you ?? "Vole";   // the display id the server gave this connection (an aid1 agent's may differ from its name)
-    // RS9 (review 10-07): the ghost (Vole) reads no chat through the history message, and its presence messages
-    // (an anim) reach nobody; a visitor can't read the ban list; a guest's kick holds against a fresh guest connection
-    // a line said AFTER the ghost arrived: arrival-only would let a non-ghost read it back, so only the ghost rule hides it
-    await own.req("say", { text: "said while vole is a ghost" }); await sleep(200);
-    const k3 = vy.msgs.length; vy.raw({ type: "history", reqId: "h1" }); await sleep(400);
-    const hist = vy.msgs.slice(k3).find((m) => m.type === "history");
-    const k4 = mo.msgs.length; vy.raw({ type: "anim", dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }); await sleep(400);
-    const animSeen = mo.msgs.slice(k4).some((m) => m.type === "anim" && m.id === VOLE);
+    // RS9 (review 10-07): a visitor can't read the ban list; a guest's kick holds against a fresh guest connection (its ghost half retired 10-20)
     const gv = await sock(S4.port); const jg = await gv.join("heath", "visitor-x");   // a guest (no account on this server)
     const kb = gv.msgs.length; gv.raw({ type: "world-bans" }); await sleep(300);
     const visBans = gv.msgs.slice(kb).find((m) => m.type === "error")?.error ?? "";   // a refusal, not a mod result (review of #260, server I33)
     const kk = await own.req("kick", { who: you(jg), minutes: 0.5 }); await sleep(300);
     const g2 = await sock(S4.port); const jg2 = await g2.join("heath", "visitor-y");
-    ok(hist && (hist.entries ?? []).length === 0 && !animSeen && /moderation power/.test(visBans) && kk.ok && !jg2.snapshot,
-      "RS9 a ghost's history is empty and its anim reaches nobody; the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [hist?.entries?.length, animSeen, visBans.slice(0, 60), kk.ok, jg2.errors]);
+    ok(/moderation power/.test(visBans) && kk.ok && !jg2.snapshot,
+      "RS9 the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [visBans.slice(0, 60), kk.ok, jg2.errors]);
     // RS10 (R 10-18): speech is arrival-only. "the secret word is heron" was said (RS4) before Fern's new leg (mo) and Newt
     // arrived: neither a moderator nor a stranger reads it back, by the history message, the authority's history or the
     // join's window; an owner (Wren, an owner since RS7) joining later reads the master log, and its join counts it
@@ -392,26 +365,16 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const um = await own.req("unmute", { who: you(j2) }); g2.close(); await sleep(300);
     const [g3, j3] = await guest("drifter3");
     ok(um.ok && !!j3.snapshot && !rights(j3).muted, "GG2 an unmute lifts the address record too: the next guest from it isn't muted", [um, rights(j3)]);
-    // GG3: a ghost (an owner's, with no end) carries too, capped at a day, hidden from the start
-    const gh = await own.req("ghost", { who: you(j3), reason: "trolling" }); await sleep(200); g3.close(); await sleep(300);
-    const k = own.msgs.length; const t0 = Date.now();
-    const [g4, j4] = await guest("drifter4"); await sleep(300);
-    const late = await sock(S5.port); const jl = await late.join("moor", "Fern", { agentToken: "tok-fern" });
-    const G = rights(j4).ghost;
-    ok(gh.ok && !!j4.snapshot && !!G && !G.chosen && G.until > t0 && G.until <= t0 + 24 * 3600_000 + 60_000
-      && !own.msgs.slice(k).some((m) => m.type === "arrive" && m.actorId === you(j4)) && !(jl.snapshot?.present ?? []).some((x) => x.actorId === you(j4) || x.id === j4.snapshot?.you),
-      "GG3 a guest's ghost holds against the next guest from the address (at most a day), unseen from their first moment", [gh.ok, G, own.msgs.slice(k).filter((m) => m.type === "arrive")]);
-    // GG4: unghosting lifts the address record
-    const ug = await own.req("unghost", { who: you(j4) }); g4.close(); await sleep(300);
+    // GG3, GG4 RETIRED (R 10-20: ghost removed)
+    g3.close(); await sleep(300);
     const [g5, j5] = await guest("drifter5");
-    ok(ug.ok && !!j5.snapshot && !rights(j5).ghost, "GG4 an unghost lifts the address record too", [ug, rights(j5)]);
     // GG5: the voice control's mute (voice-moderate) is a mute like any other: it carries, and its unmute lifts it
     own.raw({ type: "voice-moderate", actorId: you(j5), muted: true, minutes: 5 }); await sleep(400); g5.close(); await sleep(300);
     const [g6, j6] = await guest("drifter6");
     own.raw({ type: "voice-moderate", actorId: you(j6), muted: false }); await sleep(400); g6.close(); await sleep(300);
     const [g7, j7] = await guest("drifter7");
     ok(JSON.stringify(rights(j6).muted?.channels) === '["voice"]' && !rights(j7).muted, "GG5 a voice-control mute carries by address (voice only), and its unmute lifts it", [rights(j6).muted, rights(j7).muted]);
-    for (const x of [moss, late, g7]) x.close(); }
+    for (const x of [moss, g7]) x.close(); }
   // AG3-5: minAccountDays at the join
   { const DAY = 86400000; const flake = (ms) => (BigInt(ms - 1420070400000) << 22n).toString();
     const login = async (sub, name) => { const r = await fetch(`http://127.0.0.1:${S5.port}/auth`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: mint({ kind: "human", sub, name }) }) });

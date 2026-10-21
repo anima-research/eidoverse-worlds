@@ -9,7 +9,7 @@
 // Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
 // holds it: reason, by, until) and Ghost (in the world but outside society: unseen, can't interact, can't read or post
 // chat; a sanction from a rank above, or a mode someone chooses). A state is never compared as a rank, and a rank can't
-// express a state: that is why ghost is not "rank -5". The legacy role `none` (an old demotion) reads as rank -1:
+// express a state: that is why banned is not "rank -5". The legacy role `none` (an old demotion) reads as rank -1:
 // below every member, holding no permission, so no gate ever fails open on it.
 
 // ---------------- the five defaults R hasn't ruled on yet (one value each: flip it here) ----------------
@@ -25,7 +25,7 @@ export const EDIT_WORLD_PERMISSION = true;
 export const MOD_BAN_MAX_DAYS = 30;
 
 // ---------------- the other caps (research §5) ----------------
-export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute (and a ghost sanction below owner) lasts at most 7 days
+export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute lasts at most 7 days
 export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
 export const REASON_MAX = 500;
 
@@ -49,7 +49,7 @@ const LIST = [
   ["scripts", "install and edit scripts (they act with your rights)", ["build"]],
   ["pauseScripts", "pause or resume scripts whose sponsor ranks below you", []],
   ["mute", "mute someone's voice or chat for everyone, for a while (up to 7 days); warn them", []],
-  ["kick", "remove someone now; they can't come back for a while (up to 60 min); ghost them; warn them", []],
+  ["kick", "remove someone now; they can't come back for a while (up to 60 min); warn them", []],
   ["ban", `keep someone out for up to ${MOD_BAN_MAX_DAYS} days (owners: any length); lift bans you may; warn them`, ["kick"]],
   ["grantRoles", "give or take roles ranked below yours, with only permissions you hold", []],
   ...(CAPTION_ON_SCREENS ? [] : [["caption", "caption a screen", []]]),
@@ -79,6 +79,7 @@ export const BUILTIN = Object.freeze({
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
+// "ghost" stays reserved only until recut C trims the kernel (the id list is kernel-pinned; one re-pin, not two): ghost itself is gone (R 10-20)
 export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
@@ -222,7 +223,7 @@ export function guessSwitch(k) {
 
 // ---------------- what one person may do to another (the person menu; pure, unit-tested) ----------------
 /** The items of the person menu `me` sees for `them`. me/them: {id, rank, permissions: [..], role?, name?} (from
- *  effectiveOf); state: {muted?: bool, ghosted?: bool, banned?: bool}. Returns [{id, label}] in menu order, plus
+ *  effectiveOf); state: {muted?: bool, banned?: bool}. Returns [{id, label}] in menu order, plus
  *  {id: 'rank-line', label, dim: true} when rank is the only reason nothing more shows. Never yourself beyond Mention
  *  (a public @name in chat; it was Message, a DM tab, until whisper left world chat, R 10-18). */
 export function personActions(me, them, state = {}) {
@@ -235,7 +236,6 @@ export function personActions(me, them, state = {}) {
     if (WARN_POWERS.some(has)) out.push({ id: "warn", label: "Warn…" });
     if (has("mute")) out.push(state.muted ? { id: "unmute", label: "Unmute" } : { id: "mute", label: "Mute…" });
     if (has("kick")) out.push({ id: "kick", label: "Kick…" });
-    if (has("kick") && state.ghosted) out.push({ id: "unghost", label: "Bring back (end ghost)" });   // ghost is reserved (10-20): no new ghosting from the menu; a standing one can still be ended
     if (has("ban")) out.push({ id: "ban", label: "Ban…" });
     if (has("grantRoles")) out.push({ id: "role", label: "Role ▸" });
   } else if (anyMod) out.push({ id: "rank-line", dim: true, label: `they're ${article(them.name ?? them.role ?? "a member")}; you can't act on equal or higher ranks` });

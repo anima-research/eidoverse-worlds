@@ -1,7 +1,7 @@
 // rolespanels.js — the two dock panels of roles and moderation (research roles 10-06, S7 and S8; PLAN decisions 10-06).
 // Each thing lives in exactly one place (research §7):
 //   MODERATION (dock: a shield; shown only while you hold mute, kick, ban or pauseScripts — it follows your-rights)
-//     Bans     bans in force, then mutes, kicks cooling down and ghosts, each with its lift where you may; ended bans
+//     Bans     bans in force, then mutes and kicks cooling down, each with its lift where you may; ended bans
 //              collapsed. Lifting follows the authority's rule (an owner, the author, or someone who outranks the author).
 //     Log      the moderator log, newest first, with role changes merged in; a person filter and verb chips; older.
 //     Scripts  every script here: thing, name, sponsor, status, who paused it, Pause / Resume where you may.
@@ -58,22 +58,21 @@ async function paintBans(body) {
   const named = new Map([...now.map((x) => [x.who, x.name]), ...(r.ended ?? []).map((m) => [m.who, m.name])]);
   const nm = (id) => named.get(id) ?? nameOf(id);
   const row = (who, rec, kind, lift) => `<div class="rp-row" data-who="${esc(who)}"><div class="rp-main"><b>${esc(nm(who))}</b>${badge(who)} <span class="rp-dim">${esc(kind)}</span></div>`
-    + `<div class="rp-sub">${rec.reason ? `${esc(rec.reason)} · ` : ''}by ${esc(rec.by ?? nameOf(rec.actor))}${rec.ts ? ` · ${ago(rec.ts)}` : ''} · ends ${ends(rec.until)}${rec.chosen ? ' · chose it' : ''}</div>`
-    + `${lift ? `<button type="button" class="rp-btn" data-lift="${lift}" data-who="${esc(who)}">${lift === 'unban' ? 'Unban' : lift === 'unmute' ? 'Unmute' : 'Bring back'}</button>` : ''}</div>`;
-  const bans0 = now.filter((x) => x.ban || x.kick), mutes = now.filter((x) => x.mute), ghosts = now.filter((x) => x.ghost && !x.ghost.chosen);
+    + `<div class="rp-sub">${rec.reason ? `${esc(rec.reason)} · ` : ''}by ${esc(rec.by ?? nameOf(rec.actor))}${rec.ts ? ` · ${ago(rec.ts)}` : ''} · ends ${ends(rec.until)}</div>`
+    + `${lift ? `<button type="button" class="rp-btn" data-lift="${lift}" data-who="${esc(who)}">${lift === 'unban' ? 'Unban' : 'Unmute'}</button>` : ''}</div>`;
+  const bans0 = now.filter((x) => x.ban || x.kick), mutes = now.filter((x) => x.mute);
   const bans = bans0;
   body.innerHTML = `<h4 class="rp-h">Banned or removed now</h4>${bans.length ? bans.map((x) => x.ban ? row(x.who, x.ban, 'banned', mayLift(x.ban, 'ban') && 'unban') : row(x.who, x.kick, 'removed (cooling down)', mayLift(x.kick, 'ban') && 'unban')).join('') : '<p class="rp-note">nobody</p>'}`
     + `<h4 class="rp-h">Muted now</h4>${mutes.length ? mutes.map((x) => row(x.who, x.mute, (x.mute.channels ?? ['voice', 'chat']).join(' + '), mayLift(x.mute, 'mute') && 'unmute')).join('') : '<p class="rp-note">nobody</p>'}`
-    + `<h4 class="rp-h">Ghosts</h4>${ghosts.length ? ghosts.map((x) => row(x.who, x.ghost, 'ghost', mayLift(x.ghost, 'kick', false) && 'unghost')).join('') : '<p class="rp-note">nobody</p>'}`
     + `<details class="rp-ended"><summary>Ended bans (${(r.ended ?? []).length})</summary>${(r.ended ?? []).map((m) => row(m.who, m, 'ended', null)).join('') || '<p class="rp-note">none</p>'}</details>`;
   body.querySelectorAll('button[data-lift]').forEach((b) => { b.onclick = () => act(b.dataset.lift, { who: b.dataset.who }, `${b.dataset.lift} ${nm(b.dataset.who)}`, () => paintBans(body)); });
 }
-const VERB_CHIPS = [['ban', 'bans'], ['mute', 'mutes'], ['kick', 'kicks'], ['warn', 'warns'], ['ghost', 'ghosts'], ['role', 'roles'], ['auto-cooldown', 'automatic']];
+const VERB_CHIPS = [['ban', 'bans'], ['mute', 'mutes'], ['kick', 'kicks'], ['warn', 'warns'], ['role', 'roles'], ['auto-cooldown', 'automatic']];
 async function paintLog(body, { more = false } = {}) {
   if (!more) modBefore = null;
   const r = await sendRequest('modlog', { ...(modWho ? { who: modWho } : {}), ...(modBefore ? { before: modBefore } : {}), limit: 50 });
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the log")}</p>`; return; }
-  const recs = (r.records ?? []).filter((x) => !modVerbs.size || modVerbs.has(x.verb) || (modVerbs.has('ban') && x.verb === 'unban') || (modVerbs.has('mute') && x.verb === 'unmute') || (modVerbs.has('ghost') && x.verb === 'unghost'));
+  const recs = (r.records ?? []).filter((x) => !modVerbs.size || modVerbs.has(x.verb) || (modVerbs.has('ban') && x.verb === 'unban') || (modVerbs.has('mute') && x.verb === 'unmute'));
   const line = (x) => `<div class="rp-row"><div class="rp-main"><span class="rp-dim">${new Date(x.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span> `
     + `<b>${esc(x.by ?? nameOf(x.actor))}</b>${x.actor && x.actor !== 'system' ? badge(x.actor) : ''} <span class="rp-verb" data-verb="${esc(x.verb)}">${esc(x.verb === 'role' ? (x.role ? `made ${x.role}` : 'took a role from') : x.verb)}</span> <b>${esc(x.name ?? nameOf(x.who))}</b></div>`
     + `<div class="rp-sub">${[x.reason, x.channels ? x.channels.join(' + ') : null, x.until !== undefined ? `ends ${ends(x.until)}` : null, x.verb === 'auto-cooldown' ? x.why : null].filter(Boolean).map(esc).join(' · ')}</div></div>`;

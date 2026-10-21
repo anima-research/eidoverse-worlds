@@ -19,7 +19,7 @@ import { readback, clone, createOps, delOp, isE, lockedC, setOp, versionOf, lock
 import { aabb, descendants, qrot, surfacesOf, worldT } from "./math.js";
 import { kidsMap } from "./spatial.js";
 import { isSocketC, socketsOf, socketRole, modelSocketNames } from "./sockets.js";
-import { backward, creatorOf, effective, ghostOf, madeBy, roleOf } from "./rights.js";
+import { backward, creatorOf, effective, madeBy, roleOf } from "./rights.js";
 import { shieldOf } from "./bodyconsent.js";
 import { actionsOf, offersFor, pivotOf } from "./use.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -274,7 +274,7 @@ const READ_VERBS = {
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "turn {id, axis, deg, space?: object|parent|world, about?: pivot|origin}", "batch {ops: [{verb, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}: a bare undo takes back your latest change (a redo first); the reply names what it undid", "publish {from, name}", "update {copy, to, resolve?}"],
         people: ["warn {who, reason}", "mute {who, minutes, channels?: ['voice','chat'], reason?} / unmute {who}", "kick {who, minutes?, reason?} (default 10, ≤ 60)", "ban {who, days?, reason?} (≤ 30 days below owner; owners: leave days out for until lifted) / unban {who}",
-          "ghost {on} (you: unseen, no interaction or chat) | ghost {who, minutes, reason?} / unghost {who}", "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
+          "modlog {who?, before?, limit?}", "bans {}", "who may: your permissions (you.permissions); act only on ranks below yours"],
         scripts: ["upload {text} → src (JavaScript; docs/SCRIPTS.md)", "set {id, component: 'script:<name>', value: {src, scope, on, every?, knobs?}}", "scripts {id?} — what runs here and why not", "scripts {id, script, test: {on: 'use'}} — a dry run", "adopt {id, script, base?} — become a dormant script's sponsor"],
         body: ["move {to: [x, y, z]}", "grab {id, hand?, grip?}", "put {id, pos?}", "throw {id, v: [x, y, z], pos?}", "drop {id, pos?, hand?}", "use {id} while holding it: its grabbable.use (args {phase: 'up'} for the release)", "punt {id, power? | v?}", "leave", "wait"],
         physics: "the world runs physics when @world has a physics-engine component: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}} (owner). A thing can be picked up when it has a grabbable component (schema {component: 'grabbable'}: who may, grips, where it goes when let go, use while held), or physics {kind: 'dynamic', who?}. Grabbable makes it carryable; physics makes it fall", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and throughLock: true to act through a lock you may remove (§7: a lock stops accidents and binds everyone, its locker included)", details: "help {verb: 'place'} (or create, set, delete, use, grab, put, throw, punt) shows every argument with its type and an example" },
@@ -290,12 +290,11 @@ const READ_VERBS = {
     const kids = kidsMap(st); const order = []; const tree = (id, d, n = 0) => { if (n > 64) return; const sock = isSocketC(st.entities[id]?.c); if (!sock) order.push([id, d]); for (const k of kids.get(id) ?? []) tree(k, sock ? d : d + 1, n + 1); };
     ids.forEach((id) => tree(id, 0));
     const all = order.slice(0, lim).map(([id, d]) => ({ ...describe(st, id, live, w.presence.holds), depth: d })); const total = order.length;
-    // a ghost's body is unseen by everyone else (review 10-07)
     // consent is each person's own (consent gaps 6a, R 10-17 02:45): a viewer sees THEIR table, and who poses, drags or touches
     // them; of anyone else only where they stand, plus what the viewer is doing to them. Another body's stranger cells and
     // pause would undo the uniform refusal words (a stranger who reads touch: everyone and is then refused learns they
     // personally are denied), and who touches whom is nobody else's business
-    const P = w.presence; const bodies = Object.entries(P.bodies).filter(([id]) => id === actor || !ghostOf(w, id)).map(([id, b]) => ({ id, at: b.at,
+    const P = w.presence; const bodies = Object.entries(P.bodies).map(([id, b]) => ({ id, at: b.at,
       ...(id === actor ? { shield: shieldOf(P, id) } : {}),
       ...(b.poseBy && (id === actor || b.poseBy === actor) ? { posedBy: b.poseBy } : {}), ...(b.draggedBy && (id === actor || b.draggedBy === actor) ? { draggedBy: b.draggedBy } : {}),
       touchedBy: Object.entries(P.reaches ?? {}).filter(([k, r]) => r.to === id && (id === actor || k === actor)).map(([k]) => k) }));
@@ -346,12 +345,11 @@ const READ_VERBS = {
     if (a.verbs !== undefined && !(Array.isArray(a.verbs) && a.verbs.length <= 32 && a.verbs.every((v) => typeof v === "string"))) refuse("shape", "verbs is a list of verb names (at most 32)", "e.g. history {verbs: ['set', 'use']} — an imported entry matches its original verb too ('comp', 'mount')");
     if (a.before !== undefined && a.after !== undefined) refuse("shape", "page one way: before or after, not both", "before: older than that seq (the reply's next); after: newer than it");
     const lim = Math.max(1, Math.min(200, a.limit ?? 12)); const vs = a.verbs?.length ? new Set(a.verbs) : null;   // [] = no filter
-    const ghost = !!ghostOf(w, actor); // a ghost can't read chat (PLAN 10-06): says leave the page
     // speech is arrival-only (R 10-18): a say from before the asker arrived leaves the page too, unless the host says they're
     // an admin (no floor). The log keeps every say; only an admin reads one back from before they came (storage.js sayFloor)
     const floor = typeof w.sayFloor === "function" ? w.sayFloor(actor) : null;
     const match0 = (e) => !vs || !isE(e) ? !vs : vs.has(e.verb) || vs.has(e.kind) || (e.verb === "imported" && vs.has(e.body?.verb));
-    const match = (e, seq) => match0(e) && !(isE(e) && e.kind === "say" && (ghost || (floor !== null && !(seq > floor))));
+    const match = (e, seq) => match0(e) && !(isE(e) && e.kind === "say" && floor !== null && !(seq > floor));
     const row = (e, seq) => isE(e) ? { seq, actor: e.actor, ts: e.ts, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" || e.kind === "say" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code };
     const out = []; let more = false;
     if (a.after !== undefined) { for (let i = Math.max(0, a.after + 1); i < w.entries.length; i++) { if (!match(w.entries[i], i)) continue; if (out.length === lim) { more = true; break; } out.push(row(w.entries[i], i)); } }

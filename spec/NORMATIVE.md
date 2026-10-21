@@ -54,7 +54,7 @@ does, and no role overrides it).
 | Choice | Value | Status · source |
 |---|---|---|
 | The ladder | `visitor` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between | trial · lead (research 10-06) |
-| States off the ladder | `banned` (not in the world) and `ghost` (present, unseen, no chat, no acts); never ranks | trial · lead |
+| States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · lead |
 | An old demotion `none` | rank −1: below every member, no permissions | trial · lead |
 | Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles` | trial · lead |
 | Built-in roles | visitor: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |

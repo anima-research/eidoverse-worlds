@@ -16,7 +16,7 @@ import { mintId, PERSON_ID, isPlaceholder } from "./ids.js";
 import { COMPONENTS, PENDULUM, defOf, registered, baseOf, isNamespaced, materialize, mapRefs, refsOf, refFields, outOfRange, rangeWords, resolveVersioned, statusOf, canonicalName, STATUSES } from "./componentspec.js";
 import { validate, verbHelp, VERBSPEC, RESERVED_VERBS, REMOVED_VERBS } from "./verbspec.js";
 import { dec, partSlot } from "./names.js";
-import { READ_ONLY, GHOST_OK } from "./verbclasses.js";
+import { READ_ONLY, LOOK_ONLY } from "./verbclasses.js";
 import { isRefusalCode } from "./refusalcodes.js";
 import { foldSkyEntry } from "../forecast.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../captions.js";
@@ -50,8 +50,8 @@ export { posAt, worldOf, seal, LOCK_LEVELS, lockLevel, lockRank, readback } from
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
-import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, ghostOf, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
-export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, ghostOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
+import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
+export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
 import { BODY_VERBS, bodyGate, expireAsks, forgetReaches, inboxPush, shieldOf } from "./authority/bodyconsent.js";
 export { reachAdmits, reachLetGo } from "./authority/bodyconsent.js";
 import { MOD_VERBS } from "./authority/moderation.js";
@@ -134,14 +134,10 @@ export function request(w, actor, verb, args = {}) {
     // an operator's recorded repair (operatorRepair) is not the person's own request: their sanctions and role here don't gate it
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && isBanned(w, actor)) refuse("banned", `${said(actor)} is banned from this world`, "the moderator log says so; ask a moderator");
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
-    // ghost (PLAN 10-06): in the world, outside society. A ghost may look, walk and leave; never interact or talk.
     // legacy role `none` (a demotion below visitor): outside membership, it holds no permission and no voice; it may look,
-    // walk and leave, as a ghost may (top-down review 10-06: none passed say and a reaction's use)
-    if (w.exists && CTX.operator !== actor && !GHOST_OK.has(verb) && verb !== "ghost" && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
+    // walk and leave (top-down review 10-06: none passed say and a reaction's use)
+    if (w.exists && CTX.operator !== actor && !LOOK_ONLY.has(verb) && w.state().entities?.["@world"] && roleOf(w.state(), actor) === "none")
       refuse("rights", `${said(actor)} has no role here (none: below visitor), so can't ${verb}`, "someone who may grant roles (an owner, or by default a moderator) can give you one: ask them", { needs: "a role" });
-    // ghost: only the chosen mode's own toggle (ghost {on}) passes; ghost {who} is a sanction, an act on someone
-    if (w.exists && CTX.operator !== actor && (!GHOST_OK.has(verb) || (verb === "ghost" && args?.who !== undefined && args.who !== actor)) && ghostOf(w, actor)) { const g = ghostOf(w, actor);
-      refuse("ghost", g.chosen ? `you're a ghost here (you chose it): ghosts don't interact or talk` : `you're a ghost here${g.until ? ` until ${new Date(g.until).toISOString()}` : ""}: ghosts don't interact or talk`, g.chosen ? "ghost {on: false} brings you back" : "a moderator ranked at or above whoever did it can bring you back"); }
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
@@ -226,10 +222,10 @@ function placeholders(w, verb, args) {
 // (and a name the verb doesn't take is text too: it is counted as `unknownArgs`, never written). The values go to the
 // authority's in-memory ring (refusalRing: never persisted, capped, like the server's world_debug flight recorder).
 // Never logged: reads, dry runs, and the refusals that ARE the budget or the authority's own state (rate, identity,
-// no-world, custody, unreadable, and the sanctions banned, kicked and ghost): logging those would be the flood. Past the
+// no-world, custody, unreadable, and the sanctions banned and kicked): logging those would be the flood. Past the
 // budget, the authority counts what it didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
-const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "ghost", "muted"]);
+const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "muted"]);
 const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
 const PRESENCE_VERBS = new Set(["move", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged
 const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;

@@ -72,10 +72,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a mute's channels are the union", "protocol/authority.js", "const channels = [...new Set(a.flatMap((m) => m.channels ?? [\"voice\", \"chat\"]))];", "const channels = strongest(a).channels ?? [\"voice\", \"chat\"];", ["V1b"]],
   ["a lift needs rights over every record", "protocol/authority/moderation.js", "for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {", "for (const rec of (Array.isArray(recs) ? recs.slice(-1) : recs ? [recs] : [])) {", ["V2"]],
   ["nobody lifts their own", "protocol/authority/moderation.js", "if (a.who === actor) refuse(\"rank\", `you can't lift a ${verb} on yourself`", "if (false) refuse(\"rank\", `you can't lift a ${verb} on yourself`", ["V5"]],
-  ["ghost {who} is not the chosen mode", "protocol/authority.js", "|| (verb === \"ghost\" && args?.who !== undefined && args.who !== actor)", "", ["V4"]],
   ["leave passes the kick gate", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor))", "if (w.exists && tool !== \"help\" && kickOf(w, actor))", ["K5"]],
-  ["a muted refusal isn't logged", "protocol/authority.js", "\"kicked\", \"ghost\", \"muted\"]);", "\"kicked\", \"ghost\"]);", ["V7"]],
-  ["look hides a ghost", "protocol/authority/blueprints.js", ".filter(([id]) => id === actor || !ghostOf(w, id))", "", ["V8"]],
+  ["a muted refusal isn't logged", "protocol/authority.js", "\"kicked\", \"muted\"]);", "\"kicked\"]);", ["V7"]],
   ["custom ranks are range-checked on read", "protocol/roles.js", "|| d.rank < 1 || d.rank > 254) return null;", ") return null;", ["V9"]],
   ["seniority binds a capability's holder", "protocol/authority.js", "const cap = who.cap; if (cap && cap.kind !== \"reaction\" && cap.kind !== \"script\") return;", "const cap = who.cap; if (cap) return;", ["V10"]],
   ["a banned person is refused", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
@@ -98,12 +96,6 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["modlog merges role changes", "protocol/authority/moderation.js", "for (const o of opsQuiet(e)) if (o.id === \"@world\" && String(o.comp ?? \"\").startsWith(\"roles:\")) rows.push(", "for (const o of []) rows.push(", ["M9"]],
   ["modlog is for moderation powers", "protocol/authority/moderation.js", "modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== \"owner\") refuse(", "modlog: (w, actor, a) => { const st = w.state(); if (false) refuse(", ["M9"]],
   ["guests rank by their guest role", "protocol/roles.js", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;", "let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? \"visitor\" : base;", ["M10", "R6"]],
-  // ghost
-  ["a ghost can't interact or talk", "protocol/authority.js", "args.who !== actor)) && ghostOf(w, actor)) {", "args.who !== actor)) && false) {", ["G1", "G3"]],
-  ["a ghost can't read chat", "protocol/authority/blueprints.js", "const match = (e) => match0(e) && !(ghost && isE(e) && e.kind === \"say\");", "const match = (e) => match0(e);", ["G1"]],
-  ["a ghost may look and walk", "protocol/authority.js", "const GHOST_OK = new Set([\"help\", \"look\",", "const GHOST_OK = new Set([\"help\",", ["G1"]],
-  ["a sanction isn't the ghost's to end", "protocol/authority/moderation.js", "if (!a.on && inForceOf(w, actor, \"ghost\").length) refuse(\"ghost\"", "if (false) refuse(\"ghost\"", ["G2"]],
-  ["the chosen mode", "protocol/authority/moderation.js", "const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor];", "const G = {};", ["G3"]],
   // S5, S6
   ["translation: v1 fly/gen → can.fly/can.generate", "../tools/protocol/import-v1/translate-v1.js", "return Object.keys(can).length ? { ...rest, can } : rest; };", "return v; };", ["T1"]],
   ["the menu: only below you", "protocol/roles.js", "const below = them.rank < me.rank;", "const below = them.rank <= me.rank;", ["P3"]],
@@ -391,28 +383,6 @@ const cases: Case[] = [
       return { b: show(pause("b")), o: code(pause("o")), label: code(s.call("wa", "set", { id: "b", component: "label", value: "x" })) }; },
     good: (o) => o.b === "ok" && o.o === "rank" && o.label === "rights" },
   // ---------------- G: ghost (outside society) ----------------
-  { id: "G1", what: "ghost as a sanction: a moderator ghosts a visitor; the ghost can look and walk, can't build, use or say; history hides says from them", run(s) { cast(s);
-      s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } }); s.call("bob", "say", { text: "secret plans" });
-      role(s, "vic", { role: "builder" }); const g = s.call("mo", "ghost", { who: "vic", minutes: 30, reason: "trolling" });
-      const look = s.call("vic", "look"), mv = s.call("vic", "move", { to: [1, 0, 1] }), lab = s.call("vic", "set", { id: "crate", component: "label", value: "x" }), say = s.call("vic", "say", { text: "hi" });
-      const hist = s.call("vic", "history", { limit: 50 }); const sees = (hist.entries ?? []).some((e: any) => e.kind === "say");
-      const bobHist = s.call("bob", "history", { limit: 50 }); const bobSees = (bobHist.entries ?? []).some((e: any) => e.kind === "say");
-      return { g: show(g), look: show(look), mv: show(mv), lab: code(lab), say: code(say), sees, bobSees }; },
-    good: (o) => o.g === "ok" && o.look === "ok" && o.mv === "ok" && o.lab === "ghost" && o.say === "ghost" && !o.sees && o.bobSees },
-  { id: "G2", what: "ghost rank rules: only a rank above the target ghosts; a sanction is lifted at its author's rank or higher (not by the ghost themself), and ends by the clock", run(s) { cast(s, { crew: true });
-      const bobG = s.call("bob", "ghost", { who: "vic", minutes: 5 }), moMo = s.call("mo", "ghost", { who: "olive", minutes: 5 });
-      s.call("olive", "ghost", { who: "ann", minutes: 60 }); const moLift = s.call("mo", "unghost", { who: "ann" }), self = s.call("ann", "ghost", { on: false });
-      s.call("mo", "ghost", { who: "vic", minutes: 5 }); const moLift2 = show(s.call("mo", "unghost", { who: "vic" }));
-      s.call("mo", "ghost", { who: "bea", minutes: 5 }); s.advance(6 * MIN); const bea = show(s.call("bea", "say", { text: "back" }));
-      return { bobG: code(bobG), moMo: code(moMo), moLift: code(moLift), self: code(self), moLift2, bea, ownerLift: show(s.call("olive", "unghost", { who: "ann" })) }; },
-    good: (o) => o.bobG === "rights" && (o.moMo === "rights" || o.moMo === "rank") && o.moLift === "rank" && o.self === "ghost" && o.moLift2 === "ok" && o.bea === "ok" && o.ownerLift === "ok" },
-  { id: "G3", what: "ghost as a chosen mode: anyone may ghost themself and come back; it is never logged; while a ghost they can't talk", run(s) { cast(s);
-      const n0 = s.w().mod.length, e0 = s.entries().length; const on = s.call("vic", "ghost", { on: true }); const say = s.call("vic", "say", { text: "boo" });
-      const off = s.call("vic", "ghost", { on: false }); const say2 = s.call("vic", "say", { text: "hello" });
-      return { on: show(on), say: code(say), off: show(off), say2: show(say2), mod: s.w().mod.length - n0, logged: s.entries().slice(e0).filter((e: any) => e.verb === "ghost").length }; },
-    good: (o) => o.on === "ok" && o.say === "ghost" && o.off === "ok" && o.say2 === "ok" && o.mod === 0 && o.logged === 0 },
-
-  // ---------------- T: S5 translation ----------------
   { id: "T1", what: "translation: a v1 {builder, fly, gen} grant becomes roles:<id> {role, can: {fly, generate}}, and the effective set holds fly and generate", run() {
       const w = TV1.project({ roles: { olive: { role: "owner" }, alice: { role: "builder", fly: true, gen: true }, bo: { role: "visitor", fly: false } } });
       const key = Object.keys(w["@world"]).find((k) => k.startsWith("roles:") && k.includes("alice")); const id = key?.slice(6); const bo = Object.keys(w["@world"]).find((k) => k.includes("bo") && k.startsWith("roles:"));
@@ -435,10 +405,11 @@ const cases: Case[] = [
   { id: "P1", what: "personActions: a visitor sees only Mention (a public @name; Message opened a DM tab until whisper was removed, R 10-18), for anyone", run() { const A = RL.personActions;
       const vis = { id: "v", rank: 0, permissions: [] }; return { a: A?.(vis, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), b: A?.(vis, { id: "n", rank: -1, role: "none" }).map((x: any) => x.id) }; },
     good: (o) => JSON.stringify(o.a) === '["mention"]' && JSON.stringify(o.b) === '["mention"]' },
-  { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ban, role and history — no Ghost (reserved 10-20); a standing ghost can still be ended", run() {
+  // G1–G3, V4, V8 RETIRED (R 10-20): ghost removed entirely (WISHLIST "Spectator role").
+  { id: "P2", what: "personActions: a moderator acting on a builder gets warn, mute, kick, ban, role and history — no Ghost (removed 10-20)", run() {
       const mo = { id: "m", rank: 200, permissions: RL.BUILTIN?.moderator ? RL.PERMISSION_NAMES.filter((k: string) => RL.BUILTIN.moderator.can[k]) : [] };
-      return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id), ghosted: RL.personActions?.(mo, { id: "b", rank: 100 }, { ghosted: true }).map((x: any) => x.id) }; },
-    good: (o) => JSON.stringify(o.ids) === '["mention","warn","mute","kick","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") && o.ghosted?.includes("unghost") },
+      return { ids: RL.personActions?.(mo, { id: "b", rank: 100, role: "builder" }).map((x: any) => x.id), muted: RL.personActions?.(mo, { id: "b", rank: 100 }, { muted: true }).map((x: any) => x.id) }; },
+    good: (o) => JSON.stringify(o.ids) === '["mention","warn","mute","kick","ban","role","history"]' && o.muted?.includes("unmute") && !o.muted?.includes("mute") },
   { id: "P3", what: "personActions: a moderator acting on a moderator gets no acts, and one dim line saying rank is why", run() {
       const mo = { id: "m", rank: 200, permissions: ["mute", "kick", "ban", "grantRoles"] };
       return RL.personActions?.(mo, { id: "m2", rank: 200, role: "moderator", name: "Moderator" }); },
@@ -473,16 +444,15 @@ const cases: Case[] = [
     good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" },
 
   // ---------------- V: the independent review's findings (10-07), each red before its fix ----------------
-  { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban, 1-minute voice mute, short ghost or kick under an owner's leaves the owner's in force", run(s) { cast(s);
-      role(s, "ann2", { role: "visitor" }); role(s, "gh", { role: "visitor" }); role(s, "kk", { role: "visitor" });
+  { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban, 1-minute voice mute or kick under an owner's leaves the owner's in force", run(s) { cast(s);
+      role(s, "ann2", { role: "visitor" }); role(s, "kk", { role: "visitor" });
       s.call("olive", "ban", { who: "vic" }); const b = s.call("mo", "ban", { who: "vic", days: 0.0001 });
       s.call("olive", "mute", { who: "ann", minutes: 10080 }); const m = s.call("mo", "mute", { who: "ann", minutes: 1, channels: ["voice"] });
-      s.call("olive", "ghost", { who: "gh" }); s.call("mo", "ghost", { who: "gh", minutes: 0.01 });
       s.call("olive", "kick", { who: "kk", minutes: 60 }); s.call("mo", "kick", { who: "kk", minutes: 0.01 });
       const now0 = s.now(); const banUntil = D.banOf(s.w(), "vic")?.until ?? "never", kickLeft = (D.kickOf(s.w(), "kk")?.until ?? 0) - now0;   // while both are in force: the strongest is read
       s.advance(20_000);
-      return { b: show(b), m: show(m), banUntil, kickLeft, banned: D.isBanned(s.w(), "vic"), annSay: code(s.call("ann", "say", { text: "hi" })), ghost: !!D.ghostOf(s.w(), "gh"), kicked: !!D.kickOf(s.w(), "kk") }; },
-    good: (o) => o.banUntil === "never" && o.kickLeft > 50 * MIN && o.banned && o.annSay === "muted" && o.ghost && o.kicked },
+      return { b: show(b), m: show(m), banUntil, kickLeft, banned: D.isBanned(s.w(), "vic"), annSay: code(s.call("ann", "say", { text: "hi" })), kicked: !!D.kickOf(s.w(), "kk") }; },
+    good: (o) => o.banUntil === "never" && o.kickLeft > 50 * MIN && o.banned && o.annSay === "muted" && o.kicked },
   { id: "V1b", what: "a mute's channels are the union of every mute in force: a longer voice-only mute over a shorter chat mute keeps chat muted", run(s) { cast(s);
       s.call("olive", "mute", { who: "vic", minutes: 10, channels: ["chat"] }); s.call("mo", "mute", { who: "vic", minutes: 60, channels: ["voice"] });
       return { say: code(s.call("vic", "say", { text: "hi" })), ch: D.muteOf(s.w(), "vic")?.channels }; },
@@ -495,11 +465,6 @@ const cases: Case[] = [
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] });
       return { to: code(s.call("vic", "say", { text: "why?", to: "mo" })) }; },
     good: (o) => o.to === "muted" },
-  { id: "V4", what: "a ghost can't sanction anyone (ghost {who} is not the chosen mode); a ghost may still end a ghost they chose", run(s) { cast(s);
-      s.call("olive", "ghost", { who: "mo", minutes: 60 }); const g = s.call("mo", "ghost", { who: "vic", minutes: 60 });
-      s.call("bob", "ghost", { on: true }); const back = s.call("bob", "ghost", { on: false });
-      return { g: code(g), back: show(back) }; },
-    good: (o) => o.g === "ghost" && o.back === "ok" },
   { id: "V5", what: "nobody lifts their own sanction (a muted builder holding mute can't unmute themself)", run(s) { cast(s);
       role(s, "bob", { role: "builder", can: { mute: true } }); s.call("mo", "mute", { who: "bob", minutes: 60 }); role(s, "mo", { role: "visitor" });
       return { self: code(s.call("bob", "unmute", { who: "bob" })), still: !!D.muteOf(s.w(), "bob") }; },
@@ -512,10 +477,6 @@ const cases: Case[] = [
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] }); const n0 = s.entries().length; s.call("vic", "say", { text: "secret words" });
       return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words") }; },
     good: (o) => o.leaked === false },
-  { id: "V8", what: "look doesn't list a ghost's body to anyone else (unseen); the ghost still sees their own", run(s) { cast(s);
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("bob", "move", { to: [1, 0, 1] }); s.call("vic", "ghost", { on: true });
-      return { bob: (s.call("bob", "look").bodies ?? []).map((b: any) => b.id), vic: (s.call("vic", "look").bodies ?? []).map((b: any) => b.id) }; },
-    good: (o) => !o.bob.includes("vic") && o.bob.includes("bob") && o.vic.includes("vic") },
   { id: "V9", what: "a custom role's rank is range-checked when read: a rank written around the authority (300) never reads above the owner", run() {
       return { r: RL.roleDef ? RL.roleDef({ "role-defs": { boss: { name: "Boss", rank: 300 } } }, "boss") : "no roles.js" }; },
     good: (o) => o.r === null },
@@ -557,10 +518,10 @@ const cases: Case[] = [
       const n = () => s.call("olive", "modlog", {})?.records?.length ?? null;
       const lift = (verb: string) => { const r = s.call("mo", verb, { who: "vic" }); return r?.ok ? (r.recorded === false && /nothing to lift/.test(r.note ?? "") ? "unchanged" : "lifted") : code(r); };
       const before = n();
-      const r = { unban: lift("unban"), unmute: lift("unmute"), unghost: lift("unghost") };
+      const r = { unban: lift("unban"), unmute: lift("unmute") };
       s.call("mo", "mute", { who: "vic", minutes: 5 }); s.advance(6 * MIN);
       return { ...r, ended: lift("unmute"), before, after: n() }; },
-    good: (o) => o.unban === "unchanged" && o.unmute === "unchanged" && o.unghost === "unchanged" && o.ended === "unchanged" && typeof o.before === "number" && o.after === o.before + 1 }
+    good: (o) => o.unban === "unchanged" && o.unmute === "unchanged" && o.ended === "unchanged" && typeof o.before === "number" && o.after === o.before + 1 }
 ];
 
 // ---------------- run ----------------

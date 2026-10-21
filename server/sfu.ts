@@ -83,7 +83,7 @@ export class Sfu {
   /** speakers a moderator has silenced: enforced at INGRESS, so a muted
    *  speaker is inaudible to everyone at once and cannot be routed around. */
   private muted = new Set<string>();
-  /** listeners the server has made deaf (a ghost, R 10-07): overrides their own consent, which they could turn back on */
+  /** listeners the server has made deaf: overrides their own consent, which they could turn back on */
   private deafened = new Set<string>();
   private forwarded = 0;
 

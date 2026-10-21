@@ -81,8 +81,6 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // connection arrived, unless it is an admin's (owner, operator: world.ts sayFloorFor), who reads the master log.
     // Spectators page like anyone else: what they were present for.
     if (!c.world) return;
-    // a ghost can't read chat (PLAN 10-06): its scrollback is empty, as its log stream's says are (review 10-07)
-    if (c.world.log && c.world.isGhost(c)) { ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, entries: [], oldestSeq: null, hasMore: false })); return; }
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
       after: typeof msg.after === "number" ? msg.after : -Infinity,

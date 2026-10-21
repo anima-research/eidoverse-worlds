@@ -1,5 +1,5 @@
 // shared/protocol/authority/moderation.js — acting on a person: the rule every person-act shares (personAct), lifting a
-// sanction (personLift), and the moderation verbs (warn, mute/unmute, kick, ban/unban, ghost/unghost, modlog, bans) as
+// sanction (personLift), and the moderation verbs (warn, mute/unmute, kick, ban/unban, modlog, bans) as
 // MOD_VERBS, which authority.js spreads into VERBS where they stood (refactor split, 2026-10-17; moved from authority.js's
 // "acting on a person" section and the VERBS table unchanged). Moderation is the separate moderator log (§2.1): nothing
 // here writes the world log.
@@ -26,7 +26,7 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
   const st = w.state();
   if (!isIdentity(a.who)) refuse("shape", `${verb} {who}: an identity (u-…); whois {name} finds it`, "", {});
   const me = effective(st, actor);
-  if (!powers.some((k) => me.can[k])) refuse("rights", `${verb === "ban" ? "banning" : verb === "kick" ? "kicking" : verb === "ghost" ? "ghosting someone" : verb === "warn" ? "warning someone" : "muting someone"} needs ${powers.length > 1 ? `one of ${powers.join(", ")}` : powers[0]}; you are ${me.role}`, "ask a moderator or an owner", { needs: powers.join("|") });
+  if (!powers.some((k) => me.can[k])) refuse("rights", `${verb === "ban" ? "banning" : verb === "kick" ? "kicking" : verb === "warn" ? "warning someone" : "muting someone"} needs ${powers.length > 1 ? `one of ${powers.join(", ")}` : powers[0]}; you are ${me.role}`, "ask a moderator or an owner", { needs: powers.join("|") });
   if (a.who === actor) refuse("rank", `you can't ${verb} yourself`, "");
   const them = roleOf(st, a.who, CTX.isAnon(a.who));
   if (noOwner && them === "owner") refuse("rights", `${said(a.who)} is an owner here; an owner can't be ${noOwner}`, "an owner made after them can be demoted first (roles:<them>); then act");
@@ -35,8 +35,8 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
   if (a.reason !== undefined && (typeof a.reason !== "string" || a.reason.length > R.REASON_MAX)) refuse("shape", `reason is text, up to ${R.REASON_MAX} characters`, "");
   return { target: { role: them, rank: tr } };
 }
-/** Lifting a sanction (unban, unmute, unghost): the permission, and the record's rule: an owner, its author, or someone
- *  who outranks its author (strict: unban, unmute) or stands at their rank or above (ghost: "lifted only at that rank or higher"). */
+/** Lifting a sanction (unban, unmute): the permission, and the record's rule: an owner, its author, or someone
+ *  who outranks its author (strict: unban, unmute). */
 function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
   if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
@@ -83,20 +83,6 @@ const MOD_VERBS = {
     const op = !!CTX.operator && CTX.operator === actor;
     if (!op && !personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true })) return { ok: true, unbanned: a.who, recorded: false, note: `${said(a.who)} has no ban or kick in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unban", who: a.who, ...(op ? { operator: true } : {}) }); return { ok: true, unbanned: a.who, ...(op ? { operator: true } : {}) }; },
-  // ghost (PLAN 10-06): `ghost {on}` with no who is the mode you choose (presence: never logged; spectate);
-  // `ghost {who, minutes?, reason}` is a sanction (kick holders, on a rank below; capped like a mute below owner)
-  ghost: (w, actor, a) => {
-    if (a.who === undefined || a.who === actor) { if (typeof a.on !== "boolean") refuse("shape", "ghost {on: true|false}: become a ghost here (unseen; you can't interact or talk), or come back", "or ghost {who, minutes, reason} to ghost someone (kick holders)");
-      if (!a.on && inForceOf(w, actor, "ghost").length) refuse("ghost", "you were made a ghost by a moderator; that isn't yours to end", "a moderator ranked at or above them can bring you back");
-      const G = (w.presence.ghosts ??= {}); if (a.on) G[actor] = { ts: Math.floor(w.now()) }; else delete G[actor]; w.presenceDirty = true;
-      return { ok: true, ghost: a.on, chosen: true, recorded: false }; }
-    const t = personAct(w, actor, a, "ghost", ["kick"], { noOwner: "made a ghost" });
-    const owner = roleOf(w.state(), actor) === "owner";
-    const until = a.minutes === undefined && owner ? undefined : minutesUntil(w, actor, a.minutes, { cap: R.MUTE_MAX_MIN, what: "a ghost sanction", required: true });
-    w.appendMod({ actor, verb: "ghost", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, ghosted: a.who, until: until ?? null, ...t, logged: "moderator log" }; },
-  unghost: (w, actor, a) => {
-    if (!personLift(w, actor, a, "ghost", inForceOf(w, a.who, "ghost"), { strict: false, power: "kick" })) return { ok: true, unghosted: a.who, recorded: false, note: `${said(a.who)} has no ghost in force here: there was nothing to lift` };
-    w.appendMod({ actor, verb: "unghost", who: a.who }); return { ok: true, unghosted: a.who }; },
   // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
   // from the world log (roles:* writes, read-only) and the authority's automatic cool-downs
   modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });

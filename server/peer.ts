@@ -1,7 +1,7 @@
 // server/peer.ts — the client's address, from a trusted proxy only (security review 2026-10-18, H2).
 // Behind the show's nginx every socket is 127.0.0.1 and the real address rides X-Real-IP (deploy/nginx-show.conf). Honouring
 // that header from ANY peer let a guest reaching the port directly (a tailnet, a second listener, a misrouted host) pick a
-// fresh address per connection — voiding every address-keyed sanction (a guest's ban, kick cooldown, carried mute/ghost) and
+// fresh address per connection — voiding every address-keyed sanction (a guest's ban, kick cooldown, carried mute) and
 // limiter — or FRAME another visitor's address. So the header is read only when the socket peer is a trusted proxy:
 // loopback by default; TRUSTED_PROXIES=<comma-separated addresses> extends it (the proxy's own address, as requestIP sees it).
 // Every place that wants "who is this connection" uses this one function (routes.ts, upload.ts); nothing reads the header raw.
