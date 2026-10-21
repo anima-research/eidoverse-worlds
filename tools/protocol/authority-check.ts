@@ -86,19 +86,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("olive", "create-world", { title: "locks" });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "visitor" } });
+  call("olive", "set", { id: "@world", component: "roles:bea", value: { role: "builder" } });   // recut B2: the locker is a builder, so a builder's lock is what bob acts through
   call("olive", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   ok(call("bob", "create", { id: "cup", model: "crate", place: { on: "tbl" } }).ok, "P0 a crate on the table");
   ok(call("bob", "create", { id: "bell", model: "ball", place: { on: "cup" } }).ok, "P0 a ball on the crate (two levels down)");
   const w0 = W().state(); ok(w0.entities.cup.c.parent?.to === "tbl" && w0.entities.bell.c.parent?.to === "cup", "P0 the chain is tbl ← cup ← bell", [w0.entities.cup.c.parent, w0.entities.bell.c.parent]);
-  ok(call("olive", "set", { id: "tbl", component: "lock", value: true }).ok, "P1 olive locks the table (an ordinary set of `lock`)");
+  ok(call("bea", "set", { id: "tbl", component: "lock", value: true }).ok, "P1 bea (a builder) locks the table (an ordinary set of `lock`)");
   // v1's refusal matrix, for the LOCKER (who is also the owner): place, remove, cargo-mount, replace
-  ok(code(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [9, 0, 9] } })) === "locked", "P2 the locker herself can't move it (v1: 'even for the locker')");
+  ok(code(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [9, 0, 9] } })) === "locked", "P2 the owner can't move it either (v1: 'even for the locker'; a lock binds everyone)");
   ok(code(call("olive", "delete", { id: "tbl" })) === "locked", "P3 …nor remove it (and she is an owner: a lock binds owners too)");
   ok(code(call("olive", "set", { id: "tbl", component: "parent", value: { to: "cup" } })) !== undefined && code(call("olive", "place", { id: "tbl", at: [5, 5] })) === "locked", "P4 …nor place it, nor mount it on something (cargo-mount)");
   ok(code(call("olive", "set", { id: "tbl", component: "model", value: "crate" })) === "locked", "P5 …nor replace it (its model: v1's spawn onto its id)");
   ok(code(call("olive", "delete", { id: "tbl", component: "transform" })) === "locked", "P6 …nor send it to the origin by deleting its transform (25d H1)");
   { const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] } });
-    ok(code(r) === "locked" && /attached to tbl, which is locked/.test(r.refused.reason) && /locked by olive/.test(r.refused.reason), "P7 what's attached is bound too, and the refusal names the lock and who set it", r.refused);
+    ok(code(r) === "locked" && /attached to tbl, which is locked/.test(r.refused.reason) && /locked by bea/.test(r.refused.reason), "P7 what's attached is bound too, and the refusal names the lock and who set it", r.refused);
     ok(/throughLock: true/.test(r.refused.fix) && /delete \{id: 'tbl', component: 'lock'\}/.test(r.refused.fix), "P7 …and teaches both ways through: throughLock, or unlock", r.refused.fix); }
   ok(code(call("bob", "delete", { id: "cup" })) === "locked" && code(call("bob", "place", { id: "cup", at: [4, 4] })) === "locked", "P8 …nor deleted or placed elsewhere");
   ok(code(call("bob", "delete", { id: "cup", component: "parent" })) === "locked", "P9 …nor lifted off (deleting its parent)");
@@ -110,7 +111,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(call("bob", "set", { id: "tbl", component: "light", value: { range: 4 } })) === "locked" && code(call("bob", "set", { id: "tbl", component: "physics", value: { kind: "none" } })) === "locked"
     && code(call("bob", "set", { id: "tbl", component: "disabled", value: true })) === "locked" && code(call("bob", "set", { id: "tbl", component: "hidden", value: true })) === "locked", "P13 a light, physics, switching off and hiding are locked (the review's bypass)");
   ok(call("bob", "set", { id: "tbl", component: "reactions", value: { knock: { kind: "set", component: "label", value: "knocked" } }, throughLock: true }).ok && call("vic", "use", { id: "tbl", action: "knock" }).ok, "P14 through the lock a builder sets reactions, and a visitor may still `use` it (use stays open, its label write too)");
-  ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table", throughLock: true }).ok, "P14b the locker edits through it with throughLock");
+  ok(call("olive", "set", { id: "tbl", component: "label", value: "the long table", throughLock: true }).ok, "P14b the owner edits through it with throughLock");
   { const r = call("bob", "create", { id: "cup2", model: "ball", place: { on: "tbl" } }); ok(r.ok, "P15 a NEW thing may be put on a locked table (a lock guards what is attached, not the surface)", r); }
   // one place per thing (R 10-11): a light never shares an entity with a model; it goes on a child
   { call("bob", "create", { id: "pole", model: "crate", place: { at: [-9, 9] } });   // its own thing, under no lock, away from P32's spot
@@ -122,9 +123,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { const n = W().entries.length; const r = call("bob", "set", { id: "cup", component: "transform", value: { pos: [0.1, 0.75, 0] }, throughLock: true });
     const E = W().entries.slice(n); const st = E.filter((e) => e.kind === "change"); const ops = st.flatMap((e) => e.body.ops ?? [e.body]);
     ok(r.ok, "P16 throughLock: true lets a builder (who may remove the lock) act through it", r.refused);
-    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && JSON.stringify(W().state().entities.tbl.c.lock) === '{"rank":"builder"}', "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on (stored {rank: builder}: lock true is its short spelling, shape audit 10-16)", E.map((e) => [e.kind, e.verb, e.body?.comp]));
+    ok(E.length === 2 && ops.length && ops.every((o) => o.comp !== "lock") && W().state().entities.tbl.c.lock === true, "P17 …and the log records only the edit: one act, one change entry, no unlock or relock; the lock is still on (stored true: recut B2)", E.map((e) => [e.kind, e.verb, e.body?.comp]));
     ok(E[0].kind === "act" && E[0].body.request.throughLock === true, "P18 …the act carries the request as sent, flag and all (history shows who went through)", E[0].body); }
-  ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the locker herself acts through it the same way");
+  ok(call("olive", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.1] }, throughLock: true }).ok, "P19 the owner acts through it the same way");
   ok(code(call("bob", "set", { id: "cup", component: "transform", value: { pos: [0, 0.75, 0] }, throughLock: "yes" })) === "shape", "P20 throughLock is a boolean");
   ok(call("bob", "set", { id: "cup2", component: "label", value: "x", throughLock: true }).ok, "P21 throughLock on an edit no lock guards is harmless");
   { // a capability never acts through a lock: a visitor's use of a handler that would move it, flag or not
@@ -142,12 +143,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("olive", "set", { id: "cup", component: "lock", value: true });
   ok(code(call("bob", "set", { id: "bell", component: "transform", value: { pos: [0, 0.6, 0] } })) === "locked" && call("bob", "set", { id: "tbl", component: "transform", value: { pos: [0, 0, 3.2] } }).ok,
     "P30 a lock binds what's attached to it, never what it stands on");
-  { // undo through a lock: bob's move of a crate olive then locked
+  { // undo through a lock: bob's move of a crate bea then locked
     call("bob", "create", { id: "box", model: "crate", place: { at: [6, 6] } }); call("bob", "set", { id: "box", component: "transform", value: { pos: [7, 0, 7] } });
-    call("olive", "set", { id: "box", component: "lock", value: true });
+    call("bea", "set", { id: "box", component: "lock", value: true });   // a builder's lock (recut B2: an owner's would be owners-only)
     ok(code(call("bob", "undo", {})) === "locked", "P31 undo goes through admit: bob's undo of his move is refused while it's locked");
     const u = call("bob", "undo", { throughLock: true });
-    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && JSON.stringify(W().state().entities.box.c.lock) === '{"rank":"builder"}', "P32 …and undo {throughLock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
+    ok(u.ok && JSON.stringify(W().state().entities.box.c.transform.pos) === "[6,0,6]" && W().state().entities.box.c.lock === true, "P32 …and undo {throughLock: true} reverts it, leaving the lock on", u.refused ?? W().state().entities.box.c); }
   { // the gameplay lock lives inside its own component: door {open, locked}
     call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false, locked: false }, reactions: { open: { kind: "toggle", unless: "locked" }, bolt: { kind: "set", component: "openable", field: "locked", value: true, who: "builder" } } }, place: { at: [-4, 0] } });
     ok(call("vic", "use", { id: "gate", action: "open" }).ok && W().state().entities.gate.c.openable.open === true, "P33 a visitor opens the door: toggle's default is openable.open");
@@ -189,30 +190,29 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     lc("olive", "create", { id: "mic", model: "ball", place: { on: "stage" } });
     lc("bob", "create", { id: "crate1", model: "crate", place: { at: [4, 3] } });
     lc("mo", "create", { id: "booth", model: "crate", place: { at: [8, 3] } });
-    { const r = lc("olive", "set", { id: "stage", component: "lock", value: { rank: "owner" } });
-      ok(r.ok && LW().entities.stage.c.lock?.rank === "owner", "PL1 an owner locks the stage at owner level: lock {rank: 'owner'}", r.refused); }
+    // recut B2 (R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is true; its strength is its setter's rank NOW
+    { const r = lc("olive", "set", { id: "stage", component: "lock", value: true });
+      ok(r.ok && LW().entities.stage.c.lock === true, "PL1 an owner locks the stage: a lock is just true", r.refused); }
     { const r = lc("bob", "set", { id: "stage", component: "transform", value: { pos: [1, 0, 3] }, throughLock: true });
-      ok(code(r) === "locked" && /owner/.test(r.refused.reason + r.refused.fix) && r.refused.rank === "owner", "PL2 a builder can't act through an owner-level lock, and the refusal says whose level it is", r.refused); }
+      ok(code(r) === "locked" && /owners only/.test(r.refused.fix) && r.refused.rank === 255, "PL2 a builder can't act through an owner's lock, and the refusal says it's owners only (its setter's rank)", r.refused); }
     ok(code(lc("bob", "delete", { id: "stage", component: "lock" })) === "rank", "PL3 …nor lift it (rank)");
     ok(code(lc("mo", "delete", { id: "stage", component: "lock" })) === "rank" && code(lc("mo", "delete", { id: "stage", throughLock: true })) === "locked", "PL4 …nor can a moderator, lift it or delete through it");
-    ok(code(lc("bob", "set", { id: "stage", component: "lock", value: true })) === "rank", "PL5 a builder can't lower it to a plain lock either (changing a lock is lifting it)");
-    ok(code(lc("bob", "set", { id: "mic", component: "transform", value: { pos: [0, 1, 0] }, throughLock: true })) === "locked", "PL6 what rides an owner-level lock is held at its level too (the mic on the stage)");
-    ok(lc("olive", "set", { id: "stage", component: "transform", value: { pos: [0, 0, 3.5] }, throughLock: true }).ok && LW().entities.stage.c.lock?.rank === "owner", "PL7 an owner acts through it, and it stays on");
-    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "owner" } })) === "rank" && code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "moderator" } })) === "rank",
-      "PL8 nobody locks above their own rank (a builder can't set a moderator- or owner-level lock)");
-    ok(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder" } }).ok && lc("ben", "set", { id: "crate1", component: "transform", value: { pos: [4, 0, 4] }, throughLock: true }).ok,
-      "PL9 a builder-level lock: another builder acts through it (as with any plain lock)");
-    ok(lc("mo", "set", { id: "booth", component: "lock", value: { rank: "moderator" } }).ok, "PL10 a moderator locks at moderator level");
+    ok(code(lc("bob", "set", { id: "stage", component: "lock", value: true })) === "rank", "PL5 a builder can't re-set it to make it theirs (changing a lock is lifting it)");
+    ok(code(lc("bob", "set", { id: "mic", component: "transform", value: { pos: [0, 1, 0] }, throughLock: true })) === "locked", "PL6 what rides an owner's lock is held at its strength too (the mic on the stage)");
+    ok(lc("olive", "set", { id: "stage", component: "transform", value: { pos: [0, 0, 3.5] }, throughLock: true }).ok && LW().entities.stage.c.lock === true, "PL7 an owner acts through it, and it stays on");
+    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "owner" } })) === "shape", "PL8 a lock has no level to choose: {rank} is refused (its strength is your rank)");
+    ok(lc("bob", "set", { id: "crate1", component: "lock", value: true }).ok && lc("ben", "set", { id: "crate1", component: "transform", value: { pos: [4, 0, 4] }, throughLock: true }).ok,
+      "PL9 a builder's lock: another builder acts through it");
+    ok(lc("mo", "set", { id: "booth", component: "lock", value: true }).ok, "PL10 a moderator locks the booth");
     ok(code(lc("bob", "delete", { id: "booth", component: "lock" })) === "rank" && code(lc("bob", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4] }, throughLock: true })) === "locked",
       "PL11 …a builder can neither lift it nor act through it");
     lc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "builder" } });   // the locker, demoted
-    ok(lc("mo", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4.5] }, throughLock: true }).ok, "PL12 whoever set a lock may always act through it, even after a demotion below its level");
-    ok(lc("mo", "delete", { id: "booth", component: "lock" }).ok, "PL13 …and lift it");
-    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "king" } })) === "shape" && code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder", why: "x" } })) === "shape"
-      && code(lc("bob", "set", { id: "crate1", component: "lock", value: false })) === "shape", "PL14 a lock is true or {rank: builder|moderator|owner}, nothing else");
-    ok(lc("bob", "set", { id: "crate1", component: "lock", value: true }).ok && lc("ben", "delete", { id: "crate1", component: "lock" }).ok, "PL15 a plain lock is builder-level: any builder may lift it (unchanged)");
+    ok(lc("bob", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4.5] }, throughLock: true }).ok, "PL12 the setter demoted to builder takes the lock's strength down: now a builder acts through it");
+    ok(lc("mo", "delete", { id: "booth", component: "lock" }).ok, "PL13 …and the setter may still lift it");
+    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder" } })) === "shape" && code(lc("bob", "set", { id: "crate1", component: "lock", value: false })) === "shape", "PL14 a lock is true, nothing else");
+    ok(lc("ben", "delete", { id: "crate1", component: "lock" }).ok, "PL15 a builder's lock: any builder may lift it");
     const i = lc("vic", "inspect", { id: "stage" });
-    ok(i.lock?.rank === "owner" || i.flags?.lock?.rank === "owner" || /owner/.test(JSON.stringify(i.lock ?? i.flags?.lock ?? "")), "PL16 inspect says the lock's level", { lock: i.lock, flags: i.flags });
+    ok(i.lock?.rank === 255, "PL16 inspect says the lock's strength (its setter's rank)", { lock: i.lock });
   }
   { // the trusted rung (R 10-12 10:09; docs/COMPONENT-LADDER.md): @world.trusted-components {components: [drafts]} is the owner's word,
     // gated like the rest of @world (never a permission); the list is namespaced draft names only, ≤ 64, distinct
@@ -1199,8 +1199,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(nat) === "rights" && code(leg) === "rights" && code(dr) !== undefined && JSON.stringify(kids("car")) === '["seat"]', "SR1a a builder without editOthers can't add a drive seat to the owner's car (native and legacy map), so can't drive it", [nat.refused, leg.refused, dr.attach ?? dr.refused, kids("car")]);
   // 2. under an owner-level lock: a builder and another owner are both refused a new socket
   R("ann", "create", { id: "chair", model: "crate", components: { sockets: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } } } } });
-  R("ann", "set", { id: "chair", component: "lock", value: { rank: "owner" } });
-  R("ann", "create", { id: "cyshelf", model: "crate" }); R("ann", "set", { id: "cyshelf", component: "lock", value: { rank: "owner" } });
+  R("ann", "set", { id: "chair", component: "lock", value: true });
+  R("ann", "create", { id: "cyshelf", model: "crate" }); R("ann", "set", { id: "cyshelf", component: "lock", value: true });
   const lb = R("dee", "create", { id: "deeseat", components: { parent: { to: "chair" }, socket: { name: "s2", body: { action: "sit" } } } });
   const lc = R("cy", "create", { id: "cyseat", components: { parent: { to: "chair" }, socket: { name: "s3", body: { action: "sit" } } } });
   const lm = R("cy", "set", { id: "chair", component: "sockets", value: { seat: { pos: [0, 0.5, 0], body: { action: "sit" } }, s5: { pos: [0, 1, 0] } } });
