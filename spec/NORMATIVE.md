@@ -19,6 +19,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Where the prose and a vector disagree, that is a bug in one of them. |
+| `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json`: what each must come to rest as, per engine version. A server carries a version when it reproduces that version's digests. Machine-checked. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
 prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, `spec/EIDO-URIS.md` (informative until a world needs portable blobs: no reader resolves an `eido:` URI today), and every `docs/` file. Where the
