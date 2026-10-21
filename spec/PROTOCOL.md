@@ -279,7 +279,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the thing can be placed, stacked on and given a physics shape. A mesh never
   shares a thing with a model or a light (one place per thing).
 - **Water is its own component.** `@world`'s `water {level, color?, opacity?,
-  kind?, flow?}` (trial; split from `terrain` 10-16, as every engine separates
+  kind?, flow?}` (trial; split from `terrain`, as every engine separates
   water from ground) is one surface height for the world, metres in world y:
   ground below it is under water. No `water`, the world is dry; absent fields
   read as colour `0x1d5a6e`, opacity 0.82, a kind decided from the ground it
@@ -334,7 +334,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the gate verifies them at every run, so none can be dropped afterwards. One
   exception, named: a **scope extension** — a registered name entering the
   kernel with exactly the shape `spec/registry-pin.json` already pinned for it
-  (as `model`, `roles` and `access` did on 2026-10-18) — changes what no stored
+  — changes what no stored
   byte means, so no translator and no vectors can exist for it; it re-pins on
   the changelog line alone, the pin records the names, and from then on their
   shapes are the kernel's.
@@ -357,9 +357,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   (not `leave`) with the registered code `repair-needed`, whose text names
   the command. Renames whose old spelling the readers serve (`@world`
   `trusted`, a motion's old type word, a station's `pose`) leave the world writable.
-  An operator then runs `bun tools/protocol/world.ts repair <name>` (or, from
-  inside the world, a server operator's `operator-repair {verb: "repair"}`),
-  which runs the three steps in that order, each its own act carrying
+  The maintenance command (its operation: docs/MAINTENANCE.md) runs the three
+  steps in that order, each its own act carrying
   `command: "repair"` and `by` (who asked; `operator: true` from the wire):
   `lift-sockets {id, made, moved, capability?}`, `rename-components
   {renamed, failed?}`, `repair-shapes {v, ids, failed?}`
@@ -388,7 +387,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   stays deleted. The act is written even when nothing needs repair. Each
   thing is admitted on its own: a thing the door refuses keeps its old
   spelling and is named in the act's `failed`; the rest repair. A purged
-  value is left alone. The shape audit (10-16) repairs: a bare motion
+  value is left alone. The shape audit repairs: a bare motion
   naming a part → `motion:<slot> {node: <part>}` (the slot is `partSlot`
   of the name, shared/protocol/names.js: the name itself when it is a tag,
   else a sanitized form with 8 hex of its sha256), a keyed motion without
@@ -401,7 +400,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `day` → `daytime`, `shadows` dropped; a `model` stored as
   `eido:sha256/<hex>` (translate-v1@8–@11) → the library path this host's
   index names for it, with `model-hash` `sha256:<hex>` beside it (an address
-  no file here names stays, and still loads; repair v2, R 10-17); `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
+  no file here names stays, and still loads); `sky` clock 'real' and dormantRated → `tz` (hours, rate and ts
   kept as the fallback clock), azimuth degrees → radians, `weatherSeconds` →
   `transition`, a forecast's `dwellSec`/`transitionSec` → `dwell`/`transition`,
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
@@ -630,8 +629,7 @@ copy that was updated and is published again keeps its parts' keys.
   yes to an ask is one touch: it ends when the hand lets go, when either
   body leaves, when the target closes that class, or after 10 minutes. Named poses
   travel the same way: `pose.poses` lists the poses a body holds by name (a
-  pose is one frame, only the bones it names; a clip has more than one key;
-  R 10-17), never implementation-specific quaternions: `"wings-folded"` is
+  pose is one frame, only the bones it names; a clip has more than one key), never implementation-specific quaternions: `"wings-folded"` is
   the folded-wing silhouette, which each renderer applies through the worn
   rig's own fold path, and a name a rig doesn't know is ignored (its
   default). An empty list holds none; an absent one says nothing. (Before
@@ -655,7 +653,7 @@ copy that was updated and is published again keeps its parts' keys.
     whatever the body holds and returns to that, and nothing remembers it
     (a joiner never replays it). Before release the packet carried it under
     its pre-release key, which a receiver still reads for one release.
-    The anims a body PLAYS OR HOLDS are layers (R 10-17 16:26): the clip, a
+    The anims a body PLAYS OR HOLDS are layers: the clip, a
     held pose (`pose.pose`, `pose.poses`) and live animations relayed by the
     `anim` message each play at once, and a new one replaces only its own
     layer. When a body stops them — all, or one by name — it rests in its
@@ -768,7 +766,7 @@ Attention sounds stay local to the receiver, chime only for live says, and never
 
 ### Speech: arrival-only
 
-Speech in a world is public and **arrival-only** (decided 2026-10-18):
+Speech in a world is public and **arrival-only**:
 
 - The world's log keeps **every** `say` (§1), for research and moderation. Nothing about a say's entry changes.
 - A participant receives speech only for the time they are present: the says the log stream carries after the cut they
@@ -920,7 +918,7 @@ ambiguous leaves a prefix of its lines, never a gap. An act whose change was not
 result: readers already tolerate one (an act carries no ops), and undo passes over it.
 Every line that reached the log is published, whatever became of the request that wrote it.
 
-**The authority's consequences are follow-ups** (one rule, review r10): what the authority writes because of
+**The authority's consequences are follow-ups** (one rule): what the authority writes because of
 an asker's write is never written as the asker's own. A consequence that must be atomic with the asker's
 change rides in it, marked; one that may stand alone is the system's own act, caused by the asker's.
 Only what the asker could have written themselves, on what they are writing anyway, is theirs:
@@ -1114,7 +1112,7 @@ asked. Nothing is silently lost on either side.
 
 Your body is yours. Today a body is presence, never an
 entity, so no write reaches one. These rules are **normative before avatar
-entity trees ship** (R 10-17): an implementation that makes body parts
+entity trees ship**: an implementation that makes body parts
 entities MUST meet every one of them first. The names they use are reserved
 now (`body-owner`, `edit-grant`, `avatar-deny` in the registry; the request
 `arrive`; the refusal code `body`).
@@ -1249,7 +1247,7 @@ away from it.
 
 - **Units**: metres, kilograms, seconds. Instants are epoch milliseconds.
   Angles are radians unless the field's name carries its unit (`degPerSec`).
-  The shape audit (10-16) moved the last degrees: `look-at`'s yaw, pitch and
+  The shape audit moved the last degrees: `look-at`'s yaw, pitch and
   speed (rad, rad/s) and `sky.azimuth` (where the sun stands round the
   horizon: default π, within ±2π; a stored degree value is converted at
   load, §4); `grass.heading` was registered in radians. A particle effect
@@ -1261,8 +1259,7 @@ away from it.
   its parent's, or the world's. (A particle effect's `gravity` is the
   world's; its other vectors are the emitter's: shared/particle_effects.js.)
 - **Colours** are integers, sRGB (`0xffd9a0`).
-- **Asset references are stored as written** (R 10-17, binding: "definitely
-  serve path again alongside hash"): a `model` is its library path, a
+- **Asset references are stored as written**: a `model` is its library path, a
   `particles` Essential its name, a `grass` preset its name. That is the
   portable reference: a world loads anywhere the library, or the code that
   ships the Essentials and presets, exists. What the bytes were rides beside
@@ -1445,64 +1442,28 @@ argument will be short.
 
 ## 14. Worlds from the first protocol
 
-The first protocol (an untyped verb log) is retired. An old world's log can
-be translated once, one way, into a world of this protocol, in two steps.
-`bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`
-writes nothing and prints the **dry-run report** — the old log's size and
-sha256, the translator and fold build, `founderKey: null`, the counts
-(entries, changes, guards that become locks, models without bytes here), the
-translator's DROPPED table (what every translation drops or renames by
-design), and `deferred`: every use of a feature this protocol does not carry
-yet — and the report's sha256. The translation itself takes `--approved <that
-hash>`: the report is recomputed from the old log as it stands and must hash
-to it (else refused, both hashes named: the log or the tool changed since it
-was read).
+The first protocol (an untyped verb log) is retired. An old world's log can be translated once, one way, into a world of
+this protocol. A translated log is an ordinary log of this protocol, and these hold for it:
 
-**A translation names no founder and carries no owner's signature.** First-
-protocol logs record accounts, never keys, so nothing can yet bind a key to
-the old world's owner; a key handed to the tool would be the operator's
-choice, recorded as the owner's approval and installed as tier 0. So
-`--founder-key` and `--approve-sig` are refused before anything is written,
-the new world's tier 0 is empty (§13), and the approval is the **operator's**
-countersignature alone: an ed25519 signature by the host's custody operator
-key (never its sequencer key; whoever runs the tool on the host is the
-operator, and the tool signs) over `eidoverse-approve-translation:<world>:<hash>`,
-given only when the operator says `--operator-only-no-owner`, knowingly. The
-writer checks it itself (`approvalProblem`) before the log is written: a
-countersignature missing, not verifying, or over another hash or world, an
-approval carrying an owner's signature, or a founder key is refused by name.
-The approval rides in the new log as the system's `translation-approved` act
-right after `repair-shapes` (`body {report, approval: {over, owner: null,
-operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
-attested): provenance a reader checks against `log.original.jsonl`. The fold
-never reads it (§1).
+- **Every old entry is kept.** Each appears in the new log as an `act` with verb `imported` (`body {verb, args, from}`)
+  or as a `say`, followed by the change it produced. Fields with no component in this protocol ride along as
+  `imported:<name>`; a person's grant this protocol has no rung for (v1's `spectator` or `none`) rides as
+  `imported-roles:<id>`. Nothing of a world is dropped quietly: what a translation drops or renames by design is listed
+  by the translator, and the old log is kept beside the new one, never written.
+- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume,
+  an air box, a climb route, a vehicle or a collision toggle (`water`/`air`/`traversal`/`vehicle`/`collision` on an
+  entity; `water` on `@world` is the world's water level and is carried). No approval overrides the refusal.
+- **A translation names no founder and carries no owner's signature.** First-protocol logs record accounts, never keys,
+  so nothing can bind a key to the old world's owner: the new world's tier 0 is empty (§13), and the approval is the
+  host operator's countersignature alone, an ed25519 signature by the custody operator key (never the sequencer key)
+  over `eidoverse-approve-translation:<world>:<report hash>`. It rides in the new log as the system's
+  `translation-approved` act right after `repair-shapes` (`body {report, approval: {over, owner: null, operator: {key,
+  sig}, noOwner}}`, `noOwner` saying in words that no owner was attested). The fold never reads it (§1).
+- **The translator is named** in the system's `translated` act (`body {from: {…, translator}}`), so a reader knows which
+  rules produced the log.
 
-A world that uses a **deferred feature** — a water volume, an air box, a
-climb route, a vehicle, a collision toggle (`water`/`air`/`traversal`/
-`vehicle`/`collision` components on an entity, from main's #248/#254 merges;
-`water` on `@world` is the world's water level and is carried) — is
-**refused**, naming each use (component, entity, actor, seq); an approval
-cannot override the refusal. Nothing of a world is ever dropped quietly.
-
-It is translated in place: the world keeps its name, and the old log stays
-beside the new one as `log.original.jsonl`, renamed, never written (the swap
-refuses unless the old log still holds exactly the bytes that were
-translated: nothing an old server wrote meanwhile is dropped); a directory
-whose `world.jsonl` is a world of this protocol is served as one whatever
-else it holds. (`translate <old> <new>` translates into a new name instead.)
-The swap also writes `translation.json`: every file it renamed, every file
-it made (`world.jsonl`, `poses.json`, `world.mod.jsonl` for imported bans)
-with its sha256, the identities it minted, the report hash and the approval.
-`bun tools/protocol/world.ts rollback <world>` undoes the whole swap from
-it: the made files removed, the originals renamed back (the same files: bytes,
-inode, mtime), the minted identities forgotten (those nobody has bound or
-renamed since), the manifest removed — the world directory and the shared
-directory byte-identical to before. A made file the server has written to
-since refuses the rollback unless `--discard-changes`, so no history is lost
-unknowingly. Each old entry appears in the new log as an `act` with verb
-`imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
-produced; fields with no component in this protocol ride along as `imported:<name>`. A
-translated world is an ordinary world from then on.
+The operator's procedure (the dry-run report and its hash, the in-place swap, rollback) is in
+`docs/TRANSLATING-OLD-WORLDS.md`.
 
 ## Version history
 
@@ -1513,7 +1474,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10; review r10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim); occupy is the one word family for taking a socket (presence `occupants`, the `vacated {socket, …}` message, body kind `occupy`; was `seats`, `unseated {seat, …}`, `seat`; none of them is logged); and names carry no body plan and set no kind against another (R 10-17 14:34–14:41): the refusal codes `hold-limit`, `beneath`, `not-pushable` (were `hands-full`, `underfoot`, `no-body`: a refused act in an older log may carry the old word, which the fold never judges); `punt {contact: true}` (was `shove: true`: the door takes it and records `contact`; an older punt act reads as it was); @world `trusted-components` (was `trusted`: renamed at every load by the system's `rename-components` act); body consent's tiers `everyone` / `friends`, cells `allow` | `ask` | `deny`, class `displace`, and a `delegates` list apart from `friends`, each removable by its owner alone (`unfriend`, `undelegate`) (were `strangers`, `everyone` | `ask` | `nobody`, `move`, one `friends` list; presence only: the old words are still taken on the wire, and a presence file in the old shape is rewritten at load); `grabbable.anim` and `station.anim` (were `pose`: an open name of a pose, one frame, or a clip, more than one key; a name the body doesn't know is its default; `two-hand` is `twoHanded`), a grip's `grasp` (was `fingers`), and `anim-pose` reserved beside `anim-clip` (a write in the old spelling is taken and stored in the new; stored values renamed at every load by `rename-components`); the pose packet's `poses: [names]` (was `wingsFolded`: folded wings are the named pose `wings-folded`; the old boolean is still read); and the pose packet's `bodyMode` (stand | sit | lie | swim | fly | fall: what the body is doing, apart from the `clip` that plays; was the posture read off the clip, which a sample without it still means; a self-declared description that grants nothing); the pose packet's `anim` (the name of an anim played once, riding one packet; its pre-release key is still read for one release); the anims a body plays or holds as layers, which a stop leaves resting in the current body-mode's own anim, never the bind pose, the body-mode unchanged; the `anim` relay message's `{stop: true}`; the reserved anim name `live` (every ad-libbed anim); and a motion's back-and-forth along an axis is `oscillate` (R 10-17 21:40; was `bob`: the door takes the old spelling for one release and stores `oscillate`, readers read a stored one as `oscillate`, and stored values are renamed at every load by `rename-components`); who may come in (upstream world access, 10-17): `access.watch` and a role's `until`, ended by the system's `expire-roles` act (§7 Roles) | this document |
+| 4 | This protocol: typed entries (`change`, `act`, `sim`, `say`, `purge`, `sequencer`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. Before release, minor 0 gained the batch body's `followUps` (§3, §10) and §6a, one kind of participant (a status is declared at the door, never inferred or logged; `move` lost its `client` claim); occupy is the one word family for taking a socket (presence `occupants`, the `vacated {socket, …}` message, body kind `occupy`; was `seats`, `unseated {seat, …}`, `seat`; none of them is logged); and names carry no body plan and set no kind against another: the refusal codes `hold-limit`, `beneath`, `not-pushable` (were `hands-full`, `underfoot`, `no-body`: a refused act in an older log may carry the old word, which the fold never judges); `punt {contact: true}` (was `shove: true`: the door takes it and records `contact`; an older punt act reads as it was); @world `trusted-components` (was `trusted`: renamed at every load by the system's `rename-components` act); body consent's tiers `everyone` / `friends`, cells `allow` | `ask` | `deny`, class `displace`, and a `delegates` list apart from `friends`, each removable by its owner alone (`unfriend`, `undelegate`) (were `strangers`, `everyone` | `ask` | `nobody`, `move`, one `friends` list; presence only: the old words are still taken on the wire, and a presence file in the old shape is rewritten at load); `grabbable.anim` and `station.anim` (were `pose`: an open name of a pose, one frame, or a clip, more than one key; a name the body doesn't know is its default; `two-hand` is `twoHanded`), a grip's `grasp` (was `fingers`), and `anim-pose` reserved beside `anim-clip` (a write in the old spelling is taken and stored in the new; stored values renamed at every load by `rename-components`); the pose packet's `poses: [names]` (was `wingsFolded`: folded wings are the named pose `wings-folded`; the old boolean is still read); and the pose packet's `bodyMode` (stand | sit | lie | swim | fly | fall: what the body is doing, apart from the `clip` that plays; was the posture read off the clip, which a sample without it still means; a self-declared description that grants nothing); the pose packet's `anim` (the name of an anim played once, riding one packet; its pre-release key is still read for one release); the anims a body plays or holds as layers, which a stop leaves resting in the current body-mode's own anim, never the bind pose, the body-mode unchanged; the `anim` relay message's `{stop: true}`; the reserved anim name `live` (every ad-libbed anim); and a motion's back-and-forth along an axis is `oscillate` (R 10-17 21:40; was `bob`: the door takes the old spelling for one release and stores `oscillate`, readers read a stored one as `oscillate`, and stored values are renamed at every load by `rename-components`); who may come in (upstream world access): `access.watch` and a role's `until`, ended by the system's `expire-roles` act (§7 Roles) | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

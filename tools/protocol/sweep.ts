@@ -224,7 +224,7 @@ function unproject(ents0: any) {
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
         else if (k === "default-role") (world.roles ??= {})["*"] = v1Role(fromCan(v)); // DROPPED: roles['*']
         else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = v1Role(fromCan(v));
-        else if (k.startsWith("imported-roles:")) (world.roles ??= {})[dec(k.slice("imported-roles:".length))] = v;   // @17: a grant with no v4 rung, carried as it was
+        else if (k.startsWith("imported-roles:")) (world.roles ??= {})[dec(k.slice("imported-roles:".length))] = v;   // @17: a grant with no rung in this protocol, carried as it was
         else if (k.startsWith(BANS)) (world.bans ??= {})[dec(k.slice(BANS.length))] = v;
         else if (k.startsWith(BEHAVIOR)) (world.behaviors ??= {})[dec(k.slice(BEHAVIOR.length))] = v;
         else if (k.startsWith(IMP) && ["sky", "terrain", "grass", "epoch"].includes(dec(k.slice(IMP.length)))) {}   // folded back below
