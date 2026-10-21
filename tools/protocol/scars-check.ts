@@ -291,7 +291,7 @@ const cases: Case[] = [
   { id: "X6", what: "PROTOCOL §7 and §8 say what a refused act and a script act keep: argument names and a code; presence reads as counts, body effects without consent", run() {
       const spec = read("spec/PROTOCOL.md");
       return { refused: spec.includes("`{args:\n<the names of the arguments the verb takes>, refused: {code}}`") || /refused: \{code\}\}`/.test(spec) && /never holds a value/.test(spec),
-        oldRefused: spec.includes("(`{code, reason, fix}`) and nothing else is written"), reads: /never who was near or what anyone\s+is called/.test(spec), look: /`look` shows each viewer their own table/.test(spec) }; },
+        oldRefused: spec.includes("(`{code, reason, fix}`) and nothing else is written"), reads: /never who was near or what anyone\s+is called/.test(spec), look: /`look` shows each viewer their own switch/.test(spec) }; },
     good: (o) => o.refused && !o.oldRefused && o.reads && o.look },
 ];
 // G1 (static): scan the files the authority's refusals come from, then the registry; built after the cases list so the
