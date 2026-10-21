@@ -38,6 +38,7 @@ import { clickable } from './selectmask.js';
 import { outOfMyView } from './myview.js';
 import * as Sel from './edit/selection.js';
 import { claimEscape } from './windows.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
 import * as Edits from './editwrites.js';   // slice 3b: every write here is a request
@@ -84,10 +85,9 @@ export const editSurface = () => !(globalThis.matchMedia?.('(pointer: coarse)').
 export const mayEdit = () => {
   if (!editSurface()) return false;
   const r = net.myRights; const role = r?.role;
-  // a world says what you may do as permissions (research roles S4): build, whatever the role is called (a moderator,
-  // a custom role); an older server still says only the role
+  // the build permission, whatever the role is called (recut B1: never a role name); rights not known yet: allow, the authority decides
   if (Array.isArray(r?.permissions)) return r.permissions.includes('build');
-  return role === undefined || ['builder', 'owner'].includes(role);
+  return role === undefined || isOwner(r);
 };
 
 export function setEditMode(on, { quiet = false } = {}) {

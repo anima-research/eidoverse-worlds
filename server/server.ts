@@ -55,6 +55,7 @@ import { OPT_DIR, PATCH_DIR } from "./config.ts";
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
+import { isOwner } from "../shared/protocol/roles.js";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, setSfuDeafened, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 // The resident-visible service chart (amendment 2): every voice-service
@@ -742,7 +743,7 @@ function rightsFor(w: World, c: Client) {
   // client's flags, read off the permissions. An operator (WORLD_ADMIN, by account) flies and spends everywhere, as before.
   const op = isOperator(c.account);
   const wc = (w.log.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
-  const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && v?.role === "owner");
+  const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && isOwner(v));
   if (!c.actorId) return { role: "visitor", roleName: "Visitor", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
   const e = w.log.rightsOf(c.actorId); const g = w.log.ghostHere(c.actorId); const m = w.log.mutedHere(c.actorId);
   return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,

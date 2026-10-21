@@ -18,6 +18,7 @@
 // watch-only, `grant bob spectator`); here a rank is membership and entry is the world's `access` (roles.js: "a state is
 // never a rank"). The four doors upstream's panel offers map onto these components exactly (DOORS below).
 
+import * as R from "./roles.js";
 /** The four doors an owner picks between (upstream's World › access buttons), in this protocol's components. */
 export const DOORS = Object.freeze({
   open:     "anyone may come in, and build (default role: builder)",
@@ -35,7 +36,7 @@ const accessOf = (wc) => (isObj(wc?.access) ? wc.access : null);
  *  of an unloaded world — before the authority's sweep writes its end). `now` null: no clock, until is not judged. */
 export function listedIn(wc, actor, now = null) {
   const r = actor ? wc?.[`roles:${actor}`] : null;
-  if (!(isObj(r) && typeof r.role === "string" && r.role !== "none")) return false;
+  if (!(isObj(r) && typeof r.role === "string" && !R.isNone(r))) return false;
   return !(now != null && Number.isSafeInteger(r.until) && r.until <= now);
 }
 

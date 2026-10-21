@@ -50,11 +50,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
   // research §4); `none` (legacy: below visitor) is still read and written, as existing worlds carry it
   const wcS = s.entities["@world"]?.c ?? {}; const roleIds = () => R.rolesOf(wcS).map((r) => r.id);
-  if (id === "@world" && comp === "default-role" && (v?.role === "owner" || (v?.role !== "none" && !R.roleDef(wcS, v?.role))))
+  if (id === "@world" && comp === "default-role" && (R.isOwner(v) || (!R.isNone(v) && !R.roleDef(wcS, v?.role))))
     refuse("shape", `${at}.role must be a role here other than owner (${roleIds().filter((x) => x !== "owner").join(", ")}; got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
   if (id === "@world" && comp === "default-role" && v?.guests !== undefined && (v.guests === "owner" || !R.roleDef(wcS, v.guests) || (R.GUESTS_AT_MOST_DEFAULT && R.rankOfRole(wcS, v.guests) > R.rankOfRole(wcS, v.role))))
     refuse("shape", `${at}.guests must be a role here at or below role (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
-  if (id === "@world" && comp.startsWith("roles:") && (!obj || (v.role !== "none" && !R.roleDef(wcS, v.role))))
+  if (id === "@world" && comp.startsWith("roles:") && (!obj || (!R.isNone(v) && !R.roleDef(wcS, v.role))))
     refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
   if (id === "@world" && comp.startsWith("roles:") && obj) {
     for (const k of Object.keys(v)) if (!["role", "can", "note", "until"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?, until?}", { didYouMean: guessKey(k, ["role", "can", "note", "until"]) });
@@ -62,14 +62,14 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     // (expire-roles) and warns the holder five minutes before. Ownership never ends by itself (an ownerless world would
     // open), and a new end is in the future, at most a year out
     if (v.until !== undefined) {
-      if (v.role === "owner") refuse("shape", `${at}: ownership never expires`, "give a timed grant a role below owner, or leave until out");
+      if (R.isOwner(v)) refuse("shape", `${at}: ownership never expires`, "give a timed grant a role below owner, or leave until out");
       if (!Number.isSafeInteger(v.until)) refuse("shape", `${at}.until is a time in epoch milliseconds`, now != null ? `until: ${now + 7200000} ends it two hours from now (it is ${now} here now)` : "until is the time it ends, in epoch milliseconds");
       if (!carry && now != null && (v.until <= now || v.until > now + 366 * 86400000)) refuse("bounds", `${at}.until must be in the future and at most a year away (it is ${v.until <= now ? "already past" : "more than a year out"})`, `it is ${now} here now: until is that plus the grant's length in ms; to end a grant now, delete roles:<id>`);
     }
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
     if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
       // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
-      if (v.role !== "owner" && v.role !== "none") { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
+      if (!R.isOwner(v) && !R.isNone(v)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
         if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
   // default-role.can: permissions on top of the default role for everyone who holds it that way (what an imported world's
   // grant to everyone, roles['*'].gen in its old log, becomes: can.generate). The same closed list and dependencies as roles:<id>.can

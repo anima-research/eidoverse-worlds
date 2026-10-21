@@ -29,6 +29,7 @@ import { stateSampleError } from "../shared/presencewire.js";
 import { snapshots } from "./snapshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "./moderation.ts";
+import { isOwner } from "../shared/protocol/roles.js";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
  *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
@@ -418,7 +419,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
     // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
     if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
-      if (!e || !(e.role === "owner" || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }
+      if (!e || !(isOwner(e) || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.log!.sanctions();
     const dir = directoryFor(WORLDS_DIR);
     const list = Object.entries(S).filter(([, x]) => (x as any).ban).map(([, x]) => (x as any).ban).map((m) =>

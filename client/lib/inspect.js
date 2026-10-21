@@ -40,6 +40,7 @@ import { lightOf } from '../../shared/components.js';
 import { WORLD_ID, worldSchema, worldEditOps } from '../../shared/worldentity.js';
 import * as Edits from './editwrites.js';   // slice 3b: component edits are requests
 import { effectLookup } from './emitters.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -101,13 +102,13 @@ export function liveFor(id) {
   };
 }
 export const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);
-export const mayTrust = () => (net.myRights?.role === undefined ? undefined : net.myRights.role === 'owner');
+export const mayTrust = () => (net.myRights?.role === undefined ? undefined : isOwner(net.myRights));
 // The world entity `@world` (design §3, shared/worldentity.js): an alias of
 // state.sky/terrain/grass, edited through the sky/weather/terrain/grass verbs.
 // Those are owner-rank: false = this viewer is known not to be the owner
 // (WORLD_ADMIN operators fold to owner), undefined = not known yet.
 // shaping the world's look is the editWorld switch (research roles S2); the owner's on an older server
-export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : r.role === 'owner'; };
+export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : isOwner(r); };
 export const worldLive = () => ({ now: Date.now(), mayShape: mayShape(), trusted: trustedHere(), mayTrust: mayTrust() });
 export function schemaFor(id) {
   if (id === WORLD_ID) return worldSchema(state.st, worldLive());

@@ -57,6 +57,12 @@ const LIST = [
 export const PERMISSIONS = Object.freeze(Object.fromEntries(LIST.map(([k, text, needs]) => [k, Object.freeze({ text, needs: Object.freeze(needs) })])));
 export const PERMISSION_NAMES = Object.freeze(LIST.map(([k]) => k));
 /** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
+/** Owner-only powers go through this one test (recut B1): a grant value or effective rights whose role is the built-in owner. */
+export const OWNER = "owner";
+export const isOwner = (x) => (typeof x === "string" ? x : x?.role) === OWNER;   // a role string, a grant or effective rights
+/** `none` is the no-role sentinel (a removed grant, a door rung below visitor), never a role with powers. */
+export const NONE = "none";
+export const isNone = (x) => (typeof x === "string" ? x : x?.role) === NONE;
 export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
 /** The powers that may warn (research §2: warn isn't a permission; the gentlest act comes with any of these). */
 export const WARN_POWERS = Object.freeze(["mute", "kick", "ban"]);
@@ -127,7 +133,7 @@ export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   const base = dr?.role ?? "visitor";
   let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
   if (typeof r !== "string" || (r !== "none" && !roleDef(wc, r))) r = "visitor";
-  const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && wc[k]?.role === "owner");
+  const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
   return !hasOwner && rankOfRole(wc, r) > RANK.visitor ? "visitor" : r;
 }
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
@@ -151,7 +157,7 @@ export function effectiveOf(wc, id, opts = {}) {
   const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "visitor");
   let can = { ...def.can };
   const entry = isObj(wc?.[`roles:${id}`]) ? wc[`roles:${id}`] : null;
-  if (role === "owner") { if (entry?.can?.fly === true) can.fly = true; }
+  if (role === OWNER) { if (entry?.can?.fly === true) can.fly = true; }
   else if (role !== "none") {
     const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null;
     if (!entry && !opts.anon && isObj(dr?.can)) Object.assign(can, pickPermissions(dr.can));
@@ -240,7 +246,7 @@ const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.t
 /** The roles `me` may give (grantRoles): ranked below me, holding only permissions I hold. Owners may give any but owner
  *  through ownership's own path (seniority), so owner is listed for owners. */
 export function grantableRoles(wc, me) {
-  return rolesOf(wc).filter((r) => me.role === "owner" ? true : r.rank < me.rank && PERMISSION_NAMES.every((k) => !r.can[k] || (me.permissions ?? []).includes(k)));
+  return rolesOf(wc).filter((r) => isOwner(me) ? true : r.rank < me.rank && PERMISSION_NAMES.every((k) => !r.can[k] || (me.permissions ?? []).includes(k)));
 }
 /** The badge a person's row shows (research §UI): none for a visitor (the list doesn't shout), "guest" for someone
  *  without an account (whatever role guests get), else the role's name. {text, tone: 'owner'|'mod'|'role'|'guest'}. */
@@ -248,5 +254,5 @@ export function badgeOf(p) {
   if (!p) return null;
   if (p.anon) return { text: "guest", tone: "guest" };
   if (!p.role || p.role === "visitor" || p.role === "none") return null;
-  return { text: (p.name ?? p.role).toLowerCase(), tone: p.role === "owner" ? "owner" : p.role === "moderator" ? "mod" : "role" };
+  return { text: (p.name ?? p.role).toLowerCase(), tone: isOwner(p) ? "owner" : p.role === "moderator" ? "mod" : "role" };
 }

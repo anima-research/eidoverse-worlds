@@ -203,6 +203,18 @@ function cast(s: any, { crew = false } = {}) {
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
+  // B1 (recut B, house: "new code would check permissions rather than role names, with owner-only powers going through one
+  // function"): no source outside roles.js compares a role to a built-in name; owner goes through R.isOwner.
+  { id: "B1", what: "(recut B1) no role-name comparison outside shared/protocol/roles.js: permissions decide, owner goes through isOwner", run() {
+      const hits: string[] = []; const RX = /\brole\s*[!=]==?\s*["'](owner|builder|moderator|visitor|none)["']|["'](owner|builder|moderator|visitor)["']\s*[!=]==?\s*[\w.?]*role\b|\[[^\]]*["'](builder|owner)["'][^\]]*\]\.includes\([\w.?]*role\)/;
+      const walk = (d: string) => { for (const e of fs.readdirSync(TREE + d, { withFileTypes: true })) { const rel = d + "/" + e.name;
+        if (e.isDirectory()) { if (!["node_modules", "vendor", "dist"].includes(e.name)) walk(rel); continue; }
+        if (!/\.(js|ts)$/.test(e.name) || /-test\.ts$|\.test\.ts$/.test(e.name) || rel === "shared/protocol/roles.js") continue;
+        fs.readFileSync(TREE + rel, "utf8").split("\n").forEach((l, i) => { if (RX.test(l) && !/^\s*(\/\/|\*)/.test(l)) hits.push(`${rel}:${i + 1}`); }); } };
+      for (const d of ["shared", "server", "client", "mcpl"]) walk(d);
+      return hits; },
+    good: (o) => o.length === 0 },
+
   // ---------------- K: kept (green at base AND now) ----------------
   { id: "K1", what: "kept: a builder changes anyone's thing; a visitor changes nothing; only an owner sets the sky or roles", run(s) {
       s.call("olive", "create-world", { title: s.name }); role(s, "bob", { role: "builder" }); role(s, "vic", { role: "visitor" });

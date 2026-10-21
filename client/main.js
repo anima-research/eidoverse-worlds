@@ -58,7 +58,7 @@ import {
 import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
 // may I build here: the build switch (the authority's), else the role (an older server); unknown = no (strict)
-const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : ['builder', 'owner'].includes(net.myRights?.role));
+const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : isOwner(net.myRights));
 import { initPalette } from './lib/catalog.js';
 import { initConjure } from './lib/generate.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
@@ -137,6 +137,7 @@ import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 import { foldedIn } from '../shared/wingpresence.js';
 import { readBodyMode } from '../shared/bodymode.js';
+import { isOwner } from '../shared/protocol/roles.js';
 
 // (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)

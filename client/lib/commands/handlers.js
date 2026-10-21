@@ -10,7 +10,7 @@
 
 import { CONFIG, bus, report } from '../base.js';
 import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
-import { CUSTOM_ID } from '../../../shared/protocol/roles.js';
+import { CUSTOM_ID, isOwner } from '../../../shared/protocol/roles.js';
 import { DOORS, doorOf, doorWrites, durationMs, leftWords } from '../../../shared/protocol/access.js';
 import { actorName as actorLabel } from '../../../shared/protocol/names.js';
 /** This world's @world components, from this client's own fold (roles, access, the default role). */
@@ -107,7 +107,7 @@ register('role', (arg) => {
     const r = net.myRights;
     if (!r) return logChat('*', 'not in a world yet');
     if (!worldHasOwner()) return logChat('*', `you: ${r.role} — this world has no owner, so nobody builds here until someone owns it`);
-    return logChat('*', `you: ${r.role}${r.role === 'visitor' ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
+    return logChat('*', `you: ${r.role}${!r.permissions?.includes('build') ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
   }
   lookupPerson(who).then((ppl) => {
     if (ppl === null) return logChat('*', `couldn't look up ${who} just now — try again`);
@@ -139,7 +139,7 @@ register('grant', (arg) => {
   const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
   // * = the world's default role for people who signed in (guests stay visitors unless the world opts in)
   if (id === '*') {
-    if (role === 'owner') return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
+    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * visitor');
     if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access members|watch closes a world instead');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
@@ -557,7 +557,7 @@ export function initCommands() {
     // changed (a server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
     const key = JSON.stringify([r.role, r.roleName, r.permissions ?? null, r.gen, r.fly, !!r.ghost, !!r.muted]);
     if (key === saidRights) return; saidRights = key;
-    if (!r.open && r.role !== 'owner') {
+    if (!r.open && !isOwner(r)) {
       const extra = Array.isArray(r.permissions) ? '' : r.gen ? ' +gen' : '';
       logChat('*', `this world has an owner — you are ${/^[aeiou]/i.test(r.roleName ?? r.role) ? 'an' : 'a'} ${(r.roleName ?? r.role).toLowerCase()}${extra} here${r.ghost ? ' (a ghost: unseen)' : ''}`);
     }

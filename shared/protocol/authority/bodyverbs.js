@@ -18,6 +18,7 @@ import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
 import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
+import * as R from "../roles.js";
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
 // owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
 const unlockFix = (w, st, k) => { const level = lockLevel(st.entities[k]?.c.lock), by = lastSetterOf(w, k, "lock");
@@ -95,7 +96,7 @@ const EMBODIED_VERBS = {
     if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
     if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
     const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
-    if (held && !g.steal && role !== "owner") refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
+    if (held && !g.steal && !R.isOwner(role)) refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, unlockFix(w, st, k), { lock: k });
     occupiedRefuse(w, st, a.id, actor, "picked up");
     // two things at once (R, 10-10, an avatar walking about with five crates: "maybe two, since VR players can pick up two

@@ -160,7 +160,7 @@ function roleMenu(display, surface) {
   const roles = R.grantableRoles(wc(), me).filter((r) => r.id !== 'none');
   // merge when the entry exists: the role menu must not wipe the person's exceptions/note (review 10-14 K3)
   const pick = (rid) => run('set', { id: '@world', component: `roles:${them.id}`, value: { role: rid }, ...(wc()[`roles:${them.id}`] ? { merge: true } : {}) }, `make ${display} ${rid}`);
-  const items = [...roles.map((r) => ({ k: r.id, label: `${r.id === them.role ? '✓ ' : ''}${r.name}` })), ...(me.role === 'owner' || me.permissions.includes('grantRoles') ? [{ k: '::can', label: 'Exceptions…' }] : [])];
+  const items = [...roles.map((r) => ({ k: r.id, label: `${r.id === them.role ? '✓ ' : ''}${r.name}` })), ...(R.isOwner(me) || me.permissions.includes('grantRoles') ? [{ k: '::can', label: 'Exceptions…' }] : [])];
   const choose = (k) => (k === '::can' ? openCanForm(display, surface) : pick(k));
   if (surface === 'card') { const r = document.querySelector('.sp-ctx')?.getBoundingClientRect(); contextMenu(r ? r.left + 8 : innerWidth / 2, r ? r.top + 8 : innerHeight / 3, items, choose); return; }
   const host = surface === 'sheet' ? sheet().body : surface.strip;
@@ -210,7 +210,7 @@ function closeCard() { card?.remove(); card = null; }
 /** The form: who (name + identity, small: homoglyphs), how long (preset chips), channels (mute), why (chips + text),
  *  confirm. In a strip (VR), kick/ban/ghost confirm with a second press on a confirm row. */
 export function openForm(verb, display, surface = 'card') {
-  const them = personOf(display), me = myself(); const owner = me.role === 'owner';
+  const them = personOf(display), me = myself(); const owner = R.isOwner(me);
   const st = { len: (PRESETS[verb] ?? [])[0]?.[0], forever: false, ch: new Set(['voice', 'chat']), reason: '', why: '' };
   const host = document.createElement('div'); host.className = 'pm-form'; host.dataset.verb = verb;
   const row = (cls, label) => { const r = document.createElement('div'); r.className = `pm-field ${cls}`; if (label) { const l = document.createElement('div'); l.className = 'pm-label'; l.textContent = label; r.append(l); } host.append(r); return r; };

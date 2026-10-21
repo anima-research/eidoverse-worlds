@@ -12,6 +12,7 @@ import { refuse, said } from "./refuse.js";
 import { VOLATILE, followUpsOf, isE, opsQuiet } from "./storage.js";
 import { descendants } from "./math.js";
 import { backward, creatorOf, entryBy, isScriptActor, may, roleOf } from "./rights.js";
+import * as Roles from "../roles.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
@@ -125,7 +126,7 @@ function installCheck(w, st, s, who, op) {
   if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine; motion is a function of time");
   if (v.knobs !== undefined && jcs(v.knobs).length > 4096) refuse("too-big", `${at}.knobs is ${jcs(v.knobs).length} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
-  if (v.always === true && prev?.always !== true && role !== "owner") refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
+  if (v.always === true && prev?.always !== true && !Roles.isOwner(role)) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
   if (prev === undefined || prev === PURGED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
     if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.script-settings.max (owner)"); }
 }

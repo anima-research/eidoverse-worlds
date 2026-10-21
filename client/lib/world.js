@@ -39,6 +39,7 @@ import { warm, P_GATE } from './warmqueue.js';
 // ReferenceErrors a second (antra, live, from a swing in commons2)
 import { occupyCorrectionFor } from './occupants.js';
 import { applySeatCorrection } from './seatcore.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
  *  duplicate spawn in the same tick can't create two bodies for one id. */
@@ -411,7 +412,7 @@ export function applyGrantState(id, rec) {
 // lets the client SAY what someone is.
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;
-export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
+export const worldHasOwner = () => [...worldRoles.values()].some(isOwner);
 
 // ---- named parts ------------------------------------------------------------
 

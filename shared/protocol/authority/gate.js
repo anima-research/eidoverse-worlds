@@ -264,12 +264,12 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   // an imported world's records (its old bindings, unmapped fields incl. a sim epoch, bans) are carried, never
   // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
   // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
-  if (!cap && op.verb === "set" && role !== "owner" && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
+  if (!cap && op.verb === "set" && !R.isOwner(role) && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
   // a server-written component (componentspec writtenBy: copy-of): the authority's own verbs write it (a copy, a rebase,
   // a duplicate); no capability (a handler, a script) ever does, and a hand set or create below owner is refused where the
   // request is built (serverWritten, buildSet and buildCreate)
   if (op.verb === "set" && cap && ["reaction", "script"].includes(cap.kind) && defOf(op.comp)?.writtenBy === "server") serverWritten(at);
-  if (!cap && op.comp === "captions" && op.verb === "set" && role !== "owner") refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
+  if (!cap && op.comp === "captions" && op.verb === "set" && !R.isOwner(role)) refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
     if (!(Array.isArray(ids) && ids.includes(actor)) && lacks(w, st, actor, op, made)) refuse("rights", `${said(actor)} isn't one of ${op.id}'s captioners`, `whoever may edit ${op.id} names its captioners: set {id: '${op.id}', component: 'captioners', value: {ids: [<identity>]}}`);
@@ -328,7 +328,7 @@ function ownerSince(w, st, x) {
   for (const i of backward(w, "@world")) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== "@world" || (o.comp !== undefined && o.comp !== comp)) continue;
-      if (o.verb === "set" && o.comp === comp && o.value?.role === "owner") since = i; else return since; } }
+      if (o.verb === "set" && o.comp === comp && R.isOwner(o.value)) since = i; else return since; } }
   return since;
 }
 /** The most senior owner here (the start of the longest unbroken run as owner; the founder unless they left it), or null. */

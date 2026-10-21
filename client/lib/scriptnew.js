@@ -13,10 +13,11 @@ import * as Edits from './editwrites.js';
 import { net } from './net.js';
 import { refusalText } from '../../shared/protocol/refusal.js';
 import { planNewScript, TEMPLATES, TEMPLATE_SCOPE } from '../../shared/protocol/newscript.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 
 /** May I install a script here (the scripts permission; the authority decides either way)? */
 export const mayScript = () => { const r = net.myRights; if (!r) return false;
-  return Array.isArray(r.permissions) ? r.permissions.includes('scripts') : r.role === 'owner'; };
+  return Array.isArray(r.permissions) ? r.permissions.includes('scripts') : isOwner(r); };
 
 const CSS = `#script-new { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .55); }
 #script-new .sn-card { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 18px; border-radius: 10px; border: 1px solid var(--edge-hi); box-shadow: var(--rim); display: flex; flex-direction: column; gap: 8px; }

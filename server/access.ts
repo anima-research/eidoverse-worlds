@@ -28,7 +28,7 @@ import { isOperator } from "./operators.ts";
 import { sessionFromCookie, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
-import { effectiveOf, MOD_POWERS } from "../shared/protocol/roles.js";
+import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
 import { opsOf } from "../shared/protocol/fold.js";
 import { isBanned, kickOf } from "../shared/protocol/authority.js";
 import { modLogAt } from "./custody.ts";
@@ -133,7 +133,7 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // an ended timed grant is absent at `now` (security review 10-18 M6): the door reads it as not listed, loaded or not, before the
   // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
   const listed = !!actorId && listedIn(door.wc, actorId, now);
-  const bypass = isOperator(account) || (listed && (eff?.role === "owner" || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
+  const bypass = isOperator(account) || (listed && (isOwner(eff) || MOD_POWERS.some((p: string) => eff?.permissions?.includes(p))));
   const e = entryOf(door.wc, { actor: actorId ?? undefined, anon: !account, bypass, trustedRenderer: !!who.trustedRenderer }, door.name, now);
   if (e.may === "none" || (mode === "embody" && e.may === "watch")) return { code: ACCESS_CLOSE, reason: "no-access", why: e.why ?? `"${door.name}" isn't open to you` };
   if (bypass) return null;

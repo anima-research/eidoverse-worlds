@@ -24,6 +24,7 @@ import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
 import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
 import { capture, recheck, type ReqCap } from "./reqcap.ts";
+import { isOwner } from "../shared/protocol/roles.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -235,7 +236,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
-    const role = w.log.roleOf(actorOf(c)); if (role !== "owner") return err(`copying a world needs its owner — you are a ${role} here`);
+    const role = w.log.roleOf(actorOf(c)); if (!isOwner(role)) return err(`copying a world needs its owner — you are a ${role} here`);
     // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
     // most FORK_PER_HOUR per person, so no owner can stall every world on the authority by forking in a loop
     const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
@@ -268,7 +269,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const w = c.world; if (!w) return;
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't erase worlds — join embodied");
-    const role = w.log.roleOf(actorOf(c)); if (role !== "owner") return err(`erasing a world needs its owner — you are a ${role} here`);
+    const role = w.log.roleOf(actorOf(c)); if (!isOwner(role)) return err(`erasing a world needs its owner — you are a ${role} here`);
     // erasing is the most senior owner's act (the founder, unless they left ownership): a co-owner made later can't wipe
     // the world from under the people who made it (review 10-06; research: delete/reset is never a switch)
     if (w.log.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");

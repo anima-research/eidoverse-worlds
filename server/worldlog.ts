@@ -411,6 +411,7 @@ export class WorldLog {
 
 // ---- founding and translating (tools/protocol/world.ts is the command line) ----
 import { opsOf, DIALECT, VERSION } from "../shared/protocol/fold.js";
+import { isOwner } from "../shared/protocol/roles.js";
 
 /** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
 export function foundWorld(dir: string, name: string, owner: string, title?: string, now?: () => number) {
@@ -548,7 +549,7 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
  *  replaced. Returns the archive directory. The caller swaps in a fresh WorldLog and tells everyone present. */
 export function resetWorld(log: WorldLog): string {
   const st = log.live.state();
-  const owners = Object.entries<Any>(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith("roles:") && v?.role === "owner").map(([k]) => k.slice(6));
+  const owners = Object.entries<Any>(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith("roles:") && isOwner(v)).map(([k]) => k.slice(6));
   if (!owners.length) throw new Error("this world has no owner to found it again");
   const prev = { world: log.live.worldId, name: log.name, head: headOf(log.live) };
   const dir = path.join(WORLDS_DIR, log.name);
@@ -569,7 +570,7 @@ export function resetWorld(log: WorldLog): string {
     if (wc.access != null) {
       const now = Date.now();
       const keep: [string, Any][] = Object.entries<Any>(wc).filter(([k, v]) => (k === "access" || k === "default-role" || k === "role-defs"
-        || (k.startsWith("roles:") && v?.role !== "owner")) && !(Number.isSafeInteger(v?.until) && v.until <= now));
+        || (k.startsWith("roles:") && !isOwner(v))) && !(Number.isSafeInteger(v?.until) && v.until <= now));
       keep.sort(([a], [b]) => (a === "role-defs" ? -1 : b === "role-defs" ? 1 : 0));   // custom roles first: a role refers to them
       for (const [k, v] of keep) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: k, value: v });
         if (!r.ok) throw new Error(`keeping ${k} through the reset refused: ${r.refused?.reason}`); }

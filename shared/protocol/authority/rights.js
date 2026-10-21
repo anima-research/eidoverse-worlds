@@ -9,7 +9,7 @@ import { followUpsOf, isE, opsQuiet, readback } from "./storage.js";
 // whoRank below, so a custom role (any id an owner defined in @world.role-defs) stands where its rank says.
 const RANK = R.RANK;
 const wcOf = (st) => st.entities?.["@world"]?.c;
-const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && c[k]?.role === "owner"); };
+const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && R.isOwner(c[k])); };
 // §2.3: an empty owner list means NOBODY above visitor. A world may declare a default role for strangers
 // (`default-role`, what an imported world's `roles['*']` becomes); absence means visitor.
 // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner

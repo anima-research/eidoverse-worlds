@@ -23,6 +23,7 @@ import { plain, warnPlain, nameOf as thingName } from './plainwords.js';
 import { chooseCenter } from './confirmcenter.js';
 import { chooseXR, xrActive } from './xrask.js';
 import { flashHint, toast, claimStatus } from './ui.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 
 export { replicaActive };
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
@@ -57,8 +58,8 @@ export function writesOf(req) {
 // may I lift a lock (so the page offers "move anyway")? A visitor or a role-less person never does (decided by the role:
 // client-check's visitor case drives a visitor by the role alone); any other role by its build switch (a moderator, a custom role).
 // The authority decides either way; this only chooses between the dialog and the refusal.
-export const mayLift = () => { const r = net.myRights; if (!r || r.role === 'visitor' || r.role === 'none') return false;
-  return Array.isArray(r.permissions) ? r.permissions.includes('build') : ['builder', 'owner'].includes(r.role); };
+export const mayLift = () => { const r = net.myRights; if (!r) return false;
+  return Array.isArray(r.permissions) ? r.permissions.includes('build') : isOwner(r); };   // recut B1: the build permission, never a role name
 
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {
