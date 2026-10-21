@@ -4603,12 +4603,6 @@ export class WorldAgent {
       // who perceives by reading.
       const c = e.comp ?? {};
       const aff: string[] = [];
-      // A description is capped at 2,000 code points per object, but nothing caps
-      // how many labelled objects are in view: a well-labelled commons would spend
-      // an agent's whole context on building copy, and unlike a browser an agent
-      // has no objectLabels=off. One line each here -- the full text is still one
-      // look at the object itself away.
-      if (identity.description) aff.push(affordanceText(identity.description));
       if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
       const named = this.placesOn(e);
       if (named.length) aff.push(`places (walk_to {to: "${e.id}/<place>"}): ${named.slice(0, 14).map((p) => p.label && p.label !== p.name.replace(/_/g, " ") ? `${p.name} "${p.label}"` : p.name).join(", ")}${named.length > 14 ? ` +${named.length - 14} more` : ""}`);
@@ -4653,12 +4647,19 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label"].includes(k) && !isParticlesKey(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
       const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
       if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
+      // The authored description comes LAST, quoted as what someone said it
+      // is, so builder copy ("locked", "safe to sit") can never read as one of
+      // the server-derived facts above. JSON quoting keeps an embedded `"` from
+      // closing the quote early. A description is capped at 2,000 code points
+      // per object, but nothing caps how many labelled objects are in view, and
+      // unlike a browser an agent has no objectLabels=off: one line each here.
+      if (identity.description) aff.push(`described as: ${JSON.stringify(affordanceText(identity.description))}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
         // For an unmounted, unmoving thing this is exactly the folded pos.

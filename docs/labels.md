@@ -61,7 +61,11 @@ candidates do not backfill farther labels. Render-only geometry without a
 collider does not block labels.
 
 Browser, scene tree and agent look share `shared/label.js`: authored name, then
-matching logged asset name, humanized basename, and entity ID. Folded entity IDs
+matching logged asset name, humanized basename, the entity's kind (a light has
+no model, so it reads `light`), and entity ID. Agent look quotes an authored
+description last, after every server-derived affordance, as
+`described as: "…"` (one line, JSON-escaped) so authored copy never reads as
+a server fact. Folded entity IDs
 come from map keys, not an `id` property on the values. Components remain blind
 folded data; older clients may ignore their presentation semantics.
 

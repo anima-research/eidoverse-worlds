@@ -12,7 +12,9 @@ export function objectIdentity(entity, assets = []) {
   const rawAsset = text(assets.find(a => a.path === entity?.lib)?.name, 120);
   const assetName = rawAsset.toLowerCase() === 'upload' ? '' : rawAsset;
   const basename = text((entity?.lib ?? '').split('/').pop()?.replace(/\.(glb|vrm)$/i, '').replace(/[_-]+/g, ' '), 120);
-  return { ...label, authored: Boolean(label.name), id: String(entity?.id ?? ''), assetName, name: label.name || assetName || basename || String(entity?.id ?? '') };
+  // A lib-less entity (a light) is named by its kind before its bare id.
+  const kind = text(entity?.kind, 120);
+  return { ...label, authored: Boolean(label.name), id: String(entity?.id ?? ''), assetName, name: label.name || assetName || basename || kind || String(entity?.id ?? '') };
 }
 // Shared bounded presentation policy, also exercised without a renderer.
 export function visibleLabels(candidates, preference, selected) {
