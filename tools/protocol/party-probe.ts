@@ -11,10 +11,10 @@
 //   S4  Text (and a picture) added to a model shows on its front, outside the model, not at its origin inside it
 //   S5  Save as blueprint asks for a name (the thing's label or its model's name, not a hex id)
 //   S7  a thing just placed from the library is the selection
-//   M   /mute /warn /ghost /unmute /unghost are commands; /bans shows mutes too
+//   M   /mute /warn /unmute are commands; /bans shows mutes too (ghost was removed in recut B4)
 //   X   leaving builder mode leaves the old build panel shut; the World inspector's Terrain card offers the ground shapes;
 //       toasts sit above the selection bar
-//   L   the inspector shows a lock's level; the edit lock and a door's lock read differently; a child of a locked thing
+//   L   the inspector shows a lock; the edit lock and a door's lock read differently; a child of a locked thing
 //       shows the inherited lock in the hierarchy
 // @ts-nocheck
 import fs from "node:fs";
@@ -267,8 +267,8 @@ try {
     check("(setup) a door-crate under the locked crate", (await make("child1", "label: 'Lid', parent: { to: 'lockd' }, openable: { open: false, locked: false }, reactions: { open: { kind: 'toggle', unless: 'locked' } },", [0, 1.6, 0]))?.ok);
     await select("lockd"); await sleep(400);
     const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row')].filter((r) => r.querySelector('input[type=checkbox]')).map((r) => r.querySelector('.sp-label')?.textContent ?? '')`);
-    const lev = await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).filter((t) => /builder|moderator|owner/.test(t) && /lock/i.test(t))`);
-    check("L1 the inspector shows the lock's level", lev.length > 0, { lev, labels });
+    // recut B2: a lock is true, its strength its setter's rank; there is no level to show, only that it's locked
+    check("L1 the inspector shows the lock", labels.some((l: string) => /locked/i.test(l)), { labels });
     await select("child1"); await sleep(400);
     const cl = await evalJson(`[...${insp}.querySelectorAll('.sp-row')].filter((r) => r.querySelector('input[type=checkbox]')).map((r) => r.querySelector('.sp-label')?.textContent ?? '')`);
     check("L2 the door's lock and the edit lock read differently (no two rows just 'locked')", cl.filter((t: string) => t.trim() === "locked").length === 0, cl);
@@ -284,7 +284,7 @@ try {
     const vic = guest("vicky"); await vic.join(); await sleep(800);
     const say = async (s: string) => { await clickEl(`document.getElementById('chatline')`); await evalJson(`(() => { const t = document.getElementById('chatline'); t.value = ''; t.focus(); return true; })()`); await type(s); await press("Enter"); await sleep(700); };
     const log = () => evalJson(`document.querySelector('[data-frame="chat"]')?.textContent ?? ''`);
-    for (const c of ["/mute vicky 5 chat too loud", "/warn vicky please", "/unmute vicky", "/ghost vicky 5", "/unghost vicky"]) {
+    for (const c of ["/mute vicky 5 chat too loud", "/warn vicky please", "/unmute vicky"]) {
       const before = (await log()).split("unknown command").length;
       await say(c); await sleep(500);
       check(`M1 ${c.split(" ")[0]} is a command (not "unknown command")`, (await log()).split("unknown command").length === before, (await log()).slice(-300));
