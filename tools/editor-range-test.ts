@@ -44,9 +44,11 @@ for (const [card, d] of Object.entries(DESCRIPTORS) as [string, any][]) {
   for (const fd of d.fields) {
     const ui = fd.ui; if (!ui || ui.t !== "num" || ui.own || fd.path == null) continue;
     if (!FIXTURE[card]) { check(`${card}.${fd.k}: a fixture draws it`, false, "no fixture: add one"); continue; }
-    const drawn = FIXTURE[card].map(([group, comp]) => ({ group, comp, ent: { pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, comp } }))
+    const drawn = FIXTURE[card].map(([group, comp]) => ({ group, comp, ent: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...comp } }))   // a plain component map (the {pos, comp} entity drew no rows)
       .map((x) => ({ ...x, key: `${x.group}.${fd.k}`, f: fieldAt(inspectSchema(x.ent, "t1", {}), `${x.group}.${fd.k}`) })).find((x) => x.f);
-    if (!drawn) { console.log(`  · ${card}.${fd.k}: no row drawn (nothing to write)`); continue; }
+    // a fixture exists for this card, so the row must draw: a row that doesn't is a field nothing checks (Weft on #260, 10-21:
+    // the old {pos, comp} entity shape drew no rows, and every media field passed with nothing checked)
+    if (!drawn) { check(`${card}.${fd.k}: its row draws from the fixture`, false, "no row drawn"); continue; }
     const { comp, ent, key, f } = drawn;
     rows++;
     const bag = comp[d.key];

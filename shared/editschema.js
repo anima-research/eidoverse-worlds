@@ -488,6 +488,7 @@ export function inspectSchema(ent, id, live = {}) {
       L('color', { label: 'color' }),
       L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
       L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
+      L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)' }),
       L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
@@ -551,7 +552,7 @@ export function inspectSchema(ent, id, live = {}) {
           fields.push(M('degPerSec', { label: 'rate' }), M('phase'));
           break;
         case 'orbit':
-          fields.push(M('radius'), M('degPerSec', { label: 'rate', hint: 'degrees a second (a lap of 30 s is 12°/s)' }), M('face', { label: 'face along' }));
+          fields.push(M('radius'), M('degPerSec', { label: 'rate', hint: 'degrees a second (a lap of 30 s is 12°/s)' }), M('phase'), M('face', { label: 'face along' }));
           break;
         case 'oscillate':
           fields.push(M('amp'), M('period'), M('phase'));

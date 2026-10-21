@@ -106,7 +106,7 @@ console.log("\nedits → the fewest door ops:");
   const refused = WL.send(rl.ops[0]);
   check("…and the door refuses it `locked`; the chair hasn't moved", refused.ok === false && refused.refused?.code === "locked" && WL.rec("c1").pos[0] === 1, JSON.stringify(refused));
   const through = WL.send(rl.ops[0], { throughLock: true });
-  check("…with throughLock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && JSON.stringify(WL.rec("c1").lock) === '{"rank":"builder"}',   /* lock true is stored {rank: builder}: shape audit 10-16 */ JSON.stringify(through.refused));
+  check("…with throughLock (the person answered \"move anyway\") it moves, lock kept", through.ok && WL.rec("c1").pos[0] === 3 && WL.rec("c1").lock === true,   /* lock true is stored as true: recut B2 */ JSON.stringify(through.refused));
   const rs = editOps(chair, "c1", { "sockets.seat|pos|1": "+=0.1", "sockets.side|rot|1": "*=2" });
   const cs = sets(rs, "sockets");
   check("two socket edits = ONE merged set sockets keeping the other slot", cs.length === 1 && flat(rs.ops).length === 1 && near(cs[0].args.value.seat.pos[1], 0.6) && near(cs[0].args.value.side.q[1], Math.sin(1)) && near(cs[0].args.value.side.q[3], Math.cos(1)) && cs[0].args.value.side.pos[0] === 0.4, JSON.stringify(cs));
