@@ -61,6 +61,9 @@ registerHandler('light', (id, _obj, k, value, opts) => {
   return Number.isFinite(n) && previewLight(id, { [k]: n });
 });
 export function registerEditor(fn) { htmlEditors.push(fn); }
+// a host adds what only it knows about a thing to the inspector's live view (videos.js: this viewer's own playback state)
+const liveExtras = [];
+export function registerLive(fn) { liveExtras.push(fn); }
 /** editpanels installs the undo stack and the light coalescer at init —
  *  importing build.js from here would close an import loop through
  *  scenegraph.js. */
@@ -106,6 +109,7 @@ export function liveFor(id) {
     effects: effectLookup,
     // the ladder's second rung: what this world trusts (@world.trusted-components), and whether this viewer may change it (the owner)
     trusted: trustedHere(), mayTrust: mayTrust(),
+    ...Object.assign({}, ...liveExtras.map((f) => { try { return f(id) ?? {}; } catch { return {}; } })),
   };
 }
 export const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);

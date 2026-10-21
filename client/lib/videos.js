@@ -36,7 +36,9 @@ import { net } from './net.js';
 import { entities, bagOf } from './world.js';
 import { audioContext } from './audioctx.js';
 import { worldBusNode } from './sounds.js';
-import { isMineMuted } from './mediaprefs.js';
+import { isMineMuted, toggleMineMuted } from './mediaprefs.js';
+import { registerHandler, registerLive } from './inspect.js';
+import { flashHint } from './ui.js';
 import { normalizeVideo, videoGain, noteSourceState, SOURCE_STATES } from '../../shared/video.js';
 
 export const MAX_SCREENS = 4;
@@ -218,3 +220,7 @@ bus.on('entity', ({ id, kind }) => {
   else if (kind === 'spawn') { const c = bagOf(id); if (c?.video) applyFrom(id, c.video, { fresh: true }); }
 });
 bus.on('world-reset', () => clearVideos());
+
+// the inspector: this viewer's own playback state (never logged, never anyone else's), and mute-for-me
+registerLive((id) => { const s = screens.get(id); return s ? { videoState: s.why ? `${s.state}: ${s.why}` : s.state } : {}; });
+registerHandler('video', (id, _obj, k, _v, opts) => { if (k !== 'mute' || opts?.live) return false; const m = toggleMineMuted(id); flashHint(m ? '🔇 muted for you (nobody else)' : '🔊 you hear it again', 2500); return true; });

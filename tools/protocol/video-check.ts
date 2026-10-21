@@ -35,6 +35,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the id grammar", "shared/video.js", "export const VIDEO_SOURCE_ID = /^[a-z][a-z0-9-]{0,39}$/;", "export const VIDEO_SOURCE_ID = /^.+$/;", ["V1", "B1"]],
   ["a stale observation reads as unknown", "shared/video.js", "if (age > SOURCE_STATE_FRESH_MS) return { state: 'unknown', ageS };", "", ["V5"]],
   ["look judges freshness on the clock the observation was stamped on", "shared/says.js", "describeVideo(c.video, sourceStateOf(c.video.source), Date.now())", "describeVideo(c.video, sourceStateOf(c.video.source), Number.isFinite(now) ? now : Date.now())", ["V5"]],
+  ["the inspector draws the Video card", "shared/editschema.js", "groups.push({ group: 'video', label: 'video', types: ['video'], fields });", "", ["V8"]],
+  ["Add Video takes a source by value", "shared/editschema.js", "return { ops: [OP.set(id, 'video', n.video)], errors: [] };", "return { ops: [], errors: ['no'] };", ["V8"]],
   ["near can't pass radius", "shared/protocol/authority/checks.js", "if ((comp === \"sound\" || comp === \"video\") && obj", "if ((comp === \"sound\") && obj", ["V6"]],
   ["a registry entry may not carry a credential in its URL", "server/videosources.ts", "&& !u.username && !u.password ? u.toString() : null", "? u.toString() : null", ["B1"]],
   ["the broker adds the operator's read credential", "server/videosources.ts", "headers: { \"content-type\": \"application/sdp\", ...(basic(src) ? { authorization: basic(src)! } : {}) }", "headers: { \"content-type\": \"application/sdp\" }", ["B3"]],
@@ -94,6 +96,7 @@ const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const V = await import(TREE + "shared/video.js").catch(none);
 const VS = await import(TREE + "server/videosources.ts").catch(none);
+const ES = await import(TREE + "shared/editschema.js").catch(none);
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("vid");
 
@@ -202,6 +205,19 @@ const cases: Case[] = [
       return { at1: V.videoGain?.(v, 1), mine: V.videoGain?.(v, 1, 0.5), edge: V.videoGain?.(v, 10), mid: V.videoGain?.(v, 4), sound: (await_sound()).gainAt(4, 2, 10) }; },
     good: (o) => o.at1 === 0.5 && o.mine === 0.25 && o.edge === 0 && Math.abs(o.mid - 0.5 * o.sound) < 1e-12 },
 
+  { id: "V8", what: "the inspector draws the Video card from the registry (volume 0..1, this viewer's own state, mute, take down); its edits keep the door's rules; Add Video takes a source by value", run() {
+      const E = (c: any) => ({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...c });
+      const flat = (ops: any[]) => ops.flatMap((o) => (o.verb === "batch" ? o.args.ops : [o]));
+      const sc = ES.inspectSchema?.(E({ video: { source: "solstice", volume: 0.8 } }), "t1", { mutedForMe: false, videoState: "stalled" });
+      const g = sc?.groups?.find((x: any) => x.group === "video"); const vol = ES.fieldAt?.(sc, "video.volume");
+      const set = (e: any) => { const r = ES.editOps(E({ video: { source: "solstice", volume: 0.8 } }), "t1", e); const op = flat(r.ops).find((o) => o.args?.component === "video"); return { errors: r.errors, verb: op?.verb, v: op?.args.value }; };
+      return { keys: g?.fields?.map((f: any) => f.k ?? f.label), state: g?.fields?.find((f: any) => f.label === "on your screen")?.value, min: vol?.min, max: vol?.max,
+        ok: set({ "video.volume": 0.5 }), loud: set({ "video.volume": 1.5 }), url: set({ "video.source": "http://x/whep" }), off: set({ "video.off": true }),
+        add: ES.addOps?.(E({}), "t1", "Video", "solstice"), addUrl: ES.addOps?.(E({}), "t1", "Video", { source: "https://x/whep" }) }; },
+    good: (o) => ["source", "alt", "volume", "near", "radius", "width", "mute", "off"].every((k) => o.keys?.includes(k)) && o.state === "stalled" && o.min === 0 && o.max === 1
+      && o.ok.v?.volume === 0.5 && o.loud.errors.length && !o.loud.v && /never a URL/.test(o.url.errors.join()) && o.off.verb === "delete"
+      && o.add?.ops?.[0]?.args?.value?.source === "solstice" && /never a URL/.test(o.addUrl?.errors?.join() ?? "") },
+
   // ---------------- B: the broker ----------------
   { id: "B1", what: "the registry: a credential inside a URL, a bad id, an api without a path, a non-http WHEP are dropped by id; a good entry is admitted", run() {
       const { sources, dropped } = VS.parseRegistry?.({ sources: { solstice: { whep: `${APP}/screen/whep`, api: APP, path: "screen" },
@@ -224,18 +240,20 @@ const cases: Case[] = [
       const post = FAKE.log.find((x) => x.method === "POST"); const said = JSON.stringify(r);
       return { type: r?.type, sdp: r?.sdp, auth: post?.auth, body: post?.body, leak: [APP, String(fake.port), "s3cret", "whep", "Basic"].filter((x) => said.includes(x)) }; },
     good: (o) => o.type === "video-answer" && /answer-for:v=0 the-offer/.test(o.sdp ?? "") && o.auth === "Basic " + Buffer.from(SECRET).toString("base64") && o.body === "v=0 the-offer" && o.leak.length === 0 },
-  { id: "B4", what: "a viewer offers at most once every 2 s and holds at most 4 screens; a spectator, an unadmitted source and a missing video are refused in words", async run() {
+  { id: "B4", what: "a viewer offers at most once every 2 s and holds at most 4 screens; a spectator, an unadmitted source (before anything reaches an appliance) and a missing video are refused in words", async run() {
       install(REG()); FAKE.whepStatus = 201; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
       const t = 2e9; const a = await VS.offer?.(c, { id: "screen", sdp: "o" }, t); const b = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 500);
       for (let i = 1; i <= 4; i++) await VS.offer?.(c, { id: "screen", sdp: "o" }, t + i * 3000);
       const capped = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 20000);
       const spec = await VS.offer?.({ world: w, spectator: true }, { id: "screen", sdp: "o" }, t);
+      const posts = FAKE.log.filter((x) => x.method === "POST").length;
       const w2 = fakeWorld({ source: "elsewhere" }); const { c: c2 } = viewer(w2); const unadm = await VS.offer?.(c2, { id: "screen", sdp: "o" }, t);
+      const prefetch = FAKE.log.filter((x) => x.method === "POST").length - posts;
       const w3 = { state: { entities: { screen: { c: {} } } }, clients: new Set() }; const { c: c3 } = viewer(w3); const novid = await VS.offer?.(c3, { id: "screen", sdp: "o" }, t);
       const held = VS.sessionCount?.(c);
       for (const s of [...w.clients]) w.clients.delete(s); await VS.sweep?.();
-      return { a: a?.type, b: b?.why, capped: capped?.why, spec: spec?.why, unadm: unadm?.why, novid: novid?.why, held }; },
-    good: (o) => o.a === "video-answer" && /too soon/.test(o.b ?? "") && /at most 4/.test(o.capped ?? "") && o.held === 4 && /only someone in this world/.test(o.spec ?? "") && /isn't admitted/.test(o.unadm ?? "") && /has no video/.test(o.novid ?? "") },
+      return { a: a?.type, b: b?.why, capped: capped?.why, spec: spec?.why, unadm: unadm?.why, novid: novid?.why, held, prefetch }; },
+    good: (o) => o.prefetch === 0 && o.a === "video-answer" && /too soon/.test(o.b ?? "") && /at most 4/.test(o.capped ?? "") && o.held === 4 && /only someone in this world/.test(o.spec ?? "") && /isn't admitted/.test(o.unadm ?? "") && /has no video/.test(o.novid ?? "") },
   { id: "B5", what: "a session ends, its appliance resource is DELETEd and the viewer told, when the screen's source changes, when the video comes down, and when the viewer leaves", async run() {
       install(REG({ "movie-night": { whep: `${APP}/movie/whep` } })); FAKE.whepStatus = 201;
       const run1 = async (mutate: (w: any, c: any) => void) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);

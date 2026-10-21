@@ -32,6 +32,7 @@ const FIXTURE: Record<string, [string, any][]> = {
   Particles: [["particles", { particles: { effect: "fire" } }]],
   Picture: [["picture", { picture: { src: "https://example.org/a.png", width: 1 } }]],
   Sound: [["sound", { sound: { src: "https://example.org/a.ogg", playing: true, loop: true, volume: 0.8, radius: 12 } }]],
+  Video: [["video", { video: { source: "solstice", volume: 0.8, near: 1.5, radius: 12, spatial: true, width: 4, lit: "self" } }]],
   Text: [["text", { text: { text: "hi" } }]],
   LookAt: [["look-at", { "look-at": { target: "other", speed: 240 * Math.PI / 180, range: 12 } }]],   // speed is rad/s on the wire (componentspec max 20π): 240 made the door refuse every LookAt bag
 };
