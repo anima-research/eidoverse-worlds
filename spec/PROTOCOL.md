@@ -1365,12 +1365,21 @@ argument will be short.
 - **Chain points.** Any entry may carry `head` (hex) and `sig`: base64url
   Ed25519 over UTF-8 `"eidoverse-head:<world id>:<seq>:<head hex>"`, by
   the sequencer key named in genesis (handoffs are reserved, §13). The authority signs
-  at least every write it commits. A client SHOULD remember the last `(seq,
-  head)` it saw for each world and check that the log extends it on its next
-  visit: that is what catches a sequencer rewriting its own history. Two
-  signed heads for one seq are published evidence.
+  at least every write it commits. Two signed heads for one seq are published
+  evidence.
+- **The client's head check is RESERVED.** It is the one defence against a
+  sequencer rewriting its own history, and its final shape is fixed here: a
+  client asks for a **signed head on request** (`seq`, `head`, `sig`), keeps
+  the last one it saw for each world, and on its next visit checks that the
+  log it is served extends it. No client can keep that promise today, because
+  the wire strips `head` and `sig` from every entry it sends; until a server
+  answers the request, no client is held to the check.
 - **Purge** (`kind: "purge"`, `body {values: [{seq, op?}, …]}`) is the one
-  rule that changes the record. Each target folds as *absent(purged)* at
+  rule that changes the record. **Who decides:** the host operator, outside the
+  request path. No request writes a purge, and the reference server has no verb
+  for one; an operator applies it to the stored log by this rule. A purge an
+  owner asks for through the request path, with a named decider, is future
+  work, not part of this protocol. Each target folds as *absent(purged)* at
   every point in time — a defined value, distinct from deleted — and a
   later `set` of the same component replaces it normally. Purgeable: a
   `set`'s value (the id, component name and position never are, so the fold
