@@ -153,7 +153,7 @@ await tryRow('PH', () => {
 // ===================================================================== physics-engine, collider, joints, structure, surface, stage
 await tryRow('PE', () => {
   const E = COMPONENTS['physics-engine'];
-  check('PE1 physics-engine: tickMs default 33 in the registry, its range the engine\'s (TICK_MS), ms; build a string', E.defaults?.tickMs === 33 && E.ranges?.tickMs?.min === TICK_MS.min && E.ranges?.tickMs?.max === TICK_MS.max && E.units?.tickMs === 'ms' && E.fields.build === 'string', E);
+  check('PE1 physics-engine: tickMs default 33 in the registry, its range the engine\'s (TICK_MS), ms; no build field (an engine is named by its version, held to its conformance digests)', E.defaults?.tickMs === 33 && E.ranges?.tickMs?.min === TICK_MS.min && E.ranges?.tickMs?.max === TICK_MS.max && E.units?.tickMs === 'ms' && !('build' in E.fields), E);
   check('PE1 …gravity is documented as the engine\'s own', /−9\.81|-9\.81/.test(E.help) && /gravity/.test(JSON.stringify(E.absentMeans ?? {})), E.help);
   const A = readAuthority();
   check('PE2 the authority reads the default from the registry, not a literal 33', /COMPONENTS\["physics-engine"\]\.defaults\.tickMs/.test(A) && !/tickMs\) \? v\.tickMs : 33/.test(A), '');
