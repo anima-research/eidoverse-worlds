@@ -181,6 +181,11 @@ const DEFS = [
   { name: 'Sound', category: 'Audio', summary: 'positional audio, silent past its radius',
     params: paramsOf('Sound', { src: { t: 'asset', default: null }, t0: { default: null } }),
     fallback: { visual: 'silent', text: 'not heard: <why>' } },
+  // projector design revision 2 (10-21): a live stream on a quad of its own, from a source id the operator admitted (never
+  // a URL); its sound is sound's law. A screen is a thing with Video and Captions
+  { name: 'Video', category: 'Media', summary: 'a live stream on a screen of its own, from a source this server admits',
+    params: paramsOf('Video', { source: { default: null }, alt: { default: null } }),
+    fallback: { visual: 'a dark screen', text: 'not shown: <why>' } },
   { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
     params: paramsOf('Story', { title: { default: null }, text: { default: null }, marks: { default: null } }),
     fallback: { text: 'story «<title>»' } },
@@ -353,8 +358,8 @@ export function componentsOf(ent) {
     if (key === 'story' && isBag(data)) { out.push({ type: 'Story', key, params: { ...data } }); continue; }
     if (key === 'text' && isBag(data)) { out.push({ type: 'Text', key, params: { ...data } }); continue; }
     if (key === 'stage' && data && typeof data === 'object' && !Array.isArray(data)) { out.push({ type: 'Stage', key, params: { ...data } }); continue; }
-    if ((key === 'particles' || key === 'picture' || key === 'sound') && data && typeof data === 'object' && !Array.isArray(data)) {
-      const type = { particles: 'Particles', picture: 'Picture', sound: 'Sound' }[key];
+    if ((key === 'particles' || key === 'picture' || key === 'sound' || key === 'video') && data && typeof data === 'object' && !Array.isArray(data)) {
+      const type = { particles: 'Particles', picture: 'Picture', sound: 'Sound', video: 'Video' }[key];
       const rec = RECORDS[type];
       const params = {}; const extra = {};
       for (const [k, v] of Object.entries(data)) {

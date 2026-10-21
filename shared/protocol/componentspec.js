@@ -357,6 +357,24 @@ export const COMPONENTS = {
                 docs: { node: "the node of its model the image goes on, its name as the file spells it (measure lists them)", texture: "the image: store/images/…, eidoverse/assets/…, or an https link (as a picture's src)",
                   description: "what it shows, in words: for people who can't see it and for agents", lit: "scene (takes the scene's light) | self (a screen, unlit)" },
                 help: "an image on one node of this thing's model (a screen, a canvas, a poster frame): {node (its name, as the model file spells it: measure lists them), texture (store/images/…, eidoverse/assets/…, or an https link: see picture), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. The node's own material comes back when it is removed. A standalone image is a picture" },
+  // a live video a thing plays (shared/video.js; projector design revision 2, Mica 10-20, into the trial ladder): a quad of its
+  // own, as picture's, whose sound is the thing's, as sound's (the same field names and the same distance law). source is an
+  // id the OPERATOR admitted on this server, never a URL: the endpoint stays out of the log and is handed only to an
+  // admitted viewer. The door refuses an id this server hasn't admitted (mediaCheck). Live only: every viewer plays the live
+  // edge, so playing and t0 are absent on purpose (a recorded source adds them, absent = this)
+  video:      { on: "thing", fields: { source: "string", volume: "number", near: "number", radius: "number", spatial: "bool", width: "number", lit: "string", alt: "string" },
+                defaults: { volume: 0.8, near: 1.5, radius: 12, spatial: true, width: 4, lit: "self" }, required: ["source"], enums: { lit: ["self", "scene"] },
+                grammar: { source: "source-id" },
+                ranges: { volume: { min: 0, max: 1 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, width: { gt: 0, max: 20 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                units: { near: "m", radius: "m", width: "m" },
+                absentMeans: { law: "the sound component's distance law, unchanged: gain = min(1, near / distance), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius (shared/sound.js gainAt)",
+                  playback: "a live source: every viewer plays its live edge, with no shared playhead (a recorded source's playing and t0, when they exist, are absent = this)",
+                  listener: "what a viewer hears is volume × their own media gain, which is theirs and never written" },
+                docs: { source: "the stream: an id this server's operator admitted (1–40 lowercase letters, digits and hyphens), never a URL", volume: "authored linear gain, 0 silent to 1 full; each viewer's own volume multiplies it and is never written",
+                  near: "full volume within this many metres", radius: "silent at and beyond this many metres", spatial: "positional; off: heard evenly everywhere inside its radius",
+                  width: "the screen's width, metres; its height follows the stream", lit: "self (a screen, unlit; the default) | scene (takes the scene's light)",
+                  alt: "what the screen is for, in words (\"the solstice stage\"): for people who can't see it and for agents; never a claim about the current frame" },
+                help: "a live video this thing plays: {source (an id this server's operator admitted, like 'solstice'; never a URL), volume? 0..1, near? m, radius? m (≤ 100; sound's distance law), spatial?, width? m (the quad's, facing +Z on its origin; height follows the stream), lit?: self|scene, alt? (what the screen is for, in words)}. look says what the appliance last observed of the source (offline, live, ended or unknown, and how fresh); each viewer's own screen says its own playback state. A screen is a thing with video, and captions with its captioners" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],
@@ -655,7 +673,6 @@ for (const [name, what] of Object.entries({
   "anim-clip": "an animation clip (more than one key) and its playhead; when it has a shape, its own mode (once | loop | hold) and the bodyMode it asks for are fields of it (R 10-17: the agent's anim reads both)",
   "anim-states": "an animation state machine (states, transitions, params driving clips)",
   camera: "a camera a world places (a view, a screen's source)",
-  video: "a video a thing plays",
   "spring-joint": "a spring between two bodies",
   link: "a link a thing opens (a portal, a page)",
   tags: "labels a thing carries for search and rules",
@@ -891,8 +908,10 @@ export function pinBreakList(pin, now = pinOf()) {
     for (const [k, args] of Object.entries(p.handlers ?? {})) { if (!n.handlers?.[k]) { push(`${name}: handler kind ${k} is gone`); continue; }
       for (const a of args) if (!n.handlers[k].includes(a)) push(`${name}.${k}: handler arg ${a} is gone`); }
     // PROTOCOL §4: a field added after the name's first registration says what an older value WITHOUT it means (a value
-    // stored before it existed never holds it, and materialize never rewrites the past), and that meaning is pinned
-    for (const f of Object.keys(n.fields ?? {})) if (!Object.hasOwn(p.fields ?? {}, f) && !(typeof n.absentMeans?.[f] === "string" && n.absentMeans[f].trim()))
+    // stored before it existed never holds it, and materialize never rewrites the past), and that meaning is pinned. A
+    // RESERVED name's promotion is its first registration with fields: the door refused every write while it was held, so
+    // no older value without them can exist (video, 10-21: promoted from the held names)
+    if (p.status !== "reserved") for (const f of Object.keys(n.fields ?? {})) if (!Object.hasOwn(p.fields ?? {}, f) && !(typeof n.absentMeans?.[f] === "string" && n.absentMeans[f].trim()))
       push(`${name}.${f}: added after ${name} was first registered, with no meaning of absence (absentMeans.${f}: what an older value without it means)`);
   }
   return out;

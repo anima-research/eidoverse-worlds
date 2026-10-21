@@ -124,6 +124,11 @@ const CARDS = {
     editor: { src: { ui: { t: 'text' } }, description: { ui: { t: 'text' } }, loop: { ui: { t: 'check' } }, spatial: { ui: { t: 'check' } },
       volume: { ui: { t: 'num', step: 0.05, dp: 2 } }, pitch: { ui: { t: 'num', step: 0.05, dp: 2 } },
       near: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1 } }, radius: { ui: { t: 'num', step: 1, dp: 0 } } } },
+  // a live video (shared/video.js): the source is an operator-admitted id, typed as text, never a URL
+  Video: { key: 'video', show: ['source', 'volume', 'near', 'radius', 'spatial', 'width', 'lit', 'alt'], writeDp: 3,
+    editor: { source: { ui: { t: 'text' } }, alt: { ui: { t: 'text' } }, spatial: { ui: { t: 'check' } }, lit: { ui: { t: 'enum' } },
+      volume: { ui: { t: 'num', step: 0.05, dp: 2 } }, near: { ui: { t: 'num', step: 0.5, dp: 1, softMin: 0.1 } }, radius: { ui: { t: 'num', step: 1, dp: 0 } },
+      width: { ui: { t: 'num', step: 0.1, dp: 2 } } } },
   Story: { key: 'story', editor: { title: { ui: { t: 'text' } }, text: { ui: { t: 'text' } }, marks: { ui: { t: 'text' } } } },
   Text: { key: 'text', show: ['text', 'size', 'width', 'align', 'color', 'outline', 'outlineColor', 'background', 'billboard', 'lit'], writeDp: 3, extra: ['plate'],
     editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2 } }, width: { ui: { t: 'num', step: 0.1, dp: 2 } },
