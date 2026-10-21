@@ -307,6 +307,36 @@ const cases: Case[] = [
       return { a: show(a), b: code(b), parent: s.w().state().entities.cup?.c.parent?.to }; },
     good: (o) => o.parent === "table" && o.a === "ok" && o.b === "locked" },
 
+  // ---------------- B2 (recut B, R 10-20; house 21:59Z): a lock is true, its strength its setter's rank NOW ----------------
+  { id: "LK1", what: "(recut B2) an equal rank acts through a builder's lock (throughLock) and may lift it; without the flag it's refused 'locked'", run(s) { cast(s);
+      s.call("bea", "create", { id: "t", model: "table", place: { at: [0, 0] } }); const lk = set(s, "bea", "lock", true, "t"); const stored = s.w().state().entities.t?.c.lock;
+      const plain = code(s.call("bob", "place", { id: "t", at: [1, 0] }));
+      const through = show(s.call("bob", "place", { id: "t", at: [1, 0], throughLock: true }));
+      const lift = show(s.call("bob", "delete", { id: "t", component: "lock" }));
+      return { lk: show(lk), stored, plain, through, lift }; },
+    good: (o) => o.lk === "ok" && o.stored === true && o.plain === "locked" && o.through === "ok" && o.lift === "ok" },
+  { id: "LK2", what: "(recut B2) a moderator's lock: a builder can't act through it or lift it, a moderator can; demote the setter and a builder can", run(s) { cast(s); role(s, "max", { role: "moderator" });
+      s.call("mo", "create", { id: "t", model: "table", place: { at: [0, 0] } }); set(s, "mo", "lock", true, "t");
+      const bobThrough = code(s.call("bob", "place", { id: "t", at: [1, 0], throughLock: true }));
+      const bobLift = code(s.call("bob", "delete", { id: "t", component: "lock" }));
+      const maxThrough = show(s.call("max", "place", { id: "t", at: [1, 0], throughLock: true }));
+      role(s, "mo", { role: "builder" });
+      const after = show(s.call("bob", "place", { id: "t", at: [2, 0], throughLock: true }));
+      return { bobThrough, bobLift, maxThrough, after }; },
+    good: (o) => o.bobThrough === "locked" && o.bobLift === "rank" && o.maxThrough === "ok" && o.after === "ok" },
+  { id: "LK3", what: "(recut B2) re-setting a lock is lifting it: a builder can't re-set a moderator's lock to make it theirs (and weaker)", run(s) { cast(s);
+      s.call("mo", "create", { id: "t", model: "table", place: { at: [0, 0] } }); set(s, "mo", "lock", true, "t");
+      const reset = code(set(s, "bob", "lock", true, "t"));
+      const still = code(s.call("bea", "place", { id: "t", at: [1, 0], throughLock: true }));
+      return { reset, still }; },
+    good: (o) => o.reset === "rank" && o.still === "locked" },
+  { id: "LK4", what: "(recut B2) a lock has no level: {rank} is refused with a pointer, nothing written; inspect says its strength as a rank", run(s) { cast(s);
+      s.call("mo", "create", { id: "t", model: "table", place: { at: [0, 0] } });
+      const r = s.call("mo", "set", { id: "t", component: "lock", value: { rank: "owner" } }); const before = s.w().state().entities.t?.c.lock;
+      set(s, "mo", "lock", true, "t"); const ins = s.call("bob", "inspect", { id: "t" });
+      return { code: code(r), why: r?.refused?.reason ?? "", before, rank: ins?.lock?.rank }; },
+    good: (o) => o.code === "shape" && /no level/.test(o.why) && o.before === undefined && o.rank === 200 },
+
   // ---------------- M: S3 moderation tools ----------------
   { id: "M1", what: "ban: a moderator bans a visitor for 7 days; banning a moderator, an owner, themself, or a visitor for 31 days is refused", run(s) { cast(s);
       role(s, "mo2", { role: "moderator" });
