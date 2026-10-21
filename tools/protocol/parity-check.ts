@@ -291,7 +291,7 @@ const cases: Case[] = [
       return { r: show(r), body: e?.body ?? null, doc }; },
     good: (o) => o.r === "ok" && o.body?.spoken === true && o.body?.utt === 3 && /anyone|any participant/.test(o.doc) && /TTS/.test(o.doc) && !/agent/.test(o.doc) },
   // ---------------- X: the spec and docs say it ----------------
-  { id: "X1", what: "PROTOCOL §6a \"One kind of participant\": six rules (one gate; ids carry no kind; declared never inferred, `declares`, absent undeclared; same constraints on every path; policy by kind in the open; a false declaration is moderation), rule 3 keeping the spoken trio as anyone's; §3.1 points at rule 2; §5 one preset for every body", run() {
+  { id: "X1", what: "PROTOCOL §6a \"One kind of participant\": six rules (one gate; ids carry no kind; declared never inferred, `declares`, absent undeclared; same constraints on every path; policy by kind in the open; a false declaration is moderation), rule 3 keeping the spoken trio as anyone's; §3.1 points at rule 2; §5 consent decided the same way for every kind of body (recut A2)", run() {
       const md = readText("spec/PROTOCOL.md"); const s6a = section(md, /\n## 6a\. /).replace(/[ \t]*\n[ \t]*(?!\d\. )/g, " "); const s31 = md.slice(md.indexOf("### 3.1"), md.indexOf("\n## 4. ")); const s5 = section(md, /\n## 5\. /);
       const rules = [...s6a.matchAll(/^(\d)\. \*\*/gm)].map((m) => m[1]).join("");
       return { head: /## 6a\. One kind of participant/.test(s6a), rules,
@@ -300,7 +300,7 @@ const cases: Case[] = [
         r3: /\*\*A declared status, never an inferred one\.\*\*/.test(s6a) && /`declares`/.test(s6a) && /absent means \*\*undeclared\*\*, and no word is assumed in its place/.test(s6a) && /MUST NOT set it for a participant from their credential/.test(s6a),
         tts: /spoken trio/.test(s6a) && /whatever voices the words/.test(s6a) && !/"person"/.test(s6a) && !/a say is a say, however it was spoken/.test(s6a),
         r4: /\*\*The same constraints on every path\.\*\*/.test(s6a), r5: /\*\*Policy by kind is a world's choice, in the open\.\*\*/.test(s6a), r6: /\*\*A false declaration is a moderation matter\*\*/.test(s6a),
-        s31: /§6a/.test(s31) && /shape MUST NOT encode what holds it/.test(s31), s5: /one preset for every body/.test(s5) && /Arriving is presence/.test(s5) }; },
+        s31: /§6a/.test(s31) && /shape MUST NOT encode what holds it/.test(s31), s5: /the same way for every kind of\s+body/.test(s5) && /Arriving is presence/.test(s5) }; },
     good: (o) => o.head && o.rules === "123456" && o.r1 && o.r2 && o.r3 && o.tts && o.r4 && o.r5 && o.r6 && o.s31 && o.s5 },
   { id: "X2", what: "(research #18) §8, SCRIPTS.md and scriptaudit.js name the stand-ins by shape (minted-shaped and another valid shape), never person- or agent-shaped, and no script \"greets people and not agents\"", run() {
       const md = readText("spec/PROTOCOL.md"), sc = readText("docs/SCRIPTS.md"), au = readText("shared/protocol/scriptaudit.js"); const s8 = section(md, /\n## 8\. /);

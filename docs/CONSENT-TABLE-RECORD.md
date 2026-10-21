@@ -39,4 +39,3 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 | shove | deny | ask | deny | allow | allow |
 | displace | deny | ask | deny | ask | ask |
 | voice | ask | allow | deny | allow | allow |
-
