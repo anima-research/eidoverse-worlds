@@ -87,6 +87,17 @@ export function admitVideoSources(ids) {
 export const isAdmittedSource = (id) => typeof id === 'string' && ADMITTED.has(id);
 export const admittedSources = () => [...ADMITTED];
 
+// ---- what the appliance last observed of each source (ephemeral: never logged, never a world's state) ----
+// The process that holds the observations fills this: the server from its appliance poller (server/videosources.ts),
+// mcpl from the server's video-state broadcasts. A broadcast carries the observation's AGE, never a timestamp, so a
+// reader on another machine with another clock can't make a stale state look fresh: it records `at` on its own clock.
+const OBSERVED = new Map();
+/** Record what the appliance observed of `id`: {state, at} (at: epoch ms on THIS process's clock). */
+export function noteSourceState(id, obs) { if (typeof id === 'string' && obs && SOURCE_STATES.includes(obs.state) && Number.isFinite(obs.at)) OBSERVED.set(id, { state: obs.state, at: obs.at }); }
+/** Forget a source (revoked by the operator): look reads it as unknown, never observed. */
+export function forgetSourceState(id) { OBSERVED.delete(id); }
+export const sourceStateOf = (id) => OBSERVED.get(id) ?? null;
+
 const num = (v, lo, hi, dflt) => {
   const n = Number(v);
   return v == null || !Number.isFinite(n) ? dflt : Math.min(hi, Math.max(lo, n));
@@ -160,7 +171,7 @@ const STATE_WORDS = { offline: 'its source is offline', live: 'its source is liv
  *  bag and the same appliance observation. Says what the author said the screen is for (quoted, as data), and what the
  *  APPLIANCE last observed of its source, with how fresh that is. Never claims anything about frames or about any
  *  viewer's playback. `obs` is {state, at}; `now` is epoch ms. */
-export function describeVideo(data, obs = null, now = null) {
+export function describeVideo(data, obs = sourceStateOf(data?.source), now = Date.now()) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a video (malformed declaration)';
   const bad = sourceIdProblem(data.source);
   const alt = typeof data.alt === 'string' && data.alt.trim() ? data.alt : null;
