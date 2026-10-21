@@ -262,7 +262,8 @@ const cases: Case[] = [
   { id: "V1", what: "every verb the authority answers has a VERBSPEC row (names and types; help is generated from it)", run() {
       const names = D.VERB_NAMES ?? []; const V = (globalThis as any).__VS?.VERBSPEC ?? {};
       return { n: names.length, rowless: names.filter((v: string) => !V[v]), extra: Object.keys(V).filter((v) => !names.includes(v) && v !== "*") }; },
-    good: (o) => o.n > 50 && !o.rowless.length && !o.extra.length },
+    // the floor catches an empty or broken verb list, not a count: recut B4 removed ghost/unghost (51 → 49)
+    good: (o) => o.n >= 40 && !o.rowless.length && !o.extra.length },
   // ---------------- X: the spec, the registry, the ladder ----------------
   { id: "X1", what: "checkpoint: the name is reserved (gov.py refuses it by name), PROTOCOL §2 pins no unexercised shape", run() {
       const spec = read("spec/PROTOCOL.md"), gov = read("spec/conformance/gov.py");
