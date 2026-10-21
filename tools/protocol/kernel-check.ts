@@ -1,6 +1,6 @@
 // tools/protocol/kernel-check.ts — the kernel is trial-kernel (reviewer item 5, 2026-10-18): a change to the log envelope, the
-// kinds, the fold's operations, the identity grammar, the version, transform, parent, model, roles (and the ladder's grammar) or
-// access (and the four doors) is IMPOSSIBLE to land unless the same
+// kinds, the fold's operations, the identity grammar, the version, transform, parent, model, roles or access (each as its
+// component shape; the ladder's vocabulary is the registry's since recut C11) is IMPOSSIBLE to land unless the same
 // change carries (a) a translator change, (b) a REGISTRY-CHANGELOG.md line and (c) vectors an old reader refuses and the new
 // reader folds. shared/protocol/kernelspec.js is the pure half; spec/kernel-pin.json the pin.
 //   bun tools/protocol/kernel-check.ts                         the gate's check (CORE lane)
@@ -60,19 +60,29 @@ function snapshotOldReader(dir: string, base: string) {
     fs.writeFileSync(path.join(d, dst), r.stdout.replace('from "./hash.js"', 'from "./old-hash.js"').replace("from '../sha256.js'", "from './old-sha256.js'")); }
 }
 
+/** A scope trim (recut C11): kernel components whose `grammar` left. Each leaving key is HELD when spec/registry-pin.json keeps the
+ *  same value as `<name>.vocab.<key>` (so re-pin the registry first), or DROPPED by a repeatable --drop "<name>.<key>=<why>". */
+function trimOf(now: any, rp: any) {
+  if (!pin) return {}; const leaving = KS.KERNEL_COMPONENTS.filter((n: string) => pin.kernel[n]?.grammar && !now[n]?.grammar); if (!leaving.length) return {};
+  const held: Record<string, string[]> = {}, dropped: Record<string, string> = {};
+  for (const n of leaving) for (const k of Object.keys(pin.kernel[n].grammar)) if (rp[n]?.vocab && JSON.stringify(rp[n].vocab[k]) === JSON.stringify(pin.kernel[n].grammar[k])) (held[n] ??= []).push(k);
+  argv.forEach((a, i) => { if (a === "--drop") { const m = /^([a-z][a-z0-9-]*\.[A-Za-z]+)=(.+)$/s.exec(argv[i + 1] ?? ""); if (m) dropped[m[1]] = m[2]; } });
+  return { trim: { held, dropped } };
+}
+
 if (argv.includes("--pin")) {
   const now = KS.kernelPinOf();
   const base = opt("base") ?? (spawnSync("git", ["-C", T, "log", "-1", "--format=%H", "--", PIN], { encoding: "utf8" }).stdout.trim() || "HEAD");
   const vdir = opt("vectors"); let vectors = null;
   if (vdir) { if (!fs.existsSync(path.join(T, VECTORS, vdir, "old-fold.js"))) snapshotOldReader(vdir, base); const r = await runVectors(vdir); if (r.why) { console.log(`refusing to re-pin: ${r.why}`); process.exit(1); } vectors = { dir: vdir, ran: r.ran }; }
   // a scope extension: names entering the kernel whose checkable shape (status aside) is exactly what the registry pin holds
-  const rp = JSON.parse(read("spec/registry-pin.json")); const noStatus = (x: any) => { const { status: _s, grammar: _g, ...rest } = x ?? {}; return JSON.stringify(rest); };
+  const rp = JSON.parse(read("spec/registry-pin.json")); const noStatus = (x: any) => { const { status: _s, grammar: _g, vocab: _v, ...rest } = x ?? {}; return JSON.stringify(rest); };
   const entering = pin ? KS.kernelDiff(pin.kernel, now).map((d: string) => /^([a-z][a-z0-9-]*): absent → /.exec(d)?.[1]).filter((n: any) => n && KS.KERNEL_COMPONENTS.includes(n) && rp[n] && noStatus(rp[n]) === noStatus(now[n])) : [];
   const companions = { ack: opt("ack") ?? null, translator: { from: pin?.companions?.translator?.to ?? pin?.translator ?? null, to: TV1.TRANSLATOR, ...(opt("translator") ? { step: opt("translator") } : {}) }, vectors,
-    ...(entering.length && !vdir ? { scope: { names: entering, registryPinned: true } } : {}) };
+    ...(entering.length && !vdir ? { scope: { names: entering, registryPinned: true } } : {}), ...trimOf(now, rp) };
   const v = KS.kernelVerdict(pin, now, companions);
   if (!v.ok) { console.log("refusing to re-pin: " + v.why); process.exit(1); }
-  if (v.changelog) { fs.appendFileSync(path.join(T, CHANGELOG), v.changelog); console.log(`${CHANGELOG}: kernel line written (${v.diff.length} change(s)${v.scopeOnly ? `; a scope extension: ${v.companions.scope.names.join(", ")} entered the kernel with the registry's pinned shape, so no translator or vectors` : ""})`); }
+  if (v.changelog) { fs.appendFileSync(path.join(T, CHANGELOG), v.changelog); console.log(`${CHANGELOG}: kernel line written (${v.diff.length} change(s)${v.scopeOnly ? `; a scope extension: ${v.companions.scope.names.join(", ")} entered the kernel with the registry's pinned shape, so no translator or vectors` : ""}${v.trimOnly ? "; a scope trim: grammar left the kernel, each key held by the registry pin or dropped with a why, so no translator or vectors" : ""})`); }
   const out = { status: KS.TRIAL_KERNEL, translator: TV1.TRANSLATOR, companions: v.companions ?? null, kernel: now };
   fs.writeFileSync(path.join(T, PIN), JSON.stringify(out, null, 1) + "\n"); console.log(`${PIN} written${v.diff.length ? ` over ${v.diff.length} change(s), companions recorded` : " (unchanged kernel)"}`); process.exit(0);
 }
@@ -81,12 +91,13 @@ let pass = 0, fail = 0;
 const ok = (id: string, cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok ${id} ${what}`); } else { fail++; console.log(`  FAIL ${id} ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
 const C = async (id: string, what: string, fn: () => any) => { try { const r = await fn(); if (Array.isArray(r)) ok(id, r[0], what, r[1]); else ok(id, r, what); } catch (e) { ok(id, false, what, `threw: ${e?.stack ?? e}`); } };
 
-await C("K1", "the kernel's shapes carry status trial-kernel: envelope, fold, identity, version, transform, parent, model, roles, access (kernelPinOf; reviewer item 5's nine); roles carries the ladder's grammar and access the four doors; the registry says what it means (STATUSES, statusOf)", () => {
+await C("K1", "the kernel's shapes carry status trial-kernel: envelope, fold, identity, version, transform, parent, model, roles, access (kernelPinOf; reviewer item 5's nine); roles and access carry their COMPONENT shape only (recut C11: the ladder's vocabulary is the registry's, as roles.vocab; the doors are client presets); the registry says what it means (STATUSES, statusOf)", () => {
   const p = KS.kernelPinOf(); const names = [...KS.KERNEL_SHAPES, ...KS.KERNEL_COMPONENTS];
   return [names.every((n) => p[n]?.status === "trial-kernel") && Object.keys(p).length === names.length && names.length === 9 && typeof CAT.STATUSES["trial-kernel"] === "string" && /model, roles, access/.test(CAT.STATUSES["trial-kernel"])
     && ["transform", "parent:x", "model", "roles:u-1", "access"].every((n) => CAT.statusOf(n) === "trial-kernel") && CAT.statusOf("light") === "trial" && CAT.statusOf("default-role") === "trial"
     && p.envelope.fields.includes("actor") && p.envelope.kinds.includes("purge") && p.fold.ops.set.includes("commit") && p.version.v === 4 && p.identity.identity === "[a-z0-9-]{1,64}"
-    && p.model.type === "string" && p.roles.fields.until === "int" && p.roles.grammar.rank.owner === 255 && p.roles.grammar.permissions.includes("grantRoles") && p.roles.grammar.reserved.includes("ghost") && JSON.stringify(p.access.enums.join) === '["anyone","signed-in","listed"]' && JSON.stringify(p.access.grammar.doors) === '["members","open","visitors","watch"]',
+    && p.model.type === "string" && p.roles.fields.until === "int" && !("grammar" in p.roles) && !("vocab" in p.roles) && !("grammar" in p.access) && JSON.stringify(p.access.enums.join) === '["anyone","signed-in","listed"]'
+    && CAT.pinOf().roles.vocab?.rank?.owner === 255 && CAT.pinOf().roles.vocab.permissions.includes("grantRoles") && CAT.pinOf().roles.vocab.reserved.includes("ghost") && !("lockLevels" in CAT.pinOf().roles.vocab),
     Object.fromEntries(names.map((n) => [n, p[n]?.status]))]; });
 
 await C("K2", "the code's kernel is what spec/kernel-pin.json pins (a difference is THE change: red until `kernel-check.ts --pin` with its companions)", () => {
@@ -105,7 +116,10 @@ await C("K3", "the pin's recorded companions hold: the changelog line is in REGI
   const tr = !changed || (KS.translatorN(c.translator?.to) > KS.translatorN(c.translator?.from) && KS.translatorN(TV1.TRANSLATOR) >= KS.translatorN(c.translator?.to)) || (typeof c.translator?.step === "string" && fs.existsSync(path.join(T, c.translator.step)));
   const r = changed ? await runVectors(c.vectors?.dir ?? "") : { ran: null, why: "no kernel change recorded (a scope extension only)" }; const names = (c.vectors?.names ?? []);
   const vec = !changed || (!!r.ran && r.ran.length >= 1 && r.ran.every((x: any) => x.old !== "ok" && x.new === "ok") && names.every((n: string) => r.ran.some((x: any) => x.name === n)));
-  return [line && tr && vec && scope && (changed || !!c.scope), { line, tr, vec, scope: c.scope ?? null, vectors: r.ran ?? r.why }]; });
+  // a scope trim recorded (C11): every key it says the registry holds is still in the registry pin's vocab, and still out of the kernel
+  const trim = !c.trim || (Object.entries(c.trim.held ?? {}).every(([n, ks]: [string, any]) => Array.isArray(ks) && ks.every((k: string) => rp[n]?.vocab && Object.hasOwn(rp[n].vocab, k)) && !now[n]?.grammar)
+    && Object.entries(c.trim.dropped ?? {}).every(([k, w]) => typeof w === "string" && w.trim() && !now[k.split(".")[0]]?.grammar));
+  return [line && tr && vec && scope && trim && (changed || !!c.scope || !!c.trim), { line, tr, vec, scope: c.scope ?? null, trim: c.trim ?? null, vectors: r.ran ?? r.why }]; });
 
 // ---- the verdict itself, on a mutated kernel (the proof the gate carries: red without the companions, green with them) ----
 const mutated = () => { const now = KS.kernelPinOf(); now.envelope.fields = [...now.envelope.fields, "note"].sort(); return now; };
@@ -143,13 +157,16 @@ await C("K10", "the registry pin agrees: transform, parent, model, roles and acc
 
 // ---- the three that joined (reviewer item 5: model, roles, access): a mutated shape of each is a kernel change, red without the companions ----
 const mut = (f: (now: any) => void) => { const now = KS.kernelPinOf(); f(now); return now; };
-await C("K11", "a mutated model, roles or access shape is a kernel change: model's type, a roles field dropped, a permission dropped from the ladder, a reserved role id freed, access's join enum narrowed, a door renamed — each differs from the pin (kernelDiff) and is refused a re-pin without the three companions", () => {
-  const ms: [string, any][] = [["model.type", mut((n) => { n.model.type = "object"; })], ["roles.fields.until", mut((n) => { delete n.roles.fields.until; })],
-    ["roles.grammar.permissions", mut((n) => { n.roles.grammar.permissions = n.roles.grammar.permissions.filter((p: string) => p !== "ban"); })], ["roles.grammar.reserved", mut((n) => { n.roles.grammar.reserved = n.roles.grammar.reserved.filter((p: string) => p !== "ghost"); })],
-    ["roles.grammar.rank.owner", mut((n) => { n.roles.grammar.rank.owner = 254; })], ["access.enums.join", mut((n) => { n.access.enums.join = ["anyone", "listed"]; })], ["access.grammar.doors", mut((n) => { n.access.grammar.doors = ["members", "open", "visitors"]; })]];
+await C("K11", "a mutated model, roles or access SHAPE is a kernel change (model's type, a roles field dropped, access's join enum narrowed: refused without the three companions); the ladder's VOCABULARY is the registry's since C11: a permission dropped, a reserved id freed (\"ghost\" too), a rank moved, each is a registry break (pinBreaks) refused a re-pin without --ack, and NOT a kernel diff", () => {
+  const ms: [string, any][] = [["model.type", mut((n) => { n.model.type = "object"; })], ["roles.fields.until", mut((n) => { delete n.roles.fields.until; })], ["access.enums.join", mut((n) => { n.access.enums.join = ["anyone", "listed"]; })]];
   const got = ms.map(([at, now]) => { const d = KS.kernelDiff(pinned.kernel, now); const v = KS.kernelVerdict(pinned, now, null); const vs = KS.kernelVerdict(pinned, now, { ack: "x", scope: { names: [at.split(".")[0]], registryPinned: true } });
     return { at, red: d.some((x: string) => x.startsWith(at)) && !v.ok && /translator/.test(v.why) && /--vectors/.test(v.why) && !vs.ok && /translator/.test(vs.why) }; });
-  return [got.every((g) => g.red), got]; });
+  const reg = CAT.pinOf(); const vm = (f: (v: any) => void) => { const n = JSON.parse(JSON.stringify(reg)); f(n.roles.vocab); return n; };
+  const vs: [string, any][] = [["permissions", vm((v) => { v.permissions = v.permissions.filter((p: string) => p !== "ban"); })], ["reserved", vm((v) => { v.reserved = v.reserved.filter((p: string) => p !== "ghost"); })],
+    ["rank", vm((v) => { v.rank.owner = 254; })], ["customId", vm((v) => { v.customId = "^[a-z]{1,8}$"; })]];
+  const vgot = vs.map(([k, now]) => { const br = CAT.pinBreaks(reg, now); const bare = CAT.pinVerdict(reg, now, null); const acked = CAT.pinVerdict(reg, now, "x", "2026-10-21");
+    return { k, red: br.some((t: string) => t.startsWith(`roles.${k}: vocabulary`)) && !bare.ok && /--ack/.test(bare.why) && acked.ok, kernel: KS.kernelDiff(KS.kernelPinOf(), KS.kernelPinOf()).length === 0 }; });
+  return [got.every((g) => g.red) && vgot.every((g) => g.red && g.kernel), { got, vgot }]; });
 await C("K12", "the scope path is not a loophole: a kernel component ENTERING the pin with the registry's shape re-pins on the ack alone (scope recorded, no translator/vectors asked), but entering with a changed shape, entering a name that isn't the kernel's, or a scope that doesn't name every entrant, needs all three", () => {
   const base = { kernel: Object.fromEntries(Object.entries(KS.kernelPinOf()).filter(([k]) => k !== "access")), companions: null, translator: TV1.TRANSLATOR };   // a pin from before access joined
   const now = KS.kernelPinOf(); const good = KS.kernelVerdict(base, now, { ack: "test: access joins", scope: { names: ["access"], registryPinned: true } }, "2026-10-18");
@@ -160,6 +177,22 @@ await C("K12", "the scope path is not a loophole: a kernel component ENTERING th
   return [good.ok && good.scopeOnly === true && /^- 2026-10-18: kernel: test: access joins\n  - access: absent → \(the registry's pinned shape, now the kernel's\)/.test(good.changelog) && JSON.stringify(good.companions.scope) === '{"names":["access"]}' && good.companions.translator === null
     && !noAck.ok && /scope grew/.test(noAck.why) && /--ack/.test(noAck.why) && !/translator change/.test(noAck.why)
     && [unpinned, wrongName, changedToo].every((v) => !v.ok && /translator change/.test(v.why) && /--vectors/.test(v.why)), { good: good.changelog, noAck: noAck.why?.slice(0, 200), unpinned: unpinned.why?.slice(0, 120) }]; });
+
+await C("K13", "the TRIM path (recut C11) is not a loophole: a kernel component's grammar leaving re-pins on the ack alone only when every leaving key is HELD (the registry pin keeps the same value) or DROPPED with a why; a key neither held nor dropped, a blank why, no ack, a non-kernel name, or any other change alongside, is refused (the last needs all three)", () => {
+  const g = { rank: { owner: 255 }, permissions: ["build"], lockLevels: ["owner"] };
+  const base = { kernel: { ...KS.kernelPinOf(), roles: { ...KS.kernelPinOf().roles, grammar: g }, access: { ...KS.kernelPinOf().access, grammar: { doors: ["open"] } } }, companions: null, translator: TV1.TRANSLATOR };
+  const now = KS.kernelPinOf(); const trim = { held: { roles: ["rank", "permissions"] }, dropped: { "roles.lockLevels": "unread", "access.doors": "client presets" } };
+  const good = KS.kernelVerdict(base, now, { ack: "test: grammar leaves", trim }, "2026-10-21");
+  const noAck = KS.kernelVerdict(base, now, { trim });
+  const unaccounted = KS.kernelVerdict(base, now, { ack: "x", trim: { held: { roles: ["rank"] }, dropped: trim.dropped } });
+  const blank = KS.kernelVerdict(base, now, { ack: "x", trim: { held: trim.held, dropped: { "roles.lockLevels": "  ", "access.doors": "x" } } });
+  const changedToo = KS.kernelVerdict(base, mut((n) => { n.transform.defaults.scale = [2, 2, 2]; }), { ack: "x", trim });
+  const notTrim = KS.kernelVerdict(base, now, { ack: "x" });   // no trim companion: the grammar leaving is an ordinary kernel change
+  return [good.ok && good.trimOnly === true && /^- 2026-10-21: kernel: test: grammar leaves\n/.test(good.changelog) && /roles\.permissions: leaves the kernel; the registry pin holds it \(roles\.vocab\.permissions\)/.test(good.changelog) && /access\.doors: leaves every pin: client presets/.test(good.changelog)
+    && JSON.stringify(good.companions.trim) === JSON.stringify(trim) && good.companions.translator === null && good.companions.vectors === null
+    && !noAck.ok && /--ack/.test(noAck.why) && !/translator change/.test(noAck.why)
+    && !unaccounted.ok && /roles\.permissions/.test(unaccounted.why) && !blank.ok && /roles\.lockLevels/.test(blank.why)
+    && [changedToo, notTrim].every((v) => !v.ok && /translator change/.test(v.why) && /--vectors/.test(v.why)), { good: good.changelog ?? good.why, unaccounted: unaccounted.why?.slice(0, 160), blank: blank.why?.slice(0, 160) }]; });
 
 console.log(`\nkernel: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

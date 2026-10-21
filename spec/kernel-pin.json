@@ -1,14 +1,22 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@15",
+ "translator": "eidoverse/translate-v1@16",
  "companions": {
-  "changelog": "2026-10-19: kernel: scope extension (reviewer item 5, 10-18): model, roles (with the ladder's grammar) and access (with the four doors) entered the kernel with the shapes the registry pinned; no stored byte changes meaning, so no translator or vectors; from now on a change to any of them is a kernel change",
-  "scope": {
-   "names": [
-    "access",
-    "model",
-    "roles"
-   ]
+  "changelog": "2026-10-21: kernel: recut C11 (house markup 10-20, plan C11): the kernel holds what the fold reads; roles and access keep their component shape, and the ladder's vocabulary moves to the registry pin (roles.vocab: a change still needs --ack, never silent). No stored byte changes meaning.",
+  "trim": {
+   "held": {
+    "roles": [
+     "rank",
+     "builtin",
+     "permissions",
+     "customId",
+     "reserved"
+    ]
+   },
+   "dropped": {
+    "roles.lockLevels": "unread since recut B2 (a lock is true; its strength is its setter's rank); LOCK_LEVELS deleted",
+    "access.doors": "client presets that write access fields; no stored byte names a door"
+   }
   },
   "translator": null,
   "vectors": null
@@ -153,49 +161,7 @@
     "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
    },
    "keyed": true,
-   "on": "world",
-   "grammar": {
-    "rank": {
-     "none": -1,
-     "visitor": 0,
-     "builder": 100,
-     "moderator": 200,
-     "owner": 255
-    },
-    "builtin": [
-     "visitor",
-     "builder",
-     "moderator",
-     "owner"
-    ],
-    "permissions": [
-     "build",
-     "editOthers",
-     "editWorld",
-     "generate",
-     "fly",
-     "scripts",
-     "pauseScripts",
-     "mute",
-     "kick",
-     "ban",
-     "grantRoles"
-    ],
-    "customId": "^[a-z][a-z0-9-]{0,23}$",
-    "reserved": [
-     "banned",
-     "everyone",
-     "ghost",
-     "guest",
-     "none",
-     "owner"
-    ],
-    "lockLevels": [
-     "builder",
-     "moderator",
-     "owner"
-    ]
-   }
+   "on": "world"
   },
   "access": {
    "status": "trial-kernel",
@@ -233,15 +199,7 @@
    "absentMeans": {
     "watch": "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)"
    },
-   "on": "world",
-   "grammar": {
-    "doors": [
-     "members",
-     "open",
-     "visitors",
-     "watch"
-    ]
-   }
+   "on": "world"
   }
  }
 }

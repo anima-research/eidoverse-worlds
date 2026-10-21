@@ -16,6 +16,7 @@
 
 // how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
+import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS } from "./roles.js";
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
@@ -459,6 +460,9 @@ export const COMPONENTS = {
   // custom roles between) and a closed list of permissions. Banned is a state in the moderator log, never a role.
   // no `sub` (shape audit 10-16): an account subject is person data, never a value (PROTOCOL §9.2); the translator strips it
   roles:     { status: "trial-kernel", on: "world", keyed: true, key: "instance", fields: { role: "string", can: "object", note: "string", until: "int" },
+    // the ladder's vocabulary (recut C11: out of the kernel pin, which holds what the fold reads): a grant names one of these ids, a
+    // role-def keys on these permissions, so any change is a break needing --ack (pinBreakList `vocab`), an addition too
+    vocab: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort() },
     absentMeans: { until: "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80), until? (epoch ms: when the grant ends; the authority ends it then, warning the holder 5 min before; never on owner)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
   // guests isn't written down: absent means visitor whatever the role (roles.js guestRoleOf), and a written visitor is
   // refused above a default role of none (guests never above role). Pinned as a known gap (pretrans D7)
@@ -587,7 +591,7 @@ COMPONENTS["avatar-deny"] = { status: "reserved", on: "world", instead: "nothing
 
 export const STATUSES = {
   trial: "admitted, but its shape may still change during the alpha (about a year); stored values are translated or repaired where they can be",
-  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, and the five components every reader rests on: transform, parent, model, roles, access, with the roles and door grammar): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
+  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, and the five components every reader rests on: transform, parent, model, roles, access, each as its component shape): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
   reserved: "the name is held for a shape that isn't settled: every write of it is refused",
   stable: "promised: its meaning never changes; it only grows by additions",
 };
@@ -733,6 +737,7 @@ export function pinOf() {
     if (d.maxKeys !== undefined) p.maxKeys = d.maxKeys;
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
     if (d.grammar) p.grammar = { ...d.grammar };
+    if (d.vocab) p.vocab = copy(d.vocab);
     if (d.keyed !== undefined) p.keyed = d.keyed;
     if (d.on) p.on = d.on;
     // reactions' handler kinds and their args are part of its meaning (shape audit 10-16: the kinds are frozen)
@@ -783,6 +788,9 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
     for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
     for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
+    // a closed vocabulary (roles.vocab: ranks, built-in ids, permissions, the custom-id pattern, reserved ids): ANY difference
+    // changes what a stored grant or role-def means (a freed id, a new reserved one), so additions break too: never silently
+    for (const [f, v] of Object.entries(p.vocab ?? {})) if (j(n.vocab?.[f]) !== j(v)) push(`${name}.${f}: vocabulary ${j(v)} → ${j(n.vocab?.[f]) ?? "gone"}`);
     for (const [k, args] of Object.entries(p.handlers ?? {})) { if (!n.handlers?.[k]) { push(`${name}: handler kind ${k} is gone`); continue; }
       for (const a of args) if (!n.handlers[k].includes(a)) push(`${name}.${k}: handler arg ${a} is gone`); }
     // PROTOCOL §4: a field added after the name's first registration says what an older value WITHOUT it means (a value

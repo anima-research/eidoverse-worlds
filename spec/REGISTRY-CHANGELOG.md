@@ -216,3 +216,11 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - lock.rank: "builder" is no longer allowed
   - lock.rank: "moderator" is no longer allowed
   - lock.rank: "owner" is no longer allowed
+- 2026-10-21: kernel: recut C11 (house markup 10-20, plan C11): the kernel holds what the fold reads; roles and access keep their component shape, and the ladder's vocabulary moves to the registry pin (roles.vocab: a change still needs --ack, never silent). No stored byte changes meaning.
+  - roles.rank: leaves the kernel; the registry pin holds it (roles.vocab.rank)
+  - roles.builtin: leaves the kernel; the registry pin holds it (roles.vocab.builtin)
+  - roles.permissions: leaves the kernel; the registry pin holds it (roles.vocab.permissions)
+  - roles.customId: leaves the kernel; the registry pin holds it (roles.vocab.customId)
+  - roles.reserved: leaves the kernel; the registry pin holds it (roles.vocab.reserved)
+  - roles.lockLevels: leaves every pin: unread since recut B2 (a lock is true; its strength is its setter's rank); LOCK_LEVELS deleted
+  - access.doors: leaves every pin: client presets that write access fields; no stored byte names a door

@@ -10,9 +10,10 @@
 //   transform  the one placement component (§9.3: glTF's rule)
 //   parent     the one attachment component (§9.3)
 //   model      what a thing shows (its library path; §9.3) — reviewer item 5 (10-18): "envelope/fold/identity/version/transform/parent/model/roles/access"
-//   roles      who may do what (§7): the component, AND the ladder's grammar (roles.js: the ranks, the built-in roles, the closed
-//              permission list, a custom role's id grammar, the reserved ids)
-//   access     who may come in (§7, access.js): the component, AND the four doors
+//   roles      who may do what (§7): the component's shape. Its VOCABULARY (ranks, built-in ids, permissions, the custom-id
+//              pattern, reserved ids) is the registry's (componentspec roles.vocab), not the kernel's (recut C11: the kernel
+//              holds what the fold reads; the ladder is read by the authority, and a registry break still needs --ack)
+//   access     who may come in (§7, access.js): the component's shape (the four doors are client presets that write it)
 // Each has status `trial-kernel`: like trial it may still change during the alpha, but a change is never a re-pin with an
 // acknowledgement. spec/kernel-pin.json holds the pin; tools/protocol/kernel-check.ts (the gate's CORE lane) is red the moment
 // the code's kernel differs from the pin, and `kernel-check.ts --pin` re-pins ONLY when the same change brings its three
@@ -25,8 +26,6 @@
 // Pure: this module knows no files; the check does the reading and writing.
 import { ENVELOPE, KINDS, IDENT, ENTITY, COMP, OP_FIELDS, BATCH_FIELDS, GENESIS_FIELDS, DIALECT, VERSION, MINORS } from "./fold.js";
 import { COMPONENTS, pinOf } from "./componentspec.js";
-import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS, LOCK_LEVELS } from "./roles.js";
-import { DOORS } from "./access.js";
 
 export const TRIAL_KERNEL = "trial-kernel";
 /** The component names that belong to the kernel (their registry status is trial-kernel). */
@@ -37,7 +36,7 @@ export const KERNEL_SHAPES = Object.freeze(["envelope", "fold", "identity", "ver
 /** The kernel's checkable shape, as the pin stores it. Deterministic (sorted where the source is a set). */
 export function kernelPinOf() {
   const reg = pinOf();
-  const comp = (name) => { const p = reg[name]; if (!p) return { missing: true }; return { ...p, status: COMPONENTS[name]?.status ?? p.status }; };
+  const comp = (name) => { const p = reg[name]; if (!p) return { missing: true }; const { vocab: _v, ...shape } = p; return { ...shape, status: COMPONENTS[name]?.status ?? p.status }; };   // vocab is the registry's (C11)
   return {
     envelope: { status: TRIAL_KERNEL, fields: [...ENVELOPE].sort(), kinds: [...KINDS].sort() },
     fold: { status: TRIAL_KERNEL, ops: Object.fromEntries(Object.entries(OP_FIELDS).map(([k, v]) => [k, [...v]])), batch: [...BATCH_FIELDS] },
@@ -46,11 +45,8 @@ export function kernelPinOf() {
     transform: comp("transform"),
     parent: comp("parent"),
     model: comp("model"),
-    // roles: the component's pin plus the ladder every reader of roles:<id> agrees on (a rank renamed, a permission dropped, a
-    // reserved id freed: each changes what a stored grant means)
-    roles: { ...comp("roles"), grammar: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort(), lockLevels: [...LOCK_LEVELS] } },
-    // access: the component's pin (join's enum, watch) plus the four doors an owner picks between
-    access: { ...comp("access"), grammar: { doors: Object.keys(DOORS).sort() } },
+    roles: comp("roles"),
+    access: comp("access"),
   };
 }
 
@@ -83,6 +79,24 @@ export function kernelVerdict(pin, now = kernelPinOf(), companions = null, date 
   const c = companions ?? {}; const missing = [];
   const ack = typeof c.ack === "string" ? c.ack.trim() : "";
   if (!ack) missing.push(`a changelog line: --ack "<why>" (written to spec/REGISTRY-CHANGELOG.md as "kernel: <why>")`);
+  // A SCOPE TRIM (recut C11, the mirror of the extension below): the whole diff is kernel components' `grammar` leaving the pin.
+  // Every leaving key must be HELD (the registry pin keeps the same value; the caller compares the files and names it in
+  // companions.trim.held) or DROPPED with a why (companions.trim.dropped["<name>.<key>"]). No stored byte changes meaning, so no
+  // translator or vectors could exist; the ack is still required. Anything else in the diff is a kernel change: all three.
+  const leaving = diff.map((d) => /^([a-z][a-z0-9-]*)\.grammar: .* → absent$/.exec(d)?.[1] ?? null);
+  const t = c.trim;
+  if (t && diff.length && leaving.every((n) => n && KERNEL_COMPONENTS.includes(n))) {
+    const base = pin.kernel ?? pin; const lines = [], unaccounted = [];
+    for (const n of leaving) for (const k of Object.keys(base[n]?.grammar ?? {})) {
+      const why = t.dropped?.[`${n}.${k}`];
+      if (Array.isArray(t.held?.[n]) && t.held[n].includes(k)) lines.push(`  - ${n}.${k}: leaves the kernel; the registry pin holds it (${n}.vocab.${k})`);
+      else if (typeof why === "string" && why.trim()) lines.push(`  - ${n}.${k}: leaves every pin: ${why.trim()}`);
+      else unaccounted.push(`${n}.${k}`);
+    }
+    if (unaccounted.length) return { ok: false, diff, why: `a kernel grammar is leaving, but these keys are neither held by the registry pin (same value) nor dropped with a why (--drop "<name>.<key>=<why>"):\n  - ${unaccounted.join("\n  - ")}` };
+    if (missing.length) return { ok: false, diff, why: `the kernel's scope shrank (${[...new Set(leaving)].join(", ")}: grammar leaves): no stored byte changes meaning, so no translator or vectors are asked, but the change still needs its changelog line:\n  - ${missing.join("\n  - ")}` };
+    return { ok: true, diff, trimOnly: true, changelog: `- ${date}: kernel: ${ack}\n${lines.join("\n")}\n`, companions: { changelog: `${date}: kernel: ${ack}`, trim: { held: t.held ?? {}, dropped: t.dropped ?? {} }, translator: null, vectors: null } };
+  }
   // A SCOPE EXTENSION (reviewer item 5, 10-18: model, roles and access joined transform and parent): the whole diff is kernel
   // component(s) entering the pin, each with the shape the registry ALREADY pinned (the caller checks that against
   // spec/registry-pin.json and names them in companions.scope). No stored byte changes meaning, so no translator and no

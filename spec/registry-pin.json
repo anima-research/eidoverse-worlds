@@ -1588,6 +1588,43 @@
   "absentMeans": {
    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
   },
+  "vocab": {
+   "rank": {
+    "none": -1,
+    "visitor": 0,
+    "builder": 100,
+    "moderator": 200,
+    "owner": 255
+   },
+   "builtin": [
+    "visitor",
+    "builder",
+    "moderator",
+    "owner"
+   ],
+   "permissions": [
+    "build",
+    "editOthers",
+    "editWorld",
+    "generate",
+    "fly",
+    "scripts",
+    "pauseScripts",
+    "mute",
+    "kick",
+    "ban",
+    "grantRoles"
+   ],
+   "customId": "^[a-z][a-z0-9-]{0,23}$",
+   "reserved": [
+    "banned",
+    "everyone",
+    "ghost",
+    "guest",
+    "none",
+    "owner"
+   ]
+  },
   "keyed": true,
   "on": "world"
  },

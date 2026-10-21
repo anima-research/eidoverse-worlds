@@ -33,8 +33,6 @@ export const RANK = Object.freeze({ none: -1, visitor: 0, builder: 100, moderato
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
 // SETTER holds now, read from the log at check time (a setter who's demoted takes their locks down with them). Anyone at
 // that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
-// kernel-pinned (kernelspec roles.grammar); nothing reads it since recut B2; leaves in recut C's kernel trim (one re-pin)
-export const LOCK_LEVELS = Object.freeze(["builder", "moderator", "owner"]);
 /** The words for a lock's strength: who may lift it (display only). */
 export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
 export const BUILTIN_IDS = Object.freeze(["visitor", "builder", "moderator", "owner"]);
@@ -80,7 +78,8 @@ export const BUILTIN = Object.freeze({
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 export const CUSTOM_ID = /^[a-z][a-z0-9-]{0,23}$/;
-// "ghost" stays reserved only until recut C trims the kernel (the id list is kernel-pinned; one re-pin, not two): ghost itself is gone (R 10-20)
+// "ghost" stays reserved though ghost itself is gone (R 10-20): a name is never recycled for a different concept (devchat 10-21),
+// so no world can define a custom role that reuses a sanction's name. The list is the registry's (roles.vocab, recut C11).
 export const RESERVED_IDS = Object.freeze(new Set(["owner", "none", "guest", "everyone", "ghost", "banned"]));
 /** A role a `who` may name: a built-in, or an id a world's owner could define (CUSTOM_ID, not a reserved word). Whether
  *  this world defines it is the authority's to say (roleDef). */
