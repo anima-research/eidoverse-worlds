@@ -89,6 +89,7 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const none = () => ({});
 const D = await import(TREE + "shared/protocol/authority.js");
+D.fixtureIds?.(true);   // fixture-ids.ts switched on THIS checkout's authority; --tree loads another one
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const V = await import(TREE + "shared/video.js").catch(none);
