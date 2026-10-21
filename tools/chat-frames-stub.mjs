@@ -1,13 +1,11 @@
 // chat-log-test substitutes this for frames.js. The stub is stateful so tests
-// can hide the frame and watch the unread counters move.
+// can hide the frame and watch the unread counters move. Only what the real frame api has (frames.js:273).
 export const frameStub = {
   visible: true,
-  state: { collapsed: false },
   body: null,
   badge() {},
   toggle() {},
   show() { this.visible = true; },
-  collapse(v) { this.state.collapsed = !!v; },
 };
 export function makeFrame() {
   frameStub.el = document.createElement('div');
@@ -16,3 +14,9 @@ export function makeFrame() {
   document.body.append(frameStub.el);
   return frameStub;
 }
+// domquad.js walks the frame registry; nothing to walk in the chat cone
+export const allFrames = () => [];
+// the real getFrame('chat') returns the chat frame once makeFrame has run
+// (frames.js:252) — ui.js togglePeopleHere goes through it, so returning null
+// here would make any test of that path pass without reaching the DOM.
+export const getFrame = (id) => (id === 'chat' && frameStub.body ? frameStub : null);

@@ -1,0 +1,13 @@
+{
+  "name": "eido-captionbot",
+  "private": true,
+  "type": "module",
+  "description": "The projector's captioner: stream audio → VAD + STT → a bounded captions comp on the screen entity (voicebot run backwards)",
+  "scripts": {
+    "start": "bun index.ts",
+    "test": "bun ../captionbot-test.ts"
+  },
+  "dependencies": {
+    "@animalabs/voice-kit": "file:../../../voice-kit"
+  }
+}

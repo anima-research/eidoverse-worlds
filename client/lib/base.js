@@ -41,6 +41,8 @@ export const CONFIG = {
   world: params.get('world') || 'commons',
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
+  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
   token: params.get('key') || store?.getItem('ew-key') || '',
@@ -49,6 +51,17 @@ export const CONFIG = {
 };
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
+
+/** The name a join ack says we have, minus the transport prefix sendJoin put
+ *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
+ *  A VERIFIED identity (the ack carries yourSub) is the server's own name for
+ *  us — it ignored the requested id — so it is kept whole: a signed-in viewer
+ *  really called "retina-helen" must not be shortened to "helen". */
+export function nameFromJoinAck(you, { renderer = false, spectate = false, verified = false } = {}) {
+  if (!you || verified) return you;
+  const prefix = renderer ? 'renderer-' : spectate ? 'retina-' : '';
+  return prefix && you.startsWith(prefix) ? you.slice(prefix.length) : you;
+}
 
 /** Rename in place (the front-door panel calls this before connecting). */
 export function setName(name) {
@@ -71,6 +84,52 @@ export function setErrorSink(fn) { errorSink = fn; }
 // console and the toast stack — the first one is the useful one, and the
 // hundredth actively hides everything else.
 const seenErrors = new Map(); // key -> { n, nextAt }
+// ---- console tee: what a visitor's page says, where the operator can read it.
+// Every report() plus window errors post to /clientlog (key-gated, bounded
+// server-side). Off the hot path (queued, one flush per second), never throws,
+// and never carries the key in the payload or the URL — it rides the Authorization header
+// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc).
+let teeQ = [], teeTimer = 0, teeMuted = false;
+function teeFlush() {
+  teeTimer = 0;
+  if (!teeQ.length || teeMuted) return;
+  const batch = teeQ.splice(0, 20);
+  const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
+  const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
+  for (const line of batch) {
+    try { fetch(url, { method: 'POST', body: line, headers, keepalive: true }).then((r) => { if (r.status === 401 || r.status === 404) teeMuted = true; }).catch(() => {}); }
+    catch { /* the tee must never break the page */ }
+  }
+  if (teeQ.length) teeTimer = setTimeout(teeFlush, 1000);
+}
+const teeSeen = new Map();   // repeats cost one line, then one per 20
+export function tee(line) {
+  try {
+    const who = CONFIG.name ?? '?';
+    const key = String(line).slice(0, 160);
+    if (!key.startsWith('[xr:rec]')) {
+      const n = (teeSeen.get(key) ?? 0) + 1; teeSeen.set(key, n);
+      if (n > 1 && n % 20 !== 0) return;
+      if (n > 1) line = `${line} ×${n}`;
+    }
+    teeQ.push(`${who} ${String(line).slice(0, 3000)}`);
+    if (teeQ.length > 200) teeQ.splice(0, teeQ.length - 200);
+    if (!teeTimer) teeTimer = setTimeout(teeFlush, 1000);
+  } catch { /* never */ }
+}
+/** tee, sent NOW: for the line before something that may freeze the page (a GPU-process compile), so it isn't lost
+ *  in the 1 s batch. */
+export function teeNow(line) { tee(line); try { clearTimeout(teeTimer); teeFlush(); } catch { /* never */ } }
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
+  window.addEventListener('unhandledrejection', (e) => tee(`[unhandled] ${e.reason?.message ?? e.reason}`));
+  // wake CAUSE, not just the URL (cribbed from agent-framework #141's turn
+  // provenance: who woke you ≠ whose words are in view): reload vs navigate
+  // vs back_forward separates "R reloaded" from "the tunnel reconnected"
+  let cause = '?'; try { cause = performance.getEntriesByType('navigation')[0]?.type ?? '?'; } catch { /* old UA */ }
+  tee(`[boot] cause=${cause} host=${location.host} ${location.pathname}${location.search.replace(/key=[^&]+/, 'key=…')} ua=${navigator.userAgent.slice(0, 120)}`);
+}
+
 export function report(context, err) {
   const message = err?.message ?? String(err ?? 'unknown error');
   const key = `${context}:${message}`;
@@ -78,6 +137,7 @@ export function report(context, err) {
   const rec = seenErrors.get(key) ?? { n: 0, nextAt: 0 };
   rec.n++;
   const suppressed = now < rec.nextAt;
+  if (rec.n === 1 || rec.n % 20 === 0) tee(`[report] ${context}: ${message} ×${rec.n} :: ${String(err?.stack ?? '').split('\n').slice(1, 4).join(' | ').slice(0, 600)}`);
   if (!suppressed) {
     // 1st, then 2s, 10s, 60s… — enough to show a fault is ongoing, not enough to drown
     rec.nextAt = now + Math.min(60000, 2000 * rec.n);
@@ -172,3 +232,7 @@ export function assignColors(names) {
   }
   return claimed;
 }
+
+/** The 'avatar-worn' payload's name: mybody.announceWorn emits { name, path }, setMe emits a string. Every listener
+ *  that keys anything by body name goes through here (bodies.js, xr.js). */
+export const wornNameOf = (v) => (typeof v === 'string' ? v : v?.name) ?? '';

@@ -14,6 +14,21 @@
 // off the entry, so a fold is a pure function of the log.
 
 import { foldSkyEntry } from './forecast.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions.js';
+
+/** An entity's CREATION GENERATION: the seq of the entry that made this
+ *  object, kept across updates of the same object (a partial re-light, a
+ *  same-id re-spawn of the same lib) and renewed when the id comes to mean a
+ *  different thing (a different lib, a different kind, or a spawn after a
+ *  remove). A deed that names an entity binds to this, not to the reusable
+ *  id, so a grant written for one screen cannot be spent on whatever later
+ *  wears its name (Mica, #187 review). */
+function bornOf(prev, kind, a, e) {
+  const seq = e.seq ?? e.ts;
+  if (!prev) return seq;
+  const same = kind === "light" ? prev.kind === "light" : (prev.kind !== "light" && prev.lib === a.lib);
+  return same && prev.born != null ? prev.born : seq;
+}
 
 /**
  * One log entry: the unit of world history (PROTOCOL.md §1).
@@ -47,6 +62,7 @@ import { foldSkyEntry } from './forecast.js';
  * @typedef {object} WorldState
  * @property {Record<string, {
  *   kind?: "light", pos: number[], actor: string, ts: number,
+ *   placer?: { id: string, sub?: string },   // the creation's principal (server-stamped; immutable; guard matches on it)
  *   lib?: string, yaw?: number, scale?: number,
  *   collide?: string,
  *   color?: number, intensity?: number, range?: number,
@@ -83,8 +99,8 @@ import { foldSkyEntry } from './forecast.js';
  * @property {number} chatTotal
  *   Everything ever said here, so a joiner can be told that what it is
  *   looking at is a window and not the whole conversation.
- * @property {Record<string, { role: "owner" | "builder" | "visitor",
- *   gen?: boolean, fly?: boolean, sub?: string }>} roles
+ * @property {Record<string, { role: "owner" | "builder" | "visitor" | "spectator" | "none",
+ *   gen?: boolean, fly?: boolean, sub?: string, until?: number }>} roles
  *   Per-world permissions, fed by owner-authored `grant` verbs in the log —
  *   event-sourced like everything else, so roles replay, fold, and audit.
  *   A world with NO owner in this map is OPEN (everyone builds — the
@@ -95,7 +111,10 @@ import { foldSkyEntry } from './forecast.js';
  *   orthogonal to the ladder like `gen`, but default-off in EVERY world
  *   including open ones — an owner grants it deliberately or nobody has it.
  *   `sub` binds the grant to a durable subject: when present, only that sub
- *   wears it.
+ *   wears it. `until` (epoch ms) ends the record: past it, the record is
+ *   read as absent and its holder falls back to the wildcard `*`. The fold
+ *   only RECORDS the instant — the clock is the reader's (rightsIn's `now`),
+ *   so replay stays deterministic. Owner records and `*` never carry one.
  * @property {Record<string, { by: string, ts: number, reason?: string,
  *   sub?: string }>} [bans]
  *   Per-world bans, fed by owner-authored `ban`/`unban` verbs in the log —
@@ -107,9 +126,22 @@ import { foldSkyEntry } from './forecast.js';
  *   Runtime scripts bound into this world by `behavior` entries.
  */
 
-/** The rights ladder (PROTOCOL.md §7): visitor < builder < owner.
+/** The rights ladder (PROTOCOL.md §7): none < spectator < visitor < builder
+ *  < owner. The two rungs below visitor are ENTRY: `none` may not come in at
+ *  all (the world is invisible to them), `spectator` may watch but has no
+ *  body. Ranks of the original three are unchanged, so every verb gate that
+ *  compares against 0/1/2 means what it always meant.
  *  @type {Record<string, number>} */
-export const ROLE_RANK = { visitor: 0, builder: 1, owner: 2 };
+export const ROLE_RANK = { none: -2, spectator: -1, visitor: 0, builder: 1, owner: 2 };
+
+/** The placer principal a creation carries: {id, sub?}, server-stamped
+ *  (verbs.ts / behaviors.ts). Folded as given, never derived here — the fold
+ *  is blind to identity policy; it only keeps what the entry said. */
+function placerOf(a) {
+  const p = a?.placer;
+  if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id) return undefined;
+  return { id: p.id, ...(typeof p.sub === "string" && p.sub ? { sub: p.sub } : {}) };
+}
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
@@ -164,8 +196,9 @@ export function foldEntry(st, e) {
       // same doctrine: the punt is history, the flight is presence (a lease
       // some volunteer holds), the landing is the `place` that lease commits
       return;
-    case "spawn":
+    case "spawn": {
       if (!a?.id || !a?.lib) return;
+      const prev = st.entities[a.id];
       st.entities[a.id] = {
         lib: a.lib, pos: a.pos ?? [0, 0, 0], yaw: a.yaw ?? 0,
         ...(a.scale != null ? { scale: a.scale } : {}),
@@ -177,9 +210,14 @@ export function foldEntry(st, e) {
         // is precisely the drift house rule 1 forbids. The LOG always kept it,
         // so no world lost anything; it just never reached the snapshot.
         ...(a.collide != null ? { collide: a.collide } : {}),
-        actor: e.actor, ts: e.ts,
+        // who placed it, as a PRINCIPAL (display id + durable subject when
+        // known) — immutable from here: the guard matches against this, not
+        // against whoever wears the name later (rights.ts placerOf/isPlacer)
+        ...(placerOf(a) ? { placer: placerOf(a) } : {}),
+        actor: e.actor, ts: e.ts, born: bornOf(prev, "spawn", a, e),
       };
       return;
+    }
     case "place": {
       const ent = st.entities[a?.id];
       if (!ent) return;
@@ -225,8 +263,31 @@ export function foldEntry(st, e) {
         ...(base?.parent ? { parent: base.parent } : {}),
         ...(base?.yaw != null ? { yaw: base.yaw } : {}),
         ...(base?.scale != null ? { scale: base.scale } : {}),
-        actor: e.actor, ts: e.ts,
+        // a re-light is a partial update, not a re-authoring: the FIRST
+        // placer stays (the #190 known edge — an owner brightening someone's
+        // guarded lamp used to become its placer through `actor`)
+        ...((base?.placer ?? placerOf(a)) ? { placer: base?.placer ?? placerOf(a) } : {}),
+        actor: e.actor, ts: e.ts, born: bornOf(prev, "light", a, e),
       };
+      return;
+    }
+    case "caption": {
+      // One line of what a screen said, once. The bag it folds into is
+      // SERVER-WRITTEN (vComp refuses type "captions"); the dedupe and the
+      // session order are checked at the door before append, and checked
+      // again here so a hand-edited log stays total (a refused-shape entry
+      // folds to nothing, like every unknown verb).
+      const n = normalizeCaptionArgs(a);
+      if (!n.ok) return;
+      // the shape drops any `gen` a client sent; the ENTRY's gen is the
+      // sequencer's stamp (vCaption), so the fold reads it back from the log
+      const args = { ...n.args, gen: Number(a.gen) || 0 };
+      const ent = st.entities[args.id];
+      if (!ent || captionRefusal(ent.comp?.captions, args)) return;
+      const bag = foldCaption(ent.comp?.captions, args);
+      ent.comp ??= {};
+      if (bag) ent.comp.captions = bag; else delete ent.comp.captions;
+      if (!Object.keys(ent.comp).length) delete ent.comp;
       return;
     }
     case "remove": {
@@ -293,9 +354,40 @@ export function foldEntry(st, e) {
       // everything else. (Snapshots from before this verb lack the map.)
       if (!a?.id) return;
       st.roles ??= {};
+      // {id, revoke: true, sub?} — the record goes, and its holder falls back
+      // to the wildcard. Every record carrying the same sub goes with it (a
+      // subject has one record; historical worlds can hold several). This is
+      // also how an expiry is SETTLED into history: the sequencer writes the
+      // revoke when `until` passes, so the log says when access ended.
+      if (a.revoke === true) {
+        const gone = st.roles[a.id];
+        if (!(a.sub && gone?.sub && gone.sub !== a.sub)) delete st.roles[a.id];
+        if (a.sub) for (const k of Object.keys(st.roles)) if (st.roles[k]?.sub === a.sub) delete st.roles[k];
+        return;
+      }
+      // A SUBJECT HAS ONE RECORD — a subject-keyed migration (Mica, #187
+      // rounds 3–4). A grant that knows its subject's sub:
+      //   · FAILS CLOSED when the target name already carries ANOTHER sub's
+      //     record: relabeling would hand that principal's role/gen/fly to
+      //     this subject. The door refuses it (vGrant); a replayed or
+      //     hand-written entry folds to nothing here. The owner moves or
+      //     revokes the occupant first.
+      //   · collects EVERY record carrying this sub (historical worlds can
+      //     hold several, written under successive names), continues the one
+      //     under the target name if that is the subject's, else the single
+      //     same-sub record if there is exactly one — and starts from the
+      //     default when history is ambiguous, rather than merging authority
+      //     from records that disagree;
+      //   · removes all of them and writes exactly one, under the target.
+      // rightsIn (shared/rightsfold.js) fails closed on the ambiguity this
+      // leaves behind until the next grant migrates it.
+      const occupant = st.roles[a.id];
+      if (a.sub && occupant?.sub && occupant.sub !== a.sub) return;
+      const stale = a.sub ? Object.keys(st.roles).filter((k) => k !== a.id && st.roles[k]?.sub === a.sub) : [];
       // default matches the owned-world default (builder), so `/grant bob
       // +gen` on an unlisted id doesn't silently demote him to visitor
-      const cur = st.roles[a.id] ?? { role: "builder" };
+      const cur = occupant ?? (stale.length === 1 ? st.roles[stale[0]] : undefined) ?? { role: "builder" };
+      for (const k of stale) delete st.roles[k];
       const role = ROLE_RANK[a.role] != null ? a.role : cur.role;
       const gen = a.gen != null ? Boolean(a.gen) : cur.gen;
       // FLY is orthogonal like gen, and DEFAULT-OFF harder than gen is: an
@@ -304,14 +396,30 @@ export function foldEntry(st, e) {
       // its wearer MAY -- the collapse of those two questions is what made
       // the previous cut default-on for any compatible wing rig.
       const fly = a.fly != null ? Boolean(a.fly) : cur.fly;
+      // The CAPTION DEED: authority to caption exactly one entity, bound to
+      // its creation generation (vGrant resolves `born` at grant time).
+      // `caption: null` revokes; absent keeps whatever was held.
+      const caption = a.caption === null ? undefined
+        : (a.caption && typeof a.caption === "object" && a.caption.id
+          ? { id: String(a.caption.id), ...(a.caption.born != null ? { born: a.caption.born } : {}) }
+          : cur.caption);
       // Durable ink (Hesperus finding #1): when the grant was written while
       // its subject's durable sub was KNOWN, the grant carries it — and only
       // that sub can wear it. A display name is a nameplate, not a deed;
       // before this, anyone reusing an offline owner's nick inherited the
       // world. Grants without a sub (unauthenticated ids, pre-fix history)
       // keep their old name-keyed meaning.
-      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}),
-        ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}) };
+      // TIME-LIMITED: `until` (epoch ms) ends the record; `until: null`
+      // clears an end; absent keeps whatever end the record had (adding gen
+      // to someone's two hours must not make them permanent). Ownership never
+      // expires, and neither does the wildcard: an expiring `*` would fall
+      // through to the default and silently open a closed world.
+      const until = role === "owner" || a.id === "*" ? undefined
+        : a.until === null ? undefined
+          : (typeof a.until === "number" && Number.isFinite(a.until) ? a.until : cur.until);
+      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}), ...(caption ? { caption } : {}),
+        ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}),
+        ...(until != null ? { until } : {}) };
       return;
     }
     case "ban": {
@@ -345,6 +453,10 @@ export function foldEntry(st, e) {
       // stays whatever shape its author gave it. `data: null` removes.
       const ent = st.entities[a?.id];
       if (!ent || typeof a?.type !== "string") return;
+      // `captions` has one writer path — the `caption` verb — and the door
+      // refuses a comp of that type (vComp); the fold refuses it too, so a
+      // hand-edited log cannot overwrite what the sequencer folded.
+      if (a.type === "captions") return;
       ent.comp ??= {};
       if (a.data == null) delete ent.comp[a.type]; else ent.comp[a.type] = a.data;
       if (!Object.keys(ent.comp).length) delete ent.comp;
@@ -415,6 +527,7 @@ export function foldEntry(st, e) {
         ...(a.caps ? { caps: a.caps } : {}),
         ...(a.knobs ? { knobs: a.knobs } : {}),
         author: String(a.by ?? e.actor),   // by = the human/agent behind a bhv:-authored rebind
+        ...(typeof a.bySub === "string" && a.bySub ? { authorSub: a.bySub } : {}),   // the author's durable subject, server-stamped — frozen onto the script's creations
         ts: e.ts,
         // a rebind keeps nothing: fresh code starts with fresh state unless
         // the same id folds a later bstate
@@ -473,7 +586,11 @@ export function stateToEntries(state, {
 
   if (roles) {
     for (const [id, r] of Object.entries(state.roles ?? {})) {
-      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}) });
+      // `until` rides along so a reader's rightsIn ends the record on time;
+      // `sub` deliberately does NOT — the browser computes its own rights by
+      // name, and a sub-bound record it cannot match would drop it to `*`.
+      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}),
+        ...(r.until != null ? { until: r.until } : {}) });
     }
   }
   if (state.epoch) add('epoch', { sim: state.epoch.sim, tickMs: state.epoch.tickMs },

@@ -83,6 +83,27 @@ clearEmitters(); assert.equal(hooks.length, 0); assert.equal(newWax.children.len
   clearEmitters();
 }
 
+// a NAMED emitter takes its own part, and its own scale composes in that frame
+{
+  const root2 = new THREE.Group(); root2.position.set(1, 0, 0); scene.add(root2);
+  const wick = new THREE.Group(); wick.name = 'wick'; wick.position.set(0, 2, 0); wick.scale.setScalar(2); root2.add(wick);
+  entities.set('candle', root2); emit('entity', {id: 'candle', kind: 'spawn'});
+  emit('comp', {id: 'candle', type: 'particles', data: {preset: 'fire'}});
+  emit('comp', {id: 'candle', type: 'particles:sparks', data: {preset: 'embers', part: 'wick', scale: 0.25, origin: [0, .1, 0]}});
+  await settle();
+  assert.equal(wick.children.length, 1, 'named emitter attaches to its own part');
+  assert(root2.children.some(c => c.userData.emitterOf === 'candle' && c.userData.emitterKey === 'particles'), 'default emitter stays in the entity frame');
+  const spark = wick.children[0];
+  assert.equal(spark.userData.emitterKey, 'particles:sparks');
+  assert.equal(spark.scale.x, 0.25, 'emitter scale is its own frame');
+  scene.updateMatrixWorld(true);
+  assert(spark.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(1, 2.2, 0)) < 1e-6, 'part-local origin scales with the part');
+  assert(Math.abs(spark.getWorldScale(new THREE.Vector3()).x - 0.5) < 1e-9, 'emitter scale composes with the part scale');
+  emit('comp', {id: 'candle', type: 'particles:sparks', data: null}); await settle();
+  assert.equal(wick.children.length, 0, 'named emitter removal detaches from the part');
+  clearEmitters();
+}
+
 for (const part of ['', ' ', 7, {}, 'x'.repeat(257)]) {
   const r = normalizeParticles({preset: 'fire', part});
   assert(r.ok && !r.emitter.part && r.notes.some(n => n.includes('part')));
@@ -95,7 +116,7 @@ assert(describeParticles({preset:'fire',part:'missing'}).includes('fallback if u
 // Lint remains advisory and uses the rendered-node summary (orphans excluded).
 const dir = mkdtempSync(join(tmpdir(), 'particle-parts-'));
 writeFileSync(join(dir, 'fixture.glb'), 'fixture');
-mock.module(`${import.meta.dir}/../server/config.ts`, () => ({OPT_DIR:dir, LIBRARY_DIR:dir}));
+mock.module(`${import.meta.dir}/../server/config.ts`, () => ({OPT_DIR:dir, LIBRARY_DIR:dir, PATCH_DIR:dir, LADDER:[dir]}));
 mock.module(`${import.meta.dir}/../server/geometry.ts`, () => ({ summarizeGlb: async () => ({nodeNames:['wax'], nodes:[], orphans:['orphan']}) }));
 const {lintParticles} = await import('../server/lint.ts');
 const findings: any[] = [];
@@ -104,5 +125,11 @@ const lint = async (part:string) => {lintParticles(world,{verb:'comp',args:{id:'
 await lint('wax'); assert.equal(findings.length,0);
 await lint('orphan'); assert.equal(findings.length,1); assert(findings[0].why.includes('orphan') && findings[0].why.includes('entity frame'));
 assert.equal(findings[0].kind,'particles-lint');
+{
+  const n = findings.length;
+  lintParticles(world,{verb:'comp',args:{id:'lantern',type:'particles:sparks',data:{preset:'embers',part:'nope'}},actor:'builder'} as any); await settle();
+  assert.equal(findings.length, n + 1); assert.equal(findings[n].component, 'particles:sparks', 'named emitter lint says which emitter');
+  findings.splice(n, 1);
+}
 world.state.entities.lantern.lib = 'absent.glb'; await lint('wax'); assert(findings[1].why.includes('geometry is unavailable'));
 console.log('particle part transforms, fallback, replay/lifecycle, normalization, perception and lint passed');

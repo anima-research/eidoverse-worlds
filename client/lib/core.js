@@ -11,7 +11,15 @@
 
 import * as THREE from 'three';
 import * as TSL from 'three/tsl';
-import { CONFIG } from './base.js';
+import { CONFIG, tee, teeNow, bus } from './base.js';
+import { installGpuLostRecovery } from './gpulost.js';
+import { decideBackend } from './backend_choice.js';
+import { headsetSeenRecently as _headsetSeenRecently, migrateHeadsetSeen as _migrateHeadsetSeen } from './headset_seen.js';
+import { guardPixelRatioInXR } from './xrpixelratio.js';
+import { separateXRPass } from './xrpass.js';
+import { tolerateNullXRFramebuffer } from './xr_nullfb.js';
+import { patchShadowNodeForXR } from './xrshadow.js';
+import { installSyncGate } from './syncgate.js';
 
 export { THREE, TSL };
 
@@ -53,23 +61,143 @@ document.body.prepend(canvas);
 // opt-out lever (the +10fps is one flag away; §22q bought the frames back
 // for the default look). The dPR-gated auto-off waits for a real settings
 // row alongside the other quality dials.
+// ?webgl=1 forces three's WebGL 2 backend — the path a browser without WebGPU
+// (Firefox stable, older Safari, most WebXR runtimes today) takes on its own.
+// Both are renderer-construction choices, so they apply on the next load: the
+// URL param wins for a session (the A/B lever), the persisted preference
+// (video settings) otherwise.
+export const PREF_MSAA = 'ew-msaa', PREF_BACKEND = 'ew-backend';
+// The stored headset bit is HISTORY, not presence, and it expires (#197 review B3) — the meaning
+// lives in headset_seen.js so it can be driven directly; core.js just supplies the stored value.
+export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // ms timestamp of the last granted session (legacy: '1')
+const pref = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // a storage throw must not kill boot
+export const headsetSeenRecently = () => {
+  // Migrate the legacy '1' marker on first observation and WRITE IT BACK, so it ages out like every
+  // real timestamp instead of being permanent (#197 round-two review B3).
+  const now = Date.now(); let raw = pref(PREF_HEADSET_SEEN);
+  const migrated = _migrateHeadsetSeen(now, raw);
+  if (migrated !== null) { try { localStorage.setItem(PREF_HEADSET_SEEN, migrated); } catch {} raw = migrated; }
+  return _headsetSeenRecently(now, raw);
+};
+
+// ?xr=1 is a BOOT flag, not a runtime toggle: three's XRManager (0.185–0.186) rides
+// WebGPU (XRGPUBinding — Chrome, flags today) but only if the adapter was
+// requested xrCompatible, which the backend reads off renderer.xr.enabled at
+// init() time. So the flag sets xr.enabled BEFORE init below.
+// The backend is a CONSTRUCTION choice, so "WebGPU if it can do VR, else
+// WebGL" has to be decided here, not at the visor button: on a WebGPU backend
+// the xrCompatible adapter request never resolved on Chrome 152 + RTX
+// (09-06 11:12, splash 'still waking after 20s', twice) — three did NOT fall
+// back on its own. So an XR boot rides WebGPU-XR when the browser exposes
+// XRGPUBinding (the flags), and takes WebGL otherwise — `auto` decides, no
+// ?webgpu=1 needed (R 09-07, ONE renderer control; the rule is decideBackend in
+// backend_choice.js — this comment used to say the opposite and misled a probe
+// header on 09-21). When Chrome ships WebGPU-XR unflagged nothing here changes.
+// The decision itself (which backend, whether this is an XR boot, whether the tolerant render list installs)
+// is a pure function in backend_choice.js — importable headless, so the matrix is TESTED rather than trusted
+// (tools/backend-choice-test.mjs). ?xr is value-parsed: `?xr=1` boots XR, `?xr=0` and absence do not.
+export const WEBGPU_XR = 'XRGPUBinding' in globalThis;               // WebGPU can present VR here (Chrome flags)
+export const WEBGPU_POSSIBLE = typeof navigator !== 'undefined' && !!navigator.gpu;   // WebGPU API exists at all
+const _choice = decideBackend({ params: CONFIG.params, backendPref: pref(PREF_BACKEND), headsetSeen: headsetSeenRecently(), webgpuXR: WEBGPU_XR });
+export const XR_BOOT = _choice.xrBoot;
+const _forceWebGL = _choice.forceWebGL;
+// TOLERANT RENDER LIST (XR strobe, 08-05): something leaves holes in the
+// per-eye render list mid-session ("Cannot destructure 'object' of
+// renderList[i]"), and the stock loop throws — one hole kills the whole
+// frame, which reads as the world blinking in the headset. Skip holes, render
+// everything else, log the first few with a stack. Patched on the CLASS
+// PROTOTYPE before construction — an instance patch verifiably engaged yet
+// raw crashes continued (some path holds a constructor-time binding).
+// REIMPLEMENTED, not wrapped: the list mutates DURING iteration (the stock
+// loop caches its length and then dereferences a vacated slot).
+// Installed at boot under ?xr=1, otherwise by enterVR() right before the session request (xr.js) — a desktop
+// session never runs the replacement loop (review 2026-09-08: navigator.xr exists in every Chrome).
+let renderListToleranceInstalled = false;
+export function installRenderListTolerance() {
+  if (renderListToleranceInstalled) return; renderListToleranceInstalled = true;
+  globalThis.__renderListTolerance = true;   // harness: boot-check asserts this only under ?xr=1
+  const proto = THREE.WebGPURenderer?.prototype;
+  const orig = proto?._renderObjects;
+  let logged = 0;
+  if (orig) {
+    proto._renderObjects = function (renderList, cam, scn, lightsNode, passId = null) {
+      for (let i = 0; i < renderList.length; i++) {
+        const item = renderList[i];
+        if (!item) {
+          if (logged < 5) {
+            logged++;
+            const err = new Error(`renderList hole at ${i}/${renderList.length}, pass=${passId}, xr=${this.xr?.isPresenting}`);
+            globalThis.__errLog?.push?.(`${err.message} :: ${err.stack?.split('\n').slice(2, 5).join(' | ')}`);
+            console.warn('[renderlist]', err.message);
+          }
+          continue;
+        }
+        const { object, geometry, material, group, clippingContext } = item;
+        this._currentRenderObjectFunction(object, scn, cam, geometry, material, group, lightsNode, clippingContext, passId);
+      }
+    };
+  }
+}
+if (_choice.installTolerance) installRenderListTolerance();
+
 export const renderer = new THREE.WebGPURenderer({ canvas,
-  antialias: CONFIG.params.get('msaa') !== '0' });
+  antialias: (CONFIG.params.get('msaa') ?? pref(PREF_MSAA)) !== '0',
+  forceWebGL: _forceWebGL });
+/** 'webgpu' | 'webgl' — known once renderer.init() resolves. */
+export const backendName = () => (renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu');
+if (XR_BOOT) renderer.xr.enabled = true;   // must precede init(): xrCompatible adapter
 renderer.setSize(innerWidth, innerHeight);
+// SHADOWS FROM THE SUN, NOT THE HEAD (owner, 09-07 18:48 'why do shadows tank the frame rate? nothing casts a shadow
+// on the ground'): while presenting, Renderer.render() swaps in xr.getCamera() for EVERY render call
+// (three.webgpu.js r186 'use XR camera for rendering') — including the shadow pass's own render
+// from shadow.camera. So in VR the 2048² map was drawn from the eyes: a full extra scene pass per frame that
+// produced no usable shadow (the old fix was to disable shadows in XR and eat a whole-scene recompile both
+// ways). Same cure as render.js renderAside: xr off around the pass, so the sun camera is honoured. Unity
+// (Basis: 8192 map, 4 cascades, 150 m) renders its map once per frame from the light — this is that.
+globalThis.__xrShadowPatched = patchShadowNodeForXR(THREE.ShadowNode?.prototype);   // xrshadow.js — importable, so the patch is TESTED (tools/xrshadow-test.mjs); the global lets boot-check assert it was APPLIED
 // Spectators start a notch lower — an audience laptop's job is 30fps for an
 // hour, not maximum sharpness. Adaptive scaling adjusts from here.
 export const BASE_PIXEL_RATIO = Math.min(devicePixelRatio, CONFIG.spectate ? 1.5 : 2);
 renderer.setPixelRatio(BASE_PIXEL_RATIO);
+// #32 split vision: while presenting, the pixel ratio belongs to the XR layer — xrpixelratio.js says why.
+export const xrPixelRatio = guardPixelRatioInXR(renderer);
+globalThis.__xrPixelRatioGuarded = !!xrPixelRatio;   // boot-check asserts the guard was APPLIED, not just importable
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// XR-READY CONTEXT (common practice; three's own pre-r150 docs, Babylon): three's WebGL backend creates its
+// context without xrCompatible, so the FIRST entry awaits gl.makeXRCompatible() — cheap on one GPU (09-06:
+// setSession 4 ms), a context switch or loss on a multi-GPU laptop. On a machine a headset was seen on, ask
+// at creation instead. Built HERE, not at the constructor: three derives antialias from currentSamples,
+// which the tone mapping above has just made 0 (MSAA lives in the internal target) — the same attributes it
+// would have asked for, plus the one. Chrome answers xrCompatible synchronously against the XR runtime, so
+// this moves that cost to boot; __xrCtx records what it cost and whether the runtime said yes. ?xrctx=0 = off.
+let _xrGl = null;
+if (_forceWebGL && (XR_BOOT || headsetSeenRecently()) && CONFIG.params.get('xrctx') !== '0') {
+  const t = performance.now();
+  const gl = _xrGl = canvas.getContext('webgl2', { antialias: renderer.currentSamples > 0, alpha: true, depth: renderer.depth, stencil: renderer.stencil, xrCompatible: true });
+  if (gl) renderer.backend.parameters.context = gl;
+  globalThis.__xrCtx = { ms: +(performance.now() - t).toFixed(1), xrCompatible: gl?.getContextAttributes()?.xrCompatible ?? null };
+}
 await renderer.init();
+if (globalThis.__xrCtx) { const a = _xrGl?.getContextAttributes(); Object.assign(globalThis.__xrCtx, { used: !!_xrGl && renderer.backend?.gl === _xrGl, antialias: a?.antialias ?? null, threeWanted: renderer.currentSamples > 0 }); }   // harness: three drew into OUR context, with the antialias it derives itself
+// VR enter/exit: stereo renders keep their own render objects, so the switch never rebuilds either variant (xrpass.js).
+// Inert without a stereo camera, so every boot gets it — sessions can start from a non-XR boot too.
+globalThis.__xrPassSplit = separateXRPass(renderer);
+// An emulator's null eye framebuffer is the default framebuffer, not a WeakMap key (xr_nullfb.js). Installs only for a session whose layer has one — never on hardware.
+globalThis.__xrNullFb = tolerateNullXRFramebuffer(renderer);
+// No pipeline links on the render path: a missed warm pops in late instead of freezing the browser (syncgate.js). ?syncgate=0 = census only.
+globalThis.__syncGate = installSyncGate(renderer, { tee: (l, now) => (now ? teeNow(l) : tee(l)), gate: CONFIG.params.get('syncgate') !== '0' });
+// A lost context (GPU watchdog reset, driver crash) goes back to the live world instead of a black canvas (gpulost.js).
+globalThis.__gpuLost = installGpuLostRecovery({ canvas, renderer, tee, onStop: (why, rule) => bus.emit('gpu-lost-stop', { why, rule }) });
 // the splash watchdog (index.html) stops worrying: modules resolved and the
 // GPU answered — everything past this point can report its own failures
 globalThis.__ewEngineUp = true;
 
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x101828);
-scene.fog = new THREE.FogExp2(0x101828, 0.018);
+// the construct (no sky yet) wears the PANEL family — deep-ocean dark — not a
+// navy that fought the teal chrome (owner, 09-05)
+scene.background = new THREE.Color(0x0b0f12);   // the page's own --bg: neutral, so the teal chrome is the only colour (owner, 09-05: teal ground read odd)
+scene.fog = new THREE.FogExp2(0x0b0f12, 0.018);
 
 // The far plane has to hold the SKY, not just the scene. Skye's world-space
 // sky builds a cloud dome ~3200 units out, and the ringworld package hangs its
@@ -82,7 +210,9 @@ camera.position.set(3.5, 2.6, 5.5);
 camera.lookAt(0, 1, 0);
 
 addEventListener('resize', () => {
-  renderer.setSize(innerWidth, innerHeight);
+  // XR owns the framebuffer while presenting: resizing it mid-session tears
+  // the eye buffers. Aspect math is still safe to keep warm.
+  if (!renderer.xr?.isPresenting) renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 });
@@ -103,8 +233,27 @@ export const ground = new THREE.Mesh(
 );
 ground.receiveShadow = true;
 scene.add(ground);
-export const grid = new THREE.GridHelper(160, 80, 0x3a4a5a, 0x222c38);
-grid.position.y = 0.01;
+// monochrome grid (owner, 09-05). GridHelper draws every line in ONE buffer, so
+// its bright centre lines lose the depth test wherever a dark line crosses
+// them at the same y and come out dashed — so the grid is all dark, and the
+// two axis lines are their own object, a hair higher, drawn after it.
+export const grid = new THREE.GridHelper(160, 80, 0x242c36, 0x242c36);   // a shade under the plane (0x2a3440), lighter than the 0x1e2328 it was (owner, 09-19)
+export const axisLines = new THREE.LineSegments(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-80, 0, 0), new THREE.Vector3(80, 0, 0), new THREE.Vector3(0, 0, -80), new THREE.Vector3(0, 0, 80)]),
+  new THREE.LineBasicMaterial({ color: 0x6a7078 }));
+// Floor lines do not WRITE depth, and they sit clear of the ground: on the WebGL backend (every VR
+// session — no reversed-Z) the 3 mm between grid (0.01) and axes (0.013) was inside the 24-bit
+// depth error a few metres out, so the axis lines strobed and the grid cut through them (R in the
+// headset, 09-06 11:31). Testing against the ground only, at 2 cm / 4 cm, is stable on both backends.
+axisLines.material.depthWrite = false;
+grid.material.depthWrite = false;
+axisLines.position.y = 0.04; axisLines.renderOrder = 2; axisLines.frustumCulled = false;
+scene.add(axisLines);
+// XR per-eye frustum culling misjudges huge planes (in-headset 08-05: the
+// ground VANISHES at some head angles) — one draw call each, never cull them
+ground.frustumCulled = false;
+grid.frustumCulled = false;
+grid.position.y = 0.02; grid.renderOrder = 1;
 scene.add(grid);
 
 // ---------------------------------------------------------- eidoverse host

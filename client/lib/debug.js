@@ -14,6 +14,12 @@
 // have shown nothing wrong on the day it mattered most.
 
 import { THREE, scene } from './core.js';
+import { bus } from './base.js';
+import { registerXRPanel, xrPanelOpen } from './xrpanels.js';
+import { gpuLine, shadowPassLine, setGpuTimer, gpuTimerOn, gpuTimerState, measureShadowPass } from './gputime.js';
+import { perf } from './perf.js';
+import { drawStats } from './render.js';
+import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
@@ -21,6 +27,7 @@ import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
+import { toast, paintRangesIn } from './ui.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4m tall, collapsed to a slim centre column so you
@@ -366,11 +373,11 @@ function buildJointPanel(stack) {
   });
 
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
     btn('reset joint', () => {
       Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
-      table.repaint(); apply();
+      table.repaint(); apply(); paintRangesIn(stack);
     }),
     copyBtn('copy table', () => {
       const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
@@ -455,9 +462,9 @@ function buildHairPanel(stack) {
     onSet: apply,
   });
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
-    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); }),
+    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); paintRangesIn(stack); }),
     copyBtn('copy hair', () => tableLiteral('HAIR_TUNING', HAIR_TUNING)),
   );
   stack.append(table.el, btns);
@@ -499,8 +506,8 @@ function buildWingPanel(stack) {
   // exist, which is what `apply` does.
   const idle = sliderTable(WING_IDLE_FIELDS, WING_IDLE, {
     fmt: (f, v) => (f === 'deg' || f === 'bias' || f === 'sweep' ? `${v}°`
-      : f === 'hz' ? `${v}Hz`
-        : f === 'recover' ? `${(v * 1000).toFixed(0)}ms` : String(v)),
+      : f === 'hz' ? `${+(+v).toFixed(2)}Hz`   // the default is 1/3.4: unrounded it printed 0.29411764705882354Hz, 157 px in a 44 px readout
+        : f === 'recover' ? `${(v * 1000).toFixed(0)}ms` : String(+(+v).toFixed(3))),
   });
   const sim = sliderTable(WING_SIM_FIELDS, WING_TUNING, {
     fmt: (f, v) => (f === 'mass' ? `${(v * 1000).toFixed(0)}g`
@@ -514,12 +521,12 @@ function buildWingPanel(stack) {
     return h;
   };
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
     btn('reset wings', () => {
       Object.assign(WING_IDLE, idleDefaults);
       Object.assign(WING_TUNING, simDefaults);
-      idle.repaint(); sim.repaint(); apply();
+      idle.repaint(); sim.repaint(); apply(); paintRangesIn(stack);
     }),
     copyBtn('copy wings', () =>
       `${tableLiteral('WING_IDLE', WING_IDLE)}\n\n${tableLiteral('WING_TUNING', WING_TUNING)}`),
@@ -527,8 +534,7 @@ function buildWingPanel(stack) {
   stack.append(sub('flap (live)'), idle.el, sub('limp (needs a ragdoll)'), sim.el, btns);
 }
 
-// the panel has no toast of its own; keep the dependency to one line
-function toastLike(msg) { console.log(`[debug] ${msg}`); }
+const toastLike = (msg) => toast(msg);
 
 // ---- panel -----------------------------------------------------------------
 
@@ -540,19 +546,27 @@ const viewRow = (label, key, onChange) => checkRow(label,
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    title: 'debug', x: -10, y: 300, w: 250, h: 460, minW: 210, hidden: true,
+    // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top
+    title: 'debug', x: -270, y: -165, w: 250, h: 460, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');
   stack.className = 'stack';
-  // The frame block is PINNED above everything (tel0s: the stats pre at the
-  // bottom rendered past the scroller's end) — its own element, flex:none,
+  // The frame block is PINNED above everything (the stats pre at the bottom
+  // used to render past the scroller's end) — its own element, flex:none,
   // so scrolling the settings never hides the one number the panel is
   // usually opened for.
   framePre = document.createElement('pre');
   framePre.className = 'dbg-stats';
   framePre.style.cssText = 'flex:none;margin:0 0 4px';
   stack.appendChild(framePre);
-  stack.append(
+  // TEXT TABS BY JOB (owner, 09-29: Debug stays on the dock, its many collapsing sections become tabs):
+  // physics = the ragdoll and its tuning, body = the secondary motion that rides a body (blink, hair,
+  // wings), perf = what the frame costs. The frame numbers above stay put whichever tab is chosen.
+  const tabs = dbgTabs(stack, ['physics', 'body', 'perf'], () => frame.visible);
+  // the remembered tab is chosen at boot with Debug closed: its groups wait until the panel is on screen
+  frame.onShow(tabs.flush);
+  const phys = tabs.pane('physics');
+  phys.append(
     viewRow('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
     viewRow('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
   );
@@ -560,21 +574,25 @@ export function initDebug(p = {}) {
   for (const [k] of SWITCHES) DEFAULTS[k] = TUNING[k];
 
   const btns = document.createElement('div');
-  btns.className = 'row';
-  const BTN_CSS = 'flex:1;font-size:var(--fs-sm);padding:3px 0';
-  const pause = btn('pause', () => {
+  btns.className = 'row btn-row';   // unified equal-width action-button row
+  const mk = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.onclick = fn;
+    return b;
+  };
+  const pause = mk('pause', () => {
     TUNING.PAUSED = TUNING.PAUSED ? 0 : 1;
     pause.textContent = TUNING.PAUSED ? '▶ resume' : 'pause';
-  }, BTN_CSS);
+  });
   btns.append(
-    btn('re-drop', () => providers.reLimp?.(), BTN_CSS),
+    btn('re-drop', () => providers.reLimp?.()),
     pause,
     btn('reset', () => {
       for (const [k] of [...DIALS, ...SWITCHES]) TUNING[k] = DEFAULTS[k];
       dials.repaint(); repaintSwitches();
-    }, BTN_CSS),
+    }),
   );
-  stack.appendChild(btns);
+  phys.appendChild(btns);
 
   const swBox = document.createElement('div');
   // NOT .stack — that is flex:1 with its own scroller, and nested inside the
@@ -587,31 +605,93 @@ export function initDebug(p = {}) {
   const repaintSwitches = () => {
     [...swBox.querySelectorAll('input')].forEach((cb, i) => { cb.checked = !!TUNING[SWITCHES[i][0]]; });
   };
-  stack.appendChild(swBox);
+  phys.appendChild(swBox);
 
   const dials = sliderTable(DIALS, TUNING, {
     label: (k) => k.toLowerCase().replace(/_/g, ' '),
     nmW: '92px', vW: '46px',
   });
-  stack.appendChild(dials.el);
+  phys.appendChild(dials.el);
 
-  // the tuning families, one head + one builder each
-  for (const [head, build] of [
-    ['blink (live)', buildBlinkPanel],
-    ['hair (live, while ragdolled)', buildHairPanel],
-    ['limp hair, no local sim', buildLimpPanel],
-    ['wings', buildWingPanel],
-    ['joint limits (live)', buildJointPanel],
-  ]) {
-    stack.appendChild(sectionHead(head));
-    build(stack);
-  }
 
+  tabs.group('physics', 'joint limits', (body) => buildJointPanel(body));
+  tabs.group('body', 'blink', (body) => buildBlinkPanel(body));
+  tabs.group('body', 'hair (while ragdolled)', (body) => buildHairPanel(body));
+  tabs.group('body', 'limp hair (no local sim)', (body) => buildLimpPanel(body));
+  tabs.group('body', 'wings', (body) => buildWingPanel(body));
+  // perfscope mounts itself when its module is present; without it this is a silent no-op
+  import('./perfscope.js').then((m) => m.mountPerfPanel(stack, { toast: toastLike, section: (_parent, title, build) => tabs.group('perf', title, build) })).catch(() => {});
+
+  // GPU time, measured by the GPU (gputime.js): the number a headless probe cannot give us
+  tabs.group('perf', 'gpu timer', (body) => {
+    const row = document.createElement('label'); row.className = 'row dbg-row';   // the house check row, like every other switch here
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = gpuTimerOn();
+    row.append(cb, document.createTextNode('time the world pass on the GPU'));
+    const btn = document.createElement('button'); btn.textContent = 'measure shadow pass';
+    const out = document.createElement('pre'); out.className = 'dbg-stats'; out.style.whiteSpace = 'pre-wrap';   // sentences, not columns: wrap rather than scroll sideways
+    const paint = () => { out.textContent = [gpuLine(), shadowPassLine()].join('\n'); };
+    cb.onchange = () => { setGpuTimer(cb.checked); paint(); };
+    btn.onclick = () => { measureShadowPass().then((r) => { if (r?.error) toastLike(`gpu timer: ${r.error}`); cb.checked = gpuTimerOn(); paint(); }); paint(); };
+    body.append(row, btn, out);
+    setInterval(() => { let x = false; try { x = xrPanelOpen('debug'); } catch { /* not presenting */ } if (body.isConnected && (body.offsetParent || x)) paint(); }, 1000);
+    if (!gpuTimerState().supported) { cb.disabled = true; btn.disabled = true; }
+    paint();
+  });
+
+  // the live bone readout: its own group, last in physics
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
-  stack.appendChild(statsEl);
+  tabs.group('physics', 'ragdoll readout', (body) => body.appendChild(statsEl));
+  tabs.choose();
   frame.body.appendChild(stack);
   return frame;
+}
+
+// Debug's text tabs: the strip is the profile's .pf-tabs recipe with no glyphs. A group inside a tab is
+// a quiet caption and a body; `build(body)` runs once, lazily, the first time its tab is SEEN (chosen
+// while the panel shows) — so an unvisited tab costs nothing and the panel opens light. A group added to
+// the tab already on screen (perfscope arrives by dynamic import) builds at once.
+function dbgTabs(parent, names, shown) {
+  const LS = 'ew-tab-debug';
+  const strip = document.createElement('div');
+  strip.className = 'pf-tabs dbg-tabs'; strip.setAttribute('role', 'tablist');
+  parent.appendChild(strip);
+  const tabs = new Map();
+  let current = null;
+  const flush = () => { if (current && shown()) for (const g of tabs.get(current).pending.splice(0)) g(); };
+  const show = (name) => {
+    current = name;
+    for (const [n, t] of tabs) {
+      const on = n === name;
+      t.btn.classList.toggle('on', on); t.btn.setAttribute('aria-selected', String(on)); t.pane.classList.toggle('open', on);
+    }
+    flush();
+    try { localStorage.setItem(LS, name); } catch {}
+  };
+  for (const name of names) {
+    const btn = document.createElement('button');
+    btn.className = 'pf-tab'; btn.setAttribute('role', 'tab'); btn.dataset.tab = name; btn.textContent = name;
+    btn.onclick = () => show(name);
+    const pane = document.createElement('div');
+    pane.className = 'dbg-pane'; pane.dataset.tab = name; pane.setAttribute('role', 'tabpanel');
+    strip.appendChild(btn); parent.appendChild(pane);
+    tabs.set(name, { btn, pane, pending: [] });
+  }
+  return {
+    pane: (name) => tabs.get(name).pane,
+    group(name, title, build) {
+      const t = tabs.get(name);
+      const cap = document.createElement('div'); cap.className = 'dbg-group'; cap.textContent = title;
+      const body = document.createElement('div'); body.className = 'dbg-group-body';
+      body.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+      t.pane.append(cap, body);
+      const run = () => build(body);
+      if (current === name && shown()) run(); else t.pending.push(run);
+      return body;
+    },
+    flush,
+    choose() { let want = null; try { want = localStorage.getItem(LS); } catch {} show(tabs.has(want) ? want : names[0]); },
+  };
 }
 
 export function toggleDebug() { frame?.toggle(); }
@@ -633,7 +713,10 @@ export function updateDebug(now = performance.now()) {
   if (!frame) return;
   // F1 hides the UI for screenshots; debug lines are UI, whatever layer they
   // happen to live on
-  const hidden = !frame.visible || document.body.classList.contains('photo');
+  // open in the VR ring counts as shown: the desktop frame isn't 'visible' then, and this early return left the pane's
+  // numbers unpainted, so the quad (it re-rasters on DOM changes) froze (owner, 09-27 20:42: 'locked and never change')
+  let inXR = false; try { inXR = xrPanelOpen('debug'); } catch { /* not presenting */ }
+  const hidden = (!frame.visible && !inXR) || document.body.classList.contains('photo');
   ensureGroups();
   collGroup.visible = !hidden && on.colliders;
   ragGroup.visible = !hidden && on.ragdoll;
@@ -668,6 +751,7 @@ export function updateDebug(now = performance.now()) {
     framePre.textContent = [
       `frame  ${String(p.fps).padStart(4)} fps  ${p.ms.toFixed(1)}ms  worst ${Math.round(p.worst)}ms`,
       ...bill.map((s) => `  ${s.name.padEnd(12)} ${s.ms.toFixed(2).padStart(6)}ms${s.every > 1 ? ` /${s.every}f` : ''}`),
+      ...(gpuTimerOn() ? [gpuLine()] : []),
     ].join('\n');
   }
   const lines = [
@@ -725,3 +809,34 @@ export function updateDebug(now = performance.now()) {
   }
   statsEl.textContent = lines.join('\n');
 }
+
+// ---- the debug frame as a VR quad: YOUR numbers, in-headset -----------------
+// The recorder tees them to the operator; this shows them to the person
+// wearing the headset (live, 09-04: "extremely janky" — a number beats an
+// adjective). Same sources as the desk (perf.js, render.js, perfscope);
+// the perfscope modes are the same setMode the desk's rows call.
+function debugFields() {
+  const r = drawStats().render ?? {};
+  const cur = activeMode();
+  return [
+    { t: 'info', label: 'fps', value: `${perf.fps}` },
+    { t: 'info', label: 'frame', value: `${(+perf.ms).toFixed(1)} ms · worst ${(+perf.worst).toFixed(0)} · spikes ${perf.spikes}` },
+    { t: 'info', label: 'draws', value: `${r.drawCalls ?? '—'} calls · ${((r.triangles ?? 0) / 1000).toFixed(0)}k tris` },
+    { t: 'list', label: 'perfscope', rows: Object.entries(MODES).map(([k, m]) => ({ id: k, label: m.label, active: k === cur, actions: k === cur ? [] : [{ k: 'mode', label: 'use' }] })) },
+    { t: 'check', k: 'solid', label: 'solid tint', value: isSolid() },
+    { t: 'check', k: 'gputimer', label: 'gpu timer', value: gpuTimerOn() },
+    { t: 'info', label: 'gpu', value: gpuLine().replace(/^gpu:? ?/, '') },
+    { t: 'list', label: 'shadow pass', rows: [{ id: 'shadowab', label: shadowPassLine().replace(/^shadow pass:? ?/, ''), actions: [{ k: 'shadowab', label: 'measure' }] }] },
+  ];
+}
+function debugDispatch(k, v) {
+  if (k === 'mode') setMode(v);
+  else if (k === 'solid') setSolid(!!v);
+  else if (k === 'gputimer') setGpuTimer(!!v);
+  else if (k === 'shadowab') measureShadowPass().then(() => bus.emit('xr:repaint'));
+  else return;
+  bus.emit('xr:repaint');
+}
+registerXRPanel({ id: 'debug', title: 'debug', fields: debugFields, dispatch: debugDispatch });
+// live numbers: one repaint a second while the quad is open
+setInterval(() => { try { if (xrPanelOpen('debug')) bus.emit('xr:repaint'); } catch { /* not presenting */ } }, 1000);

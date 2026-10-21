@@ -31,7 +31,8 @@ review.
   monotonic **generation** (`gen`) — rtc/attest are stamped and gated by it.
 - Flags on join: `spectate` (see everything, appear as nothing, cannot
   author), `agent` (self-declared MCPL body), `renderer` (invisible
-  volunteer that answers `snap` requests). Aux surfaces imply spectator.
+  volunteer that answers `snap` requests), `clock` (send the server's time
+  just before the snapshot; see `clock` below). Aux surfaces imply spectator.
 - Rate caps, enforced server-side, excess silently dropped: **60 msgs/s**
   per client (`MSG_RATE`), **12 authored verbs / 4s** (`VERB_RATE`, refusal
   message sent once per window).
@@ -68,11 +69,11 @@ Every message belongs to exactly one plane:
 
 | type | plane | who may send | shape (essentials) | notes |
 |---|---|---|---|---|
-| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?}` | travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. Answers `snapshot` (§4). First embodied joiner of a brand-new world is granted owner via the log. |
+| `join` | — | anyone admitted | `{world, id?, token?, avatar?, surface?, spectate?, agent?, renderer?, agentToken?, session?, clock?}` | `session`: the page's own id (8–64 of `A-Za-z0-9_-`), relayed as its presence `session` (§4). travel = leave A, join B on the same socket. Verified sessions: `id` ignored, login name wins. Answers `snapshot` (§4). First embodied joiner of a brand-new world is granted owner via the log. |
 | `verb` | authored | embodied, rank-gated | `{verb, args}` | the ONLY door to the log. Closed verb set (§5); refusals teach the extension lanes (comp/use/behavior). |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder + behavior consoles; answers `debug`. |
-| `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. |
+| `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
 | `typing` | presence | embodied, or bound voice leg | `{to?, state?}` | state ∈ ear/think/tool/mic (whitelist). |
 | `caption` | presence | embodied, or bound voice leg | `{text≤500, utt?}` | live speech pacing; the finished utterance lands as one `say`. |
 | `drag` | presence | builder+ | `{id, pos, yaw}` | live build feedback; the release is a `place` verb. |
@@ -92,26 +93,40 @@ Every message belongs to exactly one plane:
 
 ## 4. Server → client messages
 
+- `clock` — `{t}`: the server's time in ms, sent just before each `snapshot`
+  to a join that asks (`clock: true`), a join's or a travel's, so the client
+  has a sample of the server's clock before anything needs it, in an idle
+  world too. A client that asks finds the snapshot by its type, not by its
+  place among a join's messages. A join that doesn't ask gets no `clock`,
+  and its messages are as they were.
 - `snapshot` — the join answer: `{world, you, gen, yourSurfaces, recording,
   state, throughSeq, entries (tail), avatars (roster), yourRights, restore,
-  present[{id, avatar, pose, agent, surfaces}]}`. State + tail is the whole
+  present[{id, avatar, pose, agent, surfaces, session}]}`. State + tail is the whole
   world; cost scales with the world, not its history.
 - `geom` — async join follow-up: `{geom: {lib: {bbox}}}` placeholders.
 - `log` — `{entry}`: one appended entry, fanned to everyone. The authored
   plane's only carrier.
 - `frame` — `{seq, t, poses{id: pose}}`: the ~15Hz stage tick, latest-wins,
   dropped for clients with >32KB backlog (skip-to-current, never queue).
-- `arrive` / `leave` — embodied presence transitions.
+- `arrive` / `leave` — embodied presence transitions. `arrive` carries
+  `{id, avatar, agent, session}`. `session` (also on each `present` record)
+  is opaque presence metadata: the joining page's own id, else a token for
+  the leg. A reconnect of the same page keeps it, so clients can scope a
+  sender's utterance counter by it. It grants nothing.
   `surface-transition` — `{id, surface, gen, retired}`: aux-leg
   join/takeover visibility (rtc re-keying, TTS hold capability).
 - `lease` — `{op: granted\|denied\|claimed\|state\|lost\|released, …}`.
 - `error` — `{error}`: every refusal, human-readable. `mod` — `{text}`:
   moderation query/act summaries.
 - `history`, `debug` — request answers (echo `reqId`).
-- `whisper` (with `echo:true` on your own sent copy), `anim`, `puppet`,
+- `whisper` (with `echo:true` on your own sent copy, and `replay:true` on a
+  held whisper delivered when its recipient joins), `anim`, `puppet`,
   `bodydrag`, `caption`, `typing`, `drag`, `rtc`, `performed` — presence
   relays, shapes as sent (see §3) plus attribution stamps.
-- `snap` — `{id, follow?, view?}`: server asks a renderer leg for a PNG.
+- `snap` — `{id, follow?, view?, width?, height?, frame?}`: server asks a renderer leg for a PNG. `width` and `height` are the image size; the screenshot broker (`server/snapshots.ts`) sends 960 × 540. `frame` is the optional framing, `{dist?, height?, pitch?}`, normalised by `shared/snapframe.js` on both ends and sent only when a field is given; absent = the fixed default framing. It is nested so that no field of the message itself, such as the image's `height`, is read as framing. Its fields:
+  - `dist`: `third`/`selfie` only. Flat distance from the body in metres, clamped to [0.5, 30]. The camera sits behind the body for `third` and in front for `selfie`. Defaults: 3.4 for `third`, 2.6 for `selfie`.
+  - `height`: `third`/`selfie` only. Camera height above the body's feet in metres, clamped to [0, 30]. Defaults: 2.1 for `third`, 1.6 for `selfie`.
+  - `pitch`: `first` only. Gaze tilt in degrees, clamped to [-85, 85]; positive looks up, negative looks down. Omitted keeps the existing gaze of about −4.3° (dropped 0.6 m over 8 m).
 - `world-forked`, `world-reset` — admin outcomes.
 - `avatar-updated` / `avatar-profile-updated` — library changes (VRM upload,
   profile edit), broadcast to every world.
@@ -171,6 +186,11 @@ a def file changed on disk; clients re-fetch /defs and regrow what the
 changed content shapes; presence-plane, never logged).
 
 ## 7. Quirks recorded, not yet ruled on
+
+Underwater/native-client extension (2026-09-10): optional `pose.q` normalized
+body quaternion and `pose.locomotion` descriptive metadata are validated and
+relayed on the existing presence lane. See `UNDERWATER-PRESENCE.md`. No new
+verb, permission, server physics or log dialect is introduced.
 
 Flagged for the phase-1 protocol review — each is as-built behavior a new
 client must currently reproduce, and a candidate for a deliberate ruling:
