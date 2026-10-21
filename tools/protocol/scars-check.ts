@@ -133,6 +133,14 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
     good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
+  { id: "L7", what: "one switch per body, and nothing around it (recut A2, house plan #260 10-20): what the consent switch grants lands in presence fields (poseBy, draggedBy, tumble, the reaches a relay caches), and the authority and the relay write them in bodyconsent.js alone, where every path (a request, a script's world.pose, a seat, a stream) is decided first; a write anywhere else in shared/ or server/ is a path around the switch", run() {
+      const walk = (d: string): string[] => fs.readdirSync(path.join(TREE, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(d, e.name))) : /\.(js|ts|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
+      const WRITE = /\.(poseBy|poseSponsor|draggedBy|dragSponsor|tumble)\s*(=[^=]|\?\?=)|reaches\s*\?\?=|\.reaches\)?\[[^\]]+\]\s*=[^=]/;
+      const files = [...walk("shared"), ...walk("server")];
+      const around = files.filter((f) => !f.endsWith(path.join("authority", "bodyconsent.js"))).flatMap((f) => read(f).split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => WRITE.test(l) && !/^\s*\/\//.test(l)).map(([f, n]) => `${f}:${n}`));
+      const inside = read("shared/protocol/authority/bodyconsent.js").split("\n").filter((l) => WRITE.test(l)).length;
+      return { files: files.length, around, inside }; },
+    good: (o) => o.files > 50 && o.around.length === 0 && o.inside >= 4 },
   { id: "L6", what: "a consented pose keeps who posed you (poseBy: the 'who posed me' answer and the revoke read it), never the pose itself: the authority sends no body's pose, so a copy of it was write-only (recut A4, house plan #260 10-20)", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });   // recut A2: default is accept
       const r = s.call("vic", "body", { to: "bob", kind: "pose", spec: { head: [0, 0, 0, 1] } });
