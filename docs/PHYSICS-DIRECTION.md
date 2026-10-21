@@ -91,5 +91,3 @@ a builder could. It is logged as a plain `transform` change, attributed to
 everyone who handled the thing since it last rested. Trajectories never enter
 the log. A holder who disconnects mid-motion is settled from their last
 accepted state, or released into the sim.
-
-

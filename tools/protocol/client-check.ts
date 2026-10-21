@@ -801,10 +801,10 @@ try {
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
       check("CP8 the command bar lists nothing that sends nothing here (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
-    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'builder', guests: 'builder' } })).ok;`);
+    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'inhabitant', guests: 'inhabitant' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
       await sleep(1200);   // CP7's flood is the say budget; this is an act
       await type("/grant * builder");
-      check("CP9 /grant * builder sets the default role and keeps guests: 'builder'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "builder" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
+      check("CP9 /grant * builder sets the default role and keeps guests: 'inhabitant'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "inhabitant" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
     // CA1 World Settings › Access: the account-age field writes access.minAccountDays, and emptying it removes the key (R 10-07)
     { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
       const field = `document.querySelector('#__acc [data-k=minAccountDays]')`;

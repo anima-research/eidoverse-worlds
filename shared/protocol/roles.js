@@ -101,7 +101,7 @@ export function isWhoValue(x) {
 }
 /** A who in words: "anyone" (the base rung), "builders" (that rank and up), "anyone who may build", "crew or dj". */
 export function whoWords(who) {
-  if (typeof who === "string") return isBase(who) ? "anyone" : `${who}s and up`;
+  if (typeof who === "string") return isBase(who) ? "anyone" : isOwner(who) ? "owners" : `${who}s and up`;
   if (isObj(who) && typeof who.permission === "string") return `anyone who may ${who.permission}`;
   if (isObj(who) && Array.isArray(who.roles)) return who.roles.join(" or ");
   return "anyone";
