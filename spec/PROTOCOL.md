@@ -1398,6 +1398,10 @@ argument will be short.
   (governance is reversed by acts, never erased) are each diagnosed and
   ignored. Blobs are purged by deleting their bytes; since the fold never
   reads bytes, the world doesn't change.
+- **A change outside this rule is detected, not enforced.** A value stored as
+  `commit` that no purge names folds as *absent(purged)*, like a purged one,
+  and is diagnosed `commit-unpurged` naming its line. Nothing else follows:
+  writes go on, and restoring the line is the operator's to do.
 
 ## 13. Genesis and governance
 
