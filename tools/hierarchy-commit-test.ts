@@ -68,7 +68,7 @@ console.log("\nrefusals send nothing; a lock is the door's question:");
   H.choose = "through";
   commitEdit("book", "parent.to", "shelf");
   await H.flush();
-  check("…answering \"move anyway\" re-sends the same request throughLock: parented, lock kept, one act", W().book.parent?.to === "shelf" && JSON.stringify(W().book?.lock) === '{"rank":"builder"}' /* lock true is stored {rank: builder}: shape audit 10-16 */ && H.sent.at(-1).args.throughLock === true && Edits.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
+  check("…answering \"move anyway\" re-sends the same request throughLock: parented, lock kept, one act", W().book.parent?.to === "shelf" && W().book?.lock === true /* lock true is stored as true: recut B2 */ && H.sent.at(-1).args.throughLock === true && Edits.stacks().undo.length === stack + 1, JSON.stringify(H.sent.at(-1)));
   const asked = H.asked.length;
   await Edits.undo();   // the lock binds the undo too: I'm asked again, and "move anyway" (still H.choose) takes it back
   H.W.call("delete", { id: "book", component: "lock" }); H.sync();

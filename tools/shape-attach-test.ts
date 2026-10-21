@@ -137,7 +137,7 @@ tryRow('MS', () => {
   const W = scratchWorld('w2-misc').seed({ box: { model: 'crate', pos: [0, 0, 0] } });
   check('SP2 a spawn radius past 100 m is refused', code(W.call('set', { id: '@world', component: 'spawn', value: { pos: [0, 0, 0], radius: 500 } })) === 'bounds');
   const k = W.call('set', { id: 'box', component: 'lock', value: true });
-  check('LK1 lock true is taken and stored as {rank: builder} (one spelling)', k.ok && JSON.stringify(W.state().entities.box.c.lock) === '{"rank":"builder"}', [k.refused, W.state().entities.box.c.lock]);
+  check('LK1 lock true is taken and stored as true (recut B2: its strength is its setter\'s rank, read at check time)', k.ok && W.state().entities.box.c.lock === true, [k.refused, W.state().entities.box.c.lock]);
   check('LK2 lock is on things only', COMPONENTS.lock.on === 'thing');
   check('FA1 hidden, disabled, clickthrough, openable say false reads as absent', ['hidden', 'disabled', 'clickthrough'].every((n) => /false reads (the same )?as absent/i.test(COMPONENTS[n].help)) && /false reads (the same )?as absent/i.test(COMPONENTS.openable.docs.open + COMPONENTS.openable.docs.locked));
   const RES = ['material', 'anim-clip', 'anim-states', 'camera', 'zone', 'video', 'spring-joint', 'link', 'tags'];
