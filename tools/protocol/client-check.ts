@@ -329,7 +329,7 @@ try {
   // on the plinth's top. The old code added a world point to a local offset and set it as the local position (so the
   // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
   { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
-    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ verb: "delete", args: { id } })), throughLock: true })).ok, roots);
+    check("(setup) the owner clears the field (everything placed so far, through its locks: some are the owner's, owners-only since recut B2), so only the plinth is under the pointer", await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('batch', { ops: ${JSON.stringify(roots)}.map((id) => ({ verb: 'delete', args: { id } })), throughLock: true })).ok;`), roots);
     // the view must hold still while the test aims (the body may still be settling, and the camera chases it)
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
