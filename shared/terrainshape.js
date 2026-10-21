@@ -231,7 +231,7 @@ export const WALK_SPEED = MOVER.walk.speed;   // the walking pace waterCost pric
 /** @deprecated wading has no depth limit now — kept so callers of the old rule still read one. */
 export const WADE_DEPTH = 1.0;
 const HEX = /^#[0-9a-fA-F]{6}$/;
-/** @world's water (shape audit 10-16: its own component, @world.water; an older world's terrain.water until the load moves
+/** @world's water (shape audit 10-16: its own component, @world.water; an older world's terrain.water until the maintenance command moves
  *  it), or undefined. @param {Record<string, any>} c  @world's components (or a view: {water, terrain}) */
 export const worldWater = (c) => c?.water ?? c?.terrain?.water;
 /** A world's water, normalized — or null when it has none. Its colour is an int (0xRRGGBB) or an older '#rrggbb'.

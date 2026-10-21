@@ -113,7 +113,7 @@ export const COMPONENTS = {
   // the per-type defaults are motioneval.js's readings, written down (a spin with no rate turned at 36°/s in every renderer)
   // shape audit 10-16 (physics-motion §4): amplitude (the first protocol's amp) and a whole motion's `part` field are gone (a node's
   // motion is motion:<slot> {node}: the node's name is DATA from the model file, any characters, never part of a key; review r7 F1),
-  // refused at write, and repaired in a stored world by its maintenance command (authority/shaperepair.js) and by translate-v1@12; an
+  // refused at write, and repaired in a stored world by its maintenance command (shaperepair.js) and by translate-v1@12; an
   // axis is stored as a vector (x|y|z|-x|-y|-z taken at write); `pivot` is a PART motion's hinge only (a whole thing turns
   // about its pivot component). The readings that lived only in motioneval.js are here, as absentMeans
   motion:    { on: "thing", keyed: "optional", when: [
@@ -503,7 +503,7 @@ export const COMPONENTS = {
                help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, segments, layers? [{color: 0xRRGGBB, repeat}], features?, heightmap?} (absent numbers are the sim's: seed 1, size 80 m, amplitude 3 m, octaves 4, frequency 2.5, flat radius 0); a raster kind is reserved; water is its own component" },
   // split out of terrain (shape audit 10-16, render-media-env §15): one water level for the world, SL's per-region water.
   // A keyed water:<name> with bounds is a later addition. shared/terrainshape.js waterParams reads it (an older terrain.water
-  // too, until the load moves it)
+  // too, until the maintenance command moves it)
   water:     { on: "world", fields: { level: "number", color: "int", opacity: "number", kind: "string", flow: "array" }, required: ["level"],
                enums: { kind: ["still", "river", "ocean"] },
                ranges: { level: { min: -500, max: 500 }, color: { min: 0, max: 0xffffff }, opacity: { min: 0.1, max: 1 } },

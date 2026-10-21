@@ -97,8 +97,8 @@ So the type contract is: **media lives beside the reference, in the log.**
   wrote models this way, review 2026-10-07; since R's ruling of 2026-10-17 a
   model is stored as its library path, the portable reference, with its
   bytes' hash beside it as `model-hash: "sha256:<hex>"`, and a stored
-  `eido:` model is read, and written back as its path at first load where
-  the host's index knows it). A whole-value reference
+  `eido:` model is read, and written back as its path when the world's
+  maintenance command runs, where the host's index knows it). A whole-value reference
   whose media can vary needs a new versioned name with a `media` field
   (PROTOCOL §4: a changed meaning is a new name).
   Exporters that rewrite `store/<hex16>.glb` → `eido:` derive `media` from

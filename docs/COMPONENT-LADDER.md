@@ -67,7 +67,7 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   `water` is a dry world, and absent fields read as `0x1d5a6e`, 0.82, a kind decided from the ground
   (shared/waterkind.js) and no current. Its readers moved with it: the authority's ground (spatial.js), the client
   (drawing, ground panel), the agent, and the mover's water law (shared/mover.js), through shared/terrainshape.js's
-  `worldWater`, which reads an older `terrain.water` until the load moves it.
+  `worldWater`, which reads an older `terrain.water` until the maintenance command moves it.
 - **stable**: promised. Its meaning never changes; it only grows by additions, and a changed meaning is a new versioned
   name (rung 4). None is stable at v1.
 

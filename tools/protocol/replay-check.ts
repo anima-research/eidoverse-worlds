@@ -89,9 +89,9 @@ for (const [name, raw] of logs) {
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });   // (the bench is ann's: undoing on it needs editOthers)
   const hat0 = worldPose(W.state(), "hat"); const u1 = R("bob", "undo", {}), u2 = R("bob", "undo", {}); const st6 = W.state();
   const left = Object.values(st6.entities).filter((e: any) => e.c.parent?.to === "bench" && e.c.socket).length; const hat1 = worldPose(st6, "hat");
-  rl(u1.ok && u2.ok && left === 0 && st6.entities.hat.c.parent?.to === "bench" && hat1.pos.every((x: number, i: number) => Math.abs(x - hat0.pos[i]) < 1e-8), "RL6 bob's undo reaches past the load's lift: his sockets edit is taken back (no socket children left; the hat stays with the bench, where it was)", [u1.refused ?? u1.undid, u2.refused ?? u2.undid, left, st6.entities.hat.c.parent]);
+  rl(u1.ok && u2.ok && left === 0 && st6.entities.hat.c.parent?.to === "bench" && hat1.pos.every((x: number, i: number) => Math.abs(x - hat0.pos[i]) < 1e-8), "RL6 bob's undo reaches past the maintenance command's lift: his sockets edit is taken back (no socket children left; the hat stays with the bench, where it was)", [u1.refused ?? u1.undid, u2.refused ?? u2.undid, left, st6.entities.hat.c.parent]);
 }
-// RL7-8: a catalogue model that declares seats (the lab chair) stored before the cut gets them at load, once: a seat someone
+// RL7-8: a catalogue model that declares seats (the lab chair) stored before the cut gets them from the maintenance command, once: a seat someone
 // then deletes stays deleted, and undoing the chair's creation takes its lift-made seat with it
 { const v1 = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } }, { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "chair1", lib: "chair", pos: [2, 0, 2] } },
@@ -103,7 +103,7 @@ for (const [name, raw] of logs) {
   const del = R("ann", "delete", { id: s1 }); const lines: string[] = [];
   const reopened = worldOf({ name: "rl", entries: W.entries, getBlob: () => { throw new Error(); }, putBlob: () => "", writeLine: (l: string) => lines.push(l), now: () => T + 1000 });
   const again = liftWorld(reopened);   // the LOAD: it must write nothing and need nothing
-  rl(L.lifted.length === 2 && !!s1 && del.ok && !again.length && !lines.length && !seatOf(reopened.state(), "chair1"), "RL7 a lab chair from before the cut gets its seat child at load; a seat then deleted stays deleted at the next load", [L.lifted, del.refused, again]);
+  rl(L.lifted.length === 2 && !!s1 && del.ok && !again.length && !lines.length && !seatOf(reopened.state(), "chair1"), "RL7 a lab chair from before the cut gets its seat child from the maintenance command; a seat then deleted stays deleted at the next load", [L.lifted, del.refused, again]);
   const u = R("ann", "undo", {});   // ann's latest act: the delete; then the chair2 spawn
   const u2 = R("ann", "undo", {}); const st8 = W.state();
   rl(u.ok && u2.ok && !st8.entities.chair2 && !Object.values(st8.entities).some((e: any) => e.c.socket && !st8.entities[e.c.parent?.to]), "RL8 undoing a pre-cut chair's creation takes its lift-made seat with it (no socket is left without a host)", [u.refused ?? u.undid, u2.refused ?? u2.undid]);

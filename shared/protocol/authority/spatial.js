@@ -177,7 +177,7 @@ const GROUND = new WeakMap();
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
-// the water level is @world.water's (shape audit 10-16: its own component; an older terrain.water until the load moves it),
+// the water level is @world.water's (shape audit 10-16: its own component; an older terrain.water until the maintenance command moves it),
 // so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
   const wc = st.entities["@world"]?.c; const t = wc?.terrain; const w = worldWater(wc);
