@@ -958,7 +958,8 @@ minutes before (`notice`, presence).
 
 **Who may come in** is the world's own `access` on `@world` (an owner's,
 never a script's): `join` is `anyone` (absent), `signed-in`, or `listed` (only
-people with a `roles:<id>` whose role isn't `none`); whoever `join` turns away
+people the world has granted a role, unexpired; a `none` grant is how a world
+says "not you", so it lists nobody); whoever `join` turns away
 may still watch, with no body, when `watch: "anyone"`, and otherwise a
 listed-only world is invisible to them (not in a listing, every read of it
 answering as for no world). `minAccountDays` and `max` refine it. Bans (the
