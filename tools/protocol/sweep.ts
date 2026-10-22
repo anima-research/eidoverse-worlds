@@ -82,10 +82,10 @@ const yq = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const LIGHT_KEYS = ["color", "intensity", "range", "keep", "day"];
 const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex").toString("utf8") : s); // h--: a hash, not invertible; a mismatch shows
 const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor / entity.ts, entity.born, placer
-// DROPPED (translate-v1@16; still so at @17): a value never carries an account, a sub or *Sub whose string starts human:, agent: or aid1:
+// DROPPED (translate-v1@16; local: since @19): a value never carries an account, a sub or *Sub whose string starts human:, agent:, aid1: or local:
 // (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays
 const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
-  : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
 const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED: mounts, recentChat / chatTotal
 // translate-v1@2 (slice 3a): a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js

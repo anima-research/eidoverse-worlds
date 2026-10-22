@@ -126,6 +126,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // old request's does (the identities were found from it before: world.ts).
 // A component whose name has an account's (`ownerSub`) and whose whole value is an account is one too: it is left out of the
 // state, an old comp request's data becomes the person's id, and the writer's check reads both shapes.
+// An account is any of the shapes a join wears (server/directory.ts): human:, agent:, aid1:, and a private server's local:.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -318,7 +319,7 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 // `comp` folded any data, so `sub` can be a sign's subtitle, and shared/particle_effects.js reserves `sub` as an effect's
 // emitter field. Whose account it is: the account's own (@19); the name beside it is joined to it only where main's server
 // wrote the pair (translate's noAcct), never from a value.
-export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
+export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1|local):/.test(s);
 const ACCOUNT_KEY = /^sub$|Sub$/;
 /** `v` with every account subject in it, at any depth, replaced by what `map(sub)` gives, or dropped where that's undefined
  *  (the default). The same object when nothing in it is an account (the projection's values can be the old fold's own). */
