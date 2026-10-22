@@ -137,8 +137,10 @@ function open(name: string, o: any = {}) {
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
 }
-// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass
-const AT_BASE = path.resolve(TREE) !== path.resolve(ENGINE);
+// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass. Known
+// by its layout (the base has no shared/protocol/authority.js), never by being another directory: a mutant is a copy of today's tree
+// and speaks today's names (read as "another tree", every case failed in every mutant, so each read as caught)
+const AT_BASE = !fs.existsSync(path.join(TREE, "shared/protocol/authority.js"));
 // the base rung's name in the tree under test (R 10-21: inhabitant; the base commit says visitor): G3 speaks each tree's own word
 const BASE_RUNG = AT_BASE ? "visitor" : "inhabitant";
 const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };
