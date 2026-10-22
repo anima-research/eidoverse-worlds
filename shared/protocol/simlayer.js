@@ -42,8 +42,8 @@ const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "di
 // the writes that end a hold, as the authority's commit() reads them (writes.js): a transform, a parent or a whole delete of the
 // thing, or switching it off (disabled set true; setting it false ends nothing). Switching off or deleting a thing also ends the
 // holds of whatever hangs under it. Keep these two in step with commit()
-const ends = (o) => (o.verb === "delete" ? o.comp === undefined || o.comp === "transform" || o.comp === "parent" : o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true));
-const endsUnder = (o) => (o.verb === "delete" && o.comp === undefined) || (o.verb === "set" && o.comp === "disabled" && o.value === true);
+export const ends = (o) => (o.verb === "delete" ? o.comp === undefined || o.comp === "transform" || o.comp === "parent" : o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true));
+export const endsUnder = (o) => (o.verb === "delete" && o.comp === undefined) || (o.verb === "set" && o.comp === "disabled" && o.value === true);
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
 // A thing's world pose, composed down its parent chain. The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S,

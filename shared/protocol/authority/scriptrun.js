@@ -9,7 +9,7 @@ import { isIdentity, PURGED } from "../fold.js";
 import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
-import { livePoses, digestOf, simCutOf, lostPlace } from "../simlayer.js";
+import { livePoses, digestOf, simCutOf, lostPlace, ends, endsUnder } from "../simlayer.js";
 import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
@@ -400,16 +400,21 @@ const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
 // no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
 function orphanLifts(w) {
-  const lifted = new Map();
+  const lifted = new Map(), parentOf = new Map();   // parentOf: each thing's parent as the log has it so far
+  const under = (k, id) => { for (let p = parentOf.get(k), n = 0; p && n < 33; p = parentOf.get(p), n++) if (p === id) return true; return false; };
   w.entries.forEach((e, seq) => {
     if (!isE(e)) return;
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
-    else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      // the same lifecycle as the engine's (simlayer ends()): what ends a hold is a write that moves it, re-parents it,
-      // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
-      // (review of 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
-      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)) lifted.delete(o.id); }
+    else if (e.kind === "change") { const ops = opsQuiet(e);
+      for (const o of ops) if (o.comp === "parent") parentOf.set(o.id, o.verb === "set" && typeof o.value?.to === "string" ? o.value.to : null);
+      // the same lifecycle as the engine's (simlayer ends() and endsUnder(), read after the whole entry as the replay reads
+      // them): what ends a hold is a write that moves it, re-parents it, switches it off or removes it, or switches off or
+      // removes a thing it hangs from; an engine change or an edit to its physics or model leaves it in the hand (review of
+      // 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
+      for (const o of ops) { if (o.verb === "create" || ends(o)) lifted.delete(o.id);
+        if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }
+      for (const o of ops) if (o.verb === "delete" && o.comp === undefined) parentOf.delete(o.id); }
   });
   return lifted;
 }
