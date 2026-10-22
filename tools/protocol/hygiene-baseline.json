@@ -156,7 +156,7 @@
   "bare-wait": 3
  },
  "tools/protocol/scripts-check.ts": {
-  "bare-wait": 22
+  "bare-wait": 15
  },
  "tools/protocol/server-check.ts": {
   "bare-wait": 28
