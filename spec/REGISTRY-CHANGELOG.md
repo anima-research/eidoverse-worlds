@@ -272,3 +272,30 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-22: sky.law and terrain.law no longer define the law by naming reference code; the law is pinned as data in spec/conformance/laws.json (the house's view, #260 10-20)
   - sky.law: its meaning of absence "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" → "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)" → "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
+- 2026-10-22: surface, terrain-grid and terrain-tile stay reserved by name with no shape pinned, and physics' reserved fields lose their pre-pinned units/ranges/enums: pre-shaping builds ahead of any world (the house's view, #260 10-20); the sketches are docs/RESERVED-SHAPES.md
+  - surface.friction: type number → gone
+  - surface.restitution: type number → gone
+  - surface.density: type number → gone
+  - surface.frictionCombine: type string → gone
+  - surface.restitutionCombine: type string → gone
+  - surface.label: type string → gone
+  - surface.frictionCombine: "average" is no longer allowed
+  - surface.frictionCombine: "min" is no longer allowed
+  - surface.frictionCombine: "multiply" is no longer allowed
+  - surface.frictionCombine: "max" is no longer allowed
+  - surface.restitutionCombine: "average" is no longer allowed
+  - surface.restitutionCombine: "min" is no longer allowed
+  - surface.restitutionCombine: "multiply" is no longer allowed
+  - surface.restitutionCombine: "max" is no longer allowed
+  - surface.friction: its meaning of absence "the engine's own law" → gone
+  - surface.restitution: its meaning of absence "the engine's own law" → gone
+  - surface.density: its meaning of absence "the engine's own" → gone
+  - surface.frictionCombine: its meaning of absence "average" → gone
+  - surface.restitutionCombine: its meaning of absence "max" → gone
+  - surface.label: its meaning of absence "its key" → gone
+  - terrain-grid.spacing: type number → gone
+  - terrain-grid.tile: type int → gone
+  - terrain-grid.origin: type array → gone
+  - terrain-grid.extent: type array → gone
+  - terrain-grid.limits: type object → gone
+  - terrain-tile.mm: type array → gone

@@ -183,8 +183,8 @@ await tryRow('SR', () => {
 });
 await tryRow('SU', () => {
   const U = COMPONENTS.surface;
-  check('SU1 surface is reserved (writes closed with physics\' reserved fields), its fields and absence written down', statusOf('surface') === 'reserved' && !!U.fields && !!U.absentMeans?.frictionCombine && U.absentMeans?.restitutionCombine === 'max', U);
-  check('SU2 the combine order is documented, KHR\'s reversal included', /KHR/.test(U.help) && /KHR/.test(read('spec/PHYSICS.md').slice(read('spec/PHYSICS.md').indexOf('3.2'))), '');
+  check('SU1 surface is reserved, and no shape is pinned for it until a world needs one (the house\'s view, #260 10-20): its name only', statusOf('surface') === 'reserved' && !U.fields && !U.absentMeans && !U.ranges, U);
+  check('SU2 the sketch it was reserved with is kept in docs, KHR\'s combine reversal included', /KHR/.test(read('docs/RESERVED-SHAPES.md')) && /RESERVED-SHAPES/.test(U.help), '');
   const W = scratchWorld('w2p-surface');
   check('SU3 a surface write is refused as reserved', code(W.call('set', { id: '@world', component: 'surface:ice', value: { friction: 0.02 } })) === 'reserved');
 });

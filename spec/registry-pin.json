@@ -761,49 +761,7 @@
    "linearDamping",
    "angularDamping",
    "centerOfMass"
-  ],
-  "reservedShape": {
-   "units": {
-    "linearDamping": "1/s",
-    "angularDamping": "1/s",
-    "centerOfMass": "m"
-   },
-   "ranges": {
-    "friction": {
-     "min": 0,
-     "max": 10
-    },
-    "restitution": {
-     "min": 0,
-     "max": 1
-    },
-    "linearDamping": {
-     "min": 0,
-     "max": 1000
-    },
-    "angularDamping": {
-     "min": 0,
-     "max": 1000
-    },
-    "surface": {
-     "maxLen": 64
-    }
-   },
-   "enums": {
-    "frictionCombine": [
-     "average",
-     "min",
-     "multiply",
-     "max"
-    ],
-    "restitutionCombine": [
-     "average",
-     "min",
-     "multiply",
-     "max"
-    ]
-   }
-  }
+  ]
  },
  "grabbable": {
   "status": "trial",
@@ -931,53 +889,6 @@
  },
  "surface": {
   "status": "reserved",
-  "fields": {
-   "friction": "number",
-   "restitution": "number",
-   "density": "number",
-   "frictionCombine": "string",
-   "restitutionCombine": "string",
-   "label": "string"
-  },
-  "enums": {
-   "frictionCombine": [
-    "average",
-    "min",
-    "multiply",
-    "max"
-   ],
-   "restitutionCombine": [
-    "average",
-    "min",
-    "multiply",
-    "max"
-   ]
-  },
-  "ranges": {
-   "friction": {
-    "min": 0,
-    "max": 10
-   },
-   "restitution": {
-    "min": 0,
-    "max": 1
-   },
-   "density": {
-    "gt": 0,
-    "max": 100000
-   },
-   "label": {
-    "maxLen": 80
-   }
-  },
-  "absentMeans": {
-   "friction": "the engine's own law",
-   "restitution": "the engine's own law",
-   "density": "the engine's own",
-   "frictionCombine": "average",
-   "restitutionCombine": "max",
-   "label": "its key"
-  },
   "keyed": true,
   "on": "world"
  },
@@ -1856,20 +1767,10 @@
  },
  "terrain-grid": {
   "status": "reserved",
-  "fields": {
-   "spacing": "number",
-   "tile": "int",
-   "origin": "array",
-   "extent": "array",
-   "limits": "object"
-  },
   "on": "world"
  },
  "terrain-tile": {
   "status": "reserved",
-  "fields": {
-   "mm": "array"
-  },
   "keyed": true,
   "on": "world"
  },

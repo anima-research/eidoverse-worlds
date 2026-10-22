@@ -230,11 +230,7 @@ export const COMPONENTS = {
     // the agent), so they are not unread. The other eight have no reader
     reservedFields: ["surface", "friction", "restitution", "frictionCombine", "restitutionCombine", "linearDamping", "angularDamping", "centerOfMass"],
     dropped: { layers: "32-bit collision layers: cut (filters return as named groups)", mask: "the layers it collides with: cut", ccd: "swept collision: cut (eidosim sweeps every body)", material: "renamed surface (it names a surface:<name>)" },
-    // the reserved fields' units, limits and meaning of absence: what they will mean when an engine reads them (PHYSICS §3.2)
     ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 } }, units: { mass: "kg", density: "kg/m³" },
-    reservedShape: { units: { linearDamping: "1/s", angularDamping: "1/s", centerOfMass: "m" },
-      ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 }, surface: { maxLen: 64 } },
-      enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE } },
     docs: { kind: "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)", who: "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
       shape: "its collision shape, measured from its model by the authority (you never send it)",
       mass: "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size", density: "kg/m³; blank: water's (1000)" },
@@ -296,10 +292,8 @@ export const COMPONENTS = {
   // The combine modes and their order are PhysX's, Unity's and Rapier's (COMBINE, above); KHR_physics_rigid_bodies names the
   // same four (minimum, maximum) but resolves a mismatch the other way round (average first), so an importer resolves per
   // pair, never per mode
-  surface:   { status: "reserved", instead: "nothing yet: no engine here reads surfaces (eidosim's friction and bounce are its own constants)", on: "world", keyed: true, key: "instance", fields: { friction: "number", restitution: "number", density: "number", frictionCombine: "string", restitutionCombine: "string", label: "string" },
-               enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE }, ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, density: { gt: 0, max: 1e5 }, label: { maxLen: 80 } }, units: { density: "kg/m³" },
-               absentMeans: { friction: "the engine's own law", restitution: "the engine's own law", density: "the engine's own", frictionCombine: "average", restitutionCombine: "max", label: "its key" },
-               help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the later of average < min < multiply < max wins (PhysX, Unity, Rapier; KHR resolves the other way round, PHYSICS §3.2)" },
+  surface:   { status: "reserved", instead: "nothing yet: no engine here reads surfaces (eidosim's friction and bounce are its own constants)", on: "world", keyed: true, key: "instance",
+               help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // spec/PHYSICS.md §3.3: the constraint between two bodies is `physics-joint` (OMI_physics_joint; it sits beside physics and
   // physics-engine). R 15:04: `joint` is the skeleton node (Maya, glTF, VRM: an avatar's entity tree), below. Both reserved:
   // one anchor can't carry the two frames every engine and glTF/OMI use, so no fields are pinned (the target shape is
@@ -511,8 +505,8 @@ export const COMPONENTS = {
                absentMeans: { color: "0x1d5a6e", opacity: "0.82", kind: "decided from the ground it fills (shared/waterkind.js)", flow: "still: no current" },
                docs: { level: "the water's surface height, metres (world y)", color: "its colour, 0xRRGGBB (sRGB)", opacity: "0.1..1", kind: "still | river | ocean", flow: "a current [x, z], metres a second" },
                help: "on @world: the world's water {level (m), color? 0xRRGGBB, opacity? 0.1..1, kind?: still|river|ocean, flow? [x, z] m/s}; delete it to drain" },
-  "terrain-grid": { status: "reserved", on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
-  "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
+  "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
+  "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
   // the lists the install check reads are here, so the pin sees them (shape audit 10-16): each item of `on` is one of
   // itemEnums.on ('changed:*' = changed:<a component name>), each of scope.bodies one of itemEnums["scope.bodies"]; scope's
@@ -746,7 +740,6 @@ export function pinOf() {
     if (d.reservedKinds) p.reservedKinds = Object.keys(d.reservedKinds);
     if (d.reservedFields) p.reservedFields = [...d.reservedFields];
     // what a reserved field will mean when it opens (physics: units, limits, enums), held as the absentMeans are
-    if (d.reservedShape) p.reservedShape = copy(d.reservedShape);
     // a nested grammar's closed vocabularies (structure's aperture kinds and wall axes: shape audit 10-16)
     if (d.nestedEnums) p.nestedEnums = copy(d.nestedEnums);
     out[name] = p;
