@@ -1191,6 +1191,8 @@ function buildVRFields() {
   ];
 }
 function buildVRDispatch(action, payload) {
+  // the rows the VR panel shares with the desktop one (blueprintFields, worldBuildFields) answer the same way
+  if (action === 'bpsave' || String(action).startsWith('envdel-')) { buildDispatch(action, payload); return; }
   if (WORLD_PICKS[action]) pickWorld(action, payload);
   else if (action === 'fold') buildFolds[payload] = !buildFolds[payload];
   else if (action === 'wsel') { selectWorld(); return; }
