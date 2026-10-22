@@ -18,8 +18,11 @@ function holderOf(f: string): { pid: number; nonce: string } | null {
   const [p, nonce] = s.split(" "); const pid = Number(p);
   return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
 }
-/** Whether process `pid` has exited (same host: the keys file is local). */
-function exited(pid: number): boolean {
+/** Whether the holder `pid` named in a lock is gone: its process exited (same host: the keys file is local), or it is this
+ *  process. A mint holds the lock only inside one synchronous call, so a lock naming this process that the call doesn't
+ *  hold was left by an earlier process with the same pid: a restart can get its old pid back. */
+function gone(pid: number): boolean {
+  if (pid === process.pid) return true;
   try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
 }
 /** Takes the lock file `name` for this process, or returns null when another holds it. The pid and a nonce never used
@@ -33,12 +36,12 @@ function take(name: string): string | null {
   catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") return null; throw e; }
   finally { fs.rmSync(tmp, { force: true }); }
 }
-/** Removes the lock file `f` if its holder has exited, as one step. Two waiters can both see the same dead holder, so the
+/** Removes the lock file `f` if its holder is gone (above), as one step. Two waiters can both see the same dead holder, so the
  *  one that removes it first takes `<lock>.<its nonce>`, the right to remove that one lock, and removes `f` only if `f`
  *  still holds that nonce. A nonce is never reused, so a lock that has since replaced it is never removed. A right whose
- *  holder exited before giving it back is removed the same way. Whether it removed `f`. */
+ *  holder is gone before giving it back is removed the same way. Whether it removed `f`. */
 function clearIfGone(lock: string, f: string): boolean {
-  const h = holderOf(f); if (!h || !exited(h.pid)) return false;
+  const h = holderOf(f); if (!h || !gone(h.pid)) return false;
   const right = `${lock}.${h.nonce}`;
   if (!take(right)) { clearIfGone(lock, right); return false; }
   try { if (holderOf(f)?.nonce !== h.nonce) return false; fs.unlinkSync(f); return true; } finally { fs.rmSync(right, { force: true }); }
@@ -70,7 +73,7 @@ function openCustody(file: string) {
   // A mint reads the file, adds a key and writes the whole file back, so two processes minting at once (the server and a
   // found / translate tool) would each write back what it read and the later rename would drop the other's key. The read,
   // the mint and the write therefore run holding `<file>.lock` (take above): a process waits for it, and removes one whose
-  // holder has exited (clearIfGone above).
+  // holder is gone (clearIfGone above).
   const lock = `${file}.lock`;
   const minting = (missing: () => boolean, mint: () => void) => {
     if (!missing()) return;

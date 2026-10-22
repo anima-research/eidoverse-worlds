@@ -439,7 +439,10 @@ const gonePid = await exitedPid();
   const B = scratchKeys(); holdLock(B.lock, gonePid); const b = mint(B.f);
   const good = (r, X) => !r.error && typeof r.key === "string" && keysIn(X.f).holders?.["u-again"]?.pub === r.key && r.ms < 9_000 && !besideKeys(X.f).length;
   ok(good(a, A), "A13f a stale lock whose removal right was left by a process that exited too is cleared, right first, without the 10 s wait", { ...a, left: besideKeys(A.f) });
-  ok(good(b, B), "A13f a stale lock alone is taken over without the 10 s wait", { ...b, left: besideKeys(B.f) }); }
+  ok(good(b, B), "A13f a stale lock alone is taken over without the 10 s wait", { ...b, left: besideKeys(B.f) });
+  // a mint holds the lock only inside one call, so a lock naming this process was left by an earlier one with its pid
+  const C = scratchKeys(); holdLock(C.lock, process.pid); const c = mint(C.f);
+  ok(good(c, C), "A13f a lock naming this process, which none of its calls holds (a restart got its old pid back), is taken over without the 10 s wait", { ...c, left: besideKeys(C.f) }); }
 // ---- A13g: …the refusal that ends the wait: after its 10 s by the child's own clock, naming the lock and its holder ----
 { const met = await waitFor(() => marks(T.dir, "met-lock") === 1, 60_000), metAt = met ? fs.statSync(path.join(T.dir, "met-lock-0")).mtimeMs : Date.now();
   const got = await Promise.race([timedOut, sleep(Math.max(0, metAt + 30_000 - Date.now())).then(() => ({ hung: true }))]);
