@@ -230,7 +230,7 @@ await C("G1", "fixtureIds (tests' fixtures seed known ids, like a fork's copy) i
   const walk = (d) => { if (!fs.existsSync(path.join(T, d))) return; for (const f of fs.readdirSync(path.join(T, d), { withFileTypes: true })) {
     const p = path.join(d, f.name); if (f.isDirectory()) { if (f.name !== "node_modules") walk(p); continue; }
     if (!/\.(js|ts|mjs)$/.test(f.name) || /-test\.|-check\.|-probe\./.test(f.name)) continue;
-    const s = read(p); if (/\bfixtureIds\b/.test(s) && p !== "shared/protocol/authority.js") hits.push(p); } };   // named at all (an import alias would dodge a call pattern)
+    const s = read(p), rel = p.split(path.sep).join("/"); if (/\bfixtureIds\b/.test(s) && rel !== "shared/protocol/authority.js") hits.push(rel); } };   // "/" on every OS (Windows joined with "\\", CI 10-21)   // named at all (an import alias would dodge a call pattern)
   roots.forEach(walk);
   return [typeof D.fixtureIds === "function" && !hits.length, hits]; });
 

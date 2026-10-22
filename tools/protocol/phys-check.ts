@@ -3,6 +3,7 @@
 // @ts-nocheck — lab code, kept as written
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
@@ -361,7 +362,7 @@ function playground(name) {
   const forged = insertAt(L, catchSeq + 1, { world: L[1].world, kind: "change", ts: L[catchSeq].ts, actor: "sim", cause: t1.seq, verb: "set", body: { id: "ball", comp: "transform", value: { pos: [0, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const fv = simFold(forged, w.now());
   ok(fv.checks.disagree.some((d) => d.id === "ball"), "M a forged rest(A) after the catch is rejected by carriers", fv.checks);
-  const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from "${ENGINE}shared/protocol/simlayer.js"; import {fold, readLog} from "${ENGINE}shared/protocol/fold.js";
+  const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/simlayer.js").href)}; import {fold, readLog} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/fold.js").href)};
     const L = readLog(fs.readFileSync("worlds/${W}.jsonl")); const sf = simFold(L, ${T});
     console.log(JSON.stringify({ blind: fold(L).entities.ball.c.transform.pos, sim: sf.sim.bodies.ball?.p ?? null, checks: sf.checks }));`], { cwd: root, env: { ...process.env, PROTOCOL_NOW: String(T) } });
     return r.stdout.toString().trim(); };
