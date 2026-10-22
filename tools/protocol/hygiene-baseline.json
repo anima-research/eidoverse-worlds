@@ -122,9 +122,6 @@
   "bare-wait": 36,
   "own-until": 1
  },
- "tools/protocol/physseeds-check.ts": {
-  "bare-wait": 7
- },
  "tools/protocol/presence-check.ts": {
   "bare-wait": 10
  },
