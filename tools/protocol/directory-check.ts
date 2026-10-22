@@ -32,7 +32,8 @@ const file = path.join(tmp, "worlds", ".directory.json");
   ok(d.resolve({ sub: "human:discord:333", name: "Bea" }) === leg, "D7 binding an account to a legacy identity lets that account wear it");
   let threw = false; try { d.bind(leg, "human:discord:111"); } catch { threw = true; }
   ok(threw, "D8 an account can't wear two identities");
-  ok((fs.statSync(file).mode & 0o777) === 0o600, "D9 the directory file is 0600", (fs.statSync(file).mode & 0o777).toString(8));
+  // Windows has no POSIX modes (stat reports 666 for any writable file; access is the profile's ACL), so this row is POSIX-only
+  if (process.platform !== "win32") ok((fs.statSync(file).mode & 0o777) === 0o600, "D9 the directory file is 0600", (fs.statSync(file).mode & 0o777).toString(8));
   const again = directoryAt(file);
   ok(again.resolve({ sub: "human:discord:111", name: "Annie" }) === ann && again.nameOf(twin) === "Annie", "D10 it survives a reopen");
   ok(JSON.stringify(again.names([ann, twin, "u-nobody"])) === JSON.stringify({ [ann]: "Annie", [twin]: "Annie" }), "D11 names() gives display names only (never accounts), skipping unknown ids"); }

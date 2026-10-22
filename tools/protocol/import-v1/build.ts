@@ -18,7 +18,7 @@ export function v1FoldFiles(entry = "tools/protocol/import-v1/fold.js"): string[
     const f = stack.pop()!; if (seen.has(f)) continue; seen.add(f);
     const src = fs.readFileSync(path.join(ROOT, f), "utf8");
     for (const m of src.matchAll(/^\s*(?:import|export)\s[^'"]*?from\s+['"](\.[^'"]+)['"]/gm))
-      stack.push(path.normalize(path.join(path.dirname(f), m[1])));
+      stack.push(path.posix.normalize(path.posix.join(path.posix.dirname(f), m[1])));   // posix on every OS: the list is hashed (v1FoldBuild), so a separator must never change it
   }
   return [...seen].sort();
 }

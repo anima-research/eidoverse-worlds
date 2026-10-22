@@ -182,7 +182,7 @@ row("IM-I35b", () => {
   const v = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }], { poses: { Ann: { p: [1, 0, 1] } } });
   fs.mkdirSync(v.dest, { recursive: true }); const MOD = JSON.stringify({ ts: T0, actor: "system", verb: "ban", who: "u-aaaaaaaaaaaaaaaaaaaa" }) + "\n"; fs.writeFileSync(path.join(v.dest, "world.mod.jsonl"), MOD); fs.writeFileSync(path.join(v.dest, "poses.json"), "POSES-BEFORE");
   const out2 = child(v, { OPT_DIR: opt, EIDOVERSE_DIR: lib });
-  ok(/Nothing written/.test(out2.error ?? "") && fs.existsSync(v.dest) && fs.readFileSync(path.join(v.dest, "world.mod.jsonl"), "utf8") === MOD && /couldn't|EISDIR/.test(out2.error ?? "") && fs.readFileSync(path.join(v.dest, "poses.json"), "utf8") === "POSES-BEFORE" && !fs.existsSync(path.join(v.dest, "world.jsonl")),
+  ok(/Nothing written/.test(out2.error ?? "") && fs.existsSync(v.dest) && fs.readFileSync(path.join(v.dest, "world.mod.jsonl"), "utf8") === MOD && /couldn't|EISDIR|EPERM/.test(out2.error ?? "") && fs.readFileSync(path.join(v.dest, "poses.json"), "utf8") === "POSES-BEFORE" && !fs.existsSync(path.join(v.dest, "world.jsonl")),
     "IM-I35b …a world.mod.jsonl and poses.json already there get their bytes back, and the destination directory that was there stays", { out2, left: fs.existsSync(v.dest) ? fs.readdirSync(v.dest) : null });
   const e = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }]); fs.mkdirSync(e.dest, { recursive: true });
   child(e, { OPT_DIR: opt, EIDOVERSE_DIR: lib });

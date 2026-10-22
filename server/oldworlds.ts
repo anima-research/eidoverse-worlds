@@ -50,7 +50,7 @@ const KEPT_IN_PLACE = "It keeps its name, so links to it keep working; the origi
 const KEPT = "the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)";
 
 /** A shell word as typed (a directory with spaces or quotes is single-quoted). */
-const sh = (s: string) => (/^[\w/.,:@%+=~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+export const shellWord = (s: string): string => (/^[\w/.,:@%+=~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 /** `<name>-2`, `-3`, …: the first that nothing on disk holds (an empty directory counts as taken), within the name grammar. */
 function freeName(dir: string, name: string): string {
@@ -74,7 +74,7 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   let st: fs.Stats; try { st = fs.statSync(d); } catch { return null; }
   if (!st.isDirectory() || isWorldDir(d)) return null;
   const suggestedName = freeName(dir, name);
-  const head = `WORLDS_DIR=${sh(dir)} ${TOOL}`;
+  const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`;
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
     const file = fs.readdirSync(d).filter((f) => f.endsWith(".jsonl")).sort((a, b) => (a === "world.jsonl" ? -1 : b === "world.jsonl" ? 1 : a.localeCompare(b)))[0]!;
     return { name, kind: "pre-names", file: path.join(d, file), suggestedName,
