@@ -5,7 +5,7 @@ on:
   push:
     branches: [browser-probe]
 env:
-  PROBE_SUITE: scripts-check.ts
+  PROBE_SUITE: scripts   # a suite name (bun tools/protocol/run.ts --manifest): it runs in the gate's own hermetic env
 jobs:
   probe:
     strategy:
@@ -23,25 +23,28 @@ jobs:
         run: |
           bun install --frozen-lockfile
           (cd client && bun install --frozen-lockfile)
+          bun tools/protocol/run.ts --siblings
           bun node_modules/playwright/cli.js install chromium
           pin=$(grep -oE 'LIBRARY_PIN = "[0-9a-f]{40}"' tools/protocol/run.ts | grep -oE '[0-9a-f]{40}')
           git clone -q --filter=blob:none https://github.com/SkyeShark/eidoverse-video.git "$RUNNER_TEMP/eidoverse-video"
           git -C "$RUNNER_TEMP/eidoverse-video" checkout -q "$pin"
       - name: probe
+        id: probe
         shell: bash
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
           EIDO_CHROME_ARGS: ${{ matrix.chrome_args }}
+          PROTOCOL_KEEP: "1"
         run: |
-          mkdir -p /tmp/g; export TMPDIR=/tmp/g PROTOCOL_KEEP=1
-          export CHROME=$(bun -e 'const { chromium } = await import("playwright"); console.log(chromium.executablePath())')
+          # as protocol-gate.yml (its comment says why)
+          if [ "$RUNNER_OS" != "Windows" ]; then mkdir -p /tmp/g; export TMPDIR=/tmp/g; fi
           bun -e 'const m = await import("./shared/protocol/sandbox.js"); console.log("SANDBOX available:", m.SANDBOX.available(), "isolated:", m.SANDBOX.isolated())' || true
-          bun tools/protocol/$PROBE_SUITE
-      - if: always()
+          bun tools/protocol/run.ts "$PROBE_SUITE" --scratch-out "$GITHUB_OUTPUT"
+      - if: always() && steps.probe.outputs.scratch != ''
         uses: actions/upload-artifact@v4
         with:
           name: probe-scratch-${{ strategy.job-index }}
           path: |
-            /tmp/g/**/*.log
-            /tmp/g/**/*.jsonl
+            ${{ steps.probe.outputs.scratch }}/**/*.log
+            ${{ steps.probe.outputs.scratch }}/**/*.jsonl
           if-no-files-found: warn

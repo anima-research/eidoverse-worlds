@@ -4,7 +4,8 @@
 //   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
 //   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
-//   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, per-suite results and output hashes)
+//   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
+//   bun tools/protocol/run.ts --scratch-out <file>   append `scratch=<the gate's temp dir>` to <file> as soon as it exists (CI: $GITHUB_OUTPUT)
 // Lanes, all required: CORE (transaction + security: the authority, access, durability, the reset race, identity, scars,
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
@@ -121,8 +122,10 @@ if (argv.includes("--siblings")) {
 }
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
-const laneArg = argv.includes("--lane") ? argv[argv.indexOf("--lane") + 1] : null;
-const only = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--lane" && argv[i - 1] !== "--receipt");
+const VALUED = ["--lane", "--receipt", "--scratch-out"];
+const valueOf = (flag: string) => argv.includes(flag) ? argv[argv.indexOf(flag) + 1] ?? null : null;
+const laneArg = valueOf("--lane");
+const only = argv.filter((a, i) => !a.startsWith("--") && !VALUED.includes(argv[i - 1]));
 for (const n of only) if (!SUITES.some(([s]) => s === n)) { console.log(`protocol gate: no suite named "${n}" (bun tools/protocol/run.ts --manifest lists them)`); process.exit(2); }
 if (laneArg && !["core", "main", "browser"].includes(laneArg)) { console.log(`protocol gate: no lane "${laneArg}" (core | main | browser)`); process.exit(2); }
 const selected = (name: string) => (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
@@ -215,6 +218,12 @@ if (problems.length) {
 
 // ---- running a suite: its own process group, timeout, HOME/TMPDIR/scratch; the group killed when it ends ----
 const GATE_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "eido-gate-"));
+// the gate names its own scratch, so CI uploads a failure's logs from where they are on every OS, instead of forcing a temp
+// root to know the path (it can't on Windows). Long form: Windows' TEMP is an 8.3 path (C:\Users\RUNNER~1\…)
+const SCRATCH_ROOT = (() => { try { return fs.realpathSync.native(GATE_TMP); } catch { return GATE_TMP; } })();
+console.log(`  scratch   ${SCRATCH_ROOT}${process.env.PROTOCOL_KEEP ? " (kept: PROTOCOL_KEEP)" : " (removed at exit)"}`);
+const scratchOut = valueOf("--scratch-out");
+if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path.sep).join("/")}\n`);
 let current: { pid: number } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
@@ -313,14 +322,14 @@ const notRun = SUITES.filter(([n]) => !selected(n)).length;
 console.log(`protocol gate: ${bad ? "FAILED" : partial ? `PARTIAL PASS (${notRun} suite(s) not selected: this is not the gate)` : "PASS"}`);
 // --receipt <file>: a machine-readable record of THIS run at THIS head (review #260 rereview: "a durable exact-head gate
 // receipt: environment/runtime identities, source head, pinned library head, tally, and log/artifact hash")
-const receiptAt = argv.includes("--receipt") ? argv[argv.indexOf("--receipt") + 1] : null;
+const receiptAt = valueOf("--receipt");
 if (receiptAt) {
   const git = (a: string[]) => spawnSync("git", ["-C", ENGINE, ...a], { encoding: "utf8" }).stdout?.trim() ?? "";
   const suites = results.map(({ name, lane, status, why, ms, leftovers, outSha256 }) => ({ name, lane, status, why, ms: Math.round(ms), leftovers, outSha256 }));
   const receipt = {
     v: 1, verdict: bad ? "FAILED" : partial ? "PARTIAL" : "PASS", head: git(["rev-parse", "HEAD"]), dirty: git(["status", "--porcelain"]) !== "",
     os: { platform: process.platform, release: os.release(), arch: process.arch }, runtimes: { ...RUNTIMES, bun: { ...RUNTIMES.bun, found: Bun.version } },
-    library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, seconds: Math.round((performance.now() - t0) / 1000),
+    library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
     notSelected: notRun, suites,
     // one hash over every suite's captured output, in run order: the log this verdict rests on
