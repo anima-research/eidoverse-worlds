@@ -79,6 +79,8 @@ if (argv.includes("--base")) {
 
 // ---------------- the authority, from a tree ----------------
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const L = await import(TREE + "server/livehost.ts");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const NS = await import(TREE + "shared/protocol/newscript.js").catch(() => null);   // absent at the base commit: the editor had no planner

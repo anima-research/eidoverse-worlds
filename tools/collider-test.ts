@@ -305,5 +305,20 @@ console.log('\nthe camera ray, a refit, the spatial index, a fallen post:');
   check('the camera ray meets a fallen trunk near its end (it is a log to the ray too)', C.colliders.get('trunk').pillar && typeof t === 'number' && Math.abs(t - 1.7) < 1e-6, String(t));
 }
 
+// house I148 (#260): the per-lib cache is keyed by the lib fitCollider is given (entry.lib): removing every collider
+// wearing a lib releases it, and a second clone of a floor-shaped lib reuses the first one's lie probe
+{
+  const slab = () => { const g = new THREE.BoxGeometry(4, 0.2, 4); g.translate(0, 0.1, 0); const m = new THREE.Mesh(g, undefined); m.updateMatrixWorld(true); return m; };
+  C.fitCollider('lib-a', slab(), { collide: 'box', lib: 'test/slab.glb' });
+  const first = C.colliderCacheStats().libs.find((l: any) => l.lib === 'test/slab.glb');
+  C.fitCollider('lib-b', slab(), { collide: 'box', lib: 'test/slab.glb' });
+  const both = C.colliderCacheStats().libs.find((l: any) => l.lib === 'test/slab.glb');
+  check('two clones of a lib hold two refs on one cache entry', first?.refs === 1 && both?.refs === 2, JSON.stringify({ first, both }));
+  check('…and the first clone\'s lie probe is shared with the cache', both?.lie != null, JSON.stringify(both));
+  C.removeCollider('lib-a'); C.removeCollider('lib-b');
+  const gone = C.colliderCacheStats().libs.find((l: any) => l.lib === 'test/slab.glb');
+  check('removing both releases the lib', gone === undefined, JSON.stringify(gone));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

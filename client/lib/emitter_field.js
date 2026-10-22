@@ -152,6 +152,9 @@ export function makeEmitterRegistry({ autos, build, onError } = {}) {
     has: (id) => live.has(id),
     get: (id) => live.get(id)?.handle ?? null,
     emitterOf: (id) => live.get(id)?.emitter ?? null,
+    /** The same emitter stops or resumes spawning (emitters.js's playing-only path): the slot's key follows, so the bag it
+     *  now matches is recognised as already applied. */
+    setPlaying(id, on) { const s = live.get(id); if (!s) return false; s.emitter.playing = on; s.key = keyOf(s.emitter); s.handle?.setEmitting?.(on); return true; },
     get size() { return live.size; },
   };
 }

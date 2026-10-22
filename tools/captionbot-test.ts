@@ -282,5 +282,17 @@ console.log('— K. a failed overflow row says what a restart may do —');
     logs.some((l) => /spool write failed on an overflow row for .* — a restart may send this line, though this run dropped it/.test(l)), JSON.stringify(logs));
 }
 
+console.log('— L. a vanished screen holds the line (the authority says not-found, the old no-such retired) —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-notfound-'));
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'spool.jsonl'), log: (m) => logs.push(m), agent: false });
+  w.caption({ t0: 1, t1: 1.5, text: 'held, not dropped' });
+  const p = (w as any).pending.shift(); (w as any).inflight = p;   // as if sent
+  (w as any).onError("not-found: no thing 'cinema' here");
+  check('not-found: the line is held (back in the queue), not resent at once or refused', w.pendingCount === 1 && (w as any).inflight === null && w.refused === 0 && logs.some((l) => /⛔ held/.test(l)), JSON.stringify({ pending: w.pendingCount, refused: w.refused, logs }));
+  (w as any).halted = 'x';   // keep its retry timer from rescheduling into a socket that isn't there
+}
+
 console.log(`\n${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

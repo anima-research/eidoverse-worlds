@@ -22,7 +22,7 @@ export const COMPONENTS = {
   // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
   // tree (PROTOCOL §9.3 writes the rule down). The door's limits, pinned: pos within ±1e5 m, each scale within ±1e3 and at
   // least 1e-4 from zero (a negative one mirrors; physics reads |scale|, KHR_physics_rigid_bodies' rule)
-  transform: { status: "trial-kernel", on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, units: { pos: "m", scale: "×" },
+  transform: { status: "trial", on: "thing", fields: { pos: "vec3", q: "array", scale: "vec3" }, defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, units: { pos: "m", scale: "×" },
     ranges: { pos: { min: -1e5, max: 1e5 }, scale: { min: -1e3, max: 1e3 } },
     docs: { pos: "where it stands, [x, y, z] in metres, in its parent's frame (the world's when it has no parent)", q: "its orientation, a unit quaternion [x, y, z, w] (glTF order), in its parent's frame; normalized on write", scale: "its size per axis, [x, y, z] (1 = as made), each within ±1000 and never within 1e-4 of zero; a negative one mirrors (physics reads its size, |scale|)" },
     help: "where it is, glTF's node TRS: pos (m), q (unit quaternion [x, y, z, w]), scale [x, y, z], all in its parent's frame. Composed as glTF composes a node: local = T · R · S, world = parent's world × local (PROTOCOL §9.3)" },
@@ -31,7 +31,7 @@ export const COMPONENTS = {
   // optionally, as model-hash (below), never instead. A content address stored before 10-17 (eido:sha256/<64 hex>: translate-v1
   // @8–@11, and this branch's door for a day) still loads where this host's index knows it, and the load repair writes its path
   // back (shaperepair.js); one no file here names reads as "thing"
-  model:     { status: "trial-kernel", on: "thing", type: "string", help: "which model it shows: its library path (eidoverse/assets/models/…glb, store/<hash>.glb; a name from find {kind: 'model'} gives one), stored as written. The server stamps model-hash beside it when it knows the file's bytes. An older eido:sha256/<64 hex> address still loads where this host can find its bytes" },
+  model:     { status: "trial", on: "thing", type: "string", help: "which model it shows: its library path (eidoverse/assets/models/…glb, store/<hash>.glb; a name from find {kind: 'model'} gives one), stored as written. The server stamps model-hash beside it when it knows the file's bytes. An older eido:sha256/<64 hex> address still loads where this host can find its bytes" },
   // the bytes a model's path named when it was written: Godot's ext_resource {path, uid}, an npm lock's {resolved, integrity},
   // a web page's <script src integrity>. Optional (a host that can't hash, or hasn't yet, writes none; nothing breaks without
   // it), never the reference: readers load the path. Stamped by the authority from what its catalogue measured off the request
@@ -77,7 +77,7 @@ export const COMPONENTS = {
   // shape audit 10-16 (physics-motion §2): `order` is gone. Its materialized "a0" ordered nothing (every child tied; no reader
   // sorted by it); a sibling order comes back as an addition (a fractional index) when a reader needs one. The door takes a
   // written order and drops it; a stored one is read by nothing (and dropped at its next write)
-  parent:    { status: "trial-kernel", on: "thing", fields: { to: "ref", socket: "string" }, required: ["to"], legacy: ["socket"], dropped: { order: "sibling order: read by nothing (every stored value was \"a0\")" },
+  parent:    { status: "trial", on: "thing", fields: { to: "ref", socket: "string" }, required: ["to"], legacy: ["socket"], dropped: { order: "sibling order: read by nothing (every stored value was \"a0\")" },
     docs: { to: "the thing it rides: its transform becomes local to this parent", socket: "the old spelling of a socket attachment: parent to the socket child instead" }, help: "{to: id}; its transform becomes local to the parent. To attach at a socket, parent to the socket (a child entity of its host). socket: the old spelling, read in old logs and lifted at the door" },
   // the punctual light every engine shares (glTF KHR_lights_punctual, Godot OmniLight3D/SpotLight3D, Unity Light,
   // three.js): kind, color, intensity, range; a spot adds its cone as HALF-angles in radians (glTF outer/innerConeAngle,
@@ -158,7 +158,7 @@ export const COMPONENTS = {
   // as additions. Materialized on write: the action table fills anim, so editing the table never re-poses a stored seat.
   // anim (R 10-17 15:09/15:11; was pose): an OPEN name, of a pose (one frame) or a clip (more than one key): a built-in
   // name today, a world's anim-pose/anim-clip later; one the body doesn't know is its default, never a refusal.
-  station:   { on: "thing", fields: { action: "string", anim: "any", anchor: "string", exit: "array", leaveBy: "string", who: "string" },
+  station:   { on: "thing", fields: { action: "string", anim: "any", anchor: "string", exit: "array", leaveBy: "string", who: "any" },
                defaults: { action: "sit", anchor: "root" },
                when: [{ if: { action: "sit" }, set: { anim: "sitchair" } }, { if: { action: "ride" }, set: { anim: "sitchair" } }, { if: { action: "drive" }, set: { anim: "sitchair" } },
                  { if: { action: "lie" }, set: { anim: "lie" } }, { if: { action: "kneel" }, set: { anim: "sit" } }, { if: { action: "stand" }, set: { anim: "idle" } }, { absent: ["anim"], set: { anim: "sitchair" } }],
@@ -222,7 +222,7 @@ export const COMPONENTS = {
   // come back as named groups, KHR's collisionSystems; ccd is a solver knob no format maps). `material` is renamed
   // `surface` (it names a surface:<name>; `material` means appearance). Angular velocity everywhere (acts, launches, state
   // samples) is w: [x, y, z] rad/s in the world frame.
-  physics:   { on: "thing", fields: { kind: "string", who: "string", shape: "any", mass: "number", density: "number" }, required: ["kind"],
+  physics:   { on: "thing", fields: { kind: "string", who: "any", shape: "any", mass: "number", density: "number" }, required: ["kind"],
     grammar: { shape: "shape" },   // `any` is the pinned type of every value ever stored; the grammar narrows what may be written
     enums: { kind: ["dynamic", "static", "none", "kinematic"] },
     when: [{ if: { kind: "dynamic" }, set: { who: "inhabitant" } }],   // shared/grab.js DEFAULT_WHO, written down
@@ -230,11 +230,7 @@ export const COMPONENTS = {
     // the agent), so they are not unread. The other eight have no reader
     reservedFields: ["surface", "friction", "restitution", "frictionCombine", "restitutionCombine", "linearDamping", "angularDamping", "centerOfMass"],
     dropped: { layers: "32-bit collision layers: cut (filters return as named groups)", mask: "the layers it collides with: cut", ccd: "swept collision: cut (eidosim sweeps every body)", material: "renamed surface (it names a surface:<name>)" },
-    // the reserved fields' units, limits and meaning of absence: what they will mean when an engine reads them (PHYSICS §3.2)
     ranges: { mass: { gt: 0, max: 1e6 }, density: { gt: 0, max: 1e5 } }, units: { mass: "kg", density: "kg/m³" },
-    reservedShape: { units: { linearDamping: "1/s", angularDamping: "1/s", centerOfMass: "m" },
-      ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 }, surface: { maxLen: 64 } },
-      enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE } },
     docs: { kind: "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)", who: "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
       shape: "its collision shape, measured from its model by the authority (you never send it)",
       mass: "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size", density: "kg/m³; blank: water's (1000)" },
@@ -256,7 +252,7 @@ export const COMPONENTS = {
   // check). Its own component, apart from dynamics: a lantern, a key, a book can be carried in a world with no physics.
   // shared/grab.js DEFAULTS, written down: the ones absent by meaning (no grips, no home, no use, a size-chosen pose)
   // stay absent. grab-check pins that these equal grab.js's own.
-  grabbable: { on: "thing", fields: { enabled: "bool", who: "string", steal: "bool", range: "number", priority: "int", hold: "string", anim: "string", grips: "object", twoHanded: "bool", carries: "bool",
+  grabbable: { on: "thing", fields: { enabled: "bool", who: "any", steal: "bool", range: "number", priority: "int", hold: "string", anim: "string", grips: "object", twoHanded: "bool", carries: "bool",
                  throw: "number", release: "string", returnAfter: "number", fits: "array", use: "any", prompt: "string" },
     // shape audit 10-16: the shape lives here now (grab.js derives its enums from these). Gone: home (the home component is
     // the one home), a grip's bone overrides (hold). Reserved: fx (refused; presence-only particles while use is held)
@@ -274,7 +270,7 @@ export const COMPONENTS = {
     defaults: { enabled: true, who: "inhabitant", steal: true, range: 1.5, priority: 0, hold: "auto", twoHanded: false, throw: 1, release: "drop", returnAfter: 0 },
     // the hand's own rules (shared/grab.js checkGrabbable) refuse outside these; written here so the inspector reads one source
     ranges: { range: { min: 0.1, max: 10 }, priority: { min: -10, max: 10 }, throw: { min: 0, max: 3 }, returnAfter: { min: 0, max: 3600 }, fits: { maxItems: 8 }, prompt: { maxLen: 40 } }, units: { range: "m", throw: "×", returnAfter: "s" },
-    docs: { enabled: "off: nobody can pick it up for now (a loose ball can still be punted)", who: "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own", steal: "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
+    docs: { anim: "how a body without tracked hands holds it: a pose or clip by name (hand, carry, torch, pistol, shoulder built in); one the body doesn't know is held by size", grips: "named places the palm goes, in its own frame: {pos, q?, hand?, role?, grasp?, part?}", carries: "true: what rests on it rides with it when it is picked up", fits: "keywords: it snaps into a socket whose accepts shares one", use: "what the use button fires while it is held: a reactions action, or {down, up}", prompt: "the hover text (≤ 40)", enabled: "off: nobody can pick it up for now (a loose ball can still be punted)", who: "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own", steal: "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
       range: "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand", priority: "when several things are in reach the highest wins: the key, not the table it sits on", hold: "auto (grip in VR, sticky on desktop) | press (only while gripping) | toggle (sticky everywhere: a tool)",
       twoHanded: "on: both hands may hold it at once (a rifle, a broom): the first carries, the second aims", throw: "how hard it flies when thrown: 1 is normal, 2 twice as fast, 0 can only be dropped", release: "drop (it falls or is set down) | stay (where you let go) | return (it goes home)",
       returnAfter: "left unheld this many seconds it goes home; 0 never" },
@@ -285,21 +281,19 @@ export const COMPONENTS = {
   // recut B3 (house 22:03Z: "starter config, switched on"): two world settings the authority reads at decision time.
   "body-default": { on: "world", type: "string", choices: ["accept", "ask", "refuse"], help: "the consent switch an untouched body has in this world: accept (the default when absent), ask or refuse. A person's own switch and their answers for someone always win (PROTOCOL §5, Body consent)" },
   "keep-owner": { on: "world", type: "bool", help: "absent or true: the authority refuses a change that would leave this world with no owner ('last-owner'). false: an owner may leave it ownerless on purpose (the host operator can still mend it). Starter config, switched on" },
-  "physics-engine": { on: "world", fields: { engine: "string", build: "string", tickMs: "int" }, required: ["engine"], nullable: ["build"], defaults: { tickMs: 33 },
+  "physics-engine": { on: "world", fields: { engine: "string", tickMs: "int" }, required: ["engine"], defaults: { tickMs: 33 },
     ranges: { tickMs: { min: 16, max: 1000 } }, units: { tickMs: "ms" },
-    docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0)", build: "the exact build the authority stamps (16 hex: its source files' hash; null for an engine this server doesn't carry); never sent", tickMs: "milliseconds a step (33 = 30 steps a second)" },
+    docs: { engine: "the engine and its version, name@semver (eidosim@1.0.0); a request may name the engine alone (eidosim), and the authority stamps the version it carries. A version is what its conformance digests say it computes (spec/conformance/physics/)", tickMs: "milliseconds a step (33 = 30 steps a second)" },
     absentMeans: { gravity: "not a field: the engine's own (eidosim: [0, −9.81, 0] m/s², world frame)" },
-    help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim@1.0.0', tickMs? (ms a step, default 33)}. The authority stamps the exact build. Gravity is the engine's own (eidosim: [0, −9.81, 0] m/s²). Delete it to turn physics off (refused while things are in flight)" },
+    help: "on @world only (owner): the physics engine this world runs: {engine: 'eidosim' or 'eidosim@1.0.0', tickMs? (ms a step, default 33)}. Name no version and the authority stamps the one it carries. Gravity is the engine's own (eidosim: [0, −9.81, 0] m/s²). Delete it to turn physics off (refused while things are in flight)" },
   // spec/PHYSICS.md §3.2: a world's named surface materials (Marrow's Surface Data Cards: one name bundles a surface's
   // physical numbers; SLZ's format names materials, not raw per-object numbers). physics.surface names one. Reserved with
   // physics' reserved fields (shape audit 10-16): no engine reads either, so neither is written yet; both open together.
   // The combine modes and their order are PhysX's, Unity's and Rapier's (COMBINE, above); KHR_physics_rigid_bodies names the
   // same four (minimum, maximum) but resolves a mismatch the other way round (average first), so an importer resolves per
   // pair, never per mode
-  surface:   { status: "reserved", instead: "nothing yet: no engine here reads surfaces (eidosim's friction and bounce are its own constants)", on: "world", keyed: true, key: "instance", fields: { friction: "number", restitution: "number", density: "number", frictionCombine: "string", restitutionCombine: "string", label: "string" },
-               enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE }, ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, density: { gt: 0, max: 1e5 }, label: { maxLen: 80 } }, units: { density: "kg/m³" },
-               absentMeans: { friction: "the engine's own law", restitution: "the engine's own law", density: "the engine's own", frictionCombine: "average", restitutionCombine: "max", label: "its key" },
-               help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the later of average < min < multiply < max wins (PhysX, Unity, Rapier; KHR resolves the other way round, PHYSICS §3.2)" },
+  surface:   { status: "reserved", instead: "nothing yet: no engine here reads surfaces (eidosim's friction and bounce are its own constants)", on: "world", keyed: true, key: "instance",
+               help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // spec/PHYSICS.md §3.3: the constraint between two bodies is `physics-joint` (OMI_physics_joint; it sits beside physics and
   // physics-engine). R 15:04: `joint` is the skeleton node (Maya, glTF, VRM: an avatar's entity tree), below. Both reserved:
   // one anchor can't carry the two frames every engine and glTF/OMI use, so no fields are pinned (the target shape is
@@ -378,7 +372,7 @@ export const COMPONENTS = {
                absentMeans: { line: "an older value's window [{t0, t1, text, speaker?}]: its last entry is the line on screen" },
                 docs: { session: "the captioning session's id", n: "the line's number in its session", gen: "the generation of the feed", title: "what is playing", line: "the line on screen now: {t0, t1 (seconds of media time), text (≤ 240), speaker? (≤ 48)}" },
                 help: "a screen's captions, written by the caption request only: {session, n, gen, title?, line: {t0, t1, text, speaker?}} (the current line; earlier ones are the earlier captions changes)" },
-  captioners: { on: "thing", fields: { ids: "people" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
+  captioners: { on: "thing", fields: { ids: "people" }, docs: { ids: "the identities who may caption this screen, beside anyone who may edit it" }, help: "who may caption this screen with the caption request: {ids: [<identity u-…>]}; anyone who may edit the screen may caption it too" },
   // round-2 review R8 (2026-10-05): names the engine reads, carried by imported worlds, registered with their old
   // meaning so it's fixed (L5). Fields from every old world log on Burrow, translated. A name not here is a world's own
   // invention (heart, inscription…): admitted, unless it's a near-miss of one of these (ligth).
@@ -395,7 +389,7 @@ export const COMPONENTS = {
                ranges: { hours: { min: 0, max: 24 }, rate: { min: -1000, max: 1000 }, azimuth: { min: -2 * Math.PI, max: 2 * Math.PI }, fog: { min: 0 }, exposure: { min: 0 }, ambient: { min: 0 }, transition: { gt: 0, max: 600 }, weatherK: { min: 0, max: 2 }, tz: { maxLen: 64 } },
                units: { hours: "h", rate: "world hours per real hour", ts: "ms", azimuth: "rad", transition: "s" },
                absentMeans: { tz: "no wall clock: hours, rate and ts govern the day", weather: "no authored weather (a forecast may still say one)", weatherK: "1: full intensity", transition: "the renderer's own ease (30 s in a forecast)",
-                 forecast: "no forecast: the authored weather holds", override: "no manual weather inside the current forecast segment", law: "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" },
+                 forecast: "no forecast: the authored weather holds", override: "no manual weather inside the current forecast segment", law: "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments" },
                docs: { hours: "the hour of day at ts, 0 ≤ h ≤ 24", rate: "world hours a real hour (0: the sun stands still)", ts: "the instant hours held, epoch ms (stamped by the authority)", tz: "an IANA time zone: present, the world's hour is that zone's wall clock", clouds: "clear | cumulus | stratus | cirrus", weather: "clear | fair | sunshower | overcast | rain | storm | cyclone | darkstorm",
                  weatherK: "the weather's intensity, 0..2", transition: "how long a change of weather eases in, seconds", azimuth: "where the sun stands round the horizon, radians (π: the default)", fog: "× this renderer's own fog curve", exposure: "× this renderer's tone mapping", ambient: "× this renderer's ambient curve",
                  forecast: "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}", override: "a weather act inside a forecast segment {state, k?, ts} (stamped)" },
@@ -452,8 +446,8 @@ export const COMPONENTS = {
                  scale: "1: the effect at its own size",
                  params: "none: the effect's own defaults" },
                help: "it emits particles: {effect (an Essentials name, fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle, or a document of your own by its address: upload {effect: {…}} stores one, sha256:<64 hex>), part? (a node of its model it emits from), at? [x, y, z] (m in its own frame, ±8), seed? (absent: derived from its id), playing? (false: no new particles; the living finish), scale? (0.01..100: every length in the effect × this, on top of the thing's own scale), params? {<name>: value} (the effect's own knobs, schema {component: 'particles'} and the inspector list them; every Essential takes count, size, opacity, speed, lifetime, area, texture, quality)}. An effect document is emitters of modules: spawn, shape, velocity, forces, rotation, size, color, render (spec in shared/particle_effects.js: angles in radians, gravity world-down, every other vector in the emitter's frame; a trial format, expected to grow)" },
-  "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "ref", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
-  assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, help: "on @world, keyed: one of the world's assets (a model added here)" },
+  "imported-behavior": { on: "world", keyed: true, key: "instance", fields: { src: "string", attach: "ref", caps: "object", knobs: "object", author: "string", ts: "number", state: "object" }, docs: { src: "the old script's source, as the translation carried it", attach: "the thing it was bound to", caps: "the capabilities it was granted", knobs: "its settings", author: "who wrote it, as the old world recorded", ts: "when it was bound (epoch ms)", state: "its saved state" }, help: "keyed by name: an imported world's old runtime-script binding, carried from translation (scripts are script:<name>)" },
+  assets:    { on: "world", keyed: true, key: "instance", fields: { name: "string", path: "string" }, docs: { name: "the asset's display name", path: "its library path" }, help: "on @world, keyed: one of the world's assets (a model added here)" },
   imported:  { keyed: true, key: "instance", help: "keyed: a field an imported world's translation had no mapping for, carried as it was" },
   "imported-roles": { on: "world", keyed: true, key: "instance", help: "on @world, keyed by identity: an imported grant this protocol has no rung for (spectator or none: R 10-21, nothing below inhabitant), carried as it was; the person holds the world's newcomer role" },
   "imported-bans": { on: "world", keyed: true, key: "instance", help: "on @world, keyed by identity: a ban an imported world carried, as it was (live bans are the moderator log's)" },
@@ -464,17 +458,17 @@ export const COMPONENTS = {
     // the ladder's vocabulary (recut C11: out of the kernel pin, which holds what the fold reads): a grant names one of these ids, a
     // role-def keys on these permissions, so any change is a break needing --ack (pinBreakList `vocab`), an addition too
     vocab: { rank: { ...RANK }, builtin: [...BUILTIN_IDS], permissions: [...PERMISSION_NAMES], customId: CUSTOM_ID.source, reserved: [...RESERVED_IDS].sort() },
-    absentMeans: { until: "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)" }, help: "on @world, keyed by identity: {role: visitor|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80), until? (epoch ms: when the grant ends; the authority ends it then, warning the holder 5 min before; never on owner)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
+    absentMeans: { until: "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)" }, docs: { role: "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines", can: "{<permission>: true|false}: exceptions on top of the role, for this person", note: "a note on the grant (≤ 80)", until: "when the grant ends, epoch ms; never on owner" }, help: "on @world, keyed by identity: {role: inhabitant|builder|moderator|owner|<a custom role>, can?: {<permission>: true|false} (exceptions on top of the role), note? (≤ 80), until? (epoch ms: when the grant ends; the authority ends it then, warning the holder 5 min before; never on owner)}. A grantRoles holder may give roles ranked below their own, with only permissions they hold" },
   // guests isn't written down: absent means inhabitant whatever the newcomer role (roles.js guestRoleOf, R 10-21: guests start
   // as inhabitants even where newcomers build). Pinned as a known gap (pretrans D7)
-  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, help: "on @world (owner): the NEWCOMER role: what anyone without roles:<id> holds (absent = inhabitant; a world founded since R 10-21 starts with builder): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default inhabitant), never above role" },
+  "default-role": { on: "world", fields: { role: "string", can: "object", guests: "string" }, docs: { role: "the newcomer role: what anyone without their own grant holds; never owner", can: "{<permission>: true|false} on top of that role, for everyone holding it this way (not guests)", guests: "the role people without an account start as; never above role" }, help: "on @world (owner): the NEWCOMER role: what anyone without roles:<id> holds (absent = inhabitant; a world founded since R 10-21 starts with builder): any role but owner; can? {<permission>: true|false} on top of that role for everyone who holds it this way (not guests); guests (people without an account) get guests (default inhabitant), never above role" },
   "role-defs": { on: "world", help: "on @world (owner): {<role id>: {name, rank (custom: 1–254, unique), can: {<permission>: true|false}, note?}}. Built-ins visitor, builder, moderator may be renamed and their permissions edited (rank fixed); owner holds every permission and isn't listed. Permissions: build, editOthers, editWorld, generate, fly, scripts, pauseScripts, mute, kick, ban, grantRoles" },
   access:    { status: "trial-kernel", on: "world", fields: { join: "string", watch: "string", max: "int", soft: "int", minAccountDays: "int" }, enums: { join: ["anyone", "signed-in", "listed"], watch: ["anyone"] },
-    absentMeans: { watch: "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)" }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people with a roles:<id> other than none; a listed-only world is invisible to everyone else), watch? (anyone: whoever join turns away may still watch, with no body), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
+    absentMeans: { watch: "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)" }, ranges: { max: { min: 1, max: 200 }, soft: { min: 1, max: 200 }, minAccountDays: { min: 0, max: 365 } }, docs: { join: "who may come in: anyone, signed-in, or listed (people the world has granted a role, unexpired)", watch: "anyone: whoever join turns away may still watch, with no body", max: "most bodies at once (1–200)", soft: "the recommended capacity (≤ max)", minAccountDays: "an account must be at least this many days old to come in (0–365; 0 is off)" }, help: "on @world (owner): who may come in {join: anyone|signed-in|listed (only people the world has granted a role, unexpired; a listed-only world is invisible to everyone else), watch? (anyone: whoever join turns away may still watch, with no body), max? (1–200 at once), soft? (≤ max: the recommended capacity), minAccountDays? (0–365: a person's account must be at least this many days old; a guest is then refused, an enrolled agent is exempt; 0 or absent = off)}; moderators and owners always get in" },
   about:     { on: "world", fields: { name: "string", text: "string" }, ranges: { name: { maxLen: 80 }, text: { maxLen: 2000 } }, docs: { name: "the world's name, ≤ 80 characters", text: "its blurb, ≤ 2000 characters" }, help: "on @world: the world's name (≤ 80) and blurb (≤ 2000)" },
   // the component ladder's second rung (docs/COMPONENT-LADDER.md; R 10-12): the drafts this world's owner trusts here.
   // A fact about the world, not the engine: the authority still doesn't read a trusted draft. Owner-gated like the rest of @world.
-  "trusted-components": { on: "world", fields: { components: "array" }, ranges: { components: { maxItems: 64 } }, help: "on @world (owner): {components: [<namespaced draft names>]} — the draft COMPONENTS used and trusted in this world (never a list of people; was `trusted`, renamed at load) (a blue chip in the Inspector, offered in the main Add Component list); never a bare name (that is the engine's or nothing); ≤ 64, each once. Trust ≠ engine understanding: the authority doesn't read them" },
+  "trusted-components": { on: "world", fields: { components: "array" }, ranges: { components: { maxItems: 64 } }, docs: { components: "the namespaced draft component names trusted in this world (≤ 64, each once)" }, help: "on @world (owner): {components: [<namespaced draft names>]} — the draft COMPONENTS used and trusted in this world (never a list of people; was `trusted`, renamed at load) (a blue chip in the Inspector, offered in the main Add Component list); never a bare name (that is the engine's or nothing); ≤ 64, each once. Trust ≠ engine understanding: the authority doesn't read them" },
   bounds:    { on: "world", fields: { min: "vec3", max: "vec3" }, required: ["min", "max"], units: { min: "m", max: "m" }, docs: { min: "the box's low corner [x, y, z], world metres", max: "its high corner [x, y, z], world metres" },
                help: "on @world: the box the world lives in, {min: [x, y, z], max: [x, y, z]} in world metres, min < max on every axis. Absent (no bounds component), anywhere is in the world" },
   // shape audit 10-16: units, a range, and the absent radius written down (shared/mover.js TRACK.spawnR; tools/shape-attach-test pins they agree)
@@ -482,7 +476,7 @@ export const COMPONENTS = {
                absentMeans: { radius: "2 m" }, docs: { pos: "where visitors arrive, [x, y, z] world metres", radius: "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)" },
                help: "on @world: where visitors arrive {pos: [x, y, z], radius? (m, 0..100; absent, 2 m): a visitor's arrival must lie within radius of pos}" },
   // research 40 §6.1, trimmed by the shape audit 10-16 (render-media-env §15): the noise ground. Its defaults ARE the sim's law
-  // (shared/terrainmath.js terrainParams, pinned by EIDOSIM_BUILD), written into every stored value, so the sim, the mesh and
+  // (shared/terrainmath.js terrainParams, held by eidosim's conformance digests (engine-check)), written into every stored value, so the sim, the mesh and
   // the inspector read one ground. raster had no reader anywhere: reserved (refused) until one exists, its fields
   // unregistered. Layer colours are ints (sRGB), like every colour here ("#rrggbb" is taken at write). Water is its own
   // component (everyone separates water from ground): terrain.water is refused with where it went
@@ -497,9 +491,9 @@ export const COMPONENTS = {
                          amplitude: { min: -500, max: 500 }, flatRadius: { min: 0, max: 4096 }, features: { maxItems: 64 }, layers: { maxItems: 8 } },
                nullable: ["features", "heightmap"],   // null = removed (a merge patch can take one away)
                absentMeans: { features: "no placed shapes: the base alone is the ground", heightmap: "no image: the noise is the base", segments: "the renderer's own mesh resolution (a drawing choice, not part of the height law)", layers: "one plain layer, 0x4a5d33 repeated 16 times across its size",
-                 law: "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" },
+                 law: "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit" },
                units: { size: "m", amplitude: "m", flatRadius: "m", flatHeight: "m" },
-               docs: { seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side (the drawn mesh's resolution)", flatRadius: "flat within this many metres of the centre", flatHeight: "the height of that flat centre, metres", octaves: "noise octaves (1–8)", frequency: "noise frequency", layers: "its colour layers, at most 8: [{color: 0xRRGGBB (sRGB), repeat: tiles across its size}]", features: "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)", heightmap: "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)" },
+               docs: { kind: "the base's kind: noise (a raster kind is reserved)", seed: "the noise seed", size: "the ground's size, metres", amplitude: "its relief: how high the ground rises, metres", segments: "samples per side (the drawn mesh's resolution)", flatRadius: "flat within this many metres of the centre", flatHeight: "the height of that flat centre, metres", octaves: "noise octaves (1–8)", frequency: "noise frequency", layers: "its colour layers, at most 8: [{color: 0xRRGGBB (sRGB), repeat: tiles across its size}]", features: "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)", heightmap: "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)" },
                help: "the ground's base: {kind: 'noise', seed, size, amplitude, octaves, frequency, flatRadius, flatHeight, segments, layers? [{color: 0xRRGGBB, repeat}], features?, heightmap?} (absent numbers are the sim's: seed 1, size 80 m, amplitude 3 m, octaves 4, frequency 2.5, flat radius 0); a raster kind is reserved; water is its own component" },
   // split out of terrain (shape audit 10-16, render-media-env §15): one water level for the world, SL's per-region water.
   // A keyed water:<name> with bounds is a later addition. shared/terrainshape.js waterParams reads it (an older terrain.water
@@ -511,8 +505,8 @@ export const COMPONENTS = {
                absentMeans: { color: "0x1d5a6e", opacity: "0.82", kind: "decided from the ground it fills (shared/waterkind.js)", flow: "still: no current" },
                docs: { level: "the water's surface height, metres (world y)", color: "its colour, 0xRRGGBB (sRGB)", opacity: "0.1..1", kind: "still | river | ocean", flow: "a current [x, z], metres a second" },
                help: "on @world: the world's water {level (m), color? 0xRRGGBB, opacity? 0.1..1, kind?: still|river|ocean, flow? [x, z] m/s}; delete it to drain" },
-  "terrain-grid": { status: "reserved", on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
-  "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
+  "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
+  "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.
   // the lists the install check reads are here, so the pin sees them (shape audit 10-16): each item of `on` is one of
   // itemEnums.on ('changed:*' = changed:<a component name>), each of scope.bodies one of itemEnums["scope.bodies"]; scope's
@@ -521,7 +515,7 @@ export const COMPONENTS = {
                required: ["src", "scope"], grammar: { src: "sha256" }, units: { every: "s" }, ranges: { every: { min: 5 } },
                itemEnums: { on: ["use", "say", "enter", "leave", "grab", "release", "changed:*"], "scope.bodies": ["shove", "pose"] },
                scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", bodies: "array" },
-               help: "keyed <name>: a script (JavaScript; docs/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
+               docs: { src: "the source blob's name", scope: "what it may touch: {ids, comps, create?, say?, bodies?}", on: "the events that wake it (use, say, enter, leave, grab, release, changed:<comp>)", every: "seconds between ticks (≥ 5)", always: "true: it runs with nobody present (owner)", knobs: "its settings (≤ 4 KiB)", paused: "true: it doesn't run" }, help: "keyed <name>: a script (JavaScript; docs/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
   // §5 (23:40): keyed names say which kind of key they are. instance: the creator rule; partition: one shared surface
   // reserved (shape audit 10-16): no format for a "written definition" exists yet and nothing writes one, so the name is held
   // until one does (it may then be a set-once string sha256:<64 hex>)
@@ -592,7 +586,7 @@ COMPONENTS["avatar-deny"] = { status: "reserved", on: "world", instead: "nothing
 
 export const STATUSES = {
   trial: "admitted, but its shape may still change during the alpha (about a year); stored values are translated or repaired where they can be",
-  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, and the five components every reader rests on: transform, parent, model, roles, access, each as its component shape): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
+  "trial-kernel": "the kernel (the log envelope and kinds, the fold's operations, the identity grammar, the version, and the two components every reader rests on: roles and access, each as its field shape only): it may still change during the alpha, but never by a re-pin with an acknowledgement alone: the same change must carry a translator, a changelog line and vectors an old reader refuses and a new one folds (shared/protocol/kernelspec.js; tools/protocol/kernel-check.ts)",
   reserved: "the name is held for a shape that isn't settled: every write of it is refused",
   stable: "promised: its meaning never changes; it only grows by additions",
 };
@@ -748,6 +742,9 @@ export function pinOf() {
     if (d.writtenBy) p.writtenBy = d.writtenBy;
     if (d.maxKeys !== undefined) p.maxKeys = d.maxKeys;
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
+    // what each field means, and its unit: the normative home of a component's meaning (the house's view, #260 10-20)
+    if (d.docs) p.docs = Object.fromEntries(Object.entries(d.docs).filter(([f]) => Object.hasOwn(d.fields ?? {}, f)));
+    if (d.units) p.units = copy(d.units);
     if (d.grammar) p.grammar = { ...d.grammar };
     if (d.vocab) p.vocab = copy(d.vocab);
     if (d.keyed !== undefined) p.keyed = d.keyed;
@@ -757,7 +754,6 @@ export function pinOf() {
     if (d.reservedKinds) p.reservedKinds = Object.keys(d.reservedKinds);
     if (d.reservedFields) p.reservedFields = [...d.reservedFields];
     // what a reserved field will mean when it opens (physics: units, limits, enums), held as the absentMeans are
-    if (d.reservedShape) p.reservedShape = copy(d.reservedShape);
     // a nested grammar's closed vocabularies (structure's aperture kinds and wall axes: shape audit 10-16)
     if (d.nestedEnums) p.nestedEnums = copy(d.nestedEnums);
     out[name] = p;
@@ -799,6 +795,8 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined && n.maxKeys !== undefined && (p.maxKeys === undefined || n.maxKeys < p.maxKeys)) push(`${name}: maxKeys ${p.maxKeys ?? "none"} → ${n.maxKeys}`);
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
     for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
+    for (const [f, m] of Object.entries(p.docs ?? {})) if (Object.hasOwn(n.fields ?? {}, f) && n.docs?.[f] !== m) push(`${name}.${f}: its meaning ${j(m)} → ${j(n.docs?.[f]) ?? "gone"}`);
+    for (const [f, u] of Object.entries(p.units ?? {})) if (Object.hasOwn(n.fields ?? {}, f) && j(n.units?.[f]) !== j(u)) push(`${name}.${f}: its unit ${j(u)} → ${j(n.units?.[f]) ?? "gone"}`);
     for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
     // a closed vocabulary (roles.vocab: ranks, built-in ids, permissions, the custom-id pattern, reserved ids): ANY difference
     // changes what a stored grant or role-def means (a freed id, a new reserved one), so additions break too: never silently

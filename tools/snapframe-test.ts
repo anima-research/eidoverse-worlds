@@ -142,7 +142,7 @@ async function viaTool(args: Record<string, unknown>) {
   const before = asked.length;
   const r = await rpc("tools/call", { name: "screenshot", arguments: args });
   const note = r.result?.content?.find((c: any) => c.type === "text")?.text as string | undefined;
-  if (note?.includes("(429)")) check(BUSY, false, note);
+  if (/answered 429\b/.test(note ?? "")) check(BUSY, false, note);
   return { img: r.result?.content?.[0]?.type === "image", note, got: asked.length > before ? asked.at(-1) : undefined };
 }
 let t = await viaTool({});
@@ -166,6 +166,12 @@ const h = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follow=frame
 if (h.status === 429) check(BUSY, false, await h.text());
 check("HTTP /snap query → normalised before the wire", h.status === 200 && asked.length > before && same(asked.at(-1), { view: "third", frame: { height: 0, pitch: 10 } }), JSON.stringify(asked.at(-1)));
 
+// the door key guards both reads this suite makes (#260 house I575): without it, refused, and no capture dispatched
+const nAsked = asked.length;
+const bare = await fetch(`http://127.0.0.1:${PORT}/worlds`);
+check("an unkeyed /worlds is refused", bare.status === 401 || bare.status === 403, String(bare.status));
+const bareSnap = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follow=framer&view=third`);
+check("an unkeyed /snap is refused, and dispatches no capture", (bareSnap.status === 401 || bareSnap.status === 403) && asked.length === nAsked, `${bareSnap.status}, ${asked.length - nAsked} dispatched`);
 for (const ws of renderers) ws.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

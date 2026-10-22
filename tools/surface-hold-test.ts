@@ -18,8 +18,9 @@ const STUB = fileURLToPath(new URL("./world-hold-stub.mjs", import.meta.url));
 plugin({
   name: "world-hold-stub",
   setup(build) {
-    // livechat.js imports ../core.js and ../chat.js (from realize/) and
-    // ./models.js (PORTED only) — all stubbed; the bus must be REAL.
+    // livechat.js imports ../core.js and ../chat.js (from realize/) and ./models.js (PORTED only), all stubbed; its bus
+    // comes from ../base.js, left REAL so it is the same bus the test drives below (#260 house I394/I240: two repairs of
+    // this one fault met in a merge; one bus, not both fixes)
     for (const f of ["^\\.\\./core\\.js$", "^\\.\\./chat\\.js$", "^\\./models\\.js$"]) {
       build.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
@@ -27,6 +28,8 @@ plugin({
 });
 
 const stub = await import("./world-hold-stub.mjs");
+// livechat.js takes its bus from ../base.js now (not core.js): drive THAT bus, or nothing reaches it
+const { bus } = await import("../client/lib/base.js");
 const causes = await import("../client/lib/realize/livechat.js");
 
 let pass = 0, fail = 0;
@@ -37,7 +40,7 @@ const check = (name: string, ok: boolean, extra = "") => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const HOLD_MS = 2500;                      // world.js's performance window
 const spoken: any[] = [];
-stub.bus.on("speech", (s: any) => spoken.push(s));
+bus.on("speech", (s: any) => spoken.push(s));
 let seq = 100;
 const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =>
   causes.handleLiveCause({ verb: "say", actor, args: { text, ...extra }, seq: ++seq, ts: Date.now() });
@@ -48,7 +51,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   await say("norrin", "before any voice leg");
   check("an actor with NO voice leg speaks immediately", spoken.length === 1 && spoken[0].text === "before any voice leg",
     JSON.stringify(spoken));
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 7, retired: null });
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 7, retired: null });
   spoken.length = 0;
   await say("norrin", "after the voice leg joined");
   await sleep(150);
@@ -57,7 +60,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   check("…but the caption is logged during the hold (text is never delayed)",
     stub.chatLog.some((c: any) => c.text === "after the voice leg joined"), `${stub.chatLog.length} chat rows`);
   // don't let this pending say leak into later vectors
-  stub.bus.emit("performed", { actor: "norrin", seq, gen: 7 });
+  bus.emit("performed", { actor: "norrin", seq, gen: 7 });
 }
 
 // ── 2. a matching performed receipt cancels exactly THAT say's fallback ─────
@@ -66,7 +69,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   await say("norrin", "receipted line");
   const receipted = seq;
   await say("norrin", "unreceipted line");
-  stub.bus.emit("performed", { actor: "norrin", seq: receipted, gen: 7 });
+  bus.emit("performed", { actor: "norrin", seq: receipted, gen: 7 });
   await sleep(HOLD_MS + 400);
   // (the receipt's display-only re-emit carries performed:true — §8; a
   // FALLBACK is a speech event without it)
@@ -90,9 +93,9 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   const sPredGen = seq;
   await say("norrin", "successor-gen receipt");
   const sSuccGen = seq;
-  stub.bus.emit("performed", { actor: "zarniwoop", seq: sWrongActor, gen: 7 }); // wrong actor → ignore
-  stub.bus.emit("performed", { actor: "norrin", seq: sPredGen, gen: 6 });       // predecessor (stale) → ignore
-  stub.bus.emit("performed", { actor: "norrin", seq: sSuccGen, gen: 9 });       // successor (takeover) → CANCEL
+  bus.emit("performed", { actor: "zarniwoop", seq: sWrongActor, gen: 7 }); // wrong actor → ignore
+  bus.emit("performed", { actor: "norrin", seq: sPredGen, gen: 6 });       // predecessor (stale) → ignore
+  bus.emit("performed", { actor: "norrin", seq: sSuccGen, gen: 9 });       // successor (takeover) → CANCEL
   await sleep(HOLD_MS + 400);
   check("wrong-actor receipt does not cancel the hold (falls back)",
     spoken.filter((s) => s.text === "wrong-actor receipt").length === 1, JSON.stringify(spoken));
@@ -113,7 +116,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 
 // ── 4. aux death removes capability immediately: later says do not wait ─────
 {
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 7 });
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 7 });
   spoken.length = 0;
   await say("norrin", "after the leg died");
   check("after aux death, a say speaks IMMEDIATELY (no 2.5s wait against a gone leg)",
@@ -122,28 +125,28 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 
 // ── 5. a stale retirement cannot remove a successor generation ──────────────
 {
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 9, retired: 7 });   // successor
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 7 }); // STALE death of gen 7
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 9, retired: 7 });   // successor
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 7 }); // STALE death of gen 7
   spoken.length = 0;
   await say("norrin", "successor should still hold");
   await sleep(150);
   check("stale retirement (old gen) does not strip the successor: the say still holds",
     spoken.length === 0, JSON.stringify(spoken));
-  stub.bus.emit("performed", { actor: "norrin", seq, gen: 9 });
+  bus.emit("performed", { actor: "norrin", seq, gen: 9 });
 }
 
 // ── 6. transition/takeover works without reload ─────────────────────────────
 {
   // takeover: gen 9 → gen 12, one event, same session, no snapshot re-seed
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 12, retired: 9 });
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 12, retired: 9 });
   spoken.length = 0;
   await say("norrin", "spoken through the successor");
   await sleep(150);
   check("takeover (new gen via transition alone) keeps hold working — no reload needed",
     spoken.length === 0, JSON.stringify(spoken));
-  stub.bus.emit("performed", { actor: "norrin", seq, gen: 12 });
+  bus.emit("performed", { actor: "norrin", seq, gen: 12 });
   // and the true death of the CURRENT gen releases it
-  stub.bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 12 });
+  bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 12 });
   spoken.length = 0;
   await say("norrin", "released after real death");
   check("real death of the current gen releases the hold immediately",
@@ -152,14 +155,14 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 
 // ── snapshot seeding (the other entry point for capability) ─────────────────
 {
-  stub.bus.emit("surfaces", [{ id: "zora", surfaces: [{ surface: "voice", gen: 3 }] }]);
+  bus.emit("surfaces", [{ id: "zora", surfaces: [{ surface: "voice", gen: 3 }] }]);
   spoken.length = 0;
   await say("zora", "seeded from snapshot");
   await sleep(150);
   check("snapshot-seeded capability holds exactly like transition-built capability",
     spoken.length === 0, JSON.stringify(spoken));
-  stub.bus.emit("performed", { actor: "zora", seq, gen: 3 });
-  stub.bus.emit("surfaces", []);   // re-seed with no legs (e.g. reconnect snapshot)
+  bus.emit("performed", { actor: "zora", seq, gen: 3 });
+  bus.emit("surfaces", []);   // re-seed with no legs (e.g. reconnect snapshot)
   spoken.length = 0;
   await say("zora", "after empty re-seed");
   check("an empty surfaces re-seed clears capability (reconnect truth wins)",
@@ -181,7 +184,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
     spoken.length === 1 && spoken[0].text === "spoken flag, no leg", JSON.stringify(spoken));
 
   // (b) spoken:true with a live leg and NO receipt → holds, then falls back
-  stub.bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: 21, retired: null });
+  bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: 21, retired: null });
   spoken.length = 0;
   await say("miri", "spoken flag, leg deaf", { spoken: true, utt: 2, t0: Date.now() });
   await sleep(150);
@@ -194,11 +197,11 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   // (c) spoken:true with a live leg and a MATCHING receipt → skip (performed)
   spoken.length = 0;
   await say("miri", "spoken flag, receipted", { spoken: true, utt: 3, t0: Date.now() });
-  stub.bus.emit("performed", { actor: "miri", seq, gen: 21 });
+  bus.emit("performed", { actor: "miri", seq, gen: 21 });
   await sleep(HOLD_MS + 400);
   check("spoken:true with a matching receipt never speaks locally (the leg performed it)",
     spoken.filter((s) => s.text === "spoken flag, receipted").length === 0, JSON.stringify(spoken));
-  stub.bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: null, retired: 21 });
+  bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: null, retired: 21 });
 }
 
 // ── 8. receipt SUCCESS still performs visually (review finding 9) ───────────
@@ -208,10 +211,10 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 //    consumers skip. Not for spoken:true says: that field owns display/caption
 //    continuation, so a caption-paced bubble is never drawn twice.
 {
-  stub.bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: 31, retired: null });
+  bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: 31, retired: null });
   spoken.length = 0;
   await say("vex", "performed and visible");
-  stub.bus.emit("performed", { actor: "vex", seq, gen: 31 });
+  bus.emit("performed", { actor: "vex", seq, gen: 31 });
   await sleep(150);
   const disp = spoken.filter((s) => s.text === "performed and visible");
   check("receipt re-emits a display-only speech (performed: true)",
@@ -222,11 +225,25 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 
   spoken.length = 0;
   await say("vex", "caption-paced line", { spoken: true, utt: 9, t0: Date.now() });
-  stub.bus.emit("performed", { actor: "vex", seq, gen: 31 });
+  bus.emit("performed", { actor: "vex", seq, gen: 31 });
   await sleep(150);
   check("spoken:true + receipt draws NO display re-emit (captions own that plane)",
     spoken.length === 0, JSON.stringify(spoken));
-  stub.bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: null, retired: 31 });
+  bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: null, retired: 31 });
+}
+
+// ── 9 (house I240, #260): a voice-RELAY leg (the SFU's surface, server.ts / voicesfubridge.js) holds the same way ──
+{
+  bus.emit("surface-transition", { actor: "rell", surface: "voice-relay", gen: 41, retired: null });
+  spoken.length = 0;
+  await say("rell", "carried by the relay");
+  await sleep(150);
+  check("a voice-relay leg holds the say (no local speech at once)", spoken.length === 0, JSON.stringify(spoken));
+  bus.emit("performed", { actor: "rell", seq, gen: 41 });
+  bus.emit("surface-transition", { actor: "rell", surface: "voice-relay", gen: null, retired: 41 });
+  spoken.length = 0;
+  await say("rell", "relay gone");
+  check("…and its retirement ends the hold", spoken.length === 1 && spoken[0].text === "relay gone", JSON.stringify(spoken));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

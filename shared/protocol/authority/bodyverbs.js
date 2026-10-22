@@ -12,12 +12,13 @@ import { refuse, said } from "./refuse.js";
 import { delOp, lockedC, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
-import { lastSetterOf, lockStrength, may, rankOf, roleOf, whoRank } from "./rights.js";
+import { admits, lastSetterOf, lockStrength, may, roleOf } from "./rights.js";
+import { whoWords } from "../roles.js";
 import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
-import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, shearFree, sizeOf, solidAt } from "./physics.js";
+import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, refuseForeign, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 import * as R from "../roles.js";
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
@@ -94,9 +95,9 @@ const EMBODIED_VERBS = {
     if (held?.by === actor) return secondGrip(w, actor, a, held, e);
     // grabOf (shared/grab.js) is the one reader: grabbable, or a dynamic thing's physics.who (the migration fallback)
     const g = grabOf(e.c);
-    if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {who: 'visitor'}} (anyone may; {} for builders only)`);
+    if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {}} (anyone may; {who: 'builder'} for builders only)`);
     if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
-    const need = g.who; const role = roleOf(st, actor); if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'visitor'`);
+    const need = g.who; const role = roleOf(st, actor); if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'inhabitant'`);
     if (held && !g.steal && !R.isOwner(role)) refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, unlockFix(w, st, k), { lock: k });
     occupiedRefuse(w, st, a.id, actor, "picked up");
@@ -129,7 +130,8 @@ const EMBODIED_VERBS = {
     // dynamic thing parented elsewhere that TOUCHES one of its tops (its oriented box meets the thin slab just over that top)
     // loses its support too, and falls from rest; the engine decides whether the support it keeps still holds it. A thing a
     // hand rule fixes (locked, or under a lock) or someone holds is no sleeper (simlayer fixedSet) and stays.
-    const physW = !!(st.entities["@world"]?.c["physics-engine"] && carried(st.entities["@world"].c["physics-engine"]));
+    // the world HAS an engine (carried here or not): what would fall is the same set either way; an uncarried one refuses it below
+    const physW = !!st.entities["@world"]?.c["physics-engine"];
     if (physW && !live) for (const k of over) { const c = st.entities[k]?.c;
       if (!c || fam.has(k) || dependents.includes(k) || !c.parent || c.physics?.kind !== "dynamic" || w.presence.holds[k] || [k, ...ancestors(st, k)].some((x) => lockedC(st.entities[x]?.c))) continue;
       if ((spatial(st).rec.get(a.id)?.surfs ?? []).some((s) => hitsIx(st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) dependents.push(k); }
@@ -139,7 +141,7 @@ const EMBODIED_VERBS = {
     if (physW && !live && !g.carries) for (const k of descendants(st, a.id)) if (st.entities[k]?.c.physics?.kind === "dynamic" && !dependents.includes(k)) dependents.push(k);
     for (const k of dependents) { const gk = grabOf(st.entities[k].c);
       const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
-      if (!may(st, actor, "editOthers") && !(gk && gk.enabled && rankOf(st, actor) >= whoRank(st, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
+      if (!may(st, actor, "editOthers") && !(gk && gk.enabled && admits(st, actor, gk.who))) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
     const spec = st.entities["@world"]?.c["physics-engine"];
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
     let plan = null;
@@ -156,7 +158,8 @@ const EMBODIED_VERBS = {
       if (ops.length) plan = admit(w, st, { actor, cap: { kind: "system", ids: carriedUp, comps: ["transform", "parent"] } }, ops);
       dependents.length = 0;
     }
-    if (dependents.length && !(spec && carried(spec))) {
+    if (dependents.length && spec && !carried(spec)) refuseForeign(spec, `picking that up would set ${dependents.join(", ")} falling (they rest on it)`);
+    if (dependents.length && !spec) {   // no physics in this world: what rested on it is set down on what's below (a settlement, no engine)
       const ops = dependents.map((k) => { const b = aabb(st, k); const below = supportUnder(st, b, new Set([k, ...fam, ...descendants(st, k)])); const tk = worldT(st, k);
         return setOp(k, "transform", { ...tk, pos: [tk.pos[0], r3(tk.pos[1] - (b.min[1] - below.y)), tk.pos[2]] }); });
       plan = admit(w, st, { actor, cap: { kind: "system", ids: dependents, comps: ["transform"] } }, ops);
@@ -204,7 +207,7 @@ const EMBODIED_VERBS = {
     // snap are the holder's settlements too, as a plain put is)
     if (a.pos !== undefined) { if (!Array.isArray(a.pos) || a.pos.length !== 3 || a.pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
       const d0 = dist(gripPoint(me), a.pos); if (d0 > REACH) refuse("out-of-reach", `that's ${r3(d0)} m from you; you can reach ${REACH} m`, "move closer first"); }
-    { const role = roleOf(st, actor); if (g && rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
+    { const role = roleOf(st, actor); if (g && !admits(st, actor, g.who)) refuse("rights", `only ${whoWords(g.who)} may move ${a.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
     // home: the holder's act, then the authority's return (its own act, caused by the release)
     if (g?.release === "return" && g.home) {
       const ret = returnPlan(w, st, a.id, g);
@@ -306,7 +309,7 @@ const EMBODIED_VERBS = {
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
-    const need = ph.who ?? DEFAULT_WHO; if (rankOf(st, actor) < whoRank(st, need)) refuse("rights", `only a ${need} may punt ${a.id}`, "ask the owner to set physics.who: 'visitor'");
+    const need = ph.who ?? DEFAULT_WHO; if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may punt ${a.id}`, "ask the owner to set physics.who: 'inhabitant'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, unlockFix(w, st, k), { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     occupiedRefuse(w, st, a.id, actor, "punted");

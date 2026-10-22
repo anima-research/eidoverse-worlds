@@ -21,7 +21,7 @@ import { inboxPush } from "./bodyconsent.js";
 import { buildCreateFrom } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, occupantOf, vacateAt, vacateWhy } from "./occupants.js";
-import { buildEpoch } from "./physics.js";
+import { buildEpoch, refuseForeign } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
@@ -335,11 +335,12 @@ function buildDelete(ctx, a) {
   // support it keeps still holds it. Held, flying, locked (or under a lock) things stay; so does everything while the
   // ground is still loading (a fall would rest on a guessed height), said so.
   const spec = ctx.st.entities["@world"]?.c["physics-engine"];
-  if (spec && carried(spec)) { const wake = [];
+  if (spec) { const wake = [];
     const tops = [...gone].flatMap((g) => ixb.rec.get(g)?.surfs ?? []);
     for (const k of over) { const c = after.entities[k]?.c;
       if (!c || gone.has(k) || !c.parent || c.physics?.kind !== "dynamic" || ctx.w?.presence.holds?.[k] || sf?.launched?.[k] || [k, ...ancestors(after, k)].some((x) => lockedC(after.entities[x]?.c))) continue;
       if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }
+    if (wake.length && !carried(spec)) refuseForeign(spec, `deleting that would set ${wake.join(", ")} falling (they rest on it as well as on what they hang from)`);
     if (wake.length && !groundReady(ctx.st)) ctx.notes.push({ kept: wake, why: "they were resting on what you deleted too, but this world's ground is still loading: they are left as they are rather than fall onto a guessed height" });
     else if (wake.length) { const rot = ENGINES[spec.engine]?.rotates;
       (ctx.launches ??= []).push(...wake.map((k) => { const t = worldT(after, k); return { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(rot ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [ctx.actor] }; }));

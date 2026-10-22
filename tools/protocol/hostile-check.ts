@@ -5,6 +5,7 @@
 // @ts-nocheck — lab code, kept as written
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import { readLog, fold, digest, worldIdOf, parseLine, cloneState, PURGED } from "../../shared/protocol/fold.js";
 import { carried } from "../../shared/protocol/simlayer.js";
 import { elide } from "../../shared/protocol/scriptrules.js";
@@ -77,12 +78,12 @@ const probes = [
     nowGood: (s) => codes(s).includes("3:malformed:comp-name") && s.entities.e.c.transform === undefined },
   { id: "E0d", src: "25e §0", what: "a batch nested 20,000 deep: bun folds it, node overflows (readers disagree)",
     base: () => { const f = root + "probe-deep.mjs";
-      fs.writeFileSync(f, `import { fold } from "${basePath}"; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { ops: [o] } };
+      fs.writeFileSync(f, `import { fold } from ${JSON.stringify(pathToFileURL(basePath).href)}; const o0 = { verb: "create", args: { id: "deep" } }; let o = o0; for (let k = 0; k < 20000; k++) o = { verb: "batch", args: { ops: [o] } };
         try { const s = fold([{ kind: "genesis", verb: "genesis", seq: 0, args: {} }, { kind: "change", seq: 1, ...o }], () => null); console.log("folded:" + Object.keys(s.entities)); } catch (e) { console.log("threw:" + e.constructor.name); }`);
       const out = ["bun", "node"].map((r) => Bun.spawnSync([r, f]).stdout.toString().trim()); fs.rmSync(f); return { ok: true, v: { bun: out[0], node: out[1] } }; },
     baseBad: (r) => r.v.bun !== r.v.node,
     now: () => { const f = root + "probe-deep2.mjs"; fs.writeFileSync(root + "probe-deep.jsonl", logOf(deepLine(20000)));
-      fs.writeFileSync(f, `import fs from "node:fs"; import { readLog, fold, digest } from "${ENGINE}shared/protocol/fold.js"; const s = fold(readLog(fs.readFileSync("${root}probe-deep.jsonl"))); console.log(s.status + ":" + digest(s) + ":" + s.diagnostics.map((d) => d[1]).join());`);
+      fs.writeFileSync(f, `import fs from "node:fs"; import { readLog, fold, digest } from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/fold.js").href)}; const s = fold(readLog(fs.readFileSync(${JSON.stringify(root + "probe-deep.jsonl")}))); console.log(s.status + ":" + digest(s) + ":" + s.diagnostics.map((d) => d[1]).join());`);
       const out = ["bun", "node"].map((r) => Bun.spawnSync([r, f]).stdout.toString().trim()); fs.rmSync(f); fs.rmSync(root + "probe-deep.jsonl"); return { bun: out[0], node: out[1] }; },
     nowGood: (s) => s.bun === s.node && /^ok:.*malformed:(cap-depth|nested-batch)/.test(s.bun) },
   { id: "H5a", src: "25d H5", what: "genesis says another fold version, log uses its verb `move`",

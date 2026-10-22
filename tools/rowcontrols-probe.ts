@@ -249,6 +249,7 @@ try {
   // the owner may lift the lock, so it asks "Move anyway?": cancel is the refusal (nothing written)
   const asked = await waitFor(`!!document.querySelector('.cc-no')`, 4000);
   log('lock dialog', { asked, buttons: await ev(`[...document.querySelectorAll('.cc-ok, .cc-no, .cc-alt, .cc-danger')].map((b) => b.className + ':' + b.textContent.trim())`) });
+  check('K1 the lock asks before an untick (a missed click would leave K2-K4 trivially unchanged)', asked);
   await ev(`(document.querySelector('.cc-no')?.click(), true)`);
   await sleep(1500); await painted(); await painted();
   log('lock answers', await ev(`window.__asked`)); log('hint times', await ev(`window.__hintT`));
@@ -259,7 +260,7 @@ try {
   await ev(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('box2')), true`); await painted(); await painted();
   await ev(`(window.__hints.length = 0, true)`);
   await clickAt(HEADBOX);
-  await waitFor(`!!document.querySelector('.cc-no')`, 4000); await ev(`(document.querySelector('.cc-no')?.click(), true)`);
+  check('K5 (setup) the header untick asks too', await waitFor(`!!document.querySelector('.cc-no')`, 4000)); await ev(`(document.querySelector('.cc-no')?.click(), true)`);
   await sleep(1500); await painted(); await painted();
   check('K5 the Inspector header box is ticked again after a refused untick', !(await ev(`(async () => ${offOf('box2')})()`)) && await waitFor(`document.querySelector('${HEADBOX}')?.checked === true`, 4000), String(await ev(`document.querySelector('${HEADBOX}')?.checked`)));
   await ev(`import('/lib/net.js').then((m) => m.sendRequest('delete', { id: 'box2', component: 'lock' }))`);

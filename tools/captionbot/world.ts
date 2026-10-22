@@ -311,7 +311,7 @@ export class WorldClient {
     // land until someone acts — hold everything, say so once, and try again
     // later …and a NEWER leg holding the screen (another captioner joined
     // after us): ours is superseded until we rejoin; hold, do not drop
-    if (/^rights:|^no-such:|^spectator:|^banned:|superseded captioner/.test(error)) {
+    if (/^rights:|^not-found:|^no-such:|^spectator:|^banned:|superseded captioner/.test(error)) {
       if (this.ackTimer) { clearTimeout(this.ackTimer); this.ackTimer = null; }
       this.inflight = null; this.pending.unshift(p);
       if (this.halted !== error) { this.halted = error; this.log(`⛔ held (${this.pendingCount} pending): ${error}`); }

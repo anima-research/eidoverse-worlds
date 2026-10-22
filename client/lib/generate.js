@@ -11,8 +11,8 @@
 //
 // The spend shape mirrors the permission model: generating needs your
 // Orrery identity (archipelago login, its own allowance metering), and
-// bringing the RESULT into the world is the `asset` verb — which needs the
-// gen capability here. The image-approval stage is Orrery's chain pause
+// bringing the RESULT into the world is a set of @world `assets:<path>`, which
+// the authority admits only with the generate permission (gate.js). The image-approval stage is Orrery's chain pause
 // (select: "starred"): candidates render as thumbnails, clicking one stars
 // it, the chain resumes into mesh generation.
 //

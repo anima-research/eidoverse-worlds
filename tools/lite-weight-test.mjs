@@ -9,7 +9,10 @@ import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 
 const ENGINE = /three\.webgpu|three\.tsl|three-vrm|three-mesh-bvh/;
 const { check, done } = checker();
-const world = await ownedWorld();
+// every world this test joins is founded (joining never founds one): otherwise the arrival and tripwire scenarios join
+// nothing and their absence checks pass vacuously (#260 house I12, I196)
+const ARRIVAL = 'arrival';
+const world = await ownedWorld({ worlds: [ARRIVAL, 'alpha', 'beta', 'gamma'] });
 const { browser, page: mkPage } = await launchBrowser();
 
 async function weigh(query, label) {
@@ -246,7 +249,7 @@ const RAW = `
 `;
 
 {
-  const WORLD = `arrival${Date.now().toString(36)}`;
+  const WORLD = ARRIVAL;
   const READER = 'reader';
   const SECRET = `removed-whisper-${Date.now()}`;
   const PRIOR = `prior-say-${Date.now()}`;
@@ -284,6 +287,17 @@ const RAW = `
   ).catch(() => {});
   await page.waitForTimeout(3000);
 
+  // the positive control: a line said AFTER the reader arrived does reach it, so the absences below mean something
+  const AFTER = `after-say-${Date.now()}`;
+  const driver2 = await mkPage();
+  await driver2.addInitScript(RAW);
+  await driver2.goto(`${world.origin}/?world=${WORLD}&name=driver2&key=${world.key}&lite=1&earlysock=0`, { waitUntil: 'load' });
+  await driver2.evaluate(async ({ after }) => {
+    await globalThis.__raw([{ type: 'request', id: 'after-say', verb: 'say', args: { text: after } }], { id: 'sender2' });
+  }, { after: AFTER });
+  await driver2.close();
+  await page.waitForFunction((t) => document.body.innerText.includes(t), AFTER, { timeout: 8000 }).catch(() => {});
+
   const body = await page.evaluate(() => document.body.innerText);
   const countOf = (hay, needle) => hay.split(needle).length - 1;
   const whisperHits = countOf(body, SECRET);
@@ -293,6 +307,7 @@ const RAW = `
   console.log(`\n  arrival delivery: removed-whisper x${whisperHits}  prior-say x${priorHits}  engine=${engine}  pageErrors=${errs.length}  drainErrors=${consoleErrs.length}`);
   for (const e of consoleErrs.slice(0, 2)) console.log(`      ! ${e.slice(0, 140)}`);
 
+  check('the control: a line said after the reader arrived reaches it', countOf(body, AFTER) > 0, `seen ${countOf(body, AFTER)}x`);
   check('a whisper sent while the reader was away never arrives (whisper removed, R 10-18)', whisperHits === 0, `seen ${whisperHits}x`);
   check('chat said before the reader arrived is not replayed (arrival-only, R 10-18)', priorHits === 0, `seen ${priorHits}x`);
   check('nothing throws inside the drain', consoleErrs.length === 0, consoleErrs[0]?.slice(0, 120));

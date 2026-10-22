@@ -199,6 +199,9 @@ export { sendRequest as requestWithBody };
 /** Bring the authority's track of my body to where I stand. Resolves true when it's there (or close enough to act). */
 async function track(force = false, { noTeleport = false } = {}) {
   if (!replica.active || !net.joined) return false;
+  // seated, the authority's track is the seat's: a move would be my own first step off it, which stands me up (the
+  // authority vacates on it: authority/occupants.js). A forced track skipped this check (house review I79)
+  if (hooks?.seated?.()) return arrived;
   const to = feet(); if (!to) return false;
   if (moving) { await moving; if (!force) return arrived; }
   const go = async () => {
@@ -608,7 +611,10 @@ export async function put(name, spot = null) {
   // a wrecking ball set down there shoved me 0.67 m aside, and the camera with me; R, 10-10). The authority works out
   // the height and what it lands on.
   const f = feet(), yaw = hooks?.myState?.()?.yaw, obj = entities.get(id), sz = obj ? sizeOf(id, obj) : null;
-  const out = Math.min(1.2, colliderFor(hooks?.me?.()?.userScale).r + (Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15) + 0.12);   // my walking capsule + its half-width + a gap
+  // my walking capsule + its half-width + a gap, and no farther than the hand reaches down to the floor: the authority
+  // measures hand to where it lands in 3D (bodyverbs put: within REACH of the grip), and a thing whose origin is its base
+  // lands HAND_Y below the hand (house review I81: 1.2 m out and 1.1 m down is past a 1.5 m reach)
+  const out = Math.min(1.2, Math.sqrt(Math.max(0, (REACH - 0.1) ** 2 - HAND_Y ** 2)), colliderFor(hooks?.me?.()?.userScale).r + (Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15) + 0.12);
   // in front of me; facing the world's edge, beside me, else behind (the authority refuses a spot past its bounds)
   const B = compsOf('@world')?.bounds, half = Array.isArray(sz) ? Math.max(sz[0], sz[2]) / 2 : 0.15;
   const inside = (x, z) => !B?.min || (x - half >= B.min[0] && x + half <= B.max[0] && z - half >= B.min[2] && z + half <= B.max[2]);
@@ -622,7 +628,7 @@ export async function put(name, spot = null) {
 export async function drop(name) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
-  const pos = heldPos(id); const r = await sendRequest('drop', { id, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });
+  const pos = letGoAt(heldPos(id)); const r = await sendRequest('drop', { id, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });   // within reach, as a throw lets go (I82)
   return r?.ok ? r : refused('drop', r, id);
 }
 /** Throw what you hold along your view, from your hand. */

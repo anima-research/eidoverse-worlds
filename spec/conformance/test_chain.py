@@ -116,3 +116,4 @@ r = strip_unnamed(roles_stripped)
 check("4m a roles: value stripped, named only by a purge the fold refuses, is detected", r["status"] == "broken" and r["at"] == len(es), r)
 
 print("%d/%d passed" % (passed, passed + failed))
+raise SystemExit(1 if failed else 0)

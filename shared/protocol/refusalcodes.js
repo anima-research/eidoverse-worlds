@@ -14,7 +14,6 @@ export const REFUSAL_CODES = Object.freeze({
   "no-world":       { meaning: "there is no such world", when: "any verb but create-world/help on a world that hasn't been founded" },
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version" },
-  "record-altered": { meaning: "the stored log was changed outside §12's purge rule: a value stripped to its commit that no purge names; the operator, with the world closed, restores each named line from a backup of the log", when: "any write (not a read, not leave) by anyone but the operator while the fold reports commit-unpurged" },
   "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
   // ---- the transaction (PROTOCOL §7: every request ends committed, rolled-back or ambiguous) ----
   "ambiguous":      { meaning: "the request's result is unknown: some or all of it may be written; never ok, never a plain failure", when: "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)" },
@@ -121,7 +120,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-pivot":       { meaning: "it swings but hangs from nothing", when: "a push to a pendulum with no hang point above" },
   "no-physics":     { meaning: "this world has no physics running", when: "throw, punt or launch in a world without physics-engine" },
   "unknown-engine": { meaning: "this server doesn't carry that engine", when: "setting physics-engine to an engine not in ENGINES" },
-  "foreign-engine": { meaning: "the world runs a build this server doesn't carry", when: "a launch in a world whose physics build is another server's" },
+  "foreign-engine": { meaning: "the world runs an engine version this server doesn't carry", when: "what only that engine computes: a launch, or a grab or delete that would set a resting thing falling" },
   "no-shape":       { meaning: "nothing to collide with", when: "a launch of a thing with no model or mesh" },
   // ---- places, things to use, things to say ----
   "no-surface":     { meaning: "it has no surface to put things on", when: "place {on} a thing with no measured surfaces" },

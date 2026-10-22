@@ -12,7 +12,7 @@ import { bodyOf } from '../../shared/components.js';
 import { mayLeave, vacatedFromMine, vacatedAt, OCCUPY_REACH, ESCAPE_HOLD_S, ESCAPE_REPEAT_S } from '../../shared/sockbody.js';
 import { driveOccupied, releaseOccupied } from './occupybody.js';
 import { serverNow } from './remotes.js';
-import { sendRequest } from './net.js';
+import { sendRequest, identities } from './net.js';
 import { plain, called, typeable } from './plainwords.js';
 import { usePromptHint } from './useprompt.js';
 import { handsHint, physicsApi as _phys } from './thingphysics.js';
@@ -33,6 +33,7 @@ import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
 import { pushable, bodyTable, onConsentChange } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
+import { bodyActAsPuppet } from './consentinbox.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
@@ -532,6 +533,12 @@ export function initLocalBody({ logChat: logChatFn }) {
     // only from the seat I'm on now (review r9 L4): a late message (after a reconnect) never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'vacated') : null;
     if (u && vacatedFromMine(u, avatarMounts.get(CONFIG.name)) && dismountMe('script', vacatedAt(u))) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved what you were occupying, so you stood up`, 'info', 5000);
+    // an act the authority delivered (an ask I said yes to: house review of #260, client/lib I1) is applied as a puppet is
+    for (const m of Array.isArray(msg?.messages) ? msg.messages : []) {
+      const p = bodyActAsPuppet(m); if (!p) continue;
+      const by = typeof m.from === 'string' ? ([...identities].find(([, a]) => a === m.from)?.[0] ?? m.from) : 'someone';
+      applyPuppet({ by, ...p });
+    }
   });
   setOccupyHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe('menu'); return true; }
@@ -551,30 +558,31 @@ export function initLocalBody({ logChat: logChatFn }) {
     removePin,
   });
 
-  bus.on('puppet', ({ by, pose, merge, anim, ragdoll: rag }) => {
-    // A ragdoll request runs the sim on MY body — I own it, so I simulate and
-    // stream. That is the sync guarantee: the requester never simulates me.
-    // The authority already decided (server/messages.ts puppet: bodyRefusal for shove and pose) — what arrives applies.
-    if (rag) {
-      // rag is true (undirected — old wire, old clients) or {lean:[x,y,z]} m/s
-      const l = Array.isArray(rag?.lean) && rag.lean.length === 3 && rag.lean.every(Number.isFinite)
-        ? _shove.set(rag.lean[0], rag.lean[1], rag.lean[2]) : null;
-      applyShove(l, by);
-      return;
-    }
-    // merge: only the bones they sent (null releases one); otherwise their
-    // pose replaces mine whole — and an EMPTY one is a release. It used to
-    // become an empty held pose, which setPose ignores: `clear_pose target`
-    // never let a human go.
-    if (pose) {
-      myState.pose = merge ? mergePose(myState.pose, pose) : (Object.keys(pose).length ? pose : null);
-      flashHint(myState.pose ? `${by} posed you` : `${by} released your pose`);
-    }
-    if (anim) {
-      const data = { ...anim, replace: anim.replace !== false }; // legacy puppets replace
-      if (data.replace) myState.pose = null;          // a replacing animation ends the held pose too
-      getMe()?.playAnimation(data); sendAnim(data);
-    }
-  });
+  bus.on('puppet', applyPuppet);
+}
 
+function applyPuppet({ by, pose, merge, anim, ragdoll: rag }) {
+  // A ragdoll request runs the sim on MY body — I own it, so I simulate and
+  // stream. That is the sync guarantee: the requester never simulates me.
+  // The authority already decided (server/messages.ts puppet: bodyRefusal for shove and pose) — what arrives applies.
+  if (rag) {
+    // rag is true (undirected — old wire, old clients) or {lean:[x,y,z]} m/s
+    const l = Array.isArray(rag?.lean) && rag.lean.length === 3 && rag.lean.every(Number.isFinite)
+      ? _shove.set(rag.lean[0], rag.lean[1], rag.lean[2]) : null;
+    applyShove(l, by);
+    return;
+  }
+  // merge: only the bones they sent (null releases one); otherwise their
+  // pose replaces mine whole — and an EMPTY one is a release. It used to
+  // become an empty held pose, which setPose ignores: `clear_pose target`
+  // never let a human go.
+  if (pose) {
+    myState.pose = merge ? mergePose(myState.pose, pose) : (Object.keys(pose).length ? pose : null);
+    flashHint(myState.pose ? `${by} posed you` : `${by} released your pose`);
+  }
+  if (anim) {
+    const data = { ...anim, replace: anim.replace !== false }; // legacy puppets replace
+    if (data.replace) myState.pose = null;          // a replacing animation ends the held pose too
+    getMe()?.playAnimation(data); sendAnim(data);
+  }
 }

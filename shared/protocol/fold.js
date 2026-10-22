@@ -333,7 +333,7 @@ function settledEntries(ok, worldId, d) {
 // §12: a set written as {commit} with no value is a purge's work. One no purge names (none does, or the purge naming it is
 // one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
 // as absent(purged), unknown as every reader takes a purged value (§1), never as the value before it, and the diagnostic
-// says so (commit-unpurged: the line still shapes, so not malformed:). The authority refuses writes while one stands.
+// says so (commit-unpurged: the line still shapes, so not malformed:). Said, not enforced: writes go on (house markup, #260 10-20).
 function unnamedStubs(ok, purged, d) {
   ok.forEach((e, seq) => { if (!e || e.kind !== "change") return;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) return; throw x; }

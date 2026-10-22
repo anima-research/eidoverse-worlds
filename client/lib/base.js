@@ -75,6 +75,9 @@ export function nameFromJoinAck(you, { renderer = false, spectate = false, verif
 export function setName(name) {
   CONFIG.name = name;
   store?.setItem('ew-name', name);
+  // the first real name this browser uses is its account, as at load: a first visit loads as a guest, and the door's name
+  // is that first name (a later rename never moves the account)
+  if (!CONFIG.account && name && !/^guest-/.test(name)) { CONFIG.account = name; store?.setItem('ew-account', name); }
 }
 export function setToken(token) {
   CONFIG.token = token;

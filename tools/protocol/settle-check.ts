@@ -147,5 +147,24 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(p.ok && ["l", "r"].includes(on) && d.ok && (d.notes ?? []).some((n) => n.fell?.includes("top")) && !s.entities[other] && wy < y0 - 0.2,
     "SE18 deleting the crate a straddling crate is NOT parented to lets it fall (it rested on both); the engine decides, from rest", { punt: p.ok ?? p.refused, on, other, del: d.ok ?? d.refused, notes: d.notes, y0, worldY: wy }); }
 
+// house answer on #260 (10-21): under an engine version this server doesn't carry (the owner named it), what only the engine
+// computes is refused, naming the engine and version, never quietly replaced. A straddler settled under the carried engine;
+// then the owner names a version this server doesn't carry. Deleting or grabbing the support it isn't parented to would set
+// it falling, which only that engine computes. Before: the delete skipped the wake and left it asleep in mid-air, the grab
+// set it down kinematically as if the world had no physics.
+for (const verb of ["delete", "grab"]) { const W = `straddle-foreign-${verb}`; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
+  call(W, "vic", "move", { to: [0, 0, -0.6] }); call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); T += 6000; call(W, "vic", "look", {});
+  const on = st(W).entities.top.c.parent?.to; const other = on === "l" ? "r" : "l";
+  const name = ENG.engine!.split("@")[0], foreign = `${name}@99.0.0`;
+  const sw = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: foreign } });
+  const n0 = openWorld(root, W).entries.length;
+  let r;
+  if (verb === "delete") r = call(W, "rowan", "delete", { id: other });
+  else { call(W, "rowan", "move", { to: [other === "l" ? -0.36 : 0.36, 0, -0.75] }); r = call(W, "rowan", "grab", { id: other }); }
+  const n1 = openWorld(root, W).entries.length;
+  ok(sw.ok && ["l", "r"].includes(on) && !r.ok && r.refused?.code === "foreign-engine" && r.refused.reason.includes(foreign) && r.refused.reason.includes("top") && /set one this server carries|carries/.test(r.refused.fix ?? "") && !openWorld(root, W).entries.slice(n0).some((e: any) => e.kind === "change") && !!st(W).entities[other],
+    `SE${verb === "delete" ? 19 : 20} under a version this server doesn't carry, a ${verb} that would set a resting thing falling is refused, naming the engine and what would fall (only that engine computes the fall); nothing is ${verb === "delete" ? "deleted" : "picked up"}`, { sw: sw.ok ?? sw.refused, on, r, n0, n1, added: openWorld(root, W).entries.slice(n0).map((e: any) => [e.kind, e.verb, e.actor, JSON.stringify(e.body).slice(0, 160)]) }); }
+
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

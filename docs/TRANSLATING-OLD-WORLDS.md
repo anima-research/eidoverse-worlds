@@ -54,8 +54,9 @@ with its sha256, the identities it minted, the report hash and the approval.
 `bun tools/protocol/world.ts rollback <world>` undoes the whole swap from
 it: the made files removed, the originals renamed back (the same files: bytes,
 inode, mtime), the minted identities forgotten (those nobody has bound or
-renamed since), the manifest removed — the world directory and the shared
-directory byte-identical to before. A made file the server has written to
+renamed since), the manifest removed — the world directory byte-identical to
+before, and the shared directory rewritten without those identities (a
+directory file the translation itself created stays, holding none of them). A made file the server has written to
 since refuses the rollback unless `--discard-changes`, so no history is lost
 unknowingly. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it

@@ -395,6 +395,41 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     const fallback = remotesMod.serverNow() - machine();
     check("a buffer with no arrival times is still adopted and drained, its clock sampled at the drain",
       outcome === "drained" && netMod.net.ws === older.ws && Math.abs(fallback - OLDER) < MARGIN, `${outcome}, serverNow - machine = ${fallback} ms, want ${OLDER}`);
+    // house review of #260, client/lib I62: requests in flight belong to the socket they went on. A replaced socket's close
+    // (rejoin waits at most 2 s for it, then dials) used to fail the NEW socket's requests too, and mark it unjoined.
+    // Mutation (must go red): make failPending ignore its socket argument (fail every request).
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const A = mk(); (globalThis as any).__ewEarlySocket = A; await netMod.connect();
+      netMod.net.joined = true;
+      const onA = netMod.sendRequest("whois", { name: "x" });
+      const B = mk(); (globalThis as any).__ewEarlySocket = B; await netMod.connect();
+      netMod.net.joined = true;
+      check("(setup) the second socket is the live one", netMod.net.ws === B.ws);
+      let settledB: any = null; const onB = netMod.sendRequest("whois", { name: "y" }).then((r: any) => (settledB = r));
+      const idB = JSON.parse(B.ws.sent.at(-1)).id;
+      A.ws.onclose({ target: A.ws, code: 1006 });   // the replaced socket's close lands late
+      const rA: any = await onA; await Promise.resolve();
+      check("the replaced socket's close answers ITS requests (offline)", rA?.ok === false && rA.refused?.code === "offline", JSON.stringify(rA));
+      check("…and leaves the live socket's requests waiting, and the live socket joined", settledB === null && netMod.net.joined === true, JSON.stringify({ settledB, joined: netMod.net.joined }));
+      await netMod._dispatch({ type: "reply", id: idB, reply: { ok: true, people: [] } });
+      const rB: any = await onB;
+      check("…which its own reply then answers", rB?.ok === true, JSON.stringify(rB));
+    }
+    // review of I62: rejoin() skips the reconnect for the socket it REPLACED only. The new socket dropping before the old
+    // socket's close lands must still redial (a shared flag let it be used up by the new socket's close, then the old
+    // close was ignored as replaced, and nothing ever redialled). Mutation (must go red): make the skip a plain boolean again.
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const C = mk(); (globalThis as any).__ewEarlySocket = C; await netMod.connect(); netMod.net.joined = true;
+      const D = mk(); (globalThis as any).__ewEarlySocket = D; netMod.rejoin(); await Promise.resolve(); await Promise.resolve();
+      check("(setup) rejoin dialled a new live socket", netMod.net.ws === D.ws);
+      netMod.net.status = "connected";
+      D.ws.onclose({ target: D.ws, code: 1006 });   // the NEW socket drops first
+      check("the new socket dropping before the old close lands redials (retrying)", netMod.net.status === "retrying", String(netMod.net.status));
+      C.ws.onclose({ target: C.ws, code: 1000 });   // the replaced socket's close, late
+      check("…and the replaced socket's late close changes nothing", netMod.net.status === "retrying", String(netMod.net.status));
+    }
   }
   // heldStill runs fn with performance.now() held at one instant, so every
   // clock read inside it reads that instant, however long the process stalls.
@@ -457,22 +492,41 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     const stamp = stamped.buf.at(-1)?.t;
     check("a pose with no t is stamped at serverNow()", stamp >= stampFrom && stamp <= stampTo,
       `stamp ${stamp}, serverNow ${stampFrom} to ${stampTo}`);
-    // updateRemotes draws a remote body at serverNow() less INTERP_MS: between
-    // two poses stamped 2 s either side of that point, it's drawn halfway. With
-    // performance.now() held still from placing the poses to drawing, that
-    // point doesn't move, so the body is drawn at x = 5 exactly: with no buffer
-    // it would stand at 5.275.
+    // updateRemotes draws a remote body at serverNow() less its interpolation delay: 110 ms while its samples arrive on
+    // time. Two samples, each stamped as it arrives (no lateness), half a second apart on a held clock: the body is drawn
+    // 110 ms behind the newer one, at x = 10 * 390/500 = 7.8 (10 with no buffer).
+    const heldAt = <T>(p: number, fn: () => T): T => { const real = performance.now; performance.now = () => p; try { return fn(); } finally { performance.now = real; } };
     const drawn = await remotesMod.ensureRemote("drawn", null);
     drawn.avatar = { root: new stubs.THREE.Object3D(), pitch: 0,
       update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
-    const x = heldStill(() => {
-      const renderPoint = remotesMod.serverNow() - 110;
-      remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, renderPoint - 2_000);
-      remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, renderPoint + 2_000);
-      remotesMod.updateRemotes(0.016);
-      return drawn.avatar.root.position.x;
-    });
-    check("a remote body is drawn 110 ms behind serverNow()", Math.abs(x - 5) < 1e-6, `x = ${x}, want 5 (5.275 with no buffer, 10 at its newer pose)`);
+    const p0 = performance.now();
+    heldAt(p0, () => remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, remotesMod.serverNow()));
+    const x = heldAt(p0 + 500, () => { remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, remotesMod.serverNow()); remotesMod.updateRemotes(0.016); return drawn.avatar.root.position.x; });
+    // (serverNow() may still be slewing from the checks above: the expected point is read off the two stamps it gave)
+    const [ta, tb] = drawn.buf.slice(-2).map((s: any) => s.t), want = 10 * (1 - 110 / (tb - ta));
+    check("a remote body whose samples arrive on time is drawn 110 ms behind serverNow()", Math.abs(x - want) < 1e-6 && Math.abs(want - 7.8) < 0.3, `x = ${x}, want ${want} (10 with no buffer)`);
+    // house review of #260, client/lib I46: a fixed 110 ms starved the buffer on a slow link (samples arriving 300 ms
+    // after their capture were all newer than the render point: the body froze at its newest pose, then jumped). The
+    // delay follows the observed lateness: up fast, down slowly, never under 110 ms nor over the cap.
+    // Mutation (must go red): make interpDelay return INTERP_MS always.
+    const ID: any = await import("../client/lib/interpdelay.js");
+    let est: number | null = null;
+    check("no samples yet: the floor", ID.interpDelay(est) === ID.INTERP_MS);
+    for (let i = 0; i < 20; i++) est = ID.noteLateness(est, 20);
+    check("samples 20 ms late: still the 110 ms floor", ID.interpDelay(est) === ID.INTERP_MS, `delay ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 12; i++) est = ID.noteLateness(est, 300);
+    check("samples 300 ms late: within a second at 15 Hz the delay covers them, with room", ID.interpDelay(est) >= 300 + 40 && ID.interpDelay(est) <= ID.INTERP_MAX_MS, `delay ${ID.interpDelay(est)}`);
+    const high = ID.interpDelay(est); est = ID.noteLateness(est, 20);
+    check("one quick sample after a slow spell lowers it only a little (a jitter buffer drains slowly)", ID.interpDelay(est) < high && ID.interpDelay(est) > high - 20, `${high} -> ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 50; i++) est = ID.noteLateness(est, 5000);
+    check("…and never past the cap", ID.interpDelay(est) === ID.INTERP_MAX_MS);
+    check("a non-finite lateness changes nothing", ID.noteLateness(42, NaN) === 42 && ID.noteLateness(null, Infinity) === null);
+    // end to end: a body whose samples arrive 300 ms late is drawn between them, not frozen at the newest
+    const slow = await remotesMod.ensureRemote("slow", null);
+    slow.avatar = { root: new stubs.THREE.Object3D(), pitch: 0, update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
+    let xs = NaN;
+    for (let i = 0; i <= 30; i++) xs = heldAt(p0 + 1000 + i * 66, () => { remotesMod.pushPose("slow", { p: [i, 0, 0], yaw: 0 }, remotesMod.serverNow() - 300); remotesMod.updateRemotes(0.016); return slow.avatar.root.position.x; });
+    check("samples 300 ms late: the body is drawn between two of them, not stuck at the newest", xs < 30 - 0.5 && xs > 20, `x = ${xs} (30 is the newest sample)`);
   }
 
   // The lite client keeps its estimate by the same rule (participants_lite.js).

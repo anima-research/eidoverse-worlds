@@ -28,7 +28,8 @@
 export const ROT_ORDERS = ['XYZ', 'XZY', 'YXZ', 'YZX', 'ZXY', 'ZYX'];
 export const QUAT_MODE = 'quat';
 export const ROT_MODES = [...ROT_ORDERS, QUAT_MODE];
-/** The order an entity's channels read in: comp.rotOrder when valid, else XYZ. */
+/** The order a viewer's channels read in: its rotOrder (an editor's live settings; PROTOCOL §9.1: Euler channels are a view,
+ *  never world state) when valid, else XYZ. */
 export const rotOrderOf = (ent) => (ROT_MODES.includes(ent?.rotOrder) ? ent.rotOrder : 'XYZ');
 
 const AX = { X: 0, Y: 1, Z: 2 };

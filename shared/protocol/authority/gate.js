@@ -15,7 +15,8 @@ import { refuse, said } from "./refuse.js";
 import { FOLLOW_UP, IMPORTED_ONLY, isE, lockedC, opsQuiet } from "./storage.js";
 import { ancestors } from "./math.js";
 import { socketRules, actionRules, liftOps } from "./sockets.js";
-import { RANK, backward, creatorOf, effective, lastSetterOf, lockStrength, may, ownersOf, rankOf, roleOf, wcOf, whoRank } from "./rights.js";
+import { RANK, admits, backward, creatorOf, effective, lastSetterOf, lockStrength, may, ownersOf, rankOf, roleOf, wcOf } from "./rights.js";
+import { whoWords } from "../roles.js";
 import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponsorOf } from "./scripts.js";
 import { vacateWhy, vacatesFor } from "./occupants.js";
 import { capacityCheck } from "./capacity.js";
@@ -289,10 +290,10 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   // not a hand, and keeps physics.who (research: "physics.who now means who may punt or push it")
   if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? DEFAULT_WHO;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can punt`, "");
-    if (rankOf(st, actor) < whoRank(st, n)) refuse("rights", `only a ${n} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
+    if (!admits(st, actor, n)) refuse("rights", `only ${whoWords(n)} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
   else if (cap.kind === "handle") { const g = grabOf(st.entities[op.id]?.c);
     if (!g) refuse("not-grabbable", `${op.id} isn't something you can carry`, "");
-    if (rankOf(st, actor) < whoRank(st, g.who)) refuse("rights", `only a ${g.who} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
+    if (!admits(st, actor, g.who)) refuse("rights", `only ${whoWords(g.who)} may move ${op.id} by hand; you are ${role}`, `ask the owner to set ${g.source}.who`); }
   // founding: once, before any state, in a world whose genesis names this server's operator key (founded here)
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this server founded", ""); }

@@ -27,7 +27,7 @@ const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0
 if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' }, worlds: ['emenu'] });
 const { browser, close } = await launchBrowser();
 
 async function boot(ctxOpts, name) {

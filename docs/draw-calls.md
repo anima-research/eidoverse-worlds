@@ -105,7 +105,6 @@ GPU passes, and runs only when requested.
 bun tools/draw-batches-test.ts
 bun tools/drawbench.ts --out /tmp/ew-drawbench
 bun tools/draw-world-probe.ts
-bun tools/paritybench.ts
 bun tools/foldfix-test.ts
 bun tools/models-field-test.ts
 ```

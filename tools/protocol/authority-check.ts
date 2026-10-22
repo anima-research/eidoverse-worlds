@@ -1499,8 +1499,10 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const before = entityBefore(w, "@world", w.entries.length)?.c["roles:bob"];   // undo's reading of the past agrees with the fold
   const write = call("olive", "create", { model: "crate" }), read = call("olive", "look", {});
   const op = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  ok(role === PURGED && before === PURGED && code(write) === "record-altered" && (write.refused?.seqs ?? []).includes(k) && /line \d+/.test(write.refused?.reason ?? "") && read.ok && op.ok,
-    "RA1 a value stripped to its commit with no purge reads as unknown; writes are refused record-altered naming the line, reads work, and the operator's own repair goes through", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
+  // the house's markup (#260 10-20), accepted: detecting the stripped value is §12's bone; refusing everyone's writes on that
+  // record until it's restored was a policy no world asked for, so it came out with the recut
+  ok(role === PURGED && before === PURGED && write.ok && read.ok && op.ok && w.state().diagnostics.some(([q, c]) => q === k && c === "commit-unpurged"),
+    "RA1 a value stripped to its commit with no purge reads as unknown and the fold names the line (commit-unpurged); writes and reads go on, and so does the operator's repair", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
 // ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.

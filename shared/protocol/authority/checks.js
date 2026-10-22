@@ -82,7 +82,12 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
   // a carried value (a fork's copy, the load's lift) keeps the who it was written with, even a role deleted since: the lift
   // re-spells what the log holds and judges nothing new (review 10-12 S2-3); an unknown who reads as the strictest
-  const whoOk = (x, where) => { if (!carry && x !== undefined && (x === "none" || !R.roleDef(wcS, x))) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, "who may: a role name; anyone ranked at or above it may", { didYouMean: guess(String(x), roleIds()) }); };
+  // recut item 8: a who is a role id (that rank or above), {permission} or {roles: [...]}; every role it names must be this world's
+  const whoOk = (x, where) => { if (carry || x === undefined) return;
+    const fix = "who may: a role name (that rank or above), {permission: '<name>'} (anyone holding it), or {roles: ['<id>', …]} (exactly those)";
+    if (typeof x === "string") { if (!R.roleDef(wcS, x)) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, fix, { didYouMean: guess(String(x), roleIds()) }); return; }
+    if (!R.isWhoValue(x)) refuse("shape", `${where}.who must be a role name, {permission: one of ${R.PERMISSION_NAMES.join(", ")}}, or {roles: 1–16 role ids} (got ${JSON.stringify(x)})`, fix);
+    for (const r of x.roles ?? []) if (!R.roleDef(wcS, r)) refuse("shape", `${where}.who names ${JSON.stringify(r)}, which isn't a role here (${roleIds().join(", ")})`, fix, { didYouMean: guess(String(r), roleIds()) }); };
   if (comp === "physics" && obj) whoOk(v.who, at);
   if (comp === "grabbable" && obj) whoOk(v.who, at);
   if (comp === "reactions" && obj) for (const [act, h] of Object.entries(v)) if (h && typeof h === "object") whoOk(h.who, `${at}.${act}`);

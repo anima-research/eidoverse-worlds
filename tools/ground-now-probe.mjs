@@ -3,7 +3,7 @@
 // different plantings through the real grass verb, then mows, and reads the line after each.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ owner: 'groundnow', env: { TRUST_NAMES: '1' } });   // the page owns staging, so its @world writes are admitted
 const { browser, page } = await launchBrowser();
 try {
   const pg = await page();
@@ -14,7 +14,7 @@ try {
   await pg.evaluate(() => document.querySelector('#sec-ground-tab').click());
   await pg.waitForFunction(() => document.querySelector('#sec-ground .ground-now'), null, { timeout: 20000 });
   const empty = await read();
-  const grow = async (args) => { await pg.evaluate(async (a) => { const { sendVerb } = await import('./lib/net.js'); sendVerb('grass', a); }, args); await pg.waitForTimeout(2500); return read(); };
+  const grow = async (args) => { await pg.evaluate(async (a) => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'grass', value: a }); if (!r.ok) throw new Error(`grass refused: ${JSON.stringify(r.refused)}`); }, args); await pg.waitForTimeout(2500); return read(); };
   const tufts = await grow({ species: 'galleta_dry', width: 40, depth: 40, center: [0, 0], height: 0.42, density: 0.5 });
   const meadow = await grow({ species: 'grass', width: 40, depth: 40, center: [0, 0], height: 0.6, density: 0.8 });
   // log entries that do not change the grass (a light placed, then removed) must not touch the line: an unchanged write
@@ -22,10 +22,11 @@ try {
   const quiet = await pg.evaluate(async () => {
     const el = document.querySelector('#sec-ground .ground-now'); let n = 0;
     const seen = []; const mo = new MutationObserver((l) => { n += l.length; for (const m of l) seen.push([m.type, m.target.nodeName, m.target.className ?? '', (m.target.textContent ?? '').slice(0, 80)]); }); mo.observe(el, { childList: true, characterData: true, subtree: true });
-    const { sendVerb } = await import('./lib/net.js');
-    sendVerb('light', { id: 'gnq1', pos: [3, 1, 3], color: 0xffd9a0, intensity: 4, range: 5 });
+    const { sendRequest } = await import('./lib/net.js');
+    const made = await sendRequest('create', { id: '$gnq1', components: { transform: { pos: [3, 1, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { color: 0xffd9a0, intensity: 4, range: 5 } } });
+    if (!made.ok) throw new Error(`light refused: ${JSON.stringify(made.refused)}`);
     await new Promise((r) => setTimeout(r, 1200));
-    sendVerb('remove', { id: 'gnq1' });
+    await sendRequest('delete', { id: made.ids['$gnq1'] });
     await new Promise((r) => setTimeout(r, 1200));
     mo.disconnect(); globalThis.__gnSeen = seen; return n;
   });

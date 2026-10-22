@@ -157,7 +157,7 @@ Keep the current client alive and shipping until the new one earns its place.
   by log-replay parity (existing worlds byte-identical through the new core).
 - **Phase 2 — new client to parity.** Build the presentation layer in the
   chosen engine against the phase-1 protocol. Parity gates per slice, same
-  culture as the rebuild: paritybench/lightbench/bootjank analogs on the new
+  culture as the rebuild: lightbench/bootjank analogs on the new
   stack, old client as the reference renderer.
 - **Phase 3 — systems rework.** Migrate systems one at a time into defs +
   modules (flora first — we know its laws cold; then seats, voice, physics).

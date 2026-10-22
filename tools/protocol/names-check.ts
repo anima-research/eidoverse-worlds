@@ -133,7 +133,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the slash command keeps the old name", "client/lib/commands/registry.js", "{ name: 'anim', help: '/anim <name>", `{ name: '${EM}', help: '/${EM} <name>`, ["E2", "E3"]],
   ["a comment says the old word", "client/lib/avatar.js", "  /** Play a gesture over locomotion.", `  /** Play an ${EM} over locomotion.`, ["E3"]],
   ["the spec says the old word", "spec/PROTOCOL.md", "poses, gestures (`pose.anim`), reach descriptors", `poses, ${EM}s, reach descriptors`, ["E3"]],
-  ["the alias also translates", "mcpl/tools.ts", "  posture: (a) => { const k", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),\n  posture: (a) => { const k`, ["M5", "E3"]],
+  ["the old gesture tool's alias forgets once (a dance would loop forever)", "mcpl/tools.ts", `  ${EM}: (a) => ({ name: a.name, mode: "once" }),`, `  ${EM}: (a) => ({ name: a.name }),`, ["M5"]],
   ["the registry says bob", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"]", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"bob\", \"path\"]", ["OS1"]],
   ["the card is still Bob", "shared/protocol/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
   ["the door stores bob as written", "shared/protocol/authority/writes.js", "if (comp === \"motion\" || comp.startsWith(\"motion:\")) { const r = renameFields(comp, value);", "if (false) { const r = renameFields(comp, value);", ["OS2"]],
@@ -156,7 +156,7 @@ async function runSelf(tree: string, only: string[] | null) {
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 // a mutant tree: shared/, server/, spec/, docs/, mcpl/ (without node_modules), client/lib and AGENTS.md copied; the rest linked back
-function copyTree(tag: string) { const d = scratch(tag);
+function mutantTree(tag: string) { const d = scratch(tag);
   for (const k of ["shared", "server", "spec", "docs"]) copyTree(path.join(ENGINE, k), path.join(d, k));
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
   try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
@@ -175,7 +175,7 @@ function copyTree(tag: string) { const d = scratch(tag);
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = copyTree("namesmut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -489,10 +489,10 @@ const cases: Case[] = [
       const told = ag.inbox?.filter((m: any) => /^stopped \{/.test(m.text ?? "")).length ?? 0;
       return { why: why(), told }; },
     good: (o) => JSON.stringify(o.why) === '["sit:replaced","dance:moved","lie:stopped","live:knocked over"]' && o.told === 4 },
-  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are hidden aliases of anim (not advertised; each maps its old shape): pose {bones} → joints, pose {clear} → stop, pose {posture} / posture {kind} → a looped name, pose {wings: fold} → wings-folded, animate {tracks, loop} → mode loop; the old gesture tool's {name} passes through untranslated (R 16:26)", async run() {
+  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are hidden aliases of anim (not advertised; each maps its old shape): pose {bones} → joints, pose {clear} → stop, pose {posture} / posture {kind} → a looped name, pose {wings: fold} → wings-folded, animate {tracks, loop} → mode loop; the old gesture tool's {name} plays ONCE, as that tool did (an alias keeps the old tool's meaning for its release: house review I59, our answer 10-19; a built-in like dance loops under anim, never under the old name)", async run() {
       const T: any = await import(TREE + "mcpl/tools.ts"); const A = T.TOOL_ALIAS_ARGS ?? {};
       return { listed: ["pose", "animate", EM, "posture"].filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
-        to: ["pose", "animate", EM, "posture"].map((n) => T.resolveTool(n)?.name ?? null), pass: A[EM] === undefined,
+        to: ["pose", "animate", EM, "posture"].map((n) => T.resolveTool(n)?.name ?? null), pass: JSON.stringify(A[EM]?.({ name: "dance" }) ?? null) === '{"name":"dance","mode":"once"}',
         m: [A.pose?.({ bones: { head: [0, 0, 0, 1] } }), A.pose?.({ clear: true }), A.pose?.({ posture: "sit" }), A.posture?.({ kind: "lie" }), A.pose?.({ wings: "fold" }), A.animate?.({ tracks: {}, dur: 1, loop: true })].map((x) => JSON.stringify(x ?? null)) }; },
     good: (o) => !o.listed.length && o.anim && o.to.every((n: string) => n === "anim") && o.pass && JSON.stringify(o.m) === JSON.stringify(['{"joints":{"head":[0,0,0,1]}}', '{"stop":true}', '{"name":"sit","mode":"loop"}', '{"name":"lie","mode":"loop"}', '{"name":"wings-folded"}', '{"tracks":{},"dur":1,"mode":"loop"}']) },
   { id: "M6", what: "…live tracks in mode hold freeze on one frame: `at` picks it (the last key at or before), default the last key", async run() {
@@ -583,7 +583,7 @@ const cases: Case[] = [
       const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
       const says = (x: string) => /rests in your body-mode's own anim \(stand: idle/.test(x) && /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
       const body = md.slice(0, md.indexOf("## Version history"));
-      return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(body) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
+      return { tool: says(d), agents: says(a), spec: (() => { const pw = fs.readFileSync(TREE + "docs/pose-wire.md", "utf8"); return /never the bind pose/i.test(pw) && /`\{type: "anim", stop: true\}`/.test(pw) && /`live` is reserved/.test(md); })() }; },   // the rest rule and the relay message are client docs since the house's view (#260 10-20); the reserved name is the spec's
     good: (o) => o.tool && o.agents && o.spec },
   // ---------------- E: the old name of a gesture, gone (R 10-17 16:26) ----------------
   { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads either key; the server remembers neither", async run() {
@@ -605,7 +605,7 @@ const cases: Case[] = [
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
-  { id: "E3", what: "…the word appears nowhere but the hidden tool alias's entry (TOOL_ALIASES) and the old key's read (shared/onceanim.js) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+  { id: "E3", what: "…the word appears nowhere but the hidden tool alias's entries (TOOL_ALIASES, and its args in TOOL_ALIAS_ARGS) and the old key's read (shared/onceanim.js) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
       const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
@@ -616,10 +616,14 @@ const cases: Case[] = [
           const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
       walk("");
       const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \};$/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h)
-        || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h);   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
+        || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
+        || /^mcpl\/tools\.ts:\d+: \w+: \(a\) => \(\{ name: a\.name, mode: "once" \}\),   \/\/ the old gesture tool played once/.test(h)
+        // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
+        || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
+        || /^tools\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool?.(EM)?.name ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
-    good: (o) => o.nStray === 0 && o.kept === 3 && o.alias === "anim" && o.read === "wave" },
+    good: (o) => o.nStray === 0 && o.kept >= 4 && o.alias === "anim" && o.read === "wave" },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
       const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
@@ -676,13 +680,13 @@ const cases: Case[] = [
       return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
     good: (o) => /@1[4-9]$/.test(o.t) && /@1[4-9]$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
-      const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history"));
+      const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md");
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the switch since recut A2, §7a rule 4)", run() {
-      const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
+      const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md"); const body = md.slice(0, md.indexOf("## Version history"));
       return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`", "`{stop: true}`", "`live`"].every((w) => vh.includes(w)),
         body: /`consent \{switch:\s*\n?\s*accept\|ask\|refuse\}`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },

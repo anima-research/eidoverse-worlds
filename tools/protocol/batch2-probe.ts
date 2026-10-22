@@ -146,4 +146,5 @@ try {
   check("no page errors", !(await evalJson(`__errs.length`)), await evalJson(`__errs`));
 } catch (e: any) { check("probe ran to the end", false, String(e?.stack ?? e).slice(0, 500)); }
 console.log(`[batch2-probe] ${tally.passed} passed, ${tally.failed} failed`);
-await cleanup();
+await cleanup(tally.failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);

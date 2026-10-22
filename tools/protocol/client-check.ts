@@ -16,7 +16,7 @@
 //   M   deleting two selected things is ONE batch act
 //   S   Save as blueprint is the authority's publish; its tile places a copy (create {from: <hash>})
 // The writes go through the real edit code (build.js, gizmo.js, inspect.js, editpanels.js); a few gestures are driven
-// at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns), as editpanels-bench does.
+// at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns).
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -115,7 +115,7 @@ try {
   await sleep(300);
   const under = await evalJson(`(() => { const e = document.elementFromPoint(760, 470); return e ? e.tagName + '#' + e.id + '.' + e.className : null; })()`);
   // the click the canvas listens for (build.js commitSpawn); dispatched on the canvas itself, since headless leaves the
-  // boot splash and frames over the viewport (editpanels-bench drives its gestures at their seams the same way)
+  // boot splash and frames over the viewport
   await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 760, clientY: 470 })), true))`);
   check("P1 a click places it: ONE create act, stamped with me", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create"),
     { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), errs: await evalJson(`__errs`), ghost: await evalJson(`import('/lib/build.js').then((m) => m.hasGhost())`), under });
@@ -801,10 +801,10 @@ try {
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
       check("CP8 the command bar lists nothing that sends nothing here (/boom), and no +gen/+fly grant", !/^boom /m.test(listed) && !/\+gen|\+fly/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
-    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'builder', guests: 'builder' } })).ok;`);
+    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'inhabitant', guests: 'inhabitant' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
       await sleep(1200);   // CP7's flood is the say budget; this is an act
       await type("/grant * builder");
-      check("CP9 /grant * builder sets the default role and keeps guests: 'builder'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "builder" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
+      check("CP9 /grant * builder sets the default role and keeps guests: 'inhabitant'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "inhabitant" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
     // CA1 World Settings › Access: the account-age field writes access.minAccountDays, and emptying it removes the key (R 10-07)
     { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
       const field = `document.querySelector('#__acc [data-k=minAccountDays]')`;
@@ -890,7 +890,7 @@ try {
       const spawned = await waitDisk(() => JSON.stringify(disk().entities["@world"]?.c.spawn?.pos) === "[3,0.5,-2]");
       const after = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(document.getElementById('__pl')?.remove(), true)`);
-      check("CB1 Places › Save with empty Bounds saves the spawn and leaves bounds as they were (no zero box)", spawned && before === after, { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
+      check("CB1 Places › Save with the Bounds fields cleared saves the spawn and removes the bounds, as the panel says empty means (house I25), never a zero box", spawned && before !== "null" && after === "null", { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
     // EK (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus"): Esc never
     // hides or restores the panel set (Tab does); F11 is the PAGE's full screen, so the browser's own Esc leaves it; Esc still
     // closes the transient things. Out of edit mode (build.js claims Esc there), with two panels open.

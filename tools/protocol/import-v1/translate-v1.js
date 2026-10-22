@@ -57,12 +57,22 @@ function newSockets(S, c) {
   const out = {}, left = {};
   for (const [slot, s] of Object.entries(S)) {
     if (!s || typeof s !== "object" || Array.isArray(s)) { out[slot] = s; continue; }
-    const { pos, yaw, part, pose, ...rest } = s;
+    const { pos, yaw: yaw0, part, pose, ...rest } = s;
+    // v1's renderer turned the seat by `yaw ?? 0` through three.js, which coerces ("1.5" turns it); what can't turn is carried
+    const yaw = yaw0 == null ? 0 : Number(yaw0);
+    if (!Number.isFinite(yaw)) rest.yaw = yaw0;
     out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: pose !== undefined ? { pose } : {} };
     if (Object.keys(rest).length) left[slot] = rest;
   }
   if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
   return out;
+}
+// v1's captions bag held the session's newest lines (`window`) and the playhead (`mediaTime`); v4's holds the current line
+// once (componentspec captions). The earlier lines are the log's own caption acts, so the window is derived, not carried.
+function newCaptions(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || !Array.isArray(v.window) || !v.window.length) return v;
+  const { window, mediaTime: _m, ...rest } = v;
+  return { ...rest, line: window[window.length - 1] };
 }
 function newStory(v) {
   const out = { ...v };
@@ -78,7 +88,11 @@ function newMotion(m0) {
   const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };
   if (!("rpm" in m)) return m;
   const { rpm, ...rest } = m;
-  return rest.degPerSec !== undefined || typeof rpm !== "number" ? rest : { ...rest, degPerSec: rpm * 6 };
+  if (rest.degPerSec !== undefined) return rest;
+  // the renderer's own reading, (rpm ?? 6) * 6 with JS coercion: a numeric string spun; a rate that isn't a number stays
+  // in the motion, so splitUnknown carries it in imported:motion (R10)
+  const rate = (rpm ?? 6) * 6;
+  return Number.isFinite(rate) ? { ...rest, degPerSec: rate } : m;
 }
 // @12, wave 2 (the shape audit's physics-motion family): what the server's load repairs in a stored v4 world
 // (shared/protocol/shaperepair.js), the translation writes already: a bare motion naming a part is motion:<part>,
@@ -101,7 +115,13 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@17";
+export const TRANSLATOR = "eidoverse/translate-v1@18";
+// @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
+// itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
+// line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
+// seat's yaw are read as the renderer coerced them, and what can't be read is carried (I36, I37); an earlier epoch's rest tick
+// never dates a later epoch's rest (I14). Output differs from @17 on any log with captions, a caption deed, a non-numeric rpm
+// or seat yaw, a physics epoch replaced after a rest, and on every approved translation. Both names.
 // @17 (R 10-21): the base rung is inhabitant (v1's visitor is written inhabitant), and there's no rung below it: a person's v1
 // spectator or none grant is CARRIED as imported-roles:<id> (never dropped, R10), with no roles:<id>, so they hold the
 // world's newcomer role (absent default-role: inhabitant). The door's own words (`*` none/spectator) still become access.
@@ -153,7 +173,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@17";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@17";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@18";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -209,6 +229,8 @@ export const DROPPED = {
   "roles.<person> spectator / none": "there is no rung below inhabitant (@17, R 10-21): the grant is carried as @world imported-roles:<id> as it was, and the person holds the world's newcomer role; v1's visitor is written inhabitant",
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3); a `*` of none / spectator (upstream world access) becomes @world `access` {join: listed (, watch: anyone)}",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
+  "roles.<person>.caption": "a v1 caption deed (to caption one thing while it is the incarnation the deed was granted for) becomes the person's place in that thing's captioners {ids}; a deed on a timed grant, or for a thing replaced or gone, stays carried in imported:roles:<id> (captioners has no end)",
+  "captions.window / captions.mediaTime": "v1's bag kept the session's newest lines and the playhead; v4's captions holds the current line (the window's last). The earlier lines are the log's own caption acts",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays",
@@ -233,18 +255,24 @@ export const DEFERRED = {
   collision: { feature: "collision on/off toggle", since: "main #248", shape: "collision {enabled: false}" },
 };
 const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
-/** Every use in a v1 log of a feature v4 doesn't carry yet: [{component, feature, id, seq, actor, ts}], in log order. A `comp`
- *  that removes one (data null) is not a use. Empty for every old world on Burrow and every fixture (checked 2026-10-18). */
+/** Every use in a v1 log of a feature v4 doesn't carry yet that still stands at its end: [{component, feature, id, seq,
+ *  actor, ts}], in log order. A `comp` that removes one (data null), or a `remove` of its thing, ends the uses before it,
+ *  so removing it on the old server (the refusal's remedy) clears the refusal. Empty for every old world on Burrow and every
+ *  fixture (checked 2026-10-18). */
 export function deferredFeatures(oldEntries) {
-  const out = [];
+  const standing = new Map();   // `${id}\0${type}` → the uses since it was last removed
   oldEntries.forEach((e, k) => {
-    if (e?.verb !== "comp" || typeof e.args?.type !== "string" || e.args.data == null) return;
+    if (e?.verb === "remove" && e.args?.id != null) { const pre = `${String(e.args.id)}\0`; for (const key of [...standing.keys()]) if (key.startsWith(pre)) standing.delete(key); return; }
+    if (e?.verb !== "comp" || typeof e.args?.type !== "string") return;
     const t = e.args.type, d = e.args.data;
     if (!Object.hasOwn(DEFERRED, t)) return;
-    if (t === "water" && e.args.id === "@world" && !(d && typeof d === "object" && VOLUME_FIELDS.some((f) => f in d))) return;   // the world's water level: carried
-    out.push({ component: t, feature: DEFERRED[t].feature, id: String(e.args.id), seq: Number.isInteger(e.seq) ? e.seq : k, actor: String(e.actor ?? "?"), ...(Number.isInteger(e.ts) ? { ts: e.ts } : {}) });
+    const key = `${String(e.args.id)}\0${t}`;
+    if (d == null) { standing.delete(key); return; }
+    if (t === "water" && e.args.id === "@world" && !(d && typeof d === "object" && VOLUME_FIELDS.some((f) => f in d))) { standing.delete(key); return; }   // the world's water level: carried
+    const uses = standing.get(key) ?? []; standing.set(key, uses);
+    uses.push({ component: t, feature: DEFERRED[t].feature, id: String(e.args.id), seq: Number.isInteger(e.seq) ? e.seq : k, actor: String(e.actor ?? "?"), ...(Number.isInteger(e.ts) ? { ts: e.ts } : {}), at: k });
   });
-  return out;
+  return [...standing.values()].flat().sort((x, y) => x.at - y.at).map(({ at: _a, ...u }) => u);
 }
 /** The refusal, in words: which feature, on what, by whom, when (seq). One line per use; null when nothing is deferred. */
 export function deferredRefusal(uses, world = "this world") {
@@ -337,7 +365,7 @@ const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
-  const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
+  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
@@ -351,7 +379,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
-      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : v; }
+      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : v; }
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
@@ -378,7 +406,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("assets", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
   // research roles §translation: v1's `fly` and `gen` grants are the fly and generate switches, can.fly / can.generate
-  // (@7: gen had stayed as written, read by the authority as generate); `caption` stays in imported until screens carry captioners
+  // (@7: gen had stayed as written, read by the authority as generate); a `caption` deed is a place in its screen's captioners (below)
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
@@ -389,11 +417,18 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
   for (const [k, v] of Object.entries(st.roles ?? {})) {
     if (k === "*") { if (DOOR_OF[v?.role]) { w.access = { ...DOOR_OF[v.role] }; const { role: _r, until: _u, ...rest } = toCan(v); if (Object.keys(rest).length) w["default-role"] = { role: "inhabitant", ...rest }; } else { const { until: _u, ...dr } = toCan(v) ?? {}; w["default-role"] = dr.role === "visitor" ? { ...dr, role: "inhabitant" } : dr; } }
-    else { const r = toCan(unsub(v)); const id = person(k, v);
+    else { let r = toCan(unsub(v)); const id = person(k, v);
+      // a caption deed (v1: to caption one thing, while it is the incarnation the deed was granted for) is a place in that
+      // screen's captioners; a timed one stays carried, since captioners has no end
+      const deed = r && typeof r === "object" ? r.caption : null, host = deed && typeof deed === "object" && typeof deed.id === "string" && Object.hasOwn(st.entities ?? {}, deed.id) ? st.entities[deed.id] : null;
+      const screen = host && (deed.born == null || host.born === deed.born) && r.until == null ? out[enc(deed.id)] : null;
+      if (screen && (screen.captioners === undefined || Array.isArray(screen.captioners?.ids))) {
+        const ids = screen.captioners?.ids ?? []; screen.captioners = { ids: ids.includes(id) ? ids : [...ids, id] };
+        const { caption: _c, ...rest } = r; r = rest; }
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
       else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
   }
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unsub(v);   // the v1 fold lowercased a ban's key
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   // …and through the account the v1 server stamped on the binding (authorSub, @16), as the author's grant is found, so the
   // two are one identity on every server; the account itself is dropped with every other one below
@@ -470,7 +505,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
@@ -493,6 +528,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
+  // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
+  if (approved) push({ kind: "act", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
   // an old request as sent keeps its words, but never an account: its top-level sub, whatever its shape, as @12 had it (main's
   // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
   // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
@@ -555,7 +592,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
       launchSeq[e.args.id] = tl;
       restLogged.delete(e.args.id); stats.launches++;
     }
-    for (const id of [...recorded.keys(), ...Object.keys(launchSeq)]) if (!sim.bodies[id]) { recorded.delete(id); restLogged.delete(id); delete launchSeq[id]; } // released by her law
+    for (const id of [...recorded.keys(), ...Object.keys(launchSeq), ...Object.keys(restTicks)]) if (!sim.bodies[id]) { recorded.delete(id); restLogged.delete(id); delete launchSeq[id]; delete restTicks[id]; } // released by her law (or a new epoch)
     const now = view();
     const ops = diff(prev, now);
     if (ops.length) { push({ kind: "change", actor, cause: tl, ...changeBody(unNegZero(ops)), ...(ts !== undefined ? { ts } : {}) }); stats.change++; stats.ops += ops.length; }
@@ -566,7 +603,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   if (sim.epoch && !sim.epoch.foreign) {
     stepTo(sim.tick + 100000);
     const tsAt = (tick) => sim.epoch.ts + tick * sim.epoch.tickMs;
-    logRests(Math.max(clock(), ...Object.values(restTicks).map(tsAt)));
+    logRests(Object.values(restTicks).reduce((m, t) => Math.max(m, tsAt(t)), clock()));
   }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }

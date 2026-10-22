@@ -130,6 +130,14 @@ function makeUpstreamStub(autos: (() => void)[]) {
   check("replace leaves one hook, not two", autos.length === base + 1);
   check("...and only the survivor is in the scene", up.built[0].inScene === false && up.built[1].inScene === true);
 
+  // house I159 (#260): the playing-only fast path (emitters.js) changes the live emitter without a rebuild; the slot's key
+  // must follow, or replaying the bag it now matches (a snapshot repeating the stop) rebuilds the fire
+  const stoppedE = { ...smokeE, playing: false };
+  if (typeof (reg as any).setPlaying === "function") (reg as any).setPlaying("hearth", false);
+  else (reg.emitterOf("hearth") as any).playing = false;   // what the fast path did before setPlaying
+  await reg.apply("hearth", stoppedE);
+  check("a stop through the fast path, then the stopped bag replayed, rebuilds nothing", up.built.length === 2, `built ${up.built.length}`);
+
   reg.retire("hearth");
   check("remove disposes", up.built[1].disposed === 1);
   check("remove unhooks — the array is back where it started", autos.length === base);

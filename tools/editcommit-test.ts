@@ -146,5 +146,42 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   check("…and one Ctrl+Z brings both back", ub.ok && c("r1").model === "swing.glb" && c("r1").collider?.shape === "box", JSON.stringify([ub.refused, c("r1")]));
 }
 
+// house review of #260, client/lib I23: a scrubbed RUN of channels (panels.js commitRun → editpanels.js __run) went to
+// commitMany for the primary thing only, and a World run was dropped. commitMany takes the multi-select (each thing from
+// its own record) and the world (worldEditOps over every field at once: two sky fields are ONE sky, where two planEdits
+// would each re-author the whole sky and the second undo the first) — one request, one Ctrl+Z, either way.
+// Mutation (must go red): make commitMany take only a single id again.
+console.log("\nI23. a scrubbed run edits the whole selection, and the world:");
+{
+  const { commitMany } = await import("../client/lib/inspect.js");
+  H.W.seed({ m1: { model: "chair.glb", pos: [0, 0, 5], yaw: 0 }, m2: { model: "chair.glb", pos: [3, 0, 5], yaw: 0 } }); H.sync();
+  H.entities.set("m1", realized()); H.entities.set("m2", realized());
+  const n0 = H.sent.length, u0 = Edits.stacks().undo.length;
+  const r = commitMany(["m1", "m2"], { "pos.y": 2 }, "channels");
+  await H.flush();
+  check("a run over two selected things moves both, in ONE request", r.ok && H.sent.length === n0 + 1 && c("m1").transform?.pos?.[1] === 2 && c("m2").transform?.pos?.[1] === 2 && Edits.stacks().undo.length === u0 + 1,
+    JSON.stringify([r.errors, H.sent.slice(n0), c("m1")?.transform, c("m2")?.transform]));
+  const { WORLD_ID } = await import("../shared/worldentity.js");
+  const n1 = H.sent.length;
+  const w = commitMany(WORLD_ID, { "sky.exposure": 0.8, "sky.fog": 2 }, "channels");
+  await H.flush();
+  const t = H.W.state().entities["@world"]?.c?.sky;
+  check("a World run is ONE request, and both fields land", w.ok && H.sent.length === n1 + 1 && t?.exposure === 0.8 && t?.fog === 2, JSON.stringify([w.errors, H.sent.slice(n1), t]));
+}
+
+console.log("\nan edit landing while an undo is in flight (house I162, #260):");
+{
+  H.W.seed({ u1: { model: "chair.glb", pos: [0, 0, 5], yaw: 0 } }); H.sync();
+  await Edits.send({ verb: "set", args: { id: "u1", component: "example.org/note", value: { n: 1 } } }, { what: "note 1" });
+  const target = Edits.stacks().undo.at(-1);
+  // the edit goes out after the undo is sent and before its reply: its act lands on the stack above the one being undone
+  const call = H.W.call; let racer: any = null;
+  H.W.call = (verb: string, args: any, actor: string) => { if (verb === "undo" && !racer) racer = Edits.send({ verb: "set", args: { id: "u1", component: "example.org/note", value: { n: 2 } } }, { what: "note 2" }); return call(verb, args, actor); };
+  const u = await Edits.undo(); await racer; H.W.call = call;
+  const st = Edits.stacks().undo;
+  check("the undo took its own act off the stack", u.ok && !st.includes(target), JSON.stringify({ target, st }));
+  check("…and the racing edit's act is still there to undo", st.length > 0 && st.at(-1) !== target && st.at(-1) > target, JSON.stringify({ target, st }));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

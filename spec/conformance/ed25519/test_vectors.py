@@ -2,7 +2,7 @@
 """PROTOCOL §2.4 Keys: a conforming verifier gives exactly EXPECTED on the 12 ed25519-speccheck vectors
 (novifinancial/ed25519-speccheck, Chalkias et al. 2020). This is the BoringSSL / OpenSSL / CryptoKit / Go / PyCA
 row. Small-order keys are refused separately, once, at key registration (is_small_order)."""
-import json, os
+import json, os, sys
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 EXPECTED = "VVVVxxxxxxxV"
 # the 8 small-order points' canonical encodings (y-coordinates), from the speccheck / Bernstein list
@@ -34,3 +34,6 @@ REG_EXPECTED = "RR........RR"
 print("registration refuses", reg, "PASS" if reg == REG_EXPECTED else "FAIL (expected %s)" % REG_EXPECTED)
 ok = "".join("V" if (got[i] == "V" and reg[i] == ".") else "x" for i in range(12))
 print("effective (registered key AND verifies):", ok)
+passed = (got == EXPECTED) + (reg == REG_EXPECTED)
+print("%d/2 passed" % passed)
+sys.exit(0 if passed == 2 else 1)

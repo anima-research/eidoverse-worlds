@@ -26,7 +26,7 @@ if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WORLD = 'bodies';
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' }, worlds: [WORLD] });
 const { browser, close } = await launchBrowser();
 
 const seen = new Map();   // id → the last pose the server relayed (read off the ref socket's frames)
@@ -34,7 +34,7 @@ function peer(id, pose, avatar) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, avatar }));
+    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, avatar, replica: true }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   ws.onmessage = (e) => { try { const m = JSON.parse(String(e.data)); if (m.type === 'frame') for (const [k, v] of Object.entries(m.poses ?? {})) seen.set(k, v); } catch {} };

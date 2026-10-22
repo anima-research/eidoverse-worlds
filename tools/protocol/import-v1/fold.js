@@ -5,10 +5,11 @@
 // Every timestamp comes off the entry, so a fold is a pure function of the log. The old protocol's spec
 // (spec/PROTOCOL.md, spec/fixtures/*) is what it was written against.
 
-import { foldSkyEntry } from '../../../shared/forecast.js';
-import { normalizeCaptionArgs, captionRefusal, foldCaption } from '../../../shared/captions.js';
-import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from '../../../shared/rot.js';
-import { blueprintHash } from '../../../shared/blueprint.js';
+// every module this fold reads is a frozen copy (./frozen/: shared/ as it stood at 6dab22f5, when the server stopped reading v1)
+import { foldSkyEntry } from './frozen/forecast.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from './frozen/captions.js';
+import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from './frozen/rot.js';
+import { blueprintHash } from './frozen/blueprint.js';
 
 // Orientation (PROTOCOL §9 amendment): `q` is the whole truth when
 // present and `yaw` is always its heading, so yaw-only readers stay correct
@@ -181,7 +182,7 @@ function placerOf(a) {
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
-import { trimRecentChat } from "../../../shared/chatwindow.js";
+import { trimRecentChat } from "./frozen/chatwindow.js";
 
 /** @returns {WorldState} */
 export const emptyState = () => ({

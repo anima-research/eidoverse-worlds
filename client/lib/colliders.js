@@ -276,7 +276,7 @@ function decide(entry, s, fresh = false) {
   // applies `s` below), so one per-vertex walk per LIB answers for every
   // clone, and nothing pays for the probe unless the shape gate consults it
   const { floorShaped } = decideSupportClass({ w, d, h });
-  const shared = entry.model ? libCache.get(entry.model) : null;
+  const shared = entry.cacheKey ? libCache.get(entry.cacheKey) : null;
   if (floorShaped && entry.lie == null) {
     if (shared && shared.lie != null) entry.lie = shared.lie;
     else {
@@ -324,7 +324,7 @@ export function fitCollider(id, obj, { collide, scale = 1, lib = null, localFram
   // camGhost hoisted from userData so the camera query never touches the
   // object graph (the flag lives on roots: gizmos, placeholders)
   const entry = { obj, box, pref: collide, pillar: false, exact: null, cells: [],
-    camGhost: !!obj.userData?.noCamCollide, lib };
+    camGhost: !!obj.userData?.noCamCollide, cacheKey: lib };   // the libCache key (the model's path), not a record field
   if (lib) {
     const c = libCache.get(lib) ?? { refs: 0 };
     c.refs++;
@@ -514,11 +514,11 @@ export function removeCollider(id) {
   const e = colliders.get(id);
   if (e) {
     bucketRemove(id, e);
-    if (e.model) {
-      const c = libCache.get(e.model);
+    if (e.cacheKey) {
+      const c = libCache.get(e.cacheKey);
       // zero refs: no resident entity wears this lib's derivations — drop
       // the CPU-side geometry + BVH for GC (demote/delete land here)
-      if (c && --c.refs <= 0) libCache.delete(e.model);
+      if (c && --c.refs <= 0) libCache.delete(e.cacheKey);
     }
   }
   colliders.delete(id);

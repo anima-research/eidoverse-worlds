@@ -100,7 +100,8 @@ const near = (v: number, want: number, tol = 0.03) => Math.abs(v - want) <= tol;
 try {
   await a.connect();
   // the protocol: a founded world has bounds (±20 m); the test ground is at x 19–21
-  await a.request("set", { id: "@world", component: "bounds", value: { min: [-100, -20, -100], max: [100, 60, 100] } });
+  const widened = await a.request("set", { id: "@world", component: "bounds", value: { min: [-100, -20, -100], max: [100, 60, 100] } });
+  if (!widened?.ok) throw new Error(`setup: widening @world's bounds was refused: ${JSON.stringify(widened?.refused ?? widened)}`);
   const up = await fetch(`${h.BASE}/upload?name=two-storey`, { method: "POST", body: await buildGlb(boxes) });
   const { path } = await up.json() as { path: string };
   // the building sits on the ground under its own origin, wherever that is

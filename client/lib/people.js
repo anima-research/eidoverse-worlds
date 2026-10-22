@@ -179,10 +179,14 @@ async function answerAsk(item, display, askId) {
   if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
   const yes = item === 'ask-allow'; const words = askWords(k);
   const r = await consentInbox.answer(k.id, yes, sendRequest);
-  if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
+  // Never's standing no is filed whatever became of the answer: an ask that lapsed (or was refused) a moment before the
+  // press is still a person I said Never to (house review I60)
   if (item === 'ask-never') { const d = await sendRequest('consent', { deny: them.id, class: k.cls });
-    deps.toast(d?.ok ? `${display} may not ${words} — not now, and not when they ask again` : `said no; the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000); }
-  else deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
+    const gone = r?.ok ? '' : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
+    deps.toast(d?.ok ? `${gone}${display} may not ${words} — not now, and not when they ask again` : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
+    return r; }
+  if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
+  deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
   return r;
 }
 /** My body's one switch as three choices (recut A2): ✓ on the current one; a press sets it (consent.js → consentsync). */

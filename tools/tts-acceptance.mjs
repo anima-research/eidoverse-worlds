@@ -6,8 +6,7 @@
 // dev/staging acceptance the r3 review asked for: actual Piper + worker +
 // ORT + a selected local voice producing OUTBOUND AUDIBLE MEDIA, received by
 // an independent listener, through the exact production paths (world `say`
-// verb → speech bus → speakOwnSays → engine → generator → sender), plus the
-// mic-priority transitions on real tracks. It mutates nothing: own spawned
+// verb → speech bus → speakOwnSays → engine → generator → sender). It mutates nothing: own spawned
 // server, throwaway world dir, models fetched from disk.
 //
 //   Requirements: playwright + chromium (run from a dir that has them, e.g.
@@ -15,14 +14,18 @@
 //     VOICE_ONNX=/path/voice.onnx VOICE_CFG=/path/voice.onnx.json
 //
 // Emits a provenance-bound receipt (JSON) on stdout: model/config sha256,
-// browser+OS versions, cold and warm load ms, voice identity, RTP counts on
-// both ends, and each acceptance check.
+// browser+OS versions, cold and warm load ms, voice identity, the listener's
+// RTP count and level, and each acceptance check.
+//
+// /lib/voice.js went with the SFU move (#260 house I423): the receiving side reads client/lib/voicesfu.js, and the
+// sender-identity / mic-priority section (senderTrackInfo, voicePcs, micDiag) is retired, as nothing exposes it now.
 
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 
@@ -52,6 +55,9 @@ const NONCE = `accept-${randomUUID().slice(0, 8)}`;
 copyFileSync(VOICE_ONNX, join(REPO, 'client', `${NONCE}.onnx`));
 copyFileSync(VOICE_CFG, join(REPO, 'client', `${NONCE}.onnx.json`));
 const worldDir = mkdtempSync(join(os.tmpdir(), 'tts-accept-'));
+// joining never founds a world: found 'accept' first (the operator's door)
+{ const f = spawnSync('bun', [join(REPO, 'tools', 'protocol', 'world.ts'), 'found', 'accept', '--owner', 'owner'], { env: { ...process.env, WORLDS_DIR: worldDir }, encoding: 'utf8' });
+  if (f.status !== 0) { console.error(`founding the world failed: ${f.stdout}${f.stderr}`); process.exit(2); } }
 const server = spawn('bun', [join(REPO, 'server', 'server.ts')],
   { env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldDir }, stdio: 'ignore' });
 const cleanup = () => {
@@ -116,10 +122,10 @@ await new Promise(r => setTimeout(r, 2000));
 // the utterance finished and read peak 0.000 against 350 delivered packets —
 // a harness lie, not a product one. Sample through the whole window.
 const levelP = listener.evaluate(async () => {
-  const v = await import('/lib/voice.js');
+  const v = await import('/lib/voicesfu.js');
   let level = 0;
   for (let i = 0; i < 240; i++) {                // 12s of 50ms samples
-    for (const [, l] of v.peerLevels()) level = Math.max(level, l);
+    for (const [, l] of v.sfuPeerLevels()) level = Math.max(level, l);
     await new Promise(r => setTimeout(r, 50));
   }
   return level;
@@ -131,87 +137,19 @@ await speaker.evaluate(async () => {
 });
 await new Promise(r => setTimeout(r, 9000));   // synth (first utterance warms phonemizer) + travel
 const sTx = await speaker.evaluate(async () => {
-  const v = await import('/lib/voice.js');
   const tts = await import('/lib/tts.js');
-  let out = 0;
-  for (const pc of (v.voicePcs?.() ?? [])) {
-    const st = await pc.getStats();
-    st.forEach(s => { if (s.type === 'outbound-rtp' && s.kind === 'audio') out += s.packetsSent ?? 0; });
-  }
-  return { outbound: out, mouth: tts.mouthInfo(), sender: v.senderTrackInfo() };
+  return { mouth: tts.mouthInfo() };
 });
 const lRx = await listener.evaluate(async () => {
-  const v = await import('/lib/voice.js');
-  const per = await v.voiceStats();
-  const inbound = Object.values(per).reduce((n, s) => n + (s.inboundAudioPackets ?? 0), 0);
+  const v = await import('/lib/voicesfu.js');
+  const inbound = (await v.sfuInboundStats()).reduce((n, s) => n + (s.packetsReceived ?? 0), 0);
   return { inbound };
 });
 lRx.level = await levelP;
-receipt.rtp = { speakerOutbound: sTx.outbound, listenerInbound: lRx.inbound, listenerPeakLevel: lRx.level };
-check('speaker sent RTP audio (synth on the sender)', sTx.outbound > 50, `${sTx.outbound} pkts`);
+receipt.rtp = { listenerInbound: lRx.inbound, listenerPeakLevel: lRx.level };
 check('independent listener RECEIVED it', lRx.inbound > 50, `${lRx.inbound} pkts`);
 check('and it is AUDIBLE (nonzero level at the listener)', lRx.level > 0.005, `peak ${lRx.level.toFixed(3)}`);
 check('speaker pacer active while TTS is the producer', sTx.mouth.pacing === true);
-
-console.error('\n— mic priority transitions: SENDER IDENTITY, not capture identity (r4) —');
-// The r3 receipt exposed a dead outbound leg the old checks greenwashed: the
-// device opened (capture side ✓) while every sender still held the generator
-// with the pacer stopped. These checks assert what the PEERS receive — actual
-// sender track ids against the lane and generator ids — through both
-// transitions, a renegotiation under each producer, and repeated cycles.
-const probe = async (page) => page.evaluate(async () => {
-  const v = await import('/lib/voice.js');
-  const tts = await import('/lib/tts.js');
-  const st = v.senderTrackInfo();
-  let rtp = 0;
-  for (const pc of (v.voicePcs?.() ?? [])) {
-    const stats = await pc.getStats();
-    stats.forEach((s) => { if (s.type === 'outbound-rtp' && s.kind === 'audio') rtp += s.packetsSent ?? 0; });
-  }
-  return { senders: st.senders.map((x) => x.track?.id), lane: st.localTracks[0]?.id ?? null,
-    gen: (tts.genTrackInfo?.() ?? {}).id ?? null, pacing: tts.mouthInfo().pacing,
-    rtp, diag: v.micDiag() };
-});
-const trans = { };
-const flipMic = () => speaker.evaluate(async (name) => { const v = await import('/lib/voice.js'); await v.toggleMic(name); }, 'accept-speaker');
-const reneg = () => listener.evaluate(async () => { const c = await import('/lib/voiceconsent.js'); c.setReceiveVoice(false); c.setReceiveVoice(true); });
-await flipMic();
-await new Promise(r => setTimeout(r, 1500));
-let during = await probe(speaker);
-check('mic ON: every sender holds the MIC-LANE id', during.senders.length > 0 && during.senders.every((id) => id === during.lane), JSON.stringify({ senders: during.senders, lane: during.lane }));
-check('mic ON: no sender holds the generator', !during.senders.includes(during.gen), `gen=${during.gen}`);
-check('mic ON: pacer stopped', during.pacing === false);
-check('mic ON: micDiag agrees end to end (no contradiction verdict)', !/BROKEN/.test(during.diag.verdict), during.diag.verdict);
-const rtp0 = during.rtp;
-await new Promise(r => setTimeout(r, 2000));
-during = await probe(speaker);
-check('mic ON: sender RTP INCREMENTS on the mic track (live leg, not a dead one)', during.rtp > rtp0, `${rtp0} → ${during.rtp}`);
-await reneg();
-await new Promise(r => setTimeout(r, 2000));
-during = await probe(speaker);
-check('renegotiation under mic: senders STILL hold the mic lane', during.senders.every((id) => id === during.lane) && !during.senders.includes(during.gen), JSON.stringify(during.senders));
-trans.during = during;
-await flipMic();
-await new Promise(r => setTimeout(r, 1500));
-let after = await probe(speaker);
-check('mic OFF: every sender holds the GENERATOR id', after.senders.length > 0 && after.senders.every((id) => id === after.gen), JSON.stringify({ senders: after.senders, gen: after.gen }));
-check('mic OFF: pacer running', after.pacing === true);
-await reneg();
-await new Promise(r => setTimeout(r, 2000));
-after = await probe(speaker);
-check('renegotiation under TTS: senders STILL hold the generator', after.senders.every((id) => id === after.gen), JSON.stringify(after.senders));
-let cyclesOk = true, cycleDetail = '';
-for (let i = 0; i < 3 && cyclesOk; i++) {
-  await flipMic(); await new Promise(r => setTimeout(r, 900));
-  const on = await probe(speaker);
-  if (!on.senders.every((id) => id === on.lane)) { cyclesOk = false; cycleDetail = `cycle ${i} ON: ${JSON.stringify(on.senders)}`; }
-  await flipMic(); await new Promise(r => setTimeout(r, 900));
-  const off = await probe(speaker);
-  if (!off.senders.every((id) => id === off.gen)) { cyclesOk = false; cycleDetail = `cycle ${i} OFF: ${JSON.stringify(off.senders)}`; }
-}
-check('3× ON/OFF cycles: sender id tracks the producer every time', cyclesOk, cycleDetail);
-trans.after = after;
-receipt.transitions = trans;
 
 // free the two live-media pages first: OPFS is origin-scoped and survives;
 // two ORT sessions + a mesh under swiftshader is real memory pressure.

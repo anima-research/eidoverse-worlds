@@ -13,10 +13,11 @@ entries, and the log records where things come to rest.*
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` over `shared/eidosim.js` (eidosim), `shared/simmath.js`,
 `shared/terrainmath.js`, and the sim layer `shared/protocol/simlayer.js`. MUST /
-SHOULD / MAY are RFC-2119. Parts marked **reserved** are names, shapes and rules
-fixed now, before an implementation, because the log, the registry pin or shipped
-clients would freeze whatever came first (research physics-seeds 10-07): an
-authority refuses what they describe until it implements them.
+SHOULD / MAY are RFC-2119. Parts marked **reserved** are names held now, because
+the log, the registry pin or shipped clients would otherwise freeze whatever took
+them first: an authority refuses what they name until it implements them. How
+the unbuilt parts are expected to work is direction, not protocol, in
+`docs/PHYSICS-DIRECTION.md`.
 
 ## 0. The idea
 
@@ -78,27 +79,41 @@ re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
 
-- `@world.physics-engine` = `{engine: "<name>@<semver>", build, tickMs?}`. The owner
-  sets `engine`; the **authority stamps `build`** when the owner's request names
-  none: the hash of the exact files that implement it (determinism is per
-  binary). A build the owner names is kept, and a server that doesn't carry it
-  treats the world as foreign. The reference authority carries
-  `eidosim@1.0.0` (`EIDOSIM_BUILD` in `shared/protocol/simlayer.js`;
-  `bun run test:protocol` recomputes it from the files and fails if they changed
-  without a new build).
+- `@world.physics-engine` = `{engine: "<name>@<semver>", tickMs?}`. An engine is
+  named by its **version**, and a server **carries** a version when its
+  implementation reproduces that version's conformance digests
+  (`spec/conformance/physics/`: throw scenarios and what each comes to rest as).
+  A change that still reproduces them is the same version; a change meant to alter
+  results is a new version with its own digests. The owner may name the engine
+  alone (`eidosim`) or a version (`eidosim@1.0.0`); when no version is named, the
+  **authority stamps** the one it carries. A version the owner names is kept, and
+  a server that doesn't carry it treats the world as foreign. The reference
+  authority carries `eidosim@1.0.0`.
 - **Changing the engine is a cut**: the authority refuses to change or delete
   `@world.physics-engine` while anything is in flight (an owner may force it, freezing
   in-flight bodies where they are). After the cut, everything is
   interpreted under the new engine.
-- **A build the authority stamped is the authority's to restamp.** When a world
-  names a carried engine under a build this server doesn't carry, the build was
-  stamped (not named in the owner's request), and nothing is in flight (by the
-  log's word: no launch without its rest, nothing lifted and not yet put
-  back) or held in presence, the authority writes the cut itself, as `system`
-  (act `restamp-engine`), at the next request or heartbeat. A server that
-  can't sign for the world doesn't. Otherwise the world stays foreign until an
-  owner restamps it.
-- **A reader that doesn't carry the named build MUST NOT recompute the
+- **A version the authority stamped is the authority's to restamp.** When a world
+  names an engine this server carries under a version it doesn't, and the version
+  was stamped (no version typed in the request that set the engine), the authority
+  cuts the world to the version it would stamp today, itself, as `system` (act
+  `restamp-engine`), at the next request or heartbeat. The owner never chose the
+  old version, so the cut overrides no choice of theirs, and the log shows where
+  the world's law changed. **A flight doesn't hold the cut back**: this server
+  can't compute it, so a cut that waited for its rest would never come. The cut
+  ends each flight itself, leaving the thing where the fold has it (only a rest
+  moves it), and names what it ended (`ended`; a purged launch's unknown body is
+  counted, `endedUnknown`). That is the cut's change, not a rest, so a reader that
+  carries the old version has no rest to check it against. A lift on the record
+  outlives the cut; only a hold in presence defers it, to the next act. A server
+  that can't sign for the world doesn't cut it.
+- **A version the owner named, or an engine of a name this server doesn't carry,**
+  is the owner's to change. The server serves what doesn't need the engine and
+  refuses what only the engine computes (a throw, or a grab or delete that would
+  set a resting thing falling), with `foreign-engine`, naming the engine's version
+  and what would have fallen, and saying an owner can set one this server
+  carries. It never quietly substitutes a settlement for the engine's result.
+- **A reader that doesn't carry the named version MUST NOT recompute the
   flights.** It folds the log (the rests are there) and shows nothing in
   flight, rather than guessing. A wrong answer is worse than a missing
   animation.
@@ -180,66 +195,25 @@ fixed before any engine writes a shape that isn't a box
 
 ### 3.2. Physical properties
 
-Named now, with units and what their absence means (PROTOCOL §4: a field
-added later states its meaning of absence, and the pin freezes it). The names,
-units and combine rules are the vocabulary the major engines **share**
-(PhysX/Unity, Jolt, Rapier, Godot, Bullet, and Box2D v3 for the 2D analogues),
-in SI units, not any one engine's API: eidosim stays this protocol's engine,
-and whichever engine follows it (most likely a spec-defined deterministic one)
-must be able to carry every field.
-
-**Reserved, not written (shape audit 2026-10-16)**, all but two. `mass` and
-`density` stay open fields: the contact push reads them (`shared/shove.js`
-`massOf`: the authority's contact gate (`punt {contact: true}`), the walker and
-the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
-they are `physics`' *reserved fields*: their names, units, limits and
-meanings of absence below are held (in the registry's `reservedFields`,
-`reservedShape` and `absentMeans`, all pinned), and every write of one is
-refused (code `reserved`) until an engine declares that it reads it. A number
-a builder can type that nothing honours is a number tuned for nothing. Absence
-keeps the behaviour before the field existed: the engine's own law. None will
-ever be a materialized default (a pinned `mass: 1` is wrong for every crate
-ever made). `physics.kind` is **required**: a bare `{}` read as dynamic while
-the component's absence means static or nothing.
+`mass` and `density` are open fields: the contact push reads them
+(`shared/shove.js` `massOf`: the authority's contact gate (`punt {contact:
+true}`), the walker and the agent cap a push by mass), though eidosim's flight
+doesn't yet.
 
 | field | unit | absent means |
 |---|---|---|
 | `mass` | kg, > 0 | `density` × the volume of the stamped shape (`shapes.js shapeVolume`). That shape is the measured **bounding box** today, so a chair weighs as a solid box; eidosim computes exactly this (`shared/sim.js`: 1000 kg/m³ × its box) |
 | `density` | kg/m³, > 0 | its surface's density, else 1000 (water; eidosim's) |
-| `surface` | a `surface:<name>` on `@world` (was `material`, renamed so `material` means appearance only) | friction, restitution and their combine modes from their own fields, else the engine's law |
-| `friction` | ≥ 0, one coefficient (static = dynamic) | its surface's, else the engine's law |
-| `restitution` | 0..1 | its surface's, else the engine's law |
-| `frictionCombine`, `restitutionCombine` | `average` \| `min` \| `multiply` \| `max` | its surface's, else `average` (friction) and `max` (restitution) |
-| `linearDamping`, `angularDamping` | 1/s | the engine's law (eidosim: none) |
-| `centerOfMass` | [x, y, z] m, own frame before scale | the centroid of its stamped shape |
 
-**Cut** (they were named, never read, and 0 values stored them): `ccd` (a
-solver-quality knob no format maps: Unity has four modes, Jolt a motion
-quality, KHR and OMI none; eidosim sweeps every body anyway) and `layers` /
-`mask` (32-bit layers can't explain themselves to a reader of the log, and
-Unity's 32-layer cap is a decade-old complaint; when collision filtering
-arrives it is **named groups**, KHR's `collisionSystems`, probably on
-`collider`). Additive later, each with its meaning of absence: `gravityFactor`
-(absent 1; KHR and OMI), `staticFriction` / `dynamicFriction` (absent:
-`friction`), inertia.
-
-How the names map (recalled from each engine's public API; a mapping, not an
-adoption):
-
-| here | PhysX / Unity | Jolt | Rapier | Godot |
-|---|---|---|---|---|
-| `mass`, `density` | `setMass` + `updateMassAndInertia(density)` / `Rigidbody.mass` | `MassProperties.mMass`; shape `mDensity` | collider `mass` / `density` | `RigidBody3D.mass` (no density) |
-| `friction` | `PxMaterial` static = dynamic / `PhysicsMaterial` both | `mFriction` | `friction` | `PhysicsMaterial.friction` |
-| `restitution` | `restitution` / `bounciness` | `mRestitution` | `restitution` | `bounce` |
-| `*Combine` | `PxCombineMode` AVERAGE/MIN/MULTIPLY/MAX / `PhysicsMaterialCombine` | a combine callback | `CoefficientCombineRule` | `rough` / `absorbent` flags (no general modes) |
-| `linearDamping`, `angularDamping` | `linearDamping`, `angularDamping` | `mLinearDamping`, `mAngularDamping` | `linearDamping`, `angularDamping` | `linear_damp`, `angular_damp` |
-| `centerOfMass` | `cMassLocalPose` / `centerOfMass` | `OffsetCenterOfMassShape` | `MassProperties` local CoM | `center_of_mass` |
-| `kind: kinematic` | `eKINEMATIC` / `isKinematic` | `EMotionType::Kinematic` | `KinematicPositionBased` | `AnimatableBody3D` |
-| `w` | angular velocity, rad/s, world | `GetAngularVelocity` | `angvel` | `angular_velocity` |
-
-Box2D v3 (2D) has the same set: `density`, `friction`, `restitution`, linear
-and angular damping, `isBullet`, `categoryBits`/`maskBits` (64-bit, a
-superset of 32).
+**Reserved names**: `surface`, `friction`, `restitution`, `frictionCombine`,
+`restitutionCombine`, `linearDamping`, `angularDamping` and `centerOfMass` on
+`physics`. Nothing reads them, so every write of one is refused (code
+`reserved`) until an engine declares that it reads it: a number a builder can
+type that nothing honours is a number tuned for nothing. Their expected units,
+limits and meanings of absence, and how the names map to the major engines,
+are direction (`docs/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
+bare `{}` read as dynamic while the component's absence means static or
+nothing.
 
 - **Surfaces.** A world names its materials as `@world surface:<name>
   {friction?, restitution?, density?, frictionCombine?, restitutionCombine?,
@@ -276,7 +250,7 @@ superset of 32).
 - **`physics.kind: kinematic`**: a collider moved only by authored edits and
   `motion`, never by the engine; it pushes dynamic things and is never
   pushed or launched. Under eidosim it is a collider at its transform, like
-  a static. **The authority stamps it** (shape audit 2026-10-16): a thing
+  a static. **The authority stamps it**: a thing
   that has `motion`, `motion:<part>` or `openable`, itself or on anything it
   hangs under, is stamped `kinematic` rather than `static` when the world runs
   physics, and a static thing that starts moving is restamped. Behaviour is
@@ -300,20 +274,8 @@ superset of 32).
   for a cone or a spring. `parent` is a rigid attachment and never a solver
   joint; `openable` is kinematic animation; a *physical* door is a
   physics-joint.
-- **The target shape, sketched so the first engine with joints doesn't
-  invent one (not registered, not pinned).** After OMI/KHR, with both frames
-  stored rather than derived at load (Covenant III: things move after
-  authoring):
-  `{to: ref, a: {pos, q}, b: {pos, q}, limits: [{linear?: [axes], angular?:
-  [axes], min?, max?, stiffness?, damping?}], drives: [{type, mode, axis,
-  maxForce, positionTarget, velocityTarget, stiffness, damping}], collide?:
-  false, breakForce? (N), breakTorque? (N·m)}`. Each frame is in its own
-  body's frame before scale; the authority *stamps* both from one authored
-  world-space anchor at write (as it stamps `physics.shape`), so authoring
-  keeps "place one empty". Limits are m or rad (N/m, N·m/rad). Named types
-  (hinge, slider, ball, fixed) are editor presets that compile to limits,
-  never stored (Unity's ConfigurableJoint-versus-HingeJoint split is the
-  lesson).
+- **The target shape** of a joint is direction (`docs/PHYSICS-DIRECTION.md`), not
+  registered and not pinned.
 
 ## 4. Covenant III — the planes stand
 
@@ -324,7 +286,7 @@ superset of 32).
   physics — and the `sim` entry they produce carries everything the engine
   needs. Taking a thing *out* of the engine is a `lift` or `catch`, whatever
   the cause: a grab today, a touch or push takeover later. Returning it is a
-  `launch` (a release with its state) or a settlement (§4.4). The engine MUST
+  `launch` (a release with its state) or (reserved) a settlement (§4.3). The engine MUST
   NOT depend on any presence fact that is not stamped into an entry.
 - **Continuous contact gives no unlogged impulse to the engine.** Contact
   under live simulation authority (§4.1) is presence, and enters history
@@ -335,7 +297,7 @@ superset of 32).
 - Carrying is presence: a held thing moves with its holder's body and is
   settled into the log by `put`, `drop` or `throw` (AGENTS.md).
 
-### 4.1. Three authorities (design 20, P1–P3)
+### 4.1. Three authorities
 
 Three different things, never conflated (conflating them is how SpatialOS lost
 updates; VRChat splits them the same way):
@@ -347,65 +309,23 @@ updates; VRChat splits them the same way):
   the log is results, never processes; a body in the engine is a process.**
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,
-  *reserved*, `deflect {id, v, w?}` (a `sim` entry: the thing leaves the body
-  with the state the client gives it, under the body's consent, like a
-  launch; refused until built). A thing under live authority that meets a
-  body delivers a `shove` to that body's client under its consent table
-  (actor: the thing's live authority, carrying the thing's `id` and `v`);
-  the thing's own motion ignores the body. Carrying a person is a consent
-  class (`carry`, PROTOCOL body consent; reserved): the carried person's
-  client parents their own body to the carrier's hand, and may stop at any
-  moment. When avatar bodies are simulated, they are simulated the way
-  Boneworks does it and Fusion networks it: a physics rig in the presence
-  plane, per client, driven toward its tracked targets, with a force-driven
-  puppet of every other body; never in the engine, never in the log.
-- **Live simulation authority** over a thing is presence: transient, cheap,
-  unlogged. *Reserved; the rules are fixed now:*
-  - **The toucher or holder simulates it.** Whoever grabs a thing, or (with
-    lower priority) touches it, simulates it locally, so hand and object are
-    in one local sim with zero latency. Everyone else draws a proxy.
-  - **Grab beats touch.** Two counters order it (Fiedler 2018): `oseq`
-    increments on each grab, `aseq` on each touch takeover and each rest; an
-    increase in `oseq` wins over an increase in `aseq`; the latest grab wins.
-    A touch takeover by impact (a hand or a body meeting a thing, Fusion's
-    `ImpactUtilities`, VRChat's collision transfer) bids `aseq` only, never
-    `oseq`: a held thing is never taken by bumping into it.
-  - **The holder's switch.** The latest grab wins because `grabbable.steal`
-    defaults to `true`; under `steal: false` a held thing's `oseq` cannot
-    advance until a `launch` or a settlement, and the second `grab` is
-    refused (`held`). *Reserved:* `steal: "ask"` (the holder's client is
-    asked, as a body act is) is a value the authority refuses until built.
-  - **Claims are ordered by admission, never by a sender's `t`** (§5.1 says
-    the same of releases): two grabs in one beat resolve in the order the
-    door admitted them. *Reserved on `@world.physics-engine`, refused until
-    read:* `claimDebounceMs` (default 200: an equal-priority `aseq` takeover
-    within it is refused, Overte's `SimulationOwner` debounce) and
-    `liveAuthorityExpiryMs` (default 5000: a live authority silent that long
-    is expired, and its thing is settled from the last accepted state or
-    released into the engine).
-  - **Two hands on one thing is one authority** (research 10-11, C: every
-    system that ships has one simulator per thing; Bonelab Fusion lets a
-    second hand act only as a force inside the holder's sim). *Reserved:*
-    `cohold` is a verb the authority refuses until built. Its rule is fixed:
-    the second person's hand is a `reach` that tracks the grip; it acts on
-    the thing only inside the holder's sim, as a puppet contact; it never
-    streams the thing's state and never advances `oseq`. A release while
-    co-held is the holder's `launch`; the rest is attributed to both.
-  - **The door is the arbiter.** It relays every claim, orders handovers
-    optimistically (a local take, corrected by the arbiter), and refuses
-    stale ones. It is *not* the edit lease, which governs history.
-  - **Velocity carries across a handover.** Letting go is a `launch`: the
-    released thing (and anything touching it that live authority had taken)
-    crosses into the engine as one committed intent and belongs to the engine
-    until it rests (§4). The thrower does not keep simulating it — live
-    authority ends at release, so a flight's outcome never depends on a
-    presence-plane fact (Covenant III).
-  - **A held object rides its holder's hand**: it travels in the holder's
-    pose as which grip and where, never as a separate stream.
-  - **Live authority may stream an object's state on a presence lane**
-    (§4.3) while it moves; rest is never a sample.
-  - Taking a resting thing into live authority is a `lift`; leaving it is a
-    `launch` or a settlement (above).
+  *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
+  body delivers a `shove` to that body's client, if that body's consent
+  allows it (actor: the thing's live authority, carrying the thing's `id` and
+  `v`); the thing's own motion ignores the body. Carrying a person and
+  simulated bodies are direction (`docs/PHYSICS-DIRECTION.md`).
+- **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
+  - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
+    `grab` is refused (`held`) until a `launch` or a settlement.
+  - **Claims are ordered by admission**, never by a sender's `t` (§5.1 says the same of releases): two grabs in one
+    beat resolve in the order the door admitted them.
+  - **Letting go is a `launch`**: the released thing crosses into the engine as one committed intent and belongs to the
+    engine until it rests (§4); a flight's outcome never depends on a presence-plane fact (Covenant III).
+  - **A held object rides its holder's hand**: it travels in the holder's pose as which grip and where, never as a
+    separate stream. Taking a resting thing into live authority is a `lift`; leaving it is a `launch`.
+  - **Reserved names, refused until built** (their intended rules are direction, in docs/PHYSICS-DIRECTION.md): the verb
+    `cohold`, the `steal` value `"ask"`, and on `@world.physics-engine` the fields `claimDebounceMs` and
+    `liveAuthorityExpiryMs`.
 - **Write authority** is the door: it alone appends to the log, and it checks
   every claim that becomes history.
 
@@ -421,37 +341,11 @@ thrower's own view of their flight, **never a backdated sim input**: a launch
 takes effect at its own entry's tick (Covenant IV), because backdating turns
 into rollback the moment bodies collide.
 
-### 4.3. The state-sync lane (reserved)
+### 4.3. The state-sync lane and settlement (reserved)
 
-A live authority streams a thing's state as presence, separately from body
-frames and from the log: `state {s: [sample, …]}`, each sample
-
-    {id, by, aseq, oseq, t, p, q, v, w, sleep}
-
-`by` the identity simulating it; `aseq`/`oseq` the counters (§4.1); `t` the
-capture time on the authority's clock; `p` (m) and `q` (unit quaternion) its
-world pose; `v` (m/s) and `w` (rad/s) its world velocities; `sleep` whether
-its simulator has it at rest. A sample is **absolute, self-contained and
-latest-wins**: no deltas against unacknowledged state, so the lane can move
-from the WebSocket to unreliable datagrams (a WebRTC DataChannel with
-`ordered: false, maxRetransmits: 0`, or WebTransport datagrams) without
-changing meaning. Receivers MAY drive a proxy toward the samples by force
-(pushable) or kinematically; a quantization, a priority accumulator and a
-per-client byte budget are added with the lane. Rest is a reliable
-settlement (§4.4), never a sample. Today the server checks the shape
-(`shared/presencewire.js stateSampleError`) and refuses every sample as
-reserved.
-
-### 4.4. Settlement is a checked claim (design 20, P3; reserved)
-
-When a thing under live authority comes to rest (asleep about 0.5 s) or is put
-down, its authority sends one **settlement**: a resting pose. The door treats
-it as a claim, like `put`: physical checks (support, overlap) and reach
-against the holder's last presence, so a cheating client can do no more than
-a builder could. It is logged as a plain `transform` change, attributed to
-everyone who handled the thing since it last rested. Trajectories never enter
-the log. A holder who disconnects mid-motion is settled from their last
-accepted state, or released into the sim.
+The presence message `state` (a live authority streaming a thing's samples) and the settlement claim are reserved names:
+the server refuses every `state` sample, and nothing settles by claim yet. Their intended shapes are direction, not
+contract: docs/PHYSICS-DIRECTION.md.
 
 ## 5. Covenant IV — tick-indexed time
 
@@ -512,7 +406,8 @@ version; it reads only what is stamped in entries; it advances by ticks; it
 reads the shapes (§3.1) and properties (§3.2) it declares, with their stated
 meanings of absence, and refuses honestly what it can't carry. To
 be carried, it registers beside eidosim in the authority's engine table
-(`ENGINES` in `shared/protocol/simlayer.js`) with its build hash, and passes the
+(`ENGINES` in `shared/protocol/simlayer.js`) under its version, with that version's
+digests in `spec/conformance/physics/`, and passes the
 same conformance (§8). An engine only the server carries would need the
 server to stream its state to clients as presence — never folded — while
 the log stays exact for everyone.

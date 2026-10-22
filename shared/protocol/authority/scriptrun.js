@@ -184,7 +184,7 @@ function checkpointSim(w) {
   // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
   const cut = simCutOf(sf, E);
   const state = w.putBlob({ cutJson: JSON.stringify(cut) });
-  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine, build: sf.spec.build }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+  w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 export function tick(w) {
   if (!w.exists || w.state().status !== "ok") return [];
@@ -282,18 +282,15 @@ export function settleOrphans(w, present = []) {
 // the command (authority.js request). Never a silent wrong behaviour; never a write the operator didn't ask for.
 const needsCache = new WeakMap();
 const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));   // what no reader serves in the old spelling
-/** Why the record itself stops a write now, or null: its log was changed outside the purge rule (§12: a value stripped to its
- *  commit that no purge names reads as unknown; nobody builds on that record until the operator restores it), or its old
- *  shapes wait for the maintenance command (lead's ruling 10-18: a load never writes; a world whose old shapes no reader serves
- *  refuses every write until the command runs). Reads work either way. One function, so a request (authority.js) and a script
- *  the host sets off (activate) meet the same gates. The system's own sweeps (settle's rests and returns, expireRoles,
- *  settleOrphans) don't: what they write is derived from the clock and the engine, not anyone's act, and gating them would
- *  keep a timed grant open past its until. Each skips a thing whose value the record lost (simlayer lostPlace; a roles: value
- *  read as unknown has no until), and restoring the named lines keeps what they wrote valid, since a restored line has the
- *  commit its stub kept. → {code, reason, fix, extra?} */
+/** Why the record itself stops a write now, or null: its old shapes wait for the maintenance command (lead's ruling 10-18:
+ *  a load never writes; a world whose old shapes no reader serves refuses every write until the command runs). Reads work
+ *  either way. A log changed outside the purge rule does NOT stop writes (house markup, #260 10-20): the fold names each such
+ *  line (commit-unpurged) and reads its value as unknown, which is §12's rule; refusing everyone's writes until an operator
+ *  restores it was a policy no world asked for. One function, so a request (authority.js) and a script the host sets off
+ *  (activate) meet the same gates. The system's own sweeps (settle's rests and returns, expireRoles, settleOrphans) don't:
+ *  what they write is derived from the clock and the engine, not anyone's act, and gating them would keep a timed grant open
+ *  past its until. → {code, reason, fix, extra?} */
 export function writeBlock(w) {
-  const alt = w.state().diagnostics.filter(([, c]) => c === "commit-unpurged");
-  if (alt.length) return { code: "record-altered", reason: `this world's log was changed outside its purge rule: ${alt.map(([q, , x]) => `line ${q} (${x})`).join(", ")} holds a value stripped to its commit that no purge names, so it reads as unknown, and the authority won't write on top of it`, fix: "only this server's operator can fix this: with the world closed (the server stopped), restore each named line from a backup of the log, then reopen it (a line restored whole has the commit its stub kept, so every later line still verifies); asking again won't change it, and reads still work", extra: { seqs: alt.map(([q]) => q) } };
   const n = maintenanceNeeds(w);
   // the reader (an agent, a person in the editor) can't run the command, so the fix says who can and that asking again
   // won't help, in plain words a person's reader keeps (refusal.js plainRefusal drops a fix with tool syntax); the command

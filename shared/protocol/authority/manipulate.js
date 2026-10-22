@@ -222,7 +222,7 @@ function stampHomes(ctx, ops) {
 function flyingWorld(st) {
   const spec = st.entities["@world"]?.c["physics-engine"];
   if (!spec) refuse("no-physics", "this world has no physics running, so nothing flies", "put it down instead (put {id}); the owner can turn physics on: set {id: '@world', component: 'physics-engine', value: {engine: 'eidosim@1.0.0'}}");
-  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`,
+  if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine}, which this server doesn't carry`,
     `put it down instead; the owner can move the world to an engine this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
   // the ground still loading (a heightmap whose grid isn't here): the engine would land it on the noise law's ground, and
   // its rest is logged for good (review r4 F2). Nothing flies until the ground is here: a throw, a drop, a punt, a shove.

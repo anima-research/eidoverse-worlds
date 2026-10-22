@@ -61,14 +61,15 @@ const ot = found.find((o) => o.name === "oldtown"), pn = found.find((o) => o.nam
 ok(ot?.file === path.join(W, "oldtown", "log.jsonl") && pn?.file === path.join(W, "prenamed", "world.jsonl"), "O2 each names the file it found", [ot?.file, pn?.file]);
 ok(ot?.suggestedName === "oldtown-3" && pn?.suggestedName === "prenamed-2" && !fs.existsSync(path.join(W, ot.suggestedName)),
   "O3 the suggested new name collides with nothing on disk (oldtown-2 is taken, even though it is empty)", [ot?.suggestedName, pn?.suggestedName]);
+const unq = (x?: string) => x?.replace(/^'(.*)'$/s, "$1").replace(/'\\''/g, "'");   // sh() quotes a dir outside its safe set (any Windows path: "\\"), CI 10-21
 const CMD = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate ([a-z0-9_-]{1,64}) --dry-run --no-founder-key$/i;
 const m = CMD.exec(ot?.command ?? "");
-ok(m && m[1] === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), the DRY RUN first (review of PR #260 item 6), with this WORLDS_DIR filled in (no founder key: a translation names none, #260 rereview blocker 1)", ot?.command);
+ok(m && unq(m[1]) === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), the DRY RUN first (review of PR #260 item 6), with this WORLDS_DIR filled in (no founder key: a translation names none, #260 rereview blocker 1)", ot?.command);
 const APPROVE = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate ([a-z0-9_-]{1,64}) --no-founder-key --approved <[^>]+> --operator-only-no-owner$/i;
 const am = APPROVE.exec(ot?.approve ?? "");
-ok(am && am[1] === W && am[2] === "oldtown", "O4 …and the second command translates bound to the approved report hash (a placeholder), on the operator's countersignature alone (no owner can be attested)", ot?.approve);
+ok(am && unq(am[1]) === W && am[2] === "oldtown", "O4 …and the second command translates bound to the approved report hash (a placeholder), on the operator's countersignature alone (no owner can be attested)", ot?.approve);
 const pm = /^WORLDS_DIR=(\S+) bun tools\/protocol\/world\.ts translate (<[a-z-]+>) ([a-z0-9_-]{1,64}) --dry-run --no-founder-key$/i.exec(pn?.command ?? "");
-ok(pm && pm[1] === W && pm[3] === "prenamed-2" && pm[2] !== "prenamed" && /found prenamed-2 --owner/.test(pn?.refound ?? "") && /translate <[a-z-]+> prenamed-2 --no-founder-key --approved <[^>]+> --operator-only-no-owner$/.test(pn?.approve ?? ""),
+ok(pm && unq(pm[1]) === W && pm[3] === "prenamed-2" && pm[2] !== "prenamed" && /found prenamed-2 --owner/.test(pn?.refound ?? "") && /translate <[a-z-]+> prenamed-2 --no-founder-key --approved <[^>]+> --operator-only-no-owner$/.test(pn?.approve ?? ""),
   "O4 a pre-names world's command re-translates from its ORIGINAL old log (not itself), dry run then approved, and a refound is offered", [pn?.command, pn?.approve, pn?.refound]);
 ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && oldWorldAt(W, "nowhere") === null && oldWorldAt(W, "oldtown")?.kind === "translatable",
   "O4 oldWorldAt answers one name: null for a current world, an empty dir and a missing one");

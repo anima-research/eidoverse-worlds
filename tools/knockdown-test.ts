@@ -44,21 +44,29 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// a "human" — a bare socket that joins, watches, and throws its weight around
-function human(name: string): Promise<{ ws: WebSocket; send: (m: any) => void; close: () => void }> {
+// a "human" — a bare socket that joins, watches, and throws its weight around. The relay forwards a shove or a drag only
+// between bodies whose last frames it has, within reach (server/messages.ts bodyRefusal), so `near` publishes a pose
+// beside the target first; `errors` collects the relay's refusals (a refused shove is answered, never silently dropped)
+type Human = { ws: WebSocket; send: (m: any) => void; close: () => void; errors: string[]; near: (who: { pos: { x: number; y: number; z: number } }) => Promise<void> };
+function human(name: string): Promise<Human> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
+    const errors: string[] = [];
+    const send = (m2: any) => ws.send(JSON.stringify(m2));
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
+      if (m.type === "error") errors.push(String(m.error));
       if (m.type === "snapshot") res({
-        ws,
-        send: (m2) => ws.send(JSON.stringify(m2)),
+        ws, send, errors,
         close: () => ws.close(),
+        near: async (who) => { send({ type: "pose", pose: { p: [who.pos.x - 1, 0, who.pos.z], yaw: 0, speed: 0, clip: "idle" } }); await sleep(300); },
       });
     };
   });
 }
+// a positive shove's wait, and a refused one's: as long, ending early only on the relay's refusal
+const settleOrRefused = async (h: Human, n0: number, ms = 2500) => { for (let t = 0; t < ms && h.errors.length === n0; t += 50) await sleep(50); };
 
 console.log("knockdown (headless bodies are pushable):\n");
 
@@ -73,6 +81,7 @@ await sleep(400);
 // 1. a shove along +x: the REAL tumble — sim pose, displaced along the lean, lying
 // (v1's radial blast, the `force` verb, went with protocol v1: a push is a puppet ragdoll lean, or the door's body
 //  shove under the target's consent)
+await h.near(ag);
 const before = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
 await sleep(2500);
@@ -89,6 +98,7 @@ await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000);
 check("walking sheds the slump", ag.clip !== "ragdoll" && ag.heldPose == null, `clip=${ag.clip}`);
 
 // 3. directed shove over the puppet wire: the tumble travels along the lean
+await h.near(ag);
 const b2 = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [0, 0, 3] } });
 await sleep(2500);
@@ -96,13 +106,18 @@ check("a directed shove floors it downwind", ag.clip === "ragdoll" && ag.pos.z >
   `clip=${ag.clip} Δz=${(ag.pos.z - b2.z).toFixed(2)}`);
 check("...and named the shover", events.some((t) => t.includes("shover") && t.includes("knocks you over")), events.join(" | "));
 
-// 4. consent: pushable=false refuses everything, silently and completely
-ag.pushable = false;
+// 4. consent: the body's switch set to refuse turns every shove away at the relay, completely
+const sw = await (ag as any).request("consent", { switch: "refuse" });
+check("the agent's body switch is set to refuse", sw?.ok === true, JSON.stringify(sw));
 ag.setPose(null);
-const b3 = { x: ag.pos.x, z: ag.pos.z };
+await sleep(300);
+await h.near(ag);
+const b3 = { x: ag.pos.x, z: ag.pos.z }, e3 = h.errors.length;
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
-await sleep(600);
-check("pushable=false: unmoved and standing",
+await settleOrRefused(h, e3);
+await sleep(600);   // past the refusal: a delivered shove would have landed by now
+check("switch refuse: the relay refuses the shove", h.errors.length > e3, JSON.stringify(h.errors.slice(e3)));
+check("switch refuse: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 
@@ -116,6 +131,7 @@ await sleep(200);
 const ag3 = new WorldAgent({ url: URL, name: "kd-bot3", world: W });
 await ag3.connect();
 await sleep(400);
+await h.near(ag3);
 h.send({ type: "puppet", target: "kd-bot3", ragdoll: { lean: [2, 0, 0] } });
 await sleep(2000);
 h.send({ type: "bodydrag", target: "kd-bot3", grab: { joint: "head" } });
@@ -143,6 +159,7 @@ ag3.close?.();
 const ag4 = new WorldAgent({ url: URL, name: "kd-bot4", world: W });
 await ag4.connect();
 await sleep(400);
+await h.near(ag4);
 h.send({ type: "puppet", target: "kd-bot4", ragdoll: { lean: [2, 0, 0] } });
 await sleep(1800);
 h.send({ type: "bodydrag", target: "kd-bot4", grab: { joint: "head" } });

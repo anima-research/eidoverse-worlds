@@ -24,6 +24,16 @@ const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, ano
 /** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
  *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
 const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
+/** Does `who` admit `actor` (recut item 8)? Absent: yes. A role id: that rank or above. {permission}: holds it (an owner
+ *  holds every permission). {roles}: holds one of them, or is an owner. Anything else admits only owners. */
+const admits = (st, actor, who, anon) => {
+  if (who === undefined || who === null) return true;
+  if (typeof who === "string") return rankOf(st, actor, anon) >= whoRank(st, who);
+  const role = roleOf(st, actor, anon); if (R.isOwner(role)) return true;
+  if (typeof who?.permission === "string") return effective(st, actor, anon)?.can?.[who.permission] === true;
+  if (Array.isArray(who?.roles)) return who.roles.includes(role);
+  return false;
+};
 /** Effective rights {role, name, rank, can, permissions} (roles.js effectiveOf). */
 const effective = (st, actor, anon = CTX.isAnon(actor)) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 const may = (st, actor, sw) => roleOf(st, actor) === "owner" ? (sw !== "fly" || effective(st, actor).can.fly) : effective(st, actor).can[sw] === true;
@@ -133,4 +143,4 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 // (refactor split, 2026-10-17: moved here from authority.js's "the authority" section; request, undo and the hands' returns read it)
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
-export { RANK, RESERVED, backward, banFrom, effective, entryBy, inForce, isScriptActor, kickFrom, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
+export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, kickFrom, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };

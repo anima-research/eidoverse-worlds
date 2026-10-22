@@ -35,7 +35,8 @@ export const pendingMounts = new Map();
 export const mountTransform = () => null;
 // world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and occupybody.js reads the
 // thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
-export const setBodySeat = () => {};
+export const seatCalls = [];   // remotes-lifecycle-test: a dropped body's seat is cleared (house review I15)
+export const setBodySeat = (id, seat) => { seatCalls.push([id, seat]); };
 export const comps = new Map();
 export const entityMeta = new Map();
 export const bagOf = (id) => comps.get(id) ?? null;

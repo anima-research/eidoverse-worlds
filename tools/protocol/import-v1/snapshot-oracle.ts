@@ -68,6 +68,7 @@ const { socketQ } = await import("../../../shared/components.js");
 const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
 const FA = await import("../../../shared/flora_args.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
+const { HN_ISS } = await import("../../../server/auth.ts");
 
 const TOL = 1e-9;
 const SHOW = Number(process.env.ORACLE_SHOW ?? 8);
@@ -157,10 +158,12 @@ function whoFrom(worldsDir) {
   const bySub = new Map(), byName = new Map();
   for (const [id, e] of Object.entries(ids)) { for (const s of e.subs ?? []) bySub.set(s, id); const a = byName.get(e.name) ?? []; a.push(id); byName.set(e.name, a); }
   const unresolved = [];
-  const who = (name, { sub } = {}) => {
+  const who = (name, { sub, lowered = false } = {}) => {
     const acct = sub ?? (/^(human|agent|aid1):/.test(name) ? name : undefined);
     if (acct && bySub.has(acct)) return bySub.get(acct);
-    const a = byName.get(name) ?? [];
+    if (acct && bySub.has(`aid1:${HN_ISS}:${acct}`)) return bySub.get(`aid1:${HN_ISS}:${acct}`);   // a v1 agent's home-node sub, as the importer files it
+    // exact, as v1 kept names; a lowered ban key is the one name that lowercases to it, as the importer reads it
+    const a = byName.get(name) ?? (lowered ? [...byName].filter(([n]) => n.toLowerCase() === name).flatMap(([, ids]) => ids) : []);
     if (a.length === 1) return a[0];
     unresolved.push({ name, sub, candidates: a.length }); return `?unresolved:${name}`; };
   return { who, unresolved, people: Object.keys(ids).length };
@@ -239,13 +242,18 @@ function originalsOf(dir) {
   return d;
 }
 
+/** What the server's load says a lifted world still lacks: a host it refused or skipped, or maintenance it still needs
+ *  (liftWorld's repairNeeded: a translation runs the maintenance itself, so a fresh one never needs any). */
+export const liftFailures = (lifted) => lifted.filter((x) => x.failed || x.skipped || x.repairNeeded);
+
 export function oracleWorld(given) {
   const dir = originalsOf(given);
   const name = path.basename(dir);
   const c = completeSnapshot(dir);
   if (!c.ok) return { name, dir, skipped: c.why };
   const t0 = performance.now();
-  const old = fs.readFileSync(path.join(dir, "log.jsonl"), "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+  let unparsed = 0;
+  const old = fs.readFileSync(path.join(dir, "log.jsonl"), "utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { unparsed++; return []; } });
   if (hasEpoch(old)) return { name, dir, skipped: "a physics-era log (dialect 3): v4 holds her sim's rests, which the old snapshot (the instant fold) never had; this oracle has no independent reading of them" };
   // 1. the real translation, into its own scratch worlds dir
   const worldsDir = path.join(SCRATCH, name.replace(/[^A-Za-z0-9_-]/g, "_") + "-" + crypto.randomBytes(3).toString("hex"), "worlds");
@@ -276,7 +284,7 @@ export function oracleWorld(given) {
   const live = openLive(dest, name, { catalogue: ENGINE_CATALOGUE, scripts: null });
   const ever = everPre;   // what the lift saw: the ids before it (its children's ids are minted against these)
   const lifted = liftWorld(live);   // the LOAD: writes nothing; says what the world still needs (nothing, for a translation)
-  const failedLift = lifted.filter((x) => x.failed || x.skipped);
+  const failedLift = liftFailures(lifted);
   const newB = v4comps(live.state());
   const { lifted: oldB, hosts } = liftPlain(oldA, ever, !shapesMarked(live.entries));
   const B = compareWorlds(oldB, newB);
@@ -290,10 +298,10 @@ export function oracleWorld(given) {
     for (const [slot, s] of Object.entries(S)) { if (!s || typeof s !== "object") continue; seats++;
       const kids = Object.entries(newB).filter(([, k]) => k.parent?.to === host && isSocketC(k) && k.socket.name === slot);
       if (kids.length !== 1) { seatDiffs.push({ id: host, field: `seat '${slot}'`, old: s, new: `${kids.length} socket children named so` }); continue; }
-      const t = kids[0][1].transform; const want = { pos: Array.isArray(s.pos) ? s.pos : [0, 0, 0], q: socketQ({ ...s, ...(Number.isFinite(s.yaw) && s.yaw !== 0 ? { q: [0, Math.sin(s.yaw / 2), 0, Math.cos(s.yaw / 2)] } : {}) }) };
+      const t = kids[0][1].transform; const y = Number(s.yaw ?? 0); const want = { pos: Array.isArray(s.pos) ? s.pos : [0, 0, 0], q: socketQ({ ...s, yaw: undefined, ...(Number.isFinite(y) && y !== 0 ? { q: [0, Math.sin(y / 2), 0, Math.cos(y / 2)] } : {}) }) };   // v1 turned a seat by its yaw as JS coerces it
       for (const d of deepDiff(want, { pos: t?.pos, q: t?.q })) seatDiffs.push({ id: kids[0][0], field: `seat '${slot}' transform${d.path}`, old: d.old, new: d.new }); } }
   const tB = performance.now();
-  return { name, dir, entries: old.length, out: r.entries, people, unresolved, lift: { hosts: hosts.length, failed: failedLift, seats, seatDiffs },
+  return { name, dir, entries: old.length, unparsed, out: r.entries, people, unresolved, lift: { hosts: hosts.length, failed: failedLift, seats, seatDiffs },
     A, B, C, ms: { translate: tTranslate - t0, compareA: tA - tTranslate, serverB: tB - tA, total: tB - t0 } };
 }
 
@@ -304,7 +312,7 @@ function printWorld(w) {
   if (w.skipped) { if (w.skipped !== "no snapshot.json") console.log(`\n-- ${w.name} (${w.dir}): SKIPPED (${w.skipped})`); return; }
   if (w.error) { console.log(`\n-- ${w.name}: FAIL ${w.error}`); return; }
   const n = unexplained(w);
-  console.log(`\n-- ${w.name} (${w.dir}): ${w.entries} old entries → ${w.out} entries; ${(w.ms.total / 1000).toFixed(1)} s (translate ${(w.ms.translate / 1000).toFixed(1)}, compare ${(w.ms.compareA / 1000).toFixed(2)}, server load+lift ${(w.ms.serverB / 1000).toFixed(2)}) — ${n ? `FAIL ${n} unexplained` : "ok"}`);
+  console.log(`\n-- ${w.name} (${w.dir}): ${w.entries} old entries${w.unparsed ? ` (and ${w.unparsed} line(s) that don't parse, read by neither engine)` : ""} → ${w.out} entries; ${(w.ms.total / 1000).toFixed(1)} s (translate ${(w.ms.translate / 1000).toFixed(1)}, compare ${(w.ms.compareA / 1000).toFixed(2)}, server load+lift ${(w.ms.serverB / 1000).toFixed(2)}) — ${n ? `FAIL ${n} unexplained` : "ok"}`);
   for (const [tag, X] of [["A translated log vs snapshot", w.A], ["B server view (lifted) vs snapshot (lifted)", w.B]]) {
     console.log(`   ${tag}: entities old ${X.old} / new ${X.new}, matched ${X.matched} (and @world), missing ${X.missing.length}, extra ${X.extra.length}, field diffs ${X.diffs.length}`);
     if (X.missing.length) console.log(`     missing (old has, new doesn't): ${X.missing.slice(0, SHOW).join(", ")}${X.missing.length > SHOW ? " …" : ""}`);

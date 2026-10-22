@@ -87,7 +87,7 @@ async function runSelf(tree: string, only: string[] | null, timeoutMs = 0) {
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]); const code = await p.exited; if (t) clearTimeout(t);
   return { code, timedOut, out: out + err };
 }
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
@@ -98,7 +98,7 @@ if (argv.includes("--mutants")) {
   let bad = 0, ran = 0; const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = copyTree("smut"); const f = path.join(d, file); let src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("smut"); const f = path.join(d, file); let src = fs.readFileSync(f, "utf8");
     const pairs: [string, string][] = Array.isArray(find) ? find : [[find, repl]];   // a gate in two places is reverted in both
     const missing = pairs.find(([a]) => src.split(a).length !== 2);
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
@@ -120,6 +120,8 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 // the first path that loads: today's name, then the base commit's (before the 10-07 names pass)
 const imp1 = async (...ps: string[]) => { let err: unknown; for (const p of ps) { try { return await import(TREE + p); } catch (e) { err = e; } } throw err; };
 const D = await imp1("shared/protocol/authority.js", "shared/" + "v4/door.js");   // (split: the base's path, not a stale one)
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const L = await imp1("server/livehost.ts", "server/" + "v4/live.ts");
 const SB = await imp1("shared/protocol/sandbox.js", "shared/" + "v4/sandbox.js");
 const SOL = await imp1("server/solids.ts", "server/" + "v4/solids.ts").catch(() => null);         // absent at the base commit
@@ -135,8 +137,10 @@ function open(name: string, o: any = {}) {
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
 }
-// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass
-const AT_BASE = path.resolve(TREE) !== path.resolve(ENGINE);
+// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass. Known
+// by its layout (the base has no shared/protocol/authority.js), never by being another directory: a mutant is a copy of today's tree
+// and speaks today's names (read as "another tree", every case failed in every mutant, so each read as caught)
+const AT_BASE = !fs.existsSync(path.join(TREE, "shared/protocol/authority.js"));
 // the base rung's name in the tree under test (R 10-21: inhabitant; the base commit says visitor): G3 speaks each tree's own word
 const BASE_RUNG = AT_BASE ? "visitor" : "inhabitant";
 const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };

@@ -12,7 +12,7 @@ import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
 const SHOT_DIR = process.env.SHOT_DIR ?? tmpdir();
 
-// a scratch issuer, so the probe can sign people in (same minting as tools/access-test.ts)
+// a scratch issuer, so the probe can sign people in
 const pair = generateKeyPairSync('ed25519');
 const spki = createPublicKey(pair.privateKey).export({ format: 'der', type: 'spki' });
 const ISSUER_ID = `ed25519:${spki.subarray(spki.length - 32).toString('base64url')}`;

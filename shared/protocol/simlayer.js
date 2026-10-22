@@ -19,18 +19,23 @@ import * as eidosim from "../sim.js";
 import { isBoxShape, shapeError } from "./shapes.js";
 import { r3, r2 } from "./round.js";
 
-// Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
-// sha256(sim.js ‖ NUL ‖ eidosim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
-export const EIDOSIM_BUILD = "45dc937ddda646f8";   // 10-15: terrainmath.js carries upstream #237 (shaped terrain: features, heightmaps) — the ground law the sim lands on changed, so the build did; 10-14 was 6026f46935023c00 (sim.js reads `model`, was `lib`)
-export const EIDOSIM_FILES = ["shared/sim.js", "shared/eidosim.js", "shared/simmath.js", "shared/terrainmath.js"];
-export const ENGINES = { [eidosim.SIM_ID]: { build: EIDOSIM_BUILD, module: eidosim, rotates: true, maxSpeed: 20,
+// An engine is named by its VERSION (house answer, #260 10-21): a server carries a version when its implementation reproduces
+// that version's conformance digests (spec/conformance/physics/, held by engine-check). A change that still reproduces them
+// is the same version; a change meant to alter results is a new version with its own digests.
+export const ENGINES = { [eidosim.SIM_ID]: { module: eidosim, rotates: true, maxSpeed: 20,
   about: "eidosim: rigid boxes and spheres that tumble and roll, soft contacts (after Box3D), swept against what rests, terrain; free dynamic things at rest can be knocked" } };
 export const DEFAULT_ENGINE = eidosim.SIM_ID;
 export const TICK_MS = eidosim.TICK_MS;
 // a sim state advanced by its engine (readers that hold a clone: the replica, the client's flights)
 export const advanceSim = (sim, tick) => eidosim.advanceSim(sim, tick);
 export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
-export const carried = (spec) => !!spec && Object.hasOwn(ENGINES, spec.engine) && ENGINES[spec.engine].build === spec.build;   // an engine this build has (review of #260, I120: unknown with no build compared undefined === undefined)
+export const carried = (spec) => !!spec && typeof spec.engine === "string" && Object.hasOwn(ENGINES, spec.engine);   // a version this server reproduces
+/** "eidosim@1.0.0" → "eidosim" */
+export const engineName = (e) => String(e).split("@")[0];
+const semver = (e) => (String(e).split("@")[1] ?? "").split(".").map((x) => Number(x) || 0);
+const newer = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
+/** the version of `name` this server would stamp today (its newest carried one), or null when it carries none of that name */
+export const stampOf = (name) => Object.keys(ENGINES).filter((k) => engineName(k) === name).reduce((best, k) => (best === null || newer(k, best) ? k : best), null);
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
 const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "disabled"]);

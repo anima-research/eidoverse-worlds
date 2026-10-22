@@ -38,12 +38,12 @@
 
 import { REACH } from './protocol/physconst.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
-import { BUILTIN_IDS, isRoleId, isBase } from './protocol/roles.js';
+import { BUILTIN_IDS, isWhoValue, isBase, whoWords } from './protocol/roles.js';
 import { isReservedAnimName } from './animdefs.js';
 
 export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
-const isWho = isRoleId;
+const isWho = isWhoValue;   // a role id, {permission} or {roles} (recut item 8)
 // the registry's (componentspec.js grabbable: its fields and enums are the shape; this file reads and checks it)
 export const HOLDS = COMPONENTS.grabbable.enums.hold;      // auto, press, toggle
 /** The hold poses every body knows by name (an anim may name any pose or clip; these are the built-in ones). */
@@ -264,7 +264,7 @@ export function checkGrabbable(v, at = 'grabbable') {
   if (v.home !== undefined) return bad('schema', `${at}.home: where a thing goes home to is its own home component now`, "home {pos, q?, scale?, parent?: {to}} (the authority stamps it for a returning grabbable)", ['home']);
   let r = keys(at, v, KEYS, 'grabbable'); if (r) return r;
   for (const k of ['enabled', 'steal', 'twoHanded', 'carries']) if (v[k] !== undefined && typeof v[k] !== 'boolean') return bad('shape', `${at}.${k} is true or false`);
-  if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is ${WHO.join(', ')} (who may pick it up)`);
+  if (v.who !== undefined && !isWho(v.who)) return bad('shape', `${at}.who is a role (${WHO.join(', ')} or this world's own), {permission: '<name>'} or {roles: [...]} (who may pick it up)`);
   if (v.hold !== undefined && !HOLDS.includes(v.hold)) return bad('shape', `${at}.hold is ${HOLDS.join(', ')} (auto: press-to-hold in VR, sticky on desktop)`);
   if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim))) return bad('shape', `${at}.anim names a pose or clip (built in: ${HOLD_POSES.join(', ')}; a name the body doesn't know is held by size)`, 'leave it out: held by size');
   if (isReservedAnimName(v.anim)) return bad('shape', `${at}.anim "${v.anim}" is reserved: it names ad-libbed anims, never a pose or clip`, 'name the pose or clip');
@@ -320,7 +320,7 @@ function near(k, allowed) {
 export function describeGrab(g, label = 'it') {
   if (!g) return null;
   if (!g.enabled) return `${label} can't be picked up now`;
-  const bits = [isBase(g.who) ? 'anyone may pick it up' : `${g.who}s may pick it up`];
+  const bits = [isBase(g.who) ? 'anyone may pick it up' : `${whoWords(g.who)} may pick it up`];
   if (g.range > HAND_REACH) bits.push(`from ${g.range} m (it flies to your hand)`); else if (g.range < HAND_REACH) bits.push(`within ${g.range} m`);
   const grips = Object.keys(g.grips); if (grips.length) bits.push(`held by ${grips.join(', ')}`);
   if (g.twoHanded) bits.push('two-handed');
