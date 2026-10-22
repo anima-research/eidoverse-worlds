@@ -361,7 +361,12 @@ if (cmd === "found") {
     const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
     const destDir = path.join(WORLDS_DIR, dest), had = fs.existsSync(destDir) ? new Set(fs.readdirSync(destDir)) : null;
     // identities join the shared directory only once the bytes are known to be the approved ones
-    const r = translateV1World(srcDir, destDir, { approval, deferIdentities: true });
+    // the importer refuses a log whose report isn't the approved one, and puts back what it wrote (house importer I25, I35):
+    // say so in this tool's own words, never as a stack trace
+    let r: ReturnType<typeof translateV1World>;
+    try { r = translateV1World(srcDir, destDir, { approval, deferIdentities: true }); }
+    catch (x) { if (!had && fs.existsSync(destDir) && !fs.readdirSync(destDir).length) fs.rmSync(destDir, { recursive: true, force: true });
+      die(`the translation failed: ${(x as Error).message}\nNothing was changed: "${src}" is as it was, and no identity was added.`); }
     { const why = unapproved(r.source, approvedSource);
       if (why) { if (!had) fs.rmSync(destDir, { recursive: true, force: true }); else for (const f of fs.readdirSync(destDir)) if (!had.has(f)) fs.rmSync(path.join(destDir, f), { recursive: true, force: true });
         die(`${why}\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
