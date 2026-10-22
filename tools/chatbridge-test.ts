@@ -54,5 +54,13 @@ check("history from before the join is not mirrored", !/before the bridge/.test(
 check("a Discord line enters the world as the bridge's door say, attributed inside the text", saysIn(alice.msgs).some((x) => x.actor === "discord" && x.text === "Ann: hi from discord"), JSON.stringify(saysIn(alice.msgs)));
 check("the bridge's own say is not echoed back to Discord", !/→ discord \[discord\]/.test(out) && !/hi from discord\n.*→ discord/.test(out));
 check("nothing was refused", !/refused/.test(out), out.slice(-300));
+
+// a burst past the door's say limit (20 per 10 s per actor, authority/gate.js): every line still lands, in order (#260 house I1)
+const N = 25, burst = Array.from({ length: N }, (_, i) => `Bo: burst ${i}`);
+bridge.stdin.write(burst.join("\n") + "\n"); bridge.stdin.flush();
+const landed = () => saysIn(alice.msgs).filter((x) => x.actor === "discord" && /^Bo: burst \d+$/.test(x.text)).map((x) => x.text);
+for (let i = 0; i < 400 && landed().length < N; i++) await sleep(100);
+check(`a burst of ${N} Discord lines all enter the world, in order`, JSON.stringify(landed()) === JSON.stringify(burst), `${landed().length} landed: ${landed().slice(-3).join(" | ")}`);
+check("…none of them refused on the way", !/refused/.test(out), out.split("\n").filter((l) => /refused/.test(l)).slice(0, 3).join(" | "));
 console.log(`\n${pass} passed, ${fail} failed`);
 done(fail ? 1 : 0);

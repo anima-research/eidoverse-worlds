@@ -54,7 +54,8 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 const MAX_BACKLOG = 50;        // per direction; beyond this the oldest drop
 const MAX_LINE_CHARS = 1500;   // Discord → world cap (with honest ellipsis)
 const DISCORD_CHUNK = 1900;    // world → Discord split point (limit is 2000)
-const SEND_GAP_MS = 350;       // world say pacing (the door rate-limits says per actor)
+const SEND_GAP_MS = 550;       // world say pacing: under the door's 20 says per 10 s per actor (authority/gate.js RATE), with room
+const RATE_BACKOFF_MS = 2000;  // a say refused `rate` anyway goes back to the front of the queue and waits this long
 
 const log = (m: string) => console.log(`[chatbridge ${new Date().toISOString().slice(11, 19)}] ${m}`);
 
@@ -144,6 +145,9 @@ let worldWs: WebSocket | null = null;
 let joined = false;
 let speaking = false;
 let reqN = 0;
+const inFlight = new Map<string, In>();   // request id → the line it carries, until the world replies
+let holdUntil = 0;                        // a rate refusal's backoff
+let requeued = 0;                         // lines put back during the current backoff (replies come in send order, so they go back in order)
 
 async function pumpWorld() {
   if (speaking) return;
@@ -154,10 +158,13 @@ async function pumpWorld() {
       const d = toWorld.shift()!;
       log(`⏭ world backlog — dropped "${d.author}: ${d.text.slice(0, 40)}…"`);
     }
+    if (Date.now() < holdUntil) { await new Promise((r) => setTimeout(r, holdUntil - Date.now())); continue; }
     const m = toWorld.shift()!;
     let text = `${m.author}: ${m.text}`;
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
-    worldWs.send(JSON.stringify({ type: "request", id: `chatbridge-${++reqN}`, verb: "say", args: { text } }));
+    const id = `chatbridge-${++reqN}`;
+    inFlight.set(id, m);
+    worldWs.send(JSON.stringify({ type: "request", id, verb: "say", args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;
@@ -184,7 +191,14 @@ function connectWorld() {
     try { msg = JSON.parse(String(ev.data)); } catch { return; }
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
     if (msg.type === "reply") {
-      if (!msg.ok) log(`world refused ${msg.tool}: ${msg.reply?.refused?.reason ?? JSON.stringify(msg.reply?.refused ?? msg.reply)}`);
+      const line = inFlight.get(msg.id); inFlight.delete(msg.id);
+      const refused = msg.reply?.refused;
+      if (line && refused?.code === "rate") {   // too fast after all: resend it, in its place, after a pause
+        if (Date.now() >= holdUntil) requeued = 0;
+        toWorld.splice(requeued++, 0, line); holdUntil = Date.now() + RATE_BACKOFF_MS;
+        log(`world asked to slow down — "${line.author}: ${line.text.slice(0, 40)}" waits ${RATE_BACKOFF_MS / 1000} s`);
+        void pumpWorld();
+      } else if (msg.reply?.ok === false || msg.ok === false) log(`world refused a say: ${refused?.reason ?? JSON.stringify(refused ?? msg.reply)}`);
       return;
     }
     if (msg.type === "snapshot") {
