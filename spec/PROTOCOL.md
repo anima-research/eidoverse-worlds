@@ -594,9 +594,8 @@ copy that was updated and is published again keeps its parts' keys.
   Consent is its person's own: `look` shows each viewer their own switch and
   who poses, drags or touches them, and of anyone else only where they
   stand (and what the viewer is doing to them); another body's switch
-  would undo the uniform words. **A seat may make leaving deliberate, never
-  impossible**, and sitting includes agreeing to be carried by the seat: a seat carries its
-  occupant through whatever moves it, and an edit is never refused because a
+  would undo the uniform words. Sitting includes agreeing to be carried by
+  the seat: a seat carries its occupant through whatever moves it, and an edit is never refused because a
   body is on the thing. An edit by anyone but the occupant that would move a
   seat — the `transform`, `parent` or `motion` of the seat or of anything
   it hangs from, by whatever verb, a handler or script on another thing
@@ -624,65 +623,21 @@ copy that was updated and is published again keeps its parts' keys.
   carries you. **A seat may make leaving deliberate, never impossible**: a
   station's `leaveBy: "script"` turns off the occupant's casual exits
   (moving, jumping, one press of the get-up), but the escape stays on and
-  no seat can remove it — holding the get-up (X, or the stand tile pressed
-  and held) for about 1.5 s, pressing it again (X, the tile, the menu)
-  within 2 s of its refusal, or an agent's
-  `detach {escape: true}` always stands the occupant up (VRChat keeps
-  respawn and the menu; Second Life's stand always works). A
+  no seat can remove it: every client offers a deliberate escape that
+  always stands the occupant up (an agent's `detach {escape: true}`; the
+  reference client's binding is `docs/SEATS.md`). A
   yes to an ask is one touch: it ends when the hand lets go, when either
-  body leaves, when the target closes that class, or after 10 minutes. Named poses
-  travel the same way: `pose.poses` lists the poses a body holds by name (a
-  pose is one frame, only the bones it names; a clip has more than one key), never implementation-specific quaternions: `"wings-folded"` is
-  the folded-wing silhouette, which each renderer applies through the worn
-  rig's own fold path, and a name a rig doesn't know is ignored (its
-  default). An empty list holds none; an absent one says nothing. (Before
-  release the packet said `wingsFolded: true|false`; a receiver still reads
-  it as that pose.) The same packet carries a body's
-  size and a person's voice state, each optional, absence meaning the
-  default (or, for voice, *unknown*):
-  - `pose.bodyMode` — what the body is doing as a whole: `stand` | `sit` |
-    `lie` | `swim` | `fly` | `fall` (R 10-17; was the posture, read off the
-    clip, which is what a sample without it still means). The body's owner
-    publishes it: the mover sets it on real transitions (into water, an
-    actual take-off, airborne, landing) and the owner may declare any of the
-    six for looks; a declaration holds until the next real transition or
-    declaration. It is apart from `clip` (what plays). It is a self-declared
-    description: the authority and every server MUST NOT grant or relax any
-    rule, consent check or permission because of a declared body-mode; a rule
-    that depends on a body's state checks what it can verify on the act (the
-    water at the position, the fly permission at take-off).
-  - `pose.anim` — the name of an anim the body plays ONCE (a gesture: a pose
-    or a clip, by name), riding exactly one packet: a receiver plays it over
-    whatever the body holds and returns to that, and nothing remembers it
-    (a joiner never replays it). Before release the packet carried it under
-    its pre-release key, which a receiver still reads for one release.
-    The anims a body PLAYS OR HOLDS are layers: the clip, a
-    held pose (`pose.pose`, `pose.poses`) and live animations relayed by the
-    `anim` message each play at once, and a new one replaces only its own
-    layer. When a body stops them — all, or one by name — it rests in its
-    CURRENT body-mode's own anim (`stand`: idle; `sit`: its sit loop; `lie`;
-    `swim`: tread; `fly`: its hover), never the bind pose, and its
-    `bodyMode` is unchanged by the stop. `{type: "anim", stop: true}` is the
-    relay message that fades out every live animation the sender is
-    playing (each receiver hands the bones back to what is beneath). The
-    name `live` is reserved: it names every ad-libbed anim (one started from
-    joints or tracks, never a name), so no clip, def, pose or world's or
-    avatar's anim may be called it, and stopping `live` stops those only.
-  - `pose.scale` — the wearer's chosen size multiplier for the whole body
-    (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
-  - `pose.plateY` — metres the nameplate hangs above the body's measured
-    crown, at its authored size (it grows with `scale`); absent = 0 (auto).
-    Range −0.3…+0.8.
-  - `pose.mic` — this person's microphone is live; `pose.hear` — they are
-    hearing voices. Booleans; absent = unknown, never "off".
-
-  Receivers MUST clamp `scale`/`plateY` to their ranges and read a
-  non-number as absent; a non-boolean `mic`/`hear` is absent
-  (shared/presencewire.js holds the clamps; the server's pose fence applies
-  the same ones). `scale`/`plateY` are body state and ride the settled pose
-  a server keeps for late joiners, as `poses` does; `mic`/`hear` are
-  a live reading re-sent with every packet and are never part of it. The
-  pose packet's fields are `docs/pose-wire.md`.
+  body leaves, when the target closes that class, or after 10 minutes. The pose packet's fields, and how a
+  receiver renders them, are `docs/pose-wire.md`; what binds every
+  implementation is this: a body's declared mode (`pose.bodyMode`) is a
+  self-declared description, and the authority and every server MUST NOT
+  grant or relax any rule, consent check or permission because of it (a
+  rule that depends on a body's state checks what it can verify on the act:
+  the water at the position, the fly permission at take-off). A once-played
+  anim (`pose.anim`) rides exactly one packet and is never replayed to a
+  joiner. The name `live` is reserved for ad-libbed anims (no clip, def,
+  pose or world's or avatar's anim may be called it). Receivers MUST clamp
+  `scale` and `plateY` to their ranges and read a non-number as absent.
 - **Presence touches the log only through checked acts, and only with what
   the world needs.** The authority checks every body request against its
   own cheap track of each body (speed, reach, solids). Arriving is presence:

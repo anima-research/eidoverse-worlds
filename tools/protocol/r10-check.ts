@@ -346,7 +346,7 @@ cases.push(
       const md = PROTO(); const s8 = section(md, /\n## 8\. /); const s5 = section(md, /\n## 5\. /);
       const lad = readText("docs/COMPONENT-LADDER.md"), sc = readText("docs/SCRIPTS.md"), ag = readText("AGENTS.md");
       return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another shape/.test(s8) && /flagged `rerun-anon`/.test(s8),
-        s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
+        s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(fs.readFileSync(new URL("../../docs/SEATS.md", import.meta.url), "utf8")),   // the binding is the client's since the house's view (#260 10-20)
         lad: /translate-v1@12 and later/.test(lad), sc: /pressing and holding the stand tile/.test(sc) && /`rerun-anon`/.test(sc),
         ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its occupants/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },
     good: (o) => o.s8 && o.s5 && o.lad && o.sc && o.ag },

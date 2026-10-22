@@ -583,7 +583,7 @@ const cases: Case[] = [
       const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
       const says = (x: string) => /rests in your body-mode's own anim \(stand: idle/.test(x) && /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
       const body = md.slice(0, md.indexOf("## Version history"));
-      return { tool: says(d), agents: says(a), spec: /never the bind pose/i.test(body) && /`\{type: "anim", stop: true\}`/.test(md) && /`live` is reserved/.test(md) }; },
+      return { tool: says(d), agents: says(a), spec: (() => { const pw = fs.readFileSync(TREE + "docs/pose-wire.md", "utf8"); return /never the bind pose/i.test(pw) && /`\{type: "anim", stop: true\}`/.test(pw) && /`live` is reserved/.test(md); })() }; },   // the rest rule and the relay message are client docs since the house's view (#260 10-20); the reserved name is the spec's
     good: (o) => o.tool && o.agents && o.spec },
   // ---------------- E: the old name of a gesture, gone (R 10-17 16:26) ----------------
   { id: "E1", what: "(R 16:26) presence pose.anim: the agent's once anim rides the next packet as anim (never the old key); the browser sends pose.anim; a receiver (browser, agent) reads either key; the server remembers neither", async run() {
