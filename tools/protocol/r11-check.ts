@@ -13,7 +13,8 @@
 //       is passed on as sent, never read as a kind
 //   R   renames (stern L3): a stored null old field is a removal; renames are admitted per thing
 //   D   repo items (claims R1, R3, R4) and the docs pass: the consent code's words, move's name order, attach's dead pose
-//       arg and /seatpose gone, replies and help in today's words, the inspector's sockets.<slot>|anim
+//       arg and /seatpose gone, replies and help in today's words, the inspector's sockets.<slot>|anim; a removed
+//       command (/ghost, /unghost) answers why
 //   (stern L4, the interrupted in-place swap, is inplace-check IP13: it needs a v1 world and the CLI)
 // @ts-nocheck
 import fs from "node:fs";
@@ -195,6 +196,11 @@ const cases: Case[] = [
       return { net: !/held pose and posture/.test(net), tl: !/a posture, or walking, stands you back up/.test(tl) && !/`pose \{ragdoll\} refused/.test(tl) && !/pose \{clear: true\} drops it/.test(tl) && !/sockets\.<slot>\|pose/.test(tl),
         reg: !/stranger/.test(reg.split("\n").find((l) => l.includes("'pushable'")) ?? ""), es: (es.match(/k: `\$\{slot\}\|anim`/g) ?? []).length === 2 && !/k: `\$\{slot\}\|pose`/.test(es) && /what0 === 'anim' \? 'pose'/.test(es), ag: /sockets\.<slot>\|anim/.test(ag) }; },
     good: (o) => o.net && o.tl && o.reg && o.es && o.ag },
+  { id: "D5", what: "a removed command answers why, as /w does: /ghost and /unghost resolve to an unlisted row that says ghost was removed, and chat answers it locally (not 'unknown command')", async run() {
+      const reg = await import(TREE + "client/lib/commands/registry.js"); const chat = readText("client/lib/chat.js");
+      const rows = ["ghost", "unghost"].map((c) => reg.resolveCommand?.(c) ?? null);
+      return { rows: rows.map((r) => r && { name: r.name, listed: r.listed, help: r.help }), local: /\n  ghost\(\) \{ logChat\('\*', 'ghost was removed/.test(chat) }; },
+    good: (o) => o.rows.every((r: any) => r && r.name === "ghost" && r.listed === false && /ghost was removed/.test(r.help)) && o.local },
 ];
 
 let pass = 0, fail = 0;

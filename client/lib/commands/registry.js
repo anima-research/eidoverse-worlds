@@ -17,6 +17,8 @@
 export const COMMANDS = [
   // whisper was removed (R 10-18): kept unlisted so a typed /w (or /r) is told why instead of "unknown command"
   { name: 'w', aliases: ['whisper', 'r', 'reply'], listed: false, help: 'whisper was removed — world chat is public' },
+  // ghost was removed (R 10-20): kept unlisted so a typed /ghost or /unghost is told why
+  { name: 'ghost', aliases: ['unghost'], listed: false, help: 'ghost was removed — nobody in a world is hidden from it' },
   { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'anim', help: '/anim <name> — play one of the action bar\'s anims once (🎭, or number keys)' },
