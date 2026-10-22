@@ -97,6 +97,7 @@ export function send(req, opts = {}) {
   const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
   return p;
 }
+const dropAct = (stack, act) => { const i = stack.lastIndexOf(act); if (i >= 0) stack.splice(i, 1); };
 const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
 async function sendNow(req, { what = req.verb, revert = null, record = true } = {}) {
   bus.emit('edit-sending', { req, what });
@@ -163,7 +164,8 @@ async function undo1() {
   const act = undoStack.at(-1);
   if (act === undefined) { flashHint('nothing of yours to undo here'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ verb: 'undo', args: { act } }, { what: 'undo', record: false });
-  if (r.ok) { undoStack.pop(); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
+  // by value, not the top: an edit sent while this undo was in flight may have pushed its act above this one
+  if (r.ok) { dropAct(undoStack, act); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
   // a refusal that can never change (already undone, or everything changed since) drops it, so the next Ctrl+Z reaches
   // the act before it; a lock or a rate limit leaves it for another try
   else if (['nothing', 'conflict', 'physical', 'founding'].includes(r.refused?.code) && undoStack.at(-1) === act) undoStack.pop();
@@ -174,7 +176,7 @@ async function redo1() {
   const act = redoStack.at(-1);
   if (act === undefined) { flashHint('nothing to redo'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ verb: 'undo', args: { act } }, { what: 'redo', record: false });
-  if (r.ok) { redoStack.pop(); undoStack.push(r.act); flashHint('redone'); }
+  if (r.ok) { dropAct(redoStack, act); undoStack.push(r.act); flashHint('redone'); }
   else if (['nothing', 'conflict'].includes(r.refused?.code) && redoStack.at(-1) === act) redoStack.pop();
   return r;
 }
