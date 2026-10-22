@@ -581,10 +581,21 @@ function playground(name) {
   const corner = supportBelow(st, 0.65, 4, 2), along = supportBelow(st, 0.5 * u[0], 4 + 0.5 * u[1], 2);
   ok(turn.ok && !inTop(0.65, 4) && inTop(0.5 * u[0], 4 + 0.5 * u[1]) && corner.id === "ground" && along.id === "table-1" && Math.abs(along.y - top) < 1e-6,
     "U8 a table turned 45 degrees supports at a point over its top, not at a corner of its bounding box", { turn: turn.ok ?? turn.refused, corner, along });
-  // asked to place the 0.6 m crate 0.35 m to the side (toward a corner of the box), it is put wholly on the top or refused
-  const put = call(W, "rowan", "place", { id: "crate-1", on: "table-1", offset: [0.35, 0] }); const p = worldT(openWorld(root, W).state(), "crate-1").pos;
-  const corners = [[-0.3, -0.3], [-0.3, 0.3], [0.3, -0.3], [0.3, 0.3]].map(([dx, dz]) => [p[0] + dx, p[2] + dz]);
-  ok(!put.ok || corners.every(([x, z]) => inTop(x, z)), "U8 …and a place on it puts the crate wholly on its top", { put: put.ok ?? put.refused, p });
+  // asked to place the 0.6 m crate turned with the table 0.35 m to the side (toward a corner of the box), it is put wholly on
+  // the top: it fits there turned as it is (0.6 m across a 0.8 m top), though its world-axis box (0.85 m) doesn't (house
+  // 6340433633: the test passed on any refusal, and placement tested that box, so it was refused)
+  const turned = (id: string, yaw: number) => { const c = openWorld(root, W).state().entities[id].c.transform; return call(W, "rowan", "set", { id, component: "transform", value: { ...c, q: yawQ(yaw) } }); };
+  const tc = turned("crate-1", Math.PI / 4);
+  const put = call(W, "rowan", "place", { id: "crate-1", on: "table-1", offset: [0.35, 0] }); const ct = worldT(openWorld(root, W).state(), "crate-1"), p = ct.pos;
+  const corners = [[-0.3, -0.3], [-0.3, 0.3], [0.3, -0.3], [0.3, 0.3]].map(([dx, dz]) => { const r = qrot(ct.q, [dx, 0, dz]); return [p[0] + r[0], p[2] + r[2]]; });
+  ok(put.ok && corners.every(([x, z]) => inTop(x, z)), "U8 …and a place on it puts the crate, turned with it, wholly on its top", { put: put.refused ?? put.ok, p });
+  // a long thing (1.0 × 0.12 m) laid along the turned top fits; across it, it doesn't (it is tested as it lies, not by its box)
+  call(W, "rowan", "delete", { id: "crate-1" });
+  call(W, "rowan", "create", { id: "plank", model: "crate", components: { transform: { pos: [3, 0, 0], q: [0, 0, 0, 1], scale: [1 / 0.6, 0.2, 0.2] } } });
+  // across first: a refused place leaves it a root, so its transform stays its world one (placed, it rides the table)
+  turned("plank", -Math.PI / 4); const across = call(W, "rowan", "place", { id: "plank", on: "table-1" });
+  turned("plank", Math.PI / 4); const along2 = call(W, "rowan", "place", { id: "plank", on: "table-1" });
+  ok(tc.ok && along2.ok && across.refused?.code === "no-room", "U8 …and a plank laid along the turned top fits, across it is refused", { along: along2.refused ?? along2.ok, across: across.refused ?? across.ok });
   const ms = call(W, "rowan", "measure", { id: "table-1" }); const top0 = ms.surfaces?.[0];
   ok(ms.ok && JSON.stringify(top0?.size) === "[1.2,0.8]" && Array.isArray(top0?.xAxis), "U8 …and measure gives that top's own size, 1.2 × 0.8 m, with its axis, not the box of its corners", top0); }
 

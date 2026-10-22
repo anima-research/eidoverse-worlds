@@ -152,6 +152,4 @@ function rectMeets(s, min, max) {
   for (const ax of [u, v, [1, 0], [0, 1]]) if (Math.abs(d2(bc, ax)) >= hx * Math.abs(d2(u, ax)) + hz * Math.abs(d2(v, ax)) + bh[0] * Math.abs(ax[0]) + bh[1] * Math.abs(ax[1])) return false;
   return true;
 }
-/** a footprint (centre x, z, half extents hx, hz on the world's axes) wholly on surface s */
-const rectHolds = (s, x, z, hx, hz) => [[-hx, -hz], [-hx, hz], [hx, -hz], [hx, hz]].every(([dx, dz]) => inRect(s, x + dx, z + dz));
-export { NONE, UPRIGHT, aabb, inRect, rectHolds, rectMeets, ancestors, boxToObb, crs, descendants, dot, hits, isI, localFrom, obbs, overlap, qYaw, qinv, qmul, qrot, satCost, satDepth, solids, surfacesOf, worldT, yawQ };
+export { NONE, UPRIGHT, aabb, inRect, rectMeets, ancestors, boxToObb, crs, descendants, dot, hits, isI, localFrom, obbs, overlap, qYaw, qinv, qmul, qrot, satCost, satDepth, solids, surfacesOf, worldT, yawQ };
