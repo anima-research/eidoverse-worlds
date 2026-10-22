@@ -269,3 +269,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - access.ranges: leaves the kernel; the registry pin holds it
   - access.absentMeans: leaves the kernel; the registry pin holds it
   - access.on: leaves the kernel; the registry pin holds it
+- 2026-10-22: sky.law and terrain.law no longer define the law by naming reference code; the law is pinned as data in spec/conformance/laws.json (the house's view, #260 10-20)
+  - sky.law: its meaning of absence "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" → "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)" → "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"

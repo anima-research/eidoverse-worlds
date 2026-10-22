@@ -1367,7 +1367,7 @@
    "transition": "the renderer's own ease (30 s in a forecast)",
    "forecast": "no forecast: the authored weather holds",
    "override": "no manual weather inside the current forecast segment",
-   "law": "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit"
+   "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
   "on": "world"
  },
@@ -1806,7 +1806,7 @@
    "heightmap": "no image: the noise is the base",
    "segments": "the renderer's own mesh resolution (a drawing choice, not part of the height law)",
    "layers": "one plain layer, 0x4a5d33 repeated 16 times across its size",
-   "law": "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)"
+   "law": "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
   },
   "on": "world",
   "reservedKinds": [

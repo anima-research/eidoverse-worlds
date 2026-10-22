@@ -19,6 +19,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
+| `spec/conformance/laws.json` | The ground's height (terrain numbers and features → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
 | `spec/conformance/trig.json` | The heading law's sine, cosine and atan2: inputs and exact float64 outputs every reader reproduces. Machine-checked. |
 | `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json`: what each must come to rest as, per engine version. A server carries a version when it reproduces that version's digests. Machine-checked. |
 
