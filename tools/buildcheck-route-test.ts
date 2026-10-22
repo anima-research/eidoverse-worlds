@@ -86,9 +86,12 @@ try {
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
   // review r3 F1: the door is public, so new work is rate-limited per address (a cached answer never is)
   {
-    const asks = Array.from({ length: 11 }, (_, i) => fetch(`${h.BASE}${up.check}&scale=${(0.3 + i * 0.01).toFixed(2)}`, { headers: { "x-real-ip": "10.7.7.7" } }));
+    // the burst is aborted and settled before the server goes: on a slow runner most of these checks are still running at
+    // cleanup, and an unawaited fetch the server dies under is an unhandled ECONNRESET that fails the suite after its last row
+    const burst = new AbortController();
+    const asks = Array.from({ length: 11 }, (_, i) => fetch(`${h.BASE}${up.check}&scale=${(0.3 + i * 0.01).toFixed(2)}`, { headers: { "x-real-ip": "10.7.7.7" }, signal: burst.signal }));
     const quick: Response[] = [];
-    asks.forEach((p) => p.then((res) => quick.push(res)));
+    asks.forEach((p) => p.then((res) => quick.push(res), () => { /* aborted at the end, or the server went first */ }));
     await sleep(1500);
     const limited = quick.filter((res) => res.status === 429);
     const body = limited[0] ? await limited[0].json() as any : null;
@@ -96,6 +99,7 @@ try {
       limited.length === 1 && /rate limit/.test(body?.error ?? "") && Number(limited[0].headers.get("retry-after")) > 0, JSON.stringify({ statuses: quick.map((x) => x.status), body }));
     const cachedAsk = await fetch(`${h.BASE}${up.check}`, { headers: { "x-real-ip": "10.7.7.7" } });
     check("...and that address is still answered at once from the cache", cachedAsk.status === 200, String(cachedAsk.status));
+    burst.abort(); await Promise.allSettled(asks);
   }
 } finally {
   try { a.close(); } catch { /* gone */ }
