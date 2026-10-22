@@ -55,7 +55,8 @@ export function syncTree(dir: string) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name);
     if (ent.isDirectory()) syncTree(p);
-    else if (ent.isFile()) { const fd = fs.openSync(p, "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+    // Windows flushes a file only through a handle opened for writing (FlushFileBuffers); POSIX blobs may be read-only
+    else if (ent.isFile()) { const fd = fs.openSync(p, process.platform === "win32" ? "r+" : "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
   }
   syncDir(dir);
 }
