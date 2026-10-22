@@ -118,10 +118,10 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   const r1 = await vic.req("consent", { switch: "accept" }), r2 = r1;
   ok(r1?.ok, "(BC setup) Vic sets her body back to accept through the authority's consent verb", r1);
   k = vic.msgs.length;
-  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over", () => got(k, "puppet").length, { ms: 2000 });
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
   k = vic.msgs.length;
-  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Vic is sent the grab", () => got(k, "bodydrag").length, { ms: 2000 });
+  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Vic is sent the grab", () => got(k, "bodydrag").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "bodydrag").length === 1, "BC2 …and the grab", vic.since(k).map((m) => m.type));
   // range: from 20 m, no
   sly.at(20, 0); await sleep(300); k = vic.msgs.length; ks = sly.msgs.length;
@@ -142,7 +142,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
     { asked, vic: vic.since(k).filter((m) => m.type === "body-inbox") });
   // yourself: always
   k = vic.msgs.length;
-  vic.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent her own knock-over", () => got(k, "puppet").length, { ms: 2000 });
+  vic.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent her own knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "puppet").length === 1, "BC6 your own body is always yours to knock over", vic.since(k).map((m) => m.type));
   vic.close(); sly.close(); }
 

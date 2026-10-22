@@ -289,7 +289,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     const mk = await da.req("create", { id: "drg", model: "test/cup.glb", place: { at: [2, 2] } });
     const k0 = db.msgs.length; da.send({ type: "drag", id: IDS.of("drg"), pos: [2.5, 0, 2], yaw: 0 }); await sleep(300); da.send({ type: "drag", id: IDS.of("drg"), pos: [3, 0, 2], yaw: 0, end: true });
     await tryUntil("Dev is sent both drag samples", () => db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg")).length >= 2, { ms: 2000 });
-    const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
+    await pause("a second copy would arrive within the old window", 400); const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
     ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
     await ann.req("delete", { id: "@world", component: "default-role" });   // back to the world as the later checks expect it
     da.close(); db.close(); await sleep(200); }
@@ -505,7 +505,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.hand === "left" && a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
   const n = a.of("log").length; b.close();
   await tryUntil("Bob's leaving drops the ball (a launch, and nobody holds it)", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === IDS.of("ball")) && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, { ms: 2000 });
-  const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
+  await pause("a second copy would arrive within the old window", 400); const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "sim" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
   ok(launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
   // wait until the authority has it at rest: the authority's clock is the wall clock made monotonic, and this host's wall clock
   // has been seen to step BACK 1.4 s under load (WSL), which stalls physics time for as long (never reorders it)
