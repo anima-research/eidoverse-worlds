@@ -10,10 +10,12 @@
 //              kept; anything else is escaped the same way (x--/h--, which start with a letter), except the hashed form.
 //   dec(s)     the inverse of enc for x-- names; null for an h-- name (a hash can't be read back).
 //
-// Injective but for one case: a kept name never starts with x--, and starts with h-- only in the hashed form; an escaped
+// Injective but for two cases: a kept name never starts with x--, and starts with h-- only in the hashed form; an escaped
 // one always starts with one or the other, and x-- names are distinct hex; h-- names collide only if sha256 does. The
-// case: a literal name in the hashed form is kept, so it encodes to the same key as the name whose sha256 it prefixes,
-// and an old world holding both folds them into one at import (HASHED, below).
+// cases: a literal name in the hashed form is kept, so it encodes to the same key as the name whose sha256 it prefixes
+// (HASHED, below); and a lone surrogate (half of a UTF-16 pair, with no other half) is written in UTF-8 as U+FFFD's
+// bytes, so names that differ only in which lone surrogate they hold escape alike. An old world holding either pair folds
+// them into one at import.
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
