@@ -11,7 +11,7 @@
 //
 // the protocol port (2026-10-06): a transform is written whole ({pos, q, scale}), so "a yaw-only thing keeps writing a bare yaw
 // (its history keeps its bytes)" has no meaning here: those checks now ask that the written q IS that pure heading.
-// Light-verb lights and guard are gone. A lock no longer makes Rotate read-only: the door refuses the turn.
+// Light-verb lights and guard are gone. A lock no longer makes Rotate read-only: the door refuses the turn (and the order).
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { inspectSchema, editOps, fieldAt, describeSchema, poseEdits } from '../shared/editschema.js';
 import { qFromEuler, eulerFromQ, ROT_ORDERS, sameRotation } from '../shared/euler.js';
@@ -164,14 +164,16 @@ console.log('rotate order: changing it never changes q');
   const card = q.sections.list.find((c: any) => c.type === 'Transform');
   check('quaternion mode: the Rotate channels are hidden, the Quaternion row is shown open', !fieldAt(q, 'rot.x') && !!fieldAt(q, 'rot.qw') && card.quatOpen === true);
   const locked = inspectSchema({ ...ent, rotOrder: 'ZXY', lock: true }, 'e');
-  check('locked: Rotate and Quaternion stay editable and say moving it asks first (the door decides, §5); the order is open',
-    !fieldAt(locked, 'rot.x')!.disabled && !fieldAt(locked, 'rot.qw')!.disabled && /locked — moving it asks first/.test(fieldAt(locked, 'rot.x')!.hint) && !fieldAt(locked, 'rot.order')!.disabled);
-  // a lock binds the turn at the door, and the order change (it moves nothing) passes it
-  const L = { ...ent, rotOrder: 'ZXY', lock: true };
+  check('locked: Rotate, Quaternion and the order stay editable and say a change asks first (the door decides, §5)',
+    !fieldAt(locked, 'rot.x')!.disabled && !fieldAt(locked, 'rot.qw')!.disabled && /locked — moving it asks first/.test(fieldAt(locked, 'rot.x')!.hint)
+      && !fieldAt(locked, 'rot.order')!.disabled && /locked — changing it asks first/.test(fieldAt(locked, 'rot.order')!.hint), JSON.stringify(fieldAt(locked, 'rot.order')));
+  // a lock covers every component (gate.js, §5), rot.order included: the door refuses the turn and the order change alike.
+  // Seeded at XYZ, so this holds whatever the stored spelling of an order turns out to be
+  const L = { ...ent, rotOrder: undefined, lock: true };
   const turn = doorEdit(L, { 'rot.y': 45 });
   check('locked: the door refuses a Rotate edit `locked` and the thing keeps its q', turn.res.ok === false && turn.res.refused?.code === 'locked' && JSON.stringify(turn.after.q) === JSON.stringify(turn.before.q), JSON.stringify(turn.res));
-  const reorder = W.send(editOps(L, turn.id, { 'rot.order': 'XYZ' }).ops[0]);
-  check('locked: …but the door takes a rotate-order change (it moves nothing)', reorder.ok && W.rec(turn.id).rotOrder === undefined && W.rec(turn.id).lock === true, JSON.stringify(reorder));
+  const reorder = W.send(editOps(L, turn.id, { 'rot.order': 'ZXY' }).ops[0]);
+  check('locked: …and refuses a rotate-order change `locked` too (a lock covers every component); the order stays XYZ', reorder.ok === false && reorder.refused?.code === 'locked' && W.rec(turn.id).rotOrder === undefined && W.rec(turn.id).lock === true, JSON.stringify(reorder));
   // step 4: a child's Rotate reads its RELATIVE orientation (the mount's), editable; only a part-socket occupant is read-only
   const mounted = inspectSchema({ ...ent, parent: { to: 'cart', yaw: 0.5 } }, 'e');
   check('mounted: Rotate reads the mount\'s relative turn, editable', !fieldAt(mounted, 'rot.y')!.disabled && Math.abs(fieldAt(mounted, 'rot.y')!.value - 0.5) < 1e-9);

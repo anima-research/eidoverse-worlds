@@ -389,7 +389,7 @@ export function inspectSchema(ent, id, live = {}) {
     const order = rotOrderOf(ent);
     const q = pv.q ?? qFromYaw(pv.yaw ?? 0);
     rotation.push({ t: 'enum', k: 'order', label: 'rotate order', value: order, def: 'XYZ', options: ROT_MODES.map((v) => ({ v, label: v === QUAT_MODE ? 'quaternion' : v })),
-      hint: 'how the Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Changing it never moves the thing, so a lock or a mount does not stop it' });
+      hint: locked ? 'locked — changing it asks first (a lock covers every component)' : 'how the Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Changing it never moves the thing, so a mount does not stop it' });
     if (order !== QUAT_MODE) {
       let e;
       if (!pv.q) e = [0, pv.yaw ?? 0, 0];
