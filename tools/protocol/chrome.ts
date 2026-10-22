@@ -68,7 +68,10 @@ export function platformArgs(platform: NodeJS.Platform = process.platform): stri
     ...(platform === "linux" ? ["--no-sandbox"] : []),
     // run.ts gives each suite a fresh HOME, and Chrome then waits on a new login keychain forever (proven 10-19 in CI: the
     // same suite failed with a fresh HOME and passed with this flag; playwright passes it too)
-    ...(platform === "darwin" ? ["--use-mock-keychain"] : []),
+    // macOS: the keychain (a launch hung on it, 10-19), and vsync. On a display-less runner VM Chrome's vsync source barely
+    // ticks: the page got 4 animation frames in 2 s (264 decoupled), so anything that moves on frames ran at ~2 fps (10-22,
+    // fork exp/mac-gl runs 39853908965 and 39854960274)
+    ...(platform === "darwin" ? ["--use-mock-keychain", "--disable-gpu-vsync", "--disable-frame-rate-limit"] : []),
     ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),
   ];
 }
