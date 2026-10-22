@@ -45,7 +45,7 @@ export const NOT_YET_CLOSE = 4011;
 /** An identity as the door sees it. `account`: the account a credential proved (null = a guest); `actorId`: the world's
  *  opaque id for it (server/directory.ts); `trustedRenderer`: the renderers' credential (may watch anywhere, never
  *  embody); `addr`: a guest's hashed address (bans name it). */
-export type Who = { account: string | null; actorId?: string | null; trustedRenderer?: boolean; addr?: string | null; nativeWorld?: string | null };
+export type Who = { account: string | null; actorId?: string | null; trustedRenderer?: boolean; addr?: string | null };
 /** `mod`: an unloaded world's moderator log, read from disk with its door (a loaded world's own log is the truth). */
 export type Door = { name: string; wc: Record<string, any>; label: string; world?: World; mod?: any[] };
 export type EntryMode = "embody" | "watch";
@@ -107,10 +107,6 @@ export function doorFor(name: string): Door | null {
 /** May `who` be in this world — with a body, or watching? null = yes; else the refusal (code, reason, words).
  *  `here` (embodied joins only): how many bodies are in the world now, for access.max. */
 export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now(), here = null as number | null } = {}): Refusal | null {
-  // a credential narrowed to one world (a native session approved for `water`, HnSession.nativeWorld) proves nothing at any
-  // other world's door: there the caller is no one, a guest (the WebSocket join refuses it outright, 4003; review of PR #260,
-  // access.ts:161 — httpCaller dropped the narrowing, so /geom, /heightmap, /snap, /worlds answered with the account's reach)
-  if (who.nativeWorld && who.nativeWorld !== "*" && who.nativeWorld !== door.name) who = { account: null, actorId: null, addr: who.addr ?? null };
   const { account, actorId, addr } = who;
   // exclusion outranks everything but the operator: a global ban closes every door, a world's ban this one. Watching
   // counts — a ban is exclusion, not just silencing
@@ -166,7 +162,7 @@ export function httpCaller(req: Request): Who | null {
   const s = sessionFromCookie(req.headers.get("cookie"));
   const dir = directoryFor(WORLDS_DIR);
   const who = (account: string): Who => ({ account, actorId: dir.idOfSub(account) });
-  if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return { ...who(s.sub), nativeWorld: s.nativeWorld ?? null };   // the session's world narrowing rides with it
+  if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return who(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "");
   if (m) {
     const tok = m[1]!;
