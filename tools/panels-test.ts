@@ -17,6 +17,7 @@ GlobalRegistrator.register();
 (Element.prototype as any).setPointerCapture = function (id: number) { (this as any).__cap = id; };
 (Element.prototype as any).releasePointerCapture = function (id: number) { (this as any).__cap = undefined; };
 
+const P = await import("../client/lib/panels.js");
 const { parseEntry, shapeKey, renderDOM, makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, scrubTravel } = await import("../client/lib/panels.js");
 
 let pass = 0, fail = 0;
@@ -202,6 +203,20 @@ console.log("\nresolveDelta — a VR stepper's {axis, delta} becomes the number 
   check("vec3 axis delta keeps the other components", JSON.stringify(resolveDelta(F, "p", { axis: 2, delta: 0.5 })) === "[1,2,3.5]");
   check("a plain number passes through", resolveDelta(F, "a", 40) === 40);
   check("an unknown key is null, never an object", resolveDelta(F, "zz", { axis: null, delta: 1 }) === null);
+}
+
+console.log("\nresolveDeltaEach — a stepper over a multi-selection steps each thing from its OWN value (house I203):");
+{
+  const own = { a: { t: "num", k: "x", value: 1 }, b: { t: "num", k: "x", value: 10 }, c: { t: "vec3", k: "x", value: [0, 5, 0] } };
+  const painted = [{ t: "num", k: "ed:x", value: 1 }];
+  const each = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["a", "b"], "ed:x", { axis: null, delta: 2 }, (id) => own[id], painted) : null;
+  check("each id gets its own value plus the delta", each?.get("a") === 3 && each?.get("b") === 12, JSON.stringify(each && [...each]));
+  const v3 = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["c"], "ed:x", { axis: 1, delta: 1 }, (id) => own[id], painted) : null;
+  check("…a vec3 steps its own axis", JSON.stringify(v3?.get("c")) === "[0,6,0]", JSON.stringify(v3 && [...v3]));
+  const fb = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["z"], "ed:x", { axis: null, delta: 2 }, () => null, painted) : null;
+  check("…a thing with no field of its own falls back to the painted value", fb?.get("z") === 3, JSON.stringify(fb && [...fb]));
+  const plain = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["a", "b"], "ed:x", 7, (id) => own[id], painted) : null;
+  check("…and a plain number goes to every id as it is", plain?.get("a") === 7 && plain?.get("b") === 7);
 }
 
 console.log("\nsoft limits are LIVE across an in-place update (typing past softMax raises the next drag's cap):");

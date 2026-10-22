@@ -609,6 +609,14 @@ export function resolveDelta(fields, k, payload) {
   if (f.t === 'vec3') { const v = [...(f.value ?? [0, 0, 0])]; const i = payload.axis ?? 0; v[i] = +v[i] + payload.delta; return v; }
   return +(f.value ?? 0) + payload.delta;
 }
+/** resolveDelta over a multi-selection: each id steps from its OWN value (fieldOf(id), its schema field), not the
+ *  painted (active) thing's, or every selected thing would be set to the active one's value plus the delta. A thing with
+ *  no field of its own falls back to the painted row. Map id → value (null: nothing to step). */
+export function resolveDeltaEach(ids, k, payload, fieldOf, painted) {
+  const out = new Map();
+  for (const id of ids) { const f = fieldOf(id); out.set(id, resolveDelta(f ? [{ ...f, k }] : painted, k, payload)); }
+  return out;
+}
 
 /** Resolve a UV hit (0..1, v measured from the top) against regions. */
 function roundRect(g, x, y, w, h, r) {

@@ -26,7 +26,7 @@ import { compEntries, compKeys } from '../../shared/protocol/view.js';
 import { requestDebug, sendRequest, replica, net } from './net.js';
 import { flashHint, html } from './ui.js';
 import { openGripEditor } from './gripedit.js';
-import { makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
+import { makeSchemaFrame, resolveDelta, resolveDeltaEach, getScrubFeel, setScrubFeel, SCRUB_SPEEDS } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 // a seated person's row in the hierarchy (not an entity: no drag, no lock, no selection)
@@ -904,11 +904,10 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     if (action.startsWith('ch:') || action.startsWith('ed:')) {
       const key = action.slice(3);
       const isDelta = typeof payload === 'object' && payload && 'delta' in payload;
-      const v = isDelta ? resolveDelta(painted, action, payload) : payload;
-      if (isDelta && v == null) return;
+      const vs = resolveDeltaEach(ids, action, payload, (each) => fieldAt(schemaFor(each), key), painted);
       // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
       const ops = [], errors = [];
-      for (const each of ids) { const plan = planEdit(each, key, v); errors.push(...plan.errors); ops.push(...plan.ops); }
+      for (const each of ids) { const v = vs.get(each); if (isDelta && v == null) continue; const plan = planEdit(each, key, v); errors.push(...plan.errors); ops.push(...plan.ops); }
       if (ops.length) Edits.sendOps(ops, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => Edits.revertPose(x)) });
       if (errors.length) flashHint(errors.join(' · '), 5000);
       repaintAll();
