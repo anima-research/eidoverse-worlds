@@ -209,7 +209,8 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
 // review of #260: a shape's type is read as an own name of the grammar, and only as a string
 { const thrown = (s) => { try { return err(s); } catch (x) { return `THREW ${x?.constructor?.name}`; } };
   const a = thrown({ type: "constructor" }), b = thrown({ type: ["box"], half: [1, 1, 1] });
-  ok("SG9", typeof a === "string" && !a.startsWith("THREW") && typeof b === "string" && !b.startsWith("THREW"), "a shape type that is an inherited name (constructor) or not a string (['box']) is no shape type: refused in words, never thrown and never read as box", { a, b }); }
+  // the refusal is the no-type one (house 6340433633: any string passed, the missing-function fallback "no shapeError" too)
+  ok("SG9", /^no shape type /.test(a) && /^no shape type /.test(b), "a shape type that is an inherited name (constructor) or not a string (['box']) is no shape type: refused in words, never thrown and never read as box", { a, b }); }
 
 console.log(`\nphysseeds: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

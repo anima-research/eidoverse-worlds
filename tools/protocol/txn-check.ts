@@ -240,7 +240,17 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   send(t, "set", { id: "@world", component: `roles:${fen}`, value: { role: "builder" } }, "operator-repair");
   X.g.release(); await until(() => t.replies.filter((m) => m.operator).length >= k0 + 2);
   const two = t.replies.filter((m) => m.operator).slice(k0);
-  ok(two.length === 2 && two.every((m) => m.ok === true && m.txn === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two); }
+  ok(two.length === 2 && two.every((m) => m.ok === true && m.txn === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two);
+  // house 6340433633: the refusal says which way the status went, and its fix follows: revoked, sending again won't
+  // change it; granted (an ordinary request queued while the account became an operator), sending again is decided anew
+  ok(/stopped being a server operator/.test(rep?.reply?.refused?.reason ?? "") && /won't change this/.test(rep?.reply?.refused?.fix ?? ""), "T9d revoked: said so, and that sending it again won't change it", rep?.reply?.refused);
+  const gus = idOf("local:gus", "gus"); const tg = tab(X, gus, { account: "local:gus" });
+  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); await until(() => X.g.entered > e2);
+  const n0 = tg.replies.length; send(tg, "say", { text: "queued" }); OPERATORS.add("local:gus");
+  X.g.release(); await until(() => tg.replies.length > n0); OPERATORS.delete("local:gus");
+  const gr = tg.replies[n0];
+  ok(gr?.ok === false && /became a server operator/.test(gr?.reply?.refused?.reason ?? gr?.refused?.reason ?? "") && !/won't change/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? "") && /send it again/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? ""),
+    "T9e granted while a request waited: said so, and sending it again is the way (not 'won't change this')", gr); }
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;

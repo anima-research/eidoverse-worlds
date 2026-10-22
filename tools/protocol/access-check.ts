@@ -281,6 +281,17 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const xffThrough = clientAddress(hdr({ "x-forwarded-for": "198.51.100.66" }), "127.0.0.1", trusted, "x-real-ip");
   ok(forged === "203.0.113.8" && chained === "203.0.113.8" && realThrough === "203.0.113.8" && xffThrough === "127.0.0.1",
     "A13b only the header the proxy writes is read: behind an X-Forwarded-For proxy, a client's own X-Real-IP or left-hand hop is never taken; behind an X-Real-IP proxy, a client's X-Forwarded-For isn't either", { forged, chained, realThrough, xffThrough }); }
+// ---- A13e (house 6340433633): PROXY_ADDRESS_HEADER itself picks the header the routes read: the rows above name the header
+// as an argument, so nothing went through the setting. addressOf (what routes.ts and upload.ts call) in a fresh process per value
+{ const peerTs = new URL("../../server/peer.ts", import.meta.url).pathname;
+  const probe = (env) => { const code = `const { addressOf } = await import(${JSON.stringify(peerTs)});
+    const req = new Request("http://x/", { headers: { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.66, 203.0.113.8" } });
+    console.log(addressOf(req, { requestIP: () => ({ address: "127.0.0.1" }) }));`;
+    const { PROXY_ADDRESS_HEADER: _drop, ...base } = process.env;
+    const r = Bun.spawnSync(["bun", "-e", code], { env: { ...base, ...env }, stdout: "pipe", stderr: "pipe" }); return r.stdout.toString().trim() || r.stderr.toString().trim().slice(0, 200); };
+  const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
+  ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
+    "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
 // ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };

@@ -11,7 +11,8 @@
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
-import { enc, encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
+// an old log's names are never ids, so a name in the hashed form is escaped too (encRaw; house 6340433633, @19)
+import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
@@ -115,7 +116,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@18";
+export const TRANSLATOR = "eidoverse/translate-v1@19";
+// @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
+// that id (old logs never held one): a long name and a raw name equal to its hashed form were one id, a thing or a person.
+// Output differs from @18 only on a log holding a name of that form. Both names.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -173,7 +177,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@18";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@18";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@19";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
