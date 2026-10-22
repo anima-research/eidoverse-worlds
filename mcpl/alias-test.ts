@@ -8,10 +8,11 @@ ok(resolveTool("teleport") === null, "a name that never existed resolves to noth
 ok(nearestTool("screenshoot")?.[0] === "screenshot", "the nearest declared tool for a typo", nearestTool("screenshoot"));
 // the old ARGUMENT shapes translate too (an alias that ran the right tool with the wrong words was a shape error, 10-15)
 import { TOOL_ALIAS_ARGS } from "./tools.ts";
-// every alias translates its old shape, but one: the action bar's old tool took {name}, which anim takes as it is (R 10-17 16:26)
-const passThrough = Object.keys(TOOL_ALIASES).filter((old) => TOOL_ALIAS_ARGS[old] === undefined);
-for (const old of Object.keys(TOOL_ALIASES)) if (!passThrough.includes(old)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
-ok(passThrough.length === 1 && TOOL_ALIASES[passThrough[0]] === "anim", "one alias passes its {name} through to anim, untranslated", passThrough);
+// every alias translates its old shape: the action bar's old tool played its gesture once, so its {name} reaches anim as
+// {name, mode: "once"} (the house's I59, #260: an untranslated name would loop a gesture the old tool played once)
+for (const old of Object.keys(TOOL_ALIASES)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
+{ const g = "emote" in TOOL_ALIASES ? "emote" : null; const t: any = g ? TOOL_ALIAS_ARGS[g]({ name: "wave" }) : null;
+  ok(!!g && t?.name === "wave" && t?.mode === "once", "the action bar's old tool reaches anim as one play (mode: once)", { g, t }); }
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: null, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, y: null, z} → move {to: [x, z]}: a null y is no y, not the floor at 0");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.2 })) === JSON.stringify({ to: [1, 2], run: true, tolerance: 0.2 }), "walk_to {x, z, run, tolerance} → move {to: [x, z], run, tolerance}");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, z} alone → move {to}");
