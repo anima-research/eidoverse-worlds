@@ -28,6 +28,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "./idalias.ts";
+import { until, tryUntil, pageWaiter } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); NODE holds the minted ids
 const NODE = new Map<string, string>(); const NAMES = ["box2", "bench5", "lockd", "signbox", "bpbox", "child1"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("party", {
@@ -42,7 +43,7 @@ const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));
 const disk = () => fold(entries());
-const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+const waitFor = pageWaiter(evalJson);
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
@@ -285,16 +286,16 @@ try {
     const say = async (s: string) => { await clickEl(`document.getElementById('chatline')`); await evalJson(`(() => { const t = document.getElementById('chatline'); t.value = ''; t.focus(); return true; })()`); await type(s); await press("Enter"); await sleep(700); };
     const log = () => evalJson(`document.querySelector('[data-frame="chat"]')?.textContent ?? ''`);
     for (const c of ["/mute vicky 5 chat too loud", "/warn vicky please", "/unmute vicky"]) {
-      const before = (await log()).split("unknown command").length;
-      await say(c); await sleep(500);
+      const t0 = await log(), before = t0.split("unknown command").length;
+      await say(c); await tryUntil(`a reply to ${c}`, async () => (await log()) !== t0, { ms: 5000 });   // judged on the reply, not on a moment
       check(`M1 ${c.split(" ")[0]} is a command (not "unknown command")`, (await log()).split("unknown command").length === before, (await log()).slice(-300));
     }
-    await say("/mute vicky 5 chat again"); await sleep(1200);
+    const t1 = await log(); await say("/mute vicky 5 chat again"); await tryUntil("the second mute is answered", async () => (await log()) !== t1, { ms: 5000 });
     const lines = async () => ((await log()).match(/muted \((?:chat|voice)[^)]*\): vicky/g) ?? []).length;   // the /bans line's own shape ("muted (chat): vicky until …")
     const n0 = await lines();
     await say("/bans");
     if (await evalJson(`!!document.getElementById('chatline').value.trim()`)) { await press("Enter"); }   // the first Enter took the autocomplete's "/bans "
-    await sleep(1500);
+    await tryUntil("the /bans reply lists the mute", async () => (await lines()) > n0, { ms: 8000 });   // CI 10-22: the line landed after a fixed 1.5 s
     const tail = { before: n0, after: await lines(), end: (await log()).slice(-300) };
     check("M2 /bans lists the mute in force, not only bans", tail.after > tail.before, tail);
     // someone else is here, so the remote-body frame loop runs: it must not throw (staging 10-07: remotes.js re-exported

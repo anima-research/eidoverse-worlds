@@ -48,3 +48,9 @@ export function pause(why: string, ms: number): Promise<void> {
   if (!why) throw new Error("pause() needs a reason: if you're waiting for something to happen, use until()");
   return tick(ms);
 }
+
+/** A browser probe's waiter: `waitFor(expr, ms?)` is true once `evaluate(expr)` is truthy in the page, false at the
+ *  deadline (scaled like `until`). One line per probe — `const waitFor = pageWaiter(evalJson)` — instead of its own loop. */
+export function pageWaiter(evaluate: (expr: string) => unknown, defaultMs = 8000) {
+  return async (expr: string, ms = defaultMs): Promise<boolean> => (await tryUntil(expr, () => evaluate(expr), { ms })) !== undefined;
+}
