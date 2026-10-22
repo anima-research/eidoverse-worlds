@@ -134,11 +134,21 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
       } else seat = { state: "approximate", reason: g.reason };
     }
     // the whole relative rotation where the mount carries one (a tilted socket, cargo at an angle), else its heading
-    const quat = qMul(parent.quat, rawQ ?? qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
+    const localQ = rawQ ?? qAxisAngle([0, 1, 0], rawYaw);
+    const quat = qMul(parent.quat, localQ) as [number, number, number, number];
     const yaw = yawOfQuat(quat);
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
+    // the parent's stretch as the child's own axes see it (house 6340433633: it was composed axis by axis, right only while
+    // the mount adds no turn): S' = Rᵀ · diag(parent) · R for the mount's turn R. A quarter turn swaps the stretched axes; a
+    // turn that mixes two unequally stretched axes makes a shear no position, rotation and scale can hold, so a thing there
+    // is refused (a body has no extent of its own: its position above is exact either way)
+    const ax = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((v) => qApply(localQ, v));
+    const sp = (i: number, j: number) => ax[i][0] * ax[j][0] * parent.scale3[0] + ax[i][1] * ax[j][1] * parent.scale3[1] + ax[i][2] * ax[j][2] * parent.scale3[2];
+    const big = Math.max(...parent.scale3.map(Math.abs));
+    if (e && [[0, 1], [0, 2], [1, 2]].some(([i, j]) => Math.abs(sp(i, j)) > 1e-6 * big))
+      return { ok: false, why: `a turned mount on a stretched parent (${parent.scale3.map((v) => +v.toFixed(3)).join(" × ")}) shears it: no position, rotation and scale holds that`, link: id };
     const own3 = e ? scale3Of(e, ownScale) : [1, 1, 1];
-    const scale3: [number, number, number] = [parent.scale3[0] * own3[0], parent.scale3[1] * own3[1], parent.scale3[2] * own3[2]];
+    const scale3: [number, number, number] = [sp(0, 0) * own3[0], sp(1, 1) * own3[1], sp(2, 2) * own3[2]];
     if (!fin3(scale3)) return { ok: false, why: "non-finite scale", link: id };
     return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}) };
   }

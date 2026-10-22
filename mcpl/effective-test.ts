@@ -63,6 +63,25 @@ console.log("mounted things");
   check("the child's scale composes per axis", r.ok && near3(r.scale3, [1, 1.5, 2]), show(r));
 }
 {
+  // house 6340433633: a mounted child with its own per-axis scale (scale3Of), on a uniformly scaled parent: (1,2,3) × 2
+  const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 2 }, c: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [1, 2, 3] } }, { c: { to: "p", offset: [0, 0, 0] } }));
+  check("a mounted child's own scale3 composes with its parent's", r.ok && near3(r.scale3, [2, 4, 6]), show(r));
+}
+{
+  // house 6340433633: a quarter turn on a stretched parent (2,3,4): +90° about Y takes the child's +X to the parent's −Z
+  // and its +Z to +X, so the child's own axes are stretched (4,3,2), not (2,3,4)
+  const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 3, 4] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [0, 0, 0], yaw: Math.PI / 2 } }));
+  check("a quarter-turned mount on a stretched parent swaps the stretched axes", r.ok && near3(r.scale3, [4, 3, 2]), show(r));
+  // 45° on (2,1,1) mixes x and z, stretched unequally: a shear, refused for a thing; on (2,1,2) the turn sees one stretch
+  const sh = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
+  check("a turned mount on an unequally stretched parent is refused (a shear no transform holds), naming the child", !sh.ok && sh.link === "c" && /shears/.test(sh.why), show(sh));
+  const even = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 2] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
+  check("…and one turned within equally stretched axes is not", even.ok && near3(even.scale3, [2, 1, 2]) && near3(even.pos, [2, 0, 0]), show(even));
+  // a body there has no extent of its own: its position is exact, so it's answered
+  const body = effectiveWorldTransform("b", { entity: (id) => (id === "p" ? { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] } : undefined), mount: (id) => (id === "b" ? { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } : undefined) }, 0);
+  check("…and a body seated there is still placed (its offset through the stretch)", body.ok && near3(body.pos, [2, 0, 0]), show(body));
+}
+{
   // parent pitched +90° about X (its stored q): the offset (0,1,0) turns to (0,0,1); by its yaw alone it stayed (0,1,0)
   const r = at("c", view({ p: { pos: [5, 0, 0], yaw: 0, q: qX90 }, c: { pos: [0, 0, 0], yaw: 0 } }, { c: { to: "p", offset: [0, 1, 0] } }));
   check("a pitched parent's rotation turns the offset", r.ok && near3(r.pos, [5, 0, 1]), show(r));
