@@ -19,8 +19,10 @@ function holderOf(f: string): { pid: number; nonce: string } | null {
   return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
 }
 /** Whether the holder `pid` named in a lock is gone: its process exited (same host: the keys file is local), or it is this
- *  process. A mint holds the lock only inside one synchronous call, so a lock naming this process that the call doesn't
- *  hold was left by an earlier process with the same pid: a restart can get its old pid back. */
+ *  process. A mint holds the lock only inside one synchronous call, and only the main thread mints, so a lock naming this
+ *  process that the call doesn't hold was left by an earlier process with the same pid: a restart can get its old pid
+ *  back. A worker thread that minted would share this pid and could clear a live sibling's lock: one that does needs the
+ *  thread in the lock's holder. */
 function gone(pid: number): boolean {
   if (pid === process.pid) return true;
   try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
