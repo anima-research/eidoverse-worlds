@@ -169,7 +169,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(u3.ok && o3 === true, "P37c a toggle of openable.locked alone doesn't take away the implicit open", { u3: code(u3) ?? u3.ok, o3 });
     // …and the implicit open is barred while openable.locked is on, as an open handler with unless: 'locked' is
     const lk = call("vic", "use", { id: "hatch2", action: "latch" }), u4 = call("vic", "use", { id: "hatch2", action: "open" }), o4 = W().state().entities.hatch2.c.openable;
-    ok(lk.ok && o4.locked === true && code(u4) === "barred" && o4.open === true, "P37d the implicit open is barred while the thing's openable.locked is on, as the registry's locked says", { lk: code(lk) ?? lk.ok, u4: code(u4) ?? u4.ok, o4 }); }
+    ok(lk.ok && o4.locked === true && code(u4) === "barred" && o4.open === true && u4.refused?.fix === "use {id: 'hatch2', action: 'latch'} unlocks it, and then 'open' opens it. Opening again won't change it while it's locked",
+      "P37d the implicit open is barred while the thing's openable.locked is on, as the registry's locked says, and its fix names what unlocks it", { lk: code(lk) ?? lk.ok, u4: code(u4) ?? u4.ok, fix: u4.refused?.fix, o4 });
+    // …and where nothing on the thing unlocks it, the fix says so, and names the edit
+    call("bob", "create", { id: "hatch3", model: "door", components: { openable: { open: false, locked: true } } });
+    const u5 = call("vic", "use", { id: "hatch3", action: "open" });
+    ok(code(u5) === "barred" && u5.refused?.fix === "nothing on hatch3 unlocks it; someone who may edit it can: set {id: 'hatch3', component: 'openable', value: {locked: false}, merge: true}. Opening again won't change it while it's locked",
+      "P37e a locked openable that nothing unlocks: its implicit open's fix says so, and names the edit that unlocks it", { u5: code(u5) ?? u5.ok, fix: u5.refused?.fix }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
