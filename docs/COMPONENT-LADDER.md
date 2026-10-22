@@ -12,8 +12,9 @@ registry. It is stored as written, but the engine doesn't know it and no rule re
 definition in `shared/protocol/componentspec.js`; `schema` returns it, and the Inspector shows it on the card):
 - **trial**: admitted and written, but its shape may still change during the alpha (about a year). When it changes we
   translate or repair stored values where we can. Every registered name that isn't reserved is trial at v1.
-- **trial-kernel** (reviewer item 5, 10-18): the kernel's status. `transform`, `parent`, `model`, `roles` and `access` carry it in the
-  registry as their component shape (recut C11: the ladder's vocabulary is the registry's `roles.vocab`, a trial break needing
+- **trial-kernel** (reviewer item 5, 10-18): the kernel's status. `roles` and `access` carry it in the registry, and the kernel
+  pins their field shape only (recut C11b: the kernel is what the fold reads, so `transform`, `parent` and `model` left it and
+  are trial again; C11: the ladder's vocabulary is the registry's `roles.vocab`, a trial break needing
   --ack; the four doors are client presets that write `access`), and
   shared/protocol/kernelspec.js extends it below the registry to the log envelope and its kinds, the fold's operations and
   batch body, the identity grammar and the version (PROTOCOL §1–§3, §13). The shapes are pinned in `spec/kernel-pin.json`;

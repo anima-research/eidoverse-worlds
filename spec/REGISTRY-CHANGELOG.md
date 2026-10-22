@@ -254,3 +254,18 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - refusal foreign-engine: {"meaning":"the world runs a build this server doesn't carry","when":"a launch in a world whose physics build is another server's"} → {"meaning":"the world runs an engine version this server doesn't carry","when":"what only that engine computes: a launch, or a grab or delete that would set a resting thing falling"}
 - 2026-10-21: normative: house markup (#260 2026-10-20), accepted: the record-altered write lockout comes out; §12 still detects a value stripped without a purge (the fold's commit-unpurged diagnostic, the value read as unknown)
   - refusal record-altered: gone (old logs may hold it)
+- 2026-10-22: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads'): transform, parent and model leave the kernel, since the fold never reads them; they are ordinary trial components again
+  - transform: status trial-kernel → trial
+  - model: status trial-kernel → trial
+  - parent: status trial-kernel → trial
+- 2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin
+  - transform: leaves the kernel; the registry pin holds it
+  - parent: leaves the kernel; the registry pin holds it
+  - model: leaves the kernel; the registry pin holds it
+  - roles.absentMeans: leaves the kernel; the registry pin holds it
+  - roles.keyed: leaves the kernel; the registry pin holds it
+  - roles.on: leaves the kernel; the registry pin holds it
+  - access.enums: leaves the kernel; the registry pin holds it
+  - access.ranges: leaves the kernel; the registry pin holds it
+  - access.absentMeans: leaves the kernel; the registry pin holds it
+  - access.on: leaves the kernel; the registry pin holds it

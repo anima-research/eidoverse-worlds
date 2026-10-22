@@ -383,9 +383,11 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
 // + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
 const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-pose", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
-await C("ST1", "every registered name has a status: the held names are reserved, the kernel's five (transform, parent, model, roles, access) trial-kernel, every other one trial, none stable (v1 promises none)", () => {
-  // reviewer item 5 (10-18): transform, parent, model, roles and access are the kernel's (trial-kernel: kernel-check.ts guards their change)
-  const KERNEL_COMPONENTS = ["transform", "parent", "model", "roles", "access"];
+const KSPEC = await import("../../shared/protocol/kernelspec.js");
+await C("ST1", "every registered name has a status: the held names are reserved, the kernel's (roles, access) trial-kernel, every other one trial, none stable (v1 promises none)", () => {
+  // the kernel's components are trial-kernel (kernel-check.ts guards their change): roles and access since C11b; transform, parent and model
+  // left it (the fold never reads them; house plan #260 10-20)
+  const KERNEL_COMPONENTS: readonly string[] = KSPEC.KERNEL_COMPONENTS;   // the kernel's own list, never a copy that can drift
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : KERNEL_COMPONENTS.includes(k) ? "trial-kernel" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
   return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("physics-joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
 await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); physics-joint's fix still says what to use", () => {

@@ -1,22 +1,23 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@16",
+ "translator": "eidoverse/translate-v1@17",
  "companions": {
-  "changelog": "2026-10-21: kernel: recut C11 (house markup 10-20, plan C11): the kernel holds what the fold reads; roles and access keep their component shape, and the ladder's vocabulary moves to the registry pin (roles.vocab: a change still needs --ack, never silent). No stored byte changes meaning.",
+  "changelog": "2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin",
   "trim": {
-   "held": {
-    "roles": [
-     "rank",
-     "builtin",
-     "permissions",
-     "customId",
-     "reserved"
-    ]
-   },
-   "dropped": {
-    "roles.lockLevels": "unread since recut B2 (a lock is true; its strength is its setter's rank); LOCK_LEVELS deleted",
-    "access.doors": "client presets that write access fields; no stored byte names a door"
-   }
+   "held": {},
+   "heldPaths": [
+    "transform",
+    "parent",
+    "model",
+    "roles.absentMeans",
+    "roles.keyed",
+    "roles.on",
+    "access.enums",
+    "access.ranges",
+    "access.absentMeans",
+    "access.on"
+   ],
+   "dropped": {}
   },
   "translator": null,
   "vectors": null
@@ -96,59 +97,6 @@
     "v"
    ]
   },
-  "transform": {
-   "status": "trial-kernel",
-   "fields": {
-    "pos": "vec3",
-    "q": "array",
-    "scale": "vec3"
-   },
-   "defaults": {
-    "pos": [
-     0,
-     0,
-     0
-    ],
-    "q": [
-     0,
-     0,
-     0,
-     1
-    ],
-    "scale": [
-     1,
-     1,
-     1
-    ]
-   },
-   "ranges": {
-    "pos": {
-     "min": -100000,
-     "max": 100000
-    },
-    "scale": {
-     "min": -1000,
-     "max": 1000
-    }
-   },
-   "on": "thing"
-  },
-  "parent": {
-   "status": "trial-kernel",
-   "fields": {
-    "to": "ref",
-    "socket": "string"
-   },
-   "required": [
-    "to"
-   ],
-   "on": "thing"
-  },
-  "model": {
-   "status": "trial-kernel",
-   "type": "string",
-   "on": "thing"
-  },
   "roles": {
    "status": "trial-kernel",
    "fields": {
@@ -156,12 +104,7 @@
     "can": "object",
     "note": "string",
     "until": "int"
-   },
-   "absentMeans": {
-    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
-   },
-   "keyed": true,
-   "on": "world"
+   }
   },
   "access": {
    "status": "trial-kernel",
@@ -171,35 +114,7 @@
     "max": "int",
     "soft": "int",
     "minAccountDays": "int"
-   },
-   "enums": {
-    "join": [
-     "anyone",
-     "signed-in",
-     "listed"
-    ],
-    "watch": [
-     "anyone"
-    ]
-   },
-   "ranges": {
-    "max": {
-     "min": 1,
-     "max": 200
-    },
-    "soft": {
-     "min": 1,
-     "max": 200
-    },
-    "minAccountDays": {
-     "min": 0,
-     "max": 365
-    }
-   },
-   "absentMeans": {
-    "watch": "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)"
-   },
-   "on": "world"
+   }
   }
  }
 }

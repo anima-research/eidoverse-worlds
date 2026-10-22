@@ -315,9 +315,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   agrees on before a component is read: the log envelope and its kinds (§1),
   the fold's four operations and the batch body (§3), the identity grammar
   (§3.1), the version (`{dialect, v}`, the minors, genesis's fields, §13), and
-  the five components every reader rests on: `transform` and `parent` (§9.3),
-  `model` (what a thing shows), `roles` and `access` (§7), each as its
-  component's shape. The roles ladder's vocabulary (the ranks, the built-in
+  the two components every reader rests on, `roles` and `access` (§7), each
+  as its field shape only (their ranges, enums and meanings are the
+  registry's). The kernel is what the fold reads: `transform`, `parent` and
+  `model` are ordinary trial components. The roles ladder's vocabulary (the ranks, the built-in
   roles, the closed permission list, a custom role's id, the reserved ids) is
   the registry's, not the kernel's: a change to it is a trial break that needs
   an acknowledgement, never a silent one. Nothing is `stable`
