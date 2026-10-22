@@ -361,7 +361,10 @@ let current: { pid: number } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
 const killGroup = (pid: number, sig: NodeJS.Signals) => killSuite(pid, sig);
 const groupMembers = (pgid: number) => suiteMembers(pgid).length;
-const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (!process.env.PROTOCOL_KEEP) fs.rmSync(GATE_TMP, { recursive: true, force: true }); };
+// a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
+const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
+const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (process.env.PROTOCOL_KEEP) return;
+  try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
 

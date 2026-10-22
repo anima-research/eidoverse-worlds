@@ -947,9 +947,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
-      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = !!s.w().presence.bodies.vic?.pose;
+      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = s.w().presence.bodies.vic?.poseBy !== undefined;   // who posed you, never the pose (recut A4)
       s.call("vic", "consent", { switch: "refuse" });
-      return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
+      return { r, posed, after: s.w().presence.bodies.vic?.poseBy !== undefined }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
   { id: "C4", what: "an expired allowance for one behaviour no longer masks its sponsor's: the sponsor-wide allowance applies once it has run out", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });

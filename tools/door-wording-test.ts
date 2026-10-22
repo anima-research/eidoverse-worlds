@@ -2,7 +2,7 @@
 // with the agent's own value where that was the problem.
 // Run: bun tools/door-wording-test.ts
 //
-// Main's test (#270, nissa-seru), carried into protocol v4 (#260). Where this
+// Main's test (#270, nissa-seru), carried into the revised protocol (#260). Where this
 // protocol renamed or folded a tool (tools.ts TOOL_ALIASES, TOOL_FOLDS), the
 // check calls the tool that does it now and reads its words; where a refusal
 // moved from the door to the world's authority (place's unknown id, a raw
