@@ -202,7 +202,7 @@ export class WorldLog {
     try { r = authorityRequest(live, actor, verb, args); }
     catch (err) { threw = err ?? new Error("the authority threw"); }
     finally { this.publish(from, held); }
-    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
+    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
     if (threw !== null) {
       console.error(`[world:${this.name}] ${verb.slice(0, 32)} by ${actor} threw in the authority (${o.outcome}${o.outcome === "ambiguous" ? ` from seq ${o.from}` : ""}):`, threw);
       if (o.outcome === "ambiguous") this.host?.debug("ambiguous", { verb: verb.slice(0, 32), from: o.from, wedged: !!o.wedged, line: `a ${verb.slice(0, 32)} ended ambiguous at seq ${o.from}${o.wedged ? ": storage failed mid-write; writes are refused until the world is reopened" : ""}` });
@@ -240,7 +240,7 @@ export class WorldLog {
       finally { if (backup) { if (threwHere || live.entries.length > from) sealBackup(backup); else dropBackup(backup); } }
     } catch (err) { threw = err ?? new Error("the repair threw"); }
     finally { this.publish(from, held); }   // the same transaction as requestSync: what reached the log is published
-    const o = txnOutcome(live, from, { threw: threw !== null, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
+    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === "object" && r.ok === false, wedgedBefore });
     if (threw !== null) { console.error(`[world:${this.name}] operator repair ${verb.slice(0, 32)} threw (${o.outcome}):`, threw); return txnRefusal(o); }
     if (r && typeof r === "object") r.txn = o.outcome;
     return r;

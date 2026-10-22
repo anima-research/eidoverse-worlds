@@ -6,7 +6,7 @@ import { bodyOf } from "../../components.js";
 import { inOccupyReach, OCCUPY_REACH } from "../../sockbody.js";
 import { grabOf } from "../../grab.js";
 import { PURGED } from "../fold.js";
-import { COMPONENTS, PENDULUM } from "../componentspec.js";
+import { COMPONENTS, PENDULUM, unitTransform } from "../componentspec.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
@@ -101,7 +101,7 @@ function buildUse(ctx, a) {
       { const sf = ctx.w.sim(), b = sf.sim?.bodies[t]; if (sf.launched[t] && b && !b.resting) { skipped.push({ id: t, why: "it is in flight; press again once it lands" }); continue; } }
       if (sameHome(ctx.st, t, home) && !ctx.w.presence.holds[t] && vec3s(te.c.transform?.scale).every((x, i) => Math.abs(x - homeScale(ctx.st, t, home)[i]) < 1e-4)) { atHome++; continue; }   // home already (and its size), in no hand
       ops.push(...(hp ? [setOp(t, "parent", { ...hp })] : te.c.parent ? [delOp(t, "parent")] : []),
-        setOp(t, "transform", { pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) }));
+        setOp(t, "transform", unitTransform({ pos: home.pos.slice(), q: (home.q ?? [0, 0, 0, 1]).slice(), scale: homeScale(ctx.st, t, home) })));
       sent.push(t); ctx.refs.add(t); }
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
@@ -142,7 +142,8 @@ function buildUse(ctx, a) {
   if ((h?.kind === "set" && h.field !== undefined) || (h?.kind === "toggle" && toggleOf(h).field !== undefined)) { const comp = h.kind === "set" ? h.component : toggleOf(h).comp;
     if (!(e.c[comp] && typeof e.c[comp] === "object" && !Array.isArray(e.c[comp]))) refuse("no-handler", `${a.id} has no ${comp} any more, so '${action}' has nothing to change`, "someone who may edit it can add it back, or set its reactions again"); }
   if (h?.kind === "set") { const comp = h.component; reactionCap(ctx, a.id, comp, action); ctx.refs.add(a.id);
-    return [setOp(a.id, comp, h.field === undefined ? h.value : { ...objOf(e.c[comp]), [h.field]: h.value })]; }
+    const v = h.field === undefined ? h.value : { ...objOf(e.c[comp]), [h.field]: h.value };
+    return [setOp(a.id, comp, comp === "transform" ? unitTransform(v) : v)]; }   // a stored rotation is a unit one, as a request's is
   // batch 2: play the thing's sound again from the top (a doorbell), playing or not; stampMedia sets t0 = now
   if (h?.kind === "play") { const cur = e.c.sound;
     if (!cur || typeof cur !== "object" || Array.isArray(cur)) refuse("no-sound", `${a.id} has no sound to play`, `give it one: set {id: '${a.id}', component: 'sound', value: {src}}`);

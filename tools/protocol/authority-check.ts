@@ -25,6 +25,7 @@ import { simFold, digestOf, restsOf } from "../../shared/protocol/simlayer.js";
 import { MODELS } from "../../shared/protocol/labmodels.js";
 import { enc, encName, dec } from "../../shared/protocol/names.js";
 import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/protocol/refusal.js";
+import { VERBSPEC } from "../../shared/protocol/verbspec.js";
 import { custodyAt } from "../../server/custody.ts";
 import { translate, TRANSLATOR } from "./import-v1/translate-v1.js";
 import { openWorld } from "../../server/filehost.ts";
@@ -1302,6 +1303,19 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
 // other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
 // identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
+// review of #260: the byte limits count the UTF-8 bytes the log stores, not JavaScript's UTF-16 string length, so a value
+// whose characters take two bytes each meets the same cap as ASCII
+{ const W = () => openWorld(root, "utf8cap"); const R = (actor, verb, args) => { T += 20000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+  R("ann", "create-world", { title: "utf8cap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+  R("ann", "create", { id: "u1", model: "crate" });
+  const big = R("ann", "set", { id: "u1", component: "t/note", value: "é".repeat(40000) });   // 40 000 characters, 80 000 bytes: over the 64 KiB value cap
+  const ascii = R("ann", "set", { id: "u1", component: "t/note", value: "e".repeat(40000) });   // the same length in ASCII fits
+  // a set's act carries the request and its change the value, so 9 000 two-byte characters write about 36 000 bytes: over a
+  // guest's 32 KiB a window, where the same length in ASCII (about 18 000) fits
+  const guest = R("g1", "set", { id: "u1", component: "t/note", value: "é".repeat(9000) });
+  const gAscii = R("g2", "set", { id: "u1", component: "t/note", value: "e".repeat(9000) });
+  ok(code(big) === "too-big" && /80\d{3} bytes/.test(big.refused?.reason ?? "") && ascii.ok && code(guest) === "rate" && gAscii.ok,
+    "UB1 a value's 64 KiB and a guest's 32 KiB a window are counted in UTF-8 bytes: two-byte characters reach them at half the length ASCII does", { big: big.refused ?? big.ok, ascii: ascii.ok ?? ascii.refused, guest: guest.refused ?? guest.ok, gAscii: gAscii.ok ?? gAscii.refused }); }
 // review of #260: the index audit expects a switched-off thing to be out of the index, as buildIx leaves it
 { const R = (actor, verb, args) => { T += 1000; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "ixoff"), actor, verb, args); };
   R("ann", "create-world", { title: "ixoff" }); R("ann", "create", { id: "box1", model: "crate" }); const off = R("ann", "set", { id: "box1", component: "disabled", value: true });
@@ -1345,6 +1359,22 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     const after = Rr("g4", "create", { id: "gr-4", model: "crate", components: { transform: { pos: [0, 0, 6] } } });
     const acct2 = Rr("ann", "create", { id: "gr-a", model: "crate", components: { transform: { pos: [2, 0, 6] } } });
     ok(before.every((x) => x.ok) && code(after) === "full" && /3 by creators this server doesn't know/.test(after.refused?.reason ?? "") && acct2.ok, "SR2c after a restart, what earlier guests made still counts against the guests' pool (their ids are unknown here now), and the refusal says so; an account still adds one", { before: before.map((x) => x.ok ?? x.refused), after: after.ok ?? after.refused, acct: acct2.ok ?? acct2.refused }); }
+  // review of #260: the guests' pool is read as the world's own cap is, on the net change: a write that deletes as many of
+  // the guests' things as it makes is never refused, and one that grows the pool past its limit is, saying by how much
+  { const Wn = () => openWorld(root, "guestnet");
+    const Rn = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = Wn(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+    Rn("ann", "create-world", { title: "guestnet" }); Rn("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
+    Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 2 } });
+    const made = ["gn-0", "gn-1"].map((id, i) => Rn("g1", "create", { id, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
+    const swap = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-0" } }, { verb: "create", args: { id: "gn-2", model: "crate", components: { transform: { pos: [4, 0, 0] } } } }] });
+    const grow = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, ...["gn-3", "gn-4"].map((id, i) => ({ verb: "create", args: { id, model: "crate", components: { transform: { pos: [6 + i * 2, 0, 0] } } } }))] });
+    // a pool already past a lowered cap still takes a delete-and-make; a make is refused against the lowered cap
+    Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 1 } });
+    const swap2 = Rn("g1", "batch", { ops: [{ verb: "delete", args: { id: "gn-1" } }, { verb: "create", args: { id: "gn-5", model: "crate", components: { transform: { pos: [10, 0, 0] } } } }] });
+    const over = Rn("g1", "create", { id: "gn-6", model: "crate", components: { transform: { pos: [12, 0, 0] } } });
+    ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? "")
+      && swap2.ok && code(over) === "full" && /lets them have 1 \(/.test(over.refused?.reason ?? "") && /1 more won't fit/.test(over.refused?.reason ?? ""),
+      "SR2d a guest's write that deletes as many of the guests' things as it makes is never refused full, even past a lowered cap; one that grows the pool past its limit is, saying how many it adds, and its fix names a delete", { made: made.map((x) => x.ok), swap: swap.refused ?? swap.ok, grow: grow.refused, swap2: swap2.refused ?? swap2.ok, over: over.refused }); }
   // the world's own budget: a socket meets it like a thing, and deleting frees room
   const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
@@ -1500,7 +1530,28 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const r2 = call("olive", "batch", { ops: [{ verb: "set", args: { id: "lamp", component: "description", value: "ok" } }, { verb: "create", args: { model: "crate", place: { on: "lamp", oops: 1 } } }] });
   ok(!r2.ok && code(r2) === "unknown-arg" && r2.refused?.op === 1 && ents().lamp?.c?.description === "a lamp", "BT2 a nested create.place is checked too, and an earlier valid op isn't written", [r2.refused ?? r2, ents().lamp?.c?.description]);
   const changes = openWorld(root, name).entries.slice(n0).filter((e) => e.kind === "change").length;
-  ok(changes === 0, "BT3 neither refused batch wrote a change", changes); }
+  ok(changes === 0, "BT3 neither refused batch wrote a change", changes);
+  // the verbs batch's help names are the verbs it takes (review of #260): help listed turn, which the batch refused
+  const q = () => ents().lamp?.c?.transform?.q;
+  const q0 = JSON.stringify(q()), n1 = openWorld(root, name).entries.length;
+  const tr = call("olive", "batch", { ops: [{ verb: "turn", args: { id: "lamp", axis: "y", deg: 90 } }, { verb: "set", args: { id: "lamp", component: "description", value: "turned" } }], label: "spin" });
+  const acts = openWorld(root, name).entries.slice(n1).filter((e) => e.kind === "change").length;
+  const turned = JSON.stringify(q()) !== q0 && Math.abs(Math.abs(q()?.[1] ?? 0) - Math.SQRT1_2) < 1e-6;
+  const un = call("olive", "undo", { label: "spin" });
+  ok(tr.ok && turned && acts === 1 && un.ok && JSON.stringify(q()) === q0 && ents().lamp?.c?.description === "a lamp",
+    "BT4 a batch takes turn: the turn and a set are one act, and one undo takes both back", { tr: tr.refused ?? tr.ok, q: q(), acts, un: un.refused ?? un.ok });
+  // a turn reads the batch's working copy: a thing made earlier in the same batch is found and turned
+  const ct = call("olive", "batch", { ops: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
+  const cq = ents()["crate-bt"]?.c?.transform?.q;
+  ok(ct.ok && Math.abs(Math.abs(cq?.[1] ?? 0) - Math.SQRT1_2) < 1e-6, "BT4b a batch's turn finds a thing made earlier in the same batch and turns it", { ct: ct.refused ?? ct.ok, q: cq });
+  // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
+  const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
+    turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
+  const named = (VERBSPEC.batch.doc.match(/ of ([a-z-]+(?:, [a-z-]+)*)$/)?.[1] ?? "").split(", ").filter(Boolean);
+  const alone = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
+  const inBatch = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
+  const turnedAway = named.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
+  ok(named.length >= 5 && !turnedAway.length, "BT5 every verb batch's help names goes in a batch, dry, as it goes alone", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
 // ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;
@@ -1589,7 +1640,15 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(!!threw && o.outcome === "ambiguous" && o.wedged === true && o.file === "moderator log" && r.ok === false && r.txn === "ambiguous" && r.refused.code === "ambiguous" && /moderator log/.test(r.refused.reason),
     "ST4 a moderator-log write that throws makes the request AMBIGUOUS (txnOutcome reads the mod log's wedge; the refusal names the moderator log), never rolled-back", [o, r.refused]);
   const o2 = txnOutcome(w, w.entries.length, { threw: true, refused: false, wedgedBefore: { log: false, mod: true } });
-  ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2); }
+  ok(o2.outcome === "rolled-back", "ST4 …and a throw on a world already wedged (its refusal before any write) is rolled back", o2);
+  // …and only the wedge's own refusal is answered as the wedge: another throw on the same world (a bug elsewhere) is a plain
+  // failure, so its reply doesn't say the world refuses writes, nor that asking again won't help
+  let again: any = null; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch (x) { again = x; }
+  const oW = txnOutcome(w, w.entries.length, { threw: true, error: again, refused: false, wedgedBefore: { log: false, mod: true } }), rW = txnRefusal(oW);
+  const oX = txnOutcome(w, w.entries.length, { threw: true, error: new Error("a handler's bug"), refused: false, wedgedBefore: { log: false, mod: true } }), rX = txnRefusal(oX);
+  ok(again?.wedged === "moderator log" && oW.wedged === true && oW.file === "moderator log" && /moderation writes/.test(rW.refused.reason) && /whoever runs this server/.test(rW.refused.fix)
+    && !oX.wedged && /send it again/.test(rX.refused.fix) && !/refuses/.test(rX.refused.reason),
+    "ST4b the moderator log's wedge refusal is answered as the wedge (who can reopen it); another throw while it is wedged is a plain failure", { oW, w: rW.refused, oX, x: rX.refused }); }
 // ST5: which file was wedged matters: with the moderator log wedged before the request, a world-log write that throws in it
 // is ambiguous, not the old wedge's rolled-back refusal
 { const { txnOutcome, wedgedOf } = await import("../../shared/protocol/authority/storage.js");

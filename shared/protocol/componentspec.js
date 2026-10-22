@@ -685,11 +685,22 @@ export function mapRefs(comp, v, f) {
 
 // ---- every parameter written down (PROTOCOL §4) ----
 const copy = (x) => (x && typeof x === "object" ? JSON.parse(JSON.stringify(x)) : x);
+// A transform's q is stored as a unit quaternion, whoever writes it (its doc: "normalized on write"): a request (writes.js
+// resolve, and put's own op), a script's set (the host's materialize, below, so an auditor's re-run writes the same), a
+// reaction's set and reset (use.js), and a return home (manipulate.js returnPlan; a home's q is held only near a
+// rotation). The authority's maths reads q as a rotation, so a scaled one would skew every inverse. A zero q stays as
+// sent, for the gate to refuse; anything that isn't four finite numbers is left for the gate's shape check
+export function unitTransform(v) {
+  const q = v && typeof v === "object" && !Array.isArray(v) ? v.q : undefined;
+  if (!Array.isArray(q) || q.length !== 4 || !q.every(Number.isFinite)) return v;
+  const n = Math.hypot(...q); return n >= 1e-6 && Math.abs(n - 1) > 1e-9 ? { ...v, q: q.map((x) => x / n) } : v;
+}
 /** A value with its definition's defaults written in: `defaults`, then each `when` rule that holds, never over a field
  *  that's there. {value, filled: [fields written]}. A non-object value, or a name with no definition, comes back as it is. */
 export function materialize(comp, v) {
   const def = defOf(comp);
   if (!def || !v || typeof v !== "object" || Array.isArray(v)) return { value: v, filled: [] };
+  if (comp === "transform") v = unitTransform(v);
   const out = { ...v }, filled = [];
   const put = (set) => { for (const [k, x] of Object.entries(set)) if (!(k in out)) { out[k] = copy(x); filled.push(k); } };
   if (def.defaults) put(def.defaults);

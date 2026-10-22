@@ -242,6 +242,12 @@ for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as 
   ok("pos" in where ? JSON.stringify(faced) === "[[10,10]]" && !out.isError : !faced.length && out.isError && out.content[0].text.includes(where.why),
     "pos" in where ? "face turns to a child's world point" : "face whose thing's point can't be worked out turns nowhere and says why", { faced, out: out.content[0].text }); }
 
+// act {verb: "use"}: the visitor's use is logged (ok), but when the script it sets off didn't run (refused, failed, …) the
+// tool says so with isError, as for any refusal; a script that ran, ran and changed nothing, or would run (a dry use) is no error
+for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", false], ["refused", true], ["failed", true], ["unavailable", true], ["paused", true]] as [string, boolean][]) {
+  const ag: any = { thingRef: (v: string) => ({ id: v }), request: async () => ({ ok: true, act: 7, recorded: true, script: { script: "script:bell", id: "bell", status, ...(err ? { code: "scope", why: "no" } : {}) } }) };
+  const out: any = await handleTool({ agent: ag } as any, "act", { verb: "use", args: { id: "bell", action: "ring" } });
+  ok(!!out.isError === err && /"status": "/.test(out.content[0].text), `act use whose script ${status}: ${err ? "isError" : "no error"}`, out); }
 // house 6340433633: on a socket that rides a model part, face and beside-thing say a retry won't help and a point near it will
 { const { effectiveWorldTransform } = await import("./effective.ts"); const { WorldAgent } = await import("./agent.ts");
   const v: any = { entity: (id: string) => (id === "cup-1" ? { pos: [0, 0, 0], socket: { name: "grip", part: "arm" } } : id === "robot" ? { pos: [0, 0, 0] } : undefined), mount: (id: string) => (id === "cup-1" ? { to: "robot" } : undefined) };

@@ -103,7 +103,7 @@ function activate(w, id, name, ev) {
     (w.presence.scriptRuns ??= []).push({ ts: now, id, key, sponsor: sp.sponsor, ms: Math.round(ms) }); w.presenceDirty = true; }
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
-  const ops = SR.elide(st, res.ops);
+  const ops = SR.elide(st, SR.stampMotions(st, res.ops, now));   // a motion on the authority's clock, then the script batch's elision of no-op writes
   if (!ops.length && !res.says.length && !res.bodies.length) { if (!dry) rt.fails = 0; return out("nothing", { why: res.ran ? "nothing changed: no entry" : `it has no handler for '${ev.on}'`, ...logs }); }
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
@@ -298,7 +298,11 @@ const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("
  *  past its until. → {code, reason, fix, extra?} */
 export function writeBlock(w) {
   const n = maintenanceNeeds(w);
-  if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves)`, fix: n.fix };
+  // the reader (an agent, a person in the editor) can't run the command, so the fix says who can and that asking again
+  // won't help, in plain words a person's reader keeps (refusal.js plainRefusal drops a fix with tool syntax); the command
+  // is named for whoever runs the host, who also sees it, and its other forms, at load (maintenanceNeeds' fix)
+  if (n.blocking.length) return { code: "repair-needed", reason: `this world needs maintenance before it can be written: ${n.blocking.join(", ")} (its values are stored in an old spelling no reader here serves); reads still work`,
+    fix: `only whoever runs this server can repair it, on the host by running its maintenance command, bun tools/protocol/world.ts repair ${w.name ?? "<name>"}, or from a server operator's account with operator-repair; asking again won't change that until they do` };
   return null;
 }
 /** What maintenance a world needs: {steps: ["lift-sockets", "rename-components", "repair-shapes"] (those needed, in order),

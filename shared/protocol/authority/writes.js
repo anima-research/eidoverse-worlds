@@ -3,9 +3,9 @@
 // of the plain writes: create (with createAt and mint), set, delete, turn and place (with resolve), and the thing
 // lookups they share (needThing, notAThing, offRefuse, the world's bounds) (refactor split, 2026-10-17; moved from
 // authority.js's gate section unchanged). guess is above it, reached through UP.
-import { isEntityId, isComponent } from "../fold.js";
+import { isEntityId, isComponent, utf8Len } from "../fold.js";
 import { mintId } from "../ids.js";
-import { COMPONENTS, defOf, isNamespaced, materialize } from "../componentspec.js";
+import { COMPONENTS, defOf, isNamespaced, materialize, unitTransform } from "../componentspec.js";
 import { offChain, carried, ENGINES, ends, endsUnder } from "../simlayer.js";
 import { atWrite } from "../assetref.js";
 import { r3 } from "../round.js";
@@ -106,7 +106,7 @@ function commit(w, actor, verb, args, build) {
   const lifts = liftsOf(w, ctx, plan);
   w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes, ...lifts); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
-  if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle" || ctx.cap.kind === "caption") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
+  if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle" || ctx.cap.kind === "caption") rateCheck(w, actor, "act", utf8Len(JSON.stringify(actE)) + utf8Len(JSON.stringify(changeE)));
   const act = w.append(actE);
   const seq = changeEntry(w, plan, act);
   const after = w.state();
@@ -189,9 +189,7 @@ function resolve(ctx, id, comp, value, prev) {
     for (const k of ["pos", "q", "scale"]) if (!Array.isArray(v[k]) || v[k].some((n) => !Number.isFinite(n))) refuse("shape", `transform.${k} must be numbers`, "pos [x,y,z], q [x,y,z,w], scale [x,y,z] or a number");
     v.pos = v.pos.map(r3);
     // stored as a unit quaternion: a rounded yaw or a hand-typed [0,0,0,0.5] otherwise disagrees with the renderer
-    // (a zero q stays as sent, for schemaCheck to refuse)
-    const n = Math.hypot(...v.q); if (v.q.length === 4 && n > 1e-6 && Math.abs(n - 1) > 1e-9) v.q = v.q.map((x) => x / n);
-    return v;
+    return unitTransform(v);
   }
   if (!defOf(comp) && isNamespaced(comp)) ctx.notes.push({ id, component: comp, why: `'${comp}' is a namespaced component this world's engine doesn't know: it is kept (and will be preserved), but nothing here will draw or run it` });
   // one spelling per meaning (shape audit 10-16): what a write may say the short way is stored the one way

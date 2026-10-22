@@ -6,6 +6,7 @@ import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
 import { REACH, HAND_Y, MAX_HELD, KICK } from "../physconst.js";
 import { r3, noNeg0 } from "../round.js";
+import { unitTransform } from "../componentspec.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { delOp, lockedC, scratch, setOp } from "./storage.js";
@@ -248,7 +249,7 @@ const EMBODIED_VERBS = {
       pos = [r3(x), r3(sup.y + under), r3(z)]; }
     if (!Array.isArray(pos) || pos.length !== 3 || pos.some((n) => !Number.isFinite(n))) refuse("shape", "put takes pos: [x, y, z] (or nothing: straight down)", "");
     const d = dist(gripPoint(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
-    const q = a.q ?? heldQ(w, h); const value = { pos, q, scale: t.scale };   // turned with the body as it was carried (heldQ)
+    const q = a.q ?? heldQ(w, h); const value = unitTransform({ pos, q, scale: t.scale });   // turned with the body as it was carried (heldQ)
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
     // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
