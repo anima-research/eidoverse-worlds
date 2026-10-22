@@ -49,6 +49,8 @@
 //
 // The modifications in this file are part of eidoverse-worlds and are licensed under the AGPL-3.0 with it.
 
+import { qRotate } from './rot.js';
+
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;   // Godot's material speaks degrees; an effect document speaks radians (PROTOCOL §9.2), so the sim never converts (kept for the tools' mutants)
 const CMP_EPSILON = 0.00001;
@@ -101,13 +103,7 @@ export function sampleRamp(g, x, out = [1, 1, 1, 1]) {
   return out;
 }
 
-/** v rotated by the unit quaternion q = [x, y, z, w]. */
-export function qRotate(q, v, out = [0, 0, 0]) {
-  const [x, y, z, w] = q, a = v[0], b = v[1], c = v[2];
-  const ix = w * a + y * c - z * b, iy = w * b + z * a - x * c, iz = w * c + x * b - y * a, iw = -x * a - y * b - z * c;
-  out[0] = ix * w - iw * x - iy * z + iz * y; out[1] = iy * w - iw * y - iz * x + ix * z; out[2] = iz * w - iw * z - ix * y + iy * x;
-  return out;
-}
+export { qRotate };
 /**
  * The document's gravity (a WORLD vector, m/s², lead 10-17) in an emitter's own frame, given the emitter's world rotation
  * q [x, y, z, w] and world scale s [x, y, z] (three's matrixWorld.decompose). The emitter's frame is scaled with its thing

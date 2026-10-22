@@ -4,7 +4,7 @@
 // agent's text-tier perception must agree on where a moving thing IS, and
 // the only way two runtimes agree forever is to evaluate the same file.
 // This module is deliberately dependency-free — no THREE, no DOM, no scene,
-// no clock (its one import is the pure type reader, names.js motionType): callers pass {base, motion, nowMs} in and get a transform out.
+// no clock (its imports are pure: names.js motionType, and shared/rot.js, the one set of quaternion functions): callers pass {base, motion, nowMs} in and get a transform out.
 // motion.js consumes it per frame; mcpl/agent.ts consumes it at read time.
 //
 // Contract: evalWholeMotion returns a FINITE transform or an explicit
@@ -17,39 +17,18 @@
 // does not displace the entity's ROOT transform at all — those stay in
 // motion.js, THREE-side, and this module reports the root as unmoved.
 import { motionType } from '../../shared/protocol/names.js';
+import { qMul, qRotate as qApply, qAxisAngle as qAxisAngleUnit } from '../../shared/rot.js';
 
-// ---- quaternions, the four lines of them we need ---------------------------
+// ---- quaternions: shared/rot.js's -----------------------------------------
 // [x, y, z, w], same layout THREE uses. Right-handed, Y-up, radians.
 
+/** The rotation of `angle` radians about `axis`, which need not be unit length. */
 export const qAxisAngle = (axis, angle) => {
   const [x, y, z] = axis;
   const n = Math.hypot(x, y, z) || 1;
-  const s = Math.sin(angle / 2);
-  return [(x / n) * s, (y / n) * s, (z / n) * s, Math.cos(angle / 2)];
+  return qAxisAngleUnit([x / n, y / n, z / n], angle);
 };
-
-export const qMul = (a, b) => {
-  const [ax, ay, az, aw] = a, [bx, by, bz, bw] = b;
-  return [
-    aw * bx + ax * bw + ay * bz - az * by,
-    aw * by - ax * bz + ay * bw + az * bx,
-    aw * bz + ax * by - ay * bx + az * bw,
-    aw * bw - ax * bx - ay * by - az * bz,
-  ];
-};
-
-export const qApply = (q, v) => {
-  // v' = v + 2 * cross(q.xyz, cross(q.xyz, v) + w*v)
-  const [qx, qy, qz, qw] = q, [vx, vy, vz] = v;
-  const cx = qy * vz - qz * vy + qw * vx;
-  const cy = qz * vx - qx * vz + qw * vy;
-  const cz = qx * vy - qy * vx + qw * vz;
-  return [
-    vx + 2 * (qy * cz - qz * cy),
-    vy + 2 * (qz * cx - qx * cz),
-    vz + 2 * (qx * cy - qy * cx),
-  ];
-};
+export { qMul, qApply };
 
 /** Yaw of a quaternion, by the house convention: the yaw whose +Z-forward
  *  matches the quaternion's, `atan2(x, z)` of the rotated forward vector. */

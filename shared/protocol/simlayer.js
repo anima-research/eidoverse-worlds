@@ -18,6 +18,8 @@ import { MODELS } from "./labmodels.js";
 import * as eidosim from "../sim.js";
 import { isBoxShape, shapeError } from "./shapes.js";
 import { r3, r2 } from "./round.js";
+import { composePose } from "../rot.js";
+import { scale3 } from "../scale3.js";
 
 // An engine is named by its VERSION (house answer, #260 10-21): a server carries a version when its implementation reproduces
 // that version's conformance digests (spec/conformance/physics/, held by engine-check). A change that still reproduces them
@@ -46,22 +48,19 @@ export const ends = (o) => (o.verb === "delete" ? o.comp === undefined || o.comp
 export const endsUnder = (o) => (o.verb === "delete" && o.comp === undefined) || (o.verb === "set" && o.comp === "disabled" && o.value === true);
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
-// A thing's world pose, composed down its parent chain. The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S,
-// world = parent's world × local. This returns a TRS, not a matrix, so it is EXACT for the position (parent pos + R·(S·pos))
-// and exact for q and scale whenever every ancestor's scale is uniform; under a non-uniformly scaled ancestor a rotated
-// child's true world transform shears (no TRS holds it), and here its q is the plain product and its scale the
-// component-wise product (Unity's lossyScale reading). The stored data had 0 such cases at the shape audit (10-16).
-// TODO(shape audit 10-16): return the composed matrix (or flag the sheared case) if a reader ever needs the exact one.
-export function worldPose(st, id, depth = 0) {
-  const e = st.entities[id]; if (!e) return null;
-  const t = e.c.transform ?? {}; const pos = t.pos ?? [0, 0, 0], q = t.q ?? [0, 0, 0, 1], sc = t.scale ?? [1, 1, 1];
-  const p = e.c.parent?.to;
-  if (!p || depth > 32 || !st.entities[p]) return { pos, q, scale: sc };
-  const pt = worldPose(st, p, depth + 1); const [x, y, z, w] = pt.q; const v = pos.map((n, i) => n * pt.scale[i]);
-  const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
-  const r = [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)];
-  const [a, b, c, d] = pt.q, [e2, f, g, h] = q;
-  return { pos: pt.pos.map((n, i) => n + r[i]), q: [d*e2+a*h+b*g-c*f, d*f-a*g+b*h+c*e2, d*g+a*f-b*e2+c*h, d*h-a*e2-b*f-c*g], scale: sc.map((n, i) => n * pt.scale[i]) };
+// A thing's world pose, composed down its parent chain by shared/rot.js composePose (glTF's rule, PROTOCOL §9.3). The
+// chain stops at a missing parent or 33 links up.
+export function worldPose(st, id) {
+  if (!st.entities[id]) return null;
+  const chain = [];
+  for (let k = id; ;) {
+    const e = st.entities[k], t = e.c.transform ?? {};
+    chain.unshift({ pos: t.pos ?? [0, 0, 0], q: t.q ?? [0, 0, 0, 1], scale: scale3(t.scale ?? [1, 1, 1]) });
+    const p = e.c.parent?.to;
+    if (!p || chain.length > 33 || !st.entities[p]) break;
+    k = p;
+  }
+  return composePose(chain);
 }
 // eidosim carries boxes only (PHYSICS.md §3.1): a stamped physics.shape is its collider when it's a bare box; any other
 // shape is no body to it (rather than a tagged object misread as [[min], [max]]). An engine that carries spheres reads them.

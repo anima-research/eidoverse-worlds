@@ -31,8 +31,8 @@ await tryRow('TF', () => {
   check('TF1 …and every vector names its frame (parent\'s)', /parent's frame/.test(T.docs?.pos ?? '') && /parent's frame/.test(T.docs?.q ?? ''), T.docs);
   const P = read('spec/PROTOCOL.md');
   check('TF2 PROTOCOL §9 writes the composition rule down (glTF: local = T · R · S, world = parent × local)', /T · R · S/.test(P) && /### 9\.3/.test(P), '');
-  const S = read('shared/protocol/simlayer.js');
-  check('TF3 simlayer worldPose says where it is exact and where it approximates glTF (a TODO, not a silent difference)', /TODO/.test(S.slice(S.indexOf('export function worldPose') - 900, S.indexOf('export function worldPose'))) && /shear/i.test(S.slice(S.indexOf('export function worldPose') - 900, S.indexOf('export function worldPose'))), '');
+  const S = read('shared/rot.js'), at = S.indexOf('export function composePose'), doc = S.slice(at - 1200, at);
+  check('TF3 the one world-pose composer (rot.js composePose, under simlayer\'s and hierarchy\'s worldPose) says where it is exact and where it approximates glTF (a TODO, not a silent difference)', at > 0 && /TODO/.test(doc) && /shear/i.test(doc), '');
   // the exact case: a rotated, uniformly scaled parent
   const s = Math.SQRT1_2; const st = { entities: { p: { c: { transform: { pos: [1, 0, 0], q: [0, s, 0, s], scale: [2, 2, 2] } } }, k: { c: { parent: { to: 'p' }, transform: { pos: [1, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } } };
   const w = worldPose(st, 'k');

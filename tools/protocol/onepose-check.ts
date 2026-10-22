@@ -70,7 +70,8 @@ for (const k of ["pos", "q", "scale"]) {
 check(`OP2 both composers are rot.js's one composer`, typeof (rot as any).composePose === "function" && (() => {
   for (let t = 0; t < 200; t++) {
     const chain: Local[] = Array.from({ length: 1 + (t % 4) }, () => ({ pos: vec(), q: quat(), scale: scale() }));
-    const { st, leaf } = worlds(chain); if (!same(simPose(st, leaf), (rot as any).composePose(chain))) return false;
+    const { st, leaf } = worlds(chain); const a = simPose(st, leaf), b = (rot as any).composePose(chain);
+    if (!["pos", "q", "scale"].every((k) => same(a[k], b[k]))) return false;
   }
   return true;
 })());
