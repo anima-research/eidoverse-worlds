@@ -177,7 +177,7 @@ function applyFrom(id, data) {
   pending.delete(id);
   // only playing changed: the same emitter stops or resumes spawning (Godot's emitting), nothing is rebuilt
   const cur = registry.emitterOf(id), h = registry.get(id);
-  if (cur && h && sansPlaying(cur) === sansPlaying(norm) && cur.playing !== norm.playing) { h.setEmitting(norm.playing); cur.playing = norm.playing; return; }
+  if (cur && h && sansPlaying(cur) === sansPlaying(norm) && cur.playing !== norm.playing) { registry.setPlaying(id, norm.playing); return; }
   void registry.apply(id, norm);
 }
 

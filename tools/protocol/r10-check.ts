@@ -337,16 +337,16 @@ cases.push(
         del: /The change entry names them \(`followUps`, §3\)/.test(s4) && /set\s+down onto what is below, as a follow-up/.test(s4) && /translate-v1@1[4-9]`, §14\)/.test(s4) }; },
     good: (o) => o.gate && o.table && o.del },
   { id: "X3", what: "(scars M2, M5) Body ownership: arrival is presence (the world's log records nothing about a body; the hash reaches the moderator log only when someone acts); B2 runs in admit on every op, follow-ups and system writes included, references nulled at read time; B5 doesn't end on leaving; `arrive` stays reserved", run() {
-      const md = PROTO(); const b = md.slice(md.indexOf("### Body ownership"), md.indexOf("\n## 8. "));
+      const md = PROTO(); const b = fs.readFileSync(new URL("../../docs/AVATAR-DIRECTION.md", import.meta.url), "utf8");   // the guard rails are direction now (house markup D, #260 10-20)
       return { b6: !/records only `arrive/.test(md) && /\*\*The world's log\s+records nothing about a body\*\*/.test(b) && /\*\*moderator log\*\* only when someone acts about it: a report,\s+a kick, a ban, or an arrival refused by `avatar-deny`/.test(b),
         b2: /\*\*B2\. One predicate, in `admit`, on every op\.\*\*/.test(b) && /follow-ups and system\s+writes/.test(b) && /\*\*at read time\*\*/.test(b) && !/top of `lacks\(\)`/.test(b),
-        b5: !/when the grantee leaves the\s+world unless/.test(b) && /It does \*\*not\*\* end when the\s+grantee leaves/.test(b), reserved: /the request\s+`arrive`/.test(b) }; },
+        b5: !/when the grantee leaves the\s+world unless/.test(b) && /It does \*\*not\*\* end when the\s+grantee leaves/.test(b), reserved: /the request\s+`arrive`/.test(md) }; },
     good: (o) => o.b6 && o.b2 && o.b5 && o.reserved },
   { id: "X4", what: "(claims R4–R7, R9) §8: unlogged grabs carry no identity (releases do), two stand-ins of two shapes, rerun-anon; §5: vacated {socket, by, why, at}, a sit within reach, the stand tile held; COMPONENT-LADDER @12 and later; SCRIPTS and AGENTS say the escape, the seat's own motion as when you sat, and where an agent stands", run() {
       const md = PROTO(); const s8 = section(md, /\n## 8\. /); const s5 = section(md, /\n## 5\. /);
       const lad = readText("docs/COMPONENT-LADDER.md"), sc = readText("docs/SCRIPTS.md"), ag = readText("AGENTS.md");
-      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && /second stand-in of another shape/.test(s8) && /flagged `rerun-anon`/.test(s8),
-        s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(s5),
+      return { s8: /a grab that isn't itself logged, records no trigger actor/.test(s8) && /a release\s+always has its own act/.test(s8) && (() => { const au = fs.readFileSync(new URL("../../docs/SCRIPTS.md", import.meta.url), "utf8"); return /second stand-in of another shape/.test(au) && /flagged `rerun-anon`/.test(au); })() && /An auditor's re-run of a script is a\s+check, never the record/.test(s8),   // the auditor's procedure is docs since the house's view (#260 10-20)
+        s5: /`vacated \{socket, by,\s+why, at\}`/.test(s5) && /\(`out-of-reach`\)/.test(s5) && /the stand tile pressed\s+and held/.test(fs.readFileSync(new URL("../../docs/SEATS.md", import.meta.url), "utf8")),   // the binding is the client's since the house's view (#260 10-20)
         lad: /translate-v1@12 and later/.test(lad), sc: /pressing and holding the stand tile/.test(sc) && /`rerun-anon`/.test(sc),
         ag: /`detach \{escape\?\}`/.test(ag) && /as it was when they sat, carries its occupants/.test(ag) && /where you were let go; you stand\s+there/.test(ag) }; },
     good: (o) => o.s8 && o.s5 && o.lad && o.sc && o.ag },

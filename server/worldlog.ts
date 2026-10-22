@@ -126,7 +126,8 @@ export class WorldLog {
     catch (err) { console.error(`[world:${name}] lifting sockets`, err); }
     const st = this.live.state();
     if (st.status !== "ok") console.warn(`[world:${name}] log folds to '${st.status}': the authority will refuse writes`);
-    // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule (record-altered)
+    // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule. Said, not enforced:
+    // the value reads as unknown, and writes go on (house markup, #260 10-20)
     const altered = (st.diagnostics ?? []).filter(([, c]: Any) => c === "commit-unpurged");
     if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown, and the authority refuses writes until the operator, with the world closed, restores those lines from a backup of the log and reopens it (each restored whole keeps its commit, so later lines still verify)`);
     this._state = this.view();
@@ -362,6 +363,7 @@ export class WorldLog {
   }
   /** The role the authority gives this identity (the authority is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
+  may(actor: string, permission: string): boolean { return effectiveIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true; }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
    *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
    *  requestwire.ts whois — is scoped to these, never the whole directory. */

@@ -42,8 +42,8 @@ function apply(id, bag, o, r, f) {
     Object.assign(r, { obj: part, sig, drawn: f !== 0, part: true });
     return;
   }
-  // a whole-thing motion owns the pose (motion.js); a mounted thing rides its parent
-  if (bag.motion?.type || obj.userData.mountedTo) return;
+  // a whole-thing motion owns the pose (motion.js). A parented thing opens in its parent's frame: its base is local (I37)
+  if (bag.motion?.type) return;
   const base = obj.userData.base; if (!base) return;
   const pv = bag.pivot?.pos; const pivot = Array.isArray(pv) && pv.length === 3 ? pv : [0, 0, 0];
   const sig = `${f}|${o.angle}|${o.axis}|${o.slide}|${pivot}|${obj.scale.x},${obj.scale.y},${obj.scale.z}`;

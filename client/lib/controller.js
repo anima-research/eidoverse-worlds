@@ -351,7 +351,8 @@ addEventListener('keydown', (e) => {
   if (typing() || isOverlayOpen()) return;
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
-  if (!(e.ctrlKey || e.metaKey)) keys.add(e.code);   // keys: toolKeys — a chord (Ctrl+D duplicates, Ctrl+Z undoes) never walks the body
+  // keys: toolKeys — a chord (Ctrl+D duplicates, Ctrl+Z undoes) never walks the body; Ctrl itself is held (dive: I97)
+  if (!(e.ctrlKey || e.metaKey) || e.code === 'ControlLeft' || e.code === 'ControlRight') keys.add(e.code);
   bus.emit('key', e);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
@@ -808,9 +809,10 @@ export function updateMe(dt, me) {
       wl == null ? {} : { floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
     myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
-    const R = 78; // stay on the island
-    const r = Math.hypot(myState.pos.x, myState.pos.z);
-    if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }
+    if (!worldBounds()) {   // the stage's 78 m island, where the world authored no bounds of its own (as swimming: I32)
+      const R = 78, r = Math.hypot(myState.pos.x, myState.pos.z);
+      if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }
+    }
   }
 
   // ---- vertical
@@ -858,6 +860,10 @@ export function updateMe(dt, me) {
   if (flight) {
     const input = pilotInput(keys, flight, dt);
     flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
+    // the world's bounds hold in the air too (house review I13): the flight state itself is clamped, or the next step
+    // carries on from outside them
+    const [fx, fz] = clampToBounds(flight.pos.x, flight.pos.z);
+    if (fx !== flight.pos.x || fz !== flight.pos.z) flight = { ...flight, pos: { ...flight.pos, x: fx, z: fz } };
     myState.pos.set(flight.pos.x, flight.pos.y, flight.pos.z);
     myState.yaw = Math.PI / 2 - flight.yaw;          // back to world convention
     myState.speed = Math.hypot(flight.vel.x, flight.vel.z);

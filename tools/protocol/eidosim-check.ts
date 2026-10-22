@@ -30,15 +30,17 @@ const schedules = (mkf: () => any, T: number) => {
 }
 { // a seeded fuzz of mixed flights over noisy ground
   let seed = 5; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-  let bad = 0, runs = 0;
+  let bad = 0, runs = 0, empty = 0;
   for (let n = 0; n < 40; n++) {
     const k = 2 + Math.floor(rnd() * 3), ents: any = {}, L: any[] = [];
-    for (let i = 0; i < k; i++) { const lib = rnd() < 0.3 ? "plank" : "crate", p = [rnd() * 3 - 1.5, 0, rnd() * 3 - 1.5];
-      ents["t" + i] = { pos: p, yaw: 0, lib, scale: 1 };
+    for (let i = 0; i < k; i++) { const model = rnd() < 0.3 ? "plank" : "crate", p = [rnd() * 3 - 1.5, 0, rnd() * 3 - 1.5];
+      ents["t" + i] = { pos: p, yaw: 0, model, scale: 1 };
       L.push({ id: "t" + i, p: [p[0], 0.2 + rnd() * 2, p[2]], v: [rnd() * 6 - 3, rnd() * 4, rnd() * 6 - 3], w: [rnd() * 6 - 3, rnd() * 6 - 3, rnd() * 6 - 3] }); }
+    if (Object.keys(mk(ents, L, { amplitude: 0.3, seed: n }).bodies).length !== k) empty++;
     const [j, t, c, s] = schedules(() => mk(ents, L, { amplitude: 0.3, seed: n }), 150); runs++;
     if (!(j === t && t === c && c === s)) bad++;
   }
+  ok(empty === 0, `S1 fuzz: every launch makes a body (the schedules compared aren't empty)`, { empty, of: runs });
   ok(bad === 0, `S1 fuzz: ${runs} multi-body flights, every schedule agrees`, { bad });
 }
 { // S2: spin is capped by the law, like v (review #2): a corner never moves faster than 20 m/s at launch
@@ -122,11 +124,11 @@ const schedules = (mkf: () => any, T: number) => {
 { // S7 (audit FIX-2): a joiner decides for itself whether it carries the cut's engine build
   const name = Object.keys(ENGINES).find((k) => k.startsWith("eidosim@"))!;
   const rep: any = makeReplica();
-  rep.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: "0000000000000000", tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
-  ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a build this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
+  rep.adopt({ state: {}, head: 0, sim: { spec: { engine: `${name.split("@")[0]}@0.0.1`, tickMs: 33 }, foreign: false, sim: { bogus: true }, clock: 0, launches: {}, launched: {} } });
+  ok(rep.sim?.foreign === true && !rep.sim?.sim?.bogus, "S7 a cut naming a version this reader doesn't carry is foreign here, whatever the sender said", { foreign: rep.sim?.foreign });
   const rep2: any = makeReplica();   // review of 8377ec52 #10: a carried build but no engine state in the cut can't fly here either
-  rep2.adopt({ state: {}, head: 0, sim: { spec: { engine: name, build: (ENGINES as any)[name].build, tickMs: 33 }, foreign: true, sim: null, clock: 0, launches: {}, launched: {} } });
-  ok(rep2.sim?.foreign === true, "S7 …and a cut of a carried build with no engine state is foreign too (a mid-epoch sim only starts from a cut)", { foreign: rep2.sim?.foreign });
+  rep2.adopt({ state: {}, head: 0, sim: { spec: { engine: name, tickMs: 33 }, foreign: true, sim: null, clock: 0, launches: {}, launched: {} } });
+  ok(rep2.sim?.foreign === true, "S7 …and a cut of a carried version with no engine state is foreign too (a mid-epoch sim only starts from a cut)", { foreign: rep2.sim?.foreign });
 }
 { // S8 stage 2: what flies knocks what rests. A dynamic thing at rest is a sleeping body the engine wakes on contact; it
   // flies under the launch that woke it and rests as that launch's. A static-kind one is a collider and never moves.

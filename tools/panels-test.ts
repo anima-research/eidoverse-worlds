@@ -17,6 +17,7 @@ GlobalRegistrator.register();
 (Element.prototype as any).setPointerCapture = function (id: number) { (this as any).__cap = id; };
 (Element.prototype as any).releasePointerCapture = function (id: number) { (this as any).__cap = undefined; };
 
+const P = await import("../client/lib/panels.js");
 const { parseEntry, shapeKey, renderDOM, makeSchemaFrame, resolveDelta, getScrubFeel, setScrubFeel, scrubTravel } = await import("../client/lib/panels.js");
 
 let pass = 0, fail = 0;
@@ -204,6 +205,20 @@ console.log("\nresolveDelta — a VR stepper's {axis, delta} becomes the number 
   check("an unknown key is null, never an object", resolveDelta(F, "zz", { axis: null, delta: 1 }) === null);
 }
 
+console.log("\nresolveDeltaEach — a stepper over a multi-selection steps each thing from its OWN value (house I203):");
+{
+  const own = { a: { t: "num", k: "x", value: 1 }, b: { t: "num", k: "x", value: 10 }, c: { t: "vec3", k: "x", value: [0, 5, 0] } };
+  const painted = [{ t: "num", k: "ed:x", value: 1 }];
+  const each = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["a", "b"], "ed:x", { axis: null, delta: 2 }, (id) => own[id], painted) : null;
+  check("each id gets its own value plus the delta", each?.get("a") === 3 && each?.get("b") === 12, JSON.stringify(each && [...each]));
+  const v3 = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["c"], "ed:x", { axis: 1, delta: 1 }, (id) => own[id], painted) : null;
+  check("…a vec3 steps its own axis", JSON.stringify(v3?.get("c")) === "[0,6,0]", JSON.stringify(v3 && [...v3]));
+  const fb = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["z"], "ed:x", { axis: null, delta: 2 }, () => null, painted) : null;
+  check("…a thing with no field of its own falls back to the painted value", fb?.get("z") === 3, JSON.stringify(fb && [...fb]));
+  const plain = typeof P.resolveDeltaEach === "function" ? P.resolveDeltaEach(["a", "b"], "ed:x", 7, (id) => own[id], painted) : null;
+  check("…and a plain number goes to every id as it is", plain?.get("a") === 7 && plain?.get("b") === 7);
+}
+
 console.log("\nsoft limits are LIVE across an in-place update (typing past softMax raises the next drag's cap):");
 {
   const sf = makeSchemaFrame("t-soft", { title: "t", x: 10, y: 10, w: 300, h: 200 });
@@ -248,6 +263,23 @@ console.log("\nfields updated IN PLACE revert to the CURRENT value, not the one 
   inp.dispatchEvent(new (globalThis as any).KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   check("Esc restores the current value (two), not the build-time one (one)", inp.value === "two", inp.value);
   check("…and commits nothing", calls.length === 0, JSON.stringify(calls));
+}
+
+console.log("\na held rebuild waits while focus moves to another field of the same panel (house I198):");
+{
+  const sf = makeSchemaFrame("t-hold", { title: "t", x: 10, y: 10, w: 300, h: 200 });
+  const edit = () => {};
+  const two = (extra = false) => [{ t: "text", k: "a", label: "a", value: "1" }, { t: "text", k: "b", label: "b", value: "2" }, ...(extra ? [{ t: "info", label: "new", value: "row" }] : [])];
+  sf.set(two(), edit);
+  const [a, b] = [...sf.frame.body.querySelectorAll(".sp-text")] as HTMLInputElement[];
+  a.focus();
+  sf.set(two(true), edit);                      // a new shape while a field is focused: held
+  b.focus();                                   // Tab to the panel's other field
+  await new Promise((r) => setTimeout(r, 5));
+  check("the panel was not rebuilt under the field just focused", b.isConnected && document.activeElement === b, `connected ${b.isConnected}, active ${(document.activeElement as any)?.className}`);
+  b.blur();
+  await new Promise((r) => setTimeout(r, 5));
+  check("…and focus leaving the panel paints the held state", !b.isConnected && /new/.test(sf.frame.body.textContent ?? ""), `connected ${b.isConnected}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -21,7 +21,7 @@
 // roughness prompted this tool — served by a scratch sequencer so nothing
 // appends to the real log.
 //
-// Scaffolding (scratch sequencer, CDP, Windows shim rule) is paritybench's.
+// Scaffolding: a scratch sequencer, CDP, and the Windows shim rule (spawn process.execPath, never the PATH bun).
 
 import { existsSync, mkdtempSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,8 +52,7 @@ const SECS = num("secs", WIDE ? 25 : HEAVYJOIN ? 50 : GRASSDIAG ? 75 : 40);
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 // A WebGPU-capable Chromium, wherever this machine keeps one — CHROME env
-// wins, else the first candidate that exists (paritybench's list, copied:
-// the tools stay self-contained).
+// wins, else the first candidate that exists (the tools stay self-contained).
 const BROWSER_CANDIDATES: Record<string, string[]> = {
   win32: [
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",

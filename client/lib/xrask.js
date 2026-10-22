@@ -38,6 +38,9 @@ function settle(v) {
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?domquads=0)
+// leaving the headset answers the open question with its cancel: nobody can see it now, and an unsettled ask holds every
+// later undo behind it (editwrites settled(); house review I19)
+bus.on('xr:state', (on) => { if (!on && pending) settle(pending.cancel); });
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
 export function initXRAsk() {
   if (api) return api;
@@ -45,7 +48,7 @@ export function initXRAsk() {
   api.xr = true;
   const css = document.createElement('style');
   css.textContent = `[data-frame=ask] .fr-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.ask-title { font-weight: 600; } .ask-row { display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
+.ask-title { font-weight: 600; flex: none; } .ask-body { flex: 1; min-height: 0; overflow: auto; } .ask-row { flex: none; display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
   document.head.appendChild(css);
   bus.on('xr:domquads', () => { if (!pending) showXRPanel('ask', false); });   // entering VR: present but hidden until asked
   return api;

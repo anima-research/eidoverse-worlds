@@ -81,9 +81,9 @@ export function seatSocket(id) {
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
-/** Avatar attachments (an occupant: sitting, standing at a station) — bodies aren't entities, so
- *  their mounts live here for remotes/controller to consume. {to: <socket id>, pose?, at?, in?} */
-export const avatarMounts = new Map();
+// Avatar attachments: the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
+import { avatarMounts } from './mounts.js';
+export { avatarMounts };
 /** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
  *  `seat: {to: <socket id>}` while seated, so every receiver sets it from the frame and clears it when a frame comes
  *  without one. A frame from a client before sockets were entities says {to: <host>, slot}: it names the host's socket
@@ -164,6 +164,7 @@ export const anyBuildsPending = () => buildDepth + skyGate;
 // Guards so a re-join (avatar switch, reconnect) that replays the log doesn't
 // regenerate an identical world.
 let lastTerrainArgs = null;
+let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
 
 // ---- world-scope state application ------------------------------------------
@@ -175,7 +176,15 @@ let lastGrassArgs = null;
 /** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
  *  a re-join replaying the same world does not regenerate identical ground. */
 export function applyTerrainState(args) {
-  if (!args) { if (lastTerrainArgs !== null) { lastTerrainArgs = null; setTerrain(null); } return; }   // removed: the stage floor returns
+  // no terrain: the stage floor returns, with the world's water on it when it has some (environment.js groundArgs
+  // {stageFloor, water}; house review I8) and without the old ground's water when it doesn't
+  if (!args || args.stageFloor === true) {
+    const key = args ? JSON.stringify(args) : null;
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); }
+      try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
+    return;
+  }
+  stageFloor = false;
   const key = JSON.stringify(args);
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
@@ -229,7 +238,7 @@ export function applyTerrainState(args) {
     // re-seat only ground-level entities — anything with a meaningful y
     // (seated on furniture, elevated) keeps its logged height
     for (const [id, obj] of entities) {
-      if (obj && Math.abs(obj.position.y) < 0.02) {
+      if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
         if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
         reindexCollider(id);

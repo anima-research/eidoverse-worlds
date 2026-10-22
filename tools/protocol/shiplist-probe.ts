@@ -764,16 +764,18 @@ try {
   // ---- MT: the draft hesperus/material, drawn (docs/COMPONENT-LADDER.md rung 1; R 10-10) ----
   await stage("MT", async () => {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
-  await page(`const m = await import('/lib/net.js'); for (const [id, dx] of [['mta', 2], ['mtb', 3.2]]) await m.sendRequest('create', { id, model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 3], scale: 0.3 } } }); return true;`);
-  await needModel(`import('/lib/world.js').then((m) => m.entities.get('mta') && m.entities.get('mtb'))`, 'mta and mtb'); await sleep(1500);
+  // ids are the authority's (10-17): a create's id is a placeholder the reply maps to the minted one
+  const made = await page(`const m = await import('/lib/net.js'); const out = []; for (const dx of [2, 3.2]) out.push((await m.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 3], scale: 0.3 } } })).refs?.[0]?.id ?? null); return out;`);
+  const [MTA, MTB] = made ?? []; if (!MTA || !MTB) throw new Error(`setup: the two crates weren't created: ${JSON.stringify(made)}`);
+  await needModel(`import('/lib/world.js').then((m) => !!(m.entities.get('${MTA}') && m.entities.get('${MTB}')))`, 'the two crates'); await sleep(1500);
   const look = (id) => `(() => { const w = globalThis.__mtw; let c = null, r = null, shared = null; w.entities.get('${id}').traverse((o) => { if (o.isMesh && c === null) { const mm = Array.isArray(o.material) ? o.material[0] : o.material; c = mm.color?.getHexString?.() ?? null; r = mm.roughness ?? null; shared = mm; } }); return { c, r, mat: shared }; })()`;
   const r = await page(`globalThis.__mtw = await import('/lib/world.js'); const n = await import('/lib/net.js');
-    const before = ${look('mta')}; const set = await n.sendRequest('set', { id: 'mta', component: 'hesperus/material', value: { color: 0xff2200, roughness: 0.15 } });
-    await new Promise((z) => setTimeout(z, 1500)); const a = ${look('mta')}, b = ${look('mtb')};
-    const del = await n.sendRequest('delete', { id: 'mta', component: 'hesperus/material' }); await new Promise((z) => setTimeout(z, 1500)); const back = ${look('mta')};
-    const slot = globalThis.__matoverride.materialsOf('mta')[0]?.slot; await n.sendRequest('set', { id: 'mta', component: 'hesperus/material:' + slot, value: { color: 0x0044ff } });
-    await n.sendRequest('set', { id: 'mtb', component: 'hesperus/material:not-a-slot', value: { color: 0x00ff00 } }); await new Promise((z) => setTimeout(z, 1500));
-    const sa = ${look('mta')}, sb = ${look('mtb')};
+    const before = ${look(MTA)}; const set = await n.sendRequest('set', { id: '${MTA}', component: 'hesperus/material', value: { color: 0xff2200, roughness: 0.15 } });
+    await new Promise((z) => setTimeout(z, 1500)); const a = ${look(MTA)}, b = ${look(MTB)};
+    const del = await n.sendRequest('delete', { id: '${MTA}', component: 'hesperus/material' }); await new Promise((z) => setTimeout(z, 1500)); const back = ${look(MTA)};
+    const slot = globalThis.__matoverride.materialsOf('${MTA}')[0]?.slot; await n.sendRequest('set', { id: '${MTA}', component: 'hesperus/material:' + slot, value: { color: 0x0044ff } });
+    await n.sendRequest('set', { id: '${MTB}', component: 'hesperus/material:not-a-slot', value: { color: 0x00ff00 } }); await new Promise((z) => setTimeout(z, 1500));
+    const sa = ${look(MTA)}, sb = ${look(MTB)};
     return { slot, slotA: sa.c, slotB: sb.c, set: set.ok ?? set.refused, before: [before.c, before.r], a: [a.c, a.r], b: [b.c, b.r], sharedWithB: a.mat === b.mat, back: [back.c, back.r], backIsOwn: back.mat === before.mat, del: del.ok ?? del.refused };`);
   check("MT2 a one-slot override (hesperus/material:<its slot>) recolours that slot; a slot the model doesn't have changes nothing", r.slot && r.slotA === "0044ff" && r.slotB === r.before[0], r);
   check("MT1 a hesperus/material override recolours that one thing (a clone; the same model elsewhere is untouched), and deleting it brings the model's own material back", r.set === true && r.a[0] === "ff2200" && Math.abs(r.a[1] - 0.15) < 1e-6 && r.b[0] === r.before[0] && !r.sharedWithB && r.backIsOwn && r.del === true, r);

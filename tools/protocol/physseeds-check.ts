@@ -68,9 +68,9 @@ const cut = [{ ccd: true }, { layers: 1 }, { mask: 1 }, { material: "wood" }];
 ok("PH3", sr({ kind: "dynamic" }) === null && sr({ kind: "dynamic", mass: 2.5, density: 700 }) === null && !!sr({ kind: "dynamic", mass: 0 }) && !!sr({ kind: "dynamic", density: -1 }) && held.every((b) => /reserved/.test(sr({ kind: "dynamic", ...b }) ?? "")) && cut.every((b) => /gone/.test(sr({ kind: "dynamic", ...b }) ?? "")) && /needs kind/.test(sr({}) ?? ""),
   "the authority takes a mass and a density in range, refuses a reserved property as reserved, a cut one as gone, and a physics with no kind", { held: held.map((b) => sr({ kind: "dynamic", ...b })), cut: cut.map((b) => sr({ kind: "dynamic", ...b })), none: sr({}) });
 const sf = CS.COMPONENTS?.surface;
-ok("PH4", sf?.on === "world" && sf?.keyed && ["friction", "restitution", "density"].every((f) => sf.fields?.[f] === "number") && AU.schemaRefusal?.("surface:oak", { friction: 0.6, restitution: 0.1, density: 700, frictionCombine: "average" }) === null
-  && AU.schemaRefusal?.("surface:oak", { friction: -1 }) && AU.schemaRefusal?.("surface:oak", { frictionCombine: "geometric" }) && JSON.stringify(CS.COMBINE) === '["average","min","multiply","max"]',
-  "a world's surfaces: @world surface:<name> {friction, restitution, density} (a named material, Marrow's surface-card shape)", sf);
+const physPin = (CS.pinOf?.() ?? {}).physics;
+ok("PH4", sf?.status === "reserved" && sf?.on === "world" && sf?.keyed && !sf.fields && !(physPin?.reservedShape) && /friction/.test(fs.readFileSync(new URL("../../docs/RESERVED-SHAPES.md", import.meta.url), "utf8")),
+  "a world's surfaces: @world surface:<name> is reserved by name, with no shape pinned (nor physics' reserved fields' shapes) until a world needs one; the sketch is docs/RESERVED-SHAPES.md", sf);
 ok("PH5", (ph.enums?.kind ?? []).includes("kinematic") && ["dynamic", "static", "none"].every((k) => ph.enums.kind.includes(k)), "physics.kind adds kinematic (moved by authority or motion, never by the engine)", ph.enums);
 ok("PH6", CS.statusOf("physics-joint") === "reserved" && CS.COMPONENTS["physics-joint"].keyed && !CS.COMPONENTS["physics-joint"].fields && CS.statusOf("joint") === "reserved" && /skeleton/.test(CS.COMPONENTS.joint.help),
   "physics-joint:<name> is the reserved constraint (no fields pinned: one anchor can't carry two frames; PHYSICS §3.3 sketches the shape); joint is the reserved skeleton node", [CS.COMPONENTS["physics-joint"], CS.COMPONENTS.joint]);

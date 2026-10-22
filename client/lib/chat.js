@@ -777,6 +777,8 @@ function sttReport() {
 const CHAT_LOCAL = {
   // whisper was removed (R 10-18): speech in a world is public and arrival-only; DMs are planned at the identity level
   w() { logChat('*', 'whisper was removed: everything said in a world is public (everyone here hears it). To address someone, @mention them.'); },
+  // ghost was removed (R 10-20): nobody is hidden in a world; moderation quiets or removes
+  ghost() { logChat('*', 'ghost was removed: nobody in a world is hidden from it. To quiet someone, /mute them; to remove them, /kick or /ban.'); },
   name(rest, arg) {
     if (!arg) { logChat('*', `you are ${CONFIG.name} — /name <new name> to change it`); return; }
     bus.emit('command', { cmd: 'rename', arg });   // the handler owns the (un)support answer
@@ -819,6 +821,7 @@ function runCommand(raw) {
   const row = resolveCommand(typed);
   const canon = row?.name ?? typed;
   if (CHAT_LOCAL[canon]) { CHAT_LOCAL[canon](rest, arg); return true; }
+  if (row?.retired) { logChat('*', row.retired); return true; }
   if (row) {
     // aliasAsAction (/pull lever1): typing the alias IS the action
     const a = row.aliasAsAction && typed !== row.name ? `${arg} ${typed}`.trim() : arg;

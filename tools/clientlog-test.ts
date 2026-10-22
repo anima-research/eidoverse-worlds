@@ -36,8 +36,8 @@ if (process.getuid?.() !== 0) {
   foundWorlds(wd, ["fresh"]);   // a known world with NO client-log file yet
   await new Promise((r) => setTimeout(r, 1100));                                                          // past the miss-relist rate limit
   chmodSync(ld, 0o500);                                                                                  // a read-only dir blocks creating one
-  ok(await st(post("world=fresh", "into a wall")) === 500, "unwritable log dir → 500, not a false ok");
-  chmodSync(ld, 0o700);
+  try { ok(await st(post("world=fresh", "into a wall")) === 500, "unwritable log dir → 500, not a false ok"); }
+  finally { chmodSync(ld, 0o700); }   // a failure here once left the dir read-only, and the gate's cleanup crashed on it
 } else console.log("(root: skipping the unwritable-dir case)");
 console.log("clientlog: 15 ok");
 import("node:fs").then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });

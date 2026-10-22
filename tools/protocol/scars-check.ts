@@ -133,6 +133,20 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
     good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
+  { id: "L7", what: "one switch per body, and nothing around it (recut A2, house plan #260 10-20): what the consent switch grants lands in presence fields (poseBy, draggedBy, tumble, the reaches a relay caches), and the authority and the relay write them in bodyconsent.js alone, where every path (a request, a script's world.pose, a seat, a stream) is decided first; a write anywhere else in shared/ or server/ is a path around the switch", run() {
+      const walk = (d: string): string[] => fs.readdirSync(path.join(TREE, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(d, e.name))) : /\.(js|ts|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
+      const WRITE = /\.(poseBy|poseSponsor|draggedBy|dragSponsor|tumble)\s*(=[^=]|\?\?=)|reaches\s*\?\?=|\.reaches\)?\[[^\]]+\]\s*=[^=]/;
+      const files = [...walk("shared"), ...walk("server")];
+      const around = files.filter((f) => !f.endsWith(path.join("authority", "bodyconsent.js"))).flatMap((f) => read(f).split("\n").map((l, i) => [f, i + 1, l] as const).filter(([, , l]) => WRITE.test(l) && !/^\s*\/\//.test(l)).map(([f, n]) => `${f}:${n}`));
+      const inside = read("shared/protocol/authority/bodyconsent.js").split("\n").filter((l) => WRITE.test(l)).length;
+      return { files: files.length, around, inside }; },
+    good: (o) => o.files > 50 && o.around.length === 0 && o.inside >= 4 },
+  { id: "L6", what: "a consented pose keeps who posed you (poseBy: the 'who posed me' answer and the revoke read it), never the pose itself: the authority sends no body's pose, so a copy of it was write-only (recut A4, house plan #260 10-20)", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });   // recut A2: default is accept
+      const r = s.call("vic", "body", { to: "bob", kind: "pose", spec: { head: [0, 0, 0, 1] } });
+      const b = s.w().presence.bodies.bob ?? {};
+      return { r: show(r), poseBy: b.poseBy, hasPose: "pose" in b }; },
+    good: (o) => o.r === "ok" && o.poseBy === "vic" && !o.hasPose },
   { id: "L5", what: "a refused touch, body effect or consent write is never logged (presence: consent is never appended, scars r8 M3); a refused edit still is", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });   // recut A2: default is accept
       const n0 = s.entries().length;
@@ -223,9 +237,9 @@ const cases: Case[] = [
       return { sit: show(sit), r: show(r), at: s.w().state().entities.chair.c.transform?.pos, seated: !!s.w().presence.occupants?.bob }; },
     good: (o) => o.sit === "ok" && o.r === "ok" && o.at?.[0] === 4 && !o.seated },
   // ---------------- Q: purge vs readback ----------------
-  { id: "Q1", what: "an owner named the engine's build; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
-      const OLD = "be543899cfedf430";
-      const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", build: OLD } });
+  { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
+      const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
+      const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
       const actSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "set");
       const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
@@ -233,8 +247,8 @@ const cases: Case[] = [
       const w2 = s.reopen(); w2.entries[actSeq].body = { commit: "0".repeat(64) }; s.call("olive", "look", {});
       const restamp2 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
       const spec = s.w().state().entities["@world"].c["physics-engine"];
-      return { set: show(set), restamp1, restamp2, build: spec.build }; },
-    good: (o) => o.set === "ok" && o.restamp1 === 0 && o.restamp2 === 0 && o.build === "be543899cfedf430" },
+      return { set: show(set), restamp1, restamp2, engine: spec.engine }; },
+    good: (o) => o.set === "ok" && o.restamp1 === 0 && o.restamp2 === 0 && o.engine === "eidosim@0.9.0" },
   { id: "Q2", what: "a thing a use handler wrote is its author's (creatorOf.rights); with the use act's body purged the rights are unknown (null), never the visitor who pulled the lever", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { reactions: { on: { kind: "set", component: "t/lit", value: { on: true } } } }, place: { at: [0, 0] } });
       const u = s.call("vic", "use", { id: "lamp", action: "on" });
@@ -274,12 +288,12 @@ const cases: Case[] = [
       return { para: /\*\*Where the authority reads old acts \(readback\)\.\*\*/.test(spec) && /treats a purged body as \*\*unknown\*\*/.test(spec),
         purge12: /act body the authority reads back, §1, may be purged/.test(spec), rows: Object.keys(RB), whole: Object.values(RB).every((r: any) => r.fields?.length && r.where && r.unknown) }; },
     good: (o) => o.para && o.purge12 && ["act:undo", "act:use", "act:script", "act:sculpt", "act:*", "sim:launch"].every((k) => o.rows.includes(k)) && o.whole },
-  { id: "X3", what: "PROTOCOL §7a: the avatar guard rails are MUSTs before avatars (owner stamped at wear, one predicate, every path, the precedence ladder, the grant, the wearer's log); body ownership is a rule under its own heading, and the old word 'sealed' is gone (R 10-17)", run() {
-      const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("## 7a."), spec.indexOf("## 8."));
-      return { b: ["B1.", "B2.", "B3.", "B4.", "B5.", "B6."].filter((x) => !sec.includes(`**${x}`)), ladder: sec.includes("consent > body owner and grantees > world"),
-        stamped: /stamped by the authority at wear/.test(sec) && /MUST NOT be derived from the log's history/.test(sec), grant: sec.includes("`edit-grant:<identity> {until?,"),
-        wearer: /stored in the wearer's log, never the world's/.test(sec), sealed: sec.includes("### Body ownership (avatars)") && !/sealed/i.test(sec), oldIntended: sec.includes("(*intended*; the avatar design, not in this PR)") }; },
-    good: (o) => !o.b.length && o.ladder && o.stamped && o.grant && o.wearer && o.sealed && !o.oldIntended },
+  { id: "X3", what: "avatars (house markup D, #260 10-20): the spec keeps only the bone (every write to a body goes through the one request path, and the body's owner decides), under its own heading, no 'sealed'; the guard rails (owner stamped at wear, one predicate, every path, the grant, the wearer's log) are direction in docs/AVATAR-DIRECTION.md; the precedence ladder between a world and the person in the body is in neither", run() {
+      const spec = read("spec/PROTOCOL.md"); const sec = spec.slice(spec.indexOf("### Body ownership (avatars)"), spec.indexOf("\n## 8. ")); const dir = read("docs/AVATAR-DIRECTION.md");
+      return { bone: /\*\*every write to a body goes\s+through the one request path, and the body's owner decides\*\*/.test(sec), noRules: !/\*\*B[1-6]\./.test(sec), pointer: sec.includes("docs/AVATAR-DIRECTION.md"), sealed: !/sealed/i.test(sec),
+        moved: ["B1.", "B2.", "B3.", "B5.", "B6."].filter((x) => !dir.includes(`**${x}`)), stamped: /stamped by the authority at wear/.test(dir) && /MUST NOT be derived from the log's history/.test(dir), grant: dir.includes("`edit-grant:<identity> {until?,"),
+        wearer: /stored in the wearer's log, never the world's/.test(dir), ladder: spec.includes("consent > body owner and grantees > world") || dir.includes("consent > body owner and grantees > world"), b4out: /\*\*B4 [\s\S]{0,120}?taken out\*\*/.test(dir) }; },
+    good: (o) => o.bone && o.noRules && o.pointer && o.sealed && !o.moved.length && o.stamped && o.grant && o.wearer && !o.ladder && o.b4out },
   { id: "X4", what: "the names the guard rails use are held: body-owner, edit-grant, avatar-deny reserved in the registry; the request arrive {wearing} refused as reserved; the refusal code body registered", async run(s) { cast(s);
       const CS = await import(TREE + "shared/protocol/componentspec.js"); const VS = (globalThis as any).__VS; const RC = (globalThis as any).__REG?.REFUSAL_CODES ?? {};
       const arrive = s.call("vic", "arrive", { wearing: { avatar: "x", hash: "sha256:" + "0".repeat(64) } });

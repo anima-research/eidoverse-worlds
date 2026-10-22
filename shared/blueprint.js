@@ -10,7 +10,7 @@
 // `components` are component instances exactly as shared/components.js reads
 // them (componentsOf / entityOf: `{ type, key?, params, wire?, extra? }`), so a
 // node expands to wire bytes with the same alias table every surface uses.
-// The root carries no placement: its Transform may say `scale` and `rotOrder`,
+// The root carries no placement: its Transform may say `scale`,
 // never `pos`/`q`/`yaw` (where a copy stands is the copy's). A child's
 // Transform is LOCAL to its parent node, as a child entity's is to its carrier
 // (design §3 "Children"); the nesting is the attachment, so no node carries an
@@ -112,7 +112,7 @@ export function blueprintRefusal(rec) {
       if (!isBag(c.params)) return `${at}.params is an object`;
       if (c.wire !== undefined && !isBag(c.wire)) return `${at}.wire is an object`;
       if (c.extra !== undefined && !isBag(c.extra)) return `${at}.extra is an object`;
-      if (c.type === 'Transform' && depth === 0 && PLACEMENT.some((k) => c.params[k] !== undefined)) return 'the root\'s Transform holds no pos, q or yaw — where a copy stands is the copy\'s own (scale and rotOrder may ride)';
+      if (c.type === 'Transform' && depth === 0 && PLACEMENT.some((k) => c.params[k] !== undefined)) return 'the root\'s Transform holds no pos, q or yaw — where a copy stands is the copy\'s own (scale may ride)';
       const id = compIdOf(c);
       if (seen.has(id)) return `${at}: two ${c.type} components${c.key != null ? ` under key "${c.key}"` : ''} on one part`;
       seen.add(id);
@@ -400,10 +400,7 @@ export function placeRefusal(rec) {
     if (comps.some((c) => c.type === 'Light' && c.key == null)) return `${where} holds a light in both spellings (kind:"light" and comp.light) — a placed part has one`;
     for (const c of comps) {
       if (c.type === 'Transform') {
-        const ro = c.params?.rotOrder;
-        const why = ro !== undefined && compRefusal('rotOrder', ro, null);
-        if (why) return `${where}: ${why}`;
-        continue;
+        continue;   // a rotOrder an older record carries is ignored: the order is the viewer's (PROTOCOL §9.1)
       }
       if (c.type === 'Model') continue;
       if (c.type === 'Collider' && c.key == null) continue;   // the legacy collide, written by spawn
@@ -496,8 +493,7 @@ export function placeVerbs(rec, at, { hash = null, taken = () => false } = {}) {
     for (const c of comps) {
       if (c.type === 'Model' || c === legacyCollide) continue;
       if (c.type === 'Transform') {
-        if (tf.rotOrder !== undefined) verbs.push({ verb: 'comp', args: { id: entId, type: 'rotOrder', data: tf.rotOrder } });
-        continue;
+        continue;   // pos/q/scale went into spawn/mount above; a rotOrder is the viewer's and is never written
       }
       for (const [type, data] of compEntries(c)) (RULES.has(type) ? rules : verbs).push({ verb: 'comp', args: { id: entId, type, data } });
     }
@@ -532,7 +528,7 @@ export function copyOf(world, id) {
 /** A child entity's components with its Transform made LOCAL (exported for
  *  6c's Save as Blueprint, which reads a selection's children the same way): the mount's
  *  offset and relative orientation (a slot's pose when the mount names a slot
- *  and no offset), its own scale and rotation order. The fold's pos/q on a
+ *  and no offset), its own scale. The fold's pos/q on a
  *  mounted thing is its pre-mount pose, not where it is (hierarchy.js). */
 export function localComponents(world, ent) {
   const { components } = componentsOf(ent);

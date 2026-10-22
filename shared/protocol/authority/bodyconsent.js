@@ -105,7 +105,8 @@ const reachModes = (P, to, now) => Object.fromEntries(Object.entries(P.reaches ?
 function deliver(w, from, to, kind, cls, extra, consent) {
   const P = w.presence, b = P.bodies[to];
   const sponsor = extra.sponsor ? { sponsor: extra.sponsor } : {};
-  if (cls === "pose") { b.pose = extra.spec ?? {}; b.poseBy = from; if (extra.sponsor) b.poseSponsor = extra.sponsor; else delete b.poseSponsor; }
+  // who posed you, never the pose: the pose travels on the presence plane from the poser's client; a copy here was never read (recut A4)
+  if (cls === "pose") { b.poseBy = from; if (extra.sponsor) b.poseSponsor = extra.sponsor; else delete b.poseSponsor; }
   if (cls === "displace") { b.draggedBy = from; if (extra.sponsor) b.dragSponsor = extra.sponsor; else delete b.dragSponsor; }
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
   // a grant the relay caches ends no later than the timed allowance it came from (reachAdmits takes the cached grant first)
@@ -121,7 +122,7 @@ function deliver(w, from, to, kind, cls, extra, consent) {
 function syncDefault(w) { const v = w.state?.()?.entities?.["@world"]?.c?.["body-default"]; if (C.SWITCHES.includes(v)) w.presence.bodyDefault = v; else delete w.presence.bodyDefault; }
 function revokeAfter(w, to, before = {}) { syncDefault(w); const P = w.presence, b = P.bodies[to], now = w.now(); if (!b) return [];
   const ended = []; const end = (actor, sponsor, cls, clear) => { if (decideAs(P, actor, sponsor, to, cls, now).mode !== "deny") return; clear(); ended.push({ actor, class: cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: cls }); };
-  if (b.poseBy) end(b.poseBy, b.poseSponsor, "pose", () => { delete b.pose; delete b.poseBy; delete b.poseSponsor; });
+  if (b.poseBy) end(b.poseBy, b.poseSponsor, "pose", () => { delete b.poseBy; delete b.poseSponsor; });
   if (b.draggedBy) end(b.draggedBy, b.dragSponsor, "displace", () => { delete b.draggedBy; delete b.dragSponsor; });
   for (const [actor, r] of Object.entries(P.reaches ?? {})) if (r?.to === to) { const m = decideAs(P, actor, r.sponsor, to, r.cls, now).mode;
     if (m === "deny" || (m !== "allow" && m !== before[actor])) { delete P.reaches[actor]; ended.push({ actor, class: r.cls }); inboxPush(P, actor, { type: "body-revoked", by: to, class: r.cls }); } }

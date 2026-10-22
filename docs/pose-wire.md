@@ -73,3 +73,61 @@ sockets (`mcpl/agent.ts` keeps the raw pose in `people`, and `look` describes it
 
 Bound by `tools/voice-wire-test.ts` (owner → fence → frame → peer, spectator, agent; latest wins; fence; unknown;
 not remembered) and `tools/voice-wire-mutation-test.ts` (sender, fence, settledPose and the look note each turn it red).
+
+## Named poses, body-mode, anims, size and voice (moved from PROTOCOL §5, the house's view #260 10-20: one list)
+
+Verbatim when moved; PROTOCOL §5 keeps the rules that bind (a declared body-mode grants nothing; a once-anim is never replayed; `live` is reserved; receivers clamp).
+
+Named poses
+  travel the same way: `pose.poses` lists the poses a body holds by name (a
+  pose is one frame, only the bones it names; a clip has more than one key), never implementation-specific quaternions: `"wings-folded"` is
+  the folded-wing silhouette, which each renderer applies through the worn
+  rig's own fold path, and a name a rig doesn't know is ignored (its
+  default). An empty list holds none; an absent one says nothing. (Before
+  release the packet said `wingsFolded: true|false`; a receiver still reads
+  it as that pose.) The same packet carries a body's
+  size and a person's voice state, each optional, absence meaning the
+  default (or, for voice, *unknown*):
+  - `pose.bodyMode` — what the body is doing as a whole: `stand` | `sit` |
+    `lie` | `swim` | `fly` | `fall` (R 10-17; was the posture, read off the
+    clip, which is what a sample without it still means). The body's owner
+    publishes it: the mover sets it on real transitions (into water, an
+    actual take-off, airborne, landing) and the owner may declare any of the
+    six for looks; a declaration holds until the next real transition or
+    declaration. It is apart from `clip` (what plays). It is a self-declared
+    description: the authority and every server MUST NOT grant or relax any
+    rule, consent check or permission because of a declared body-mode; a rule
+    that depends on a body's state checks what it can verify on the act (the
+    water at the position, the fly permission at take-off).
+  - `pose.anim` — the name of an anim the body plays ONCE (a gesture: a pose
+    or a clip, by name), riding exactly one packet: a receiver plays it over
+    whatever the body holds and returns to that, and nothing remembers it
+    (a joiner never replays it). Before release the packet carried it under
+    its pre-release key, which a receiver still reads for one release.
+    The anims a body PLAYS OR HOLDS are layers: the clip, a
+    held pose (`pose.pose`, `pose.poses`) and live animations relayed by the
+    `anim` message each play at once, and a new one replaces only its own
+    layer. When a body stops them — all, or one by name — it rests in its
+    CURRENT body-mode's own anim (`stand`: idle; `sit`: its sit loop; `lie`;
+    `swim`: tread; `fly`: its hover), never the bind pose, and its
+    `bodyMode` is unchanged by the stop. `{type: "anim", stop: true}` is the
+    relay message that fades out every live animation the sender is
+    playing (each receiver hands the bones back to what is beneath). The
+    name `live` is reserved: it names every ad-libbed anim (one started from
+    joints or tracks, never a name), so no clip, def, pose or world's or
+    avatar's anim may be called it, and stopping `live` stops those only.
+  - `pose.scale` — the wearer's chosen size multiplier for the whole body
+    (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
+  - `pose.plateY` — metres the nameplate hangs above the body's measured
+    crown, at its authored size (it grows with `scale`); absent = 0 (auto).
+    Range −0.3…+0.8.
+  - `pose.mic` — this person's microphone is live; `pose.hear` — they are
+    hearing voices. Booleans; absent = unknown, never "off".
+
+  Receivers MUST clamp `scale`/`plateY` to their ranges and read a
+  non-number as absent; a non-boolean `mic`/`hear` is absent
+  (shared/presencewire.js holds the clamps; the server's pose fence applies
+  the same ones). `scale`/`plateY` are body state and ride the settled pose
+  a server keeps for late joiners, as `poses` does; `mic`/`hear` are
+  a live reading re-sent with every packet and are never part of it. The
+  pose packet's fields are `docs/pose-wire.md`.

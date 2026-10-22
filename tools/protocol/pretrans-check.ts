@@ -364,6 +364,14 @@ await C("D8", "a definition's meaning is pinned: a changed default, type or enum
   const am0 = CAT.COMPONENTS.light.absentMeans;   // light has its own absentMeans since the shape audit (10-16): put them back after the probe
   CAT.COMPONENTS.light.fields.extra = "number"; CAT.COMPONENTS.light.absentMeans = { ...(am0 ?? {}), extra: "no extra" }; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra; if (am0) CAT.COMPONENTS.light.absentMeans = am0; else delete CAT.COMPONENTS.light.absentMeans;
   return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
+await C("D12", "every field of an open component has a written meaning, pinned with its unit (spec/registry-pin.json docs/units: the normative home of what a field means, the house's view #260 10-20), and a changed meaning is a break", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf();
+  const bare = Object.entries(now).filter(([, p]: any) => p.status !== "reserved" && p.status !== "retired").flatMap(([n, p]: any) => Object.keys(p.fields ?? {}).filter((f) => !(typeof p.docs?.[f] === "string" && p.docs[f].trim())).map((f) => `${n}.${f}`));
+  const unpinned = Object.entries(now).flatMap(([n, p]: any) => Object.keys(p.docs ?? {}).filter((f) => pin[n]?.docs?.[f] !== p.docs[f]).map((f) => `${n}.${f}`));
+  const changed = JSON.parse(JSON.stringify(pin)); const lit = changed.light; const f0 = Object.keys(lit?.docs ?? {})[0]; if (f0) lit.docs[f0] = lit.docs[f0] + " (it once meant something else)";
+  const caught = f0 ? CAT.pinBreakList(changed).some((b: any) => b.text.startsWith(`light.${f0}: its meaning`)) : false;
+  return [!bare.length && !unpinned.length && caught, { bare: bare.slice(0, 8), unpinned: unpinned.length, caught }];
+});
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
@@ -383,9 +391,11 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
 // + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
 const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "material", "anim-pose", "anim-clip", "anim-states", "camera", "zone", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
-await C("ST1", "every registered name has a status: the held names are reserved, the kernel's five (transform, parent, model, roles, access) trial-kernel, every other one trial, none stable (v1 promises none)", () => {
-  // reviewer item 5 (10-18): transform, parent, model, roles and access are the kernel's (trial-kernel: kernel-check.ts guards their change)
-  const KERNEL_COMPONENTS = ["transform", "parent", "model", "roles", "access"];
+const KSPEC = await import("../../shared/protocol/kernelspec.js");
+await C("ST1", "every registered name has a status: the held names are reserved, the kernel's (roles, access) trial-kernel, every other one trial, none stable (v1 promises none)", () => {
+  // the kernel's components are trial-kernel (kernel-check.ts guards their change): roles and access since C11b; transform, parent and model
+  // left it (the fold never reads them; house plan #260 10-20)
+  const KERNEL_COMPONENTS: readonly string[] = KSPEC.KERNEL_COMPONENTS;   // the kernel's own list, never a copy that can drift
   const bad = Object.entries<any>(CAT.COMPONENTS).filter(([k, d]) => d.status !== (RESERVED_NAMES.includes(k) ? "reserved" : KERNEL_COMPONENTS.includes(k) ? "trial-kernel" : "trial")).map(([k, d]) => `${k}: ${d.status}`);
   return [!bad.length && typeof CAT.STATUSES?.trial === "string" && typeof CAT.statusOf === "function" && CAT.statusOf("script:bell") === "trial" && CAT.statusOf("physics-joint:h") === "reserved" && CAT.statusOf("example.org/heart") === null, bad]; });
 await C("ST2", "a write of any reserved name is refused at the door, one code and one wording for all of them (an owner's too); physics-joint's fix still says what to use", () => {

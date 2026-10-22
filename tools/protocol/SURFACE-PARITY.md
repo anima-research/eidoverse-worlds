@@ -117,8 +117,7 @@ The script is Bun + CDP only — no Playwright, no Linux paths it cannot do with
    seconds rather than the minute SwiftShader takes; expect ~6 boots (old, new, old-control × 2 worlds).
 3. Add `--headed` to watch it. Add `--keep-ui` to include the panels. Frames land under `notes\surface-parity\<time>\`.
 
-On Windows the script spawns `process.execPath`, not `bun` (the PATH shim orphaned sequencers before —
-`tools/paritybench.ts` header, lesson 4), and kills by PID.
+On Windows the script spawns `process.execPath`, not `bun` (the PATH shim orphaned sequencers before), and kills by PID.
 
 ## Known limits
 

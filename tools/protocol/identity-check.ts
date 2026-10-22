@@ -322,7 +322,14 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
       ownerWs: heron(await hist2(w2)), ownerReq: heron(await w2.req("history", { verbs: ["say"], limit: 200 })), ownerTotal: jw2.snapshot?.state?.chatTotal, ownerWindow: jw2.snapshot?.state?.recentChat?.length };
     ok(!!jn.snapshot && !!jw2.snapshot && !seen10.newtWs && !seen10.newtReq && !seen10.newtJoin && !seen10.fernWs && !seen10.fernReq && seen10.ownerWs && seen10.ownerReq && seen10.ownerTotal > 0 && seen10.ownerWindow === 0,
       "RS10 speech is arrival-only: a stranger and a moderator who arrived after a say read none of it back (history, the authority's history, the join); an owner arriving later reads the master log", seen10);
-    for (const x of [vy, mo, gv, g2, nt, w2]) x.close(); }
+    // RS10b (the house's view, #260 10-20): reading speech back is a permission a role holds (readChat), not a role named in
+    // the protocol: Newt, granted readChat alone, reads the master log on a fresh arrival; still nothing for Newt before it
+    const gr = await w2.req("set", { id: "@world", component: `roles:${you(jn)}`, value: { role: "inhabitant", can: { readChat: true } } });
+    const nt2 = await sock(S4.port); const jn2 = await nt2.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
+    const seen10b = { granted: gr.ok ?? gr, ws: heron(await hist2(nt2)), req: heron(await nt2.req("history", { verbs: ["say"], limit: 200 })), total: jn2.snapshot?.state?.chatTotal };
+    ok(seen10b.granted === true && seen10b.ws && seen10b.req && seen10b.total > 0,
+      "RS10b reading speech back is a permission (readChat), not a role: an inhabitant granted it reads the master log on its next arrival", seen10b);
+    for (const x of [vy, mo, gv, g2, nt, w2, nt2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 
 // ---- AG (pure): a Discord account's age is its snowflake's timestamp; the gate's policy, case by case ----

@@ -29,22 +29,23 @@ import { COMPONENTS, pinOf } from "./componentspec.js";
 
 export const TRIAL_KERNEL = "trial-kernel";
 /** The component names that belong to the kernel (their registry status is trial-kernel). */
-export const KERNEL_COMPONENTS = Object.freeze(["transform", "parent", "model", "roles", "access"]);
+/** The component names that belong to the kernel: what every reader rests on (C11b, house plan #260 10-20: the kernel is what the
+ *  fold reads; transform, parent and model left it, as the fold never reads them). */
+export const KERNEL_COMPONENTS = Object.freeze(["roles", "access"]);
 /** The kernel's shapes that aren't components: the pin's other keys. */
 export const KERNEL_SHAPES = Object.freeze(["envelope", "fold", "identity", "version"]);
 
 /** The kernel's checkable shape, as the pin stores it. Deterministic (sorted where the source is a set). */
 export function kernelPinOf() {
   const reg = pinOf();
-  const comp = (name) => { const p = reg[name]; if (!p) return { missing: true }; const { vocab: _v, ...shape } = p; return { ...shape, status: COMPONENTS[name]?.status ?? p.status }; };   // vocab is the registry's (C11)
+  // a kernel component's FIELD shape only (C11b: "roles/access keep at most their component shape"): its ranges, enums, defaults,
+  // meanings and vocabulary are the registry's, pinned there
+  const comp = (name) => { const p = reg[name]; if (!p) return { missing: true }; return { status: COMPONENTS[name]?.status ?? p.status, fields: p.fields }; };
   return {
     envelope: { status: TRIAL_KERNEL, fields: [...ENVELOPE].sort(), kinds: [...KINDS].sort() },
     fold: { status: TRIAL_KERNEL, ops: Object.fromEntries(Object.entries(OP_FIELDS).map(([k, v]) => [k, [...v]])), batch: [...BATCH_FIELDS] },
     identity: { status: TRIAL_KERNEL, identity: IDENT, entity: ENTITY.source, component: COMP.source },
     version: { status: TRIAL_KERNEL, dialect: DIALECT, v: VERSION, minors: [...MINORS].sort((a, b) => a - b), genesis: [...GENESIS_FIELDS].sort() },
-    transform: comp("transform"),
-    parent: comp("parent"),
-    model: comp("model"),
     roles: comp("roles"),
     access: comp("access"),
   };
@@ -79,23 +80,34 @@ export function kernelVerdict(pin, now = kernelPinOf(), companions = null, date 
   const c = companions ?? {}; const missing = [];
   const ack = typeof c.ack === "string" ? c.ack.trim() : "";
   if (!ack) missing.push(`a changelog line: --ack "<why>" (written to spec/REGISTRY-CHANGELOG.md as "kernel: <why>")`);
-  // A SCOPE TRIM (recut C11, the mirror of the extension below): the whole diff is kernel components' `grammar` leaving the pin.
-  // Every leaving key must be HELD (the registry pin keeps the same value; the caller compares the files and names it in
-  // companions.trim.held) or DROPPED with a why (companions.trim.dropped["<name>.<key>"]). No stored byte changes meaning, so no
-  // translator or vectors could exist; the ack is still required. Anything else in the diff is a kernel change: all three.
-  const leaving = diff.map((d) => /^([a-z][a-z0-9-]*)\.grammar: .* → absent$/.exec(d)?.[1] ?? null);
+  // A SCOPE TRIM (recut C11, the mirror of the extension below; C11b): the whole diff is kernel components, or keys of them,
+  // LEAVING the pin (a line "<name>[.<key>]: … → absent", <name> a component of the pinned kernel). A `grammar` leaving is
+  // accounted key by key (companions.trim.held[name] = its keys the registry's vocab keeps, as C11 recorded it); any other path
+  // is accounted whole (companions.trim.heldPaths: the registry pin keeps that path's value). Every one must be HELD or
+  // DROPPED with a why (companions.trim.dropped["<path>"]). No stored byte changes meaning, so no translator or vectors could
+  // exist; the ack is still required. Anything else in the diff is a kernel change: all three.
+  const base = pin.kernel ?? pin; const pinnedComps = Object.keys(base).filter((k) => !KERNEL_SHAPES.includes(k));
+  const units = diff.map((d) => { const m = /^([a-z][a-z0-9-]*)((?:\.[A-Za-z]+)?): [\s\S]* → absent$/.exec(d);
+    return m && pinnedComps.includes(m[1]) ? { n: m[1], path: m[1] + m[2], grammar: m[2] === ".grammar" } : null; });
   const t = c.trim;
-  if (t && diff.length && leaving.every((n) => n && KERNEL_COMPONENTS.includes(n))) {
-    const base = pin.kernel ?? pin; const lines = [], unaccounted = [];
-    for (const n of leaving) for (const k of Object.keys(base[n]?.grammar ?? {})) {
-      const why = t.dropped?.[`${n}.${k}`];
-      if (Array.isArray(t.held?.[n]) && t.held[n].includes(k)) lines.push(`  - ${n}.${k}: leaves the kernel; the registry pin holds it (${n}.vocab.${k})`);
-      else if (typeof why === "string" && why.trim()) lines.push(`  - ${n}.${k}: leaves every pin: ${why.trim()}`);
-      else unaccounted.push(`${n}.${k}`);
+  if (t && diff.length && units.every(Boolean)) {
+    const lines = [], unaccounted = [];
+    for (const u of units) {
+      if (u.grammar) { for (const k of Object.keys(base[u.n]?.grammar ?? {})) {
+        const why = t.dropped?.[`${u.n}.${k}`];
+        if (Array.isArray(t.held?.[u.n]) && t.held[u.n].includes(k)) lines.push(`  - ${u.n}.${k}: leaves the kernel; the registry pin holds it (${u.n}.vocab.${k})`);
+        else if (typeof why === "string" && why.trim()) lines.push(`  - ${u.n}.${k}: leaves every pin: ${why.trim()}`);
+        else unaccounted.push(`${u.n}.${k}`); } continue; }
+      const why = t.dropped?.[u.path];
+      if (Array.isArray(t.heldPaths) && t.heldPaths.includes(u.path)) lines.push(`  - ${u.path}: leaves the kernel; the registry pin holds it`);
+      else if (typeof why === "string" && why.trim()) lines.push(`  - ${u.path}: leaves every pin: ${why.trim()}`);
+      else unaccounted.push(u.path);
     }
-    if (unaccounted.length) return { ok: false, diff, why: `a kernel grammar is leaving, but these keys are neither held by the registry pin (same value) nor dropped with a why (--drop "<name>.<key>=<why>"):\n  - ${unaccounted.join("\n  - ")}` };
-    if (missing.length) return { ok: false, diff, why: `the kernel's scope shrank (${[...new Set(leaving)].join(", ")}: grammar leaves): no stored byte changes meaning, so no translator or vectors are asked, but the change still needs its changelog line:\n  - ${missing.join("\n  - ")}` };
-    return { ok: true, diff, trimOnly: true, changelog: `- ${date}: kernel: ${ack}\n${lines.join("\n")}\n`, companions: { changelog: `${date}: kernel: ${ack}`, trim: { held: t.held ?? {}, dropped: t.dropped ?? {} }, translator: null, vectors: null } };
+    const names = [...new Set(units.map((u) => u.path))];
+    if (unaccounted.length) return { ok: false, diff, why: `the kernel is shrinking, but these are neither held by the registry pin (same value) nor dropped with a why (--drop "<path>=<why>"):\n  - ${unaccounted.join("\n  - ")}` };
+    if (missing.length) return { ok: false, diff, why: `the kernel's scope shrank (${names.join(", ")} leave): no stored byte changes meaning, so no translator or vectors are asked, but the change still needs:\n  - ${missing.join("\n  - ")}` };
+    const trim = { held: t.held ?? {}, ...(t.heldPaths?.length ? { heldPaths: t.heldPaths } : {}), dropped: t.dropped ?? {} };
+    return { ok: true, diff, trimOnly: true, changelog: `- ${date}: kernel: ${ack}\n${lines.join("\n")}\n`, companions: { changelog: `${date}: kernel: ${ack}`, trim, translator: null, vectors: null } };
   }
   // A SCOPE EXTENSION (reviewer item 5, 10-18: model, roles and access joined transform and parent): the whole diff is kernel
   // component(s) entering the pin, each with the shape the registry ALREADY pinned (the caller checks that against

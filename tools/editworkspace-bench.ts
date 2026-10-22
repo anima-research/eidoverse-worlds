@@ -1,19 +1,19 @@
 // editworkspace-bench — the edit WORKSPACE's own chrome, in a real browser (R's 09-30 pass):
 //
-//   bun tools/editworkspace-bench.ts        (the default ../eidoverse-video library, like editpanels-bench)
+//   bun tools/editworkspace-bench.ts        (the default ../eidoverse-video library)
 //
 //   the corner   the ∃ in the top-left cell, the mic / ear (/ goggles) folded to its right exactly as
 //                the HUD folds them, the menus after them, the glyphs in the editor's greys;
 //   the wrench   the way out: amber on purpose, titled "leave edit mode (B)", the only amber on the rail;
 //   Build        Build | Hierarchy tabs in the left column (Build replaced Create in step 5, 10-02; its
-//                World section and @world are editpanels-bench's); the six building tools as tiles (structure_ui's
+//                World section and @world are worldentity-test's); the six building tools as tiles (structure_ui's
 //                TOOLS), "new building", an honest "undo building edit"; the armed tool's strip across the
 //                top of the viewport and Esc to drop it; the Library (add light, search, the starters as
 //                picture tiles that put the model in your hand); and a VR body that says what it can't do;
 //   leaving      the workspace chrome is no longer PAINTED (not merely [hidden]) and the ∃ is home.
 //
-// Its own browser on purpose: editpanels-bench is long, and headless leaks heap with time (a dead
-// WebGPU device; HEAD idles at ~50 MB/s, measured 09-30), so adding these there OOMed its renderer.
+// Its own browser on purpose: headless leaks heap with time (a dead WebGPU device; HEAD idles at ~50 MB/s,
+// measured 09-30), so a long bench sharing one renderer OOMed it.
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 
@@ -39,7 +39,7 @@ await cdp.send('Page.navigate', { url: `${BASE}/?name=wsbot&world=wsbench` });
     if (secs < 4) await sleep(500);
   }
   check('client boots', secs >= 4, `${secs} sections`);
-  // the never-finishing boot splash steals elementFromPoint in headless (editpanels-bench says why)
+  // the never-finishing boot splash steals elementFromPoint in headless
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s && !s.classList.contains('gone')) s.style.pointerEvents = 'none'; return true; })()`);
 }
 await waitFor(`import('/lib/build.js').then((m) => m.mayEdit())`, 10000);

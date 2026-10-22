@@ -36,7 +36,7 @@ const bs = await import('../client/lib/bodysim.js');
 const { Ragdoll } = await import('../client/lib/ragdoll.js');
 const { AmmoRagdoll } = await import('../client/lib/ammodoll.js');
 const { BodyEngineBase } = await import('../client/lib/bodyengine.js');
-const { rigs, makeAvatar, toppleLean } = await import('./rig-load.mjs');
+const { rigs, makeAvatar, toppleLean, fixtureRig, VRM_DIR } = await import('./rig-load.mjs');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -44,7 +44,11 @@ const check = (name: string, ok: boolean, detail = '') => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
 };
 
-const FLEET = rigs().filter((r: any) => !r.err);
+// the avatar library (assets/opt, untracked) when it is on disk; else the rig the repo carries (spec/fixtures), so a clean
+// checkout runs this suite instead of throwing ENOENT (#260 house I438)
+const { existsSync } = await import('node:fs');
+const FLEET = existsSync(VRM_DIR) ? rigs().filter((r: any) => !r.err) : [fixtureRig('ammodoll')];
+if (!existsSync(VRM_DIR)) console.log(`(no avatar library at ${VRM_DIR}: using the tracked ammodoll rig fixture)`);
 const rig: any = FLEET[0];
 if (!rig) { console.error('no rigs in the fleet'); process.exit(1); }
 

@@ -92,8 +92,12 @@ const current = (id, r) => revision.get(id) === r;
 // is right the whole time, the texture just waits for something to land on.
 const pending = new Map();
 
-async function pictureTexture(picture) {
-  if (/^https:/i.test(picture.src)) return linkTexture(picture.src);
+// `quad`: the picture's own plane. A PlaneGeometry's UVs are WebGL's (v up), so a quad wants the browser flip; a modelled
+// part's are glTF's (no flip). `flip` inverts either. Decided at decode: a store texture is a shared ImageBitmap (its
+// flipY is a no-op after upload), a link's is this picture's own canvas.
+async function pictureTexture(picture, quad = false) {
+  const flipY = quad ? picture.flip !== true : picture.flip === true;
+  if (/^https:/i.test(picture.src)) { const t = await linkTexture(picture.src); t.flipY = flipY; t.needsUpdate = true; return t; }
   await primeFiles([picture.src]);
   const bytes = globalThis.Deno.readFileSync(picture.src);
   // glTF UVs are authored in glTF convention (no vertical flip); the shim's
@@ -101,7 +105,7 @@ async function pictureTexture(picture) {
   // on a modelled part wants the glTF convention, so flipY:false — `flip` is
   // the author's escape hatch for a part whose UVs were exported the other
   // way, which the by-eye check tells you in one glance.
-  return globalThis.loadImageTexture(bytes, { srgb: true, flipY: picture.flip === true });
+  return globalThis.loadImageTexture(bytes, { srgb: true, flipY });
 }
 
 function takeDown(id) {
@@ -134,11 +138,10 @@ async function hang(id, picture, rev) {
     pending.delete(id);
     if (!mayFetch) return;   // an untrusted link without this viewer's opt-in: never fetched
     let tex;
-    try { tex = await pictureTexture(picture); }
+    try { tex = await pictureTexture(picture, true); }
     catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
     if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
     const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;
-    if (picture.flip) { tex.flipY = !tex.flipY; tex.needsUpdate = true; }
     takeDown(id);
     const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
     hung.set(id, { picture, quad: q, root, aspect });
@@ -252,14 +255,14 @@ bus.on('entity', ({ id, kind }) => {
 //     round-1 case and why this is a comparison, not a clear-on-every-echo.
 const notes = new Map();   // id → { text, warn, about }   (about = pictureKey of the bag the line describes)
 
-/** The five fields a picture IS, normalized, as one comparable string; `none`
+/** The four fields a picture IS, normalized, as one comparable string; `none`
  *  for no picture. Echo data and committed data both go through here so a
  *  server-side default or key order can never read as a change. */
 function pictureKey(data) {
   if (data == null) return 'none';
   const n = normalizePicture(data);
   const p = n.ok ? n.picture : data;
-  return JSON.stringify([p?.src ?? '', p?.part ?? '', p?.alt ?? '', p?.lit ?? 'scene', !!p?.flip, p?.width ?? 1]);
+  return JSON.stringify([p?.src ?? '', p?.alt ?? '', p?.lit ?? 'scene', p?.width ?? 1]);
 }
 
 /** A picture echo for `id`: the line stays only if it was about this very bag. */
@@ -288,9 +291,8 @@ export { THREE as _THREE };
 // ---- the editor block: how a HUMAN hangs a picture -------------------------
 //
 // The scene panel's generic layer already edits the comp as raw JSON; this is
-// the semantic block (client/lib/inspect.js): the model's named parts as a
-// list instead of a guess, a file door that lands the image in the store and
-// fills `src`, the look line with its bound, lit and flip. One verb per
+// the semantic block (client/lib/inspect.js): a file door that lands the image
+// in the store and fills `src`, the alt line with its bound, and lit. One verb per
 // gesture — `hang` commits the whole bag, `take down` commits null — and the
 // bag goes through normalizePicture FIRST so a refusal is a hint here, not a
 // console warning after the round-trip.
@@ -319,13 +321,10 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
   const parts = namedParts(obj);
   if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
   const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;
-  const part = cur?.part && parts.includes(cur.part) ? cur.part : parts[0];
   const lit = cur?.lit === 'self' ? 'self' : 'scene';
   return {
     html: `<div data-pe-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">
-      <div><b>🖼 picture</b> <span style="color:var(--dim);font-size:11px">${cur ? 'hung on ' + esc(cur.part ?? '?') : 'none hung'}</span></div>
-      <label style="display:flex;gap:6px;align-items:center">part
-        <select data-pe="part" style="flex:1">${parts.map((p) => `<option value="${esc(p)}"${p === part ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <div><b>🖼 picture</b> <span style="color:var(--dim);font-size:11px">${cur ? 'hung' : 'none hung'}</span></div>
       <label style="display:flex;gap:6px;align-items:center">image
         <input data-pe="src" type="text" placeholder="eidoverse/assets/… or store/images/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
         <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
@@ -335,7 +334,6 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">lit
           <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
-        <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input data-pe="flip" type="checkbox"${cur?.flip ? ' checked' : ''}> flip (UVs upside down)</label>
       </div>
       <div style="display:flex;gap:6px">
         <button data-pe="hang">${cur ? 'update' : 'hang'}</button>
@@ -365,13 +363,14 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         ev.target.value = '';
       });
       q('hang')?.addEventListener('click', (ev) => {
-        const data = { src: q('src').value.trim(), part: q('part').value, lit: q('lit').value, flip: !!q('flip').checked };
+        // part and flip went with the shape audit (10-16: shared/picture.js keeps src/width/alt/lit), so the block offers neither (I59)
+        const data = { src: q('src').value.trim(), lit: q('lit').value };
         const alt = q('look').value.trim();
         if (alt) data.alt = alt;
         const norm = normalizePicture(data);
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('picture', norm.picture);
-        msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
+        msg(norm.notes.length ? norm.notes.join(' · ') : 'hung', false, norm.picture);
         if (norm.notes.length) flashHint(`🖼 ${norm.notes[0]}`);
         ev.target.blur();
       });

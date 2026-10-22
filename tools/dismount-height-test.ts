@@ -27,7 +27,7 @@ const STUBS: Record<string, string> = {
     globalThis.__dm.world = { avatarMounts, socket, entities };`,
   occupybody: `export const driveOccupied = () => {}; export const releaseOccupied = () => {};`,
   remotes: `export const serverNow = () => Date.now();`,
-  net: `export const sendRequest = async () => ({ ok: true }); export const sendAnim = () => {};`,
+  net: `export const sendRequest = async () => ({ ok: true }); export const sendAnim = () => {}; export const identities = new Map();`,
   plainwords: `export const plain = (x) => x; export const called = (x) => x; export const typeable = (x) => x;`,
   useprompt: `export const usePromptHint = () => {};`,
   thingphysics: `export const handsHint = () => {}; export const physicsApi = { mine: () => [] };`,

@@ -24,7 +24,7 @@
 // maintain), with the panels' colour handling (prepareQuadMaterial). It floats beside the plate at the plate's own
 // depth, upright, facing you, sized to a constant angle — at any distance it reads as a panel does at arm's length.
 // The "mention" button is left out in VR: it types into the desktop chat box (index.html #platecard[data-xr]).
-// The trigger on a plate does nothing new.
+// The trigger on a plate does nothing new; on the card it clicks where it points (platePress).
 import * as THREE from 'three';
 import { claimEscape } from './windows.js';
 import { svg, fsvg } from './icons.js';
@@ -223,6 +223,22 @@ export function platePick(handRay, cam, far = 40) {
     }
   }
   return best ? { id: best, dist: bestD, obj: bestLab } : null;   // obj: what it was found on (the plate, or the card's quad) — the pointer's stickiness keeps its point there
+}
+/** VR, a trigger press (xr.js, after no panel took it): on the open card's quad, the press becomes mousedown → mouseup →
+ *  click at the hit's uv on the card's real DOM (the vendored HTMLMesh forwards them, as domquad.js does for the panels),
+ *  so the card's buttons (⋯ and its strip's rows) answer the trigger as they answer the mouse. The distance, or null. */
+export function platePress(handRay, far = 40) {
+  if (!d || !vr || !cardFor || !xrMesh?.visible) return null;
+  _rm.extractRotation(handRay.matrixWorld);
+  _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
+  _rc.ray.direction.set(0, 0, -1).applyMatrix4(_rm);
+  _rc.near = 0; _rc.far = far;
+  _hits.length = 0; xrMesh.raycast(_rc, _hits);
+  const h = _hits.reduce((a, b) => (!a || b.distance < a.distance ? b : a), null);
+  if (!h?.uv) return null;
+  const data = { x: h.uv.x, y: 1 - h.uv.y };
+  for (const type of ['mousedown', 'mouseup', 'click']) xrMesh.dispatchEvent({ type, data });
+  return h.distance;
 }
 /** VR: xr.js reports, per hand per frame, the plate its laser rests on (null: none) and since when — that hand's dwell
  *  clock (dwell.js), keyed on what the laser holds, so stickiness carries through. */

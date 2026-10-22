@@ -113,5 +113,29 @@ const run = async (reply: (n: number) => any, want = 'refuse') => {
   check('a malformed inbox is ignored', (box.take(null as any), box.take([{ type: 'body-ask' }, 7, { type: 'body-ask', ask: { id: 42 } }]), box.asks().length === 0));
 }
 
+// 4. (house review of #260, client/lib I1) an act the authority delivered ({type: 'body', kind, spec}: an ask answered yes,
+// or a standing allow through the body verb) is APPLIED to my body: it becomes the puppet message localbody.js applies.
+// The relay refuses a puppet while my switch is `ask` (server/messages.ts bodyRefusal), so this is the only way it lands.
+// Mutation (must go red): in consentinbox.js bodyActAsPuppet return null for every kind.
+{
+  const { bodyActAsPuppet } = await import('../client/lib/consentinbox.js');
+  const q = [0, 0, 0.38, 0.92];
+  const pose = bodyActAsPuppet({ type: 'body', from: 'u-wren', kind: 'pose', cls: 'pose', consent: 'asked', spec: { head: q } });
+  check('a delivered pose (spec: bones) is a replacing puppet pose', JSON.stringify(pose) === JSON.stringify({ pose: { head: q }, merge: false }), JSON.stringify(pose));
+  const merged = bodyActAsPuppet({ type: 'body', kind: 'pose', spec: { pose: { head: q }, merge: true } });
+  check('…or {pose, merge} as a puppet sends it', JSON.stringify(merged) === JSON.stringify({ pose: { head: q }, merge: true }), JSON.stringify(merged));
+  const anim = { dur: 1, tracks: { head: [{ t: 0, q }] }, replace: false };
+  check('a delivered anim with tracks is a puppet anim', JSON.stringify(bodyActAsPuppet({ type: 'body', kind: 'anim', spec: anim })) === JSON.stringify({ anim }));
+  // streamed kinds apply nothing from the inbox (they arrive live, where consent gates each sample), and an unknown kind
+  // applies nothing: only pose, anim (with tracks) and shove become puppet messages (client review, 10-21)
+  check('a delivered drag, occupy or carry, or an unknown kind, applies nothing', ['drag', 'occupy', 'carry', 'teleport'].every((kind) => bodyActAsPuppet({ type: 'body', kind, spec: { tracks: { head: [] }, pose: { head: q } } }) === null));
+  check('a delivered shove is a ragdoll, directed by spec.lean when it has one', JSON.stringify(bodyActAsPuppet({ type: 'body', kind: 'shove', spec: { lean: [1, 0, 2] } })) === JSON.stringify({ ragdoll: { lean: [1, 0, 2] } })
+    && bodyActAsPuppet({ type: 'body', kind: 'shove' })?.ragdoll === true && bodyActAsPuppet({ type: 'body', kind: 'shove', spec: { lean: [1, 'x', 2] } })?.ragdoll === true);
+  check('drag, occupy and carry are live presence, not a one-shot: nothing to apply', ['drag', 'occupy', 'carry'].every((kind) => bodyActAsPuppet({ type: 'body', kind, spec: {} }) === null));
+  check('a pose with no bones, an anim with no tracks, or another message type applies nothing',
+    bodyActAsPuppet({ type: 'body', kind: 'pose' }) === null && bodyActAsPuppet({ type: 'body', kind: 'pose', spec: [q] }) === null
+    && bodyActAsPuppet({ type: 'body', kind: 'anim', spec: { clip: 'wave' } }) === null && bodyActAsPuppet({ type: 'body-reply', kind: 'pose', spec: { head: q } }) === null && bodyActAsPuppet(null) === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

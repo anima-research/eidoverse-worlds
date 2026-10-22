@@ -33,7 +33,7 @@ function check(name: string, cond: boolean, detail = "") {
   else { fail++; console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-/** A port nothing listens on right now (bind :0, release), as tools/access-test.ts takes one. */
+/** A port nothing listens on right now (bind :0, release). */
 const freePort = () => new Promise<number>((res, rej) => {
   const s = createServer(); s.once("error", rej);
   s.listen(0, "127.0.0.1", () => { const p = (s.address() as { port: number }).port; s.close(() => res(p)); });

@@ -247,3 +247,57 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - station.who: type string → any
   - physics.who: type string → any
   - grabbable.who: type string → any
+- 2026-10-21: engine identity (house answer, #260 2026-10-21): an engine is named by its version, held to its conformance digests (spec/conformance/physics/), so physics-engine.build (a source-file hash) leaves; the terrain law now says the digests hold it, not the hash
+  - physics-engine.build: type string → gone
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" → "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)"
+- 2026-10-21: normative: engine identity E4 (house answer, #260 2026-10-21): foreign-engine names a version, not a build, and covers a grab or delete that would set a resting thing falling, which only the world's engine computes
+  - refusal foreign-engine: {"meaning":"the world runs a build this server doesn't carry","when":"a launch in a world whose physics build is another server's"} → {"meaning":"the world runs an engine version this server doesn't carry","when":"what only that engine computes: a launch, or a grab or delete that would set a resting thing falling"}
+- 2026-10-21: normative: house markup (#260 2026-10-20), accepted: the record-altered write lockout comes out; §12 still detects a value stripped without a purge (the fold's commit-unpurged diagnostic, the value read as unknown)
+  - refusal record-altered: gone (old logs may hold it)
+- 2026-10-22: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads'): transform, parent and model leave the kernel, since the fold never reads them; they are ordinary trial components again
+  - transform: status trial-kernel → trial
+  - model: status trial-kernel → trial
+  - parent: status trial-kernel → trial
+- 2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin
+  - transform: leaves the kernel; the registry pin holds it
+  - parent: leaves the kernel; the registry pin holds it
+  - model: leaves the kernel; the registry pin holds it
+  - roles.absentMeans: leaves the kernel; the registry pin holds it
+  - roles.keyed: leaves the kernel; the registry pin holds it
+  - roles.on: leaves the kernel; the registry pin holds it
+  - access.enums: leaves the kernel; the registry pin holds it
+  - access.ranges: leaves the kernel; the registry pin holds it
+  - access.absentMeans: leaves the kernel; the registry pin holds it
+  - access.on: leaves the kernel; the registry pin holds it
+- 2026-10-22: sky.law and terrain.law no longer define the law by naming reference code; the law is pinned as data in spec/conformance/laws.json (the house's view, #260 10-20)
+  - sky.law: its meaning of absence "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" → "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)" → "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
+- 2026-10-22: surface, terrain-grid and terrain-tile stay reserved by name with no shape pinned, and physics' reserved fields lose their pre-pinned units/ranges/enums: pre-shaping builds ahead of any world (the house's view, #260 10-20); the sketches are docs/RESERVED-SHAPES.md
+  - surface.friction: type number → gone
+  - surface.restitution: type number → gone
+  - surface.density: type number → gone
+  - surface.frictionCombine: type string → gone
+  - surface.restitutionCombine: type string → gone
+  - surface.label: type string → gone
+  - surface.frictionCombine: "average" is no longer allowed
+  - surface.frictionCombine: "min" is no longer allowed
+  - surface.frictionCombine: "multiply" is no longer allowed
+  - surface.frictionCombine: "max" is no longer allowed
+  - surface.restitutionCombine: "average" is no longer allowed
+  - surface.restitutionCombine: "min" is no longer allowed
+  - surface.restitutionCombine: "multiply" is no longer allowed
+  - surface.restitutionCombine: "max" is no longer allowed
+  - surface.friction: its meaning of absence "the engine's own law" → gone
+  - surface.restitution: its meaning of absence "the engine's own law" → gone
+  - surface.density: its meaning of absence "the engine's own" → gone
+  - surface.frictionCombine: its meaning of absence "average" → gone
+  - surface.restitutionCombine: its meaning of absence "max" → gone
+  - surface.label: its meaning of absence "its key" → gone
+  - terrain-grid.spacing: type number → gone
+  - terrain-grid.tile: type int → gone
+  - terrain-grid.origin: type array → gone
+  - terrain-grid.extent: type array → gone
+  - terrain-grid.limits: type object → gone
+  - terrain-tile.mm: type array → gone
+- 2026-10-22: readChat joins the closed permission list: reading speech back past your arrival is a permission a role holds, not 'the owner' named in the protocol (the house's view, #260 10-20)
+  - roles.permissions: vocabulary ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles"] → ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles","readChat"]

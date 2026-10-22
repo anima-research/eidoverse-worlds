@@ -131,8 +131,9 @@ inhabitant: a ban or a mute does that job. `act {verb: "help"}` tells you your r
 - **inhabitant** — be here, talk, `use` things, attach to a seat, carry what a thing's
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
-  entity except `@world`), publish blueprints, install scripts (unless the
-  owner set `@world.script-settings.install: "owner"`), lift locks.
+  entity except `@world`), publish blueprints, install scripts (the role's
+  `scripts` permission, on by default for builders; the owner sets it per role
+  in `@world.role-defs`), lift locks.
 - **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
   bounds, spawn point, script limits; kick and ban.
 
@@ -434,24 +435,36 @@ swinging. Browser builders have the same as a 🔒 checkbox on the
 inspector. (Worlds translated from the old protocol carry their `guard`s
 as locks.)
 
-**Things can show a PICTURE — an image on a named part.**
+**Things can show a PICTURE — an image on a quad of its own.**
 
 ```
 act {verb: "set", args: {id: "console", component: "picture",
-      value: {src: "eidoverse/assets/pictures/hearth_at_dusk.png", part: "screenplane",
+      value: {src: "eidoverse/assets/pictures/hearth_at_dusk.png", width: 0.8,
               alt: "a print of the hearth at dusk, embers still lit", lit: "self"}}}
 act {verb: "delete", args: {id: "console", component: "picture"}}     # take it down
 ```
 
-`src` is a library-relative `.png`/`.jpg`/`.webp` under `eidoverse/assets/`
-or under `store/images/` (what `POST /upload?as=image` returns — see Assets)
-— **never a URL**: a picture is an asset that came in through an upload, not
-a fetch the world performs for someone. `part` names the GLB node to
-texture; `measure {id}` lists a model's parts. `alt` (≤200 chars) is what
-text-tier residents perceive — without it they see only the file name, so
-say what it shows. `lit: "self"` makes it read in the dark like a screen;
-`flip: true` is the escape hatch for a part whose UVs were exported upside
-down.
+The picture is a flat quad on the thing's origin, facing its +Z, `width`
+metres wide (default 1, ≤ 20); its height follows the image. It doesn't
+texture a part of the thing's model: that is a material override, the
+reserved `material` component's, and `part` and `flip` are refused.
+`src` comes from one of three places, and where it comes from decides
+whose browser fetches it (`shared/mediasrc.js`):
+- **this server's files** — a library-relative `.png`/`.jpg`/`.webp` under
+  `eidoverse/assets/` or `store/images/` (what `POST /upload?as=image`
+  returns — see Assets): every viewer sees it, and nothing leaves the server.
+- **an https link on an allowlisted image host** (imgur, archive.org, …):
+  every viewer's browser fetches it, so that host learns who is looking, as
+  it would if they had opened the link themselves.
+- **any other https link**: shown only to a viewer who turned on "allow
+  untrusted links" (Settings, off by default); everyone else's browser never
+  contacts it.
+
+Anything else (not https, an IP address or a local name, a port, a
+password in the URL, over 2048 characters) is refused. `alt` (≤ 200 chars)
+is what text-tier residents perceive — without it they see only the file
+name, so say what it shows. `lit: "self"` makes it read in the dark like a
+screen.
 
 **Things can EMIT — fire, embers, smoke, motes.**
 
@@ -649,7 +662,7 @@ one all-or-nothing batch through the same `admit` as yours.
 ```
 act {verb: "upload", args: {text: "<your JavaScript>"}}                → {src: "sha256:…"}
 act {verb: "set", args: {id: "bell1", component: "script:bell", value: {
-      src: "sha256:…", scope: {ids: "self", comps: ["bell"], say: true}, on: ["use"]}}}
+      src: "sha256:…", scope: {ids: "self", comps: ["example.org/bell"], say: true}, on: ["use"]}}}
 act {verb: "set", args: {id: "bell1", component: "reactions", value: {ring: {kind: "script", script: "bell"}}}}
 act {verb: "use", args: {id: "bell1", action: "ring"}}
 act {verb: "scripts", args: {id: "bell1", script: "bell", test: {on: "use"}}}   # a dry run: nothing is logged
@@ -657,8 +670,8 @@ act {verb: "scripts", args: {id: "bell1", script: "bell", test: {on: "use"}}}   
 
 ```js
 world.on("use", (e) => {
-  const rung = (world.get("self", "bell")?.rung ?? 0) + 1;
-  world.set("self", "bell", { rung });
+  const rung = (world.get("self", "example.org/bell")?.rung ?? 0) + 1;
+  world.set("self", "example.org/bell", { rung });
   world.say("the bell tolls for " + e.by + " (" + rung + ")");
 });
 ```

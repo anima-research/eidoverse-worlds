@@ -4,7 +4,7 @@
 //   macOS and other POSIX: `ps -A -o pid=,pgid=,stat=`
 //   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
 //            parent links in Win32_Process (they survive the parent's exit, so orphans still count); killed with taskkill.
-import fs from "node:fs"; import { spawnSync } from "node:child_process";
+import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
 
 export type Row = { pid: number; pgid: number; ppid: number; zombie: boolean };
 
@@ -54,4 +54,42 @@ export function killSuite(root: number, sig: NodeJS.Signals, platform: NodeJS.Pl
   // Windows has no signals or groups: kill the tree, children first (taskkill /T can't find orphans of a dead root)
   const members = suiteMembers(root, processTable("win32"), "win32");
   for (const pid of (members.length ? members : [root]).reverse()) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 15_000 });
+}
+
+// ---- the gate's kill path, asynchronous end to end (CI 10-21: on Windows a synchronous WMI query or taskkill can block forever
+// when a grandchild holds its pipe, whatever timeout it was given; the gate's event loop froze, and with it every timer that
+// could have moved on, until the job's two-hour limit). These never block: each child call has a bound, and past it we
+// give up on the answer (an empty table, a kill that may not have landed) and say so, rather than wait.
+
+/** Run a command, give back its stdout, or null past `ms` (the command is killed and left behind; never waited on). */
+function outputOf(cmd: string, args: string[], ms: number): Promise<string | null> {
+  return new Promise((res) => {
+    let out = "", done = false; const end = (v: string | null) => { if (!done) { done = true; clearTimeout(t); res(v); } };
+    let c: ReturnType<typeof spawn>;
+    try { c = spawn(cmd, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }); } catch { return res(null); }
+    const t = setTimeout(() => { try { c.kill("SIGKILL"); } catch { /* gone */ } end(null); }, ms);
+    c.stdout!.on("data", (b) => { out += b.toString(); });
+    c.on("error", () => end(null)); c.on("exit", (code) => end(code === 0 ? out : null));
+  });
+}
+const WIN_QUERY = ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"];
+
+/** processTable, without blocking. `query` and `ms` are for tests (a query that never answers). */
+export async function processTableAsync(platform: NodeJS.Platform = process.platform, { ms = 30_000, query }: { ms?: number; query?: () => Promise<string | null> } = {}): Promise<Row[]> {
+  if (platform === "linux" && !query) return processTable("linux");   // /proc reads are local files: they don't hang
+  const ask = query ?? (() => platform === "win32" ? outputOf("powershell.exe", WIN_QUERY, ms) : outputOf("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], ms));
+  const out = await Promise.race([ask(), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+  if (out === null) { if (platform === "win32") console.error("[procgroup] the Windows process table didn't answer in time; killing by tree only"); return []; }
+  return platform === "win32" ? parseWinTable(out) : parsePsTable(out);
+}
+export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
+  return suiteMembers(root, await processTableAsync(platform), platform);
+}
+/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills the tree it can find, children
+ *  first, then the root's own tree with taskkill /T, each call bounded. */
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform): Promise<void> {
+  if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
+  const members = await suiteMembersAsync(root, "win32");
+  for (const pid of [...members].reverse().filter((p) => p !== root)) await outputOf("taskkill", ["/PID", String(pid), "/T", "/F"], 15_000);
+  await outputOf("taskkill", ["/PID", String(root), "/T", "/F"], 15_000);
 }

@@ -5,6 +5,8 @@
 //   bun tools/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "./procgroup.ts";
+import * as PG from "./procgroup.ts";
+import fs from "node:fs";
 let pass = 0, fail = 0;
 const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}`); if (info !== undefined) console.log("     ", JSON.stringify(info)); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -45,5 +47,35 @@ check("PG3 the Windows process table parses (pid, parent) rows from CRLF output"
 
 // PG5: the POSIX ps parse skips zombies (their group id stays, but they hold nothing)
 check("PG5 a zombie in the group is not counted as left running", suiteMembers(7, parsePsTable(" 7 7 1 S\n 8 7 7 Z+\n 9 7 7 R\n 10 10 1 S\n"), "darwin").join() === "7,9");
+
+// PG6: the Windows table, asked asynchronously, gives up within its bound when the query never answers, and the event loop runs
+// meanwhile (CI 10-21: a synchronous WMI query in the kill path froze the gate for two hours, past every timeout it had)
+{
+  let ticks = 0; const tick = setInterval(() => ticks++, 50);
+  const t0 = Date.now(); const hung = await (PG as any).processTableAsync?.("win32", { ms: 600, query: () => new Promise(() => {}) });
+  const took = Date.now() - t0; clearInterval(tick);
+  check("PG6 the async Windows table gives up within its bound on a query that never answers (an empty table, not a hang), and the gate's loop keeps ticking meanwhile",
+    Array.isArray(hung) && hung.length === 0 && took < 1500 && ticks >= 5, { hung, took, ticks });
+}
+
+// PG7: the async kill ends a suite and the process it started, on this OS, without blocking
+{
+  const script = "const {spawn}=require('node:child_process'); spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); setInterval(()=>{},1000);";
+  const child = spawn(process.execPath, ["-e", script], { detached: true, stdio: "ignore" });
+  await sleep(1500);
+  const before = await (PG as any).suiteMembersAsync?.(child.pid!) ?? [];
+  await (PG as any).killSuiteAsync?.(child.pid!, "SIGKILL");
+  let after = await (PG as any).suiteMembersAsync?.(child.pid!) ?? ["none"]; for (let i = 0; i < 20 && after.length; i++) { await sleep(150); after = await (PG as any).suiteMembersAsync(child.pid!); }
+  if (after.length) killSuite(child.pid!, "SIGKILL");
+  check(`PG7 (${process.platform}) the async kill ends a suite's process and the one it started`, before.length >= 2 && after.length === 0, { before, after });
+}
+
+// PG8: the gate's kill path is asynchronous end to end: run.ts never calls the synchronous killSuite or suiteMembers
+{
+  const run = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
+  const sync = run.split("\n").map((l, i) => [i + 1, l] as const).filter(([, l]) => /\b(killSuite|suiteMembers)\(/.test(l) && !/^\s*\/\//.test(l)).map(([n, l]) => `${n}: ${l.trim().slice(0, 90)}`);
+  check("PG8 run.ts's kill path never blocks: no synchronous killSuite/suiteMembers call, and a suite that won't die is left behind after a bound (a watchdog), not waited on forever",
+    sync.length === 0 && /killSuiteAsync/.test(run) && /suiteMembersAsync/.test(run) && /wouldn't die/.test(run), { sync });
+}
 
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

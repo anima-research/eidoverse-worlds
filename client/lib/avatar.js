@@ -1659,6 +1659,17 @@ export class Avatar {
     }
     this._sb.want = clips; this._sb.phase = Number.isFinite(phase) ? phase : null;
   }
+  /** The slot actually carrying the body: currentSlot, or while a socket's pose holds (setSeatBlend clears currentSlot)
+   *  the blend's heaviest clip, named as the slot it really is (a fallback reads as itself). The seat-profile gate reads
+   *  this (occupants.js; house review I2). */
+  playingSlot() {
+    if (!this._sb) return this.currentSlot;
+    let best = null, bw = 0;
+    for (const [a, w] of this._sb.w) if (w > bw) { best = a; bw = w; }
+    if (!best) return null;
+    for (const [n, act] of Object.entries(this.actions)) if (act === best) return n;
+    return null;
+  }
   /** What the seat blend is doing (probes and the agent's eye): [[clip, weight, time]] as the mixer has it. */
   seatBlendState() {
     if (!this._sb) return null;

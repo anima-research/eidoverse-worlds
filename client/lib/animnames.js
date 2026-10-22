@@ -32,9 +32,13 @@ export function hydrateAnimNames(table) {
   bus.emit('animnames-updated');
 }
 {
-  const refresh = () => defsRegistry()
-    .then((reg) => hydrateAnimNames(reg.actionbar))
-    .catch((e) => console.warn('[actionbar] def hydration failed — no gestures until it lands:', e));
+  // a failed fetch tries again, backing off (2 s doubling to a minute): waiting for a hot-reload push left the bar empty
+  // for the session (house config I18). unref: a headless host without /defs isn't held open by the retry
+  let wait = 2000, retry = null;
+  const refresh = () => { clearTimeout(retry); retry = null; return defsRegistry()
+    .then((reg) => { wait = 2000; hydrateAnimNames(reg.actionbar); })
+    .catch((e) => { console.warn(`[actionbar] def hydration failed — no gestures until it lands (trying again in ${wait / 1000} s):`, e);
+      retry = setTimeout(refresh, wait); retry?.unref?.(); wait = Math.min(60000, wait * 2); }); };
   refresh();
   bus.on('defs-updated', refresh);
 }

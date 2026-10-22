@@ -191,7 +191,16 @@ const transformOf = (ent) => ({
     ? ent.pos : [0, 0, 0],
   yaw: Number.isFinite(ent?.yaw) ? ent.yaw : 0,
   scale: Number.isFinite(ent?.scale) && ent.scale > 0 ? ent.scale : 1,
+  // the drawn group takes the whole rotation and per-axis scale (view.js gives q and scale3); the collider boxes stay
+  // yaw and one scale (fitStructureBoxes' frame)
+  q: Array.isArray(ent?.q) && ent.q.length === 4 && ent.q.every(Number.isFinite) ? ent.q : null,
+  scale3: Array.isArray(ent?.scale3) && ent.scale3.length === 3 && ent.scale3.every((x) => Number.isFinite(x) && x > 0) ? ent.scale3 : null,
 });
+function poseGroup(group, tf) {
+  group.position.set(...tf.position);
+  if (tf.q) group.quaternion.set(...tf.q); else group.rotation.set(0, tf.yaw, 0);
+  if (tf.scale3) group.scale.set(...tf.scale3); else group.scale.setScalar(tf.scale);
+}
 
 /** Build the scene object for one plan. Geometry only — no scene insertion, no
  *  collider registration, so a throw anywhere in here leaks nothing. */
@@ -333,9 +342,7 @@ function realize(id, ent) {
     // Geometry is still right; only the pose can have moved. Colliders must be
     // re-declared even so — their boxes are entity-local but their bucket
     // registration is world-space.
-    prev.group.position.set(...tf.position);
-    prev.group.rotation.y = tf.yaw;
-    prev.group.scale.setScalar(tf.scale);
+    poseGroup(prev.group, tf);
     fitStructureBoxes(id, prev.plan.boxes, tf);
     bus.emit('entity', { id, kind: 'collider' });
     return;
@@ -343,9 +350,7 @@ function realize(id, ent) {
 
   const plan = planStructure(data);
   const { group, geoms } = buildGroup(plan);
-  group.position.set(...tf.position);
-  group.rotation.y = tf.yaw;
-  group.scale.setScalar(tf.scale);
+  poseGroup(group, tf);
 
   if (prev) { scene.remove(prev.group); for (const g of prev.geoms) g.dispose(); }
   scene.add(group);

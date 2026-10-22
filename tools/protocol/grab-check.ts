@@ -117,7 +117,7 @@ async function runSelf(tree: string, only: string[] | null, extra: string[] = []
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 // the mutant tree: shared/, server/, tools/ and defs/ (so the other suites run in it too), node_modules linked
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
@@ -129,7 +129,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = copyTree("gmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("gmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -165,6 +165,8 @@ if (argv.includes("--control")) {
 // ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
@@ -822,6 +824,19 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [1.5, 0, 0.5] }, 1000); const tray = s.call("vic", "grab", { id: "tray" });
       return { rec, tray: code(tray) }; },
     good: (o) => o.rec?.hand === "left" && !o.rec?.offset && o.tray === "rights" },
+  { id: "F7", what: "the refusals' fixes work as written: following not-grabbable's and rights' suggested grabbable value lets an inhabitant pick the thing up", run(s) { cast(s);
+      // the value a fix suggests, read from its words (`value: {…}` or `.who: '<role>'`)
+      const valueOf = (fix: string) => { const m = /value: (\{[^}]*\})/.exec(fix ?? ""); if (m) try { return JSON.parse(m[1].replace(/'/g, '"').replace(/(\w+):/g, '"$1":')); } catch { return null; }
+        const w = /\.who: '(\w+)'/.exec(fix ?? ""); return w ? { who: w[1] } : null; };
+      s.call("olive", "create", { id: "rock", model: "crate", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "builder" } }, place: { at: [1, 0] } });
+      s.call("vic", "move", { to: [0.5, 0, 0.5] });
+      const r1 = s.call("vic", "grab", { id: "rock" }), v1 = valueOf(r1?.refused?.fix), set1 = s.call("olive", "set", { id: "rock", component: "grabbable", value: v1 });
+      const g1 = s.call("vic", "grab", { id: "rock" }); s.call("vic", "put", { id: "rock" });
+      const r2 = s.call("vic", "grab", { id: "key" }), v2 = valueOf(r2?.refused?.fix), set2 = s.call("olive", "set", { id: "key", component: "grabbable", value: v2 });
+      const g2 = s.call("vic", "grab", { id: "key" });
+      return { r1: code(r1), v1, set1: show(set1), g1: show(g1), r2: code(r2), v2, set2: show(set2), g2: show(g2) }; },
+    good: (o) => o.r1 === "not-grabbable" && o.set1 === "ok" && o.g1 === "ok" && o.r2 === "rights" && o.set2 === "ok" && o.g2 === "ok" },
 ];
 
 // ---------------- run ----------------

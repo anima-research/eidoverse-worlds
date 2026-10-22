@@ -53,7 +53,7 @@ async function runSelf(tree: string, only: string[] | null) {
   const r = Bun.spawnSync(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
@@ -62,7 +62,7 @@ function copyTree(tag: string) {
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = copyTree("smut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("smut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -88,6 +88,8 @@ if (argv.includes("--control")) {
 
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
 const ONLY = opt("only")?.split(",") ?? null;

@@ -258,27 +258,55 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   const ag = new WorldAgent({ name: 'eye' });
   const A = ag as any;
   // the agent's world is the view; its door is this scratch world's real door (dry runs answered by the door itself)
-  const sync = () => { A.st = W.view(); A.reconcileFromFold(); };
+  const sync = () => { A.st = W.view(); A.replica = { st: W.state() }; A.reconcileFromFold(); };   // componentsOf (edit's expect pins) reads the replica's state
   sync();
   A.door = async (verb: string, args: any) => W.call(verb, args);
+  // edit goes sendOps → request, which answers not-joined for an agent that never joined: answer it from the same door (#260 house I457)
+  A.request = async (verb: string, args: any) => W.call(verb, args);
   const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
   const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
   check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
   const one = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6 }, dry: true }));
-  check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"\}/.test(one) && !/refused/.test(one), one);
+  check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"[,}]/.test(one) && !/refused/.test(one), one);
   const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'terrain.amplitude': '+=1' }, dry: true }));
   check('edit @world (dry), two groups: ONE request with the sky verb and set terrain (amplitude 3.6)', /would send batch .*"verb":"sky".*"hours":6.*"component":"terrain".*"amplitude":3\.6/.test(ed), ed);
-  // KNOWN BUG (reported 2026-10-06): that batch carries the `sky` tool, which the door's batch refuses
-  check('…and the door accepts that request (KNOWN BUG: refused, sky can\'t go in a batch)', !/refused|can't go in a batch/.test(ed), ed);
+  // reported 2026-10-06 as refused (sky couldn't go in a batch); answered by the real door it is accepted
+  check('…and the door accepts that request (the sky tool inside a batch)', !/refused|can't go in a batch/.test(ed), ed);
   const bad = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'pos.x': 1 }, dry: true }));
   check('…an address the world has not is refused by name', /refused: pos\.x: no such field on @world/.test(bad), bad);
   const wet = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'terrain.amplitude': '+=1' } }));
   sync();
-  check('edit @world for real: the door accepts it and the world reads back the new amplitude', /the door accepted it/.test(wet) && A.st.terrain?.amplitude === 3.6, wet);
+  check('edit @world for real: the door accepts it and the world reads back the new amplitude', /the authority accepted it/.test(wet) && A.st.terrain?.amplitude === 3.6, wet);
   const hier = out(await HANDLERS.hierarchy(ag as any, {}));
   check('hierarchy pins the world first, then the things', /^\[@world\] World — sky /.test(hier) && /\[pivot\]/.test(hier.split('\n')[1] ?? ''), hier.split('\n').slice(0, 2).join(' / '));
   const filtered = out(await HANDLERS.hierarchy(ag as any, { filter: 'zzz' }));
   check('…even under a filter that matches nothing else', /^\[@world\]/.test(filtered) && /no placed thing matches "zzz"/.test(filtered), filtered);
+}
+
+// ------------------------------------------------------------ house review of #260, client/lib I95
+// Removing Weather (the Hierarchy row's ✕, editpanels.js removeEnv) wrote `weather.state: clear`: under a forecast that is
+// a manual override the next segment undoes (and the door refuses a weather pick under a forecast: section 1's KNOWN BUG),
+// so the Weather never went. `weather.remove` takes the weather off: the forecast stops too (a sky request that keeps
+// every sky field but the weather's), and Ctrl+Z (the door's undo) brings the forecast back. With no forecast it is the
+// clear weather it always was.
+// Mutation (must go red): in shared/worldentity.js make weather.remove send weatherOp('clear') under a forecast too.
+console.log('\nI95. removing the Weather removes it, forecast and all:');
+{
+  const W = scratchWorld('worldentity');
+  const s0 = W.call('sky', { hours: 8, clouds: 'stratus', exposure: 0.7, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  check('(setup) a sky with a storm and a forecast', s0.ok && !!W.view().sky.forecast, JSON.stringify(s0.refused));
+  const sch = worldSchema(W.view(), { now: Date.now() });
+  check('the Weather card offers remove', fieldAt(sch, 'weather.remove')?.t === 'btn', JSON.stringify(fieldAt(sch, 'weather.remove')));
+  const r = worldEditOps(W.view(), { 'weather.remove': true }, { now: Date.now() });
+  check('under a forecast it is ONE sky request, with no forecast and no weather in it', r.errors.length === 0 && r.ops.length === 1 && r.ops[0].verb === 'sky' && r.ops[0].args.forecast === undefined && r.ops[0].args.weather === undefined, JSON.stringify(r));
+  const sent = W.sendAll(r.ops);
+  const sky = W.view().sky;
+  check('the door takes it: no forecast, clear, and the sky\'s own fields kept', sent.ok && !sky.forecast && (sky.weather ?? 'clear') === 'clear' && sky.clouds === 'stratus' && sky.exposure === 0.7, JSON.stringify([sent.refused, sky]));
+  check('…and the Weather row has nothing to remove', fieldAt(worldSchema(W.view(), { now: Date.now() }), 'weather.remove') == null);
+  check('the door\'s undo brings the forecast back', W.call('undo', {}).ok && !!W.view().sky?.forecast && W.view().sky?.weather === 'storm', JSON.stringify(W.view().sky));
+  const M = scratchWorld('worldentity'); M.call('weather', { weather: 'rain' });
+  const r2 = worldEditOps(M.view(), { 'weather.remove': true }, { now: Date.now() });
+  check('with no forecast it is the clear weather it always was', canon(r2.ops) === canon([{ verb: 'weather', args: { weather: 'clear' } }]), JSON.stringify(r2));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

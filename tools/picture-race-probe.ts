@@ -17,8 +17,15 @@
 //   G. LOD demote + promote under a held load with the entity PRESENT — the
 //      stale load is refused and the still-authored picture rehangs from
 //      pending (Mica, round 2: {part:true, hung:false, mapSrc:null}).
+//
+// Ported to the request path (#260 house I397/I401): writes go through net.sendRequest with ops built by
+// shared/protocol/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture
+// has no part any more (shared/picture.js): it is the thing's own quad, so a hang is judged by that quad's texture,
+// and a held load shows the empty plate (hung, no map) until it lands.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { join } from 'node:path';
+import * as OP from '../shared/protocol/requests.js';
+import { qFromYaw } from '../shared/rot.js';
 
 const LIB = 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb';
 // ONE UNPRIMED IMAGE PER HELD LEG. The host caches library bytes for the
@@ -42,7 +49,8 @@ const POOL = [
 let poolIdx = 0;
 const fresh = () => { if (poolIdx >= POOL.length) throw new Error('image pool exhausted'); return POOL[poolIdx++]; };
 const { check, done } = checker();
-const world = await ownedWorld({ env: { EIDOVERSE_DIR: process.env.EIDOVERSE_DIR ?? join(process.env.HOME!, 'origin/eidoverse-video') } });
+// founded, owned by the page's typed name (TRUST_NAMES), so its writes are admitted
+const world = await ownedWorld({ worlds: ['raceprobe'], owner: 'raceprobe', env: { TRUST_NAMES: '1', EIDOVERSE_DIR: process.env.EIDOVERSE_DIR ?? join(process.env.HOME!, 'origin/eidoverse-video') } });
 const { page, close } = await launchBrowser();
 const errs: string[] = [];
 
@@ -56,16 +64,26 @@ async function joinAs(name: string) {
   await pg.waitForSelector('#mictoggle', { timeout: 30000 });
   return pg;
 }
-const verb = (pg: any, v: string, args: unknown) => pg.evaluate(([v, args]: [string, unknown]) => import('/lib/net.js').then((n: any) => n.sendVerb(v, args)), [v, args]);
-const comp = (pg: any, src: string | null) => verb(pg, 'comp', { id: 'console', type: 'picture', data: src ? { src, part: 'screenplane', look: 'race', lit: 'self' } : null });
-const state = (pg: any) => pg.evaluate(async () => {
-  const { entities, findPart } = await import('/lib/world.js');
+const req = async (pg: any, op: any) => {
+  const r = await pg.evaluate((op: any) => import('/lib/net.js').then((n: any) => n.sendRequest(op.verb, op.args)), op);
+  if (!r?.ok) throw new Error(`${op.verb} refused: ${JSON.stringify(r?.refused ?? r)}`);
+  return r;
+};
+let ID = '';   // the console's id: minted by the authority on each spawn
+const spawn = async (pg: any) => {
+  const r = await req(pg, OP.create('$console', { model: LIB, transform: { pos: [1.3, 0.5, -2.2], q: qFromYaw(0.6) } }));
+  ID = r.ids?.['$console'];
+  if (!ID) throw new Error(`create named no id: ${JSON.stringify(r)}`);
+};
+const remove = (pg: any) => req(pg, OP.remove(ID));
+const comp = (pg: any, src: string | null) => req(pg, src ? OP.set(ID, 'picture', { src, alt: 'race', lit: 'self' }) : OP.unset(ID, 'picture'));
+const state = (pg: any) => pg.evaluate(async (id: string) => {
+  const { entities } = await import('/lib/world.js');
   const { _hung } = await import('/lib/pictures.js');
-  const root = entities.get('console'); const part = root ? findPart(root, 'screenplane') : null;
-  const h = _hung.get('console'); const mat: any = part?.material;
-  return { entity: !!root, part: !!part, hung: !!h, count: _hung.size, hasMap: !!mat?.map, mapSrc: h?.picture?.src ?? null,
-    original: !!(part && !h && !mat?.map) };
-});
+  const root = entities.get(id); const h = _hung.get(id);
+  let mat: any = null; h?.quad?.traverse((o: any) => { if (o.isMesh && !mat) mat = o.material; });
+  return { entity: !!root, hung: !!h, count: _hung.size, hasMap: !!mat?.map, mapSrc: h?.picture?.src ?? null, original: !!root && !h };
+}, ID);
 const until = async (pg: any, pred: (s: any) => boolean, ms = 20000) => { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await state(pg); if (pred(s)) return s; await new Promise((r) => setTimeout(r, 150)); } return s; };
 const settle = (ms = 1500) => new Promise((r) => setTimeout(r, ms));
 
@@ -81,9 +99,9 @@ async function hold(pg: any, src: string) {
 
 try {
   const pg = await joinAs('raceprobe');
-  await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
-  let s = await until(pg, (x) => x.part);
-  check('the model spawned with its screenplane', s.part, JSON.stringify(s));
+  await spawn(pg);
+  let s = await until(pg, (x) => x.entity);
+  check('the console spawned', s.entity, JSON.stringify(s));
 
   // A. Mica's sequence: hold the fetch, author, remove, release.
   {
@@ -107,12 +125,12 @@ try {
     await until(pg, () => h.heldCount() > 0, 10000);
     check('B. the hold engaged', h.heldCount() > 0);
     await comp(pg, imgB);
-    s = await until(pg, (x) => x.hung && x.mapSrc === imgB);
-    check('B. the newer bag hangs while the older load is still held', s.hung && s.mapSrc === imgB, JSON.stringify(s));
+    s = await until(pg, (x) => x.hung && x.hasMap && x.mapSrc === imgB);
+    check('B. the newer bag hangs while the older load is still held', s.hung && s.hasMap && s.mapSrc === imgB, JSON.stringify(s));
     await h.release();
     await settle();
     s = await state(pg);
-    check('B. the older load, released late, does not overwrite the newer picture', s.hung && s.mapSrc === imgB && s.count === 1, JSON.stringify(s));
+    check('B. the older load, released late, does not overwrite the newer picture', s.hung && s.hasMap && s.mapSrc === imgB && s.count === 1, JSON.stringify(s));
     await comp(pg, null);
     await until(pg, (x) => !x.hung);
   }
@@ -123,7 +141,7 @@ try {
     await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
     check('C. the hold engaged', h.heldCount() > 0);
-    await verb(pg, 'remove', { id: 'console' });
+    await remove(pg);
     await until(pg, (x) => !x.entity);
     await h.release();
     await settle();
@@ -132,17 +150,17 @@ try {
   }
   // D. remove + respawn (a new subtree) under a held load.
   {
-    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
-    await until(pg, (x) => x.part);
+    await spawn(pg);
+    await until(pg, (x) => x.entity);
     const img = fresh();
     const h = await hold(pg, img);
     await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
     check('D. the hold engaged', h.heldCount() > 0);
-    await verb(pg, 'remove', { id: 'console' });
+    await remove(pg);
     await until(pg, (x) => !x.entity);
-    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
-    await until(pg, (x) => x.part);
+    await spawn(pg);
+    await until(pg, (x) => x.entity);
     await h.release();
     await settle();
     s = await state(pg);
@@ -164,8 +182,8 @@ try {
   }
   // F. the gate refuses only STALE loads.
   {
-    await verb(pg, 'spawn', { id: 'console', model: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
-    await until(pg, (x) => x.part);
+    await spawn(pg);
+    await until(pg, (x) => x.entity);
     const img = fresh();
     await comp(pg, img);
     s = await until(pg, (x) => x.hung && x.hasMap);
@@ -181,7 +199,7 @@ try {
     await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
     check('G. the hold engaged', h.heldCount() > 0);
-    await pg.evaluate(() => import('/lib/base.js').then((b: any) => { b.bus.emit('entity', { id: 'console', kind: 'demote' }); b.bus.emit('entity', { id: 'console', kind: 'spawn' }); }));
+    await pg.evaluate((id: string) => import('/lib/base.js').then((b: any) => { b.bus.emit('entity', { id, kind: 'demote' }); b.bus.emit('entity', { id, kind: 'spawn' }); }), ID);
     await settle(300);
     await h.release();
     s = await until(pg, (x) => x.hung && x.hasMap);

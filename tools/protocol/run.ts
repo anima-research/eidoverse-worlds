@@ -22,7 +22,8 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuite, suiteMembers } from "./procgroup.ts";
+import { killSuiteAsync, suiteMembersAsync } from "./procgroup.ts";
+import { spawn as spawnNow } from "node:child_process";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
@@ -32,6 +33,9 @@ import { ENGINE, controlNote } from "./common.ts";
 type Lane = "core" | "main" | "browser";
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["kernel", "kernel-check.ts", 1],
+  ["trig", "trig-check.ts", 1],
+  ["laws", "laws-check.ts", 1],            // the ground's height and the sky's forecast are data: spec/conformance/laws.json            // the heading law's trig is data: spec/conformance/trig.json, bit for bit
+  ["engine", "engine-check.ts", 1],          // what "carries" means: every carried engine version reproduces its conformance digests (house, #260 10-21)
   ["normative", "normative-check.ts", 1], // spec/NORMATIVE.md is the closed set, and its consent/roles tables equal the reference (10-20, nissa-seru)     // reviewer item 5 (10-18): the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
   ["gov-reserved", "gov-reserved-check.ts", 1], // reviewer item 8 (10-18): governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
   ["diffcheck", "diffcheck.ts", 1],        // review #260 rereview (10-19) blocker 3: the range is clean under `git diff --check`; two documented exemptions only
@@ -53,11 +57,18 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["mover", "mover-check.ts", 1],       // ONE walker (shared/mover.js) for the agent, the client and the authority: no caller's own numbers; floor rule, walls, arrival; agreement with the real authority
   ["colliders", "../collider-test.ts", 1], // the walker's reading of placed geometry, incl. things a tumbling engine laid on their sides (review of b398d7e3 #1)
   ["lying-support", "../lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin (review of b398d7e3 #1)
+  ["support-swap", "../support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
+  ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one under its switch (the relay answers), hangs from a nail
+  ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
+  ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the load's repairs; ran only as an import before
+  ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
+  ["renderer-cred", "../renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches a members-only world; a stranger's /snap and /heightmap of it are 404
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],
   ["oracle", "import-v1/snapshot-oracle.ts", 2], // owner 10-15: the translator against the OLD ENGINE — every old world whose snapshot.json is a complete fold of its log, compared with its translation (and the server's lifted load)
   ["inplace", "inplace-check.ts", 1],   // R 10-17 13:36: translate <world> in place (the name and links kept, the old log beside it as log.original.jsonl), verified before the swap, everything put back on any failure
+  ["migrate-identities", "migrate-identities-check.ts", 1],   // migrate-identities.ts: one id per person everywhere (actors, role keys, say.to, capability, sponsor, the moderator log), a gate that reads the two logs side by side, refused twice
   ["oldworlds", "../oldworlds-test.ts", 1], // owner 10-15: an old-format world is found and named at boot (the exact translate command), and a visitor is told in plain words             // the old-world importer (tools/protocol/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
@@ -148,15 +159,35 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["buildcheck-queue", "../buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
   ["door-is-error", "../door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
+  ["door-wording", "../door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["history-request", "../history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
   ["wing-fold-presence", "../wing-fold-presence-test.ts", 1], // #159: a held posture rides the presence wire (absence is not release; survives late join, reconnect, swap)
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)
+  ["grant-command", "../grant-command-test.ts", 1], // #260 house client I6/I42: /grant keeps exceptions and the end date unless it changes them
+  ["environment-realizer", "../environment-realizer-test.ts", 1], // #260 house client I8/I55: water on the flat floor; a rejoin clears gone terrain and grass
+  ["grant-until", "../grant-until-test.ts", 1], // house client I124: a timed grant's end is a whole millisecond (the authority refused every fractional one)
+  ["lite-graph", "../lite-graph-test.ts", 1], // house client I10 / config I1: the lite client never imports the WebGPU renderer
+  ["say-live", "../say-live-test.ts", 1], // house client I135/I217: a transcript is dropped offline, and its say carries spoken/utt/t0
+  ["presence-actor", "../presence-actor-test.ts", 1], // house client I197: puppet, bodydrag and typing go only with the target's identity
+  ["first-name-account", "../first-name-account-test.ts", 1], // house client I192: the first-run door's name becomes the account
+  ["retired-commands", "../retired-commands-test.ts", 1], // house config I19: a retired command says why it is gone
+  ["animnames-retry", "../animnames-retry-test.ts", 1], // house config I18: a failed defs fetch is retried with back-off
+  ["panels", "../panels-test.ts", 1], // house client I203/I198/I213: steppers per thing, focus keeps the panel, Tab adds to the hidden set
+  ["surface-hold", "../surface-hold-test.ts", 1], // house client I240: a voice-relay leg holds an actor's lines (repaired: it drove the wrong bus)
+  ["particles", "../particles-test.ts", 1], // house client I159: a play/stop change updates the registry key, no rebuild
+  ["shadow-fade", "../shadow-fade-test.mjs", 1], // house client I172: registered shadow casters start not casting
+  ["frames-layout", "../frames-layout-test.ts", 1], // the frames and panels layout
+  ["models-field", "../models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
+  ["importer", "importer-check.ts", 1], // the house's review of #260 (6291883302), the v1 importer: causes, the approval's hash, one identity per person, nothing left half-written, values read as v1 read them
+  ["eidosim-v1", "import-v1/eidosim-v1-test.ts", 1], // the first eidosim's covenant tests, on the copy the importer keeps (house #260, importer I8)
+  ["render-scene-import", "../render-scene-import-test.ts", 1], // #260 I464: server/render-scene.ts links (nothing serves it), and particles project through resolveParticles
+  ["channelbox", "../channelbox-test.ts", 1], // #260 I242: the channel box through the real door; the rotate order is the viewer's (PROTOCOL §9.1), never sent
   ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 
 // ---- lanes ----
 // CORE runs first, in this order, and a failure there stops the gate
-const CORE = ["kernel", "normative", "gov-reserved", "diffcheck", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
+const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reserved", "diffcheck", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through tools/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
 // refusedjoin (scratchBench) and client-tools (run-client.ts runs every tools/*-test file, browser tests among them, those one
@@ -171,11 +202,11 @@ for (const n of BROWSER) NEEDS[n] = "Chromium";
 // hermetic env; the browser lane from the house gate's run the same day). The timeout
 // is 5x that, at least 180 s: a slow host gets room, a hung suite is still killed.
 const EXPECT: Record<string, number> = {
-  "agent-mesh-collision": 92, "kernel": 0.5, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
+  "agent-mesh-collision": 92, "kernel": 0.5, "trig": 0.2, "laws": 0.3, "engine": 0.6, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
-  "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
-  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "lookat-forward": 0.5,
+  "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "importer": 1.2, "eidosim-v1": 0.2, "inplace": 15, "migrate-identities": 1.7, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
+  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "grant-command": 0.3, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
   "role-grammar": 0.3, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
   "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
@@ -337,10 +368,13 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
 const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
 const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
 let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
-if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
+// suites outside the browser lane that read the asset library, read-only: knockdown's ragdoll needs a real rig (with none
+// it falls back to the canned slump, which is what its rows reject)
+const READS_LIBRARY = new Set(["knockdown"]);
+if (SUITES.some(([n]) => selected(n) && (laneOf(n) === "browser" || READS_LIBRARY.has(n)))) {
   const want = process.env.EIDOVERSE_DIR;
   const fix = `git clone ${LIBRARY_REPO} <dir> && git -C <dir> checkout ${LIBRARY_PIN}, then EIDOVERSE_DIR=<dir>`;
-  if (!want) problems.push(`the browser lane needs the asset library: set EIDOVERSE_DIR (${fix})`);
+  if (!want) problems.push(`the browser lane (and ${[...READS_LIBRARY].join(", ")}) needs the asset library: set EIDOVERSE_DIR (${fix})`);
   else if (!fs.existsSync(path.join(want, "eidoverse", "terrain.js"))) problems.push(`EIDOVERSE_DIR=${want} is not an eidoverse-video checkout (no eidoverse/terrain.js): ${fix}`);
   else {
     LIBRARY = path.resolve(want);
@@ -357,15 +391,22 @@ if (problems.length) {
 const GATE_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "eido-gate-"));
 let current: { pid: number } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
-const killGroup = (pid: number, sig: NodeJS.Signals) => killSuite(pid, sig);
-const groupMembers = (pgid: number) => suiteMembers(pgid).length;
-const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (!process.env.PROTOCOL_KEEP) fs.rmSync(GATE_TMP, { recursive: true, force: true }); };
+// the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
+const killGroup = (pid: number, sig: NodeJS.Signals) => killSuiteAsync(pid, sig);
+const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
+/** at exit, where nothing can be awaited: signal the group (POSIX) or start a tree kill and leave it running (Windows) */
+const killNow = (pid: number) => { if (process.platform !== "win32") { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } return; }
+  try { spawnNow("taskkill", ["/PID", String(pid), "/T", "/F"], { detached: true, stdio: "ignore", windowsHide: true }).unref(); } catch { /* gone */ } };
+// a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
+const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
+const cleanup = () => { if (current) killNow(current.pid); if (process.env.PROTOCOL_KEEP) return;
+  try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
 
 const OPT_TRACKED = (spawnSync("git", ["-C", ENGINE, "ls-files", "-z", "assets/opt"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean).map((f) => f.slice("assets/opt/".length));
 const PATH = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? process.env.Path ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
-async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number }> {
+async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number; stuck?: boolean }> {
   const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
   for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
   // the asset cache starts empty EXCEPT for what the repo itself commits there (props/ball.glb, a fixture since 08-03):
@@ -377,7 +418,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (PY) env.PYTHON = PY;
   if (CHROME) env.CHROME = CHROME;
-  if (LIBRARY && laneOf(name) === "browser") env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other lane keeps its empty library
+  if (LIBRARY && (laneOf(name) === "browser" || READS_LIBRARY.has(name))) env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other suite keeps its empty library
   const [script, ...args] = file.split(" ");
   let cmd = [process.execPath, path.resolve(ENGINE, "tools/protocol", script), ...args];
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
@@ -386,15 +427,18 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   current = { pid: child.pid! };
   let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
-  const timer = setTimeout(() => { timedOut = true; killGroup(child.pid!, "SIGTERM"); setTimeout(() => killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
-  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); }); });
-  clearTimeout(timer);
-  const leftovers = child.pid ? groupMembers(child.pid) : 0;   // anything the suite started and left running
-  if (child.pid) killGroup(child.pid, "SIGKILL");
+  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM"); setTimeout(() => void killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
+  // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
+  let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); });
+    watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
+  clearTimeout(timer); clearTimeout(watchdog);
+  const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
+  if (child.pid) await killGroup(child.pid, "SIGKILL");
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
-  return { code, signal, out, timedOut, leftovers };
+  return { code, signal, out, timedOut, leftovers, stuck };
 }
 
 // ---- the gate ----
@@ -414,14 +458,16 @@ for (const name of order) {
   const optional = lines.filter((l) => /^\s*OPTIONAL\b/.test(l)).map((l) => l.trim());
   const ms = performance.now() - t;
   let status: Result["status"] = r.code === 0 ? "pass" : r.code === 77 ? "skip" : "fail";
-  let why = r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
+  let why = r.stuck ? `timed out after ${timeoutOf(name)} s, and it wouldn't die: left behind after a minute more (its kill didn't land)` : r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
   if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
   if (r.timedOut) status = "fail";
   results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
-  console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? ` · killed ${r.leftovers} leftover process(es)` : ""}`);
+  console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
   for (const l of fails.slice(0, 20)) console.log(l);
   for (const l of rowSkips.slice(0, 20)) console.log(l);
-  for (const l of lines.slice(-tail)) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
+  // a suite that failed without one FAIL line crashed: its last line is the runtime's banner, so show enough to read the error (CI 10-21: six Windows reds read 'Bun v1.3.14' and nothing else)
+  const crashed = status === "fail" && !fails.length && !r.timedOut;
+  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : tail))) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
   if (lane === "core" && status !== "pass") stopped = `not run: the core lane failed at ${name}`;
 }
 

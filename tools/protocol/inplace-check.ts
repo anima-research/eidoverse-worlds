@@ -35,6 +35,8 @@
 //   IP21 an approval of a report that is no longer the world's (the old log changed since) is refused, both hashes named,
 //        nothing moved
 //   —— #260 rereview blocker 1: nothing can yet bind a key to the v1 world's owner, so a translation names no founder ——
+//   IP21b the bytes translated are the bytes the approved report hashed (a write between the approval and the
+//        importer's read is refused, both forms)
 //   IP22 `--founder-key` (dry run, or with --approved and the key's GOOD signature) and `--approve-sig` are REFUSED, truthfully
 //        (no key can be bound to the old owner: v1 logs record accounts, not keys; use --no-founder-key --operator-only-no-owner),
 //        and nothing is written
@@ -46,6 +48,7 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
 //   IP30 (r14 M3) a world.mod.jsonl the server made after the translation blocks rollback without --discard-changes, is removed with it, and the world translates again
 //   IP24 `rollback <world>` restores the WHOLE operational set: the renamed originals back (same bytes, inode, mtime), the
 //        made files (world.jsonl, poses.json, world.mod.jsonl, translation.json) removed, the minted identities forgotten: the
@@ -165,7 +168,7 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   const ha = /^report-hash ([0-9a-f]{64})$/m.exec(a.out)?.[1], hb = /^report-hash ([0-9a-f]{64})$/m.exec(b.out)?.[1];
   let rep: any = null; try { rep = JSON.parse(a.out.slice(a.out.indexOf("{"), a.out.lastIndexOf("}") + 1)); } catch {}
   ok(a.code === 0 && !!ha && ha === hb && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d), "IP19 --dry-run prints the report hash, the same on a second run, and writes nothing (the directory is as it was, no temporary directory)", { code: a.code, ha, hb, keys: Object.keys(fingerprint(d)) });
-  ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@17",
+  ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@18",
     "IP19 the report names the old log's bytes (sha256), the counts, the translator, the DROPPED table (what every translation drops by design) and an empty deferred list", rep && { source: rep.source, entries: rep.entries, dropped: Object.keys(rep.dropped ?? {}).length, deferred: rep.deferred, refused: rep.refused });
   ok(rep && /trial period/.test(rep.trial ?? "") && /translate this world again/.test(rep.trial) && /^trial period: .*Approving this report accepts that/m.test(a.out),
     "IP19t the report (so the hash the owner signs) says the protocol is in a trial period and the world may be translated again, and --dry-run prints it (Mica, #260: alpha worlds should know they accepted translation churn)", rep && rep.trial);
@@ -181,6 +184,18 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
     "IP21 an approval of a report the world has since outgrown is refused, both hashes named, nothing moved", { code: stale.code, out: stale.out.slice(-700) });
   const good = tool(["translate", "careful", "--no-founder-key", "--operator-only-no-owner", "--approved", now]);
   ok(good.code === 0 && isWorldDir(d), "IP21 …and approving the report as it stands now translates", good.out.slice(-300)); }
+
+// ================= IP21b: the bytes translated are the bytes the approved report hashed =================
+// the importer reads log.jsonl again after the approval was checked: a write between the two reads (WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)
+// would be translated, and stamped approved, from bytes nobody approved
+for (const two of [false, true]) { const nm = two ? "racer2" : "racer"; const d = oldWorld(nm); fs.rmSync(path.join(d, "snapshot.json"));
+  const words = two ? [nm, `${nm}-new`] : [nm]; const h = dryHash(words);
+  const r = tool(["translate", ...words, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL: "1" });
+  const destDir = path.join(W, two ? `${nm}-new` : nm), dirNow = fs.existsSync(dirf) ? fs.readFileSync(dirf, "utf8") : "";
+  // two layers refuse it (the importer's own report of the bytes it read, house importer I25; and the byte compare, I206):
+  // either one firing first is the property, refused with nothing written
+  ok(r.code !== 0 && /not the bytes the approved report|the report of the log being translated hashes to/.test(r.out) && /Nothing was (changed|moved)/.test(r.out) && !isWorldDir(destDir) && !(two && fs.existsSync(destDir)) && !temps().length && !/local:late/.test(dirNow),
+    `IP21b ${two ? "the two-name form" : "in place"}: a log written to after the approval was checked is refused, nothing written`, { code: r.code, out: r.out.slice(-500) }); }
 
 // ================= IP22, IP28: a translation names no founder (#260 rereview, blocker 1) =================
 // Nothing can yet bind a key to the v1 world's owner (v1 logs record accounts, not keys), so `--founder-key` would let the
@@ -270,6 +285,16 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
   const r4 = tool(["rollback", name]);
   ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
+// ================= IP24b: rollback keeps an identity another world's translation reused =================
+// (TRUST_NAMES on: a name is an account, so a second world translated after the first wears the first one's id for Zed)
+{ const zed = [{ actor: "Zed", verb: "say", args: { text: "here in both" } }];
+  const d1 = oldWorld("share1", { extra: zed }), d2 = oldWorld("share2", { extra: zed });
+  const t1 = xlate(["share1"]), t2 = xlate(["share2"]);
+  const zedIn = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8")).find((e: any) => e.kind === "say" && e.body?.text === "here in both")?.actor;
+  const id = zedIn(d1), m1 = JSON.parse(fs.readFileSync(path.join(d1, MANIFEST), "utf8"));
+  const r = tool(["rollback", "share1"]); const dirNow = JSON.parse(fs.readFileSync(dirf, "utf8"));
+  ok(t1.code === 0 && t2.code === 0 && !!id && id === zedIn(d2) && id in (m1.identities ?? {}) && r.code === 0 && !!(dirNow.ids ?? dirNow)[id] && /another world/.test(r.out),
+    "IP24b rolling back the first world keeps the identity the second one's log names (minted by the first, reused by the second), and says so", { id, second: zedIn(d2), minted: id in (m1.identities ?? {}), code: r.code, kept: !!(dirNow.ids ?? dirNow)[id], out: r.out.slice(-400) }); }
 // ================= IP30 (r14 M3): a file the server made AFTER the translation (its first ban → world.mod.jsonl) is history too =================
 { const name = "modlater"; const d = oldWorld(name); const fp = fingerprint(d); const r = xlate([name]);
   ok(r.code === 0 && isWorldDir(d) && !fs.existsSync(path.join(d, "world.mod.jsonl")), "IP30 setup: translated in place, no moderator log yet (this old world had no bans)", r.out.slice(-200));

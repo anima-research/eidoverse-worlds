@@ -254,14 +254,17 @@ try {
   // --- refusals
   const bad = await alice.req("obliterate", { everything: true });
   check("an unknown verb is refused, to the asker, by name", bad.ok === false && bad.reply?.refused?.code === "unknown-verb", JSON.stringify(bad.reply));
-  alice.send({ type: "verb", verb: "spawn", args: { id: "old", lib: "x.glb", pos: [0, 0, 0] } });
-  await sleep(250);
+  // a world founded since R 10-21 makes newcomers builders; the owner sets them back to inhabitants (strangers read, builders
+  // build) so a visitor's create has something to refuse (#260 house I442)
+  const dr = await alice.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });
+  check("the owner makes newcomers inhabitants", dr.ok === true, JSON.stringify(dr.reply));
+  const nR = quiet();
   const bobSees = await bob.req("create", { id: "bobs", components: { transform: { pos: [0, 0, 0] } } });
   check("a visitor's create is refused (the door's roles: strangers read, builders build)", bobSees.ok === false && bobSees.reply?.refused?.code === "rights", JSON.stringify(bobSees.reply));
   await sleep(200);
-  const refusedActs = logLines().slice(n0);
-  check("a refused write changes no state: at most the door's record of the refused act",
-    refusedActs.every((e: any) => e.kind === "act" && e.body?.refused) && !logText().includes('"old"'), JSON.stringify(refusedActs).slice(0, 300));
+  const refusedActs = logLines().slice(nR);
+  check("a refused write changes no state: the log gained only the door's records of refused acts (and at least one)",
+    refusedActs.length > 0 && refusedActs.every((e: any) => e.kind === "act" && e.body?.refused), JSON.stringify(refusedActs).slice(0, 300));
   const n1 = quiet();
 
   // --- one body per identity
@@ -282,9 +285,11 @@ try {
     await sleep(300);
     const late = await joined("latecomer", fw);
     const st = late.snapshot.cut?.state ?? {};
-    const things = Object.keys(st).filter((k) => k !== "@world" && /f\d+$/.test(k));
+    // ids are minted (R 10-17): the suite's names f0..f59 read as theirs through IDS
+    const mine = new Set(Array.from({ length: 60 }, (_, i) => IDS.of(`f${i}`)));
+    const things = Object.keys(st).filter((k) => mine.has(k));
     check("the cut survives removals", things.length === 30, `${things.length} things`);
-    const f31 = st[things.find((k) => k.endsWith("f31")) ?? ""]?.c?.transform?.v?.pos;
+    const f31 = st[IDS.of("f31")]?.c?.transform?.v?.pos;
     check("the cut holds the LATEST transforms", f31?.[2] === 5, JSON.stringify(f31));
     check("a joiner is not handed the history (no entries; the cut's head says where it stands)",
       !("entries" in late.snapshot) && late.snapshot.cut.head >= 4, `head ${late.snapshot.cut.head}`);
@@ -367,7 +372,7 @@ try {
     const w = (c: Client) => c.snapshot.cut?.state?.["@world"]?.c ?? {};
     const a = await joined("g-after", gw);
     check("terrain is in a joiner's cut", w(a).terrain?.v?.amplitude === 2.6, JSON.stringify(w(a).terrain));
-    check("grass is in a joiner's cut", w(a).grass?.v?.perCell === 4, JSON.stringify(w(a).grass));
+    check("grass is in a joiner's cut", w(a).grass?.v?.width === 90 && w(a).grass?.v?.depth === 80, JSON.stringify(w(a).grass));   // spacing and perCell are not grass fields now (the door drops them)
     const m = await owner.req("delete", { id: "@world", component: "grass" });
     const b = await joined("g-mowed", gw);
     check("mowing grass (delete @world grass) clears it", m.ok && !w(b).grass, JSON.stringify([m.reply?.refused, w(b).grass]));
@@ -418,7 +423,10 @@ try {
     await sleep(300);
     check("a one-off animation relays to others", watcher.of("anim").some((m) => m.id === "poser" && m.dur === 1.5));
 
-    // a puppet is ROUTED to the target only
+    // a puppet is ROUTED to the target only. The relay acts on a body only when it knows where both bodies stand, within
+    // reach (server/messages.ts bodyRefusal), so the watcher publishes where it is first (#260 house I127)
+    watcher.send({ type: "pose", pose: { p: [1, 0, 0], yaw: 0, speed: 0, clip: "idle" } });
+    await sleep(200);
     poser.send({ type: "puppet", target: "watcher", pose: { spine: [0, 0, 0.2, 0.98] } });
     await sleep(300);
     check("a puppet reaches its target", watcher.of("puppet").some((m) => m.by === "poser"));

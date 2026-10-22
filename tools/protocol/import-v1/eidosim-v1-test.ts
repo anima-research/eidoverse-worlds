@@ -1,5 +1,5 @@
 // The deterministic sim fold, held to PROTOCOL_v2's covenants in a vacuum:
-//   bun tools/sim-test.ts
+//   bun tools/protocol/import-v1/eidosim-v1-test.ts   (suite eidosim-v1 in tools/protocol/run.ts)
 //
 // SELF-AGREEMENT — two independent folds of the same entries are
 // bit-identical; SCHEDULE-INDEPENDENCE — advancing in one jump equals

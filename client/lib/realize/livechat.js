@@ -15,14 +15,16 @@ import { logChat } from '../chat.js';
 const voiceCapable = new Map();
 const pendingSpeech = new Map();
 const PERFORMANCE_TIMEOUT_MS = 2500;
+// a leg that performs an actor's says aloud: the voice leg, or the SFU relay's (server.ts, voicesfubridge.js)
+const isVoiceLeg = (s) => s === 'voice' || s === 'voice-relay';
 bus.on('surfaces', (people) => {
   voiceCapable.clear();
   for (const p of people ?? [])
     for (const sf of p.surfaces ?? [])
-      if (sf.surface === 'voice') voiceCapable.set(p.id, sf.gen);
+      if (isVoiceLeg(sf.surface)) voiceCapable.set(p.id, sf.gen);
 });
 bus.on('surface-transition', ({ actor, surface, gen, retired }) => {
-  if (surface !== 'voice') return;
+  if (!isVoiceLeg(surface)) return;
   // gen null = the leg DIED unreplaced (r-review: this event never fired
   // before — set-only bookkeeping held dead capability forever and every say
   // from that actor ate the full performance timeout against a gone leg).

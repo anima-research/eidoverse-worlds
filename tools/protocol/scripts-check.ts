@@ -617,7 +617,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { blocking, req: code(req), ticks, enter, written, n, after, nAfter: comp(s, "clock", "t/n")?.n ?? null }; },
     good: (o) => o.blocking.includes("rename-components") && o.req === "repair-needed" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused repair-needed")
       && JSON.stringify(o.enter) === '["refused repair-needed"]' && o.written.length === 0 && o.n === null && o.after.includes("ran") && o.nAfter >= 1 },
-  { id: "B26", what: "…and a log changed outside the purge rule (record-altered) stops them the same way: a timer's and an arrival's activations write nothing", run(s) { cast(s);
+  { id: "B26", what: "…but a log changed outside the purge rule does NOT stop them (house markup, #260 10-20: detection is §12's bone, a write lockout was a policy no world asked for): a timer's and an arrival's activations still write", run(s) { cast(s);
       if (!D.tick || !D.presenceEvent) return { absent: true };
       const BEAT = `world.on("tick", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\nworld.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
       s.call("olive", "create", { id: "clock", model: "crate", place: { at: [0, 0] } });
@@ -630,8 +630,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const n0 = w.entries.length, ticks: string[] = [];
       for (let i = 0; i < 3; i++) { T += 5000; process.env.PROTOCOL_NOW = String(T); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
       T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
-      return { req: code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
-    good: (o) => o.req === "record-altered" && o.ticks.length >= 2 && o.ticks.every((t: string) => t === "refused record-altered") && JSON.stringify(o.enter) === '["refused record-altered"]' && o.written.length === 0 },
+      return { req: ok(req) ? "ok" : code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
+    good: (o) => o.req === "ok" && o.ticks.length >= 2 && !o.ticks.some((t: string) => /record-altered/.test(t)) && !o.enter.some((t: string) => /record-altered/.test(t)) && o.written.length > 0 },
   // ---------------- R: runaway work ----------------
   ...[["R1", "while (true) {}", "fuel"], ["R2", "function f() { return f(); } f();", "stack"], ["R3", `let s = "x"; for (;;) s += s;`, "memory"],
       ["R4", `for (let i = 0; i < 1000; i++) world.get("self");`, "calls"], ["R5", `for (let i = 0; i < 40; i++) world.set("self", "t/n", i);`, "too-big"], ["R6", "this is not javascript", "syntax"]].map(([id, body, want]) => ({
@@ -947,9 +947,9 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
       s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
-      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = !!s.w().presence.bodies.vic?.pose;
+      const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = s.w().presence.bodies.vic?.poseBy !== undefined;   // who posed you, never the pose (recut A4)
       s.call("vic", "consent", { switch: "refuse" });
-      return { r, posed, after: !!s.w().presence.bodies.vic?.pose }; },
+      return { r, posed, after: s.w().presence.bodies.vic?.poseBy !== undefined }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
   { id: "C4", what: "an expired allowance for one behaviour no longer masks its sponsor's: the sponsor-wide allowance applies once it has run out", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });

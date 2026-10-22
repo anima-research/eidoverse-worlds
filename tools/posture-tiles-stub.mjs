@@ -22,7 +22,6 @@ export const bus = {
   emit(t, p) { busLog.push(t); for (const f of handlers.get(t) ?? []) f(p); },
 };
 export const CONFIG = { name: 'tester', params: new URLSearchParams() };
-export function report() {}
 export function angleDelta(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; }
 
 // ---- terrain.js / colliders.js — a flat world; the test places one chair pan when it wants one
@@ -46,11 +45,8 @@ export { html } from '../client/lib/markup.js';
 // core.js
 export const BASE_PIXEL_RATIO = 1;
 export const PREF_HEADSET_SEEN = 'ew-headset-seen', PREF_MSAA = 'ew-msaa';
-export const TSL = {};
 export const WEBGPU_POSSIBLE = false, WEBGPU_XR = false, XR_BOOT = null;
 export const axisLines = new THREE_RAW.Object3D(), grid = new THREE_RAW.Object3D(), ground = new THREE_RAW.Object3D();
-export const hemi = new THREE_RAW.Object3D(), sun = new THREE_RAW.Object3D();
-export const scene = new THREE_RAW.Scene();
 export const renderer = { backend: {}, xr: { isPresenting: false, getSession: () => null }, setPixelRatio() {}, render() {} };
 export const backendName = () => 'none';
 export const headsetSeenRecently = () => false;

@@ -24,7 +24,7 @@ import { partSlot } from "../../shared/protocol/names.js";   // the node-motion 
 import { readLog, fold as replica, opsOf, applyInPlace, emptyState } from "../../shared/protocol/fold.js";
 import { translate as translateV1, DROPPED, hasEpoch, puntedLives, lifeTracker } from "./import-v1/translate-v1.js";
 import { translate as translateD3 } from "./import-v1/translate-d3.js";
-import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
+import { simFold, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "./import-v1/fold.js";
 import * as eidosim from "./import-v1/eidosim-v1.js";   // HER engine (the first eidosim): what v1 logs mean
 import { localOf } from "../../shared/hierarchy.js";
@@ -48,9 +48,7 @@ for (const s of ["é ☃ 𝄞 \u0000 ", "x".repeat(1000), JSON.stringify({ a: [1
 check("utf8Hex = Buffer hex", utf8Hex("é☃𝄞a-") === Buffer.from("é☃𝄞a-", "utf8").toString("hex"));
 check("the native path is the one in use under bun", typeof (globalThis as any).Bun !== "undefined" && sha256 !== sha256Portable);
 
-// ---- 2. the engine's name is its exact build ----
-const build = sha256(EIDOSIM_FILES.map((f: string) => fs.readFileSync(ENGINE + f, "utf8")).join("\0")).slice(0, 16);
-check("EIDOSIM_BUILD names the sim files in this checkout (change them → a new engine name)", build === EIDOSIM_BUILD, `${build} vs ${EIDOSIM_BUILD}`);
+// ---- 2. (the engine's identity is its version, held to its conformance digests by engine-check.ts; no source hash) ----
 
 // ---- 3. her dialect-3 fixtures through translate-d3 ----
 const golden = JSON.parse(fs.readFileSync(ENGINE + "spec/fixtures/replay/.replaybench.json", "utf8"));
@@ -308,7 +306,11 @@ for (const p of logs.sort()) {
       if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does
-  compareAt(k); if (loss) lossy++;
+  compareAt(k);
+  // the inverse folds the source only as far as the translation's acts led it: a translation that stops early would be
+  // compared with a source folded to the same point and pass, so the whole source must have been consumed
+  if (!loss && k !== body.length - 1) loss = { truncated: { consumed: k + 1, of: body.length } };
+  if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
   { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.translated)) for (const [k, v] of Object.entries<any>(comps)) {

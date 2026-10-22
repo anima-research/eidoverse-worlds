@@ -26,7 +26,7 @@ const M: [string, string, string, string, string[]][] = [
   // speech is arrival-only (R 10-18)
   ["the history message has an arrival floor", "server/messages.ts", "floor: c.world.sayFloorFor(c),", "floor: null,", ["RS10"]],
   ["the authority's history has an arrival floor", "shared/protocol/authority/blueprints.js", "const floor = typeof w.sayFloor === \"function\" ? w.sayFloor(actor) : null;", "const floor = null;", ["RS10"]],
-  ["a moderator is not an admin", "server/world.ts", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.roleOf(c.actorId) === \"owner\"); }", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && [\"owner\", \"moderator\"].includes(this.log.roleOf(c.actorId))); }", ["RS10"]],
+  ["a moderator is not an admin", "server/world.ts", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && this.log.may(c.actorId, \"readChat\")); }", "isAdmin(c: Client): boolean { return isOperator(c.account) || (!!c.actorId && [\"owner\", \"moderator\"].includes(this.log.roleOf(c.actorId))); }", ["RS10", "RS10b"]],
   ["an owner reads the master log", "server/world.ts", "if (this.isAdmin(c)) return null; if (Number.isInteger", "if (false) return null; if (Number.isInteger", ["RS10"]],
   // RETIRED 10-20: "presence messages from a role-less (none) person are dropped" — RS9's ghost half tested it; no row does now (BUG-HUNT gap)
   ["the ban list is for moderation holders", "server/messages.ts", "if (!e || !(isOwner(e) ||", "if (false && !(isOwner(e) ||", ["RS9"]],

@@ -12,7 +12,7 @@ const { check, tally } = mkCheck();
 // a commented-out call is no call (a `//` after a quote or colon is a URL, kept)
 const uncomment = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[\s;{}()])\/\/.*$/gm, "$1");
 const CLIENT = resolve(import.meta.dir, "../client");
-const files = [...new Glob("**/*.{js,mjs,ts}").scanSync(CLIENT)].filter((f) => !f.includes("node_modules")).map((f) => ({ f, src: uncomment(readFileSync(join(CLIENT, f), "utf8")) }));
+const files = [...new Glob("**/*.{js,mjs,ts}").scanSync(CLIENT)].map((f) => f.split("\\").join("/")).filter((f) => !f.includes("node_modules")).map((f) => ({ f, src: uncomment(readFileSync(join(CLIENT, f), "utf8")) }));   // "/" on every OS (Windows globs with "\\", CI 10-21)
 const DEF = /export\s+(?:async\s+)?function\s+(init[A-Z]\w*)\s*\(|export\s+const\s+(init[A-Z]\w*)\s*=/g;
 const inits = files.filter(({ f }) => f.startsWith("lib/")).flatMap(({ f, src }) => [...src.matchAll(DEF)].map((m) => ({ name: m[1] ?? m[2], f })));
 check(`found the client's init* exports (${inits.length})`, inits.length > 20);

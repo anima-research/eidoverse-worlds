@@ -2,7 +2,7 @@
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
 import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
-import { avatarMounts } from './world.js';
+import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -118,6 +118,9 @@ export const identities = new Map();
 /** A presence message names its person by IDENTITY too (security pass 3, H2): the server routes it to that identity, and
  *  a name someone else wears never catches it. `key` is the field the server reads (targetActor / toActor). */
 const actorFor = (name, key) => { const a = name ? identities.get(name) : null; return a ? { [key]: a } : {}; };
+// A message about someone's BODY or to them (puppet, bodydrag, typing) goes only to an identity: sent without one the
+// server routes it by name (messages.ts presenceTarget), and a name is whatever someone else chose to wear (house I197).
+const hasActor = (name) => !!(name && identities.get(name));
 /** Display ids of people here without an account (the server marks them on arrive/present): the 'guest' badge. */
 export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
@@ -143,9 +146,14 @@ export function sayRefusalWords(r, text) {
 function sendSay(args) {
   return sendRequest('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
 }
+/** extra: to (a whisper); spoken/utt/t0 (the words were voice-performed: the authority logs the trio, display only);
+ *  live: true for a transcript of speech (stt.js), which is never queued for a reconnect: sent later it would publish
+ *  after the mic went off, with nothing to check it again, so offline it is dropped. */
 export function say(text, extra = {}) {
-  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
+  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}),
+    ...(extra.spoken === true && Number.isSafeInteger(extra.utt) ? { spoken: true, utt: extra.utt, ...(Number.isFinite(extra.t0) ? { t0: extra.t0 } : {}) } : {}) };
   if (net.joined && net.ws?.readyState === 1) return sendSay(args);
+  if (extra.live) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world' } });
   // removed, taken over, or refused at the authority: nothing will reconnect, so nothing is queued (it would wait forever)
   if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
   logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
@@ -170,7 +178,7 @@ export function sendAnim(data) {
  *  the bones sent, over what they already hold (a null bone releases it);
  *  without it the pose replaces theirs whole. */
 export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'puppet', target, ...actorFor(target, 'targetActor'), pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
@@ -248,7 +256,7 @@ export function sendVoiceConsent(recv) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'voice-consent', recv: !!recv }));
 }
 export function sendTyping(to, state) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
+  if (net.joined && net.ws?.readyState === 1 && (!to || hasActor(to))) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
 }
 
 /** Transient, never-logged relay — used while a build drag is in flight so
@@ -294,14 +302,14 @@ export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
   const id = ++requestSeq;
   return new Promise((resolve) => {
     const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
-    pendingRequests.set(id, { resolve, timer, verb });
+    pendingRequests.set(id, { resolve, timer, verb, ws: net.ws });   // the socket it went on: only that one's close fails it (I62)
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
 }
 // The socket closed: no reply can come on it (request ids don't carry over to the next one), so every request still in flight
 // is answered now, not by its 15 s timer (which held the body track that long after a reconnect, then spoke a stale timeout)
-function failPending() {
-  for (const [id, p] of pendingRequests) { pendingRequests.delete(id); clearTimeout(p.timer);
+function failPending(ws = null) {
+  for (const [id, p] of pendingRequests) { if (ws && p.ws !== ws) continue; pendingRequests.delete(id); clearTimeout(p.timer);
     p.resolve({ ok: false, refused: { code: 'offline', reason: `the connection dropped before the authority answered '${p.verb}'`, fix: 'it may have landed: look before trying again' } }); }
 }
 function onReply(msg) {
@@ -346,7 +354,7 @@ let lastPoseSent = 0;
 /** Targeted ragdoll-drag traffic (grab / sim stream / release). Presence
  *  semantics: fire-and-forget, never logged. The target's client decides. */
 export function sendBodyDrag(target, payload) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'bodydrag', target, ...actorFor(target, 'targetActor'), ...payload }));
   }
 }
@@ -443,13 +451,13 @@ export function sendPoseExact(pose) {
 }
 
 export function rejoin() {
-  intentionalClose = true;
+  intentionalClose = net.ws ?? true;   // the socket being replaced: its close is the one rejoin() answers for
   try { net.ws?.close(); } catch { /* already gone */ }
   net.joined = false;
   connect();
 }
 
-let intentionalClose = false;
+let intentionalClose = false;   // false, or the socket whose close rejoin() drives (true: one with no socket to name)
 
 // archipelago-home session (home-node.md §7): the server may know who we are
 // from the ew_sess cookie (set by /auth after a Discord login). Fetched once;
@@ -614,10 +622,16 @@ function showRefusal(text) {
 
 /** The socket's close, live or the early socket's (connect()). One place decides what each close code means. */
 function onSocketClosed(ev) {
+  // a socket already replaced (rejoin dials before the old close lands: it waits at most 2 s) answers its own requests
+  // and nothing else: the live socket's requests, its join and its clock are not its to end (house review I62)
+  const sock = ev?.target ?? null;
+  failPending(sock);
+  if (sock && net.ws && sock !== net.ws) { if (sock === intentionalClose) intentionalClose = false; return; }
   clearInterval(clockTimer); clockTimer = null;
   net.joined = false;
-  failPending();
-  if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
+  // rejoin() drives its own reconnect, for the socket it replaced only: the NEW socket dropping before the old close
+  // lands must still redial (review of I62: a shared flag let the new socket's close use it up, and nothing redialled)
+  if (intentionalClose && (intentionalClose === true || intentionalClose === sock || !sock)) { intentionalClose = false; return; }
   // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
   // would kick THAT session and ping-pong forever.
   if (ev.code === 4002) {
@@ -709,9 +723,8 @@ function onSocketClosed(ev) {
  *  VRM), then the voice peer and its analyser, then the body itself
  *  (avatar root, nameplate, bubbles, typing dots and held poses all hang
  *  off the avatar and dispose with it). Ownership stays explicit — each
- *  line names the table it clears. Logged body-mounts are deliberately NOT
- *  touched: avatarMounts mirrors folded world state, and the seat renders
- *  through the remote, which is now gone.
+ *  line names the table it clears. A body's seat (avatarMounts) is presence,
+ *  fed by its frames: dropRemote clears it with the body.
  *  `expected` makes the drop generation-conditional (see dropRemote). */
 export function teardownParticipant(id, expected) {
   // The generation check comes BEFORE any side effect: a predecessor's stale

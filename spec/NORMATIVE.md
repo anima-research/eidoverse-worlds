@@ -13,16 +13,21 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/PROTOCOL.md` | The log, the fold, components, rights, presence, speech, actors, the door. |
 | `spec/PHYSICS.md` | Bodies, motion, flight, the clock a sample carries. |
 | `spec/NORMATIVE.md` | This file: the set itself, and the tables below. |
-| `spec/kernel-pin.json` | The kernel: the log envelope, the fold, the identity grammar, the version, and the shapes of `transform`, `parent`, `model`, `roles` and `access`. Machine-checked. |
-| `spec/registry-pin.json` | The registry: every bare component name and its shape. Machine-checked. |
+| `spec/kernel-pin.json` | The kernel, what the fold reads: the log envelope, the fold, the identity grammar, the version, and the field shapes of `roles` and `access`. Machine-checked. |
+| `spec/registry-pin.json` | The registry: every bare component name and its shape. A second reader needs its types, required fields and meanings of absence; its defaults, ranges and enum members are the registry's current settings. Machine-checked. |
 | `spec/refusal-codes.json` | Every code the authority refuses with: what it means and when (and the words renamed before release). Machine-checked. |
 | `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
-| `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Where the prose and a vector disagree, that is a bug in one of them. |
+| `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
+| `spec/conformance/laws.json` | The ground's height (terrain numbers and features → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
+| `spec/conformance/trig.json` | The heading law's sine, cosine and atan2: inputs and exact float64 outputs every reader reproduces. Machine-checked. |
+| `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json`: what each must come to rest as, per engine version. A server carries a version when it reproduces that version's digests. Machine-checked. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
 prose names a file as the place to look: a file named in the spec or in a pin's `when` is a pointer to the reference, never the rule), `spec/history/`, `spec/fixtures/`, `spec/EIDO-URIS.md` (informative until a world needs portable blobs: no reader resolves an `eido:` URI today), and every `docs/` file. Where the
-reference implementation and this set disagree, the implementation is wrong.
+reference implementation and this set disagree, the implementation is wrong, with one exception: the pins are generated from the
+reference registry, so for them a change to the code is a change to the pin, and it lands only with an acknowledged re-pin
+(`spec/REGISTRY-CHANGELOG.md`).
 
 ## The control plane
 
@@ -60,7 +65,7 @@ does, and no role overrides it).
 | Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `inhabitant` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · lead (R 10-21) |
 | No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · lead (R 10-21) |
 | Doors | client presets that write `access` and the newcomer role: `open` (newcomers build) · `public` (newcomers play) · `invite-only` · `watch` | trial · lead (R 10-21) |
-| Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles` | trial · lead |
+| Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles`, `readChat` | trial · lead |
 | Built-in roles | inhabitant: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
 | Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
 | What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · lead (house markup) |
@@ -78,8 +83,9 @@ does, and no role overrides it).
 
 A 10-17 audit found the line between the two tables isn't yet drawn for **avatars**: once an avatar's parts are entities,
 they fall under the *thing* rules (roles, log history, and an owner who can do anything), not under body consent. The
-spec's "Body ownership (avatars)" section states the rule (normative before avatar entities ship); five write paths
-(the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
+spec's "Body ownership (avatars)" section keeps the one rule (every write to a body goes through the one request path,
+and the body's owner decides); how it is built is direction in `docs/AVATAR-DIRECTION.md` until avatars are shared. Five
+write paths (the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
 
 ### Not yet listed
 

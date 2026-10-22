@@ -7,16 +7,14 @@
 //                                              #   grass world: compile + fps
 //   bun tools/lightbench.ts --headed --console # watch it happen
 //
-// paritybench proves fold parity; this proves the parts of step 5 parity
-// cannot see: EW.materials() wetness rising under a rain verb, the cloud
+// It proves what a fold-parity check cannot see: EW.materials() wetness rising under a rain verb, the cloud
 // field waking, slot assignment honoring keep > authored, the day cycle
 // leaving only the day:false porch light burning at noon, the weather
 // system's lightning adopted through the scene-proxy seam instead of
 // entering the light topology, and the caster budget tracking realized
 // models. Page console errors fail the pass.
 //
-// Scaffolding (scratch sequencer, CDP, driver socket, Windows shim rule) is
-// paritybench's — see its header for the four expensive lessons.
+// Scaffolding: a scratch sequencer, CDP, a driver socket, and the Windows shim rule (spawn process.execPath).
 
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,8 +30,7 @@ const MEASURE = has("measure");
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 // A WebGPU-capable Chromium, wherever this machine keeps one — CHROME env
-// wins, else the first candidate that exists (paritybench's list, copied:
-// the tools stay self-contained).
+// wins, else the first candidate that exists (the tools stay self-contained).
 const BROWSER_CANDIDATES: Record<string, string[]> = {
   win32: [
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",

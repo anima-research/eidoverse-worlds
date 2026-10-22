@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, mintId, type Entry } from "../../../server/directory.ts";
-import { agentTokens } from "../../../server/auth.ts";
+import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal, maintain } from "../../../shared/protocol/authority.js";
@@ -56,26 +56,69 @@ export function makeApproval(world: string, report: string, { operator }: { oper
   return { report, owner: null, operator: { key: operator.key, sig: operator.sign(approvalText(world, report)) }, noOwner: NO_OWNER };
 }
 
+/** A v1 log's lines, parsed: the entries, and how many lines didn't parse (dropped, and said so in the report and result). */
+function readOld(srcBytes: Buffer) {
+  let unparsed = 0;
+  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { unparsed++; return []; } });
+  return { old, unparsed };
+}
+
+/** The identity mapper a translation runs with: who(name, {sub, lowered}) → the v4 identity. A person with an account is
+ *  that account; a person without one is their EXACT name, as v1 kept roles and acts. `lowered`: the name is one the v1
+ *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
+ *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
+ *  the report counts exactly what the real run renames and nothing in it varies. */
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true }: { mint?: boolean } = {}) {
+  const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
+  const agents = agentTokens();
+  const nameKey = (n: string) => `name:${n}`;
+  // every name this log gives a person (actors, grants, genesis roles, a say's addressee): what a lowered ban key may mean
+  const names = new Set<string>();
+  for (const e of old) { const a = e?.args ?? {};
+    if (typeof e?.actor === "string") names.add(e.actor);
+    if (e?.verb === "grant" && typeof a.id === "string") names.add(a.id);
+    if (e?.verb === "say" && typeof a.to === "string") names.add(a.to);
+    if (e?.verb === "genesis") for (const k of Object.keys(a.roles ?? {})) if (k !== "*") names.add(k); }
+  const unlowered = (k: string) => { const c = [...names].filter((n) => n.toLowerCase() === k); return c.length === 1 ? c[0] : k; };
+  // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
+  // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
+  const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
+  const stable = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
+  const who = (name0: string, { sub, lowered = false }: { sub?: string; lowered?: boolean } = {}) => {
+    const name = lowered && sub === undefined ? unlowered(name0) : name0;
+    // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
+    // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
+    const acct = sub !== undefined ? liveAccount(sub) : (isAccount(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
+    const display = isAccount(name) ? null : name;   // a role keyed by its account has no name of its own
+    const key = acct ?? nameKey(name);
+    // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
+    let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
+    if (!id) { id = mint ? mintId() : stable(key); planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
+    if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
+    memo.set(key, id); if (display !== null) memo.set(nameKey(display), id); return id; };
+  // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
+  // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
+  // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
+  for (const e of old) { const a = e?.args ?? {};
+    if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
+  return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)) };
+}
+
+const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
  *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
- *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. */
-export function reportV1World(srcDir: string, { name, content }: { name?: string; content?: (p: string) => string | null } = {}) {
-  const src = path.join(srcDir, "log.jsonl");
-  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
-  const srcBytes = fs.readFileSync(src);
-  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  const world = name ?? path.basename(srcDir);
-  const deferred = deferredFeatures(old);
-  // the pure translation (no directory, no custody key: the conformance key, no nonce): the same stats the real one has
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, ...(content ? { content } : {}) });
+ *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
+ *  report from its own run and refuses an approval of any other hash. */
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
     // approved covers it (PROTOCOL.md, the trial-period paragraph).
     trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
-    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") },
+    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed },
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
-    entries: { old: r.stats.in, new: r.out.length, change: r.stats.change, divergences: r.stats.divergences },
+    entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
     actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
     guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
     ...(r.stats.launches !== undefined ? { physics: { launches: r.stats.launches, rests: r.stats.rests } } : {}),
@@ -85,6 +128,17 @@ export function reportV1World(srcDir: string, { name, content }: { name?: string
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
   };
   return { report, hash: sha256(JSON.stringify(report)) };
+}
+export function reportV1World(srcDir: string, { name, content }: { name?: string; content?: (p: string) => string | null } = {}) {
+  const src = path.join(srcDir, "log.jsonl");
+  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
+  const srcBytes = fs.readFileSync(src);
+  const { old, unparsed } = readOld(srcBytes);
+  const world = name ?? path.basename(srcDir);
+  // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
+  // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: identityMapper(old, directoryFor(path.dirname(path.resolve(srcDir))), { mint: false }).who, content: content ?? hostContent });
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r);
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -99,13 +153,17 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
   const srcBytes = fs.readFileSync(src);
+  const world = name ?? path.basename(destDir);
+  const { old, unparsed } = readOld(srcBytes);
   // features v4 doesn't carry yet are never dropped quietly (DEFERRED): the log is refused, naming each use
-  { const uses = deferredFeatures(srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }));
-    if (uses.length) throw new Error(deferredRefusal(uses, `"${name ?? path.basename(destDir)}"`)!); }
+  const deferred = deferredFeatures(old);
+  if (deferred.length) throw new Error(deferredRefusal(deferred, `"${world}"`)!);
+  // the approval is checked before anything is translated: its countersignature here, its report hash after the run
+  if (approval) { const bad = approvalProblem(world, approval);
+    if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`); }
   // the bytes this translation is OF: an in-place translation checks the old log still holds exactly these before it swaps
   // (world.ts translateInPlace; review of PR #260, world.ts:99 — a server still writing to it would lose those edits)
-  const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex") };
-  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+  const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed };
   // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
   // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
   // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
@@ -115,41 +173,24 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
   // directory only after the log is — and, translating in place (deferIdentities), only once the swap has succeeded
   // (world.ts): a failed translation leaves no identities behind.
-  const dir = directoryFor(path.dirname(destDir)); const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
-  const agents = agentTokens().names;
-  const isAcct = (k: string) => isAccount(k);   // the translator's own account shape (translate-v1 @16)
-  const who = (name: string, { sub }: { sub?: string } = {}) => {
-    // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
-    // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
-    const acct = sub ?? (isAcct(name) ? name : agents.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
-    const display = isAcct(name) ? null : name;   // a role keyed by its account has no name of its own
-    const key = acct ?? `name:${name}`;
-    let id = memo.get(key) ?? (acct ? dir.idOfSub(acct) : null) ?? null;   // the same person they are everywhere on this server
-    if (!id) { id = mintId(); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
-    if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
-    memo.set(key, id); if (display) memo.set(`name:${display}`, id); return id; };
-  // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
-  // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
-  // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
-  for (const e of old) { const a = e?.args ?? {};
-    if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
-    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
+  const dir = directoryFor(path.dirname(destDir));
+  const { who, planned, idOfName } = identityMapper(old, dir);
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
   // recorded so this server answers /eido/sha256/<hex> for them
   const addressed = new Map<string, string>();
   const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
   const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: name ?? path.basename(destDir), content });
+  // the approval (the operator's countersignature; no owner attested), bound to the dry-run report's hash, rides in the
+  // world's own log right after the system's repair-shapes act, written by translate itself so every later cause counts it:
+  // provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never reads acts (PROTOCOL §1), so
+  // this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
+  const approved = approval ? { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } : undefined;
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: world, content, ...(approved ? { approved } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
-  // the approval (the operator's countersignature; no owner attested), bound to the dry-run report's hash, rides in the world's own log right after the system's
-  // repair-shapes act (index 2): provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never
-  // reads acts (PROTOCOL §1), so this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
-  if (approval) { const world = name ?? path.basename(destDir); const bad = approvalProblem(world, approval);
-    if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`);
-    const at = r.out.findIndex((e: Any) => e.kind === "act" && e.verb === "repair-shapes") + 1;
-    r.out.splice(at || 3, 0, { world: r.out[1].world, kind: "act", actor: "system", verb: "translation-approved", ts: r.out[1].ts ?? 0,
-      body: { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } }); }
+  // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
+  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1).hash;
+    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now} (the old log or the tool changed since the dry run). Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
@@ -164,38 +205,65 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // must read the whole history without one disagreement
   let sim: Any = null;
   if (r.stats.launches !== undefined) {
-    const lines = readLog(text); const sf = simFold(lines, Math.max(0, ...lines.map((e: Any) => (Number.isFinite(e?.ts) ? e.ts : 0))), { models: {} });
+    const lines = readLog(text); const end = lines.reduce((m: number, e: Any) => (Number.isFinite(e?.ts) && e.ts > m ? e.ts : m), 0);
+    const sf = simFold(lines, end, { models: {} });
     const flown = lines.filter((e: Any) => e?.kind === "sim").length;
     if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
     sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
   }
+  const madeDir = !fs.existsSync(destDir);
   fs.mkdirSync(destDir, { recursive: true });
   const tmp = path.join(destDir, "world.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
-  // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
-  // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
-  // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
-  const live = openLive(destDir, name ?? path.basename(destDir), { catalogue: ENGINE_CATALOGUE, scripts: null });
-  const m: Any = maintain(live, { by: "translate" });
-  if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
-  const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
-  if (maintenance.liftFailed.length) throw new Error(`the translated world's seats could not all be lifted: ${JSON.stringify(maintenance.liftFailed).slice(0, 300)}`);
-  if (!deferIdentities) dir.put(planned);
-  for (const [h, p] of addressed) recordEido(h, p);
-  // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
-  // translated world quietly unbans everyone (component review, world-settings #3)
-  const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
-  if (banned.length) { const m = modLogAt(path.join(destDir, "world.mod.jsonl"));
-    for (const [k, v] of banned) m.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
-  // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
-  // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
-  let poses = 0;
+  // from here a failure puts destDir back as it found it (a file this call made is removed, one it changed gets its bytes
+  // back), so a rerun isn't refused as "already holds a world"; the shared directory is written last, once nothing can fail
+  const touched: Touched = [{ file: path.join(destDir, "world.jsonl"), before: null }];
+  try {
+    // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
+    // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
+    // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
+    const live = openLive(destDir, world, { catalogue: ENGINE_CATALOGUE, scripts: null });
+    const m: Any = maintain(live, { by: "translate" });
+    if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
+    const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
+    if (maintenance.liftFailed.length) throw new Error(`the translated world's seats could not all be lifted: ${JSON.stringify(maintenance.liftFailed).slice(0, 300)}`);
+    // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
+    // translated world quietly unbans everyone (component review, world-settings #3)
+    const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
+    if (banned.length) { const modFile = path.join(destDir, "world.mod.jsonl"); touched.push({ file: modFile, before: fs.existsSync(modFile) ? fs.readFileSync(modFile) : null }); const ml = modLogAt(modFile);
+      for (const [k, v] of banned) ml.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
+    // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
+    // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
+    const places = carryPoses(srcDir, destDir, idOfName, touched);
+    // the model index is a cache of library bytes (what is recorded stays true); the identities go in last
+    for (const [h, p] of addressed) recordEido(h, p);
+    if (!deferIdentities) dir.put(planned);
+    // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
+    // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
+    return { source, unparsed, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
+  } catch (x) {
+    const undone: string[] = [];
+    for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }
+    if (madeDir) try { if (!fs.readdirSync(destDir).length) fs.rmdirSync(destDir); } catch { /* not empty, or gone */ }
+    const left = touched.map((t) => path.basename(t.file)).filter((f) => !undone.includes(f));
+    throw new Error(`${(x as Error)?.message ?? x}. Nothing written (${undone.join(", ")} put back as they were${left.length ? `; NOT put back: ${left.join(", ")}` : ""})`);
+  }
+}
+
+/** The old world's remembered places (poses.json, by display name) under each person's id: {poses: how many carried,
+ *  posesDropped: names this log never knew as one person, posesUnread?: why the file couldn't be read or written}. */
+type Touched = { file: string; before: Buffer | null }[];   // a file this call wrote, and its bytes before (null: it made it)
+function carryPoses(srcDir: string, destDir: string, idOfName: (n: string) => string | undefined, touched: Touched) {
   const oldPoses = path.join(srcDir, "poses.json");
-  if (fs.existsSync(oldPoses)) { try { const P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); const out: Record<string, unknown> = {};
-    for (const [name, pose] of Object.entries<Any>(P ?? {})) { const id = memo.get(`name:${name}`); if (id && pose) { out[id] = pose; poses++; } }
-    if (poses) fs.writeFileSync(path.join(destDir, "poses.json"), JSON.stringify(out)); } catch { /* an unreadable poses file: nobody's place is remembered */ } }
-  // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
-  // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
-  return { source, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, poses, ...(sim ? { sim } : {}) };
+  if (!fs.existsSync(oldPoses)) return { poses: 0, posesDropped: 0 };
+  let P: Any;
+  try { P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); } catch (x) { return { poses: 0, posesDropped: 0, posesUnread: `poses.json couldn't be read: ${(x as Error).message}` }; }
+  const out: Record<string, unknown> = {}; let dropped = 0;
+  for (const [n, pose] of Object.entries<Any>(P && typeof P === "object" ? P : {})) { const id = idOfName(n); if (id && pose) out[id] = pose; else dropped++; }
+  const n = Object.keys(out).length;
+  if (!n) return { poses: 0, posesDropped: dropped };
+  const to = path.join(destDir, "poses.json");
+  try { const before = fs.existsSync(to) ? fs.readFileSync(to) : null; fs.writeFileSync(to, JSON.stringify(out)); touched.push({ file: to, before }); } catch (x) { return { poses: 0, posesDropped: dropped, posesUnread: `poses.json couldn't be written: ${(x as Error).message}` }; }
+  return { poses: n, posesDropped: dropped };
 }
