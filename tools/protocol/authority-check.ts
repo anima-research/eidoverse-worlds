@@ -182,7 +182,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("bob", "create", { id: "hatch4", model: "door", components: { openable: { open: false, locked: true }, reactions: {
       "it's": { kind: "set", component: "openable", field: "locked", value: false, who: "owner" }, reset: { kind: "set", component: "openable", value: { open: false, locked: false } } } } });
     const u6 = call("vic", "use", { id: "hatch4", action: "open" });
-    ok(code(u6) === "barred" && u6.refused?.fix === `use {id: "hatch4", action: "it's"} unlocks it (only owners may); or use {id: "hatch4", action: "reset"} unlocks it; then "open" opens it. ${TAIL}`,
+    ok(code(u6) === "barred" && u6.refused?.fix === `use {id: "hatch4", action: "it's"} unlocks it (only owners may); or use {id: "hatch4", action: "reset"} unlocks it; then "open" opens or shuts it. ${TAIL}`,
       "P37f a fix names every reaction it sees unlock the thing, a field set and a whole-component set alike, quoted, with who may use each", { u6: code(u6) ?? u6.ok, fix: u6.refused?.fix });
     // …a toggle of locked that is itself barred (unless: 'locked') isn't offered, and on an open door the open step shuts it
     call("bob", "create", { id: "hatch5", model: "door", components: { openable: { open: true, locked: true }, reactions: { latch: { kind: "toggle", component: "openable", field: "locked", unless: "locked" } } } });
@@ -194,7 +194,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("bob", "create", { id: "hatch7", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, unbolt: { kind: "set", component: "openable", field: "locked", value: false } } } });
     const u8 = call("vic", "use", { id: "hatch6", action: "open" }), u9 = call("vic", "use", { id: "hatch7", action: "open" });
     ok(code(u8) === "barred" && u8.refused?.fix === "ring the bell" && code(u9) === "barred" && u9.refused?.fix === "someone allowed to may 'use' it with another action first",
-      "P37h an authored open handler barred by the lock keeps its own fix, or the general one", { u8: u8.refused?.fix ?? u8.ok, u9: u9.refused?.fix ?? u9.ok }); }
+      "P37h an authored open handler barred by the lock keeps its own fix, or the general one", { u8: u8.refused?.fix ?? u8.ok, u9: u9.refused?.fix ?? u9.ok });
+    // review of #260: a set of locked to true and a whole set that keeps it on don't unlock it, and aren't offered; a whole
+    // set that leaves locked off is, and since it also sets whether the door is open, the open step isn't predicted
+    call("bob", "create", { id: "hatch8", model: "door", components: { openable: { open: false, locked: true }, reactions: {
+      bolt: { kind: "set", component: "openable", field: "locked", value: true }, reseal: { kind: "set", component: "openable", value: { open: false, locked: true } },
+      wipe: { kind: "set", component: "openable", value: { open: false } } } } });
+    const u10 = call("vic", "use", { id: "hatch8", action: "open" });
+    ok(code(u10) === "barred" && u10.refused?.fix === `use {id: "hatch8", action: "wipe"} unlocks it; then "open" opens or shuts it. ${TAIL}`,
+      "P37i a fix leaves out a set that locks it and a whole set that keeps it locked, names a whole set that drops the lock, and doesn't predict the open step it sets", { u10: code(u10) ?? u10.ok, fix: u10.refused?.fix });
+    // …and an action name holding a double quote or a backslash is quoted as JSON, so the example stays usable
+    call("bob", "create", { id: "hatch9", model: "door", components: { openable: { open: false, locked: true }, reactions: { 'say "in" \\ go': { kind: "toggle", component: "openable", field: "locked" } } } });
+    const u11 = call("vic", "use", { id: "hatch9", action: "open" });
+    ok(code(u11) === "barred" && u11.refused?.fix === 'use {id: "hatch9", action: "say \\"in\\" \\\\ go"} unlocks it; then "open" opens it. ' + TAIL,
+      "P37j an action name with a double quote and a backslash is quoted as JSON in the fix", { u11: code(u11) ?? u11.ok, fix: u11.refused?.fix }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
