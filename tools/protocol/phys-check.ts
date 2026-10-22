@@ -578,6 +578,17 @@ function playground(name) {
     "U5f a batch that starts the engine and moves a held thing logs no lift for it: it leaves the hand and is in the engine's world where the edit put it", { g: g.ok ?? g.refused, b: b.ok ?? b.refused, lift: !!lift, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball });
   ok(dry.ok && dry.dry && !dry.lifts && (dry.notes ?? []).filter((x: any) => x.id === "ball" && x.tookFromHand === "sam").length === 1,
     "U5f …and its dry run says the thing leaves the hand, and names no lift for it", { lifts: dry.lifts, notes: dry.notes }); }
+// U5g: with two things in hand, a batch that starts the engine and moves one lifts the other alone (dry and live)
+{ const W = fresh("held-two-at-start"); call(W, "rowan", "create-world", { title: W });
+  for (const [id, x] of [["ball", 0], ["cup", 0.4]] as const) call(W, "rowan", "create", { id, model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [x, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = [call(W, "sam", "grab", { id: "ball" }), call(W, "sam", "grab", { id: "cup" })];
+  const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
+  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { ops });
+  const lifts = log(W).slice(n).filter((e: any) => e?.kind === "sim" && e.verb === "lift").map((e: any) => `${e.body?.id}:${e.actor}`); const v = view(W);
+  ok(g.every((x) => x.ok) && b.ok && JSON.stringify(lifts) === '["cup:sam"]' && JSON.stringify(dry.lifts) === '["cup"]' && v.lifted.has("cup") && !v.lifted.has("ball"),
+    "U5g with two things in hand, a batch that starts the engine and moves one lifts the other alone, dry and live", { g: g.map((x) => x.ok ?? x.refused?.code), b: b.ok ?? b.refused, lifts, dryLifts: dry.lifts, lifted: [...v.lifted] }); }
 
 // review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
 // back, purges nothing in either)
