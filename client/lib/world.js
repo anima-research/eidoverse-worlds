@@ -229,7 +229,7 @@ export function applyTerrainState(args) {
     // re-seat only ground-level entities — anything with a meaningful y
     // (seated on furniture, elevated) keeps its logged height
     for (const [id, obj] of entities) {
-      if (obj && Math.abs(obj.position.y) < 0.02) {
+      if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
         if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
         reindexCollider(id);

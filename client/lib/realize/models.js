@@ -775,6 +775,8 @@ function execMount(id) {
   if (Array.isArray(rel.q) && rel.q.length === 4) child.quaternion.set(rel.q[0], rel.q[1], rel.q[2], rel.q[3]);
   else child.rotation.set(0, rel.yaw ?? 0, 0);
   if (partNode) attachAtRest(parent, partNode, child);
+  // its rest is this local pose (in the part's node when it rides one): motion.js and openable.js compose onto it (I37)
+  child.userData.base = { pos: child.position.toArray(), yaw: child.rotation.y, q: child.quaternion.toArray() };
   child.userData.mountedTo = rel.to;
   child.userData.mountRel = relKey;
   indexSceneMount(id, rel.to);

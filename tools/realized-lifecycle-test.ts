@@ -174,6 +174,9 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   const wp = (o: any) => { o.updateWorldMatrix(true, false); return new T.Vector3().setFromMatrixPosition(o.matrixWorld); };
   const want = new T.Vector3(0, 0.5, 0.1).applyMatrix4(host.matrixWorld);
   check('a part socket goes INTO the part\'s node, where the part at rest puts it on the host', so?.parent === plank && wp(so).distanceTo(want) < 1e-9, JSON.stringify({ parent: so?.parent?.name, at: wp(so).toArray(), want: want.toArray() }));
+  // I37: its rest (what motion.js and openable.js compose onto) is that pose in the part's node, not its pose on the host
+  // Mutation (must go red): drop the `child.userData.base = …` line in models.js execMount.
+  check('…and its rest is its pose in that node', JSON.stringify(so?.userData?.base?.pos) === JSON.stringify(so?.position?.toArray()), JSON.stringify({ base: so?.userData?.base, local: so?.position?.toArray() }));
   door('create', { id: 'cup', model: lib('cup'), components: { parent: { to: seat }, transform: { pos: [0, 0.1, 0] } } }); await settle(); drain();
   const cup = stub.entities.get('cup');
   check('cargo on the part socket rides inside it', cup?.parent === so, JSON.stringify({ parent: cup?.parent?.userData }));
@@ -200,6 +203,19 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   door('delete', { id: 'sw' });
   check('deleting the host takes its sockets (and what rides them) with it, from every registry', gone('sw') && gone(seat) && gone(hook) && gone('cup'), JSON.stringify({ sw: held('sw'), seat: held(seat), hook: held(hook), cup: held('cup') }));
   noErrors('sockets');
+}
+
+// ---- 8. (house review of #260, client/lib I37) a thing parented after it was realized: its rest (userData.base, what
+// motion.js and openable.js compose onto) is now its LOCAL pose in the parent, not the world pose it had at the root.
+{
+  spawnAt('crate8', 5); spawnAt('toy8', 9); await settle(); drain();
+  const toy = stub.entities.get('toy8');
+  check('(setup) at the root its rest is its world pose', JSON.stringify(toy?.userData?.base?.pos) === JSON.stringify([0, 0, 9]), JSON.stringify(toy?.userData?.base));
+  door('set', { id: 'toy8', component: 'parent', value: { to: 'crate8' } }); await settle(); drain();
+  const local = toy.position.toArray();
+  check('parented: it hangs in the crate, and its rest is the local pose the mount gave it', toy.parent === stub.entities.get('crate8') && JSON.stringify(toy.userData.base?.pos) === JSON.stringify(local), JSON.stringify({ base: toy.userData.base, local }));
+  door('delete', { id: 'crate8' }); if (S.state.st.entities.toy8) door('delete', { id: 'toy8' });
+  noErrors('re-parent rest');
 }
 
 console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
