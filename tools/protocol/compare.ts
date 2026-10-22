@@ -46,7 +46,7 @@ console.log(`${files.length} logs, ${diffs} unexplained differences`);
 // the reference reader's own suites. test_reader.py regenerates logs/ from its builders: they must come out byte-identical
 const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
 let suiteFails = 0;
-for (const t of ["test_reader.py", "test_chain.py", "test_gov.py"]) {   // test_gov: governance (§13), with the add-key rule (review 10-07 H4)
+for (const t of ["test_reader.py", "test_chain.py", "test_gov.py", "ed25519/test_vectors.py"]) {   // test_gov: governance (§13), with the add-key rule (review 10-07 H4); the ed25519 row: §2.4 Keys
   const r = py([t]); const out = (r.stdout.toString() + r.stderr.toString()).trim().split("\n");
   console.log(`${r.exitCode === 0 ? "ok  " : "FAIL"} python ${t}: ${out.find((l) => /^\d+\/\d+ passed/.test(l)) ?? out.at(-1)}`);
   if (r.exitCode !== 0) { suiteFails++; console.log(out.slice(-8).join("\n")); }
