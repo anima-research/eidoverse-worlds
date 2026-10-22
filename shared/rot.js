@@ -37,15 +37,42 @@ export function qMul(a, b) {
   ];
 }
 
-/** Rotate vector v by unit quaternion q. */
-export function qRotate(q, v) {
-  const [x, y, z, w] = q;
-  const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
-  return [
-    v[0] + w * tx + (y * tz - z * ty),
-    v[1] + w * ty + (z * tx - x * tz),
-    v[2] + w * tz + (x * ty - y * tx),
-  ];
+/** Rotate vector v by unit quaternion q (into `out` when given; it may be v). */
+export function qRotate(q, v, out = [0, 0, 0]) {
+  const [x, y, z, w] = q, a = v[0], b = v[1], c = v[2];
+  const tx = 2 * (y * c - z * b), ty = 2 * (z * a - x * c), tz = 2 * (x * b - y * a);
+  out[0] = a + w * tx + (y * tz - z * ty);
+  out[1] = b + w * ty + (z * tx - x * tz);
+  out[2] = c + w * tz + (x * ty - y * tx);
+  return out;
+}
+
+/** The conjugate: a unit quaternion's inverse. */
+export const qConj = (q) => [-q[0], -q[1], -q[2], q[3]];
+
+/** The rotation of `angle` radians about the unit vector `axis`. */
+export function qAxisAngle(axis, angle) {
+  const h = angle / 2, s = sinT(h);
+  return [axis[0] * s, axis[1] * s, axis[2] * s, cosT(h)];
+}
+
+/** The world pose of a parent chain, root first, each link a local { pos, q, scale: [x, y, z] } in its parent's frame.
+ *  The protocol's rule is glTF's (PROTOCOL §9.3): local = T · R · S, world = parent's world × local. This returns a TRS,
+ *  not a matrix, so it is exact for the position (parent pos + R·(S·pos)) and exact for q and scale whenever every
+ *  ancestor's scale is uniform; under a non-uniformly scaled ancestor a rotated child's true world transform shears (no
+ *  TRS holds it), and here its q is the plain product and its scale the component-wise product (Unity's lossyScale).
+ *  The stored data had 0 such cases at the shape audit (10-16).
+ *  The authority compares this as JSON text with the engine's rests (authority/checks.js) and the engine's conformance
+ *  digests start from it, so its float order is pinned: no renormalization between links. */
+// TODO(shape audit 10-16): return the composed matrix (or flag the sheared case) if a reader ever needs the exact one.
+export function composePose(chain) {
+  let acc = chain[0];
+  for (let i = 1; i < chain.length; i++) {
+    const L = chain[i], s = acc.scale;
+    const r = qRotate(acc.q, [L.pos[0] * s[0], L.pos[1] * s[1], L.pos[2] * s[2]]);
+    acc = { pos: [acc.pos[0] + r[0], acc.pos[1] + r[1], acc.pos[2] + r[2]], q: qMul(acc.q, L.q), scale: [L.scale[0] * s[0], L.scale[1] * s[1], L.scale[2] * s[2]] };
+  }
+  return acc;
 }
 
 /** Heading of an orientation: yaw = atan2(fx, fz) of where +Z ends up

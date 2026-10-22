@@ -19,14 +19,13 @@
 import * as OP from './protocol/requests.js';
 import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
-import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
+import { qNorm, qMul, qRotate, qFromYaw, qHeading, qConj as conj, composePose } from './rot.js';
 import { socketQ, lightOf } from './components.js';
 import { kindOf } from './protocol/kind.js';
 import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
 import { modelWord } from './eido.js';
 
-const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
@@ -76,24 +75,18 @@ export function ancestors(world, id) {
 }
 
 /** World pose { pos, q, scale } of `id`, composing its chain the way three.js
- *  composes the realized Object3Ds: parent ∘ local. */
+ *  composes the realized Object3Ds: parent ∘ local (shared/rot.js composePose,
+ *  the authority's composer). */
 export function worldPose(world, id) {
   const ent = world?.[id];
   if (!ent) return null;
-  const chain = [id, ...ancestors(world, id)];
-  // the top of the chain is a root: its own pose IS its world pose
-  let acc = null;
-  for (let i = chain.length - 1; i >= 0; i--) {
-    const e = world[chain[i]];
-    const L = localOf(e, i === chain.length - 1 ? {} : world);   // {} = "treat as root": no carrier lookups
-    const lq = L.q ?? qFromYaw(L.yaw);
-    if (!acc) { acc = { pos: L.pos, q: lq, scale: L.scale }; continue; }
-    // a scale is one number or [x,y,z] (shared/scale3.js): the parent's scale applies in its own axes, before its turn
-    const s = scale3(acc.scale), ls = scale3(L.scale);
-    const p = qRotate(acc.q, [s[0] * L.pos[0], s[1] * L.pos[1], s[2] * L.pos[2]]);
-    acc = { pos: [acc.pos[0] + p[0], acc.pos[1] + p[1], acc.pos[2] + p[2]], q: qNorm(qMul(acc.q, lq)), scale: scaleWire([s[0] * ls[0], s[1] * ls[1], s[2] * ls[2]]) };
-  }
-  return acc;
+  const ids = [id, ...ancestors(world, id)].reverse();
+  // the top of the chain is a root: its own pose IS its world pose ({} = "treat as root": no carrier lookups)
+  const chain = ids.map((k, i) => { const L = localOf(world[k], i === 0 ? {} : world); return { pos: L.pos, q: L.q ?? qFromYaw(L.yaw), scale: L.scale }; });
+  if (chain.length === 1) return chain[0];
+  // a scale is one number or [x,y,z] (shared/scale3.js)
+  const w = composePose(chain.map((L) => ({ ...L, scale: scale3(L.scale) })));
+  return { ...w, scale: scaleWire(w.scale) };
 }
 
 /** The local transform that puts a thing at world pose `child` under a
