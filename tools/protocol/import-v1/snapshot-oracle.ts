@@ -152,7 +152,7 @@ function compareWorlds(oldP, newP) {
 const v4comps = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, jclone(e.c)]));
 
 /** The translated world's people, read back from its directory: (name, {sub}) → the id it was given there. */
-function whoFrom(worldsDir) {
+export function whoFrom(worldsDir) {
   const f = directoryFileIn(worldsDir);
   const ids = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")).ids ?? {} : {};
   const bySub = new Map(), byName = new Map();

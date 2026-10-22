@@ -316,18 +316,26 @@ await C("K13", "a component named as an account is (ownerSub) whose whole value 
     { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true, sub: ANN } },
     { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
     { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ownerSub", data: ANN } },
-    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "menuSub", data: "soup today" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const r = translateV1World(src, path.join(W, "new"));
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "menuSub", data: "soup today" } },
+    // a v1 name that is itself an escape (x-- and ownerSub's hex): read the one way the writer's check reads it, so dropped, not refused
+    { seq: 5, ts: 6, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "x--" + Buffer.from("ownerSub", "utf8").toString("hex"), data: ANN } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  let r: any; try { r = translateV1World(src, path.join(W, "new")); } catch (e: any) { return [false, { threw: String(e?.message ?? e).slice(0, 300) }]; }
   const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
   const ann = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(ANN)).map(([id]) => id);
   const comps = lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "comp").map((e: any) => e.body.args);
   const lamp = FOLD.fold(FOLD.readLog(text)).entities?.[TV1.enc("lamp_1")]?.c ?? {};
+  const hex = (n: string) => "x--" + Buffer.from(n, "utf8").toString("hex");
   const seen = [TV1.accountIn([{ seq: 7, kind: "change", ops: [{ verb: "set", id: "x", comp: "ownerSub", value: ANN }] }]), TV1.accountIn([{ seq: 8, body: { verb: "comp", args: { id: "x", type: "ownerSub", data: ANN } } }]),
-    TV1.accountIn([{ seq: 9, ops: [{ verb: "set", id: "x", comp: "menuSub", value: "soup today" }] }])];
-  return [ann.length === 1 && !/human:discord/.test(text) && comps[0]?.data === ann[0] && comps[1]?.data === "soup today"
-    && !Object.values(lamp).includes(ANN) && Object.values(lamp).includes("soup today")
-    && seen[0]?.seq === 7 && seen[0]?.path === "ops[0].value" && seen[1]?.seq === 8 && seen[1]?.path === "body.args.data" && seen[2] === null,
-    { ann, comps, lamp: Object.keys(lamp), seen, leaked: /human:discord/.test(text) }]; });
+    TV1.accountIn([{ seq: 9, ops: [{ verb: "set", id: "x", comp: "menuSub", value: "soup today" }] }]),
+    // the name as the log writes it: under a namespace, escaped, or as `component`
+    TV1.accountIn([{ seq: 10, ops: [{ verb: "set", id: "x", comp: `new/${hex("ownerSub")}`, value: ANN }] }]), TV1.accountIn([{ seq: 11, ops: [{ verb: "set", id: "x", component: "imported/ownerSub", value: ANN }] }])];
+  // the component itself is gone, not only its value: no name of the lamp's reads as ownerSub
+  const names = Object.keys(lamp).map((k) => TV1.dec?.(k.slice(k.lastIndexOf("/") + 1)) ?? k);
+  return [ann.length === 1 && !/human:discord/.test(text) && comps[0]?.data === ann[0] && comps[1]?.data === "soup today" && comps[2]?.data === ann[0]
+    && !Object.values(lamp).includes(ANN) && Object.values(lamp).includes("soup today") && !names.includes("ownerSub") && names.includes("menuSub")
+    && seen[0]?.seq === 7 && seen[0]?.path === "ops[0].value" && seen[1]?.seq === 8 && seen[1]?.path === "body.args.data" && seen[2] === null
+    && seen[3]?.seq === 10 && seen[4]?.seq === 11,
+    { ann, comps, lamp: Object.keys(lamp), names, seen, leaked: /human:discord/.test(text) }]; });
 
 await C("K14", "a private server's local: account is an account (translateV1World): a placer's local: sub reaches no value, and is its person's identity", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
@@ -414,6 +422,23 @@ await C("K18", "the pairs v1's server stamped join a name to its account before 
   const light = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "light");
   return [dee.length === 1 && r.planned[dee[0]].subs?.includes(DEE) && actors.length === 2 && actors.every((a: string) => a === dee[0]) && light?.body?.args?.placer?.sub === dee[0] && !text.includes(DEE),
     { dee, actors, planned: r.planned, placer: light?.body?.args?.placer }]; });
+await C("K19", "with no identity mapper (the pure translation), every account is dropped where it sits: a genesis role's sub, a component an account names and fills, an entry keyed by an account; and with a mapper an entry keyed by an account whose id is already a key keeps that one", () => {
+  const ANN = "human:discord:42";
+  const log = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner", sub: ANN }, [ANN]: { role: "builder" } } } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ownerSub", data: ANN } },
+    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { [ANN]: "paid", note: "kept" } } }];
+  const pure = TV1.translate(log); const ptext = pure.out.map((e: any) => JSON.stringify(e)).join("\n");
+  const st = FOLD.fold(FOLD.readLog(ptext + "\n")); const lamp = st.entities?.[TV1.enc("lamp_1")]?.c ?? {};
+  const ledger: any = Object.values(lamp).find((v: any) => v && typeof v === "object" && v.note === "kept");
+  // a mapper whose id for ANN is fixed, so a map can already hold it as a key beside the account
+  const ID = "u-aaaaaaaaaaaaaaaaaaaa";
+  const who = (n: string, o: any = {}) => (o.sub === ANN || n === ANN ? ID : TV1.enc(n));
+  const both = TV1.withoutAccounts({ [ANN]: "the account's", [ID]: "the id's" }, (sub: string) => who(sub, { sub }));
+  const mapped = TV1.translate(log, { who }); const from = mapped.out.find((e: any) => e.verb === "translated")?.body?.from;
+  return [!ptext.includes(ANN) && ledger && !(ANN in ledger) && !Object.values(lamp).includes(ANN) && JSON.stringify(both) === JSON.stringify({ [ID]: "the id's" })
+    && from?.roles?.Ann?.sub === ID && from?.roles?.[ID]?.role === "builder" && !Object.keys(from?.roles ?? {}).includes(ANN),
+    { leaked: ptext.includes(ANN), ledger, lamp: Object.keys(lamp), both, from: from?.roles }]; });
 await C("K20", "a person whose name begins local: is a name, not an account (translateV1World): a private server's local: account is one only where an account sits (a sub), so 'local:ann' keeps their acts on one named identity with no account", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k20"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
@@ -427,6 +452,25 @@ await C("K20", "a person whose name begins local: is a name, not an account (tra
   const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
   return [ann.length === 1 && Object.keys(r.planned).length === 1 && !(r.planned[ann[0]].subs ?? []).length && spawn?.actor === ann[0] && w[`roles:${ann[0]}`]?.role === "builder",
     { ann, planned: r.planned, spawn: spawn?.actor, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
+await C("K21", "the sweep's independent reading agrees with the translator on accounts (tools/protocol/sweep.ts over a world with a local: placer, an entry keyed by an account, and a component an account names and fills, its only one): no loss, and the snapshot oracle's reading of the directory finds a local: sub's person", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const W = scratch("k21"), dir = path.join(W, "worlds", "acct"); fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: "Ann", sub: "local:ann" } } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "box_1", lib: "a.glb", pos: [1, 0, 0] } },
+    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "box_1", type: "ownerSub", data: "human:discord:42" } },
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { "human:discord:42": "paid", note: "kept" } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const p = spawnSync(process.execPath, [path.join(T, "tools/protocol/sweep.ts")], { cwd: T, env: { ...process.env, PROTOCOL_WORLDS: path.join(W, "worlds") }, encoding: "utf8", timeout: 120000 });
+  const out = `${p.stdout}${p.stderr}`; const fails = out.split("\n").filter((l) => /FAIL/.test(l));
+  // the sweep counts this world beside the repo's own fixture logs (distinct by content, as it reads them)
+  const seen = new Set<string>(); const walk = (d: string, depth = 0) => { if (depth > 5) return; for (const n of fs.readdirSync(d)) { const q = path.join(d, n);
+    if (n === "log.jsonl") { const t = fs.readFileSync(q, "utf8"); if (t.trim()) seen.add(t); } else if (fs.statSync(q).isDirectory()) walk(q, depth + 1); } };
+  walk(path.join(T, "spec/fixtures")); const counted = out.includes(`[sweep] ${seen.size + 1} distinct world logs`);
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts"); const OR = await imp("tools/protocol/import-v1/snapshot-oracle.ts");
+  const r = translateV1World(dir, path.join(W, "worlds", "acct-new"));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes("local:ann")).map(([id]) => id);
+  const got = OR.whoFrom?.(path.join(W, "worlds"))?.who("Ann", { sub: "local:ann" });
+  return [p.status === 0 && counted && / lossy 0,/.test(out) && !fails.length && ann.length === 1 && got === ann[0], { status: p.status, counted, fails: fails.slice(0, 4), tail: out.slice(-400), ann, got }]; });
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };

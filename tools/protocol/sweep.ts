@@ -82,10 +82,11 @@ const yq = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const LIGHT_KEYS = ["color", "intensity", "range", "keep", "day"];
 const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex").toString("utf8") : s); // h--: a hash, not invertible; a mismatch shows
 const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor / entity.ts, entity.born, placer
-// DROPPED (translate-v1@16; local: since @19): a value never carries an account, a sub or *Sub whose string starts human:, agent:, aid1: or local:
-// (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays
+// DROPPED (translate-v1@16; local: and account-keyed entries since @19): a value never carries an account, a sub or *Sub whose
+// string starts human:, agent:, aid1: or local:, nor an entry keyed by one (human:, agent: or aid1:, the shapes a name can
+// be) (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays
 const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
-  : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
+  : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !/^(human|agent|aid1):/.test(k) && !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
 const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED: mounts, recentChat / chatTotal
 // translate-v1@2 (slice 3a): a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
@@ -150,8 +151,8 @@ function oldNorm(st: any, phys: any = null) {
     }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
-    if (n.comp && !Object.keys(n.comp).length) delete n.comp;
-    ents[id] = noAccounts(n);
+    const m = noAccounts(n); if (m.comp && !Object.keys(m.comp).length) delete m.comp;   // a bag left empty by an account dropped from it, too
+    ents[id] = m;
   }
   const world: any = {};
   for (const [k, v] of Object.entries<any>(st)) { if (DROP_WORLD.includes(k) || v == null) continue;

@@ -248,6 +248,7 @@ export const DROPPED = {
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
   "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays",
+  "an entry keyed by an account, and a component an account names and fills": "an account used as a key (a role or ban kept by its account, an entry in any value), or as the whole value of a component whose name has an account's (`ownerSub`), is person data (PROTOCOL §9.2): in the state the entry or the component is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
   "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
@@ -327,6 +328,9 @@ export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1|loc
  *  server gives a bare name in a sub position only, so a person may well be called `local:ann` and isn't an account. */
 export const isAccountName = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
 const ACCOUNT_KEY = /^sub$|Sub$/;
+/** Whether a component's name has an account's, read as written under its namespace and its escape (`imported/x--…`):
+ *  the one reading the scrub and the writer's check share. */
+const accountNamed = (n) => typeof n === "string" && ACCOUNT_KEY.test(dec(n.slice(n.lastIndexOf("/") + 1)) ?? n);
 /** `v` with every account subject in it, at any depth, replaced by what `map(sub)` gives, or dropped where that's undefined
  *  (the default). The same object when nothing in it is an account (the projection's values can be the old fold's own). */
 export function withoutAccounts(v, map = () => undefined) {
@@ -347,9 +351,7 @@ export function withoutAccounts(v, map = () => undefined) {
  *  account-shaped string; a key that is one; or a component so named whose value is one: a change's op {comp, value}, an
  *  old comp request's {type, data}), or null: the writer's check before anything is written (world.ts translateV1World). */
 export function accountIn(entries) {
-  // a component's name as written, under its namespace and its escape (`imported/x--…`)
-  const plain = (n) => dec(n.slice(n.lastIndexOf("/") + 1)) ?? "";
-  const named = (v) => [["comp", "value"], ["component", "value"], ["type", "data"]].find(([n, x]) => typeof v[n] === "string" && ACCOUNT_KEY.test(plain(v[n])) && isAccount(v[x]));
+  const named = (v) => [["comp", "value"], ["component", "value"], ["type", "data"]].find(([n, x]) => accountNamed(v[n]) && isAccount(v[x]));
   const find = (v, path) => {
     if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const f = find(v[i], `${path}[${i}]`); if (f) return f; } return null; }
     if (!v || typeof v !== "object") return null;
@@ -399,7 +401,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
-      if (ACCOUNT_KEY.test(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
+      if (accountNamed(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
@@ -581,7 +583,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
       if (who && (e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p) && isAccount(p.sub))
         x = { ...x, placer: { ...p, sub: who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }) } };
       // a v1 comp's data is the component's value: under a name that has an account's, an account is one (@19)
-      if (e.verb === "comp" && typeof x.type === "string" && ACCOUNT_KEY.test(x.type) && isAccount(x.data)) {
+      if (e.verb === "comp" && accountNamed(x.type) && isAccount(x.data)) {
         if (who) x = { ...x, data: who(x.data, { sub: x.data }) }; else { const { data: _d, ...rest } = x; x = rest; } }
       if (who && e.verb === "behavior" && isAccount(x.bySub))
         x = { ...x, bySub: who(typeof e.actor === "string" && !SYSTEM.has(e.actor) && !/^bhv:/i.test(e.actor) ? e.actor : x.bySub, { sub: x.bySub }) }; }
