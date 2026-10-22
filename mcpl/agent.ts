@@ -4711,23 +4711,44 @@ export class WorldAgent {
       if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
   }
-  /** The other body a world or self-frame point lands in, and its class there: server/reachgate.ts's bodiesAt, read from
-   *  the presence this body holds (each body's capsule, scaled to its size). The first found, as the relay refuses any. */
-  private bodyAtPoint(t: any): { name: string; cls: string } | null {
-    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return null;
-    let pt = t.p as number[];
-    if (t.space !== undefined) {   // this body's root frame → world (yaw about +y), as reachgate's frameToWorld
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-      pt = [this.pos.x + pt[0] * cy + pt[2] * sy, this.pos.y + pt[1], this.pos.z - pt[0] * sy + pt[2] * cy];
-    }
+  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
+   *  presence this body holds (each body's capsule, scaled to its size). */
+  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
+    const out: { name: string; cls: string }[] = [];
     for (const [name, person] of this.people) {
       const at = (person.pose as any)?.p;
       if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
       const sc = clampBodyScale((person.pose as any)?.scale);
       const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
-      if (cls) return { name, cls };
+      if (cls) out.push({ name, cls });
     }
-    return null;
+    return out;
+  }
+  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
+   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
+   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
+  private reachHolders(t: any): { name: string; cls: string }[] {
+    if (t?.who !== undefined) {
+      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
+      return cls ? [{ name: t.who, cls }] : [];
+    }
+    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
+    const p = t.p as number[];
+    if (t.space === undefined) return this.bodiesAtPoint(p);
+    if (t.space === "self" || t.space === this.name) {   // this body's root frame → world (yaw about +y), as reachgate's frameToWorld
+      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+      return this.bodiesAtPoint([this.pos.x + p[0] * cy + p[2] * sy, this.pos.y + p[1], this.pos.z - p[0] * sy + p[2] * cy]);
+    }
+    // their own frame: theirs, and wherever it lands in the world, as their pose draws it (by its yaw: the presence this
+    // body holds keeps no whole-body turn, which the relay reads first for a swimmer)
+    const own = WorldAgent.reachClass(t, t.space);
+    const pose: any = this.people.get(t.space)?.pose;
+    const at = pose?.p, sc = clampBodyScale(pose?.scale), yaw = Number(pose?.yaw) || 0;
+    const world = Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)
+      ? (() => { const l = p.map((v) => v * sc), c = Math.cos(yaw), sn = Math.sin(yaw);
+          return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c]; })()
+      : null;
+    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
   }
   /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
    *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
@@ -4736,16 +4757,18 @@ export class WorldAgent {
     if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p);
     return null;
   }
-  /** After streaming a reach at another body: did the relay refuse it? A fresh refusal (waits a few frames for one), or one
-   *  said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is not a yes). */
-  private async reachRefusalFor(limb: string, actor: string, cls: string, since: number) {
+  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
+   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
+   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
+  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
+    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
     for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
-      const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb && x.cls === cls);   // the class too, as the stale lookup below
-      if (r) return { r, fresh: true };
+      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
+      if (r) return { r, by: holderOf(r)!.name, fresh: true };
       await new Promise((res) => setTimeout(res, 50));
     }
-    const r = [...this.reachRefusals].reverse().find((x) => x.to === actor && x.cls === cls && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
-    return r ? { r, fresh: false } : null;
+    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
+    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
   }
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its log arrived first). Ops planned before that wait don't see what landed meanwhile, so a caller that
@@ -5012,16 +5035,14 @@ export class WorldAgent {
     const what = describeTarget(t, this.name);
     // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
     // a point in the world or in this body's own frame is judged by the body it lands in, as the relay judges it
-    const landed = t.who === undefined && (t.space === undefined || t.space === "self" || t.space === this.name) ? this.bodyAtPoint(t) : null;
-    const otherName = landed ? landed.name : t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
-    const otherActor = otherName && otherName !== this.name ? this.actorIds.get(otherName) : undefined;
-    const cls = landed ? landed.cls : otherName ? WorldAgent.reachClass(t, otherName) : null;   // null: beside them, nothing for the relay to refuse
-    if (otherActor && this.joined && cls) {
-      const refused = await this.reachRefusalFor(limb, otherActor, cls, since);
+    // every body the relay holds it to (none: beside them, nothing for the relay to refuse)
+    const holders = this.reachHolders(t).flatMap((h) => { const actor = this.actorIds.get(h.name); return actor ? [{ ...h, actor }] : []; });
+    if (holders.length && this.joined) {
+      const refused = await this.reachRefusalFor(limb, holders, since);
       if (refused) {
         if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
         const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
-        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${otherName}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
+        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
           + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
             : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn without streaming it again; if they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
       }
