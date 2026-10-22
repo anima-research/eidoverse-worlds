@@ -234,7 +234,13 @@ let tierNobody, perPerson;   // recut A2: the two ways to be refused are my swit
   ok(reached.length === 0, "RG23 with Vic's displace at deny, Sly's unpin and drag samples never reach her", reached);
   ok(sly.got.slice(ks).some((m) => m.type === "error"), "RG23 …and Sly is told the unpin was refused", sly.got.slice(ks));
   drag({ end: true });
-  ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG23 …an end still goes through", vic.got.slice(kv)); }
+  ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG23 …an end still goes through", vic.got.slice(kv));
+  // RG23b (house 6340433633 Q3): an unpin riding an end is checked too; the end goes through without it
+  const kv2 = vic.got.length, ks2 = sly.got.length;
+  drag({ end: true, unpin: { joint: "hand_l" } });
+  const got2 = vic.got.slice(kv2).filter((m) => m.type === "bodydrag");
+  ok(got2.length === 1 && got2[0].end != null && got2[0].unpin === undefined && sly.got.slice(ks2).some((m) => m.type === "error"),
+    "RG23b an unpin sent with an end is refused like any unpin (Sly is told); the end still reaches Vic, without it", { got2, sly: sly.got.slice(ks2) }); }
 
 // ---- (the clock moves on from here: asks are at most 2 a minute) ----
 // RL3: an ask answered no and an ask nobody answered read the same to the asker, and the same as a refusal

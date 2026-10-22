@@ -1260,7 +1260,7 @@ export class WorldAgent {
               // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
               if (this.pins.delete(j)) this.body?.setPin(j, null);
-              break;
+              if (msg.end == null) break;   // an unpin can ride an end: apply the end too (house 6340433633 Q3)
             }
             if (msg.end != null) {
               if (this.draggedBy === msg.by) {
