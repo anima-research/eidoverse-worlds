@@ -48,6 +48,14 @@ r = await run('wren +fly');
 check('exceptions for someone who holds no role send nothing, and say why', sent.length === 0 && messages.some((m) => /holds no role/.test(m)), JSON.stringify({ sent, messages }));
 r = await run('wren for 2h');
 check('…as does a time', sent.length === 0 && messages.some((m) => /holds no role/.test(m)), JSON.stringify({ sent, messages }));
+// an owner's grant never ends (the authority refuses an owner with an until): making a timed holder owner drops the end,
+// with no `forever` needed (adversarial review of the merged I6/I124 /grant)
+world.c = { 'roles:u-wren': { role: 'builder', can: { fly: true }, until: 9_000_000_000_000 } };
+r = await run('wren owner');
+check('/grant <name> owner on a timed holder sends no end (ownership never expires)', r?.args?.value?.role === 'owner' && !('until' in r.args.value), JSON.stringify(r?.args));
+r = await run('wren owner for 2h');
+check('…and refuses a duration for owner rather than sending one', r === undefined || !('until' in (r?.args?.value ?? {})), JSON.stringify(r?.args));
+world.c = {};
 r = await run('wren builder +fly');
 check('a role with exceptions for someone new is one whole grant', r?.args?.value?.role === 'builder' && r.args.value.can?.fly === true && !('until' in r.args.value), JSON.stringify(r?.args));
 
