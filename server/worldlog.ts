@@ -129,7 +129,7 @@ export class WorldLog {
     // §12: a value stripped to its commit that no purge names: the log was changed outside the purge rule. Said, not enforced:
     // the value reads as unknown, and writes go on (house markup, #260 10-20)
     const altered = (st.diagnostics ?? []).filter(([, c]: Any) => c === "commit-unpurged");
-    if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown, and the authority refuses writes until the operator, with the world closed, restores those lines from a backup of the log and reopens it (each restored whole keeps its commit, so later lines still verify)`);
+    if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown. The operator can, with the world closed, restore those lines from a backup of the log and reopen it (each restored whole keeps its commit, so later lines still verify)`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
     const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
