@@ -3,7 +3,7 @@
 // to off BEFORE load: a software-rendered cloud bake can exhaust a machine. Run one headless browser at a time.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ owner: 'skystate', env: { TRUST_NAMES: '1' } });   // the page owns staging, so its @world writes are admitted
 const { browser, page } = await launchBrowser();
 try {
   const pg = await page();
@@ -26,7 +26,7 @@ try {
     catch (e) { console.log('    unsettled after 120 s:', JSON.stringify(await read())); throw e; }
     console.log(`    settled in ${Date.now() - t0} ms`);
   };
-  const log = async (a) => { await pg.evaluate(async (x) => { const { sendVerb } = await import('./lib/net.js'); sendVerb('sky', x); }, a); await pg.waitForTimeout(1500); await settle(); return read(); };
+  const log = async (a) => { await pg.evaluate(async (x) => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: x, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); }, a); await pg.waitForTimeout(1500); await settle(); return read(); };
   const dusk = await log({ hours: 18.5, rate: 0, clouds: 'cumulus', weather: 'clear' });
   check('a logged sky reads as world: 18:30 · clear · clouds cumulus', /^world: 18:30 · clear · clouds cumulus$/.test(dusk.w ?? ''), dusk.w);
   check('clouds⚙ off against a cloudy log: "you:" says so', /no clouds \(your clouds⚙ is off\)/.test(dusk.y ?? ''), dusk.y);
@@ -44,10 +44,11 @@ try {
   const quiet = await pg.evaluate(async () => {
     const el = document.querySelector('#sec-sky .sky-state'); let n = 0;
     const mo = new MutationObserver((l) => { n += l.length; }); mo.observe(el, { childList: true, characterData: true, subtree: true, attributes: true });
-    const { sendVerb } = await import('./lib/net.js');
-    sendVerb('light', { id: 'ssq1', pos: [3, 1, 3], color: 0xffd9a0, intensity: 4, range: 5 });
+    const { sendRequest } = await import('./lib/net.js');
+    const made = await sendRequest('create', { id: '$ssq1', components: { transform: { pos: [3, 1, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, light: { color: 0xffd9a0, intensity: 4, range: 5 } } });
+    if (!made.ok) throw new Error(`light refused: ${JSON.stringify(made.refused)}`);
     await new Promise((r) => setTimeout(r, 1200));
-    sendVerb('remove', { id: 'ssq1' });
+    await sendRequest('delete', { id: made.ids['$ssq1'] });
     await new Promise((r) => setTimeout(r, 1200));
     // and refreshes that change nothing (the 30 s sun tick, a degrade notice) must not write either
     const { bus } = await import('./lib/base.js');
