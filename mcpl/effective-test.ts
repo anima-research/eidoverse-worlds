@@ -80,9 +80,12 @@ console.log("mounted things");
   check("a quarter-turned mount on a stretched parent swaps the stretched axes", r.ok && near3(r.scale3, [4, 3, 2]), show(r));
   // 45° on (2,1,1) mixes x and z, stretched unequally: a shear, refused for a thing; on (2,1,2) the turn sees one stretch
   const sh = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
-  check("a turned mount on an unequally stretched parent is refused (a shear no transform holds), naming the child", !sh.ok && sh.link === "c" && /shears/.test(sh.why), show(sh));
+  check("a turned mount on an unequally stretched parent is answered with its exact position, flagged sheared (scale3 is the shear's diagonal), not refused",
+    sh.ok && sh.sheared === true && near3(sh.pos, [2, 0, 0]), show(sh));
+  const kid = at("k", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 }, k: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 }, k: { to: "c", offset: [0, 0, 0], yaw: 0 } }));
+  check("…and a thing mounted on that sheared one carries the flag down the chain", kid.ok && kid.sheared === true, show(kid));
   const even = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 2] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
-  check("…and one turned within equally stretched axes is not", even.ok && near3(even.scale3, [2, 1, 2]) && near3(even.pos, [2, 0, 0]), show(even));
+  check("…and one turned within equally stretched axes is not", even.ok && !even.sheared && near3(even.scale3, [2, 1, 2]) && near3(even.pos, [2, 0, 0]), show(even));
   // a body there has no extent of its own: its position is exact, so it's answered
   const body = effectiveWorldTransform("b", { entity: (id) => (id === "p" ? { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] } : undefined), mount: (id) => (id === "b" ? { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } : undefined) }, 0);
   check("…and a body seated there is still placed (its offset through the stretch)", body.ok && near3(body.pos, [2, 0, 0]), show(body));

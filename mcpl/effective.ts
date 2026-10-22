@@ -45,7 +45,10 @@ export type Effective =
       /** for seated BODIES only (#101): whether the profile correction is in
        *  this composition, or the declared reason it is not. Things never
        *  carry it. */
-      seat?: { state: "profiled" | "approximate"; reason?: string } }
+      seat?: { state: "profiled" | "approximate"; reason?: string };
+      /** a turned mount on an unequally stretched parent (here or up the chain): the true shape is a shear, so `scale3` is
+       *  its diagonal (approximate); pos and quat are exact */
+      sheared?: true }
   | { ok: false; why: string; link: string };
 
 const fin3 = (v: unknown): v is [number, number, number] =>
@@ -145,17 +148,17 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
     // the parent's stretch as the child's own axes see it (house 6340433633: it was composed axis by axis, right only while
     // the mount adds no turn): S' = Rᵀ · diag(parent) · R for the mount's turn R. A quarter turn swaps the stretched axes; a
-    // turn that mixes two unequally stretched axes makes a shear no position, rotation and scale can hold, so a thing there
-    // is refused (a body has no extent of its own: its position above is exact either way)
+    // turn that mixes two unequally stretched axes makes a shear no rotation and scale can hold: the thing's position and
+    // turn above are exact, its scale is the shear's diagonal, and the answer says so (`sheared`) rather than refusing a
+    // read of content that exists (review of the house fixes; a body has no extent of its own either way)
     const ax = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((v) => qApply(localQ, v));
     const sp = (i: number, j: number) => ax[i][0] * ax[j][0] * parent.scale3[0] + ax[i][1] * ax[j][1] * parent.scale3[1] + ax[i][2] * ax[j][2] * parent.scale3[2];
     const big = Math.max(...parent.scale3.map(Math.abs));
-    if (e && [[0, 1], [0, 2], [1, 2]].some(([i, j]) => Math.abs(sp(i, j)) > 1e-6 * big))
-      return { ok: false, why: `a turned mount on a stretched parent (${parent.scale3.map((v) => +v.toFixed(3)).join(" × ")}) shears it: no position, rotation and scale holds that`, link: id };
+    const sheared = !!e && [[0, 1], [0, 2], [1, 2]].some(([i, j]) => Math.abs(sp(i, j)) > 1e-6 * big);
     const own3 = e ? scale3Of(e, ownScale) : [1, 1, 1];
     const scale3: [number, number, number] = [sp(0, 0) * own3[0], sp(1, 1) * own3[1], sp(2, 2) * own3[2]];
     if (!fin3(scale3)) return { ok: false, why: "non-finite scale", link: id };
-    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}) };
+    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}), ...(sheared || parent.sheared ? { sheared: true } : {}) };
   }
 
   // ---- unmounted: the folded base, plus the thing's own whole-entity motion --
