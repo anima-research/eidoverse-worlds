@@ -118,8 +118,9 @@ function newReactions(rx) {
 
 export const TRANSLATOR = "eidoverse/translate-v1@19";
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
-// that id (old logs never held one): a long name and a raw name equal to its hashed form were one id, a thing or a person.
-// Output differs from @18 only on a log holding a name of that form. Both names.
+// that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
+// already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
+// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
