@@ -80,10 +80,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a second hand takes a secondary grip", "grab.js", "const exact = all.find(([, x]) => x.role === role && x.hand === hand) ?? all.find(([, x]) => x.role === role);", "const exact = null;", ["H4"]],
   ["every client is told the hand", "grab.js", "...(h.hand ? { hand: h.hand } : {}),", "", ["H1", "H4"]],
   ["orphans: a hold whose holder isn't here is settled", "protocol/authority/scriptrun.js", ".filter((who) => !here.has(who));", ".filter(() => false);", ["O1"]],
-  ["orphans: the log's lift is settled", "protocol/authority/scriptrun.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2"]],
+  ["orphans: the log's lift is settled", "protocol/authority/scriptrun.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2", "O3d"]],
   ["orphans: a lift is settled once", "protocol/authority/scriptrun.js", "for (const o of ops) { if (o.verb === \"create\" || ends(o)) lifted.delete(o.id);", "for (const o of ops) { if (false) lifted.delete(o.id);", ["O2"]],
-  ["orphans: a hold ends under a thing switched off", "protocol/authority/scriptrun.js", "if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }", "}", ["O3", "O3b"]],
-  ["orphans: a returning thing goes home", "protocol/authority/scriptrun.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2"]],
+  ["orphans: a hold ends under a thing switched off", "protocol/authority/scriptrun.js", "if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }", "}", ["O3", "O3b", "O3c"]],
+  ["orphans: a returning thing goes home", "protocol/authority/scriptrun.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2", "O3d"]],
   ["orphans: a holder who's here keeps it", "protocol/authority/scriptrun.js", "if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;", "if (!st.entities[id] || lostPlace(st, id)) continue;", ["O2"]],
   ["use while held fires grabbable.use", "protocol/authority/use.js", "if (a.action === undefined && g?.use) { const action", "if (false) { const action", ["U1"]],
   ["use while held: up fires the up", "protocol/authority/use.js", "const action = phase === \"up\" ? g.use.up : g.use.down;", "const action = g.use.down;", ["U1"]],
@@ -562,9 +562,10 @@ const cases: Case[] = [
       const off = s.call("olive", "set", { id: "tray", component: "disabled", value: true }); const ended = !s.w().presence.holds.cup;
       const on = s.call("olive", "set", { id: "tray", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
-      D.settleOrphans?.(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
-      return { g: show(g), off: show(off), on: show(on), ended, acts }; },
-    good: (o) => o.g === "ok" && o.off === "ok" && o.on === "ok" && o.ended && !o.acts.length },
+      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { g: show(g), off: show(off), on: show(on), ended, lift, acts }; },
+    good: (o) => o.g === "ok" && o.off === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
   { id: "O3b", what: "…and so does one ended when a thing it came to hang from later, through a batch that re-hangs its holder's tray, was switched off", run(s) { cast(s, true);
       s.call("olive", "create", { id: "shelf", model: "table", place: { at: [3, 1] } });
       s.call("olive", "create", { id: "tray", model: "table", place: { at: [0, 1] } });
@@ -574,9 +575,31 @@ const cases: Case[] = [
       const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }, { verb: "set", args: { id: "shelf", component: "disabled", value: true } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
       const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
-      D.settleOrphans?.(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
-      return { g: show(g), b: show(b), on: show(on), ended, acts }; },
-    good: (o) => o.g === "ok" && o.b === "ok" && o.on === "ok" && o.ended && !o.acts.length },
+      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
+    good: (o) => o.g === "ok" && o.b === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
+  { id: "O3c", what: "…whichever order the batch writes them in: the shelf switched off first, then the tray re-hung under it", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "shelf", model: "table", place: { at: [3, 1] } });
+      s.call("olive", "create", { id: "tray", model: "table", place: { at: [0, 1] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", release: "return" } }, place: { on: "tray" } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
+      const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "shelf", component: "disabled", value: true } }, { verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }] });
+      const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
+    good: (o) => o.g === "ok" && o.b === "ok" && o.on === "ok" && o.ended && o.lift && !o.acts.length },
+  { id: "O3d", what: "…while a hold the log hasn't ended is settled at load: the returning cup goes home", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "tray", model: "table", place: { at: [0, 1] } });
+      s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", release: "return" } }, place: { on: "tray" } });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
+      D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
+      return { g: show(g), lift, acts }; },
+    good: (o) => o.g === "ok" && o.lift && o.acts.includes("return-home:cup") },
   // ---------------- U: use while held, and the grab / release events (slice 5) ----------------
   { id: "U1", what: "use while held: the holder's use with no action fires grabbable.use's down, with phase up its up (each one act, the act saying held/hand/phase); held: true from someone not holding is refused", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "inhabitant", use: { down: "on", up: "off" } },
