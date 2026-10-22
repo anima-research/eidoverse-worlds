@@ -404,7 +404,8 @@ export function repairShapes(w, { by = null, operator = false, dryRun = false } 
 }
 const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
-// no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
+// and no write that ends the hold (simlayer's ends() and endsUnder(), the replay's own rule). An epoch cut doesn't end
+// one: a hold outlives it, and the new epoch's engine leaves the held thing out, as the replay does.
 function orphanLifts(w) {
   const lifted = new Map(), parentOf = new Map();   // parentOf: each thing's parent as the log has it so far
   const under = (k, id) => { for (let p = parentOf.get(k), n = 0; p && n < 33; p = parentOf.get(p), n++) if (p === id) return true; return false; };
