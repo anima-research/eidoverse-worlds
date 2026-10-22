@@ -260,7 +260,7 @@ await C("K10", "an account in a value that nothing beside it names is resolved b
     && !/human:discord/.test(text),
     { antra, other, after: after?.actor, planned: r.planned, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
 
-await C("K11", "a name is joined to an account only where v1's server wrote the pair: a builder's data pairing the owner's name with the builder's account, and a behaviour whose own `by` names the owner, move neither the owner's later acts nor the owner's role, and the builder's identity takes no name from them", async () => {
+await C("K11", "a name is joined to an account only where v1's server wrote the pair: a builder's data pairing the owner's name with the builder's account, and a behaviour whose own `by` names the owner, move neither the owner's later acts nor the owner's role, and the builder's identity takes no name from them; the builder's placer and both bindings, one sent with by: door, are the builder's", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k11"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
   const BOB = "human:discord:77", SRC = "sha256:" + "e".repeat(64);
@@ -273,19 +273,23 @@ await C("K11", "a name is joined to an account only where v1's server wrote the 
     { seq: 4, ts: 5, actor: "bob", verb: "comp", args: { id: "board_1", type: "guestbook", data: { line: "hi", id: "Ann", sub: BOB, ownerSub: BOB, owner: "Ann" } } },
     // a binding: the server stamped bob's account as bySub; the `by` beside it is what bob sent
     { seq: 5, ts: 6, actor: "bob", verb: "behavior", args: { id: "bell", src: SRC, by: "Ann", bySub: BOB } },
-    { seq: 6, ts: 7, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
-    { seq: 7, ts: 8, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    { seq: 6, ts: 6, actor: "bob", verb: "behavior", args: { id: "gong", src: SRC, by: "door", bySub: BOB } },
+    { seq: 7, ts: 7, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
+    { seq: 8, ts: 8, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const r = translateV1World(src, path.join(W, "new"));
   const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
   const ann = Object.entries<any>(r.planned).filter(([, e]) => e.name === "Ann").map(([id]) => id);
   const bob = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(BOB)).map(([id]) => id);
   const spawn = (id: string) => lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn" && e.body.args?.id === id);
   const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
-  const roleDeletes = lines.filter((e: any) => e.kind === "change").flatMap((e: any) => (e.ops ?? e.body?.ops ?? []).filter((o: any) => o.verb === "delete" && String(o.comp ?? "").startsWith("roles:")));
+  // every change, a batch or a single op (fold.js opsOf)
+  const roleDeletes = lines.filter((e: any) => e.kind === "change").flatMap((e: any) => FOLD.opsOf(e)).filter((o: any) => o.verb === "delete" && String(o.comp ?? o.component ?? "").startsWith("roles:"));
+  const authors = Object.values<any>(w).filter((v) => v?.src === SRC).map((v) => v.author);
   return [ann.length === 1 && bob.length === 1 && ann[0] !== bob[0] && r.planned[bob[0]].name === "bob"
-    && spawn("lamp_1")?.actor === ann[0] && spawn("board_1")?.actor === bob[0] && w[`roles:${ann[0]}`]?.role === "owner" && w[`roles:${bob[0]}`]?.role === "builder"
-    && !roleDeletes.length && !/human:discord/.test(text),
-    { ann, bob, planned: r.planned, lamp: spawn("lamp_1")?.actor, roles: Object.fromEntries(Object.entries<any>(w).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => [k, v?.role])), roleDeletes }]; });
+    && spawn("lamp_1")?.actor === ann[0] && spawn("board_1")?.actor === bob[0] && spawn("board_1")?.body?.args?.placer?.sub === bob[0]
+    && w[`roles:${ann[0]}`]?.role === "owner" && w[`roles:${bob[0]}`]?.role === "builder"
+    && authors.length === 2 && authors.every((a) => a === bob[0]) && !roleDeletes.length && !/human:discord/.test(text),
+    { ann, bob, planned: r.planned, lamp: spawn("lamp_1")?.actor, placer: spawn("board_1")?.body?.args?.placer, authors, roles: Object.fromEntries(Object.entries<any>(w).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => [k, v?.role])), roleDeletes }]; });
 
 await C("K12", "an old genesis whose roles carry an account translates (translateV1World): the translated act's copy of it holds the person's id where the account was, and the role and the person's acts are that one identity", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
@@ -352,6 +356,77 @@ await C("K15", "a person v1 knew by an aid1 account is one identity (translateV1
   return [zeds.length === 1 && r.planned[zeds[0]].subs?.includes(ZED) && spawns.every((a: string) => a === zeds[0])
     && from?.roles?.[zeds[0]]?.role === "builder" && !text.includes(ZED) && TV1.accountIn([{ seq: 4, body: { roles: { [ZED]: { role: "builder" } } } }])?.seq === 4,
     { zeds, planned: r.planned, spawns, from: from?.roles, leaked: text.includes(ZED) }]; });
+
+await C("K16", "a ban keyed by an account that the old fold lowercased is that account's person (translateV1World): a role and a ban keyed by aid1:issuer:Alice are one identity, its case restored, and a ban's own {id, sub} joins the banned name to its account before any act is read", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k16"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ALICE = "aid1:issuer:Alice", CAROL = "human:discord:55";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: ALICE, role: "builder", gen: true } },
+    { seq: 2, ts: 3, actor: "world", verb: "ban", args: { id: ALICE, reason: "spam" } },
+    // Carol acts before the ban the server filed with her account: her acts and the ban are one identity
+    { seq: 3, ts: 4, actor: "Carol", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 4, ts: 5, actor: "world", verb: "ban", args: { id: "Carol", sub: CAROL } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const holding = (s: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(s)).map(([id]) => id);
+  const alice = holding(ALICE), carol = holding(CAROL), lower = holding(ALICE.toLowerCase());
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
+  return [alice.length === 1 && !lower.length && w[`roles:${alice[0]}`]?.role === "builder" && w[`imported-bans:${alice[0]}`] !== undefined
+    && carol.length === 1 && spawn?.actor === carol[0] && w[`imported-bans:${carol[0]}`] !== undefined && Object.keys(r.planned).length === 2,
+    { alice, lower, carol, planned: r.planned, spawn: spawn?.actor, keys: Object.keys(w).filter((k) => /roles:|bans:/.test(k)) }]; });
+
+await C("K17", "an old request names a person by their account (translateV1World): a grant, ban and unban keyed by an account carry the person's id, not the account, and a top-level sub joins its id only on a grant or a ban: a comp sent with {id: <someone's name>, sub: <own account>} moves no one", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k17"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ZOE = "human:discord:61", BOB = "human:discord:77";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } },
+    { seq: 2, ts: 3, actor: "world", verb: "grant", args: { id: ZOE, role: "builder", gen: true } },
+    { seq: 3, ts: 4, actor: "world", verb: "ban", args: { id: ZOE, reason: "spam" } },
+    { seq: 4, ts: 5, actor: "world", verb: "unban", args: { id: ZOE } },
+    { seq: 5, ts: 6, actor: "world", verb: "grant", args: { id: "bob", role: "builder", gen: true, sub: BOB } },
+    { seq: 6, ts: 7, actor: "bob", verb: "spawn", args: { id: "board_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 7, ts: 8, actor: "bob", verb: "comp", args: { id: "Ann", sub: BOB, type: "guestbook", data: { line: "hi" } } },
+    { seq: 8, ts: 9, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const holding = (a: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(a)).map(([id]) => id);
+  const zoe = holding(ZOE), bob = holding(BOB), ann = Object.entries<any>(r.planned).filter(([, e]) => e.name === "Ann").map(([id]) => id);
+  const acts = (verb: string) => lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb);
+  const lamp = acts("spawn").find((e: any) => e.body.args?.id === "lamp_1");
+  return [zoe.length === 1 && ["grant", "ban", "unban"].every((v) => acts(v).some((e: any) => e.body.args?.id === zoe[0]))
+    && ann.length === 1 && !(r.planned[ann[0]].subs ?? []).length && lamp?.actor === ann[0] && acts("comp")[0]?.body?.args?.sub === bob[0]
+    && !/human:discord/.test(text) && TV1.accountIn([{ seq: 9, body: { verb: "grant", args: { id: ZOE } } }])?.path === "body.args.id",
+    { zoe, ann, bob, planned: r.planned, ids: ["grant", "ban", "unban"].map((v) => acts(v).map((e: any) => e.body.args?.id)), lamp: lamp?.actor, comp: acts("comp")[0]?.body?.args }]; });
+await C("K18", "the pairs v1's server stamped join a name to its account before any act is read (translateV1World): acts by a name before the light that carries its account, its only stamp, are that one identity", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k18"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const DEE = "human:discord:88";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "dee", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: "dee", verb: "light", args: { id: "glow_1", pos: [1, 2, 1], color: "#ffcc88", placer: { id: "dee", sub: DEE } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const dee = Object.entries<any>(r.planned).filter(([, e]) => e.name === "dee" || (e.subs ?? []).includes(DEE)).map(([id]) => id);
+  const actors = lines.filter((e: any) => e.kind === "act" && e.verb === "imported").map((e: any) => e.actor);
+  const light = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "light");
+  return [dee.length === 1 && r.planned[dee[0]].subs?.includes(DEE) && actors.length === 2 && actors.every((a: string) => a === dee[0]) && light?.body?.args?.placer?.sub === dee[0] && !text.includes(DEE),
+    { dee, actors, planned: r.planned, placer: light?.body?.args?.placer }]; });
+await C("K20", "a person whose name begins local: is a name, not an account (translateV1World): a private server's local: account is one only where an account sits (a sub), so 'local:ann' keeps their acts on one named identity with no account", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k20"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "local:ann", role: "builder", gen: true } },
+    { seq: 2, ts: 3, actor: "local:ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => e.name === "local:ann").map(([id]) => id);
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
+  return [ann.length === 1 && Object.keys(r.planned).length === 1 && !(r.planned[ann[0]].subs ?? []).length && spawn?.actor === ann[0] && w[`roles:${ann[0]}`]?.role === "builder",
+    { ann, planned: r.planned, spawn: spawn?.actor, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };

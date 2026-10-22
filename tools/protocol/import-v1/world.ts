@@ -14,7 +14,7 @@ import { openLive } from "../../../server/livehost.ts";
 import { ENGINE_CATALOGUE } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
-import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount } from "./translate-v1.js";
+import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { v1FoldBuild } from "./build.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
@@ -72,13 +72,15 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const agents = agentTokens();
   const nameKey = (n: string) => `name:${n}`;
-  // every name this log gives a person (actors, grants, genesis roles, a say's addressee): what a lowered ban key may mean
+  // every name this log gives a person (actors, grants, bans, genesis roles, a say's addressee), and every account it
+  // gives one (a sub, a placer's, a bySub): what a lowered ban key may mean, an account's case included
   const names = new Set<string>();
   for (const e of old) { const a = e?.args ?? {};
     if (typeof e?.actor === "string") names.add(e.actor);
-    if (e?.verb === "grant" && typeof a.id === "string") names.add(a.id);
+    if ((e?.verb === "grant" || e?.verb === "ban") && typeof a.id === "string") names.add(a.id);
     if (e?.verb === "say" && typeof a.to === "string") names.add(a.to);
-    if (e?.verb === "genesis") for (const k of Object.keys(a.roles ?? {})) if (k !== "*") names.add(k); }
+    for (const s of [a.sub, a.placer?.sub, a.bySub]) if (isAccount(s)) names.add(s);
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*") { names.add(k); if (isAccount(v?.sub)) names.add(v.sub); } }
   const unlowered = (k: string) => { const c = [...names].filter((n) => n.toLowerCase() === k); return c.length === 1 ? c[0] : k; };
   // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
@@ -88,8 +90,8 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
     const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
     // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
-    const acct = sub !== undefined ? liveAccount(sub) : (isAccount(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
-    const display = isAccount(name) ? null : name;   // a role keyed by its account has no name of its own
+    const acct = sub !== undefined ? liveAccount(sub) : (isAccountName(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
+    const display = isAccountName(name) || name === sub ? null : name;   // a role keyed by its account, or an account alone, has no name of its own
     const key = acct ?? nameKey(name);
     // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
     let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
@@ -99,10 +101,10 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
   // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
   // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
-  // The other pairs v1's server wrote itself count too (server/verbs.ts at 306a00b0): a spawn's or a light's placer
-  // {id, sub}, and a behaviour's bySub, which is its own actor's account.
+  // The other pairs v1's server wrote itself count too (server/verbs.ts at 306a00b0): a ban's {id, sub}, a spawn's or a
+  // light's placer {id, sub}, and a behaviour's bySub, which is its own actor's account.
   for (const e of old) { const a = e?.args ?? {};
-    if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
+    if ((e?.verb === "grant" || e?.verb === "ban") && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub });
     if ((e?.verb === "spawn" || e?.verb === "light") && typeof a.placer?.id === "string" && isAccount(a.placer.sub)) who(a.placer.id, { sub: a.placer.sub });
     if (e?.verb === "behavior" && typeof e.actor === "string" && !["door", "world", "sim"].includes(e.actor) && !/^bhv:/i.test(e.actor) && isAccount(a.bySub)) who(e.actor, { sub: a.bySub }); }

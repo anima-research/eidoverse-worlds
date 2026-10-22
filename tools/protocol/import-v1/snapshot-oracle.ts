@@ -159,7 +159,7 @@ function whoFrom(worldsDir) {
   for (const [id, e] of Object.entries(ids)) { for (const s of e.subs ?? []) bySub.set(s, id); const a = byName.get(e.name) ?? []; a.push(id); byName.set(e.name, a); }
   const unresolved = [];
   const who = (name, { sub, lowered = false } = {}) => {
-    const acct = sub ?? (/^(human|agent|aid1|local):/.test(name) ? name : undefined);
+    const acct = sub ?? (/^(human|agent|aid1):/.test(name) ? name : undefined);   // a name that is an account (local: is one only as a sub)
     if (acct && bySub.has(acct)) return bySub.get(acct);
     if (acct && bySub.has(`aid1:${HN_ISS}:${acct}`)) return bySub.get(`aid1:${HN_ISS}:${acct}`);   // a v1 agent's home-node sub, as the importer files it
     // exact, as v1 kept names; a lowered ban key is the one name that lowercases to it, as the importer reads it

@@ -323,6 +323,9 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 // emitter field. Whose account it is: the account's own (@19); the name beside it is joined to it only where main's server
 // wrote the pair (translate's noAcct), never from a value.
 export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1|local):/.test(s);
+/** A NAME that is an account (a role or a ban keyed by it, an actor that is one): every shape but local:, which a private
+ *  server gives a bare name in a sub position only, so a person may well be called `local:ann` and isn't an account. */
+export const isAccountName = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
 const ACCOUNT_KEY = /^sub$|Sub$/;
 /** `v` with every account subject in it, at any depth, replaced by what `map(sub)` gives, or dropped where that's undefined
  *  (the default). The same object when nothing in it is an account (the projection's values can be the old fold's own). */
@@ -335,14 +338,14 @@ export function withoutAccounts(v, map = () => undefined) {
       out ??= { ...v }; const to = map(x);
       if (to === undefined) delete out[k]; else out[k] = to; continue; }
     // a map keyed by an account (a genesis role, a ban, as v1 could key them): the entry under its person's id, or dropped
-    if (isAccount(k)) { out ??= { ...v }; delete out[k]; const to = map(k); if (to !== undefined && !Object.hasOwn(out, to)) out[to] = withoutAccounts(x, map); continue; }
+    if (isAccountName(k)) { out ??= { ...v }; delete out[k]; const to = map(k); if (to !== undefined && !Object.hasOwn(out, to)) out[to] = withoutAccounts(x, map); continue; }
     const y = withoutAccounts(x, map); if (y !== x) (out ??= { ...v })[k] = y;
   }
   return out ?? v;
 }
-/** The first account subject a log still carries, as {seq, path} (a property named as above holding an account-shaped
- *  string, or a component so named whose value is one: a change's op {comp, value}, an old comp request's {type, data}),
- *  or null: the writer's check before anything is written (world.ts translateV1World). */
+/** The first account subject a log still carries, as {seq, path} (a property named as above, or an id, holding an
+ *  account-shaped string; a key that is one; or a component so named whose value is one: a change's op {comp, value}, an
+ *  old comp request's {type, data}), or null: the writer's check before anything is written (world.ts translateV1World). */
 export function accountIn(entries) {
   // a component's name as written, under its namespace and its escape (`imported/x--…`)
   const plain = (n) => dec(n.slice(n.lastIndexOf("/") + 1)) ?? "";
@@ -352,14 +355,14 @@ export function accountIn(entries) {
     if (!v || typeof v !== "object") return null;
     const n = named(v); if (n) return path ? `${path}.${n[1]}` : n[1];
     for (const [k, x] of Object.entries(v)) { const p = path ? `${path}.${k}` : k;
-      if ((ACCOUNT_KEY.test(k) && isAccount(x)) || isAccount(k)) return p; const f = find(x, p); if (f) return f; }
+      if ((ACCOUNT_KEY.test(k) && isAccount(x)) || (k === "id" && isAccountName(x)) || isAccountName(k)) return p; const f = find(x, p); if (f) return f; }
     return null; };
   for (const [i, e] of entries.entries()) { const p = find(e, ""); if (p) return { seq: Number.isInteger(e?.seq) ? e.seq : i, path: p }; }
   return null;
 }
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
-const asSub = (k) => (isAccount(k) ? k : undefined);   // a role or ban keyed by its account (@19: every account shape)
+const asSub = (k) => (isAccountName(k) ? k : undefined);   // a role or ban keyed by its account (@19)
 // @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A
 // v1 world's own inventions (a `heart` comp nobody registered) come across under a namespace, `<namespace>/heart` (the
 // translated world's name; "imported" when the caller gives none), so the registry can promote the word later without
@@ -384,7 +387,8 @@ const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
-  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k), ...(lowered ? { lowered } : {}) }) : enc(k));
+  // a key the v1 fold lowercased (a ban's) isn't an account as written: who() restores its case first, then reads it
+  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? (lowered ? undefined : asSub(k)), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
@@ -455,7 +459,8 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // …the account's own person (@19): v1's author is `by` where a request sent one, which a request could name anyone in, so
   // the name is joined to the account only through the act itself, a behaviour's actor and its bySub (noAcct, below)
   for (const [k, v] of Object.entries(st.behaviors ?? {})) { const sub = isAccount(v?.authorSub) ? v.authorSub : undefined;
-    w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: sub ? who(sub, { sub }) : who(v.author, {}) } : v; }
+    w[keyed("imported-behavior", k)] = who && v && sub ? { ...v, author: who(sub, { sub }) }   // the stamp first: `by` can't make it the system's
+      : who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v; }
   const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
@@ -560,11 +565,18 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
   // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
   // act never re-leaks what the values no longer hold
+  const PERSON_VERBS = new Set(["grant", "ban", "unban"]);   // the old requests whose id names a person
   const noAcct = (e, a) => { let x = a;
     if (x && typeof x === "object" && !Array.isArray(x)) {
+      // a top-level sub: a grant's or a ban's is the server's own, beside the id it names; any other request's is an
+      // account alone (or not one at all), joined to no name
       if ("sub" in x) {
-        if (who && typeof x.sub === "string") x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
+        if (who && typeof x.sub === "string" && (e.verb === "grant" || e.verb === "ban")) x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
+        else if (who && isAccount(x.sub)) x = { ...x, sub: who(x.sub, { sub: x.sub }) };
         else { const { sub: _s, ...rest } = x; x = rest; } }
+      // a person named by their account (a grant, ban or unban keyed by it): their id, as a role or ban keyed by it is
+      if (PERSON_VERBS.has(e.verb) && isAccountName(x.id)) {
+        if (who) x = { ...x, id: who(x.id, { sub: x.id }) }; else { const { id: _i, ...rest } = x; x = rest; } }
       const p = x.placer;
       if (who && (e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p) && isAccount(p.sub))
         x = { ...x, placer: { ...p, sub: who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }) } };
