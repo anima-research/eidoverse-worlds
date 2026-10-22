@@ -1301,9 +1301,10 @@ them, and the suite holds them to it), not part of conformance.
   known minor. `dialect` and `v` are the shape every eidoverse log has
   announced itself with since its first genesis (`{v, dialect}`); `v` is the
   protocol's number, and it is written here and nowhere else. `nonce` is ≥ 16 random bytes, canonical unpadded base64url (two
-  worlds founded with the same keys must not share an id). `owners` are rank
-  tiers of keys, tier 0 highest; `quorum` optionally gives each tier's
-  threshold; `parent {world, seq, head}` names the world a fork came from.
+  worlds founded with the same keys must not share an id). `owners` is a list
+  of lists of keys (list 0 is the founder's, list 1 the host's operator key);
+  what more the lists mean (rank tiers, a quorum per tier) is reserved with
+  governance, below, and today only the founding act reads list 0; `parent {world, seq, head}` names the world a fork came from.
   Genesis seeds no state: the founding act then writes `@world` through the
   gate. A missing or malformed genesis means "no world"; a `dialect`, `v` or
   `minor` the reader doesn't implement means "unknown version" and no world.
@@ -1315,8 +1316,8 @@ them, and the suite holds them to it), not part of conformance.
   rewind window, the merge rule) are kept on the project wishlist until a
   server implements them. What is fixed now: the entry kind `sequencer` and the
   genesis fields `owners`, `sequencer`, `quorum?` and `rewind_window?` are
-  reserved names with today's shapes (`owners` are rank tiers of keys, tier 0
-  highest; the rest a reader carries and does not interpret). The fold never
+  reserved names (`owners` with the shape above; every one of them a reader
+  carries and does not interpret). The fold never
   reads a `sequencer` entry. **The reference server never writes one and
   refuses to serve a log that holds one**: such an entry may have moved the
   writer role somewhere the server cannot check, so it says so ("governance is
@@ -1336,9 +1337,13 @@ them, and the suite holds them to it), not part of conformance.
   without one has an empty tier 0, and its operator key (tier 1) is its top
   governance key. A **translated** world's tier 0 is always empty (§14):
   nothing can yet bind a key to the old world's owner, so a translation names
-  no founder. The reserved governance draft must allow ONE attested fill of a
-  translated world's empty tier 0 later, once something (a home-node
-  attestation) can vouch that a key belongs to the old world's owner.
+  no founder. Today most worlds are founded without a key (a browser or an
+  agent sends none), so an empty tier 0 is the common case, not the
+  translated one's alone: the reserved governance draft must allow ONE
+  attested fill of ANY world's empty tier 0 later, once something can vouch
+  that a key belongs to the world's owner (for a translated world, its old
+  owner). Genesis hashes into the world id, so the fill is a later entry,
+  never an edit of genesis.
 
 ## 14. Worlds from the first protocol
 
