@@ -189,7 +189,9 @@ function checkpointSim(w) {
   w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 export function tick(w) {
-  if (!w.exists || w.state().status !== "ok") return [];
+  // without the world's key nothing a script writes can be logged (storage's append refuses), so, as settle() and
+  // expireRoles() do, the timers don't start what they can't write
+  if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return [];
   return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const now = w.now(), present = presentOf(w).size > 0, ran = [];

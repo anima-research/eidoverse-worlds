@@ -190,7 +190,7 @@ function openWorld(name: string, o: any = {}) {
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts === undefined ? SB?.SANDBOX ?? null : o.scripts, present: o.present, nameOf: o.nameOf, kindOf: o.kindOf,
-    custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
+    custody: custodyAt(o.custodyFile ?? path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 let T = 1800000000000, N = 0;
 function session(o: any = {}) {
@@ -321,6 +321,17 @@ const cases: Case[] = [
         return { set: set?.ok === true, why };
       } finally { D.setScriptConfig(was); } },
     good: (o) => o.set && /budget is 30/.test(o.why ?? "") && /asks 60/.test(o.why ?? "") && /caps it/.test(o.why ?? "") },
+  { id: "B6f", what: "a timed script on a world this server can't sign for: tick starts nothing, appends nothing and doesn't throw, as the heartbeat's settle doesn't", run(s) { cast(s);
+      if (!D.tick) return { absent: true };
+      s.call("olive", "create", { id: "heart", model: "bell", place: { at: [0, 0] } });
+      const BEAT = `world.on("tick", () => world.set("self", "t/beat", { n: (world.get("self", "t/beat")?.n ?? 0) + 1 }));\n`;
+      const inst = install(s, "olive", "heart", "beat", BEAT, { scope: { ids: "self", comps: ["t/beat"] }, every: 5, always: true });
+      // the same world, served by a server holding another key
+      const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
+      const n0 = other.entries.length; let threw: string | null = null; const out: any[] = [];
+      for (let i = 0; i < 3; i++) { s.advance(6000); try { out.push(D.tick(other)); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); break; } }
+      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out }; },
+    good: (o) => o.installed && !o.threw && o.appended === 0 },
   { id: "B6e", what: "…with no owner value, a ceiling lowered below the server's default is the plain budget, and the refusal names no owner's value", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       const set = { ok: true };   // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 30
