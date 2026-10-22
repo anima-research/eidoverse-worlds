@@ -3,7 +3,8 @@
 //   - the old entry as sent: an `act` (verb "imported", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
 //   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
-// grammar refuses is mapped by `enc` (injective, deterministic). After every entry it folds the v4 entry with the v4
+// grammar refuses is mapped by `enc` (deterministic, and injective but for a literal name in the hashed form, which
+// encodes as the name it was computed from: names.js). After every entry it folds the v4 entry with the v4
 // fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
