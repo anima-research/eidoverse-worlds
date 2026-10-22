@@ -11,9 +11,9 @@ plugin({
   name: 'fp-plate-stubs',
   setup(b) {
     // controller.js gets the posture-tiles world; avatar.js (and what it pulls in) the core stub the plate tests use
-    b.onResolve({ filter: /^\.\/core\.js$/ }, (a) => ({ path: here(a.importer.endsWith('/controller.js') ? './posture-tiles-stub.mjs' : './core-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/core\.js$/ }, (a) => ({ path: here(a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? './posture-tiles-stub.mjs' : './core-stub.mjs') }));
     for (const m of ['base', 'terrain', 'colliders', 'chat', 'ui']) {
-      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, (a) => (a.importer.endsWith('/controller.js') ? { path: here('./posture-tiles-stub.mjs') } : undefined));
+      b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, (a) => (a.importer.replace(/\\/g, '/').endsWith('/controller.js') ? { path: here('./posture-tiles-stub.mjs') } : undefined));
     }
     b.onResolve({ filter: /^\.\/assets\.js$/ }, () => ({ path: here('./assets-stub.mjs') }));
     b.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: here('./loadwork-stub.mjs') }));

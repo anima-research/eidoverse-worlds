@@ -39,7 +39,7 @@ plugin({
     }
     // the realizer's report(), recorded; everyone else gets the real base.js
     b.onResolve({ filter: /^\.\.\/base\.js$/ }, (args) =>
-      (args.importer.endsWith('realize/models.js') ? { path: SPY } : undefined));
+      (args.importer.replace(/\\/g, '/').endsWith('realize/models.js') ? { path: SPY } : undefined));
   },
 });
 

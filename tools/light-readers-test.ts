@@ -18,10 +18,10 @@ plugin({
   name: "light-readers",
   setup(b) {
     for (const f of ["^\\.\\./core\\.js$", "^\\.\\./assets\\.js$", "^\\.\\./colliders\\.js$", "^\\.\\./lightrig\\.js$", "^\\.\\./lights\\.js$", "^\\.\\./world\\.js$", "^\\.\\./materials\\.js$"]) {
-      b.onResolve({ filter: new RegExp(f) }, (a) => (a.importer.includes("/client/lib/realize/") ? { path: LOD } : undefined));
+      b.onResolve({ filter: new RegExp(f) }, (a) => (a.importer.replace(/\\/g, "/").includes("/client/lib/realize/") ? { path: LOD } : undefined));
     }
     b.onResolve({ filter: /^\.\/(lightrig|materials)\.js$/ }, (a) =>
-      (/\/client\/lib\/(lights|matoverride)\.js$/.test(a.importer) ? { path: a.path, namespace: "light-readers" } : undefined));
+      (/\/client\/lib\/(lights|matoverride)\.js$/.test(a.importer.replace(/\\/g, "/")) ? { path: a.path, namespace: "light-readers" } : undefined));
     b.onLoad({ filter: /.*/, namespace: "light-readers" }, (a) => ({
       loader: "js",
       contents: a.path.includes("lightrig")

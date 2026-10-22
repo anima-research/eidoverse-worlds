@@ -29,7 +29,7 @@ plugin({
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
     // the realizer's report(), recorded; everyone else gets the real base.js (the real bus)
-    b.onResolve({ filter: /^\.\.\/base\.js$/ }, (args) => (args.importer.endsWith('realize/models.js') ? { path: SPY } : undefined));
+    b.onResolve({ filter: /^\.\.\/base\.js$/ }, (args) => (args.importer.replace(/\\/g, '/').endsWith('realize/models.js') ? { path: SPY } : undefined));
   },
 });
 
