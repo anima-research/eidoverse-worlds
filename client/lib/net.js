@@ -451,13 +451,13 @@ export function sendPoseExact(pose) {
 }
 
 export function rejoin() {
-  intentionalClose = true;
+  intentionalClose = net.ws ?? true;   // the socket being replaced: its close is the one rejoin() answers for
   try { net.ws?.close(); } catch { /* already gone */ }
   net.joined = false;
   connect();
 }
 
-let intentionalClose = false;
+let intentionalClose = false;   // false, or the socket whose close rejoin() drives (true: one with no socket to name)
 
 // archipelago-home session (home-node.md §7): the server may know who we are
 // from the ew_sess cookie (set by /auth after a Discord login). Fetched once;
@@ -626,10 +626,12 @@ function onSocketClosed(ev) {
   // and nothing else: the live socket's requests, its join and its clock are not its to end (house review I62)
   const sock = ev?.target ?? null;
   failPending(sock);
-  if (sock && net.ws && sock !== net.ws) { intentionalClose = false; return; }
+  if (sock && net.ws && sock !== net.ws) { if (sock === intentionalClose) intentionalClose = false; return; }
   clearInterval(clockTimer); clockTimer = null;
   net.joined = false;
-  if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
+  // rejoin() drives its own reconnect, for the socket it replaced only: the NEW socket dropping before the old close
+  // lands must still redial (review of I62: a shared flag let the new socket's close use it up, and nothing redialled)
+  if (intentionalClose && (intentionalClose === true || intentionalClose === sock || !sock)) { intentionalClose = false; return; }
   // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
   // would kick THAT session and ping-pong forever.
   if (ev.code === 4002) {

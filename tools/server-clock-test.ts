@@ -416,6 +416,20 @@ console.log("\n— the browser takes the clock as its server clock —\n");
       const rB: any = await onB;
       check("…which its own reply then answers", rB?.ok === true, JSON.stringify(rB));
     }
+    // review of I62: rejoin() skips the reconnect for the socket it REPLACED only. The new socket dropping before the old
+    // socket's close lands must still redial (a shared flag let it be used up by the new socket's close, then the old
+    // close was ignored as replaced, and nothing ever redialled). Mutation (must go red): make the skip a plain boolean again.
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const C = mk(); (globalThis as any).__ewEarlySocket = C; await netMod.connect(); netMod.net.joined = true;
+      const D = mk(); (globalThis as any).__ewEarlySocket = D; netMod.rejoin(); await Promise.resolve(); await Promise.resolve();
+      check("(setup) rejoin dialled a new live socket", netMod.net.ws === D.ws);
+      netMod.net.status = "connected";
+      D.ws.onclose({ target: D.ws, code: 1006 });   // the NEW socket drops first
+      check("the new socket dropping before the old close lands redials (retrying)", netMod.net.status === "retrying", String(netMod.net.status));
+      C.ws.onclose({ target: C.ws, code: 1000 });   // the replaced socket's close, late
+      check("…and the replaced socket's late close changes nothing", netMod.net.status === "retrying", String(netMod.net.status));
+    }
   }
   // heldStill runs fn with performance.now() held at one instant, so every
   // clock read inside it reads that instant, however long the process stalls.
