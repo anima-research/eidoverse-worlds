@@ -543,6 +543,13 @@ function playground(name) {
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
   ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
+{ const W = fresh("held-at-batch-start"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "move", { to: [0, 0, -0.5] }); const g = call(W, "rowan", "grab", { id: "ball" });
+  const on = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } }] });
+  const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W);
+  ok(g.ok && on.ok && lift?.actor === "rowan" && v.lifted.has("ball") && !v.sim?.bodies.ball && !v.sim?.statics?.ball,
+    "U5c an engine started inside a batch logs the same lift for a thing in a hand, so the thing stays out of the engine's world", { g: g.ok, on: on.ok ?? on.refused, lift: !!lift, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
 
 // review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
 // back, purges nothing in either)
