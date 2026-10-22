@@ -844,9 +844,11 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel() ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
   // a scrubbed RUN of channels (Maya's channel box): one edit for all of them, FACE values, one Ctrl+Z (panels.js commitRun)
-  if (action === '__run' && id && id !== WORLD_ID && payload && typeof payload === 'object') {
+  // the whole selection, or the world (house review I23: only the primary thing was edited, and a World run was dropped)
+  if (action === '__run' && id && payload && typeof payload === 'object') {
     const edits = Object.fromEntries(Object.entries(payload).map(([k, v]) => [String(k).replace(/^(ch|ed):/, ''), v]));
-    const r = commitMany(id, edits, 'channels'); endGesture(); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); repaintAll(); return; }
+    const ids = id === WORLD_ID ? null : selection();
+    const r = commitMany(id === WORLD_ID ? WORLD_ID : ids.length > 1 ? ids : id, edits, 'channels'); endGesture(); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); repaintAll(); return; }
   if (action === 'history') { bus.emit('edit-righttab', 'history'); return; }
   if (action === 'goto') {   // a driven field's ~: open the driver's card and bring it into view
     const g = `c:${payload}`; if (!isOpen(id, g)) toggleFold(id, g);
