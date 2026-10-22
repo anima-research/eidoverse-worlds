@@ -349,7 +349,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const op = h.operator(), held = h.keyOf("u-cccccccccccccccccccc", true), after = JSON.parse(fs.readFileSync(g, "utf8"));
   ok(op === other.pub && held === other.pub && after.operator?.pub === other.pub && after.holders?.["u-cccccccccccccccccccc"]?.pub === other.pub,
     "A13d …a key another process wrote after the handle opened is taken, not minted over", { op, held, after }); }
-// ---- A13e–A13g (review of #260, server I5): custody's lock. A lock file is "<pid> <nonce>", linked into place whole
+// ---- A13f–A13h (review of #260, server I5): custody's lock. A lock file is "<pid> <nonce>", linked into place whole
 // (server/custody.ts take); this process holds one the same way, so the children meet a lock held by a live process ----
 const custodyTs = path.join(ENGINE, "server/custody.ts");
 const lockText = (pid) => { const nonce = crypto.randomBytes(8).toString("hex"); return { nonce, text: `${pid} ${nonce}` }; };
@@ -390,7 +390,7 @@ const scratchKeys = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "c
 // A13g's child starts first, since it waits out the lock: one this process holds the whole time
 const T = scratchKeys(); holdLock(T.lock); fs.writeFileSync(T.go, "");
 const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
-// ---- A13e: while a live process holds the lock no one mints; released, six processes minting into one keys file at once keep every key ----
+// ---- A13h: while a live process holds the lock no one mints; released, six processes minting into one keys file at once keep every key ----
 { const { dir, f, lock, go } = scratchKeys(), N = 6, EACH = 8; holdLock(lock);
   const kids = Array.from({ length: N }, (_, i) => minter(dir, f, go, i, EACH));
   const ready = await waitFor(() => marks(dir, "ready") === N, 60_000); fs.writeFileSync(go, "");
@@ -402,7 +402,7 @@ const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
   const seqs = new Set(minted.map((m) => m.sequencer)), left = besideKeys(f);
   ok(ready && met && during === 0 && waiting && minted.every((m) => m.code === 0 && !m.error && Object.keys(m).filter((k) => k.startsWith("u-")).length === EACH && typeof m.sequencer === "string")
     && lost.length === 0 && seqs.size === 1 && disk.sequencer?.pub === [...seqs][0] && !left.length,
-    "A13e six minters each meet the custody lock a live process holds, and none mints while it's held; released, they mint into one keys file at once, every holder key each minted is on disk, they sign with one sequencer key, and nothing is left beside the file",
+    "A13h six minters each meet the custody lock a live process holds, and none mints while it's held; released, they mint into one keys file at once, every holder key each minted is on disk, they sign with one sequencer key, and nothing is left beside the file",
     { ready, met, during, waiting, results: minted.map((m) => m.error ?? (m.crashed ? `crashed ${m.code}` : "ok")), lost: lost.length, of: N * EACH, seqs: seqs.size, left }); }
 // ---- A13f: a lock whose holder exited is removed only by whoever holds the right to remove it (`<lock>.<its nonce>`), and
 // only while the lock is still that one ----
