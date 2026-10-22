@@ -543,6 +543,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
   ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
+// ---- E: a handler whose author a purge erased acts for nobody (house 6340433633 Q2) ----
+{ let now = T + 7000; const w = openLive(root + "erased/", "erased", { kindOf: LABKIND, now: () => now });
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
+  call("ann", "create-world", { title: "erased" });   // a new world: newcomers build
+  call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
+  call("bob", "set", { id: "box", component: "reactions", value: { evolve: { kind: "set", component: "reactions", value: { tag: { kind: "set", component: "label", value: "tagged" } } } } });
+  ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "E1 (setup) vic's use of bob's evolve installs bob's tag handler");
+  const useSeq = [...w.entries].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic")?.seq;
+  now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
+  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } }).ok, "E1 (setup) bob is made an inhabitant");
+  const r = call("vic", "use", { id: "box", action: "tag" });
+  ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
+    "E1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
+
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };

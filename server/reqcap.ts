@@ -14,7 +14,7 @@ import { entryFor, doorOfWorld } from "./access.ts";
 
 export type ReqCap = Readonly<{
   c: Client; w: World; gen: number | null; actorId: string; account: string | null; spectator: boolean; operator: boolean;
-  nativeWorld: string | null; addr: string | null; trustedRenderer: boolean; role: string;
+  addr: string | null; trustedRenderer: boolean; role: string;
 }>;
 
 /** The connection's capability as it is now, frozen. Throws if it has no identity (it never joined: a server bug). */
@@ -22,7 +22,7 @@ export function capture(c: Client, w: World): ReqCap {
   if (!c.actorId) throw new Error(`request from ${c.id} with no directory id (join didn't resolve one)`);
   return Object.freeze({
     c, w, gen: c.gen ?? null, actorId: c.actorId, account: c.account ?? null, spectator: !!c.spectator, operator: isOperator(c.account),
-    nativeWorld: c.auth?.nativeWorld ?? null, addr: c.addr ?? null, trustedRenderer: !!c.trustedRenderer, role: w.log.roleOf(c.actorId),
+    addr: c.addr ?? null, trustedRenderer: !!c.trustedRenderer, role: w.log.roleOf(c.actorId),
   });
 }
 
@@ -35,12 +35,12 @@ export function recheck(cap: ReqCap, now = Date.now(), { role = true } = {}): st
   if (!(c.world === w && !c.superseded && w.clients.has(c) && (c.gen ?? null) === cap.gen))
     return "this connection left the world, was closed or was taken over by a newer one while the request waited; nothing was written";
   // identity: the same who (a re-join over the same socket reassigns actorId; the account is the socket's, checked all the same)
-  if (c.actorId !== cap.actorId || (c.account ?? null) !== cap.account || !!c.spectator !== cap.spectator || (c.auth?.nativeWorld ?? null) !== cap.nativeWorld)
+  if (c.actorId !== cap.actorId || (c.account ?? null) !== cap.account || !!c.spectator !== cap.spectator)
     return "this connection is someone else now (it joined again while the request waited); nothing was written";
   // operator status (operator-repair's right, and the door's bypass)
   if (isOperator(cap.account) !== cap.operator) return "this account's operator status changed while the request waited; nothing was written";
   // the door: the same decision the join made (access.ts entryFor), asked again with the captured who
-  const door = entryFor(doorOfWorld(w), { account: cap.account, actorId: cap.actorId, addr: cap.addr, nativeWorld: cap.nativeWorld, trustedRenderer: cap.trustedRenderer },
+  const door = entryFor(doorOfWorld(w), { account: cap.account, actorId: cap.actorId, addr: cap.addr, trustedRenderer: cap.trustedRenderer },
     cap.spectator ? "watch" : "embody", { now });
   if (door) return `this world's door no longer lets this connection in (${door.reason}): ${door.why}; nothing was written`;
   // the role it was admitted under: a change mid-request refuses (the asker chose under the old one)

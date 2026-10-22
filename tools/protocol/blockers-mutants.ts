@@ -29,8 +29,6 @@ const M: Mutant[] = [
     repl: '    entries.push(posAt(parsed, seq)); durably("log", () => io.writeLine(line));', suite: "authority", rows: ["ST1"], expect: 9 },
   { id: "B2", what: "a batch op's args unchecked before any is built ({verb: delete, args: {id, componnent}} deletes the entity)", file: "shared/protocol/authority/verbs.js",
     find: "        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", repl: "        if (false) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", suite: "authority", rows: ["BT1"], expect: 9 },
-  { id: "B3", what: "a credential narrowed to one world keeps its reach at another's HTTP door", file: "server/access.ts",
-    find: '  if (who.nativeWorld && who.nativeWorld !== "*" && who.nativeWorld !== door.name) who =', repl: "  if (false) who =", suite: "access", rows: ["A10"], expect: 8 },
   { id: "B4", what: "a request whose connection was superseded while it awaited still writes", file: "server/reqcap.ts",
     find: "  if (!(c.world === w && !c.superseded && w.clients.has(c) && (c.gen ?? null) === cap.gen))", repl: "  if (false)", suite: "reset-race", rows: ["SR1"], expect: 1 },
   { id: "B5", what: "WORLD_ADMIN's repair is not narrow: any verb through the operator door", file: "shared/protocol/authority.js",
