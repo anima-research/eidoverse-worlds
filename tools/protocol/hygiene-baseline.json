@@ -61,8 +61,7 @@
   "bare-wait": 18
  },
  "tools/protocol/access-check.ts": {
-  "bare-wait": 14,
-  "own-until": 1
+  "bare-wait": 13
  },
  "tools/protocol/agentshove-check.ts": {
   "bare-wait": 39
