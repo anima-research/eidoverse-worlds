@@ -29,6 +29,7 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 }
 
 const { WorldAgent } = await import("../mcpl/agent.ts");
+const { tryUntil, pause } = await import("./protocol/wait.ts");
 
 const W = `kd-${Math.random().toString(36).slice(2, 8)}`;
 // its own scratch sequencer (a free port, scratch WORLDS_DIR) with the world founded: joining never founds one
@@ -66,7 +67,7 @@ function human(name: string): Promise<Human> {
   });
 }
 // a positive shove's wait, and a refused one's: as long, ending early only on the relay's refusal
-const settleOrRefused = async (h: Human, n0: number, ms = 2500) => { for (let t = 0; t < ms && h.errors.length === n0; t += 50) await sleep(50); };
+const settleOrRefused = async (h: Human, n0: number, ms = 2500) => { await tryUntil("the relay refuses the shove", () => h.errors.length !== n0, { ms, step: 50 }); };
 
 console.log("knockdown (headless bodies are pushable):\n");
 
@@ -84,7 +85,7 @@ await sleep(400);
 await h.near(ag);
 const before = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
-await sleep(2500);
+await tryUntil("the shove floors the agent, displaced along the lean, and it perceives it", () => ag.clip === "ragdoll" && ag.heldPose != null && ag.heldPose !== (ag as any).DOWNED_POSE && Object.keys(ag.heldPose).length >= 10 && ag.pos.x > before.x + 0.2 && ag.pos.y < -0.2 && events.some((t) => t.includes("knocks you over")), { ms: 2500 });
 check("a shove knocks the agent down", ag.clip === "ragdoll" && ag.heldPose != null, `clip=${ag.clip}`);
 check("...with a SIMULATED pose, not the canned slump",
   ag.heldPose != null && Object.keys(ag.heldPose).length >= 10 && ag.heldPose !== (ag as any).DOWNED_POSE,
@@ -101,7 +102,7 @@ check("walking sheds the slump", ag.clip !== "ragdoll" && ag.heldPose == null, `
 await h.near(ag);
 const b2 = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [0, 0, 3] } });
-await sleep(2500);
+await tryUntil("the directed shove floors the agent downwind, named", () => ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3 && events.some((t) => t.includes("shover") && t.includes("knocks you over")), { ms: 2500 });
 check("a directed shove floors it downwind", ag.clip === "ragdoll" && ag.pos.z > b2.z + 0.3,
   `clip=${ag.clip} Δz=${(ag.pos.z - b2.z).toFixed(2)}`);
 check("...and named the shover", events.some((t) => t.includes("shover") && t.includes("knocks you over")), events.join(" | "));
@@ -115,7 +116,7 @@ await h.near(ag);
 const b3 = { x: ag.pos.x, z: ag.pos.z }, e3 = h.errors.length;
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
 await settleOrRefused(h, e3);
-await sleep(600);   // past the refusal: a delivered shove would have landed by now
+await pause("past the refusal: a delivered shove would have landed by now", 600);
 check("switch refuse: the relay refuses the shove", h.errors.length > e3, JSON.stringify(h.errors.slice(e3)));
 check("switch refuse: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
@@ -139,11 +140,11 @@ await sleep(300);
 h.send({ type: "bodydrag", target: "kd-bot3", pose: {}, p: [ag3.pos.x, 1.2, ag3.pos.z], yaw: 0 });
 await sleep(300);
 h.send({ type: "bodydrag", target: "kd-bot3", end: true, pinAt: { joint: "head", at: [ag3.pos.x, 1.9, ag3.pos.z] } });
-await sleep(2500);
+await pause("the nailed body has had its time to fall, were the nail not holding it", 2500);
 check("released with a nail: the agent's sim HANGS the body",
   ag3.pins.size === 1 && ag3.pos.y > -0.3, `pins=${ag3.pins.size} y=${ag3.pos.y.toFixed(2)}`);
 h.send({ type: "bodydrag", target: "kd-bot3", unpin: { joint: "head" } });
-await sleep(2500);
+await tryUntil("the unpinned body comes down off the nail", () => ag3.pins.size === 0 && ag3.pos.y < 0.7, { ms: 2500 });
 // A body released dead-still from a vertical head-hang drops feet-first and
 // can LAND STANDING — the solver has no reason to invent a stumble. So the
 // assertion is "came down off the nail", not "ended lying": no longer
@@ -167,7 +168,7 @@ h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
 await sleep(300);
 const draggedMid = (ag5 as any).draggedBy;
 h.send({ type: "bodydrag", target: "kd-bot5", end: true, unpin: { joint: "head" } });
-await sleep(800);
+await tryUntil("the nail comes out and the drag ends", () => ag5.pins.size === 0 && (ag5 as any).draggedBy == null, { ms: 800 });
 check("an unpin sent with an end: the nail comes out AND the drag ends",
   draggedMid != null && ag5.pins.size === 0 && (ag5 as any).draggedBy == null, `draggedMid=${draggedMid} pins=${ag5.pins.size} draggedBy=${(ag5 as any).draggedBy}`);
 ag5.close?.();

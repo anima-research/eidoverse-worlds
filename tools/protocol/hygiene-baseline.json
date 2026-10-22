@@ -36,7 +36,7 @@
   "bare-wait": 1
  },
  "tools/knockdown-test.ts": {
-  "bare-wait": 27
+  "bare-wait": 20
  },
  "tools/lying-support-test.ts": {
   "bare-wait": 1
