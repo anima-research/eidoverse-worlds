@@ -168,8 +168,11 @@ const stretchOf = (x: { scale3?: number[] }): [number, number, number] | null =>
   const [a, b, c] = x.scale3.map(Math.abs);
   return a === b && b === c ? null : [a, b, c];
 };
-/** The transform a stretched support is fitted with: its stretch is in its geometry, so the transform carries none. */
-const unstretched = <T extends { scale?: number; scale3?: number[] }>(x: T): T => ({ ...x, scale: 1, scale3: undefined });
+/** The transform a support is fitted with: a stretched one at scale 1, its stretch being in its geometry, and any other at
+ *  |scale|, since physics reads a mirrored axis as its size (a mirror the same on every axis is no stretch, and a negative
+ *  one-number scale is refused by the grid fitter and turns a box inside out). */
+const fitXform = <T extends { scale?: number; scale3?: number[] }>(x: T, k: number[] | null): T =>
+  ({ ...x, scale: k ? 1 : Math.abs(x.scale ?? 1), scale3: undefined });
 
 /** Register a placed entity's support geometry (a local-frame box + world
  *  transform) so settling bodies rest on it. `holder` is the claiming agent;
@@ -193,8 +196,8 @@ export async function registerSupport(
   // re-fit unconditionally: a place moves the box, and the newest claimant's
   // transform is the freshest reading of where the thing actually is
   const k = stretchOf(xform);
-  if (k) m.colliders.fitSupportBox(id, min.map((v, i) => v * k[i]), max.map((v, i) => v * k[i]), unstretched(xform));
-  else m.colliders.fitSupportBox(id, min, max, xform);
+  if (k) m.colliders.fitSupportBox(id, min.map((v, i) => v * k[i]), max.map((v, i) => v * k[i]), fitXform(xform, k));
+  else m.colliders.fitSupportBox(id, min, max, fitXform(xform, null));
   generation++;
   scopeEntry(m, id);
 }
@@ -229,7 +232,7 @@ export async function registerSupportGrid(
     ? { ...grid, minXZ: [mm(grid.minXZ[0] * k[0]), mm(grid.minXZ[1] * k[2])], sizeXZ: [mm(grid.sizeXZ[0] * k[0]), mm(grid.sizeXZ[1] * k[2])],
         cells: grid.cells.map((c: unknown) => (typeof c === "number" ? mm(c * k[1]) : c)) }
     : topGrid;
-  if (!m.colliders.fitSupportGrid(id, fitted, k ? unstretched(xform) : xform)) return false;
+  if (!m.colliders.fitSupportGrid(id, fitted, fitXform(xform, k))) return false;
   generation++;
   scopeEntry(m, id);
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
@@ -271,7 +274,7 @@ export async function registerMeshSupport(
   // fit are for the model at one scale
   const k = stretchOf(xform);
   if (k) geom = geom.clone().scale(k[0], k[1], k[2]);
-  const s = k ? 1 : xform.scale ?? 1;
+  const s = fitXform(xform, k).scale!;
   const root = new THREE.Group();
   root.add(new THREE.Mesh(geom));
   root.position.set(xform.position[0], xform.position[1], xform.position[2]);

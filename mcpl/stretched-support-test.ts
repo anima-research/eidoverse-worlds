@@ -8,7 +8,10 @@
  * three axes, so the door fits a stretched support at scale 1 with the stretch
  * in its own numbers: its box, its heightfield, its triangles. A thing lying
  * down is stretched along its own axes first and turned after. A mirrored axis
- * (a negative scale) is read as its size, as componentspec says physics does.
+ * (a negative scale) is read as its size, as componentspec says physics does,
+ * a mirror the same on every axis included. Each fixture carries the one-number
+ * scale a record's transform gives beside its per-axis one (view.js tf: the
+ * y axis's, when stretched), as the door receives it.
  *
  * Each case asks standOn for the ground just above where the stretched top is
  * drawn, so it answers that top or, if the stretch was lost, something lower.
@@ -33,7 +36,7 @@ const at = { position: [0, 0, 0], yaw: 0 };
 console.log("data boxes");
 {
   // a 2 × 1 × 2 box, stretched ×2 in height: drawn 2 m tall
-  await registerSupport(HOLDER, "w/tall", [-1, 0, -1], [1, 1, 1], { ...at, scale: 1, scale3: [1, 2, 1] });
+  await registerSupport(HOLDER, "w/tall", [-1, 0, -1], [1, 1, 1], { ...at, scale: 2, scale3: [1, 2, 1] });
   const g = groundAt(0, 2.05, 0);
   check("a box stretched in height holds a body at its drawn top", near(g, 2), String(g));
   await removeSupport(HOLDER, "w/tall");
@@ -47,40 +50,71 @@ console.log("data boxes");
 }
 {
   // mirrored in x and stretched ×2 in height
-  await registerSupport(HOLDER, "w/mirror", [-1, 0, -1], [1, 1, 1], { ...at, scale: 1, scale3: [-1, 2, 1] });
+  await registerSupport(HOLDER, "w/mirror", [-1, 0, -1], [1, 1, 1], { ...at, scale: 2, scale3: [-1, 2, 1] });
   const g = groundAt(0, 2.05, 0);
   check("a mirrored, stretched box still holds a body, at its drawn top", near(g, 2), String(g));
   await removeSupport(HOLDER, "w/mirror");
 }
+{
+  // mirrored in y alone, the same size on every axis: no stretch, and the one-number scale is −1
+  await registerSupport(HOLDER, "w/flip", [-1, 0, -1], [1, 1, 1], { ...at, scale: -1, scale3: [1, -1, 1] });
+  const g = groundAt(0, 1.05, 0);
+  check("a box mirrored to the same size on every axis holds a body at its top", near(g, 1), String(g));
+  await removeSupport(HOLDER, "w/flip");
+  await registerSupport(HOLDER, "w/neg", [-1, 0, -1], [1, 1, 1], { ...at, scale: -1 });
+  const g2 = groundAt(0, 1.05, 0);
+  check("...and so does one whose one-number scale is −1", near(g2, 1), String(g2));
+  await removeSupport(HOLDER, "w/neg");
+}
 
 console.log("heightfield");
+const gridOf = (cell: (gx: number, gz: number) => number | null) => ({
+  version: TOPGRID_VERSION, n: LIE_GRID, minXZ: [-1, -1], sizeXZ: [2, 2], lie: 0.2, certSpread: 0.01,
+  cells: Array.from({ length: LIE_GRID * LIE_GRID }, (_, k) => cell(k % LIE_GRID, Math.floor(k / LIE_GRID))),
+});
 {
-  // a 2 × 2 m grid, every cell's top at 0.5, stretched ×2 in height
-  const grid = {
-    version: TOPGRID_VERSION, n: LIE_GRID, minXZ: [-1, -1], sizeXZ: [2, 2], lie: 0.2, certSpread: 0.01,
-    cells: Array.from({ length: LIE_GRID * LIE_GRID }, () => 0.5),
-  };
-  const ok = await registerSupportGrid(HOLDER, "w/grid", grid, { ...at, scale: 1, scale3: [1, 2, 1] });
-  const g = groundAt(0, 1.05, 0);
+  // a 2 × 2 m grid whose tops are 0.5 on its −x half and 0.8 on its +x half, with one empty cell; stretched ×3 along x,
+  // ×2 in height and ×1.5 along z, it is drawn 6 × 3 m, its tops at 1 and 1.6
+  const HOLE = [18, 12];
+  const grid = gridOf((gx, gz) => gx === HOLE[0] && gz === HOLE[1] ? null : gx < LIE_GRID / 2 ? 0.5 : 0.8);
+  const ok = await registerSupportGrid(HOLDER, "w/grid", grid, { ...at, scale: 2, scale3: [3, 2, 1.5] });
   check("a stretched heightfield is fitted", ok === true);
-  check("...and holds a body at its drawn cell tops", near(g, 1), String(g));
+  const right = groundAt(2.5, 1.65, 0), left = groundAt(-2.5, 1.05, 1.2);
+  check("...and holds a body at its drawn cell tops, out along its stretched width", near(right, 1.6), String(right));
+  check("...and across its stretched depth", near(left, 1), String(left));
+  // the empty cell's middle, where it is drawn: [-3 + 18.5/24 × 6, -1.5 + 12.5/24 × 3]
+  const hole = groundAt(-3 + (HOLE[0] + 0.5) / LIE_GRID * 6, 1.65, -1.5 + (HOLE[1] + 0.5) / LIE_GRID * 3);
+  check("...and its empty cell holds nothing, where it is drawn", near(hole, 0), String(hole));
   await removeSupport(HOLDER, "w/grid");
+}
+{
+  // every top at 0.5, under a one-number scale of −1: read as its size
+  const ok = await registerSupportGrid(HOLDER, "w/grid-neg", gridOf(() => 0.5), { ...at, scale: -1 });
+  const g = groundAt(0, 0.55, 0);
+  check("a heightfield whose one-number scale is −1 is fitted at its size", ok === true && near(g, 0.5), `${ok} ${g}`);
+  await removeSupport(HOLDER, "w/grid-neg");
 }
 
 console.log("triangles");
 {
   const { pos, idx } = boxMesh([[-1, 0, -1, 1, 1, 1]]);
   const mesh = { positions: new Float32Array(pos), indices: new Uint32Array(idx) };
-  const ok = await registerMeshSupport(HOLDER, "w/mesh", mesh, { ...at, scale: 1, scale3: [1, 2, 1], collide: "exact", model: "zz/box.glb" });
-  const g = groundAt(0, 2.05, 0);
+  // stretched ×3 along x and ×2 in height: drawn 6 m wide and 2 m tall
+  const ok = await registerMeshSupport(HOLDER, "w/mesh", mesh, { ...at, scale: 2, scale3: [3, 2, 1], collide: "exact", model: "zz/box.glb" });
+  const g = groundAt(2.5, 2.05, 0);
   check("a stretched mesh is fitted", ok === true);
-  check("...and holds a body at its drawn top", near(g, 2), String(g));
+  check("...and holds a body at its drawn top, out along its stretched width", near(g, 2), String(g));
   // the same model unstretched, beside it, still stands at its own height: the stretch stayed in its copy
-  const ok2 = await registerMeshSupport(HOLDER, "w/mesh-plain", mesh, { position: [5, 0, 0], yaw: 0, scale: 1, collide: "exact", model: "zz/box.glb" });
-  const g2 = groundAt(5, 1.05, 0);
+  const ok2 = await registerMeshSupport(HOLDER, "w/mesh-plain", mesh, { position: [10, 0, 0], yaw: 0, scale: 1, collide: "exact", model: "zz/box.glb" });
+  const g2 = groundAt(10, 1.05, 0);
   check("...and the same model unstretched stands at its own height", ok2 === true && near(g2, 1), String(g2));
   await removeSupport(HOLDER, "w/mesh");
   await removeSupport(HOLDER, "w/mesh-plain");
+  // a one-number scale of −1: read as its size, not turned inside out below the ground
+  const ok3 = await registerMeshSupport(HOLDER, "w/mesh-neg", mesh, { position: [20, 0, 0], yaw: 0, scale: -1, collide: "exact", model: "zz/box.glb" });
+  const g3 = groundAt(20, 1.05, 0);
+  check("a mesh whose one-number scale is −1 holds a body at its top", ok3 === true && near(g3, 1), `${ok3} ${g3}`);
+  await removeSupport(HOLDER, "w/mesh-neg");
 }
 
 console.log("lying down");
