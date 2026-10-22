@@ -50,8 +50,10 @@ console.log('MATERIALS — one mask node, marked');
   check('an unlit material is not marked (hard flip)', basic.userData.shadowFade !== true);
   // matoverride clones a prepared material: NodeMaterial.copy carries maskShadowNode AND userData, then prepareMaterial runs again
   const clone = new THREE.NodeMaterial(); clone.roughness = 0.5; clone.metalness = 0; clone.maskShadowNode = a.maskShadowNode; clone.userData = { ...a.userData };
+  clone.colorNode = a.colorNode; clone.roughnessNode = a.roughnessNode;
   mats.prepareMaterial(clone);
-  check('re-preparing a clone keeps the ONE node (never FADE.and(FADE))', clone.maskShadowNode === a.maskShadowNode, clone.maskShadowNode?.tag); }
+  check('re-preparing a clone keeps the ONE node (never FADE.and(FADE))', clone.maskShadowNode === a.maskShadowNode, clone.maskShadowNode?.tag);
+  check('…and its wrapped colour and roughness are not wrapped again (house I173: wetness and cloud shade twice)', !!a.colorNode && clone.colorNode === a.colorNode && clone.roughnessNode === a.roughnessNode); }
 
 console.log('REGISTER — a mesh handed in casting starts not casting (house I172, #260)');
 { const g = new THREE.Group(); const m = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); m.castShadow = true;   // realize/models.js primitives
