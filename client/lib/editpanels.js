@@ -147,17 +147,18 @@ const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, ico
 // Here they are @world's components, so they hang under the World row; a click opens their card, ✕ removes them.
 const ENV = [
   { key: 'sky', label: 'Sky', icon: 'sun', gone: 'a plain clear sky' },
-  { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather' },
+  { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather (a forecast stops too)' },
   { key: 'terrain', label: 'Terrain', icon: 'mountains', gone: 'the default flat ground' },
   { key: 'grass', label: 'Grass', icon: 'plant', gone: 'no grass' },
 ];
 const wxOf = () => state.st.sky?.weather ?? state.st.sky?.override?.weather ?? null;
 /** Remove one environment component (sky/weather/terrain/grass): the same edit from the Hierarchy row's ✕, the World section's
- *  button and the card's remove button (mow, for grass; clear, for weather). */
+ *  button and the card's remove button (mow, for grass). */
 function removeEnv(key) {
   const e = ENV.find((x) => x.key === key); if (!e) return;
-  const path = key === 'weather' ? 'weather.state' : key === 'grass' ? 'grass.mow' : `${key}.remove`;
-  const r = commitEdit(WORLD_ID, path, key === 'weather' ? 'clear' : true);
+  // weather.remove, not a clear pick: under a forecast a pick is an override its next segment undoes (house review I95)
+  const path = key === 'grass' ? 'grass.mow' : `${key}.remove`;
+  const r = commitEdit(WORLD_ID, path, true);
   flashHint(r.errors?.length ? r.errors.join(' · ') : `${e.label} removed: ${e.gone} (Ctrl+Z brings it back)`, r.errors?.length ? 5000 : 2600, r.errors?.length ? 'attn' : undefined);
   repaintAll();
 }
