@@ -133,7 +133,7 @@ check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.
 
 // The pixel cap is read from the header (a tiny file can decode to a huge
 // image), so an image whose header gives no size is refused, and one past
-// 8192 px on a side is refused while one at 8192 lands.
+// 8192 px on either side is refused while one at 8192 lands.
 const JPG_NO_SIZE = new Uint8Array([...JPG.subarray(0, 20), 0xff, 0xd9]);   // SOI, JFIF, EOI: no frame header
 r = await post(JPG_NO_SIZE, { as: "image", name: "no size.jpg" });
 check("a JPEG whose header gives no pixel size: 415", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
@@ -141,6 +141,11 @@ r = await post(pngSized(1, 8193), { as: "image", name: "tall.png" });
 check("a PNG 8193 px tall: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 r = await post(pngSized(8192, 8192), { as: "image", name: "at the cap.png" });
 check("a PNG 8192 px on each side lands", r.status === 200 && /\.png$/.test(r.json?.path ?? ""), `${r.status} ${r.text.slice(0, 120)}`);
+// …and the cap holds on the width too (the window is spent: one more rest)
+console.log("  (resting out the 4/min upload window…)");
+await new Promise((res) => setTimeout(res, 61_000));
+r = await post(pngSized(8193, 1), { as: "image", name: "wide.png" });
+check("a PNG 8193 px wide: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 
 await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);
