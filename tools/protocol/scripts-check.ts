@@ -228,6 +228,25 @@ function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model:
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
+// A sponsor's cpu limit, reached by the time the runs actually record, not by a count a host's speed decides: vic says
+// until the script's run is refused (at most 90 says, 54 s of the clock, inside the minute the limit counts), and the
+// refusal must quote exactly the milliseconds the sponsor's runs recorded. Returns each say's outcome, the why, the
+// milliseconds it quotes and the milliseconds recorded.
+function grindToCpu(s: any, id: string, sponsor: string, tag: string) {
+  const last = () => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === id).last.at(-1);
+  const out: string[] = [];
+  for (let i = 0; i < 90; i++) {
+    const said = s.call("vic", "say", { text: `${tag} ${i}` }, 600);
+    if (!said?.ok) { out.push(`say ${said?.refused?.code ?? "failed"}`); break; }
+    out.push(last()?.status); if (out.at(-1) !== "nothing") break;
+  }
+  const why = last()?.why ?? null, used = Number(/used (\d+) ms/.exec(why ?? "")?.[1] ?? NaN);
+  const recorded = (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === sponsor).reduce((t: number, x: any) => t + x.ms, 0);
+  return { out, why, used, recorded };
+}
+// …and the outcome it must have: every say before the last ran and wrote nothing, the last was refused at the limit
+const cpuCapped = (g: any, cpu: number) => g.out.length > 1 && g.out.slice(0, -1).every((x: string) => x === "nothing") && g.out.at(-1) === "refused"
+  && g.used >= cpu && g.used === g.recorded;
 const HEAVY = onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`);
 
 // E5's stand-in for the sandbox: a host whose script callback re-enters the authority with a request of its own (the shape
@@ -593,19 +612,18 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
       const earWhy = last("ear")?.why;
       // phase 2: cpu (runs out of the way), a minute later
-      s.advance(61000); D.setScriptConfig({ runs: 600 }); s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });   // ≈10–16 ms a run quiet (isolated or not), ≈30–45 loaded: either way the cap binds before the sixth
-      const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
+      s.advance(61000); D.setScriptConfig({ runs: 600 }); s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });
+      const mill = grindToCpu(s, "mill", "ann", "ho");
       D.setScriptConfig(was);
-      return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
+      return { ear, earWhy, mill }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
       && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // review of #260: runs is the server's, so the refusal names no owner field
-      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why)
-      && /which the world's owner sets in @world\.script-settings\.cpu/.test(o.why) },
+      && cpuCapped(o.mill, 25) && /ann's scripts used \d+ ms of the authority's time in the last minute; at most 25/.test(o.mill.why)
+      && /which the world's owner sets in @world\.script-settings\.cpu/.test(o.mill.why) },
   { id: "B23b", what: "a cpu refusal says whose limit it is: this server's when the owner set none, and this server's ceiling over the owner's value when it lowered theirs", run(s) { cast(s);
       s.call("ann", "create", { id: "mill2", model: "crate", place: { at: [2, 0] } });
       install(s, "ann", "mill2", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
-      const last = () => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === "mill2").last.at(-1);
-      const grind = (tag: string) => { const out: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `${tag} ${i}` }, 600); out.push(last()?.status); } return { out, why: last()?.why }; };
+      const grind = (tag: string) => grindToCpu(s, "mill2", "ann", tag);
       const was = D.setScriptConfig({ runs: 600, cpu: 25 });   // the operator's cpu: 25 is this server's, and its ceiling
       try {
         const server = grind("a");   // the owner has set no cpu
@@ -615,8 +633,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
         const capped = grind("b");
         return { server, set: set?.ok === true, capped };
       } finally { D.setScriptConfig(was); } },
-    good: (o) => o.server.out.at(-1) === "refused" && /this server's limit/.test(o.server.why ?? "") && !/owner sets/.test(o.server.why ?? "")
-      && o.set && o.capped.out.at(-1) === "refused" && /at most 20/.test(o.capped.why ?? "") && /asks 25/.test(o.capped.why ?? "") && /caps it/.test(o.capped.why ?? "") },
+    good: (o) => cpuCapped(o.server, 25) && /at most 25, this server's limit/.test(o.server.why ?? "") && !/owner sets/.test(o.server.why ?? "")
+      && o.set && cpuCapped(o.capped, 20) && /at most 20, this server's ceiling/.test(o.capped.why ?? "") && /asks 25/.test(o.capped.why ?? "") && /caps it/.test(o.capped.why ?? "") },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
     run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
