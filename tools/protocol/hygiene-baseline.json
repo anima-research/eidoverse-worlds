@@ -39,7 +39,7 @@
   "bare-wait": 1
  },
  "tools/navgrid-test.ts": {
-  "bare-wait": 2
+  "bare-wait": 1
  },
  "tools/panels-test.ts": {
   "bare-wait": 3
