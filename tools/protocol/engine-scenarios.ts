@@ -7,8 +7,9 @@ import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { scratch } from "./common.ts";
+import { fileURLToPath } from "node:url";
 
-const root = scratch("engine-scen"), OUT = new URL("../../spec/conformance/physics/", import.meta.url).pathname;
+const root = scratch("engine-scen"), OUT = fileURLToPath(new URL("../../spec/conformance/physics/", import.meta.url));
 let T = 1800000000000;
 const call = (world: string, actor: string, verb: string, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); const r = request(openWorld(root, world), actor, verb, args); if (!r.ok) throw new Error(`${world}: ${verb} refused: ${JSON.stringify(r).slice(0, 300)}`); return r; };
 function world(name: string) {

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import { sinT, cosT, atan2T, SIMMATH_ID } from "../../shared/simmath.js";
 import * as PH from "./pinhistory.ts";
+import { fileURLToPath } from "node:url";
 export const LAW = "heading-trig@1";
 const DATA = ["sin", "cos", "atan2"] as const;
 const FILE = new URL("../../spec/conformance/trig.json", import.meta.url);
@@ -32,7 +33,7 @@ if (want) for (const k of ["sin", "cos", "atan2"] as const) {
 check(`TRC the file says what a second reader must do: the kernel it pins (${SIMMATH_ID}) and its contract (the reference kernel's bits, not libm's; sin(pi/6) not 0.5 by design; port the kernel or ship the table), as the kernel states them now`,
   want?.kernel === SIMMATH_ID && want?.contract === CONTRACT && bits(sinT(Math.PI / 6)) !== bits(0.5) && (want?.sin ?? []).some((r: string[]) => r[0] === bits(Math.PI / 6) && r[1] !== bits(0.5)), { kernel: want?.kernel, contract: want?.contract === CONTRACT || want?.contract });
 check(`TRV the file names its law's version (${LAW}), and an earlier trig.json under the same version (the base's, the previous) pinned the same outputs: a change in pinned output is a new version`, (() => {
-  const ROOT = new URL("../../", import.meta.url).pathname; const F = "spec/conformance/trig.json";
+  const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/trig.json";
   const r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), [{ law: "trig", versionOf: (x) => x?.law, data: [...DATA] }]);
   if (r.out.length) console.log("     ", JSON.stringify(r).slice(0, 400)); return want?.law === LAW && !r.out.length; })(), { law: want?.law, LAW });
 console.log(`[trig-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

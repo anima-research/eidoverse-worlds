@@ -14,8 +14,9 @@ import { readLog } from "../../shared/protocol/fold.js";
 import { simFold, ENGINES } from "../../shared/protocol/simlayer.js";
 import { r3 } from "../../shared/protocol/round.js";
 import * as PH from "./pinhistory.ts";
+import { fileURLToPath } from "node:url";
 
-const DIR = new URL("../../spec/conformance/physics/", import.meta.url).pathname, DIG = `${DIR}digests.json`;
+const DIR = fileURLToPath(new URL("../../spec/conformance/physics/", import.meta.url)), DIG = `${DIR}digests.json`;
 let pass = 0, fail = 0;
 const check = (n: string, ok: boolean, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${n}`); } else { fail++; console.log(`FAIL ${n}`); if (info !== undefined) console.log("     ", JSON.stringify(info).slice(0, 400)); } };
 const scenarios = fs.readdirSync(DIR).filter((f) => f.endsWith(".jsonl")).map((f) => f.slice(0, -6)).sort();
@@ -60,7 +61,7 @@ for (const s of scenarios) {
 }
 // EN4: a version's digests never change under its name, against the record (a --write that rewrote them by hand, or an edit of
 // the file, would otherwise pass EN2 against the changed engine)
-{ const F = "spec/conformance/physics/digests.json"; const ROOT = new URL("../../", import.meta.url).pathname;
+{ const F = "spec/conformance/physics/digests.json"; const ROOT = fileURLToPath(new URL("../../", import.meta.url));
   const e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null));
   const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => Object.entries<any>(d).filter(([s, x]) => pinned?.[ver]?.[s] !== x).map(([s, x]) => `${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${pinned?.[ver]?.[s] ?? "gone"}`)));
   check(`EN4 each version's digests equal that version's at the base (and at the file's previous version) where it had them: a change meant to alter results is a new version (judged: ${e.out.map((o) => `${o.rev.slice(0, 8)} ${o.why}`).join(", ") || "no earlier version"})`, !moved.length, moved.slice(0, 6)); }

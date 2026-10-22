@@ -27,7 +27,7 @@
 // cursor is module state, and one scenario's walk must not leak into another.
 
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "chat-stubs",
   setup(b) {
@@ -39,6 +39,7 @@ plugin({
 });
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { fileURLToPath } from "node:url";
 GlobalRegistrator.register();
 
 const { setLog, holdNext, failNext, release, inFlight, requests } = await import("./chat-history-stub.mjs");

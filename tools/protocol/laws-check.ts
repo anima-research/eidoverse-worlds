@@ -11,6 +11,7 @@ import { makeHeightField, terrainParams } from "../../shared/terrainmath.js";
 import { MAX_FEATURES } from "../../shared/terrainshape.js";
 import { normalizePolicy, segmentAt } from "../../shared/forecast.js";
 import * as PH from "./pinhistory.ts";
+import { fileURLToPath } from "node:url";
 export const LAWS = { ground: { version: "ground@1", data: "terrain" }, sky: { version: "forecast@1", data: "sky" } } as const;
 const FILE = new URL("../../spec/conformance/laws.json", import.meta.url);
 const bits = (x: number) => { const b = new DataView(new ArrayBuffer(8)); b.setFloat64(0, x); return b.getBigUint64(0).toString(16).padStart(16, "0"); };
@@ -47,7 +48,7 @@ check("LWC the rows are labelled (columns: each row's arity is its header's) and
   JSON.stringify(want?.columns) === JSON.stringify(COLUMNS) && want?.contract === CONTRACT && now.terrain.every((t) => t.heights.every((h) => h.length === COLUMNS["terrain[].heights[]"].length)) && now.sky.every((g) => (g.segments as any[]).every((r) => r.length === COLUMNS["sky[].segments[]"].length)),
   { columns: JSON.stringify(want?.columns) === JSON.stringify(COLUMNS), contract: want?.contract === CONTRACT || want?.contract });
 check(`LWV each law names its version (ground ${LAWS.ground.version}, sky ${LAWS.sky.version}), and an earlier laws.json under the same version (the base's, the previous) pinned the same output: a change in pinned output is a new version`, (() => {
-  const ROOT = new URL("../../", import.meta.url).pathname; const F = "spec/conformance/laws.json";
+  const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/laws.json";
   const r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), Object.entries(LAWS).map(([k, L]) => ({ law: k, versionOf: (x: any) => x?.laws?.[k], data: [L.data] })));
   if (r.out.length) console.log("     ", JSON.stringify(r).slice(0, 400)); return want?.laws?.ground === LAWS.ground.version && want?.laws?.sky === LAWS.sky.version && !r.out.length; })(), want?.laws);
 console.log(`[laws-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
