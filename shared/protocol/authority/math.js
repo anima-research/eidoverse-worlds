@@ -98,6 +98,15 @@ function surfacesOf(st, id) {
   const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
   const at = (x, y, z) => { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[1] + t.pos[1], p[2] + t.pos[2]]; };
+  // A surface off the world's axes also carries its own rectangle on the ground, rect {c, u, hx, hz} (centre, its x axis, half
+  // extents after the inset): min/max stay the axis-aligned box of its corners, the broad phase (near(), the index), and what
+  // supports a point or a footprint is read against the rectangle (inRect, rectMeets). A tilted surface (not yaw-only) is
+  // projected onto the ground the same way, an approximation, with y its highest corner's as before.
+  const rectOf = (cs, k) => { const ex = [cs[2][0] - cs[0][0], cs[2][2] - cs[0][2]], ez = [cs[1][0] - cs[0][0], cs[1][2] - cs[0][2]];
+    const lx = Math.hypot(...ex); if (!(lx > 1e-9)) return null; const u = [ex[0] / lx, ex[1] / lx];
+    if (Math.abs(u[0]) < 1e-9 || Math.abs(u[1]) < 1e-9) return null;   // on the world's axes: the box is the rectangle
+    const hz = Math.abs(ez[0] * -u[1] + ez[1] * u[0]) / 2;
+    return { c: [(cs[0][0] + cs[3][0]) / 2, (cs[0][2] + cs[3][2]) / 2], u, hx: Math.max(0, lx / 2 - k), hz: Math.max(0, hz - k) }; };
   if (qrot(t.q, [0, 1, 0])[1] * Math.sign(t.scale[1] || 1) < UPRIGHT) {
     if (m.round) return [];   // a round thing (a ball, a bell) offers no face in any pose; an empty UPRIGHT list (a door, a wall) says nothing about lying
     const out = []; const boxes = obbs(st, id);
@@ -109,7 +118,9 @@ function surfacesOf(st, id) {
       if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
       const [a, c] = [0, 1, 2].filter((k) => k !== j);
       const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
-      out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))] });
+      // its own rectangle when it's off the world's axes, as a standing thing's top has (house 6340433633)
+      const rect = rectOf(cs.map(([x, z]) => [x, 0, z]), 0);
+      out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))], ...(rect ? { rect } : {}) });
     }
     // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
     // Faces within 1e-6 of each other are one height (float noise): each group takes its highest y, so the levels stay
@@ -122,15 +133,6 @@ function surfacesOf(st, id) {
   }
   const yawOnly = t.q[0] === 0 && t.q[2] === 0;   // the common case keeps its exact arithmetic
   const yOf = (sy) => (yawOnly ? t.pos[1] + sy * t.scale[1] : at(0, sy, 0)[1]);
-  // A surface off the world's axes also carries its own rectangle on the ground, rect {c, u, hx, hz} (centre, its x axis, half
-  // extents after the inset): min/max stay the axis-aligned box of its corners, the broad phase (near(), the index), and what
-  // supports a point or a footprint is read against the rectangle (inRect, rectMeets). A tilted surface (not yaw-only) is
-  // projected onto the ground the same way, an approximation, with y its highest corner's as before.
-  const rectOf = (cs, k) => { const ex = [cs[2][0] - cs[0][0], cs[2][2] - cs[0][2]], ez = [cs[1][0] - cs[0][0], cs[1][2] - cs[0][2]];
-    const lx = Math.hypot(...ex); if (!(lx > 1e-9)) return null; const u = [ex[0] / lx, ex[1] / lx];
-    if (Math.abs(u[0]) < 1e-9 || Math.abs(u[1]) < 1e-9) return null;   // on the world's axes: the box is the rectangle
-    const hz = Math.abs(ez[0] * -u[1] + ez[1] * u[0]) / 2;
-    return { c: [(cs[0][0] + cs[3][0]) / 2, (cs[0][2] + cs[3][2]) / 2], u, hx: Math.max(0, lx / 2 - k), hz: Math.max(0, hz - k) }; };
   return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
     if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (min/max: the axis-aligned box of its corners)
       const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => at(x, s.y, z));
