@@ -470,7 +470,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
@@ -493,6 +493,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
+  // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
+  if (approved) push({ kind: "act", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
   // an old request as sent keeps its words, but never an account: its top-level sub, whatever its shape, as @12 had it (main's
   // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
   // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
@@ -566,7 +568,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   if (sim.epoch && !sim.epoch.foreign) {
     stepTo(sim.tick + 100000);
     const tsAt = (tick) => sim.epoch.ts + tick * sim.epoch.tickMs;
-    logRests(Math.max(clock(), ...Object.values(restTicks).map(tsAt)));
+    logRests(Object.values(restTicks).reduce((m, t) => Math.max(m, tsAt(t)), clock()));
   }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
