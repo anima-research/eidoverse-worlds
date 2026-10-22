@@ -149,6 +149,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["buildcheck-queue", "../buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
   ["door-is-error", "../door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
+  ["door-wording", "../door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["history-request", "../history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
   ["wing-fold-presence", "../wing-fold-presence-test.ts", 1], // #159: a held posture rides the presence wire (absence is not release; survives late join, reconnect, swap)
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)

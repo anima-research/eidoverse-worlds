@@ -276,19 +276,20 @@ time.
 | 106 | buildcheck-queue | main | `tools/buildcheck-queue-test.ts` | bun | 7.4 s | 180 s |
 | 107 | buildcheck-route | main | `tools/buildcheck-route-test.ts` | bun | 22 s | 180 s |
 | 108 | door-is-error | main | `tools/door-is-error-test.ts` | bun | 280 s | 1400 s |
-| 109 | history-request | main | `tools/history-request-test.ts` | bun | 0.3 s | 180 s |
-| 110 | wing-fold-presence | main | `tools/wing-fold-presence-test.ts` | bun | 0.3 s | 180 s |
-| 111 | skystamp | main | `tools/skystamp-test.ts` | bun | 0.5 s | 180 s |
-| 112 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
-| 113 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
-| 114 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 126 s | 630 s |
-| 115 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
-| 116 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 117 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 118 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 119 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 120 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 121 | client-tools | browser | `tools/run-client.ts --import-only` | Chromium | 202 s | 1010 s |
+| 109 | door-wording | main | `tools/door-wording-test.ts` | bun | ? | 300 s |
+| 110 | history-request | main | `tools/history-request-test.ts` | bun | 0.3 s | 180 s |
+| 111 | wing-fold-presence | main | `tools/wing-fold-presence-test.ts` | bun | 0.3 s | 180 s |
+| 112 | skystamp | main | `tools/skystamp-test.ts` | bun | 0.5 s | 180 s |
+| 113 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
+| 114 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
+| 115 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 126 s | 630 s |
+| 116 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
+| 117 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 118 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 119 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 120 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 121 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 122 | client-tools | browser | `tools/run-client.ts --import-only` | Chromium | 202 s | 1010 s |
 
-Lanes: core 15 suites (~78 s), main 96 (~1637 s), browser 10 (~1123 s); 121 suites in all.
+Lanes: core 15 suites (~78 s), main 97 (~1637 s), browser 10 (~1123 s); 122 suites in all.
 <!-- END GENERATED -->
