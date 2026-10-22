@@ -68,6 +68,23 @@ for (const dur of [2, undefined]) {
   ok(dur ? calls.join(",") === "end:replaced,animate,began" : !calls.includes("end:replaced"),
     dur ? "a new loop ends the earlier one first, then plays" : "a loop refused for want of dur leaves the earlier one playing", calls);
 }
+// house 6340433633: the other refusal, a loop with dur but no usable track (every bone unknown), leaves it playing too
+{ const calls: string[] = [];
+  const ag: any = { anims: [{ name: "live", kind: "track" }], endTrackLoop: (why: string) => calls.push(`end:${why}`), animate: () => calls.push("animate"),
+    animBegan: () => calls.push("began") };
+  await handleTool({ agent: ag } as any, "anim", { tracks: { notABone: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, 0, 0, 1] }] }, mode: "loop", dur: 2 });
+  ok(!calls.includes("end:replaced"), "a loop refused for want of a usable track leaves the earlier one playing", calls); }
+
+// house 6340433633: the replacement through the agent's own endTrackLoop (it was stubbed): the renderers are sent the
+// stop before the new loop, and only the tracks layer ends: a clip playing beside it goes on
+{ const { WorldAgent } = await import("./agent.ts");
+  const sent: string[] = []; const ag: any = Object.create(WorldAgent.prototype);
+  Object.assign(ag, { name: "me", inbox: [], animStops: [], modeTracker: { declared: null, declare() {} }, joined: true, anims: [{ name: "live", kind: "track" }, { name: "dance", kind: "clip", clip: "dance" }],
+    ws: { readyState: 1, send: (m: string) => sent.push(m) }, animate: () => sent.push("animate") });
+  await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, 0, 0, 1] }] }, mode: "loop", dur: 2 });
+  ok(sent[0] === JSON.stringify({ type: "anim", stop: true }) && sent.indexOf("animate") > 0, "a new loop sends the renderers its stop before the new one", sent);
+  ok(ag.anims.some((a: any) => a.name === "dance") && ag.animStops.some((x: any) => x.name === "live" && x.why === "replaced") && !ag.animStops.some((x: any) => x.name === "dance"),
+    "…and ends the tracks layer alone: the clip beside it goes on", { anims: ag.anims, stops: ag.animStops }); }
 
 // attach on a thing with no seat teaches a whole edit call, id and set
 { const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
