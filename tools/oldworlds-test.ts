@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { oldWorldsIn, oldWorldAt, bootNotice, visitorText } from "../server/oldworlds.ts";
+import { oldWorldsIn, oldWorldAt, bootNotice, visitorText, shellWord } from "../server/oldworlds.ts";
 import { isWorldDir } from "../server/livehost.ts";
 
 const ROOT = path.resolve(import.meta.dir, "..");
@@ -79,8 +79,8 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
   ok(blocks.length === 2 && /"oldtown"/.test(blocks[0] + blocks[1]) && /"prenamed"/.test(blocks[0] + blocks[1]), "O6 one block per old world", n);
   const b1 = blocks.find((b) => /"oldtown"/.test(b)) ?? "", b2 = blocks.find((b) => /"prenamed"/.test(b)) ?? "";
   ok(/NOT being served/.test(b1) && /NOT being served/.test(b2), "O6 each says it is NOT being served");
-  ok(b1.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate oldtown --dry-run --no-founder-key`)
-    && b1.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate oldtown --no-founder-key --approved <the report hash the dry run printed> --operator-only-no-owner`)
+  ok(b1.includes(`WORLDS_DIR=${shellWord(W)} bun tools/protocol/world.ts translate oldtown --dry-run --no-founder-key`)
+    && b1.includes(`WORLDS_DIR=${shellWord(W)} bun tools/protocol/world.ts translate oldtown --no-founder-key --approved <the report hash the dry run printed> --operator-only-no-owner`)
     && /no owner was attested/.test(b1) && !/--founder-key </.test(b1) && !/approve-sig/.test(b1)
     && /dry run writes nothing/.test(b1) && b1.indexOf("--dry-run") < b1.indexOf("--approved"), "O6 the translatable block carries both exact commands (in place): the dry run, then the translation bound to its approved hash", b1);
   ok(/re-translate/i.test(b2) && /refound/.test(b2) && b2.includes(`found prenamed-2 --owner`), "O6 the pre-names block says re-translate from its original, or refound", b2);
@@ -99,7 +99,7 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
 
 // ---- O5: the printed command, run ----
 { const argv = (ot?.command ?? "x=y bun").split(" ");
-  const env = Object.fromEntries([argv.shift()!.split("=")]);
+  const [k, ...v] = argv.shift()!.split("="); const env = { [k]: unq(v.join("=")) };   // a shell would unquote a Windows WORLDS_DIR; so does this
   ok(argv[0] === "bun" && argv[1] === "tools/protocol/world.ts", "O5 the command runs world.ts", argv);
   const before = fs.readdirSync(path.join(W, "oldtown")).sort();
   const d = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });

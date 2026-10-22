@@ -69,7 +69,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js";
-import { oldWorldAt, oldWorldsIn, bootNotice } from "../../server/oldworlds.ts";
+import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
 import { noFoldRefusal } from "../../server/oldworlds.ts";
 import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "./import-v1/world.ts";
@@ -375,7 +375,7 @@ const waiting = oldWorld("waiting");
 { ok(oldWorldAt(W, "porch") === null && !isPreNamesDir(porch), "IP3 a translated directory (world.jsonl + log.original.jsonl) is no old-format world: oldWorldAt null, not pre-names", oldWorldAt(W, "porch"));
   const names = oldWorldsIn(W).map((o) => o.name); const notice = bootNotice(W);
   ok(names.includes("waiting") && !names.includes("porch") && !/"porch"/.test(notice) && /"waiting"/.test(notice), "IP3 the boot notice names the world still waiting and not the translated one (control: a waiting world IS named)", [names, notice]);
-  ok(notice.includes(`WORLDS_DIR=${W} bun tools/protocol/world.ts translate waiting --dry-run --no-founder-key`) && notice.includes(`translate waiting --no-founder-key --approved <the report hash the dry run printed> --operator-only-no-owner`)
+  ok(notice.includes(`WORLDS_DIR=${shellWord(W)} bun tools/protocol/world.ts translate waiting --dry-run --no-founder-key`) && notice.includes(`translate waiting --no-founder-key --approved <the report hash the dry run printed> --operator-only-no-owner`)
     && !/--founder-key </.test(notice) && !/approve-sig/.test(notice) && /keeps its name, so links to it keep working/.test(notice), "IP3 …and its commands are the in-place form, the one path: the dry run, then the operator-only translation (no founder key: none can be bound to the owner)", notice); }
 
 // ================= IP2: the server serves it under its original name =================
