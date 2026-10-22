@@ -52,13 +52,27 @@ console.log("where a walk goes");
   check("a room on a stretched thing is reached across its stretched floor", near(rs.reach!, Math.hypot(4, 8) / 2), String(rs.reach));
   check("...and its seat from the wider of its stretched half-widths", near(cs.reach!, 0.7 + 0.3 * 4), String(cs.reach));
 }
+console.log("which room a body is in first");
 {
-  // a booth inside a hall scaled ×2: a body in both is in the booth first, the smaller
-  const ag2: any = new WorldAgent({ name: "walker", world: "w" });
-  ag2.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, places: { hall: { min: [-5, 0, -5], max: [5, 3, 5] } } });
-  ag2.entities.set("booth", { id: "booth", model: "zz/booth.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 1, places: { booth: { min: [-1, 0, -1], max: [1, 2, 1] } } });
-  const at = ag2.placesAt([0, 1, 0]).map((x: any) => x.place.name);
-  check("the rooms a body stands in come smallest first, a scaled thing's by its scaled size", at.join() === "booth,hall", at.join());
+  // The rooms a body stands in come smallest first, each by its size in the world: its own size times the scale its
+  // places are framed at. Each row is two rooms around the origin whose own sizes would order them the other way.
+  const order = (a: { scale: number; scale3?: number[]; box: number }, b: { scale: number; scale3?: number[]; box: number }) => {
+    const ag2: any = new WorldAgent({ name: "walker", world: "w" });
+    const room = (id: string, x: { scale: number; scale3?: number[]; box: number }) => ag2.entities.set(id, {
+      id, model: `zz/${id}.glb`, kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: x.scale, ...(x.scale3 ? { scale3: x.scale3 } : {}),
+      places: { [id]: { min: [-x.box / 2, 0, -x.box / 2], max: [x.box / 2, x.box, x.box / 2] } } });
+    room("a", a); room("b", b);
+    return ag2.placesAt([0, 0.05, 0]).map((x: any) => x.place.name).join();
+  };
+  // a: 2 m on a side (8 m³), stretched ×2 in x and y, so 32 m³; b: 16 m³ (2.52 m on a side), unscaled
+  const stretched = order({ scale: 2, scale3: [2, 2, 1], box: 2 }, { scale: 1, box: Math.cbrt(16) });
+  check("a stretched room is sized per axis: 8 m³ stretched to 32 comes after 16", stretched === "b,a", stretched);
+  // a: 10 m on a side (1000 m³) at ×0.1, so 1 m³; b: 2 m on a side (8 m³), unscaled
+  const shrunk = order({ scale: 0.1, box: 10 }, { scale: 1, box: 2 });
+  check("...and a scaled one by its scale cubed: 1000 m³ at ×0.1 comes before 8", shrunk === "a,b", shrunk);
+  // a: mirrored, its places framed at 1 (places.ts frames only positive axes), so 1000 m³; b: 8 m³
+  const mirrored = order({ scale: -2, box: 10 }, { scale: 1, box: 2 });
+  check("...and a mirrored one as its places are framed, never by a negative volume", mirrored === "b,a", mirrored);
 }
 
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");

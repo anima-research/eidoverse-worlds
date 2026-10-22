@@ -99,6 +99,9 @@ export function placesOf(meta: any, comp: unknown): Place[] {
 /** Model frame → world (the inverse of shared/structure.js localizePoint). */
 const scale3 = (s: PlaceHolder["scale"]): Vec3 => Array.isArray(s) && s.length === 3 && s.every((x) => Number.isFinite(x) && x > 0) ? [s[0], s[1], s[2]]
   : typeof s === "number" && s > 0 ? [s, s, s] : [1, 1, 1];
+/** How much a thing's frame scales a volume in it: the product of the axes its places are framed at (scale3), so a
+ *  region's size in the world agrees with where inRegion finds it. */
+export function frameVolume(e: PlaceHolder): number { const s = scale3(e.scale); return s[0] * s[1] * s[2]; }
 const rotOf = (e: PlaceHolder): number[] => { const q = e.q; if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) { const n = Math.hypot(...q); if (n > 1e-9) return q.map((x) => x / n); }
   const y = e.yaw ?? 0; return [0, Math.sin(y / 2), 0, Math.cos(y / 2)]; };
 const qApply = (q: number[], v: number[]): Vec3 => { const [x, y, z, w] = q; const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
