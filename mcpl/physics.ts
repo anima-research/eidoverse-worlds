@@ -28,9 +28,12 @@
 // hands over its terrain height function (setHeightField — the same generator
 // the browsers run, replicated in agent.ts) and registers support boxes for
 // placed entities; Ragdoll's own _terrain()/_world() clamps then see exactly
-// what a browser's would. Those colliders are fitted from each model's own
-// triangles where the agent can decode them (registerMeshSupport — walls and
-// furniture included, and the walking feet use them too: standOn), and from
+// what a browser's would, except for a thing stretched by different amounts
+// along its axes, which is fitted as it is drawn where a browser's colliders
+// read one scale for all three (registerSupport). Those colliders are fitted
+// from each model's own triangles where the agent can decode them
+// (registerMeshSupport — walls and furniture included, and the walking feet
+// use them too: standOn), and from
 // the server's /geom summaries otherwise (registerSupport/registerSupportGrid
 // — floors only; data boxes carry no architecture, see colliders.fitSupportBox).
 //
@@ -247,7 +250,9 @@ const meshGeometries = new WeakMap<object, any>();
 /** Register a placed entity's REAL collider: fitted by colliders.js from its
  *  triangles (server/geometry.ts collisionTriangles), with the same `collide`
  *  override, scale and lib-sharing the browser's promote tail passes
- *  (client/lib/realize/models.js). decide() then makes the browser's choice —
+ *  (client/lib/realize/models.js), but for a stretched thing: its triangles are
+ *  stretched as it is drawn, in a copy of its own, where the browser's colliders
+ *  read one scale for all three axes. decide() then makes the browser's choice —
  *  box, pillar or exact trimesh — so the walls of a room-scale interior hold
  *  an agent back and its floors hold it up, not just a ragdoll's beads.
  *  Same holder discipline and lifetime as registerSupport. */
