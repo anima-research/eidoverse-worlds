@@ -1987,6 +1987,10 @@ body.edit-workspace [data-frame="console"] { z-index: 30 !important; }   /* over
   background: #232326; border: 1px solid rgb(255 255 255 / .12); border-radius: 6px; box-shadow: 0 10px 28px rgb(0 0 0 / .5);
   display: flex; flex-direction: column; }
 .edit-menu-pop[hidden] { display: none; }   /* an author display rule outranks the UA's [hidden] — say it explicitly */
+/* a menu's z 40 is inside the bar's stacking context (27), under the view bar, split, grip editor and tool strip (29):
+   while one is open the bar rises over them, and the dock (the ∃ that sits on the bar, normally 28) with it */
+.edit-strip:has(.edit-menu-pop:not([hidden])) { z-index: 44; }
+body.edit-workspace:has(.edit-menu-pop:not([hidden])) #dock { z-index: 45; }
 .edit-menu-item { display: flex; justify-content: space-between; gap: 18px; width: 100%; text-align: left; background: none; border: none;
   color: #e4e4e8; font: 12.5px var(--font); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
 .edit-menu-item:hover { background: rgb(255 255 255 / .09); }
