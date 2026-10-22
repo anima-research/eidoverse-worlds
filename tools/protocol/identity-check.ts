@@ -258,7 +258,10 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const kk = await fern.req("kick", { who: you(jm2), minutes: 0.03, reason: "cool off" }); await sleep(300);
     const said = m2.msgs.find((m) => m.type === "error" && m.until);
     const m3 = await sock(S4.port); const jm3 = await m3.join("heath", "Moss", { agentToken: "tok-moss" });
-    await sleep(2200);
+    // past the cooldown the SERVER stated, read on the same wall clock it judges by (never a fixed sleep on the monotonic
+    // timer: a WSL host's wall clock steps back ~1.4 s every ~30 s, and the server's clock then holds still, so a fixed
+    // 2.2 s after a 1.8 s cooldown arrived early under load: gate 10-22, and twice before)
+    for (let i = 0; i < 100 && !(said?.until && Date.now() > said.until + 300); i++) await sleep(100);
     const m4 = await sock(S4.port); const jm4 = await m4.join("heath", "Moss", { agentToken: "tok-moss" });
     // join() waits 3 s for the snapshot; a loaded host can take longer (the snapshot then arrives late, not never)
     for (let i = 0; i < 100 && !jm4.snapshot && !jm4.errors.length && m4.closed == null; i++) { await sleep(100); jm4.snapshot = m4.msgs.find((m) => m.type === "snapshot"); }
