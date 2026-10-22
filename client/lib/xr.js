@@ -43,7 +43,7 @@ import { setPttHeld } from './micstate.js';   // the left A/X under push-to-talk
 import { pttMode } from './voiceconsent.js';
 import './xrmicicon.js';   // the mic, in view, while presenting (VRChat's lower-left icon)
 import { markActive } from './presence.js';
-import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
+import { platePick, aimPlate, platePress } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
 import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
@@ -1393,7 +1393,9 @@ export function updateXR(dtSec = 1 / 72) {
         const panelDist = pr?.dist ?? null;
         if (pr?.press) panelPress[side] = pr.press;
         if (panelDist != null) haptic(side, 0.3, 18);   // a button, felt
-        if (panelDist == null && !panelAt?.handle) {   // (the handle bar is a panel's, not the world's)
+        const cardDist = panelDist == null ? platePress(ray) : null;   // a nameplate's open card (its buttons): before the world
+        if (cardDist != null) haptic(side, 0.3, 18);
+        if (panelDist == null && cardDist == null && !panelAt?.handle) {   // (the handle bar is a panel's, not the world's)
           const hit = rayHitEntity(ray);
           if (hit) { bus.emit('xr:select', hit.id); flashHint(`→ ${hit.id}`); }
         }
