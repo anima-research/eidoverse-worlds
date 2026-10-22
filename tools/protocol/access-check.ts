@@ -32,7 +32,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
-import { tryUntil } from "./wait.ts";
+import { tryUntil, pause } from "./wait.ts";
 
 const root = scratch("access");
 let pass = 0, fail = 0;
@@ -62,7 +62,7 @@ async function sock(port) {
   return {
     msgs, get closed() { return closed; },
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
-      for (let i = 0; i < 60; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null) break; await sleep(50); }
+      await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 3000, step: 50 });
       await sleep(80); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
     raw: (m) => ws.send(JSON.stringify(m)),
@@ -194,7 +194,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "invite-only" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
-  while (Date.now() <= fenUntil + 50) await sleep(50);
+  await pause("Fen's timed grant runs out, with no sweep to write its end", Math.max(0, fenUntil + 51 - Date.now()));
   { const logHas = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes(`"roles:${ids.Fen}"`) && !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const map = await worldsAs(s2.port, "tok-fen"), acc = await accessAs(s2.port, "keep", "tok-fen"), g = await geomAs(s2.port, "keep", "tok-fen");
     const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
