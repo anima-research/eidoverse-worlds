@@ -4,12 +4,16 @@
 // spec/conformance/physics/digests.json[version][scenario]. A change that still reproduces them needs no cut; a change
 // meant to alter results is a new version with its own digests.
 //   bun tools/protocol/engine-check.ts            check every carried version
-//   bun tools/protocol/engine-check.ts --write    (re)write the digests of every carried version (a new version only)
+//   bun tools/protocol/engine-check.ts --write    write the digests of a carried version the file doesn't hold yet (and of a
+//                                                 new scenario); never an existing digest: a changed one means the engine
+//                                                 changed its results under the same name, which --write refuses
+//   EN4 holds the same against git: a version's digests equal that version's at the base (and at the file's previous version)
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { readLog } from "../../shared/protocol/fold.js";
 import { simFold, ENGINES } from "../../shared/protocol/simlayer.js";
 import { r3 } from "../../shared/protocol/round.js";
+import * as PH from "./pinhistory.ts";
 
 const DIR = new URL("../../spec/conformance/physics/", import.meta.url).pathname, DIG = `${DIR}digests.json`;
 let pass = 0, fail = 0;
@@ -31,8 +35,13 @@ export function digestOf(text: string, version: string): string {
 const carried = Object.keys(ENGINES).sort();
 if (process.argv.includes("--write")) {
   const out: Record<string, Record<string, string>> = fs.existsSync(DIG) ? JSON.parse(fs.readFileSync(DIG, "utf8")) : {};
-  for (const ver of carried) { out[ver] = {}; for (const s of scenarios) out[ver][s] = digestOf(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8"), ver); }
-  fs.writeFileSync(DIG, JSON.stringify(out, null, 2) + "\n"); console.log(`[engine-check] wrote ${carried.length} version(s) × ${scenarios.length} scenario(s)`); process.exit(0);
+  const moved: string[] = [], added: string[] = [];
+  for (const ver of carried) { const had = out[ver] ?? {}; const next: Record<string, string> = { ...had };
+    for (const s of scenarios) { const d = digestOf(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8"), ver);
+      if (s in had) { if (had[s] !== d) moved.push(`${ver} ${s}: ${had[s]} → ${d}`); } else { next[s] = d; added.push(`${ver} ${s}`); } }
+    out[ver] = next; }
+  if (moved.length) { console.log(`refusing to write: the engine changed its results under the same name (a change meant to alter results is a new version with its own digests; never a rewrite of an existing one):\n  ${moved.join("\n  ")}`); process.exit(1); }
+  fs.writeFileSync(DIG, JSON.stringify(out, null, 2) + "\n"); console.log(`[engine-check] wrote ${added.length} new digest(s)${added.length ? `: ${added.join(", ")}` : " (nothing new)"}`); process.exit(0);
 }
 const pinned = fs.existsSync(DIG) ? JSON.parse(fs.readFileSync(DIG, "utf8")) : null;
 check("EN0 the digests file exists, and there are scenarios to hold an engine to", !!pinned && scenarios.length >= 5, { pinned: !!pinned, scenarios });
@@ -49,4 +58,10 @@ for (const s of scenarios) {
   const v: any = simFold(readLog(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8")), 1e15);
   check(`EN3 ${s} has a rest to hold the engine to`, (v.rested?.length ?? 0) > 0, v.rested);
 }
+// EN4: a version's digests never change under its name, against the record (a --write that rewrote them by hand, or an edit of
+// the file, would otherwise pass EN2 against the changed engine)
+{ const F = "spec/conformance/physics/digests.json"; const ROOT = new URL("../../", import.meta.url).pathname;
+  const e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null));
+  const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => Object.entries<any>(d).filter(([s, x]) => pinned?.[ver]?.[s] !== x).map(([s, x]) => `${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${pinned?.[ver]?.[s] ?? "gone"}`)));
+  check(`EN4 each version's digests equal that version's at the base (and at the file's previous version) where it had them: a change meant to alter results is a new version (judged: ${e.out.map((o) => `${o.rev.slice(0, 8)} ${o.why}`).join(", ") || "no earlier version"})`, !moved.length, moved.slice(0, 6)); }
 console.log(`[engine-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -1,4 +1,5 @@
 {
+ "law": "heading-trig@1",
  "note": "inputs and outputs are IEEE-754 float64 bits, big-endian hex",
  "sin": [
   [

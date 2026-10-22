@@ -1,4 +1,8 @@
 {
+ "laws": {
+  "ground": "ground@1",
+  "sky": "forecast@1"
+ },
  "note": "heights and intensities are IEEE-754 float64 bits, big-endian hex; times are epoch ms",
  "terrain": [
   {
