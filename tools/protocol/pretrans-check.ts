@@ -33,6 +33,7 @@ const T = ENGINE;
 const imp = async (p: string) => await import(path.join(T, p));
 const FOLD = await imp("shared/protocol/fold.js"), D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js");
 const SD = await imp("tools/protocol/scratchworld.ts");
+const PH = await imp("tools/protocol/pinhistory.ts");
 let pass = 0, fail = 0;
 const ok = (id: string, cond: any, what: string, detail?: any) => {
   if (cond) { pass++; console.log(`  ok ${id} ${what}`); }
@@ -364,7 +365,7 @@ await C("D8", "a definition's meaning is pinned: a changed default, type or enum
   const am0 = CAT.COMPONENTS.light.absentMeans;   // light has its own absentMeans since the shape audit (10-16): put them back after the probe
   CAT.COMPONENTS.light.fields.extra = "number"; CAT.COMPONENTS.light.absentMeans = { ...(am0 ?? {}), extra: "no extra" }; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra; if (am0) CAT.COMPONENTS.light.absentMeans = am0; else delete CAT.COMPONENTS.light.absentMeans;
   return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
-await C("D12", "every field of an open component has a written meaning, pinned with its unit (spec/registry-pin.json docs/units: the normative home of what a field means, the house's view #260 10-20), and a changed meaning is a break", () => {
+await C("D12", "every field of an open component has a written meaning, every meaning is pinned (spec/registry-pin.json docs: the normative home of what a field means, the house's view #260 10-20), and a changed meaning is a break (this row checks meanings, not units)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf();
   const bare = Object.entries(now).filter(([, p]: any) => p.status !== "reserved" && p.status !== "retired").flatMap(([n, p]: any) => Object.keys(p.fields ?? {}).filter((f) => !(typeof p.docs?.[f] === "string" && p.docs[f].trim())).map((f) => `${n}.${f}`));
   const unpinned = Object.entries(now).flatMap(([n, p]: any) => Object.keys(p.docs ?? {}).filter((f) => pin[n]?.docs?.[f] !== p.docs[f]).map((f) => `${n}.${f}`));
@@ -372,6 +373,10 @@ await C("D12", "every field of an open component has a written meaning, pinned w
   const caught = f0 ? CAT.pinBreakList(changed).some((b: any) => b.text.startsWith(`light.${f0}: its meaning`)) : false;
   return [!bare.length && !unpinned.length && caught, { bare: bare.slice(0, 8), unpinned: unpinned.length, caught }];
 });
+await C("D13", "a pin break is acknowledged in the record, not just against the live code: every break between an earlier spec/registry-pin.json (the base's, where this branch left origin/main; and the pin's previous version, before its newest change) and the working tree's is a `  - <break>` line spec/REGISTRY-CHANGELOG.md gained since then (D8 compares the pin to the code, so the code and the pin edited together, with no line, passed it)", () => {
+  const F = "spec/registry-pin.json"; const now = (f: string) => (fs.existsSync(path.join(T, f)) ? read(f) : null);
+  const r = PH.unacknowledged(T, [F], "spec/REGISTRY-CHANGELOG.md", now, (was, is) => CAT.pinBreakList(was[F] ?? {}, is[F] ?? {}).map((b: any) => b.text), argv);
+  return [r.judged.length >= 1 && !r.out.length, { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }]; });
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
