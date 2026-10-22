@@ -9,15 +9,16 @@ import { scratch, labAt, controlNote } from "./common.ts";
 import * as doorNow from "../../shared/protocol/authority.js";
 import * as simNow from "../../shared/protocol/simlayer.js";
 import { openWorld as openNow } from "../../server/filehost.ts";
+import { labClock } from "./clock.ts";
 
 const root = scratch("attack");
 const B = labAt("4f62913", ["door.js", "fold.js", "simlayer.js", "catalogue.js", "toolspec.js", "legacy"], "attack");
 const doors = { baseline: B ? { ...(await import(B + "authority.js")), sim: await import(B + "simlayer.js"), root: B } : null,
   now: { ...doorNow, openWorld: openNow, sim: simNow, root } };
-let T = 1800000000000;
+const clock = labClock();
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor, verb, args = {}) => { clock.advance(100);
     try { return d.request(d.openWorld(d.root, name), actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 120) }; } };
   return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
 }
@@ -168,11 +169,11 @@ attacks.push({ id: "H4f", what: "a log with no owner at all: roles:bob says buil
 
 // ---- H2: the rest check verifies a copy, not the fact (P1a–d, P4), run on each server's own physics log ----
 function physLog(d) {
-  const s = session(d, "atk-phys"); T = 1800000000000;
+  const s = session(d, "atk-phys"); clock.t = 1800000000000;
   s.call("rowan", "create-world", { title: "p" }); s.call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   s.call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
   s.call("rowan", "move", { to: [0, 0, -0.5] }); s.call("rowan", "grab", { id: "ball" }); s.call("rowan", "throw", { id: "ball", v: [0, 2, 3] });
-  T += 6000; s.call("rowan", "wait", {});
+  clock.t += 6000; s.call("rowan", "wait", {});
   return s.world();
 }
 const forgeries = {

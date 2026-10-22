@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { tryUntil } from "./wait.ts";
+import { pin, LAB_EPOCH } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const only = (() => { const i = argv.indexOf("--only"); return i >= 0 ? argv[i + 1].split(",") : null; })();
@@ -195,7 +196,7 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
 {
   const FH = await imp("server/filehost.ts"); const root = scratch("physseeds-rs"); fs.mkdirSync(root + "worlds", { recursive: true });
   for (const f of ["rs.jsonl", "rs.presence.json"]) fs.rmSync(`${root}worlds/${f}`, { force: true });
-  process.env.PROTOCOL_NOW = String(1800000000000);
+  pin(LAB_EPOCH);
   const rq = (verb, args = {}) => AU.request(FH.openWorld(root, "rs"), "rowan", verb, args);
   const made = rq("create-world", { title: "rs" }); const rs = ["cohold", "deflect", "carry"].map((v) => rq(v, { id: "x" }));
   ok("RS1", made.ok && rs.every((r) => r.ok === false && /verb/.test(r.refused?.code ?? "")), "cohold, deflect and carry are reserved verbs: the authority refuses each as a verb it doesn't have", rs.map((r) => r.refused?.code));

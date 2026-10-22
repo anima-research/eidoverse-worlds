@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { pinned } from "./protocol/clock.ts";
 
 process.env.WORLDS_DIR = join(mkdtempSync(join(tmpdir(), "ew-grant-until-")), "worlds");
 let passed = 0, failed = 0;
@@ -25,10 +26,10 @@ const check = (name, ok, detail = "") => {
 // 1. the door
 const { scratchWorld } = await import("./protocol/scratchworld.ts");
 const W = scratchWorld("grant-until");
-const now = Number(process.env.PROTOCOL_NOW);
+const now = pinned();
 const frac = W.call("set", { id: "@world", component: "roles:u-pip", value: { role: "builder", until: now + 7_200_000.37 } });
 check("the authority refuses an until with a fraction of a millisecond", !frac.ok, JSON.stringify(frac.refused ?? frac));
-const now2 = Number(process.env.PROTOCOL_NOW);
+const now2 = pinned();
 const whole = W.call("set", { id: "@world", component: "roles:u-pip", value: { role: "builder", until: Math.round(now2 + 7_200_000.37) + 1000 } });
 check("…and accepts the same time rounded", whole.ok, JSON.stringify(whole.refused ?? whole));
 

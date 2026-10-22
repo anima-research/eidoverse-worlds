@@ -22,6 +22,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -104,16 +105,16 @@ function openWorld(name: string) {
   const w = D.worldOf({ name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: SB.SANDBOX,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
   w.catalogue = D.LAB_CATALOGUE;
   return w;
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `r${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const step = () => { T += 1000; process.env.PROTOCOL_NOW = String(T); };
+  const step = () => { clock.advance(1000); };
   const call = (actor: string, verb: string, args: any = {}) => { step();
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   // a reload from disk: the log as stored (JSON: no symbol survives), with the presence carried over

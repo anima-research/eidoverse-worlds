@@ -21,6 +21,7 @@ import { ENGINE, scratch, copyTree } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -169,16 +170,16 @@ function openWorld(name: string) {
   const w = D.worldOf({ name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: SB.SANDBOX,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
   w.catalogue = D.LAB_CATALOGUE;
   return w;
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `p${++N}`; let w: any = null; const Wd = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}) => { T += 1000; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}) => { clock.advance(1000);
     try { return D.request(Wd(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: Wd, entries: () => Wd().entries };
 }
@@ -258,7 +259,7 @@ const cases: Case[] = [
       return { sit: show(sit), occ, dry: show(dry), vacates: dry?.vacates ?? null, still: s.w().presence.occupants?.vic?.to ?? null }; },
     good: (o) => o.sit === "ok" && !!o.occ && /^ok|dry/.test(o.dry) && JSON.stringify(o.vacates) === JSON.stringify([{ who: "vic", socket: o.occ }]) && o.still === o.occ },
   { id: "O2", what: "…a presence file written before (`seats`) is read as `occupants` and only the new key is kept", run() {
-      const w = D.worldOf({ name: "o2", entries: [], getBlob: () => null, putBlob: () => "", now: () => T, writeLine: () => {}, presence: { bodies: {}, holds: {}, seats: { vic: { to: "s1", since: 3 } } }, savePresence: () => {}, scripts: null });
+      const w = D.worldOf({ name: "o2", entries: [], getBlob: () => null, putBlob: () => "", now: () => clock.t, writeLine: () => {}, presence: { bodies: {}, holds: {}, seats: { vic: { to: "s1", since: 3 } } }, savePresence: () => {}, scripts: null });
       return { keys: Object.keys(w.presence), occ: w.presence.occupants?.vic?.to ?? null }; },
     good: (o) => o.occ === "s1" && !o.keys.includes("seats") },
   { id: "O3", what: "…body consent's kind is `occupy` (`seat` is no kind), and the reach that bounds taking any station is OCCUPY_REACH (no SIT_REACH/SEAT_REACH)", async run(s) {

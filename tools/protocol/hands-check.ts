@@ -8,11 +8,12 @@ import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";
 import { ENGINES, simFold } from "../../shared/protocol/simlayer.js";
 import { scratch } from "./common.ts";
+import { labClock } from "./clock.ts";
 const ENG = { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) };
 let pass = 0, fail = 0;
 const ok = (c, name, info) => { if (c) pass++; else { fail++; console.log("FAIL", name, info === undefined ? "" : JSON.stringify(info)); } };
-const root = scratch("hands"); let T = 1800000000000;
-const call = (w, a, v, args = {}) => { T += 1500; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, w), a, v, args); };
+const root = scratch("hands"); const clock = labClock();
+const call = (w, a, v, args = {}) => { clock.advance(1500); return request(openWorld(root, w), a, v, args); };
 const pos = (W, id) => fold(openWorld(root, W).entries).entities[id]?.c.transform.pos;
 const held = (W) => Object.keys(openWorld(root, W).presence.holds);
 const code = (r) => (r.ok ? "ok" : r.refused?.code);
@@ -28,7 +29,7 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
   const r = call(W, "vic", "put", { id: "b" });
   ok(r.ok && pos(W, "b")[1] === 0, "H2 …and the same with no `at` (straight down from the hand)", { r: code(r), b: pos(W, "b") }); }
 { const W = "sliver"; mk(W); take(W, "b", 3); call(W, "vic", "move", { to: [1.2, 0, -0.8] }); call(W, "vic", "move", { to: [0.6, 0, -0.7] });
-  const r = call(W, "vic", "put", { id: "b", at: [0.48, 0] }); T += 6000; process.env.PROTOCOL_NOW = String(T);
+  const r = call(W, "vic", "put", { id: "b", at: [0.48, 0] }); clock.advance(6000);
   const w = openWorld(root, W); const p = simFold(w.entries, w.now())?.sim?.bodies?.b?.p ?? pos(W, "b");
   ok(r.ok && p[1] < 0.45 && held(W).length === 0, "H3 put down with a sliver of it over a neighbour: it does not perch on the neighbour's top (0.6 up) over thin air; physics lets it fall beside", { r: code(r), flying: r.flying, p }); }
 { const W = "sliver-still"; mk(W, false); take(W, "b", 3); call(W, "vic", "move", { to: [1.2, 0, -0.8] }); call(W, "vic", "move", { to: [0.6, 0, -0.7] });

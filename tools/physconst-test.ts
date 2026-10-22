@@ -16,14 +16,15 @@ import { ENGINES } from "../shared/protocol/simlayer.js";
 import { grabOf } from "../shared/grab.js";
 import { planLaunch } from "../shared/protocol/launchplan.js";
 import { ENGINE, scratch } from "./protocol/common.ts";
+import { labClock } from "./protocol/clock.ts";
 
 let fails = 0, passes = 0;
 function ok(cond, what, detail) { if (cond) passes++; else { fails++; console.log("FAIL", what, detail !== undefined ? JSON.stringify(detail).slice(0, 600) : ""); } }
 
 // ---------------- A: the predicted entry vs the logged entry ----------------
 const root = scratch("physconst");
-let T = 1800000000000;
-const at = (ms) => { T += ms; process.env.PROTOCOL_NOW = String(T); };
+const clock = labClock();
+const at = (ms) => { clock.advance(ms); };
 const wire = (x) => JSON.parse(JSON.stringify(x));   // what the authority sees: a request after the socket (I-JSON has no −0)
 function call(world, actor, verb, args = {}, step = 100) { at(step); return request(openWorld(root, world), actor, verb, wire(args)); }
 const bytes = (x) => JSON.stringify(x, (_k, v) => (Object.is(v, -0) ? "-0" : v));   // −0 visible, so the compare is bit-for-bit

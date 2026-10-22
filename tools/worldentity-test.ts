@@ -32,12 +32,13 @@ import { emptyState, applyInPlace, opsOf } from '../shared/protocol/fold.js';
 import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 import { COMPONENTS as SPEC } from '../shared/protocol/componentspec.js';
+import { pinned } from "./protocol/clock.ts";
 const SKY_DEFAULTS = SPEC.sky.defaults;
 const hexInt = (x: any) => (typeof x === 'string' && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);   // a layer colour is stored as an int (shape audit 10-16)
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
-const now = () => Number(process.env.PROTOCOL_NOW ?? Date.now()) + 500;   // the authority's clock (scratchworld steps it per request)
+const now = () => pinned(Date.now()) + 500;   // the authority's clock (scratchworld steps it per request)
 const ROOT = join(import.meta.dir, '..');
 const PRESETS = JSON.parse(readFileSync(join(ROOT, 'defs/sky/_presets.json'), 'utf8'));
 const PAL = JSON.parse(readFileSync(join(ROOT, 'defs/ground/_palette.json'), 'utf8'));

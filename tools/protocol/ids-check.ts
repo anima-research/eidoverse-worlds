@@ -241,8 +241,9 @@ await C("G2", "at runtime, loading the server's and the agent door's own code ne
     const { request, liftWorld, LAB_CATALOGUE } = await import(${JSON.stringify(path.join(T, "shared/protocol/authority.js"))});
     const { openWorld } = await import(${JSON.stringify(path.join(T, "server/filehost.ts"))});
     const { scratch } = await import(${JSON.stringify(path.join(T, "tools/protocol/common.ts"))});
-    process.env.PROTOCOL_NOW = "1800000000000"; const w = openWorld(scratch("g2"), "g2"); w.catalogue = LAB_CATALOGUE; liftWorld(w);
-    request(w, "olive", "create-world", { title: "g2" }); process.env.PROTOCOL_NOW = "1800000001000";
+    const { pin } = await import(${JSON.stringify(path.join(T, "tools/protocol/clock.ts"))});
+    pin(1800000000000); const w = openWorld(scratch("g2"), "g2"); w.catalogue = LAB_CATALOGUE; liftWorld(w);
+    request(w, "olive", "create-world", { title: "g2" }); pin(1800000001000);
     const r = request(w, "olive", "create", { id: "table", model: "table" });
     console.log("G2:" + JSON.stringify({ ok: r.ok, code: r.refused?.code, minted: /mint/.test(r.refused?.reason ?? "") }));`;
   const out = Bun.spawnSync(["bun", "-e", src], { cwd: T, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });

@@ -21,6 +21,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, archiveTo } from "./common.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -88,14 +89,14 @@ const SB = await import(TREE + "shared/protocol/sandbox.js");
 const NS = await import(TREE + "shared/protocol/newscript.js").catch(() => null);   // absent at the base commit: the editor had no planner
 const SE = await import(ENGINE + "shared/structure_edit.js");   // the editor's own planner makes the buildings (pure; this checkout's)
 const root = scratch("build");
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function open(name: string, o: any = {}) {
   const dir = path.join(root, "worlds", name); fs.mkdirSync(dir, { recursive: true });
-  return L.openLive(dir, name, { now: () => Number(process.env.PROTOCOL_NOW ?? T), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
+  return L.openLive(dir, name, { now: () => pinned(clock.t), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
 }
 function session(o: any = {}) {
   const name = `w${++N}`; const w = open(name, { scripts: SB.SANDBOX, ...o });
-  const call = (actor: string, verb: string, args: any = {}, step = 1000) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 1000) => { clock.advance(step);
     try { return D.request(w, actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, w: () => w, call };
 }

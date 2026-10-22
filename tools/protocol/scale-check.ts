@@ -30,6 +30,7 @@ import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 
 import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
+import { labClock, pinned } from "./clock.ts";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "d374d2ef";
@@ -129,10 +130,10 @@ const RM = await imp1("server/readmeter.ts", "server/" + "v4/readmeter.ts").catc
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("scale");
 
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function open(name: string, o: any = {}) {
   const dir = path.join(root, "worlds", name); fs.mkdirSync(dir, { recursive: true });
-  const w = L.openLive(dir, name, { now: () => Number(process.env.PROTOCOL_NOW ?? T), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"),
+  const w = L.openLive(dir, name, { now: () => pinned(clock.t), scripts: o.scripts ?? null, custodyFile: path.join(root, "custody.json"),
     nameOf: () => null, kindOf: o.kindOf ?? (() => "human"), catalogue: o.catalogue });
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
@@ -148,9 +149,9 @@ const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check"
 const baseArgs = (verb: string, args: any) => (verb === "batch" && Array.isArray(args?.ops) ? { ...args, ops: args.ops.map((o: any) => (o && "verb" in o ? (({ verb: v, ...r }) => ({ tool: BASE_VERB[v] ?? v, ...r }))(o) : o)) } : args);
 function session(o: any = {}) {
   const name = `w${++N}`; let w = open(name, o);
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
     try { return AT_BASE ? D.request(w, actor, BASE_VERB[verb] ?? verb, baseArgs(verb, args)) : D.request(w, actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
-  return { name, call, w: () => w, reopen: (o2: any = {}) => (w = open(name, { ...o, ...o2 })), advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); } };
+  return { name, call, w: () => w, reopen: (o2: any = {}) => (w = open(name, { ...o, ...o2 })), advance: (ms: number) => { clock.advance(ms); } };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code ?? (r?.crashed ? "CRASH" : r?.ok ? "ok" : "?");
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 140)}`);
@@ -267,7 +268,7 @@ const cases: Case[] = [
       const holds: any = {}, bodies: any = {};
       for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "inhabitant" } } } });
         s.call("olive", "batch", { ops }, 20000); }
-      for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: T, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: T, tokens: 4 }; }
+      for (let i = 0; i < 400; i++) { holds[`g-${i}`] = { by: `h-${i}`, since: clock.t, pose: { pos: [i % 20, 1.1, Math.floor(i / 20)], q: [0, 0, 0, 1], scale: [1, 1, 1] }, handled: [`h-${i}`] }; bodies[`h-${i}`] = { at: [i % 20, 0, Math.floor(i / 20)], ts: clock.t, tokens: 4 }; }
       s.call("olive", "look", {}, 20000);
       const w = s.reopen({ presence: { holds, bodies } });
       const x = timed(() => D.settleOrphans(w, []));

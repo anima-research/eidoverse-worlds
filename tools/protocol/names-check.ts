@@ -39,6 +39,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const BASE = "a6d05a6b";
 const EM = "em" + "ote";   // the old word, built so this file never spells it (row E3 scans every file, this one too)
@@ -224,16 +225,16 @@ function openWorld(name: string, presence: any = { bodies: {}, holds: {} }) {
   const w = D.worldOf({ name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence, savePresence: () => {}, scripts: null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
   w.catalogue = D.LAB_CATALOGUE;
   return w;
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `n${++N}`; let w: any = null; const Wd = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}, step = 1000) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 1000) => { clock.advance(step);
     try { return D.request(Wd(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: Wd, entries: () => Wd().entries, reopen: (presence?: any) => (w = openWorld(name, presence)) };
 }
@@ -319,7 +320,7 @@ const cases: Case[] = [
       const v = { components: ["hesperus/material"] };
       fs.appendFileSync(path.join(root, "worlds", `${s.name}.jsonl`), [{ world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "@world", component: "trusted", value: v } }, ts: ts + 1 },
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "@world", comp: "trusted", value: v }, ts: ts + 1 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      clock.advance(1000);
       const w1 = s.reopen(); const before = Object.keys(w1.state().entities["@world"].c); const out = D.maintain(w1);
       const w2 = s.reopen(); const c = w2.state().entities["@world"].c; const acts = w2.entries.filter((e: any) => e.kind === "act" && e.verb === "rename-components" && e.actor === "system");
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
@@ -426,7 +427,7 @@ const cases: Case[] = [
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      clock.advance(1000);
       const w1 = s.reopen(); D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
@@ -649,7 +650,7 @@ const cases: Case[] = [
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "drone", comp: "motion", value: mv }, ts: ts + 1 },
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: "arm", component: "motion:piston", value: pv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: "arm", comp: "motion:piston", value: pv }, ts: ts + 2 }].map((e) => JSON.stringify(e)).join("\n") + "\n");
-      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      clock.advance(1000);
       const w1 = s.reopen(); const before = w1.state().entities.drone?.c.motion?.type; D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const k = w2.entries.length; D.maintain(w2); const again = s.reopen().entries.length - k;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");

@@ -23,6 +23,7 @@ import { request } from "../../shared/protocol/authority.js";
 import { creatorOf } from "../../shared/protocol/authority/rights.js";
 import { openLive } from "../../server/livehost.ts";
 import { SANDBOX } from "../../shared/protocol/sandbox.js";
+import { labClock, pinned } from "./clock.ts";
 
 // the sandbox runs in-process here: this suite tests the protocol's rules around a script, not its isolation (scripts-check
 // does that); the isolated path's first activation can wait on a warm process and read `unavailable`, which is a host fact
@@ -39,12 +40,12 @@ const code = (r: any) => (r?.ok ? "ok" : r?.refused?.code ?? "?");
 
 // ---- the harness ----
 const ROOT = scratch("counter");
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function scratchLive(owner = "olive") {
   const name = `w${++N}`; const dir = path.join(ROOT, "worlds", name); fs.mkdirSync(dir, { recursive: true });
-  const opts = { now: () => Number(process.env.PROTOCOL_NOW ?? T), scripts: SANDBOX, custodyFile: path.join(ROOT, "custody.json"), nameOf: () => null, kindOf: () => "human" };
+  const opts = { now: () => pinned(clock.t), scripts: SANDBOX, custodyFile: path.join(ROOT, "custody.json"), nameOf: () => null, kindOf: () => "human" };
   let w = openLive(dir, name, opts);
-  const call = (verb: string, args: any = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); return request(w, actor, verb, args); };
+  const call = (verb: string, args: any = {}, actor = owner) => { clock.advance(1000); return request(w, actor, verb, args); };
   const founded = call("create-world", { title: name });
   if (!founded.ok) throw new Error(`scratch world: refused: ${J(founded.refused)}`);
   return {

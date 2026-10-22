@@ -15,6 +15,7 @@ import * as doorNow from "../../shared/protocol/authority.js";
 import * as simNow from "../../shared/protocol/simlayer.js";
 import { openWorld as openNow } from "../../server/filehost.ts";
 import { fold as foldNow, readLog as readNow } from "../../shared/protocol/fold.js";
+import { labClock } from "./clock.ts";
 
 const root = scratch("gaps");
 const BASE = "c9b4a67";
@@ -27,11 +28,11 @@ const WL_DIR = `${root}wl`; fs.mkdirSync(WL_DIR, { recursive: true }); process.e
 const WL = await import("../../server/worldlog.ts"); const { WORLDS_DIR: WL_SEEN } = await import("../../server/config.ts");
 if (WL_SEEN !== (await import("node:path")).resolve(WL_DIR)) throw new Error(`gaps G3h: server/config.ts was loaded before WORLDS_DIR pointed at scratch (${WL_SEEN})`);
 let g3hRuns = 0;
-let T = 1800000000000;
+const clock = labClock();
 function session(d, name) {
   for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${d.root}worlds/${f}`, { force: true });
   // every call advances the authority's clock by `step` ms (default 100: a fast client)
-  const call = (actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor, verb, args = {}, step = 100) => { clock.advance(step);
     try { return d.request(d.openWorld(d.root, name), actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } };
   return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
 }
@@ -250,7 +251,7 @@ const cases = [
       return { left: show(left), stillHeld: !!w.presence.holds["ball-2"], returnActs: ret, ball: posOf(s, "ball-2"), carriers: doors.now.sim.simFold(w.entries, w.now()).checks.disagree.length }; },
     nowGood: (o) => o.left === "ok" && !o.stillHeld && o.returnActs === 1 && o.ball === "[0,0,0]" && o.carriers === 0 },
   { id: "R4", what: "33 F4: the authority's clock steps back (NTP slew, VM restore): it writes a decreasing ts", run(s) { cast(s);
-      const keep = T; T = 1000000; s.call("olive", "create", { id: "c", model: "crate", place: { at: [0, 0] } }); T = keep;
+      const keep = clock.t; clock.t = 1000000; s.call("olive", "create", { id: "c", model: "crate", place: { at: [0, 0] } }); clock.t = keep;
       const L = s.world().entries; const dec = L.findIndex((e, i) => i > 1 && e.ts < L[i - 1].ts);
       const f = nowFold(fs.readFileSync(`${s.root}worlds/${s.name}.jsonl`)); return { decreasingAt: dec, malformed: f.diagnostics.filter(([, c]) => c.startsWith("malformed")).length, c: !!f.entities?.c }; },
     baseBad: (o) => o.decreasingAt > 0, nowGood: (o) => o.decreasingAt === -1 && o.malformed === 0 && o.c },
@@ -292,7 +293,7 @@ const cases = [
       const name = `g3h-${++g3hRuns}`; const { owner } = WL.foundWorld(`${WL_DIR}/${name}`, name, "olive");
       const log = new WL.WorldLog(name); const got = [];
       log.attach({ broadcast() {}, rightsChanged() {}, debug() {}, toActor(who, msg) { if (who === "bob" && msg?.type === "body-inbox") got.push(...msg.messages); return true; } });
-      const call = (actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return log.requestSync(actor, verb, args); };
+      const call = (actor, verb, args = {}, step = 100) => { clock.advance(step); return log.requestSync(actor, verb, args); };
       for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"]]) call(owner, "set", { id: "@world", component: `roles:${who}`, value: { role } });
       call("bob", "move", { to: [0, 0, 0] }); call("vic", "move", { to: [0.5, 0, 0] });
       const allow = call("bob", "consent", { allow: "vic", class: "pose" });
