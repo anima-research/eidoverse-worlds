@@ -460,7 +460,7 @@ await C("K20", "a person whose name begins local: is a name, not an account (tra
   const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
   return [ann.length === 1 && Object.keys(r.planned).length === 1 && !(r.planned[ann[0]].subs ?? []).length && spawn?.actor === ann[0] && w[`roles:${ann[0]}`]?.role === "builder",
     { ann, planned: r.planned, spawn: spawn?.actor, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
-await C("K21", "the sweep's independent reading agrees with the translator on accounts (tools/protocol/sweep.ts over a world with a local: placer, an entry keyed by an account, a component an account names and fills, its only one, the same under an escaped name, a role kept by its account, and a local: account in a kept value): no loss, and the snapshot oracle's reading of the directory finds a local: sub's person", async () => {
+await C("K21", "the sweep's independent reading agrees with the translator on accounts (tools/protocol/sweep.ts over a world with a local: placer, an entry keyed by an account, a component an account names and fills, its only one, the same under an escaped name, a role and a ban kept by their account, a ban by someone named by their account, and a local: account in a kept value): no loss, and the snapshot oracle's reading of the directory finds a local: sub's person", async () => {
   const { spawnSync } = await import("node:child_process");
   const W = scratch("k21"), dir = path.join(W, "worlds", "acct"); fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
@@ -472,7 +472,10 @@ await C("K21", "the sweep's independent reading agrees with the translator on ac
     // and a local: account inside a value the state keeps
     { seq: 5, ts: 6, actor: "world", verb: "grant", args: { id: "human:discord:43", role: "builder", gen: true } },
     { seq: 6, ts: 7, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "x--" + Buffer.from("ownerSub", "utf8").toString("hex"), data: "human:discord:42" } },
-    { seq: 7, ts: 8, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "tag", data: { ownerSub: "local:ann", note: "kept" } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    { seq: 7, ts: 8, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "tag", data: { ownerSub: "local:ann", note: "kept" } } },
+    // a ban kept by its account, and a ban by someone named by their account (its `by`, dropped with no mapper)
+    { seq: 8, ts: 9, actor: "world", verb: "ban", args: { id: "human:discord:45", reason: "spam" } },
+    { seq: 9, ts: 10, actor: "human:discord:46", verb: "ban", args: { id: "Zed", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const p = spawnSync(process.execPath, [path.join(T, "tools/protocol/sweep.ts")], { cwd: T, env: { ...process.env, PROTOCOL_WORLDS: path.join(W, "worlds") }, encoding: "utf8", timeout: 120000 });
   const out = `${p.stdout}${p.stderr}`; const fails = out.split("\n").filter((l) => /FAIL/.test(l));
   // the sweep counts this world beside the repo's own fixture logs (distinct by content, as it reads them)
@@ -552,6 +555,22 @@ await C("K24", "an account's place in a request is read as the scrub reads it (t
     && comps[0]?.entries?.[0]?.id === B && act("spawn", "board_1")?.body?.args?.sub === "bob" && pure?.body?.args?.sub === "bob" && ledger?.["local:ann"] === "paid",
     { a, placer: act("spawn", "lamp_1")?.body?.args?.placer, guest: comps[0], sub: [act("spawn", "board_1")?.body?.args?.sub, pure?.body?.args?.sub], ledger }]; });
 
+await C("K26", "a grant and a ban keyed by an account beside the sub the server stamped, and a ban by someone named by their account (translateV1World): the grant's and ban's id is the person's id, as their sub is, and the ban's `by` is the banner's id; no account reaches the log", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k26"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const A = "human:discord:42", B = "human:discord:44";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: A, role: "owner", gen: true, sub: A } },
+    { seq: 2, ts: 3, actor: A, verb: "ban", args: { id: B, reason: "spam", sub: B } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  let r: any; try { r = translateV1World(src, path.join(W, "new")); } catch (e: any) { return [false, { threw: String(e?.message ?? e).slice(0, 300) }]; }
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const holding = (s: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(s)).map(([id]) => id);
+  const a = holding(A), b = holding(B);
+  const args = (verb: string) => lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb)?.body?.args;
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  return [a.length === 1 && b.length === 1 && args("grant")?.id === a[0] && args("grant")?.sub === a[0] && args("ban")?.id === b[0] && args("ban")?.sub === b[0]
+    && w[`imported-bans:${b[0]}`]?.by === a[0] && !text.includes(A) && !text.includes(B),
+    { a, b, grant: args("grant"), ban: args("ban"), banned: w[`imported-bans:${b[0]}`] }]; });
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {

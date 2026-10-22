@@ -85,7 +85,8 @@ const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor 
 // DROPPED (translate-v1@16; local: and account-keyed entries since @19): a value never carries an account, a sub or *Sub whose
 // string starts human:, agent:, aid1: or local:, nor an entry keyed by one (human:, agent: or aid1:, the shapes a name can
 // be) (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays.
-// A role or ban kept by its account isn't a value: it stays, keyed by its person.
+// A role or ban kept by its account isn't a value: it stays, keyed by its person (the sweep's translation runs with no
+// identity mapper, so by its account, encoded, which the inverse reads back). A ban's `by` that is an account is dropped.
 const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
   : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !/^(human|agent|aid1):/.test(k) && !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
@@ -165,9 +166,11 @@ function oldNorm(st: any, phys: any = null) {
   // DROPPED "roles.sub / bans.sub" (translate-v1@12): an account subject never reaches a value
   for (const k of ["roles", "bans"]) if (world[k] && typeof world[k] === "object") world[k] = Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, v && typeof v === "object" && !Array.isArray(v) && "sub" in v ? (({ sub, ...r }) => r)(v) : v]));
   // DROPPED "behaviors.authorSub, and any other account in a value" (translate-v1@16; still so at @17): nor does any account-shaped sub or *Sub
-  // …but a role or ban kept by its account is kept (by its person, or its account without a mapper): only its value is read
+  // …but a role or ban kept by its account is kept, under its account here (no mapper): only its value is read, and a ban's
+  // `by` that is an account is dropped, as the translator drops it without a mapper
   for (const k of Object.keys(world)) world[k] = (k === "roles" || k === "bans") && world[k] && typeof world[k] === "object" && !Array.isArray(world[k])
-    ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(v)])) : noAccounts(world[k]);
+    ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(k === "bans" && v && typeof v === "object" && /^(human|agent|aid1):/.test(v.by) ? (({ by: _b, ...r }) => r)(v) : v)]))
+    : noAccounts(world[k]);
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }

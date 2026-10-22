@@ -246,7 +246,7 @@ export const DROPPED = {
   "roles.<person>.caption": "a v1 caption deed (to caption one thing while it is the incarnation the deed was granted for) becomes the person's place in that thing's captioners {ids}; a deed on a timed grant, or for a thing replaced or gone, stays carried in imported:roles:<id> (captioners has no end)",
   "captions.window / captions.mediaTime": "v1's bag kept the session's newest lines and the playhead; v4's captions holds the current line (the window's last). The earlier lines are the log's own caption acts",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
-  "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
+  "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped. A ban's `by`, who banned, stays as v1 kept it, unless it is itself an account: then it is that person's id (@19), or dropped without a mapper",
   "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays",
   "an entry keyed by an account in a value, and a component an account names and fills": "an entry keyed by an account in a value, or a component whose name has an account's (`ownerSub`) and whose whole value is one, is person data (PROTOCOL §9.2): in the state it is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it, each dropped without an identity mapper. A role or ban kept by its account isn't a value: it is kept, keyed by its person's id (with a mapper) or by its account, encoded (without one)",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
@@ -350,12 +350,13 @@ export function withoutAccounts(v, map = () => undefined) {
 /** The first account subject a log still carries, as {seq, path}, or null: the writer's check before anything is written
  *  (world.ts translateV1World). It reads what the scrub reads: a property named as above holding an account-shaped string;
  *  a key that is one; an id naming a person that is one (an old grant's, ban's or unban's, or a spawn's or light's
- *  placer's); and a component so named whose value is one (a change's op {comp, value}, an old comp request's {type,
+ *  placer's), and an imported ban's `by` that is one; and a component so named whose value is one (a change's op {comp, value}, an old comp request's {type,
  *  data}). Elsewhere an `id`, like any key not named as above, holds data. */
 export function accountIn(entries) {
   const named = (v) => [["comp", "value"], ["component", "value"], ["type", "data"]].find(([n, x]) => accountNamed(v[n]) && isAccount(v[x]));
-  // an id is an account where it names a person, as the scrub (noAcct) maps one
-  const person = (v) => (!v.args || typeof v.args !== "object" ? null : PERSON_REQUESTS.has(v.verb) && isAccountName(v.args.id) ? "args.id"
+  // an id is an account where it names a person, as the scrub (noAcct) maps one; and an imported ban's `by` (project's unby)
+  const banBy = (v) => { const c = v.comp ?? v.component; return typeof c === "string" && c.startsWith("imported-bans:") && v.value && typeof v.value === "object" && isAccountName(v.value.by); };
+  const person = (v) => (banBy(v) ? "value.by" : !v.args || typeof v.args !== "object" ? null : PERSON_REQUESTS.has(v.verb) && isAccountName(v.args.id) ? "args.id"
     : (v.verb === "spawn" || v.verb === "light") && v.args.placer && typeof v.args.placer === "object" && isAccountName(v.args.placer.id) ? "args.placer.id" : null);
   const find = (v, path) => {
     if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const f = find(v[i], `${path}[${i}]`); if (f) return f; } return null; }
@@ -461,7 +462,11 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
       else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
   }
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unsub(v);   // the v1 fold lowercased a ban's key
+  // the v1 fold lowercased a ban's key. Its `by` is who banned, the act's actor as v1 kept it: a name stays as it was, and
+  // one that is itself an account is that person's id, as their acts' actor is (dropped without a mapper)
+  const unby = (v) => (!v || typeof v !== "object" || Array.isArray(v) || !isAccountName(v.by) ? v
+    : who ? { ...v, by: who(v.by, {}) } : (({ by: _b, ...rest }) => rest)(v));
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unby(unsub(v));
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   // …and through the account the v1 server stamped on the binding (authorSub, @16), as the author's grant is found, so the
   // two are one identity on every server; the account itself is dropped with every other one below
