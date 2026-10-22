@@ -87,7 +87,7 @@
   "raw-symlink": 1
  },
  "tools/protocol/identity-check.ts": {
-  "bare-wait": 52
+  "bare-wait": 51
  },
  "tools/protocol/import-v1/snapshot-oracle.ts": {
   "raw-symlink": 2

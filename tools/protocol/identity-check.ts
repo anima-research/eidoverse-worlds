@@ -30,6 +30,7 @@ import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { idAliases } from "./idalias.ts";
+import { tryUntil } from "./wait.ts";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const root = scratch("identity");
@@ -443,8 +444,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   a.raw({ type: "pose", pose: big }); await sleep(400);
   const relayed = b.msgs.slice(k).filter((m) => m.type === "frame" && JSON.stringify(m).length > 40_000).length;
   ok(JSON.stringify(big).length > 40_000 && relayed === 0, "MA a pose past 32 KB isn't relayed to anyone", [JSON.stringify(big).length, relayed]);
-  a.raw({ type: "pose", pose: { p: [2, 0, 2], yaw: 0, speed: 0, clip: "idle" } }); await sleep(300);
-  ok(b.msgs.slice(k).some((m) => m.type === "frame"), "MA …and an ordinary pose still is (the control)", b.msgs.slice(k).map((m) => m.type).slice(0, 8));
+  const k2 = b.msgs.length; a.raw({ type: "pose", pose: { p: [2, 0, 2], yaw: 0, speed: 0, clip: "idle" } });
+  await tryUntil("Yarrow is sent a frame after Sorrel's ordinary pose", () => b.msgs.slice(k2).some((m) => m.type === "frame"), { ms: 3000 });
+  ok(b.msgs.slice(k2).some((m) => m.type === "frame"), "MA …and an ordinary pose still is (the control)", b.msgs.slice(k2).map((m) => m.type).slice(0, 8));
   const huge = await sock(srv.port); await huge.join("garden", "Burdock");
   huge.raw({ type: "typing", pad: "x".repeat(3 * 1024 * 1024) }); await sleep(600);
   ok(huge.closed != null, "MA one websocket message past 2 MiB closes the socket (Bun's default took 16 MB)", huge.closed);
