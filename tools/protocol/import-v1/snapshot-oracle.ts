@@ -54,7 +54,7 @@ process.env.OPT_DIR = opt;
 process.env.WORLDS_DIR = path.join(SCRATCH, "worlds");
 
 const { project, DROPPED, namespaceOf, hasEpoch, canon } = await import("./translate-v1.js");
-const { enc } = await import("../../../shared/protocol/names.js");
+const { encRaw: enc } = await import("../../../shared/protocol/names.js");   // the translator's encoder (old names are never ids)
 const { readLog, fold, emptyState, applyInPlace } = await import("../../../shared/protocol/fold.js");
 const { translateV1World } = await import("./world.ts");
 const { contentAddressOf } = await import("../../../server/eidoindex.ts");

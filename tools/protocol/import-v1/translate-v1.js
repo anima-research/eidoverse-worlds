@@ -11,7 +11,8 @@
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
-import { enc, encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
+// an old log's names are never ids, so a name in the hashed form is escaped too (encRaw; house 6340433633, @19)
+import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
@@ -116,6 +117,11 @@ function newReactions(rx) {
 }
 
 export const TRANSLATOR = "eidoverse/translate-v1@19";
+// @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
+// that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
+// already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
+// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 on those two, and on the
+// accounts and names below, which @19 carries too.
 // @19: a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
 // a ban's sub beside its id, a spawn's or a light's placer {id, sub}, a behaviour's bySub, the act's own actor's). Elsewhere
 // in an old request's args, inside data a v1 `comp` folded blindly, a name beside an account is data like any other: the

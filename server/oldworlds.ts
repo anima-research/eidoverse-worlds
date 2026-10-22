@@ -33,7 +33,7 @@ export type OldWorld = {
 };
 
 /** What a client that doesn't fold the log is told at join (server.ts, the 4005 refusal). A NATIVE session (the Unreal client,
- *  signed in through native-login: HnSession.nativeWorld) is told the truth about itself: it hasn't been ported to this protocol
+ *  signed in through native-login: isNativeSession, native: true or an older nativeWorld) is told the truth about itself: it hasn't been ported to this protocol
  *  yet (review of PR #260, Mica, item 7); until 2026-10-18 it was told to "reload the page", which it has none of. Anyone else
  *  (an old page, an old agent build) is told to reload or update. */
 export function noFoldRefusal(world: string, native: boolean): string {

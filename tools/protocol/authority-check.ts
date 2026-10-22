@@ -618,6 +618,18 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const ws = viewState({ entities: { "@world": { c: { sky: { preset: "dusk" }, "imported:sky": { stars: 3 }, "imported:entities": { x: 1 }, "imported:fog": { d: 1 } } } } });
   ok(JSON.stringify(ws.sky) === JSON.stringify({ preset: "dusk" }) && JSON.stringify(ws.entities) === "{}" && ws.fog?.d === 1,
     "S3e …nor, on the world, its active sky or the view's own entities; one nothing holds still shows", { sky: ws.sky, entities: ws.entities, fog: ws.fog });
+  // house 6340433633 (lead's decision): a request that sets or deletes the world's own sky, terrain, grass or water deletes
+  // the translation's imported:<it> in the same change, so a deleted sky leaves the slot empty (it showed the leftovers)
+  { const iw = (actor: string, verb: string, args: any = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imp-sky"), actor, verb, args); };
+    const wc = () => openWorld(root, "imp-sky").state().entities["@world"].c; const vs = () => viewState(fold(openWorld(root, "imp-sky").entries));
+    iw("ann", "create-world", { title: "imp-sky" });
+    iw("ann", "set", { id: "@world", component: "imported:sky", value: { stars: 3 } }); iw("ann", "set", { id: "@world", component: "imported:water", value: { foam: 1 } });
+    const other = iw("ann", "set", { id: "@world", component: "bounds", value: { min: [-90, 0, -90], max: [90, 40, 90] } }); const keptByOther = "imported:sky" in wc();
+    const set = iw("ann", "set", { id: "@world", component: "sky", value: { hours: 12 } }); const goneBySet = !("imported:sky" in wc()) && "imported:water" in wc();
+    iw("ann", "set", { id: "@world", component: "imported:sky", value: { stars: 4 } });
+    const del = iw("ann", "delete", { id: "@world", component: "sky" }); const v = vs();
+    ok(other.ok && keptByOther && set.ok && goneBySet && del.ok && !("imported:sky" in wc()) && v.sky == null && v.water?.foam === 1,
+      "S3f setting or deleting the world's sky deletes its imported:sky with it: a deleted sky leaves the slot empty (other components and imported:water stay)", { other: other.ok, keptByOther, set: set.ok, goneBySet, del: del.ok, keys: Object.keys(wc()), sky: v.sky, water: v.water }); }
 }
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
