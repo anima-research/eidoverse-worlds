@@ -124,6 +124,8 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // request sent one, a name the request chose.
 // The translated act's copy of the old genesis carries no account either: a genesis role's sub becomes its person's id, as an
 // old request's does (the identities were found from it before: world.ts).
+// A component whose name has an account's (`ownerSub`) and whose whole value is an account is one too: it is left out of the
+// state, an old comp request's data becomes the person's id, and the writer's check reads both shapes.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -333,11 +335,16 @@ export function withoutAccounts(v, map = () => undefined) {
   return out ?? v;
 }
 /** The first account subject a log still carries, as {seq, path} (a property named as above holding an account-shaped
- *  string), or null: the writer's check before anything is written (world.ts translateV1World). */
+ *  string, or a component so named whose value is one: a change's op {comp, value}, an old comp request's {type, data}),
+ *  or null: the writer's check before anything is written (world.ts translateV1World). */
 export function accountIn(entries) {
+  // a component's name as written, under its namespace and its escape (`imported/x--…`)
+  const plain = (n) => dec(n.slice(n.lastIndexOf("/") + 1)) ?? "";
+  const named = (v) => [["comp", "value"], ["component", "value"], ["type", "data"]].find(([n, x]) => typeof v[n] === "string" && ACCOUNT_KEY.test(plain(v[n])) && isAccount(v[x]));
   const find = (v, path) => {
     if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const f = find(v[i], `${path}[${i}]`); if (f) return f; } return null; }
     if (!v || typeof v !== "object") return null;
+    const n = named(v); if (n) return path ? `${path}.${n[1]}` : n[1];
     for (const [k, x] of Object.entries(v)) { const p = path ? `${path}.${k}` : k;
       if (ACCOUNT_KEY.test(k) && isAccount(x)) return p; const f = find(x, p); if (f) return f; }
     return null; };
@@ -382,6 +389,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
+      if (ACCOUNT_KEY.test(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
@@ -554,6 +562,9 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
       const p = x.placer;
       if (who && (e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p) && isAccount(p.sub))
         x = { ...x, placer: { ...p, sub: who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }) } };
+      // a v1 comp's data is the component's value: under a name that has an account's, an account is one (@19)
+      if (e.verb === "comp" && typeof x.type === "string" && ACCOUNT_KEY.test(x.type) && isAccount(x.data)) {
+        if (who) x = { ...x, data: who(x.data, { sub: x.data }) }; else { const { data: _d, ...rest } = x; x = rest; } }
       if (who && e.verb === "behavior" && isAccount(x.bySub))
         x = { ...x, bySub: who(typeof e.actor === "string" && !SYSTEM.has(e.actor) && !/^bhv:/i.test(e.actor) ? e.actor : x.bySub, { sub: x.bySub }) }; }
     return withoutAccounts(x, mapAcct); };

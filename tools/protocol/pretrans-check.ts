@@ -304,6 +304,27 @@ await C("K12", "an old genesis whose roles carry an account translates (translat
   return [ann.length === 1 && from?.roles?.Ann?.sub === ann[0] && from?.roles?.Ann?.role === "owner" && spawn?.actor === ann[0] && !/human:discord/.test(text),
     { ann, from: from?.roles, spawn: spawn?.actor, planned: r.planned, leaked: /human:discord/.test(text) }]; });
 
+await C("K13", "a component named as an account is (ownerSub) whose whole value is an account (translateV1World): the account reaches neither the state nor the old comp request, and the writer's check reads a change's op and an old comp request of that shape", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k13"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ANN = "human:discord:42";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true, sub: ANN } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
+    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ownerSub", data: ANN } },
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "menuSub", data: "soup today" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(ANN)).map(([id]) => id);
+  const comps = lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "comp").map((e: any) => e.body.args);
+  const lamp = FOLD.fold(FOLD.readLog(text)).entities?.[TV1.enc("lamp_1")]?.c ?? {};
+  const seen = [TV1.accountIn([{ seq: 7, kind: "change", ops: [{ verb: "set", id: "x", comp: "ownerSub", value: ANN }] }]), TV1.accountIn([{ seq: 8, body: { verb: "comp", args: { id: "x", type: "ownerSub", data: ANN } } }]),
+    TV1.accountIn([{ seq: 9, ops: [{ verb: "set", id: "x", comp: "menuSub", value: "soup today" }] }])];
+  return [ann.length === 1 && !/human:discord/.test(text) && comps[0]?.data === ann[0] && comps[1]?.data === "soup today"
+    && !Object.values(lamp).includes(ANN) && Object.values(lamp).includes("soup today")
+    && seen[0]?.seq === 7 && seen[0]?.path === "ops[0].value" && seen[1]?.seq === 8 && seen[1]?.path === "body.args.data" && seen[2] === null,
+    { ann, comps, lamp: Object.keys(lamp), seen, leaked: /human:discord/.test(text) }]; });
+
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
