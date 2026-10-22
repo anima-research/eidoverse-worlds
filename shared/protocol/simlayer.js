@@ -192,7 +192,9 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
   // catch hides which thing is held, and a hold outlives an epoch while its end can't be read from the log. Both ride in
   // a cut (simCutOf), so a folder resumed from one judges what an uninterrupted one does
   const unknown = () => out.unknownEpoch || out.unknownHold;
-  const mayLose = !!from?.st || (purged?.size ?? 0) > 0;   // a value reads PURGED only where a purge names it, or in a cut's state
+  // a value reads PURGED only where the feed's purge map names it (without one, applyInPlace refuses a stripped value) or in
+  // the state a cut starts from, so with neither the lost-body scan below is skipped
+  const mayLose = (purged?.size ?? 0) > 0 || (!!from?.st && Object.values(from.st.entities).some((e) => Object.values(e.c).some((v) => v === PURGED)));
   // a thing in someone's hand is nowhere in the engine's world: no rebuild (terrain, epoch, relock) may seat it (review 64d26822 #3)
   const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id];
     if (mayLose && !out.unknownEpoch && Object.keys(s.entities).some((id) => !v.entities[id] && !out.lifted.has(id) && lostBody(s, id, models))) out.unknownEpoch = true;
