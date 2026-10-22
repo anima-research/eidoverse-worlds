@@ -16,7 +16,7 @@
 // required); exit code 77 = the whole suite skipped (fails the gate); `OPTIONAL <name>: <why>` = an optional extension
 // that did not run (host data, the lab's control arm) — counted and listed, never a failure.
 //   PROTOCOL_LAB=<protocol lab checkout>   also run the control arms (common.ts)
-//   PROTOCOL_WORLDS=<dir>[:<dir>…]         also sweep / oracle a host's own world logs (the repo's fixtures always)
+//   PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows)         also sweep / oracle a host's own world logs (the repo's fixtures always)
 //   CHROME=<chromium binary>                the browser lane's Chromium (else playwright's, else /usr/bin/{google-chrome,chromium})
 //   PYTHON=<python3>                        the conformance suite's interpreter (else python3 on PATH)
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read

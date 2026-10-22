@@ -22,6 +22,7 @@ import { v1FoldBuild } from './protocol/import-v1/build.ts';
 import { scratchWorld, flat } from './protocol/scratchworld.ts';
 import { registerDraft, trustedOf } from '../shared/drafts.js';
 import { materialize } from '../shared/protocol/componentspec.js';
+import { pathList } from "./protocol/common.ts";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -35,7 +36,7 @@ const walk = (d: string, depth = 0) => {
   }
 };
 walk(join(import.meta.dir, '..', 'spec', 'fixtures'));
-for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
+for (const d of pathList(process.env.COMPONENTS_CORPUS)) walk(d);
 
 const ents: [string, any][] = [];
 const folds: [string, any][] = [];   // the same entities as the fold holds them (C7b: the editor's one input)

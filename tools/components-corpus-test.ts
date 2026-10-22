@@ -16,6 +16,7 @@ import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, co
 import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
 import { blueprintRefusal, blueprintHash, expand, overridesOf, placeVerbs, placeRefusal, copyTree, modernize, localComponents, LINK_KEY } from '../shared/blueprint.js';
 import { treeOf } from '../shared/hierarchy.js';
+import { pathList } from "./protocol/common.ts";
 
 const J = JSON.stringify;
 let pass = 0, fail = 0;
@@ -131,7 +132,7 @@ const walk = (d: string, depth = 0) => {
   }
 };
 walk(join(import.meta.dir, '..', 'spec', 'conformance'));
-for (const d of (process.env.COMPONENTS_CORPUS ?? '').split(':').filter(Boolean)) walk(d);
+for (const d of pathList(process.env.COMPONENTS_CORPUS)) walk(d);
 const seen = new Set<string>(); const unique: string[] = [];
 for (const p of logs) { const h = createHash('md5').update(readFileSync(p)).digest('hex'); if (!seen.has(h)) { seen.add(h); unique.push(p); } }
 console.log(`\nthe corpus: ${unique.length} distinct world logs (${logs.length} found; COMPONENTS_CORPUS adds dirs holding <world>/world.jsonl)`);

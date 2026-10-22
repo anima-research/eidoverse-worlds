@@ -27,7 +27,7 @@
 //
 // usage: bun tools/protocol/import-v1/snapshot-oracle.ts [<world dir> …]
 //   a world dir translated in place is read through its kept originals (log.original.jsonl, snapshot.original.json)
-//   no args: ORACLE_WORLDS=<dir>[:<dir>…] (a world dir, or a dir of worlds), else PROTOCOL_WORLDS; always the repo's spec/fixtures (folded.json as each snapshot)
+//   no args: ORACLE_WORLDS=<dir>[:<dir>…] (`;` on Windows) (a world dir, or a dir of worlds), else PROTOCOL_WORLDS; always the repo's spec/fixtures (folded.json as each snapshot)
 //   (walked like the sweep), each distinct complete snapshot once. Exit 0 only when every compared world has 0 differences.
 //   OPT_DIR=<serving checkout>/assets/opt so store models get the model-hash they get on this host (read only).
 //   ORACLE_SCRATCH=<dir> where the scratch worlds go (default $PROTOCOL_SCRATCH or the OS temp dir); ORACLE_KEEP=1 keeps it.
@@ -36,6 +36,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pathList } from "../common.ts";
 
 const ENGINE = path.resolve(import.meta.dir, "../../..");
 // the server modules read WORLDS_DIR and OPT_DIR at import: a scratch for both before any of them loads. OPT_DIR holds
@@ -340,8 +341,8 @@ if (import.meta.main) {
   // folded.json, as its snapshot), then any host worlds ORACLE_WORLDS / PROTOCOL_WORLDS name. It never walks outside the
   // checkout unasked; not comparing a host's own worlds is an OPTIONAL line the gate counts.
   const roots = process.env.ORACLE_WORLDS ?? process.env.PROTOCOL_WORLDS;
-  const dirs = args.length ? args.map((a) => path.resolve(a)) : [...fixtureWorlds(), ...(roots ? findWorlds(roots.split(":")) : [])];
-  if (!args.length && !roots) console.log("OPTIONAL oracle-host-worlds: compared the repo's reference fixtures only (set ORACLE_WORLDS or PROTOCOL_WORLDS=<dir>[:<dir>…] to add a host's old worlds: log.jsonl + snapshot.json)");
+  const dirs = args.length ? args.map((a) => path.resolve(a)) : [...fixtureWorlds(), ...(roots ? findWorlds(pathList(roots)) : [])];
+  if (!args.length && !roots) console.log("OPTIONAL oracle-host-worlds: compared the repo's reference fixtures only (set ORACLE_WORLDS or PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows) to add a host's old worlds: log.jsonl + snapshot.json)");
   console.log(`snapshot oracle: the translator against the OLD ENGINE's own folded state (snapshot.json), ${dirs.length} world dir(s)`);
   console.log(`not compared (translate-v1 DROPPED, the translator's documented table; nothing else is left out):`);
   for (const [k, why] of Object.entries(DROPPED)) console.log(`   - ${k}: ${why}`);
