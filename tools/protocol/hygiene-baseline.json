@@ -2,9 +2,6 @@
  "mcpl/door-body-test.ts": {
   "bare-wait": 2
  },
- "mcpl/storey-walk-test.ts": {
-  "bare-wait": 10
- },
  "tools/agent-mesh-collision-test.ts": {
   "bare-wait": 10
  },
