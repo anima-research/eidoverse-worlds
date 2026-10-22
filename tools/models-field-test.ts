@@ -100,6 +100,11 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("an unrelated comp changes nothing",
     !collisionOwnedElsewhere({ ...model("x.glb"), lock: true }, false));
   check("missing entity is not a crash", !collisionOwnedElsewhere(undefined, false));
+  // house I243 (#260): a collision switched off is honoured — today's physics {kind: 'none'} (the authority's sim skips it,
+  // shared/protocol/simlayer.js) and a stored collision {enabled: false} from before the rename
+  check("physics kind none gets no box", collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "none" } }, false));
+  check("a stored collision {enabled: false} gets no box", collisionOwnedElsewhere({ ...model("x.glb"), collision: { enabled: false } }, false));
+  check("…a static body still does", !collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "static" } }, false));
 }
 
 // 9. a mesh thing (componentspec `mesh`, R 10-12): its own kind; a changed shape or size is a rebuild, a malformed value an Empty
