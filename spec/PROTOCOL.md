@@ -1127,8 +1127,9 @@ speaks yaw is always right about which way a thing faces, though it will
 show a toppled thing upright. Euler channels are a view: an editor's
 rotation order (`XYZ` applies X first) changes how the channels read, never
 the stored `q`. Anything the fold or a physics engine computes from a
-heading uses owned trig (`shared/simmath.js`), never host `sin/cos/atan2`,
-so every runtime gets the same bits.
+heading uses trig that gives the same bits on every runtime, never the
+host's `sin/cos/atan2`: `spec/conformance/trig.json` pins its outputs bit
+for bit.
 
 ### 9.2 Component conventions
 
