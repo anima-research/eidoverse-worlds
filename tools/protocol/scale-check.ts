@@ -87,7 +87,7 @@ async function runSelf(tree: string, only: string[] | null, timeoutMs = 0) {
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]); const code = await p.exited; if (t) clearTimeout(t);
   return { code, timedOut, out: out + err };
 }
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
@@ -98,7 +98,7 @@ if (argv.includes("--mutants")) {
   let bad = 0, ran = 0; const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = copyTree("smut"); const f = path.join(d, file); let src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("smut"); const f = path.join(d, file); let src = fs.readFileSync(f, "utf8");
     const pairs: [string, string][] = Array.isArray(find) ? find : [[find, repl]];   // a gate in two places is reverted in both
     const missing = pairs.find(([a]) => src.split(a).length !== 2);
     if (missing) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }

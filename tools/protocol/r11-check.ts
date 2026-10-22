@@ -51,7 +51,7 @@ async function runSelf(tree: string, only: string[] | null) {
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 // a mutant tree: shared/, mcpl/ (without node_modules) and client/lib/ + client/lib/commands/ copied; the rest linked back
-function copyTree(tag: string) { const d = scratch(tag);
+function mutantTree(tag: string) { const d = scratch(tag);
   fs.cpSync(path.join(ENGINE, "shared"), path.join(d, "shared"), { recursive: true });
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
   try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* no node_modules: the import says so */ }
@@ -64,7 +64,7 @@ function copyTree(tag: string) { const d = scratch(tag);
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = copyTree("r11mut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("r11mut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);

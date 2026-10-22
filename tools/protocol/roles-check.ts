@@ -113,7 +113,7 @@ async function runSelf(tree: string, only: string[] | null, extra: string[] = []
   const r = Bun.spawnSync(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
@@ -125,7 +125,7 @@ if (argv.includes("--mutants")) {
   let bad = 0, ran = 0; const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cs] of MUTANTS) {
     if (only && !cs.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cs.length)) continue;
-    ran++; const d = copyTree("rmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("rmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cs.length ? cs : null);

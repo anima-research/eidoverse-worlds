@@ -1540,7 +1540,7 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
     ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) }),
   snapshot: (a) => a,
   check_model: (a) => ({ ...a, check: true }),   // #241's tool, a mode of measure: the same {id | lib, scale?}
-  // three that became anim (R 10-17 15:31), each with its old shape (the action bar's old tool took {name}, as anim does: no translation)
+  // the old body tools became anim (R 10-17 15:31), each with its old shape and meaning (the action bar's old tool played its {name} once)
   pose: (a) => {
     const t = a.target != null ? { target: a.target } : {};
     if (a.clear === true) return { stop: true, ...t };
@@ -1552,6 +1552,7 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
   },
   animate: (a) => a.name != null ? { name: a.name, ...(a.looped === true || a.loop === true ? { mode: "loop" } : {}) }
     : { tracks: a.tracks, dur: a.dur, mode: a.looped === true || a.loop === true ? "loop" : "once", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target != null ? { target: a.target } : {}) },
+  emote: (a) => ({ name: a.name, mode: "once" }),   // the old gesture tool played once: a dance loops under anim, never under the old name (house review I59)
   posture: (a) => { const k = String(a.kind ?? a.posture ?? ""); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "posture is sit, sitchair, lie or stand — anim {name} plays it now" }; },
   world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {

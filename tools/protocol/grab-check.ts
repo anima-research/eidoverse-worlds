@@ -117,7 +117,7 @@ async function runSelf(tree: string, only: string[] | null, extra: string[] = []
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 // the mutant tree: shared/, server/, tools/ and defs/ (so the other suites run in it too), node_modules linked
-function copyTree(tag: string) {
+function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
@@ -129,7 +129,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = copyTree("gmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("gmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
