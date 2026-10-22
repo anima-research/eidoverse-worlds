@@ -286,6 +286,18 @@ const cases: Case[] = [
       const blind = new Uint8Array(64); blind.set([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10], 0);   // a JPEG header with no SOF in reach
       return { padded: UP.imageDims(padded, "jpg"), blind: UP.imageSizeRefusal(blind, "jpg")?.status ?? null, moon: UP.imageSizeRefusal(moon, "jpg") }; },
     good: (o) => !o.none && JSON.stringify(o.padded) === "[1024,512]" && o.blind === 415 && o.moon === null },
+  { id: "P6c", what: "upload (house 6340433633, the lead's decision): a zero dimension is an unknown size, not a size: a 0×0 WebP (VP8), PNG or JPEG is refused 415, a real-size VP8 is measured", async run() {
+      const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageSizeRefusal) return { none: true };
+      // a lossy WebP: RIFF size WEBP, the VP8 chunk, its frame tag and start code, then width and height (14 bits each)
+      const vp8 = (w: number, h: number) => { const b = new Uint8Array(40); b.set([0x52, 0x49, 0x46, 0x46, 0x20, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 0x14, 0, 0, 0], 0);
+        b.set([0x9d, 0x01, 0x2a], 23); b[26] = w & 0xff; b[27] = (w >> 8) & 0x3f; b[28] = h & 0xff; b[29] = (h >> 8) & 0x3f; return b; };
+      const png0 = new Uint8Array(32); png0.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0); new DataView(png0.buffer).setUint32(20, 10);   // width 0
+      const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
+      const sof = (() => { for (let i = 2; i + 9 < moon.length; i++) if (moon[i] === 0xff && moon[i + 1] >= 0xc0 && moon[i + 1] <= 0xc3) return i; return -1; })();
+      const jpg0 = moon.slice(); if (sof >= 0) { jpg0[sof + 5] = 0; jpg0[sof + 6] = 0; }   // height 0 (a DNL-deferred height reads as 0)
+      return { real: UP.imageDims(vp8(640, 480), "webp"), zero: UP.imageDims(vp8(0, 0), "webp"), r0: UP.imageSizeRefusal(vp8(0, 0), "webp")?.status ?? null,
+        png0: UP.imageDims(png0, "png"), jpg0: sof >= 0 ? UP.imageDims(jpg0, "jpg") : "no SOF in the fixture" }; },
+    good: (o) => !o.none && JSON.stringify(o.real) === "[640,480]" && o.zero === null && o.r0 === 415 && o.png0 === null && o.jpg0 === null },
 
   // ---------------- S: sound ----------------
   { id: "S1", what: "sound src: an http link and an IP address refused; a trusted host's link admitted and said to reach everyone; another host's admitted and said to reach only viewers who opted in", run(s) { cast(s);

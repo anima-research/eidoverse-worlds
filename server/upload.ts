@@ -444,7 +444,13 @@ export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): {
   if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
   return null;
 }
+/** …a zero on either side is no size either (house 6340433633, the lead's decision): a 0×0 WebP header, a PNG with width 0
+ *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
 export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const d = headerDims(b, kind);
+  return d && d[0] > 0 && d[1] > 0 ? d : null;
+}
+function headerDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
   const u16 = (i: number) => (b[i] << 8) | b[i + 1], u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
   const le16 = (i: number) => b[i] | (b[i + 1] << 8), le24 = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
   try {
