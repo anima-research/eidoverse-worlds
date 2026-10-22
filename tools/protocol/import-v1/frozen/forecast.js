@@ -1,4 +1,3 @@
-// tools/protocol/import-v1/forecast-v1.js — main's shared/forecast.js frozen as the v1 fold read it (anima/main 5b5872c7); only this line and the import paths differ. The fold here never follows the live module's changes.
 // forecast — the deterministic ambient-weather oracle, and the one sky fold
 // every plane shares.
 //
@@ -19,6 +18,9 @@
 // simultaneous clients all land on the same segment of the same forecast.
 
 export const WEATHERS = ['clear', 'fair', 'sunshower', 'overcast', 'rain', 'storm', 'cyclone', 'darkstorm'];
+// The cloud kinds the sky realizes (client/lib/sky.js re-exports this; the
+// world entity's Sky record names the same list).
+export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 
 // ---------------------------------------------------------------- day clock
 

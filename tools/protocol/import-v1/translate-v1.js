@@ -118,7 +118,7 @@ function newReactions(rx) {
 export const TRANSLATOR = "eidoverse/translate-v1@18";
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
-// line, read by main's frozen helpers (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
+// line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
 // seat's yaw are read as the renderer coerced them, and what can't be read is carried (I36, I37); an earlier epoch's rest tick
 // never dates a later epoch's rest (I14). Output differs from @17 on any log with captions, a caption deed, a non-numeric rpm
 // or seat yaw, a physics epoch replaced after a rest, and on every approved translation. Both names.

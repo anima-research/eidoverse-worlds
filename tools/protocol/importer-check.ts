@@ -19,6 +19,7 @@
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
 //   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
 //   IM-I3   the old fold reads captions with main's frozen helpers (a window), and the translation holds its current line
+//   IM-I3b  the old fold's whole import closure is frozen beside it (nothing it reads is a live runtime module)
 //   IM-I14  a rest tick from an earlier epoch never dates a later epoch's rest
 //   IM-I17  the oracle counts a lifted world's repairNeeded as a failure
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/importer-check.ts
@@ -249,6 +250,12 @@ row("IM-I3", () => {
   const bag = st.entities.tv?.comp?.captions; const F = finalOf(L);
   ok(Array.isArray(bag?.window) && bag.window.length === 2 && bag.mediaTime === 4 && F.tv?.captions?.line?.text === "second" && !("window" in (F.tv?.captions ?? {})) && !F.tv?.["imported:captions"],
     "IM-I3 the old fold reads captions as main did (its frozen helpers: a window of lines, the playhead), and the translation holds the current line", { bag, now: F.tv?.captions, imp: F.tv?.["imported:captions"] });
+});
+
+row("IM-I3b", () => {
+  const { v1FoldFiles } = require("./import-v1/build.ts");
+  const live = v1FoldFiles().filter((f: string) => !f.startsWith("tools/protocol/import-v1/"));
+  ok(!live.length, "IM-I3b every module the old fold reads is a frozen copy under import-v1/ (none is a live runtime module)", live);
 });
 
 // ---- IM-I14: an earlier epoch's rest tick never dates a later epoch's rest ----
