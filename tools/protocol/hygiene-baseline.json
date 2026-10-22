@@ -54,7 +54,7 @@
   "bare-wait": 3
  },
  "tools/places-test.ts": {
-  "bare-wait": 18
+  "bare-wait": 7
  },
  "tools/protocol/access-check.ts": {
   "bare-wait": 13

@@ -19,6 +19,7 @@ process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, boxes, building, buildGlb } = await import("./two-storey-fixture.ts");
 const P = await import("../mcpl/places.ts");
 const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
+const { tryUntil } = await import("./protocol/wait.ts");
 const { check, tally } = mkCheck();
 
 console.log("places.ts (pure):");
@@ -71,7 +72,7 @@ try {
   await legacyVerb(a, "spawn", { id: "tower", lib, pos: [0, gy, 0], yaw: 0 });
   // a second, identical tower 30m east, for "the nearest of two"
   await legacyVerb(a, "spawn", { id: "tower2", lib, pos: [30, a.heightAt(30, 0), 0], yaw: 0 });
-  for (let i = 0; i < 100 && !(a.supportIds?.get("tower") && a.supportIds?.get("tower2")); i++) await sleep(50);
+  await tryUntil("the towers' supports are registered", () => a.supportIds?.get("tower") && a.supportIds?.get("tower2"), { ms: 5000, step: 50 });
   await a.supportReady(); await sleep(300);
 
   await a.walkTo(0, 7, true);
@@ -143,7 +144,7 @@ try {
   const stool = await upload("stool", await buildGlb([[-0.25, 0, -0.2, 0.25, 0.32, 0.2]]));
   await legacyVerb(a, "spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get(sceneId(a, "tower")).places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
-  for (let i = 0; i < 40 && !a.supportIds?.get("stool"); i++) await sleep(50);
+  await tryUntil("the stool's support is registered", () => a.supportIds?.get("stool"), { ms: 2000, step: 50 });
   await a.supportReady(); await sleep(400);
   await tool("walk_to", { to: "tower/entrance", run: true });
   r = await tool("walk_to", { to: "tower/by_stool", run: true });
@@ -162,7 +163,7 @@ try {
     try {
       await squatter.connect();
       await squatter.walkTo(-15, -15, true);
-      for (let i = 0; i < 40 && ![...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"); i++) await sleep(50);
+      await tryUntil("a visitor named Tower is here", () => [...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"), { ms: 2000, step: 50 });
       check("(a visitor named \"Tower\" is here)", [...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"), [...a.people.keys()].join(","));
       r = await tool("walk_to", { to: "tower", run: true });
       check("move {to: \"tower\"} goes to the tower's entrance, not to the person called Tower", /arrived at tower\/entrance/.test(r), `${r} ${at()}`);
@@ -171,12 +172,12 @@ try {
   // review r4 claims C1: nor does a person whose name is a thing's LABEL (a display name, not its id)
   {
     await a.request("set", { id: sceneId(a, "tower2"), component: "label", value: "Belfry" });
-    for (let i = 0; i < 40 && a.entities.get(sceneId(a, "tower2"))?.label !== "Belfry"; i++) await sleep(50);
+    await tryUntil("tower2 is relabelled Belfry", () => a.entities.get(sceneId(a, "tower2"))?.label === "Belfry", { ms: 2000, step: 50 });
     const squatter: any = new WorldAgent({ name: "Belfry", world: "places", url: URL_ });
     try {
       await squatter.connect();
       await squatter.walkTo(-15, -15, true);
-      for (let i = 0; i < 40 && ![...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"); i++) await sleep(50);
+      await tryUntil("a visitor named Belfry is here", () => [...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"), { ms: 2000, step: 50 });
       check("(tower2 is labelled \"Belfry\", and a visitor named \"Belfry\" is here)", a.entities.get(sceneId(a, "tower2"))?.label === "Belfry" && [...a.people.keys()].some((k: string) => k.toLowerCase() === "belfry"), [...a.people.keys()].join(","));
       r = await tool("move", { to: "belfry", run: true });
       check("move {to: \"belfry\"} goes to the thing labelled Belfry (its entrance), not to the person called Belfry", /arrived at Belfry\/entrance/.test(r), `${r} ${at()}`);   // a thing is read by its label (R 10-17)
@@ -190,7 +191,7 @@ try {
 
   // moved things take their places with them
   await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
-  for (let i = 0; i < 40 && a.entities.get(sceneId(a, "tower2"))?.pos?.[2] !== -20; i++) await sleep(50);
+  await tryUntil("tower2 has moved to z = -20", () => a.entities.get(sceneId(a, "tower2"))?.pos?.[2] === -20, { ms: 2000, step: 50 });
   await a.supportReady(); await sleep(400);
   r = await tool("walk_to", { to: "Belfry/entrance", run: true });   // tower2 is labelled Belfry since the C1 rows
   // entrance [0,0,5] in the model frame, turned a quarter and moved to (30, -20)
@@ -212,7 +213,7 @@ try {
   const kr = await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0], kind: "seat" } } });
   check("a place's kind is gone: an entry with one is refused (shape audit 10-16: a seat is a station)", kr?.refused?.code === "schema", JSON.stringify(kr?.refused ?? kr));
   await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0] } } });
-  for (let i = 0; i < 60 && !(a.supportIds?.get("rug") && a.supportIds?.get("perch")); i++) await sleep(50);
+  await tryUntil("the rug's and perch's supports are registered", () => a.supportIds?.get("rug") && a.supportIds?.get("perch"), { ms: 3000, step: 50 });
   await a.supportReady(); await sleep(400);
   r = await tool("walk_to", { to: "the long room", run: true });
   check("a room whose middle is furnished is reached at its clear floor, toward an end",
@@ -230,10 +231,10 @@ try {
   r = await tool("name_place", { name: "nowhere", y: 2 });
   check("...and with y alone is refused, not quietly named where the body stands", /need x and z/.test(r) && !a.entities.get(sceneId(a, "rug")).places.nowhere, r);
   await legacyVerb(a, "light", { id: "lamp", pos: [50, ry + 2, -20], intensity: 5 });
-  for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "lamp")); i++) await sleep(50);
+  await tryUntil("the agent holds the lamp", () => a.entities.get(sceneId(a, "lamp")), { ms: 2000, step: 50 });
   r = await tool("name_place", { name: "glow", on: "lamp" });
   // a thing with no model still has a frame (its transform), so a light holds a place as a model does
-  for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "lamp"))?.places?.glow; i++) await sleep(50);
+  await tryUntil("the lamp has its glow place", () => a.entities.get(sceneId(a, "lamp"))?.places?.glow, { ms: 2000, step: 50 });
   check("a light carries places too — named in its frame, and saved", /named this spot "glow" on \[lamp\]/.test(r) && !!a.entities.get(sceneId(a, "lamp"))?.places?.glow, r);
   // two names in a row, before the first echo: both land
   const [r1, r2] = await Promise.all([
@@ -266,7 +267,7 @@ try {
     const many: Record<string, unknown> = {};
     for (let i = 0; i < 230; i++) many[`stall_${i}`] = { at: [-90 - (i % 10), 0, -90 - Math.floor(i / 10)] };
     const wr: any = await a.request("set", { id: "@world", component: "places", value: many });
-    for (let i = 0; i < 60 && a.worldPlaces().length < 230; i++) await sleep(50);
+    await tryUntil("the agent sees at least 230 places", () => a.worldPlaces().length >= 230, { ms: 3000, step: 50 });
     check("(230 places on @world)", wr?.ok !== false && a.worldPlaces().length === 230, `${JSON.stringify(wr).slice(0, 200)} ${a.worldPlaces().length}`);
     const listed = await tool("move", { to: "?" });
     const lines = listed.split("\n").filter((l) => /^  \S/.test(l));
@@ -278,7 +279,7 @@ try {
       nl.length === 11 && nl.every((l) => /stall_22/.test(l)), narrowed.slice(0, 300));
     check("...and a narrowing that matches nothing says so", /no named places .*"zzz"/.test(await tool("move", { to: "?zzz" })));
     await a.request("delete", { id: "@world", component: "places" });
-    for (let i = 0; i < 60 && a.worldPlaces().length; i++) await sleep(50);
+    await tryUntil("the agent's places are gone", () => !(a.worldPlaces().length), { ms: 3000, step: 50 });
   }
 
   console.log("move {to: <a thing with no entrance>} (review r5 F3: one resolver, things before people, the nearest):");
