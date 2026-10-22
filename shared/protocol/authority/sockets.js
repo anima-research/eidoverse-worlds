@@ -16,7 +16,7 @@ import { refuse } from "./refuse.js";
 
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== PURGED;
 export const isSocketC = (c) => bag(c?.socket);
-export const socketRole = (c) => (bag(c?.station) ? "station" : Array.isArray(c?.socket?.accepts) ? "snap" : "attach");
+export { socketRole } from "../../sockbody.js";
 // what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
 // (disabled, lock, hidden), a motion of its own (R 10-12 20:44), and the blueprint mark every placed part carries
 // one host holds at most this many sockets (review 10-12 S1-2): a seat map past it is several things. No setting raises it;

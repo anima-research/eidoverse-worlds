@@ -294,5 +294,13 @@ check('…and a default: leaveBy any leaves the key out; the anchor is written d
     && JSON.stringify(resolveSeat(view, { to: 'bench', slot: 'seat' })) === '{"to":"bench-seat"}' && JSON.stringify(resolveSeat(fold, { to: 'bench', slot: 'seat' })) === '{"to":"bench-seat"}'
     && resolveSeat(view, { to: 'other', slot: 'seat' }) === null && resolveSeat(view, { to: 'bench', slot: 'nope' }) === null && resolveSeat(view, null) === null); }
 
+// a purged station is no station, to the client and the authority alike, in the fold's form and in a view's JSON form
+// (audit 10-22: the client's socketRole read isObj and called a purged station a station; the authority's said attach)
+{ const { socketRole: viewRole } = await import('../shared/sockbody.js'); const { socketRole: authRole } = await import('../shared/protocol/authority/sockets.js');
+  const { PURGED } = await import('../shared/protocol/fold.js');
+  const cases = [{ socket: { name: 's' }, station: PURGED }, { socket: { name: 's' }, station: { purged: true } }, { socket: { name: 's', accepts: ['x'] }, station: PURGED }];
+  const got = cases.map((c) => [viewRole(c), authRole(c)]);
+  check('SR1 a purged station reads as no station, the same at the client and the authority, from the fold or from JSON', JSON.stringify(got) === JSON.stringify([['attach', 'attach'], ['attach', 'attach'], ['snap', 'snap']]), got); }
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

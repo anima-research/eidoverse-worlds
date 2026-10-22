@@ -40,6 +40,7 @@ import { REACH } from './protocol/physconst.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
 import { BUILTIN_IDS, isWhoValue, isBase, whoWords } from './protocol/roles.js';
 import { isReservedAnimName } from './animdefs.js';
+import { isPurged } from './protocol/fold.js';
 
 export const WHO = BUILTIN_IDS;
 // a `who` may also name a world's custom role: the shape is roles.js's, existence the authority's (whoRank)
@@ -105,7 +106,7 @@ export function gripOf(g) {
 export function grabOf(c) {
   if (!isObj(c)) return null;
   const v = c.grabbable;
-  if (isObj(v)) return v.purged === true && Object.keys(v).length === 1 ? null : fill(v, 'grabbable', c.home);   // a purged value is absent, not a grabbable
+  if (isObj(v)) return isPurged(v) ? null : fill(v, 'grabbable', c.home);   // a purged value is absent, not a grabbable
   if (v === undefined && isObj(c.physics) && c.physics.kind === 'dynamic') return fill({ who: isWho(c.physics.who) ? c.physics.who : DEFAULT_WHO }, 'physics', c.home);
   return null;
 }

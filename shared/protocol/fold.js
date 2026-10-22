@@ -166,6 +166,9 @@ export function utf8Len(s) {
 export { sha256 };
 export const worldIdOf = (genesis) => "sha256:" + sha256(jcs(genesis));
 export const PURGED = Object.freeze({ purged: true });
+/** A purged value, whichever way it reached the reader: the fold's own sentinel, or its JSON form `{purged: true}` in a
+ *  snapshot or view (which loses the identity). */
+export const isPurged = (v) => v === PURGED || (!!v && typeof v === "object" && v.purged === true && Object.keys(v).length === 1);
 export function canonicalView(st) {
   const out = Object.create(null);
   for (const id of Object.keys(st.entities)) { const c = st.entities[id].c, v = Object.create(null);

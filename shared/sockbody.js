@@ -44,6 +44,7 @@ import { checkAccepts } from './grab.js';
 import { isReservedAnimName } from './animdefs.js';
 import { BUILTIN_IDS, isWhoValue, whoWords } from './protocol/roles.js';
 import { COMPONENTS, materialize } from './protocol/componentspec.js';
+import { isPurged } from './protocol/fold.js';
 
 // surface (D14, R 10-12): the seat authors its support plane; a body's profiled seat contact lands on it (client/lib/seatcore.js)
 export const ANCHORS = COMPONENTS.station.enums.anchor;   // hips, feet, head, root, surface
@@ -390,7 +391,7 @@ export function resolveSeat(world, seat) {
 
 /** What a socket is for, read from what it has (never stored): a station if it has one, a snap point if accepts, else
  *  an attach point. `c` is the socket's record (a fold `c` or a view's `comp`). */
-export const socketRole = (c) => (isObj(c?.station) ? 'station' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');
+export const socketRole = (c) => (isObj(c?.station) && !isPurged(c.station) ? 'station' : Array.isArray(c?.socket?.accepts) ? 'snap' : 'attach');   // the authority's own reads this one (authority/sockets.js)
 /** A host's sockets, as its socket children (PLAN-sockets-entities §1): [{id, name, sock, station}] in `kids` order. `kids(host)`
  *  lists a thing's child ids; `rec(id)` is a record's components (a fold `c`, or a view's `comp`). A socket switched off
  *  on its own is a closed seat: not listed. The one reader every client and agent surface shares (the authority's own is

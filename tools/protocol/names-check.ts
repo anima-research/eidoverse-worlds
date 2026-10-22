@@ -71,7 +71,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the plate says agent", "client/lib/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
   ["the alt note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
-  ["socketRole says seat", "shared/protocol/authority/sockets.js", "(bag(c?.station) ? \"station\" :", "(bag(c?.station) ? \"seat\" :", ["O2"]],
+  ["socketRole says seat", "shared/sockbody.js", "!isPurged(c.station) ? 'station' :", "!isPurged(c.station) ? 'seat' :", ["O2"]],
   ["the toast says seat", "client/lib/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
   ["light.noon again", "shared/protocol/descriptors.js", "daytime: { k: 'daytime', param: 'burnsAtNoon'", "daytime: { k: 'noon', param: 'burnsAtNoon'", ["S1"]],
   ["sky.clock again", "shared/worldentity.js", "    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", "    { t: 'enum', k: 'clock', label: 'clock', value: real ? 'real' : 'authored', def: 'authored', options: [{ v: 'authored', label: 'authored' }, { v: 'real', label: 'real time' }] },\n    { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,", ["S2"]],
@@ -366,9 +366,9 @@ const cases: Case[] = [
       s.call("olive", "create-world", { title: s.name });
       s.call("olive", "create", { id: "sofa", model: "crate", place: { at: [3, 0] } });
       s.call("olive", "create", { id: "sofa-l", components: { parent: { to: "sofa" }, transform: { pos: [0, 0.45, 0] }, socket: { name: "left" }, station: { action: "sit" } } });
-      const r = s.call("olive", "inspect", { id: "sofa" }); const SK = { a: readText("shared/sockbody.js") };
-      return { r: show(r), as: (r.sockets ?? []).map((x: any) => x.as), sk: /isObj\(c\?\.station\) \? 'station'/.test(SK.a) }; },
-    good: (o) => o.r === "ok" && JSON.stringify(o.as) === '["station"]' && o.sk },
+      const r = s.call("olive", "inspect", { id: "sofa" });
+      return { r: show(r), as: (r.sockets ?? []).map((x: any) => x.as) }; },
+    good: (o) => o.r === "ok" && JSON.stringify(o.as) === '["station"]' },
   { id: "O3", what: "…the user-visible words: the editor's tool tile reads 'station', the toast says 'moved what you were occupying', '+ socket here'", run() {
       const ep = readText("client/lib/editpanels.js"), lb = readText("client/lib/localbody.js"), es = readText("shared/editschema.js");
       return { tile: /label: 'station', icon: 'armchair'/.test(ep), toast: /moved what you were occupying/.test(lb) && !/moved the seat you were on/.test(lb), add: /'\+ socket here'/.test(es) && !/'\+ seat here'/.test(es) }; },
