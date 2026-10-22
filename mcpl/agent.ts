@@ -2545,7 +2545,8 @@ export class WorldAgent {
     // folding the wings open waits for the bones: a walk (it bumps bodyEpoch) or an anim begun meanwhile keeps its clip
     const epoch = this.bodyEpoch, before = new Set(this.anims);
     if ((which == null || kinds.has("pose")) && this.wingsFolded) await this.foldWings(false);
-    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a));
+    // …a tracks loop plays in its own layer and takes no clip, so one begun meanwhile doesn't (house 6340433633)
+    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a) && a.kind !== "track");
     if ((which == null || kinds.has("clip")) && !newer) {
       if (this.clip === "ragdoll") this.setPose(null);   // a slump ends in the rest too (setPose stands it, and stops its sim)
       const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }

@@ -97,6 +97,19 @@ for (const dur of [2, undefined]) {
   ok(ag.anims.some((a: any) => a.name === "dance") && ag.animStops.some((x: any) => x.name === "live" && x.why === "replaced") && !ag.animStops.some((x: any) => x.name === "dance"),
     "…and ends the tracks layer alone: the clip beside it goes on", { anims: ag.anims, stops: ag.animStops }); }
 
+// house 6340433633: anim {stop} with folded wings waits for them to open; a tracks loop begun meanwhile plays in its own
+// layer and takes no clip, so the rest clip still comes back (a clip begun meanwhile, the control, keeps its own)
+for (const kind of ["track", "clip"]) {
+  const { WorldAgent } = await import("./agent.ts"); const ag: any = Object.create(WorldAgent.prototype);
+  Object.assign(ag, { name: "me", inbox: [], animStops: [], modeTracker: { declared: null, declare() {} }, joined: false, bodyEpoch: 0, heldPose: null,
+    anims: [{ name: "fold", kind: "pose" }, { name: "dance", kind: "clip", clip: "dance" }], wingsFolded: true, clip: "dance",
+    restClip: () => "idle-rest", bodyModeNow: () => "stand", stop() { this.clip = "idle"; },
+    foldWings: async (fold: boolean) => { await Promise.resolve(); ag.wingsFolded = fold;
+      ag.anims.push(kind === "track" ? { name: "live", kind: "track" } : { name: "wave", kind: "clip", clip: "wave" }); if (kind === "clip") ag.clip = "wave"; return { ok: true, text: "" }; } });
+  await ag.stopAnims(null);
+  ok(kind === "track" ? ag.clip === "idle-rest" : ag.clip === "wave",
+    kind === "track" ? "anim {stop}: a tracks loop begun while the wings opened doesn't keep the rest clip from coming back" : "…a clip begun meanwhile keeps its own (the control)", { clip: ag.clip, anims: ag.anims }); }
+
 // attach on a thing with no seat teaches a whole edit call, id and set
 { const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
     myOccupancy: null, name: "me", handle: (id: string) => id.slice(0, 10) };
