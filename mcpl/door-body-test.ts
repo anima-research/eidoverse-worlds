@@ -35,24 +35,65 @@ console.log("a tracks loop");
 }
 
 console.log("a reach held to two bodies");
-{
-  // A world point inside both Ann and Cal: the relay holds the reach to each of them, and strips it if either refuses.
-  // Cal refuses, so the reach is refused, by Cal, whichever of the two the door reads first.
+// Ann stands at the origin and Cal 0.1 m from her, so a point at chest height between them lands in both. Cal stands
+// further off, at x = 2, in the frame rows. The relay holds a reach to every body its point lands in (reachgate.ts
+// touched) and strips it if any of them refuses.
+const pose = (p: number[], extra: Record<string, unknown> = {}) => ({ p, yaw: 0, speed: 0, clip: "idle", ...extra });
+const reacher = (cal: number[], ann: Record<string, unknown> = {}) => {
   const ag: any = new WorldAgent({ name: "me", world: "w" });
-  const pose = (p: number[]) => ({ p, yaw: 0, speed: 0, clip: "idle" });
-  ag.people.set("Ann", { id: "Ann", avatar: "", pose: pose([0, 0, 0]) });
-  ag.people.set("Cal", { id: "Cal", avatar: "", pose: pose([0.1, 0, 0]) });
+  ag.people.set("Ann", { id: "Ann", avatar: "", pose: pose([0, 0, 0], ann) });
+  ag.people.set("Cal", { id: "Cal", avatar: "", pose: pose(cal) });
   ag.actorIds.set("Ann", "a-ann"); ag.actorIds.set("Cal", "a-cal");
-  const pt = [0.05, 1.2, 0];
-  const calCls = pointClass([0, 0, 0], [pt[0] - 0.1, pt[1], pt[2]]);
-  check("(the point lands in both bodies)", !!pointClass([0, 0, 0], pt) && !!calCls);
   ag.joined = true;
   ag.refreshReachReading = async () => {};
   ag.solveReachEntry = () => ({ state: "pending" });
-  setTimeout(() => ag.reachRefusals.push({ to: "a-cal", cls: calCls, why: "Cal's table says no", limb: "rightHand", ts: Date.now() }), 60);
-  const r = await ag.reach("rightHand", { p: pt });
-  check("a reach refused by the second body it lands in is refused", r.ok === false && /Cal's consent refused it/.test(r.text), r.text);
+  return ag;
+};
+const refusal = (to: string, cls: string, ago = 0) => ({ to, cls, why: "their table says no", limb: "rightHand", ts: Date.now() - ago });
+// a refusal said for this reach, not one said earlier and read back (that one's words say when it was said)
+const fresh = (r: any, who: string) => r.ok === false && new RegExp(`${who}'s consent refused it`).test(r.text) && /nobody saw your hand there/.test(r.text);
+const between = [0.05, 1.2, 0];
+const annCls = pointClass([0, 0, 0], between), calCls = pointClass([0, 0, 0], [between[0] - 0.1, between[1], between[2]]);
+check("(the point between them lands in both bodies)", !!annCls && !!calCls);
+{
+  const ag = reacher([0.1, 0, 0]);
+  setTimeout(() => ag.reachRefusals.push(refusal("a-cal", calCls)), 60);
+  const r = await ag.reach("rightHand", { p: between });
+  check("a reach refused by the second body it lands in is refused", fresh(r, "Cal"), r.text);
   check("...and withdrawn", !ag.reaches.has("rightHand"));
+}
+{
+  const ag = reacher([0.1, 0, 0]);
+  setTimeout(() => ag.reachRefusals.push(refusal("a-ann", annCls)), 60);
+  const r = await ag.reach("rightHand", { p: between });
+  check("...and so is one refused by the first", fresh(r, "Ann"), r.text);
+}
+{
+  // the relay says a refusal once per REACH_NOTE_MS, so one said a second ago stands for this reach too
+  const ag = reacher([0.1, 0, 0]);
+  ag.reachRefusals.push(refusal("a-cal", calCls, 1000));
+  const r = await ag.reach("rightHand", { p: between });
+  check("a refusal the second body said a moment ago stands for a reach again", r.ok === false && /Cal's consent refused it/.test(r.text) && /That was said/.test(r.text), r.text);
+}
+// A point in a body's own frame lands where its pose draws it. Ann's frame here is turned a quarter about +y by her pose's
+// q (a swimmer's whole-body turn), with her yaw left at 0: 2 m in front of her, in her frame, is then at x = 2, in Cal.
+const quarter = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+const ahead = [0, 1.2, 2];
+const calThere = pointClass([0, 0, 0], [0, 1.2, 0]);
+check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0], ahead) && !!calThere);
+{
+  const ag = reacher([2, 0, 0], { q: quarter });
+  setTimeout(() => ag.reachRefusals.push(refusal("a-cal", calThere)), 60);
+  const r = await ag.reach("rightHand", { p: ahead, space: "Ann" });
+  check("a point in a turned body's frame is held to the body it lands in, by its pose's q", fresh(r, "Cal"), r.text);
+}
+{
+  // this body's own frame, turned by its yaw
+  const ag = reacher([2, 0, 0]);
+  ag.yaw = Math.PI / 2;
+  setTimeout(() => ag.reachRefusals.push(refusal("a-cal", calThere)), 60);
+  const r = await ag.reach("rightHand", { p: ahead, space: "self" });
+  check("...and so is a point in this body's own frame, by its yaw", fresh(r, "Cal"), r.text);
 }
 
 console.log("a walk carried across a rejoin");

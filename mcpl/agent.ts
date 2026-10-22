@@ -4748,20 +4748,30 @@ export class WorldAgent {
     if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
     const p = t.p as number[];
     if (t.space === undefined) return this.bodiesAtPoint(p);
-    if (t.space === "self" || t.space === this.name) {   // this body's root frame → world (yaw about +y), as reachgate's frameToWorld
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-      return this.bodiesAtPoint([this.pos.x + p[0] * cy + p[2] * sy, this.pos.y + p[1], this.pos.z - p[0] * sy + p[2] * cy]);
+    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
+      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
+      return world ? this.bodiesAtPoint(world) : [];
     }
-    // their own frame: theirs, and wherever it lands in the world, as their pose draws it (by its yaw: the presence this
-    // body holds keeps no whole-body turn, which the relay reads first for a swimmer)
+    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
     const own = WorldAgent.reachClass(t, t.space);
-    const pose: any = this.people.get(t.space)?.pose;
-    const at = pose?.p, sc = clampBodyScale(pose?.scale), yaw = Number(pose?.yaw) || 0;
-    const world = Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)
-      ? (() => { const l = p.map((v) => v * sc), c = Math.cos(yaw), sn = Math.sin(yaw);
-          return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c]; })()
-      : null;
+    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
     return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
+  }
+  /** A point in a body's own root frame, in the world, as server/reachgate.ts's frameToWorld places it: at the body's size,
+   *  turned by the pose's q when it carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a
+   *  position. */
+  private static poseToWorld(pose: any, local: number[]): number[] | null {
+    const at = pose?.p;
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+    const sc = clampBodyScale(pose.scale), l = local.map((v) => v * sc), q = pose.q;
+    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
+      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
+      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
+      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
+      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
+    }
+    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
+    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
   }
   /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
    *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
