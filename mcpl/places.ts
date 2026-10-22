@@ -116,7 +116,7 @@ export function toLocal(e: PlaceHolder, w: number[]): Vec3 {
  *  on or above the region's floor (a hand's width of slack) and below its top. */
 export function inRegion(e: PlaceHolder, p: Place, w: number[]): boolean {
   if (p.kind !== "region" || !p.min || !p.max) return false;
-  const l = toLocal(e, w), s = e.scale && e.scale > 0 ? e.scale : 1, slack = 0.1 / s;
+  const l = toLocal(e, w), slack = 0.1 / scale3(e.scale)[1];   // a hand's width in metres, in the frame's height
   return l[0] >= p.min[0] && l[0] <= p.max[0] && l[2] >= p.min[2] && l[2] <= p.max[2]
     && l[1] >= p.min[1] - slack && l[1] < p.max[1];
 }

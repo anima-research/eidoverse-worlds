@@ -4005,7 +4005,11 @@ export class WorldAgent {
    *  where a carried or moving thing is. Null when that cannot be resolved. */
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
-    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale: f.scale } : null;
+    // its per-axis scale, so a place on a stretched thing is stretched with it, as the thing is drawn. places.ts frames
+    // only positive axes, so a mirrored thing keeps its one-number scale, as before
+    const s3 = f.ok ? f.scale3 : undefined;
+    const scale = Array.isArray(s3) && s3.every((v) => v > 0) ? s3 : f.ok ? f.scale : undefined;
+    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale } : null;
   }
 
   /** Places that belong to no thing ("the meadow"): @world's places component, in world coordinates. */
