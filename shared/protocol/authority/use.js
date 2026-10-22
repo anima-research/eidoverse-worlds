@@ -165,12 +165,20 @@ const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSock
 // 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it"). It is barred
 // while openable.locked is on, as the registry's `locked` reads: "bars opening while on (an open handler with unless: 'locked')"
 const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open", unless: "locked" });
-// the barred implicit open's remedy: what on the thing unlocks it, and who may, or else that nothing does
+// the barred implicit open's remedy, saying only what it can see: the reactions on the thing that unlock it (a toggle of
+// openable.locked, a set of it to false, or a set of the whole openable that leaves it off) and that aren't barred
+// themselves, with who may use each; else the edit that unlocks it. A script may unlock it too, unseen here, so the remedy
+// never says nothing does. The open step is worded by state: on an open door the implicit open shuts it
 function unlockFix(e, id) {
-  const keys = Object.entries(e.c.reactions ?? {}).filter(([, h]) => (h?.kind === "toggle" && toggleOf(h).comp === "openable" && toggleOf(h).field === "locked")
-    || (h?.kind === "set" && h.component === "openable" && h.field === "locked" && h.value === false));
-  if (!keys.length) return `nothing on ${id} unlocks it; someone who may edit it can: set {id: '${id}', component: 'openable', value: {locked: false}, merge: true}. Opening again won't change it while it's locked`;
-  return `${keys.map(([k, h]) => `use {id: '${id}', action: '${k}'} unlocks it${h.who ? ` (only ${whoWords(h.who)} may)` : ""}`).join("; ")}, and then 'open' opens it. Opening again won't change it while it's locked`;
+  const q = (x) => JSON.stringify(String(x));
+  const unlocks = (h) => (h?.kind === "toggle" && toggleOf(h).comp === "openable" && toggleOf(h).field === "locked" && !barredBy(e, h))
+    || (h?.kind === "set" && h.component === "openable" && (h.field === "locked" ? h.value !== true
+      : h.field === undefined && !!h.value && typeof h.value === "object" && !Array.isArray(h.value) && h.value.locked !== true));
+  const keys = Object.entries(e.c.reactions ?? {}).filter(([, h]) => unlocks(h));
+  const may = (h) => { const w = h.who ? whoWords(h.who) : "anyone"; return w === "anyone" ? "" : ` (only ${w} may)`; };
+  const first = keys.length ? keys.map(([k, h]) => `use {id: ${q(id)}, action: ${q(k)}} unlocks it${may(h)}`).join("; or ")
+    : `someone who may edit it can unlock it: set {id: ${q(id)}, component: "openable", value: {locked: false}, merge: true}`;
+  return `${first}; then "open" ${objOf(e.c.openable).open === true ? "shuts" : "opens"} it. "open" won't change it while it's locked`;
 }
 function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {

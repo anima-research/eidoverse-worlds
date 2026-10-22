@@ -169,13 +169,32 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(u3.ok && o3 === true, "P37c a toggle of openable.locked alone doesn't take away the implicit open", { u3: code(u3) ?? u3.ok, o3 });
     // …and the implicit open is barred while openable.locked is on, as an open handler with unless: 'locked' is
     const lk = call("vic", "use", { id: "hatch2", action: "latch" }), u4 = call("vic", "use", { id: "hatch2", action: "open" }), o4 = W().state().entities.hatch2.c.openable;
-    ok(lk.ok && o4.locked === true && code(u4) === "barred" && o4.open === true && u4.refused?.fix === "use {id: 'hatch2', action: 'latch'} unlocks it, and then 'open' opens it. Opening again won't change it while it's locked",
-      "P37d the implicit open is barred while the thing's openable.locked is on, as the registry's locked says, and its fix names what unlocks it", { lk: code(lk) ?? lk.ok, u4: code(u4) ?? u4.ok, fix: u4.refused?.fix, o4 });
-    // …and where nothing on the thing unlocks it, the fix says so, and names the edit
+    const TAIL = `"open" won't change it while it's locked`;
+    ok(lk.ok && o4.locked === true && code(u4) === "barred" && o4.open === true && u4.refused?.fix === `use {id: "hatch2", action: "latch"} unlocks it; then "open" shuts it. ${TAIL}`,
+      "P37d the implicit open is barred while the thing's openable.locked is on, as the registry's locked says, and its fix names what unlocks it (the door is open, so 'open' then shuts it)", { lk: code(lk) ?? lk.ok, u4: code(u4) ?? u4.ok, fix: u4.refused?.fix, o4 });
+    // …and where it sees nothing on the thing that unlocks it, the fix names the edit, and claims nothing more
     call("bob", "create", { id: "hatch3", model: "door", components: { openable: { open: false, locked: true } } });
     const u5 = call("vic", "use", { id: "hatch3", action: "open" });
-    ok(code(u5) === "barred" && u5.refused?.fix === "nothing on hatch3 unlocks it; someone who may edit it can: set {id: 'hatch3', component: 'openable', value: {locked: false}, merge: true}. Opening again won't change it while it's locked",
-      "P37e a locked openable that nothing unlocks: its implicit open's fix says so, and names the edit that unlocks it", { u5: code(u5) ?? u5.ok, fix: u5.refused?.fix }); }
+    ok(code(u5) === "barred" && u5.refused?.fix === `someone who may edit it can unlock it: set {id: "hatch3", component: "openable", value: {locked: false}, merge: true}; then "open" opens it. ${TAIL}`,
+      "P37e a locked openable with no reaction that unlocks it: its implicit open's fix names the edit that does", { u5: code(u5) ?? u5.ok, fix: u5.refused?.fix });
+    // review of #260: a set of locked (gated to owners, its action named with a quote) and a set of the whole openable both
+    // unlock it: the fix names both, quoted, with who may use each
+    call("bob", "create", { id: "hatch4", model: "door", components: { openable: { open: false, locked: true }, reactions: {
+      "it's": { kind: "set", component: "openable", field: "locked", value: false, who: "owner" }, reset: { kind: "set", component: "openable", value: { open: false, locked: false } } } } });
+    const u6 = call("vic", "use", { id: "hatch4", action: "open" });
+    ok(code(u6) === "barred" && u6.refused?.fix === `use {id: "hatch4", action: "it's"} unlocks it (only owners may); or use {id: "hatch4", action: "reset"} unlocks it; then "open" opens it. ${TAIL}`,
+      "P37f a fix names every reaction it sees unlock the thing, a field set and a whole-component set alike, quoted, with who may use each", { u6: code(u6) ?? u6.ok, fix: u6.refused?.fix });
+    // …a toggle of locked that is itself barred (unless: 'locked') isn't offered, and on an open door the open step shuts it
+    call("bob", "create", { id: "hatch5", model: "door", components: { openable: { open: true, locked: true }, reactions: { latch: { kind: "toggle", component: "openable", field: "locked", unless: "locked" } } } });
+    const u7 = call("vic", "use", { id: "hatch5", action: "open" }), u7b = call("vic", "use", { id: "hatch5", action: "latch" });
+    ok(code(u7) === "barred" && code(u7b) === "barred" && u7.refused?.fix === `someone who may edit it can unlock it: set {id: "hatch5", component: "openable", value: {locked: false}, merge: true}; then "open" shuts it. ${TAIL}`,
+      "P37g a barred toggle of locked isn't offered as the unlock, and on an open locked door the fix says 'open' then shuts it", { u7: code(u7) ?? u7.ok, u7b: code(u7b) ?? u7b.ok, fix: u7.refused?.fix });
+    // …and an authored open handler barred by the lock keeps its own fix, or the general one: unlockFix is the implicit open's
+    call("bob", "create", { id: "hatch6", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked", fix: "ring the bell" } } } });
+    call("bob", "create", { id: "hatch7", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, unbolt: { kind: "set", component: "openable", field: "locked", value: false } } } });
+    const u8 = call("vic", "use", { id: "hatch6", action: "open" }), u9 = call("vic", "use", { id: "hatch7", action: "open" });
+    ok(code(u8) === "barred" && u8.refused?.fix === "ring the bell" && code(u9) === "barred" && u9.refused?.fix === "someone allowed to may 'use' it with another action first",
+      "P37h an authored open handler barred by the lock keeps its own fix, or the general one", { u8: u8.refused?.fix ?? u8.ok, u9: u9.refused?.fix ?? u9.ok }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
