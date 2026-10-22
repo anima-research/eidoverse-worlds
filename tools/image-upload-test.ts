@@ -16,7 +16,8 @@
 // a PNG named .glb is a .png in the store), the path is content-addressed and
 // idempotent, the /library route serves it back byte-identical with the right
 // content-type and the store's immutable cache policy, the picture allow-list
-// admits the path it returns, the manifest records who, and the door is
+// admits the path it returns, the manifest records who, an image's pixel size
+// is read from its header and capped at 8192 on a side, and the door is
 // token-gated, capped and rate-limited like the model door.
 import { allowedPictureSrc } from "../shared/picture.js";
 
@@ -48,6 +49,12 @@ const JPG = new Uint8Array([0xff, 0xd8,                                         
   0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,   // APP0 (JFIF 1.1)
   0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,   // SOF0: 8-bit, 1×1, 3 components
   0xff, 0xd9]);                                                                     // EOI
+// The PNG above with its IHDR saying w×h (and that chunk's CRC recomputed).
+function pngSized(w: number, h: number): Uint8Array {
+  const b = PNG.slice(); const v = new DataView(b.buffer);
+  v.setUint32(16, w); v.setUint32(20, h); v.setUint32(29, Bun.hash.crc32(b.subarray(12, 29)));
+  return b;
+}
 const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, ...new Array(24).fill(0)]);
 const GLB = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, ...new Array(24).fill(0)]);
 const JUNK = new Uint8Array(40).map((_, i) => (i * 37) & 0xff);
@@ -117,12 +124,23 @@ if (MANIFEST_DIR) {
   check("the manifest records the name and who (first upload wins the name)", entry && entry.name === "hearth at dusk" && typeof entry.by === "string", JSON.stringify(entry));
 } else console.log("  (OPT_DIR not set — manifest check skipped)");
 
-// ---- the cap ------------------------------------------------------------------
+// ---- the caps -----------------------------------------------------------------
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
 const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
+
+// The pixel cap is read from the header (a tiny file can decode to a huge
+// image), so an image whose header gives no size is refused, and one past
+// 8192 px on a side is refused while one at 8192 lands.
+const JPG_NO_SIZE = new Uint8Array([...JPG.subarray(0, 20), 0xff, 0xd9]);   // SOI, JFIF, EOI: no frame header
+r = await post(JPG_NO_SIZE, { as: "image", name: "no size.jpg" });
+check("a JPEG whose header gives no pixel size: 415", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
+r = await post(pngSized(1, 8193), { as: "image", name: "tall.png" });
+check("a PNG 8193 px tall: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
+r = await post(pngSized(8192, 8192), { as: "image", name: "at the cap.png" });
+check("a PNG 8192 px on each side lands", r.status === 200 && /\.png$/.test(r.json?.path ?? ""), `${r.status} ${r.text.slice(0, 120)}`);
 
 await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);
