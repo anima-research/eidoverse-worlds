@@ -56,6 +56,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["colliders", "../collider-test.ts", 1], // the walker's reading of placed geometry, incl. things a tumbling engine laid on their sides (review of b398d7e3 #1)
   ["lying-support", "../lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin (review of b398d7e3 #1)
   ["support-swap", "../support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
+  ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one under its switch (the relay answers), hangs from a nail
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],
