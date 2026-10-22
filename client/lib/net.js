@@ -296,12 +296,14 @@ export function sendJoin() {
 let requestSeq = 0;
 const pendingRequests = new Map();   // id → {resolve, timer}
 /** One request; resolves with the authority's own reply ({ok, …} or {ok: false, refused: {code, reason, fix}}).
- *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
+ *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. When the request was sent
+ *  and no answer came (a timeout, or the socket dropping after it went), the refusal also carries mayHaveLanded: true,
+ *  since the authority may have done what it asked; one never sent (not connected) doesn't. */
 export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
   if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', fix: 'wait for the connection to come back, then try again' } });
   const id = ++requestSeq;
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
+    const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again', mayHaveLanded: true } }); }, timeoutMs);
     pendingRequests.set(id, { resolve, timer, verb, ws: net.ws });   // the socket it went on: only that one's close fails it (I62)
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
@@ -310,7 +312,7 @@ export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
 // is answered now, not by its 15 s timer (which held the body track that long after a reconnect, then spoke a stale timeout)
 function failPending(ws = null) {
   for (const [id, p] of pendingRequests) { if (ws && p.ws !== ws) continue; pendingRequests.delete(id); clearTimeout(p.timer);
-    p.resolve({ ok: false, refused: { code: 'offline', reason: `the connection dropped before the authority answered '${p.verb}'`, fix: 'it may have landed: look before trying again' } }); }
+    p.resolve({ ok: false, refused: { code: 'offline', reason: `the connection dropped before the authority answered '${p.verb}'`, fix: 'it may have landed: look before trying again', mayHaveLanded: true } }); }
 }
 function onReply(msg) {
   const p = pendingRequests.get(msg.id); if (!p) return;

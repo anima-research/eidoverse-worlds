@@ -64,6 +64,9 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
+  /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
+   *  account wears in this directory, present or not — the presence plane is read by people, who read names) */
+  const claimedByOther = (name: string, sub: string): boolean => { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; };
   return {
     /** The id for a connection in a world: its account's id there (minted on first sight; the display name kept
      *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
@@ -104,9 +107,16 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     entry: (id: string): Entry | null => get(id),
     /** the display names an account-holding identity has claimed here (an anonymous joiner may not take one: H1/M3) */
     claimedName(name: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
-    /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
-     *  account wears in this directory, present or not — the presence plane is read by people, who read names) */
-    claimedByOther(name: string, sub: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && !e.subs.includes(sub) && foldName(e.name) === k) return true; return false; },
+    claimedByOther,
+    /** The name a spectator's account takes on first sight: the typed name, unless another account wears it; then the
+     *  typed name with a tag from the account (`-` and its last four letters or digits), the name cut so the tag always
+     *  fits in `max`, and a number after the tag until no other account wears the result (review of #260, server I42). */
+    spectatorName(name: string, sub: string, max: number): string {
+      if (!claimedByOther(name, sub)) return name;
+      const tag = sub.replace(/[^a-z0-9]/gi, "").slice(-4) || "2";
+      for (let k = 1; ; k++) { const suffix = k === 1 ? tag : `${tag}${k}`; const n = `${name.slice(0, Math.max(0, max - suffix.length - 1))}-${suffix}`;
+        if (!claimedByOther(n, sub)) return n; }
+    },
     /** the accounts of every identity wearing this (folded) display name here: what a GLOBAL ban by name binds to (security
      *  review 10-18 H1; an identity with no account is nobody to ban by account). */
     accountsNamed(name: string): string[] { const k = foldName(name); const out: string[] = []; for (const e of Object.values(d.ids)) if (foldName(e.name) === k) out.push(...e.subs); return [...new Set(out)]; },

@@ -15,6 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { mkdirDurable } from "./durable.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
@@ -428,7 +429,7 @@ import { isOwner } from "../shared/protocol/roles.js";
 /** Found a new world in `dir` (which must not hold a world): genesis + the founding act, through the authority. */
 export function foundWorld(dir: string, name: string, owner: string, title?: string, now?: () => number) {
   if (fs.existsSync(path.join(dir, "world.jsonl")) || fs.existsSync(path.join(dir, "log.jsonl"))) throw new Error(`${dir} already holds a world`);
-  fs.mkdirSync(dir, { recursive: true });
+  mkdirDurable(dir);   // the world's directory is named in its parent, which a crash can lose like the log's first line
   const w = openLive(dir, name, { now });
   // the owner is an account (human:…, agent:…, local:…); a bare name means `local:<name>`, the account a TRUST_NAMES
   // server gives that typed name. Its opaque id comes from the authority directory (round-2 review R1).
@@ -598,6 +599,8 @@ export function resetWorld(log: WorldLog): string {
     // whether the old log is gone from its place (this attempt moved it, or an earlier failed one did): if not, the world is
     // as it was and stays live
     err.logMoved = fs.existsSync(path.join(arch, "world.jsonl")) || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
-  fs.rmSync(fresh, { recursive: true, force: true });
+  // the fresh log is in place, and nothing left in the scratch directory is used again: failing to remove it, whole or in
+  // part, leaves litter for the operator, not a failed reset
+  try { fs.rmSync(fresh, { recursive: true, force: true }); } catch (e) { console.warn(`[world] reset left its scratch directory ${fresh}: ${e}`); }
   return arch;
 }

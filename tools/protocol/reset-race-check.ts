@@ -30,6 +30,28 @@ ok(r?.ok === false && r?.refused?.code === "reset", "RR2 the straggler is refuse
 ok(lines("race").length === before, "RR3 the new world's file gained no line from the old log", { before, after: lines("race").length });
 ok(!fresh.live.state().entities.straggler && fresh.live.entries.length === before, "RR4 the fresh log never saw it", { head: fresh.live.entries.length });
 ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset", "RR5 the old log stays retired for every later request");
+// RR6: a failure after the fresh log is in place has erased the world; the owner is told it was, not that nothing changed
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "reopen"), "reopen", "olive");
+  const rw = new World("reopen"); rw.openLog = () => { throw new Error("injected: the fresh log won't open"); };
+  const sent = []; const c = { id: "olive", world: rw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } };
+  REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "reopen" });
+  const e = sent.find((m) => m.type === "error")?.error ?? "";
+  const archived = fs.readdirSync(path.join(process.env.WORLDS_DIR, "reopen")).some((n) => n.startsWith("reset-"));
+  ok(/was erased/.test(e) && /stays closed/.test(e) && /whoever runs this server/.test(e) && /Resetting again erases nothing more/.test(e) && !/nothing changed/.test(e)
+    && archived && !sent.some((m) => m.type === "world-reset"),
+    "RR6 the fresh log doesn't open after the reset swapped it: the owner is told the world was erased and stays closed, who can open it, and that resetting again erases nothing more; never that nothing changed", { e, archived }); }
+// RR6b: once the fresh log is open the reset stands: a failure starting the fresh world's scripts (it has none) is the
+// server log's, and everyone present is told of the reset as usual
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts"); const { WorldScripts } = await import("../../server/scripts.ts");
+  const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "scripted"), "scripted", "olive");
+  const sw = new World("scripted"); const sync = WorldScripts.prototype.sync;
+  const sent = []; const c = { id: "olive", world: sw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } }; sw.clients.add(c);
+  WorldScripts.prototype.sync = () => { throw new Error("injected: the scripts won't start"); };
+  try { REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "scripted" }); } finally { WorldScripts.prototype.sync = sync; }
+  const fresh = sw.log.live.entries.length, err = sent.find((m) => m.type === "error")?.error;
+  ok(!err && sent.some((m) => m.type === "world-reset") && sw.log.requestSync(owner, "create", { components: { description: "after" } })?.ok === true,
+    "RR6b the fresh log opened but the scripts didn't start: the reset stands, everyone present is told, and the fresh world takes requests", { err, sent: sent.map((m) => m.type), fresh }); }
 
 // ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260, requestwire.ts:135;
 // Antra's repro: the old tab's request still committed, wrote:true, ok reply). The await is held by a gate in front of the

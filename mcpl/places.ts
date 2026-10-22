@@ -99,6 +99,9 @@ export function placesOf(meta: any, comp: unknown): Place[] {
 /** Model frame → world (the inverse of shared/structure.js localizePoint). */
 const scale3 = (s: PlaceHolder["scale"]): Vec3 => Array.isArray(s) && s.length === 3 && s.every((x) => Number.isFinite(x) && x > 0) ? [s[0], s[1], s[2]]
   : typeof s === "number" && s > 0 ? [s, s, s] : [1, 1, 1];
+/** How much a thing's frame scales a volume in it: the product of the axes its places are framed at (scale3), so a
+ *  region's size in the world agrees with where inRegion finds it. */
+export function frameVolume(e: PlaceHolder): number { const s = scale3(e.scale); return s[0] * s[1] * s[2]; }
 const rotOf = (e: PlaceHolder): number[] => { const q = e.q; if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) { const n = Math.hypot(...q); if (n > 1e-9) return q.map((x) => x / n); }
   const y = e.yaw ?? 0; return [0, Math.sin(y / 2), 0, Math.cos(y / 2)]; };
 const qApply = (q: number[], v: number[]): Vec3 => { const [x, y, z, w] = q; const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
@@ -116,7 +119,7 @@ export function toLocal(e: PlaceHolder, w: number[]): Vec3 {
  *  on or above the region's floor (a hand's width of slack) and below its top. */
 export function inRegion(e: PlaceHolder, p: Place, w: number[]): boolean {
   if (p.kind !== "region" || !p.min || !p.max) return false;
-  const l = toLocal(e, w), s = e.scale && e.scale > 0 ? e.scale : 1, slack = 0.1 / s;
+  const l = toLocal(e, w), slack = 0.1 / scale3(e.scale)[1];   // a hand's width in metres, in the frame's height
   return l[0] >= p.min[0] && l[0] <= p.max[0] && l[2] >= p.min[2] && l[2] <= p.max[2]
     && l[1] >= p.min[1] - slack && l[1] < p.max[1];
 }
@@ -158,14 +161,14 @@ export const SEAT_STANDOFF = 0.7, SEAT_HALF = 0.3;
  *  — the body sits by mounting it), the nearest floor below the seat. A door
  *  or point: there. */
 export function destinationOf(e: PlaceHolder, p: Place): Destination {
-  const s = e.scale && e.scale > 0 ? e.scale : 1;
+  const s = scale3(e.scale);   // per axis: a stretched thing's room and seat are stretched with it
   const label = `${e.name ?? e.id}/${p.name}${p.label ? ` (${p.label})` : ""}`;
   if (p.kind === "region") {
     const mid = toWorld(e, [(p.min![0] + p.max![0]) / 2, p.min![1], (p.min![2] + p.max![2]) / 2]);
     // reach covers the whole room (its half-diagonal); `inside` keeps the
     // search to the room itself — a long or furnished room is reached at
     // whatever clear floor it has, not only round its middle
-    const half = Math.hypot(p.max![0] - p.min![0], p.max![2] - p.min![2]) * s / 2;
+    const half = Math.hypot((p.max![0] - p.min![0]) * s[0], (p.max![2] - p.min![2]) * s[2]) / 2;
     const room = { ...p, min: [p.min![0], -Infinity, p.min![2]] as Vec3, max: [p.max![0], Infinity, p.max![2]] as Vec3 };
     return { x: mid[0], y: mid[1], z: mid[2], reach: Math.max(0.6, half), label, above: ROOM_FLOOR_EPS, below: ROOM_FLOOR_EPS,
       inside: (x, z) => inRegion(e, room, [x, 0, z]) };
@@ -176,6 +179,7 @@ export function destinationOf(e: PlaceHolder, p: Place): Destination {
   // keeps the seat's own surface out is the model's (an authoring error grows
   // with the thing; never less than 5cm) — it only looks below the seat, so
   // it can't pick another storey over the floor beside it.
-  if (p.kind === "seat") return { x: w[0], y: w[1] - 0.05 * Math.max(1, s), z: w[2], reach: SEAT_STANDOFF + SEAT_HALF * s, label, above: 0 };
+  // (a stretched seat's half-width: the wider of its two)
+  if (p.kind === "seat") return { x: w[0], y: w[1] - 0.05 * Math.max(1, s[1]), z: w[2], reach: SEAT_STANDOFF + SEAT_HALF * Math.max(s[0], s[2]), label, above: 0 };
   return { x: w[0], y: w[1], z: w[2], reach: 0.6, label };
 }

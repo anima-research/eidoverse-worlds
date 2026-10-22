@@ -51,13 +51,24 @@ try {
   }
 } catch (e) { console.log(`[mod] global ban restore failed (starting empty): ${e}`); }
 
+/** Whether a ban record names this account: its own account, or, for a record from before accounts (`legacySub`), the aid1
+ *  account whose sub it names, under any issuer. */
+export function banHoldsAgainst(b: BanRec, account: string | null | undefined): boolean {
+  if (!account || !b.account) return false;
+  return b.account === account || (!!b.legacySub && account.startsWith("aid1:") && account.endsWith(`:${b.account}`));
+}
+/** The keys of the global bans an unban of `id` lifts: the one filed under it, any filed under that name, and any that
+ *  holds against one of `accounts` (the account `id` names, or those wearing that name), by the rule a door checks. */
+export function bansLiftedBy(map: Record<string, BanRec>, id: string, accounts: Iterable<string>, fold: (s: string) => string): string[] {
+  const accts = [...accounts];
+  return Object.entries(map).filter(([k, b]) => k === id.toLowerCase() || (b.name && fold(b.name) === fold(id)) || accts.some((a) => banHoldsAgainst(b, a)) || (b as any).sub === id).map(([k]) => k);
+}
 /** Does a ban list hit this connection? By its account; a guest (no account) by its hashed address while unexpired. */
 export function findBan(map: Record<string, BanRec> | undefined, account: string | null | undefined, addr?: string | null, now = Date.now(), world: string | null = null): BanRec | null {
   if (!map) return null;
   for (const b of Object.values(map)) {
     if (b.world && b.world !== world) continue;   // a guest's ban in one world (the door's world ban can't name a guest)
-    if (account && b.account === account) return b;
-    if (account && b.legacySub && b.account && account.startsWith("aid1:") && account.endsWith(`:${b.account}`)) return b;
+    if (banHoldsAgainst(b, account)) return b;
     if (!account && addr && b.addr === addr && (b.until ?? 0) > now) return b;
   }
   return null;

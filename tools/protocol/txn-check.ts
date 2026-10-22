@@ -10,7 +10,13 @@
 //   T6  the connection becomes someone else while the request waits → refused; nothing under either identity
 //   T7  static: no await in the authority; none between worldlog's recheck and the synchronous commit
 //   T8  a short write is looped to the end, and a write that takes nothing throws
+//   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too,
+//       a founded world's own directory included (and nothing is synced on win32, where the server can't sync a directory)
+//   T8d the keys file a mint writes is synced before it's renamed into place
+//   T8e …and the directory that holds its name is synced after, as are directories made for it (none on win32, where the
+//       server can't sync a directory)
 //   T9  operator-repair: operator status revoked while queued → refused
+//   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
 //   T11 (r14 M1) server.ts writes only through requestwire (voice-moderate via requestAs); no direct w.log.request caller
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/txn-check.ts
@@ -28,15 +34,26 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["recheck without the role", "server/reqcap.ts", "  if (role && w.log.roleOf(cap.actorId) !== cap.role) return", "  if (false) return", ["T4b"]],
   ["identity read after the await: recheck without it", "server/reqcap.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
+  ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
+  ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);   // the world's", "  fs.mkdirSync(dir, { recursive: true });   // the world's", ["T8c"]],
+  ["a replaced file renamed in unsynced", "server/durable.ts", "writeAll(fd, Buffer.from(data, \"utf8\")); fs.fsyncSync(fd); }", "writeAll(fd, Buffer.from(data, \"utf8\")); }", ["T8d"]],
+  ["the keys file's directory made by plain mkdir", "server/custody.ts", "    mkdirDurable(path.dirname(file));   // the keys file's", "    fs.mkdirSync(path.dirname(file), { recursive: true });   // the keys file's", ["T8e"]],
+  ["a replaced file's new name left unsynced", "server/durable.ts", "  syncDir(path.dirname(file));   // the new name, in its directory", "", ["T8e"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
+  ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
+// T8c and T8e check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
+// they would turn red have nothing to catch, so their mutants are skipped
+const DIR_SYNC_ROWS = new Set(["T8c", "T8e"]);
 if (process.argv.includes("--mutants")) {
-  const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0;
+  const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0, ran = 0;
   for (const [name, file, find, repl, rows] of MUTANTS) {
+    if (process.platform === "win32" && rows.length && rows.every((x) => DIR_SYNC_ROWS.has(x))) { console.log(`skip mutant '${name}': the server syncs no directory on win32`); continue; }
+    ran++;
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
     fs.mkdirSync(path.join(d, "tools/protocol"), { recursive: true });
@@ -51,7 +68,7 @@ if (process.argv.includes("--mutants")) {
     console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → red: ${red.join(",") || "(none)"} (want ${rows.join(",")})`);
     fs.rmSync(d, { recursive: true, force: true });
   }
-  console.log(`[txn-check --mutants] ${MUTANTS.length} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
+  console.log(`[txn-check --mutants] ${ran} mutations run${ran < MUTANTS.length ? ` (${MUTANTS.length - ran} skipped on ${process.platform})` : ""}, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 const root = scratch("txn");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
@@ -220,6 +237,45 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   nodefs.writeSync = function () { return 0; };
   let threw2 = null; try { appendDurable(f, '{"b":1}'); } catch (e) { threw2 = e; } finally { nodefs.writeSync = o; }
   ok(/short write/.test(String(threw2?.message)), "T8b a write that takes nothing throws (never a silent torn line)", String(threw2)); }
+// ---------------- T8c ----------------
+// a directory mkdir makes is named by an entry in its parent: a first write into new directories is durable only once
+// every one of those entries is synced, the topmost new directory's parent included
+{ const { putBlobFile } = await import("../../server/durable.ts");
+  const base = path.join(root, "t8c"); fs.mkdirSync(base, { recursive: true });
+  // a world founded in a worlds directory that already exists: its own directory is the only new name, in that directory.
+  // The directory's keys exist already, as for any founding after its first, so the first founding is made before the
+  // syncs are watched: it mints the keys, and saving the keys file syncs this directory too, which would hide whether
+  // founding synced the world's own name
+  const worlds = path.join(base, "worlds"); fs.mkdirSync(worlds); foundWorld(path.join(worlds, "t8c-first"), "t8c-first", "olive");
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync }; const dirFds = new Map(); const synced = [];
+  nodefs.openSync = function (p, flags, ...r) { const fd = o.openSync.call(nodefs, p, flags, ...r); if (flags === "r") dirFds.set(fd, path.resolve(String(p))); return fd; };
+  nodefs.fsyncSync = function (fd) { if (dirFds.has(fd)) synced.push(dirFds.get(fd)); return o.fsyncSync.call(nodefs, fd); };
+  try { appendDurable(path.join(base, "a", "b", "c", "world.jsonl"), '{"n":1}'); putBlobFile(path.join(base, "x", "blobs", "h.txt"), "blob", "sha256:unused");
+    foundWorld(path.join(worlds, "t8c"), "t8c", "olive"); }
+  finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; }
+  const want = process.platform === "win32" ? [] : [base, "a", "a/b", "a/b/c", "x", "x/blobs", "worlds"].map((d) => d === base ? base : path.join(base, d));
+  const missing = want.filter((d) => !synced.includes(d));
+  ok(!missing.length && (process.platform !== "win32" || !synced.length) && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
+    "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made, a founded world's directory too (none on win32)", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
+
+// ---------------- T8d, T8e ----------------
+// a key a mint hands out must survive a crash, or the genesis it signed (synced) names a key no one holds: the keys file is
+// written to a temp file and synced, renamed into place, and the directory holding its name synced after the rename
+{ const { custodyAt } = await import("../../server/custody.ts");
+  const file = path.join(root, "t8d", "keys", "custody.json"), dir = path.dirname(file);
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync }; const fdPath = new Map(), events = [];
+  nodefs.openSync = function (p, ...r) { const fd = o.openSync.call(nodefs, p, ...r); fdPath.set(fd, path.resolve(String(p))); return fd; };
+  nodefs.fsyncSync = function (fd) { events.push(["fsync", fdPath.get(fd)]); return o.fsyncSync.call(nodefs, fd); };
+  nodefs.renameSync = function (a, b) { events.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.renameSync.call(nodefs, a, b); };
+  let key; try { key = custodyAt(file).sequencer(); } finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; nodefs.renameSync = o.renameSync; }
+  const into = events.findIndex((e) => e[0] === "rename" && e[2] === file), tmp = into >= 0 ? events[into][1] : null;
+  const synced = tmp !== null && events.slice(0, into).some((e) => e[0] === "fsync" && e[1] === tmp);
+  const dirSynced = into >= 0 && events.slice(into + 1).some((e) => e[0] === "fsync" && e[1] === dir)
+    // the keys directory and its parent were made for this file: each is named in the directory above it
+    && [path.dirname(dir), path.dirname(path.dirname(dir))].every((d) => events.some((e) => e[0] === "fsync" && e[1] === d));
+  const onDisk = JSON.parse(fs.readFileSync(file, "utf8")).sequencer?.pub === key;
+  ok(onDisk && synced, "T8d the keys file a mint writes is synced before it's renamed into place", { key, into, tmp, events: events.map((e) => e.map((x) => typeof x === "string" ? path.relative(root, x) : x)) });
+  ok(onDisk && (process.platform === "win32" ? !dirSynced : dirSynced), "T8e …and the directory holding its name is synced after the rename, as are the directories made for it (none on win32)", { dirSynced, events: events.map((e) => e.map((x) => typeof x === "string" ? path.relative(root, x) : x)) }); }
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");
@@ -250,7 +306,13 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   X.g.release(); await until(() => tg.replies.length > n0); OPERATORS.delete("local:gus");
   const gr = tg.replies[n0];
   ok(gr?.ok === false && /became a server operator/.test(gr?.reply?.refused?.reason ?? gr?.refused?.reason ?? "") && !/won't change/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? "") && /send it again/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? ""),
-    "T9e granted while a request waited: said so, and sending it again is the way (not 'won't change this')", gr); }
+    "T9e granted while a request waited: said so, and sending it again is the way (not 'won't change this')", gr);
+  // T9f: an account that isn't an operator is refused at once, and told who can repair, which is never a world's owner
+  const nob = idOf("local:nob", "nob"); const tn = tab(X, nob, { account: "local:nob" });
+  send(tn, "set", { id: "@world", component: `roles:${bea}`, value: { role: "visitor" } }, "operator-repair"); await until(() => tn.replies.some((m) => m.operator));
+  const nr = tn.replies.find((m) => m.operator)?.reply;
+  ok(nr?.ok === false && nr?.refused?.code === "rights" && /whoever runs this server/.test(nr?.refused?.fix ?? "") && !/owner/.test(nr?.refused?.fix ?? ""),
+    "T9f operator-repair from an account that isn't an operator: refused, and pointed to whoever runs this server, not to an owner", nr); }
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;

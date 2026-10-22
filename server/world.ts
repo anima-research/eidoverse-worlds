@@ -213,11 +213,16 @@ export class World {
     // log stays in the first attempt's archive
     let arch: string;
     try { arch = resetWorld(this.log); } catch (e: any) { if (e?.logMoved) this.log.retire(WorldLog.HALF_RESET); throw e; }
-    this.log.retire();           // a request still awaiting warm() on the old log refuses instead of writing into the new file
-    this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
-    this.log = this.openLog();
-    this.scripts = new WorldScripts(this.log);
-    this.scripts.sync();
+    // the fresh log is on disk from here, so the world is erased whatever follows: an error carries the archive
+    // (`resetDone`) and whether the fresh log opened (`opened`), so no answer reads as a reset that changed nothing
+    let opened = false;
+    try {
+      this.log.retire();           // a request still awaiting warm() on the old log refuses instead of writing into the new file
+      this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
+      this.log = this.openLog(); opened = true;
+      this.scripts = new WorldScripts(this.log);
+      this.scripts.sync();
+    } catch (e) { throw Object.assign(new Error(String((e as Error)?.message ?? e)), { resetDone: arch, opened, cause: e }); }
     return arch;
   }
 }

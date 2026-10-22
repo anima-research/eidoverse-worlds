@@ -26,7 +26,7 @@ import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld, lineOfSight, withoutColliders } from "./physics.ts";
 import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "./navgrid.ts";
-import { placesOf, inRegion, names, destinationOf, toLocal, type Place, type Destination, type PlaceHolder } from "./places.ts";
+import { placesOf, inRegion, names, destinationOf, toLocal, frameVolume, type Place, type Destination, type PlaceHolder } from "./places.ts";
 import { collisionTriangles } from "../server/geometry.ts";
 import { colliderOf } from "../shared/components.js";
 // FLIGHT. The same deterministic integrator the browser bench and the capture
@@ -92,6 +92,7 @@ import { isFiniteVec3 } from "./shape.ts";
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
 import { makeReplica } from "../shared/protocol/replica.js";
+import { PURGED } from "../shared/protocol/fold.js";
 import { diffView } from "../shared/protocol/viewdiff.js";
 import { emptyView, idOut } from "../shared/protocol/view.js";
 import { hear } from "../shared/chatwindow.js";
@@ -1176,7 +1177,7 @@ export class WorldAgent {
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
-            if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
+            this.resumeWalkGate();   // a walk carried across the rejoin
             // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
             // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
             void this.replaySwitch();
@@ -1723,10 +1724,21 @@ export class WorldAgent {
   }
   /** A thing's components as this body's replica folds them now (a copy), or null: what a write planned from them pins
    *  with expect, as a person's edit does (client/lib/editwrites.js compsOf). id and the component
-   *  names are the authority's own, as requests.js encodes them. */
+   *  names are the authority's own, as requests.js encodes them. A purged component is the fold's PURGED itself, not a
+   *  copy: the authority's expect counts a purged value equal to nothing, so a pin has to tell one apart and leave it out. */
   componentsOf(id: string): Record<string, unknown> | null {
     const c = this.replica?.st?.entities?.[id]?.c;
-    return c ? structuredClone({ ...c }) : null;
+    return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === PURGED ? PURGED : structuredClone(v)])) : null;
+  }
+  /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
+   *  (componentsOf). A write of the host's sockets map changes the children it names and retires the rest
+   *  (shared/protocol/authority/sockets.js liftOps), so it pins these. */
+  socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
+      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== PURGED)
+        out[k] = this.componentsOf(k)!;   // a socket child as liftOps counts one (isSocketC)
+    return out;
   }
 
   private reconcileFromFold() {
@@ -2393,10 +2405,15 @@ export class WorldAgent {
     const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s, ...(Array.isArray(e.scale3) ? { scale3: s3 } : {}) };
     // lying down (a tumbling engine's rest, or a hand's tilt): its box turned into the frame of its own yaw, and no
     // decks or grid (those are measured upright); read by its yaw alone it was a phantom deck where it no longer stands
-    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, g.bbox.min, g.bbox.max) : null;
+    // A stretch acts on the model's own axes, before its rotation, so a stretched box is stretched first and then turned,
+    // and is registered at scale 1 (the turn would carry a stretch applied afterwards onto the wrong axes).
+    const stretched = Array.isArray(e.scale3) && !(Math.abs(s3[0]) === Math.abs(s3[1]) && Math.abs(s3[1]) === Math.abs(s3[2]));
+    const st = (v: number[]) => stretched ? v.map((x, i) => x * Math.abs(s3[i])) : v;
+    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, st(g.bbox.min), st(g.bbox.max)) : null;
     if (lying) {
       const bid = `${this.world}/${id}`;
-      void registerSupport(this.supportHolder, bid, lying.min, lying.max, { ...xform, yaw: lying.yaw });
+      void registerSupport(this.supportHolder, bid, lying.min, lying.max,
+        stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
       this.supportIds.set(id, [bid]);
       return;
     }
@@ -2425,12 +2442,14 @@ export class WorldAgent {
       this.supportIds.delete(id);
     }
     if (!g) return;
-    const [w, h, d] = [g.bbox.size[0] * s3[0], g.bbox.size[1] * s3[1], g.bbox.size[2] * s3[2]];
+    // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
+    const a3 = s3.map(Math.abs);
+    const [w, h, d] = [g.bbox.size[0] * a3[0], g.bbox.size[1] * a3[1], g.bbox.size[2] * a3[2]];
     const ids: string[] = [];
     const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
     const decks = roomScale
       ? (g.topSurfaces ?? [])
-          .filter((t: any) => t.area * s3[0] * s3[2] >= 1 && fillOf(t) >= DECK_FILL)
+          .filter((t: any) => t.area * a3[0] * a3[2] >= 1 && fillOf(t) >= DECK_FILL)
           .slice(0, 6)
       : [];
     if (roomScale && decks.length) {
@@ -2449,19 +2468,19 @@ export class WorldAgent {
       // the same shared classifier the browser's decide() runs; a summary
       // without `lie` (older server) cannot accuse anyone, so honest small
       // boxes keep today's behavior either way.
-      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s3[1] : 0 });
+      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * a3[1] : 0 });
       if (cls.uneven) {
         // the certification is a MODEL-frame bound; this spawn's scale must
         // not stretch it past the agreed world bound (#94 review B1) — a
         // grid certified to 3cm serves a ×1.25 spawn (3.75cm) but not a ×2
-        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s3[1] > CERT_MAX_WORLD;
+        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (fit) ids.push(bid);
         // refused grid (absent/malformed/oversized/over-stretched): a
         // DECLARED abstention — the body finds terrain, which is at worst
         // the browser's under-the-rubble disagreement, never a floating
         // false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s3[1]} high)` : ""} — abstaining, no box`);
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
       } else {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
@@ -2562,8 +2581,9 @@ export class WorldAgent {
       else if (a.kind === "pose" && !this.wingsFolded) end("stopped");
       else if (a.kind === "live" && !this.heldPose) end(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
       else if ((a.kind === "live" || a.kind === "track") && this.clip === "ragdoll") end("knocked over");
-      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it
-      else if (a.kind === "track" && (this.target || ["walk", "run", "swim", "tread"].includes(this.clip))) this.endTrackLoop("moved");
+      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it. Treading water is a
+      // swimmer at rest, not a move, so a loop started while treading plays on
+      else if (a.kind === "track" && (this.target || ["walk", "run", "swim"].includes(this.clip))) this.endTrackLoop("moved");
     }
   }
   /** End the tracks loop alone (its layer, not a held pose or a clip), and tell the renderers so: a walk ends it, and a
@@ -3960,8 +3980,19 @@ export class WorldAgent {
     });
   }
 
-  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin
-   *  (the authority's track of this body ended with the old connection, so a tracked gate has no permit left). */
+  /** A walk carried across a rejoin: the authority's track of this body ended with the old connection, so the walk asks
+   *  again where it stands. It does so on a gate of its own, since a request the old connection sent (a stretch of the
+   *  walk, or where it stood) answers the gate it was sent for, and its answer, often a timeout, mustn't end this walk. */
+  private resumeWalkGate() {
+    const old = this.walkGate;
+    if (!old || old.mode === "open") return;   // open: the authority keeps no track of this body, so there is nothing to ask
+    // nothing in flight carries over: a stretch or a shove the old connection sent settles on the old gate, so the new one
+    // starts with no permit asked for and no shove holding it
+    const g: WalkGate = { ...old, busy: false, permit: null, blocker: null, hold: 0 };
+    this.walkGate = g;
+    this.syncWalkGate(g);
+  }
+  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin. */
   private syncWalkGate(gate: WalkGate) {
     gate.mode = "sync"; gate.permit = null;
     void this.trackHere().then((t) => {
@@ -3987,7 +4018,11 @@ export class WorldAgent {
    *  where a carried or moving thing is. Null when that cannot be resolved. */
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
-    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale: f.scale } : null;
+    // its per-axis scale, so a place on a stretched thing is stretched with it, as the thing is drawn. places.ts frames
+    // only positive axes, so a mirrored thing keeps its one-number scale, as before
+    const s3 = f.ok ? f.scale3 : undefined;
+    const scale = Array.isArray(s3) && s3.every((v) => v > 0) ? s3 : f.ok ? f.scale : undefined;
+    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale } : null;
   }
 
   /** Places that belong to no thing ("the meadow"): @world's places component, in world coordinates. */
@@ -4058,7 +4093,7 @@ export class WorldAgent {
     for (const { id, h, ps } of this.placeHolders(now)) {
       const e = { id };
       if (!h) continue;
-      const s3 = (h.scale ?? 1) ** 3;
+      const s3 = frameVolume(h);   // the thing's volume factor, as its places are framed
       for (const p of ps) {
         if (!inRegion(h, p, w)) continue;
         out.push({ entity: e, place: p, vol: s3 * (p.max![0] - p.min![0]) * (p.max![1] - p.min![1]) * (p.max![2] - p.min![2]) });
@@ -4686,35 +4721,67 @@ export class WorldAgent {
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
   private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
   /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
-   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs aimed at that
+   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
    *  body in the refused class. */
   private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
     const name = this.nameOfActor(actor), out: string[] = [];
     for (const [l, e] of [...this.reaches]) {
-      // a limb's refusal is that reach's only while the reach still aims at the refuser's body (or at a point, which the relay
-      // judges by where it lands): a newer reach on the same hand toward someone else stays
-      const atThem = !!name && (e.t?.who === name || e.t?.space === name), atBody = e.t?.who != null || e.t?.space != null;
-      const hit = limb !== undefined ? l === limb && (atThem || !atBody) : atThem && (!cls || WorldAgent.reachClass(e.t, name!) === cls);
+      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
+      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
+      // lands now: a newer reach on the same hand held to nobody who refused stays
+      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
+      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
       if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
   }
-  /** The other body a world or self-frame point lands in, and its class there: server/reachgate.ts's bodiesAt, read from
-   *  the presence this body holds (each body's capsule, scaled to its size). The first found, as the relay refuses any. */
-  private bodyAtPoint(t: any): { name: string; cls: string } | null {
-    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return null;
-    let pt = t.p as number[];
-    if (t.space !== undefined) {   // this body's root frame → world (yaw about +y), as reachgate's frameToWorld
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-      pt = [this.pos.x + pt[0] * cy + pt[2] * sy, this.pos.y + pt[1], this.pos.z - pt[0] * sy + pt[2] * cy];
-    }
+  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
+   *  presence this body holds (each body's capsule, scaled to its size). */
+  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
+    const out: { name: string; cls: string }[] = [];
     for (const [name, person] of this.people) {
       const at = (person.pose as any)?.p;
       if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
       const sc = clampBodyScale((person.pose as any)?.scale);
       const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
-      if (cls) return { name, cls };
+      if (cls) out.push({ name, cls });
     }
-    return null;
+    return out;
+  }
+  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
+   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
+   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
+  private reachHolders(t: any): { name: string; cls: string }[] {
+    if (t?.who !== undefined) {
+      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
+      return cls ? [{ name: t.who, cls }] : [];
+    }
+    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
+    const p = t.p as number[];
+    if (t.space === undefined) return this.bodiesAtPoint(p);
+    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
+      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
+      return world ? this.bodiesAtPoint(world) : [];
+    }
+    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
+    const own = WorldAgent.reachClass(t, t.space);
+    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
+    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
+  }
+  /** A point in a body's own root frame, in the world, as server/reachgate.ts's frameToWorld places it: at the body's size,
+   *  turned by the pose's q when it carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a
+   *  position. */
+  private static poseToWorld(pose: any, local: number[]): number[] | null {
+    const at = pose?.p;
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+    const sc = clampBodyScale(pose.scale), l = local.map((v) => v * sc), q = pose.q;
+    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
+      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
+      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
+      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
+      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
+    }
+    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
+    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
   }
   /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
    *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
@@ -4723,16 +4790,18 @@ export class WorldAgent {
     if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p);
     return null;
   }
-  /** After streaming a reach at another body: did the relay refuse it? A fresh refusal (waits a few frames for one), or one
-   *  said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is not a yes). */
-  private async reachRefusalFor(limb: string, actor: string, cls: string, since: number) {
+  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
+   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
+   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
+  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
+    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
     for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
-      const r = this.reachRefusals.find((x) => x.ts >= since && x.to === actor && (x.limb ?? limb) === limb && x.cls === cls);   // the class too, as the stale lookup below
-      if (r) return { r, fresh: true };
+      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
+      if (r) return { r, by: holderOf(r)!.name, fresh: true };
       await new Promise((res) => setTimeout(res, 50));
     }
-    const r = [...this.reachRefusals].reverse().find((x) => x.to === actor && x.cls === cls && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
-    return r ? { r, fresh: false } : null;
+    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
+    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
   }
   /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
    *  was answered (its log arrived first). Ops planned before that wait don't see what landed meanwhile, so a caller that
@@ -4999,16 +5068,14 @@ export class WorldAgent {
     const what = describeTarget(t, this.name);
     // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
     // a point in the world or in this body's own frame is judged by the body it lands in, as the relay judges it
-    const landed = t.who === undefined && (t.space === undefined || t.space === "self" || t.space === this.name) ? this.bodyAtPoint(t) : null;
-    const otherName = landed ? landed.name : t.who !== undefined ? t.who : t.space !== undefined && t.space !== "self" ? t.space : null;
-    const otherActor = otherName && otherName !== this.name ? this.actorIds.get(otherName) : undefined;
-    const cls = landed ? landed.cls : otherName ? WorldAgent.reachClass(t, otherName) : null;   // null: beside them, nothing for the relay to refuse
-    if (otherActor && this.joined && cls) {
-      const refused = await this.reachRefusalFor(limb, otherActor, cls, since);
+    // every body the relay holds it to (none: beside them, nothing for the relay to refuse)
+    const holders = this.reachHolders(t).flatMap((h) => { const actor = this.actorIds.get(h.name); return actor ? [{ ...h, actor }] : []; });
+    if (holders.length && this.joined) {
+      const refused = await this.reachRefusalFor(limb, holders, since);
       if (refused) {
         if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
         const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
-        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${otherName}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
+        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
           + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
             : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn without streaming it again; if they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
       }

@@ -156,6 +156,9 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["door-unit", "../../mcpl/door-unit-test.ts", 0.5],   // the agent door's units (house 6340433633 fixes live here: loops, stops, part refusals, speech tags)
   ["effective-mcpl", "../../mcpl/effective-test.ts", 0.3],   // the agent's composed transforms (mounts, stretch, shear, stored rotation)
   ["effective", "../effective-test.ts", 0.5],   // the same seen from a seated body (occupant size, seat correction)
+  ["stretched-support", "../../mcpl/stretched-support-test.ts", 1], // a stretched thing's support (box, heightfield, triangles, lying down) holds a body where it's drawn
+  ["stretched-places", "../../mcpl/stretched-places-test.ts", 1], // a named place on a stretched thing is stretched with it; a region's floor slack stays 0.1 m
+  ["door-body", "../../mcpl/door-body-test.ts", 1], // the door's own body state on a bare agent: a tracks loop, a reach held to several bodies, a walk across a rejoin
   ["shape-attach", "../shape-attach-test.ts", 1], // shape audit 10-16 wave 2: socket/station, one action namespace, one home, grabbable registered, reactions frozen, look-at radians, places closed, spawn, lock, reserved names
   ["shape-physics", "../shape-physics-test.ts", 1], // shape audit 10-16 wave 2: transform pinned (glTF rule), parent −order, pivot {pos}, motion trims + repair, physics kind/reserved/kinematic, physics-engine, collider mesh, physics-joint + joint, structure, surface, stage
   ["shape-repair", "../shape-repair-test.ts", 1], // review r7 (10-16): the load's repair once per world (a marker in the log), per thing, a node's name as data (motion:<slot> {node}); no empty stations by default
