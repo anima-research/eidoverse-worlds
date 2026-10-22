@@ -103,7 +103,7 @@
   "raw-symlink": 2
  },
  "tools/protocol/inplace-check.ts": {
-  "bare-wait": 7
+  "bare-wait": 3
  },
  "tools/protocol/inspectharness.ts": {
   "bare-wait": 1

@@ -68,6 +68,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
+import { tryUntil } from "./wait.ts";
 import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js";
 import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
@@ -130,7 +131,7 @@ async function boot(tag: string, extra: Record<string, string> = {}) {
   const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "", ...extra }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
   process.on("exit", () => { try { proc.kill(); } catch {} });
-  for (let i = 0; i < 100; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok) return { port, proc, log }; } catch {} }
+  if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc, log };
   throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);
 }
 async function joinAs(port: number, world: string) {
@@ -138,7 +139,7 @@ async function joinAs(port: number, world: string) {
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.send(JSON.stringify({ type: "join", world, id: "Ann", avatar: "", replica: true }));
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+  await tryUntil(`Ann's join to ${world} is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   ws.close();
   return { snap: msgs.find((m) => m.type === "snapshot"), err: msgs.find((m) => m.type === "error")?.error, types: msgs.map((m) => m.type === "error" ? m.error : m.type).slice(0, 6) };
 }
@@ -156,7 +157,7 @@ const srv1 = await boot("boot1");
   // a current world to be refused at: found one
   tool(["found", "current", "--owner", "Ann"]);
   ws.send(JSON.stringify({ type: "join", world: "current", id: "Ann", avatar: "" }));
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); ws.close();
+  await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
 ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /a world of the current protocol, and/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
@@ -169,7 +170,7 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   const ws = new WebSocket(`ws://127.0.0.1:${srvN.port}/ws`, { headers: { cookie: `ew_sess=${sid}` } } as any); const msgs: any[] = []; ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.send(JSON.stringify({ type: "join", world: "current", id: "Nat", avatar: "" }));
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); ws.close();
+  await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   try { srvN.proc.kill(); } catch {}
   ok(err === noFoldRefusal("current", true), "IP27c a native session marked native: true (issued since #255) is told on the wire that the Unreal client hasn't been ported yet", err); }
