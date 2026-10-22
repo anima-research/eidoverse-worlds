@@ -1,7 +1,6 @@
 {
  "mcpl/door-body-test.ts": {
-  "bare-wait": 3,
-  "own-until": 1
+  "bare-wait": 2
  },
  "mcpl/storey-walk-test.ts": {
   "bare-wait": 10
