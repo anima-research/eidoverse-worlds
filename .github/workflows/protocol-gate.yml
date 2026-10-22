@@ -69,7 +69,8 @@ jobs:
           #  macOS: nothing. 10-19 forced SwiftShader here for a hang whose cause was the keychain (harness.ts passes
           #         --use-mock-keychain); SwiftShader itself then blocked the page's main thread > 60 s, and the browser
           #         lane failed 5/10 for days. Default GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
-          EIDO_METER_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}   # the hosted Windows VM is ~3x slower per request (access A8/A14 hit the 3000 ms cap)
+          # no EIDO_METER_SCALE: it was 3 on Windows for access A8/A14 (10-19); A14's cause was test order (a2b496e5, 10-22).
+          # The knob stays for an operator whose host is slow; the gate runs the cap as shipped.
           EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || '' }}
         run: |
           # one known temp dir under /tmp so failed suites' scratch can be uploaded. With $RUNNER_TEMP/gate-tmp here,
