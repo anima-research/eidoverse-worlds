@@ -96,11 +96,34 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   check("...and so is a point in this body's own frame, by its yaw", fresh(r, "Cal"), r.text);
 }
 {
+  // Ann at twice her size, pitched back a quarter about x by her pose's q (her yaw still 0): her frame's [0, 1, 0.6] is
+  // [0, 2, 1.2] at her size, and pitched back it is [0, 1.2, -2], in Cal standing there. Read without her size it lands
+  // [0, 0.6, -1], 1 m short of Cal; turned by her yaw alone, [0, 2, 1.2], in nobody.
+  const ag = reacher([0, 0, -2], { q: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2], scale: 2 });
+  const local = [0, 1, 0.6];
+  check("(that point is beside Ann, not in her)", !pointClass([0, 0, 0], local));
+  setTimeout(() => ag.reachRefusals.push(refusal("a-cal", calThere)), 60);
+  const r = await ag.reach("rightHand", { p: local, space: "Ann" });
+  check("...and in a pitched, scaled body's frame, by her pose's q and her size", fresh(r, "Cal"), r.text);
+}
+{
   // a reach that streamed, and is refused later by a body its point lands in that it doesn't name
   const ag = reacher([2, 0, 0], { q: quarter });
   ag.reaches.set("rightHand", { t: { p: ahead, space: "Ann" } });
   const dropped = ag.dropReachesAt("a-cal", "rightHand", calThere);
   check("a later refusal from a body the reach lands in withdraws it", dropped.length === 1 && !ag.reaches.has("rightHand"), JSON.stringify(dropped));
+}
+{
+  // a refusal from a server that names no limb: the limbs held to that body in the refused class go, another class stays
+  const ag = reacher([2, 0, 0]);
+  const chest = [2, 1.2, 0], head = [2, 1.65, 0];
+  const chestCls = pointClass([0, 0, 0], [0, 1.2, 0]), headCls = pointClass([0, 0, 0], [0, 1.65, 0]);
+  check("(Cal's chest and head are different classes)", !!chestCls && !!headCls && chestCls !== headCls, `${chestCls} ${headCls}`);
+  ag.reaches.set("rightHand", { t: { p: chest } });
+  ag.reaches.set("leftHand", { t: { p: head } });
+  const dropped = ag.dropReachesAt("a-cal", undefined, chestCls);
+  check("a refusal that names no limb withdraws the reaches held to that body in its class, and keeps another class",
+    !ag.reaches.has("rightHand") && ag.reaches.has("leftHand") && dropped.length === 1, JSON.stringify(dropped));
 }
 
 console.log("a walk carried across a rejoin");
@@ -117,15 +140,26 @@ console.log("a walk carried across a rejoin");
   // the old connection sent, answered only after the rejoin); else it is answered yes at once, at the point asked.
   const walker = (name: string) => {
     const ag: any = new WorldAgent({ name, world: "w", url: `ws://127.0.0.1:${world.port}/ws` });
-    const io = { held: true, waiting: [] as ((v: unknown) => void)[], moves: 0 };
+    const io = { held: true, waiting: [] as ((v: unknown) => void)[], heldCalls: [] as Promise<unknown>[], moves: 0 };
     ag.request = (verb: string, args: any) => {
       if (verb !== "move") return Promise.resolve({ ok: true });
       io.moves++;
-      return io.held ? new Promise((res) => io.waiting.push(res)) : Promise.resolve({ ok: true, at: args.to });
+      if (!io.held) return Promise.resolve({ ok: true, at: args.to });
+      const p = new Promise((res) => io.waiting.push(res));
+      io.heldCalls.push(p);
+      return p;
     };
     return { ag, io };
   };
   const timedOut = { ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } };
+  // Answer the old connection's held requests with a timeout, and wait for them: once each has settled, a macrotask
+  // later every continuation the walk hung on them has run. Returns how many there were.
+  const answerLate = async (io: { waiting: ((v: unknown) => void)[]; heldCalls: Promise<unknown>[] }) => {
+    for (const answer of io.waiting) answer(timedOut);
+    await Promise.all(io.heldCalls);
+    await sleep(0);
+    return io.heldCalls.length;
+  };
   // Drop the connection as a restarting server does, let the body dial again, and wait for its new snapshot.
   const rejoin = async (name: string, ag: any, io: { held: boolean }) => {
     const before = sockets.get(name);
@@ -146,10 +180,9 @@ console.log("a walk carried across a rejoin");
     // the resumed walk asks where it stands (one move), then for its next stretch (another)
     const goesOn = await until(() => io.moves >= asked + 2, 3000);
     check("a walk carried across a rejoin asks for its next stretch", rejoined && goesOn, JSON.stringify({ rejoined, moves: io.moves, asked, gate: ag.walkGate }));
-    for (const answer of io.waiting) answer(timedOut);
-    await sleep(50);
-    check("...and the old connection's late answer doesn't end it", ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
-      JSON.stringify({ target: ag.target, refusal: ag.lastWalkRefusal }));
+    const late = await answerLate(io);
+    check("...and the old connection's late answer doesn't end it", late === 1 && ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
+      JSON.stringify({ late, target: ag.target, refusal: ag.lastWalkRefusal }));
     ag.close();
   }
   {
@@ -164,10 +197,9 @@ console.log("a walk carried across a rejoin");
     const asked = io.moves;
     const goesOn = await until(() => io.moves >= asked + 2, 3000);
     check("a walk still finding where it stands at the drop is resumed too, and asks for its next stretch", rejoined && goesOn, JSON.stringify({ rejoined, moves: io.moves, asked, gate: ag.walkGate }));
-    for (const answer of io.waiting) answer(timedOut);
-    await sleep(50);
-    check("...and the old connection's late answer doesn't end it", ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
-      JSON.stringify({ target: ag.target, refusal: ag.lastWalkRefusal }));
+    const late = await answerLate(io);
+    check("...and the old connection's late answer doesn't end it", late === 1 && ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
+      JSON.stringify({ late, target: ag.target, refusal: ag.lastWalkRefusal }));
     ag.close();
   }
   world.stop(true);
