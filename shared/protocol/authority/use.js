@@ -43,6 +43,8 @@ function pivotOf(st, id) {
 function reactionCap(ctx, id, comp, action) {
   const implicit = !ctx.st.entities[id]?.c.reactions?.[action] && action === "open" && implicitOpens(ctx.st.entities[id]);
   const lt = lastTouch(ctx.w, id, implicit ? "openable" : "reactions", { editsOnly: implicit, authored: true }); if (!lt) refuse("no-handler", `nobody set up '${action}' on ${id}`, `inspect {id: '${id}'} shows what it offers; a builder can set up '${action}' in its reactions, and asking again won't change it until then`);
+  // a purge erased whose rights installed it: it acts for nobody, never as a newcomer would (house 6340433633 Q2)
+  if (lt.actor == null) refuse("rights", `a purge erased who set up '${action}' on ${id}, so it acts for nobody`, `someone who may change ${id}'s reactions can set it up again`);
   ctx.actExtra = { capability: { reaction: action, author: lt.actor, grantedAt: lt.seq } };
   ctx.cap = { kind: "reaction", ids: [id], comps: [comp], author: lt.actor, action };
 }
