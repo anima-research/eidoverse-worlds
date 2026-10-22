@@ -12,13 +12,36 @@ type File = { sequencer?: Key; operator?: Key; holders: Record<string, Key> };
 
 /** How long a mint waits for another process's mint to finish before it gives up. */
 const LOCK_WAIT_MS = 10_000;
-/** Whether the process named in a lock file has exited (same host: the keys file is local). An unreadable or empty lock
- *  is being written by its holder, so it isn't gone. */
-function lockHolderGone(lock: string): boolean {
-  let pid: number;
-  try { pid = Number(fs.readFileSync(lock, "utf8")); } catch { return false; }
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+/** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
+function holderOf(f: string): { pid: number; nonce: string } | null {
+  let s: string; try { s = fs.readFileSync(f, "utf8"); } catch { return null; }
+  const [p, nonce] = s.split(" "); const pid = Number(p);
+  return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
+}
+/** Whether process `pid` has exited (same host: the keys file is local). */
+function exited(pid: number): boolean {
   try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
+}
+/** Takes the lock file `name` for this process, or returns null when another holds it. The pid and a nonce never used
+ *  before are written to a file of their own and synced, and only then linked to `name`, so `name` never exists without
+ *  its holder, even after a power loss. Returns the nonce. */
+function take(name: string): string | null {
+  const nonce = crypto.randomBytes(8).toString("hex"), tmp = `${name}.${nonce}.tmp`;
+  const fd = fs.openSync(tmp, "wx", 0o600);
+  try { fs.writeSync(fd, `${process.pid} ${nonce}`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.linkSync(tmp, name); return nonce; }
+  catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") return null; throw e; }
+  finally { fs.rmSync(tmp, { force: true }); }
+}
+/** Removes the lock file `f` if its holder has exited, as one step. Two waiters can both see the same dead holder, so the
+ *  one that removes it first takes `<lock>.<its nonce>`, the right to remove that one lock, and removes `f` only if `f`
+ *  still holds that nonce. A nonce is never reused, so a lock that has since replaced it is never removed. A right whose
+ *  holder exited before giving it back is removed the same way. Whether it removed `f`. */
+function clearIfGone(lock: string, f: string): boolean {
+  const h = holderOf(f); if (!h || !exited(h.pid)) return false;
+  const right = `${lock}.${h.nonce}`;
+  if (!take(right)) { clearIfGone(lock, right); return false; }
+  try { if (holderOf(f)?.nonce !== h.nonce) return false; fs.unlinkSync(f); return true; } finally { fs.rmSync(right, { force: true }); }
 }
 
 const mk = (): Key => {
@@ -45,23 +68,21 @@ function openCustody(file: string) {
   const save = () => { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(c, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600); };
   // A mint reads the file, adds a key and writes the whole file back, so two processes minting at once (the server and a
   // found / translate tool) would each write back what it read and the later rename would drop the other's key. The read,
-  // the mint and the write therefore run holding `<file>.lock`, made with O_EXCL: a process waits for it, and takes over
-  // one whose holder has exited.
+  // the mint and the write therefore run holding `<file>.lock` (take above): a process waits for it, and removes one whose
+  // holder has exited (clearIfGone above).
   const lock = `${file}.lock`;
   const minting = (missing: () => boolean, mint: () => void) => {
     if (!missing()) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const wait = new Int32Array(new SharedArrayBuffer(4)); const until = Date.now() + LOCK_WAIT_MS;
-    for (;;) {
-      try { const fd = fs.openSync(lock, "wx", 0o600); fs.writeSync(fd, String(process.pid)); fs.closeSync(fd); break; }
-      catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-        if (lockHolderGone(lock)) { try { fs.unlinkSync(lock); } catch { /* another waiter took it over first */ } continue; }
-        if (Date.now() > until) throw new Error(`custody: ${lock} has been held for ${LOCK_WAIT_MS / 1000} s; if no process is minting a key, remove it`);
-        Atomics.wait(wait, 0, 0, 10);
-      }
+    while (!take(lock)) {
+      if (clearIfGone(lock, lock)) continue;
+      if (Date.now() > until) { const h = holderOf(lock);
+        throw new Error(`custody: ${lock} has been held${h ? ` by process ${h.pid}` : ""} for ${LOCK_WAIT_MS / 1000} s; if no process is minting a key, remove it`); }
+      Atomics.wait(wait, 0, 0, 10);
     }
-    try { sync(); if (missing()) { mint(); save(); } } finally { try { fs.unlinkSync(lock); } catch { /* already gone */ } }
+    // only this process removes its own lock: another removes a lock only once its holder has exited
+    try { sync(); if (missing()) { mint(); save(); } } finally { fs.rmSync(lock, { force: true }); }
   };
   return {
     sequencer(): string { minting(() => !c.sequencer, () => { c.sequencer = mk(); }); return c.sequencer!.pub; },
