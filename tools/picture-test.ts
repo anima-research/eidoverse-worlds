@@ -62,6 +62,11 @@ const nUnknown = normalizePicture({ src: GOOD, alt: "x", scale: 2, _private: 1, 
 check("unknown keys and an unknown lit are noted, not fatal; _keys ignored silently", nUnknown.ok && nUnknown.notes.some((x) => /ignored by the evaluator: scale/.test(x) && !/_private/.test(x)) && nUnknown.notes.some((x) => /lit "neon" is unknown/.test(x)) && nUnknown.picture.lit === "scene", JSON.stringify(nUnknown.notes));
 check("malformed bags are refused", !normalizePicture(null).ok && !normalizePicture([]).ok && !normalizePicture("x").ok);
 
+// house I236 (#260): alt was named look; a picture stored under the old name still says what it shows
+const nOld = normalizePicture({ src: GOOD, look: "the hearth, written before alt" });
+check("a stored look reads as alt, with no 'ignored' note", nOld.ok && nOld.picture.alt === "the hearth, written before alt" && !nOld.notes.some((x) => /ignored/.test(x)), JSON.stringify(nOld));
+check("…and describe carries it", describePicture({ src: GOOD, look: "the hearth, written before alt" }) === "a picture: «the hearth, written before alt»", describePicture({ src: GOOD, look: "the hearth, written before alt" }));
+check("…alt wins when both are there", normalizePicture({ src: GOOD, alt: "new", look: "old" }).picture?.alt === "new");
 check("describe: with a look line, says what the author said", describePicture({ src: GOOD, alt: "a print of the hearth at dusk" }) === "a picture: «a print of the hearth at dusk»", describePicture({ src: GOOD, alt: "a print of the hearth at dusk" }));
 check("describe: self-lit is named", /\(self-lit\)$/.test(describePicture({ src: GOOD, part: "p", alt: "x", lit: "self" })));
 check("describe: without a look line, the file name", describePicture({ src: GOOD }) === "a picture (hearth_at_dusk.png)", describePicture({ src: GOOD }));
