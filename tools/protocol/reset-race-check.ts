@@ -34,13 +34,21 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "reopen"), "reopen", "olive");
   const rw = new World("reopen"); rw.openLog = () => { throw new Error("injected: the fresh log won't open"); };
+  (await import("../../server/world.ts")).worlds.set("reopen", rw);   // registered, as getWorld leaves a loaded world
+  const erasedId = rw.log.live.worldId;
+  const casts = []; rw.broadcast = (m) => casts.push(m);   // what everyone present is sent
   const sent = []; const c = { id: "olive", world: rw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } };
   REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "reopen" });
   const e = sent.find((m) => m.type === "error")?.error ?? "";
   const archived = fs.readdirSync(path.join(process.env.WORLDS_DIR, "reopen")).some((n) => n.startsWith("reset-"));
-  ok(/was erased/.test(e) && /stays closed/.test(e) && /whoever runs this server/.test(e) && /Resetting again erases nothing more/.test(e) && !/nothing changed/.test(e)
-    && archived && !sent.some((m) => m.type === "world-reset"),
-    "RR6 the fresh log doesn't open after the reset swapped it: the owner is told the world was erased and stays closed, who can open it, and that resetting again erases nothing more; never that nothing changed", { e, archived }); }
+  // (review of the house's PR #9: "stays closed" wasn't true: the World stayed registered and a reload was served the erased
+  // world's state from memory) it leaves the registry, everyone present reloads, and the next join opens the fresh world from disk
+  const { worlds, getWorld } = await import("../../server/world.ts");
+  const gone = !worlds.has("reopen"); const next = gone ? getWorld("reopen") : null;
+  const fresh = !!next && next !== rw && !next.log.retired && !!next.log.live.worldId && next.log.live.worldId !== erasedId;   // the fresh world, not the erased one
+  ok(/was erased/.test(e) && /next join/.test(e) && /whoever runs this server/.test(e) && /Resetting again erases nothing more/.test(e) && !/nothing changed/.test(e) && !/stays closed/.test(e)
+    && archived && casts.some((m) => m.type === "world-reset") && gone && fresh,
+    "RR6 the fresh log doesn't open after the reset swapped it: the owner is told the world was erased and opens at the next join (who to ask if not), resetting again erases nothing more; everyone present reloads, and the next join opens the fresh world from disk, never the erased one from memory", { e, archived, gone, fresh, casts: casts.map((m) => m.type) }); }
 // RR6b: once the fresh log is open the reset stands: a failure starting the fresh world's scripts (it has none) is the
 // server log's, and everyone present is told of the reset as usual
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts"); const { WorldScripts } = await import("../../server/scripts.ts");

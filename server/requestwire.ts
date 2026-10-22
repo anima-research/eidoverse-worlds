@@ -13,7 +13,7 @@
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one.
 import { forkWorld, foundOwnedWorld, recheckFix } from "./worldlog.ts";
-import { worldExists } from "./world.ts";
+import { worldExists, worlds } from "./world.ts";
 import type { Client, World } from "./world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
@@ -275,7 +275,11 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (e?.resetDone && e.opened) {   // the fresh world is open: the reset stands, and its scripts (it has none yet) are the operator's to look at
         console.error(`[world:${w.name}] reset by ${c.id}: the fresh world is open, but its scripts didn't start:`, e.cause ?? e); arch = e.resetDone; }
       else if (e?.resetDone) { console.error(`[world:${w.name}] reset by ${c.id}: erased (history archived in ${e.resetDone}), but the fresh log didn't open:`, e.cause ?? e);
-        return err("the world was erased (its history is archived), but the server couldn't open the fresh world, so the world stays closed: ask whoever runs this server to restart it (what failed is in its log). Resetting again erases nothing more, and may open it if what failed has cleared"); }
+        // the loaded World still holds the erased world in memory: it leaves the registry, so the next join opens the world from
+        // disk (where the fresh log is), and everyone present reloads (review of the house's PR #9: "stays closed" wasn't so)
+        if (worlds.get(w.name) === w) worlds.delete(w.name);
+        w.broadcast({ type: "world-reset", world: w.name, by: c.id });
+        return err("the world was erased (its history is archived), but the server couldn't open the fresh world just now: it opens again from disk at the next join, and if that fails too, ask whoever runs this server (what failed is in its log). Resetting again erases nothing more"); }
       // what the world does now, and whether to reset again (house 6340433633): world.ts retires a log that was moved aside
       else return err(e?.logMoved
         ? "the reset failed partway: the world's old log was moved aside (the server's log says where), so this world takes no writes until the server's operator puts it back. Resetting again is safe: it finishes the erase, and the old log stays in the archive this attempt made"
