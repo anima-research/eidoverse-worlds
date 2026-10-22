@@ -211,6 +211,13 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
           else if (PHYSICAL.has(o.comp) && !(e.cause > l.seq)) disagree({ seq, id: o.id, why: `changes a body in flight, but its cause (${e.cause}) is not after the launch (${l.seq})` }); }
       }
       applyInPlace(st, ops, seq, purged, e.verb === "batch");
+      // a hold ends on the record whatever the engine is doing (physics off included): the hand lets go of the thing, and of
+      // what hangs under a thing switched off or deleted (the authority's commit() lets those go too). Before an epoch's
+      // rebuild below, so a write that starts a new epoch and ends a hold seats the thing in the new engine's world
+      for (const o of ops) if (o.id !== "@world") {
+        if (out.lifted.has(o.id) && ends(o)) out.lifted.delete(o.id);
+        if (endsUnder(o)) for (const k of [...out.lifted]) if (isUnder(st, k, o.id) || !st.entities[k]) out.lifted.delete(k);
+      }
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; unknownEpoch = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
@@ -219,12 +226,6 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
           SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
         }
         return;
-      }
-      // a hold ends on the record whatever the engine is doing (physics off included): the hand lets go of the thing, and of
-      // what hangs under a thing switched off or deleted (the authority's commit() lets those go too)
-      for (const o of ops) if (o.id !== "@world") {
-        if (out.lifted.has(o.id) && ends(o)) out.lifted.delete(o.id);
-        if (endsUnder(o)) for (const k of [...out.lifted]) if (isUnder(st, k, o.id) || !st.entities[k]) out.lifted.delete(k);
       }
       if (!out.sim) return;
       let relock = false;

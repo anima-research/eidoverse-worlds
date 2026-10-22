@@ -543,6 +543,13 @@ function playground(name) {
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
   ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
+{ const W = playground("held-released-at-epoch");
+  call(W, "rowan", "grab", { id: "ball" }); const held = view(W).lifted.has("ball");
+  const b = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }] });
+  const v = view(W); const w = openWorld(root, W);
+  ok(held && b.ok && !w.presence.holds?.ball && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
+    "U5d a write that changes the engine's epoch and moves a held thing lets go of it in the engine too, as the authority's hold does", { held, b: b.ok ?? b.refused, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
 { const W = fresh("held-at-batch-start"); call(W, "rowan", "create-world", { title: W });
   call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, -0.5] }); const g = call(W, "rowan", "grab", { id: "ball" });
