@@ -134,5 +134,20 @@ console.log("lying down");
   ag.dropSupport("log");
 }
 
+console.log("a summary's floors");
+{
+  // A 6 × 3 × 6 m building whose summary has one deck at 1.5 m, mirrored in x. A mirrored axis is its size, so the
+  // building is room-scale and its deck holds a body; read signed, it was a 3 m pillar where its floor is.
+  const ag: any = new WorldAgent({ name: "visitor", world: "w" });
+  ag.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [30, 0, 0], yaw: 0, actor: "x", scale: 1, scale3: [-1, 1, 1] });
+  ag.geomFor = async () => ({ bbox: { min: [-3, 0, -3], max: [3, 3, 3], size: [6, 3, 6] }, topSurfaces: [{ x: [-3, 3], z: [-3, 3], y: 1.5, area: 36 }] });
+  ag.meshFor = async () => null;
+  await ag.syncSupport("hall");
+  let g: number | null = null;
+  for (let i = 0; i < 50 && !near(g, 1.5); i++) { await new Promise((r) => setTimeout(r, 10)); g = groundAt(32, 1.55, 2); }
+  check("a mirrored building's summary deck holds a body on its floor", near(g, 1.5), String(g));
+  ag.dropSupport("hall");
+}
+
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
 process.exit(failures ? 1 : 0);

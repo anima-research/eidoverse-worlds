@@ -2444,12 +2444,14 @@ export class WorldAgent {
       this.supportIds.delete(id);
     }
     if (!g) return;
-    const [w, h, d] = [g.bbox.size[0] * s3[0], g.bbox.size[1] * s3[1], g.bbox.size[2] * s3[2]];
+    // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
+    const a3 = s3.map(Math.abs);
+    const [w, h, d] = [g.bbox.size[0] * a3[0], g.bbox.size[1] * a3[1], g.bbox.size[2] * a3[2]];
     const ids: string[] = [];
     const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
     const decks = roomScale
       ? (g.topSurfaces ?? [])
-          .filter((t: any) => t.area * s3[0] * s3[2] >= 1 && fillOf(t) >= DECK_FILL)
+          .filter((t: any) => t.area * a3[0] * a3[2] >= 1 && fillOf(t) >= DECK_FILL)
           .slice(0, 6)
       : [];
     if (roomScale && decks.length) {
@@ -2468,19 +2470,19 @@ export class WorldAgent {
       // the same shared classifier the browser's decide() runs; a summary
       // without `lie` (older server) cannot accuse anyone, so honest small
       // boxes keep today's behavior either way.
-      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s3[1] : 0 });
+      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * a3[1] : 0 });
       if (cls.uneven) {
         // the certification is a MODEL-frame bound; this spawn's scale must
         // not stretch it past the agreed world bound (#94 review B1) — a
         // grid certified to 3cm serves a ×1.25 spawn (3.75cm) but not a ×2
-        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s3[1] > CERT_MAX_WORLD;
+        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (fit) ids.push(bid);
         // refused grid (absent/malformed/oversized/over-stretched): a
         // DECLARED abstention — the body finds terrain, which is at worst
         // the browser's under-the-rubble disagreement, never a floating
         // false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s3[1]} high)` : ""} — abstaining, no box`);
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
       } else {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
