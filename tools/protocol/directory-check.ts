@@ -95,7 +95,31 @@ const file = path.join(tmp, "worlds", ".directory.json");
   T += 60000;
   const other3: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const n6 = other3.entries.length; let r6: any; try { r6 = request(other3, me, "look", {}); } catch (x: any) { r6 = { threw: String(x?.message ?? x) }; }
-  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4c a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 }); }
+  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4c a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 });
+  // the control: the server that holds the key, reading at the same clock, sends it home, so the return was due
+  const n7 = w.entries.length; const r7 = request(w, me, "look", {}); const home = w.entries.slice(n7).some((e: any) => e?.verb === "return-home" && e.body?.id === "ball");
+  ok(r7.ok && home, "K4c …the return was due: the server that holds the key, reading at the same clock, logs it", { r7: r7.ok ?? r7.refused, logged: w.entries.slice(n7).map((e: any) => e?.verb) }); }
+// K4d, K4e: a world with an engine, served by a server without its key: a read with a thrown thing's rest due, and the
+// load's settlement of a hold its holder left, skip what they can't log
+{ let T = 1800000000000; const d = directoryAt(file); const { ENGINES } = await import("../../shared/protocol/simlayer.js");
+  const opts = (c: string) => ({ now: () => (T += 100), custodyFile: path.join(tmp, c), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
+  const w: any = openLive(path.join(tmp, "worlds", "k5"), "k5", opts("k5-custody.json"));
+  const me = d.resolve({ sub: "human:discord:557", name: "Kit" });
+  const steps: any[] = [request(w, me, "create-world", { title: "k5" }),
+    request(w, me, "set", { id: "@world", component: "physics-engine", value: { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) } }),
+    request(w, me, "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } }),
+    request(w, me, "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0.4, 0] } })];
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, -0.5] })); T += 1000; steps.push(request(w, me, "grab", { id: "cup" }));
+  T += 1000; steps.push(request(w, me, "grab", { id: "ball" })); T += 1000; steps.push(request(w, me, "throw", { id: "ball", v: [0, 2, 3] }));
+  T += 20000;
+  const other: any = openLive(path.join(tmp, "worlds", "k5"), "k5", opts("k5-other-custody.json"));
+  const n0 = other.entries.length; let r: any; try { r = request(other, me, "look", {}); } catch (x: any) { r = { threw: String(x?.message ?? x) }; }
+  ok(steps.every((x) => x.ok) && r?.ok && other.entries.length === n0, "K4d a read on a world this server can't sign for works with a thrown thing's rest due, and appends nothing", { steps: steps.map((x) => x.ok || x.refused?.code), r: r?.ok ?? r?.refused ?? r, appended: other.entries.length - n0 });
+  const { settleOrphans } = await import("../../shared/protocol/authority.js"); let so: any; try { so = settleOrphans(other, []); } catch (x: any) { so = { threw: String(x?.refused?.code ?? x?.message ?? x) }; }
+  ok(!so?.threw && other.entries.length === n0 && !other.presence.holds?.cup, "K4e there, the settlement of a hold whose holder left ends the hold and logs nothing, rather than throwing", { so, appended: other.entries.length - n0, hold: !!other.presence.holds?.cup });
+  // the control: the server that holds the key logs the rest at its next read
+  const n1 = w.entries.length; const r1 = request(w, me, "look", {});
+  ok(r1.ok && w.entries.length > n1, "K4d …the rest was due: the server that holds the key logs it at its next read", { r1: r1.ok ?? r1.refused, logged: w.entries.slice(n1).map((e: any) => e?.verb) }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },

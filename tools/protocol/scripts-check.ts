@@ -349,8 +349,22 @@ const cases: Case[] = [
       const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
       const n0 = other.entries.length; let threw: string | null = null; const out: any[] = [];
       for (let i = 0; i < 3; i++) { s.advance(6000); try { out.push(D.tick(other)); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); break; } }
-      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out }; },
-    good: (o) => o.installed && !o.threw && o.appended === 0 },
+      // the control: the server that holds the key runs the same timer
+      const own: any[] = []; for (let i = 0; i < 2; i++) { s.advance(6000); own.push(...(s.tick() ?? [])); }
+      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out: out.map((r) => r.length), ran: own.filter((x) => x.script === "script:beat").map((x) => x.status) }; },
+    good: (o) => o.installed && !o.threw && o.appended === 0 && o.out.length === 3 && o.out.every((n: number) => n === 0) && o.ran.length > 0 },
+  { id: "B6g", what: "an enter script on a world this server can't sign for: an arrival starts nothing, appends nothing and doesn't throw", run(s) { cast(s);
+      if (!D.presenceEvent) return { absent: true };
+      s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
+      const HI = `world.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
+      const inst = install(s, "olive", "door", "hi", HI, { scope: { ids: "self", comps: ["t/n"] }, on: ["enter"] });
+      const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
+      const n0 = other.entries.length; let threw: string | null = null; let out: any = null;
+      T += 100; process.env.PROTOCOL_NOW = String(T); try { out = D.presenceEvent(other, "enter", "vic"); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); }
+      // the control: the server that holds the key runs it
+      T += 100; process.env.PROTOCOL_NOW = String(T); const own = D.presenceEvent(s.w(), "enter", "vic").filter((x: any) => x.script === "script:hi").map((x: any) => x.status);
+      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out: out?.length ?? null, own }; },
+    good: (o) => o.installed && !o.threw && o.appended === 0 && o.out === 0 && o.own.length === 1 },
   { id: "B6e", what: "…with no owner value, a ceiling lowered below the server's default is the plain budget, and the refusal names no owner's value", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 31. Odd, because each beat

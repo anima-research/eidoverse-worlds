@@ -252,7 +252,9 @@ export function settleOrphans(w, present = []) {
     // lifted is settled below by the authority, as leave's own refusal is (review 10-06)
     if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
   withAuthority(w, () => {
-    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
+    // the holds end above (presence is this server's own); what the log lifted is settled by a server that can sign for the
+    // world, since this one can't log the settlement
+    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"] || !holdsCustody(w)) return;
     let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
       if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;   // a place the record lost stays where it is
@@ -426,7 +428,8 @@ function orphanLifts(w) {
  *  the act records no identity, ANON_EVENTS). The act's cause is the entry that made the script's sponsor (an arrival isn't
  *  logged on every path). */
 export function presenceEvent(w, kind, who) {
-  if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
+  // a world this server can't sign for: what a script writes can't be logged, so its enter and leave scripts don't start (as tick)
+  if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who) || !holdsCustody(w)) return [];
   return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = []; w.heldQ = []; const ran = [];
     for (const { id, name, v } of allScripts(w.state())) if (Array.isArray(v.on) && v.on.includes(kind)) { const sp = sponsorOf(w, id, `script:${name}`);
