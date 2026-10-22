@@ -283,7 +283,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A13b only the header the proxy writes is read: behind an X-Forwarded-For proxy, a client's own X-Real-IP or left-hand hop is never taken; behind an X-Real-IP proxy, a client's X-Forwarded-For isn't either", { forged, chained, realThrough, xffThrough }); }
 // ---- A13e (house 6340433633): PROXY_ADDRESS_HEADER itself picks the header the routes read: the rows above name the header
 // as an argument, so nothing went through the setting. addressOf (what routes.ts and upload.ts call) in a fresh process per value
-{ const peerTs = new URL("../../server/peer.ts", import.meta.url).pathname;
+{ const peerTs = new URL("../../server/peer.ts", import.meta.url).href;   // a file URL: a pathname is "/D:/…" on Windows
   const probe = (env) => { const code = `const { addressOf } = await import(${JSON.stringify(peerTs)});
     const req = new Request("http://x/", { headers: { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.66, 203.0.113.8" } });
     console.log(addressOf(req, { requestIP: () => ({ address: "127.0.0.1" }) }));`;
