@@ -106,7 +106,7 @@ import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
-import { effectiveWorldTransform, type Effective } from "./effective.ts";
+import { effectiveWorldTransform, partHint, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
@@ -4085,7 +4085,8 @@ export class WorldAgent {
     }
     const at = (e: Entity, p: Place): Destination | { refusal: string } => {
       const h = this.placeHolder(e, now);
-      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${(this.eff(e.id, now) as { why: string }).why})` };
+      const why = h ? "" : (this.eff(e.id, now) as { why: string }).why;
+      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${why})${partHint(why)}` };
     };
     if (slash > 0) {
       const tr = this.thingRef(q.slice(0, slash));   // its id, its label or a unique id prefix (R 10-17); a shared label is refused with the candidates
@@ -4148,7 +4149,7 @@ export class WorldAgent {
     const me = this.pos, box = footprint(this.replica?.st, x.id), w = this.worldPointOf(x.id, now);
     // where it stands: its effective point, else the middle of its footprint; never its saved pos, a child's offset
     const at = "pos" in w ? w.pos : box ? [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2] : null;
-    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? w.why : "no frame"}` };
+    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? `${w.why}${partHint(w.why)}` : "no frame"}` };
     let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
       const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));

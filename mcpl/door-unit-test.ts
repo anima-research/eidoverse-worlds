@@ -158,4 +158,16 @@ for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as 
   ok("pos" in where ? JSON.stringify(faced) === "[[10,10]]" && !out.isError : !faced.length && out.isError && out.content[0].text.includes(where.why),
     "pos" in where ? "face turns to a child's world point" : "face whose thing's point can't be worked out turns nowhere and says why", { faced, out: out.content[0].text }); }
 
+// house 6340433633: on a socket that rides a model part, face and beside-thing say a retry won't help and a point near it will
+{ const { effectiveWorldTransform } = await import("./effective.ts"); const { WorldAgent } = await import("./agent.ts");
+  const v: any = { entity: (id: string) => (id === "cup-1" ? { pos: [0, 0, 0], socket: { name: "grip", part: "arm" } } : id === "robot" ? { pos: [0, 0, 0] } : undefined), mount: (id: string) => (id === "cup-1" ? { to: "robot" } : undefined) };
+  const r: any = effectiveWorldTransform("cup-1", v, 0);
+  const faced: number[][] = [];
+  const ag: any = { people: new Map(), thingRef: () => ({ id: "cup-1" }), entities: new Map([["cup-1", { id: "cup-1", pos: [0, 0, 0] }]]), worldPointOf: () => ({ why: r.why }), face: (x: number, z: number) => faced.push([x, z]) };
+  const out: any = await handleTool({ agent: ag } as any, "face", { target: "cup" });
+  const b: any = Object.create(WorldAgent.prototype); Object.assign(b, { pos: { x: 5, y: 0, z: 5 }, replica: null, worldPointOf: () => ({ why: r.why }), refName: (id: string) => id });
+  const beside = b.besideThing({ id: "cup-1", pos: [0, 0, 0] });
+  const says = (t: string) => /part geometry unavailable here/.test(t) && /asking again won't change that/.test(t) && /face \{x, z\}|move \{to: \[x, z\]\}/.test(t);
+  ok(!r.ok && !faced.length && out.isError && says(out.content[0].text) && says(beside.refusal ?? ""), "on a part-riding socket, face and beside say a retry won't help and coordinates near it will", { face: out.content[0].text, beside }); }
+
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

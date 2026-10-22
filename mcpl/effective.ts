@@ -59,6 +59,11 @@ const scale3Of = (e: { scale?: number; scale3?: number[] }, s: number): [number,
 /** Default local offset when the mount gives none: the parent's origin — for a body on a socket, the socket itself
  *  (the browser: world.js mountTransform reads the socket's own frame; realize/models.js execMount [0,0,0]). */
 const DEFAULT_OFFSET: [number, number, number] = [0, 0, 0];
+/** What a refusal built on a part-riding socket's why adds (house 6340433633): the why alone left an agent to retry. */
+export const PART_UNAVAILABLE = "part geometry unavailable here";
+export const partHint = (why: string) => (why.includes(PART_UNAVAILABLE)
+  ? "; asking again won't change that (this door can't place a model's parts), but a point near it will: face {x, z} or move {to: [x, z]} at coordinates beside it"
+  : "");
 const socketOf = (e: { comp?: Record<string, any> } | undefined) => {
   const s = e?.socket; return s && typeof s === "object" && !Array.isArray(s) ? s : undefined; };
 
@@ -81,7 +86,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   // when the geometry does. Everything on it (an occupant, cargo) inherits the refusal through the chain.
   const ownSock = socketOf(e);
   if (ownSock && typeof ownSock.part === "string")
-    return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — part geometry unavailable here`, link: m?.to ?? id };
+    return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — ${PART_UNAVAILABLE}`, link: m?.to ?? id };
 
   // ---- mounted: the parent's frame is the truth, recursively -----------------
   // A mounted entity's OWN root motion is deliberately inert here — the

@@ -47,6 +47,7 @@ import { type ActResult, type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
 import type { Destination } from "./places.ts";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { shown } from "../shared/shown.js";
+import { partHint } from "./effective.ts";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
  *  agent's surface is the contract, not this file's re-declaration of it. */
@@ -740,7 +741,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // a thing's world point, as move reads it: a child's pos is local to its parent
         const person = ag.people.get(tid)?.pose?.p;
         let p: number[] | undefined = person;
-        if (!p && ag.entities.has(tid)) { const w = ag.worldPointOf(tid); if ("why" in w) return fail(`face: you didn't turn, since where ${a.target} is can't be worked out here: ${w.why}`); p = w.pos; }
+        if (!p && ag.entities.has(tid)) { const w = ag.worldPointOf(tid); if ("why" in w) return fail(`face: you didn't turn, since where ${a.target} is can't be worked out here: ${w.why}${partHint(w.why)}`); p = w.pos; }
         if (!p) return fail(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
