@@ -5,9 +5,6 @@
  "mcpl/storey-walk-test.ts": {
   "bare-wait": 10
  },
- "mcpl/stretched-support-test.ts": {
-  "bare-wait": 5
- },
  "tools/agent-mesh-collision-test.ts": {
   "bare-wait": 15
  },
