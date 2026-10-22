@@ -52,30 +52,13 @@ function reap(p: Bun.Subprocess | null) {
 // `server: true` → boot a scratch sequencer and hand the tool WORLD_URL/
 // JOIN_TOKEN/HTTP. `env` on either kind is the tool's documented header.
 
-type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number; sweepPorts?: number[] };
+type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number };
 const BATTERY: Row[] = [
   { name: "smoke", tool: "tools/smoke.ts" },   // its own free port (8987 is a live sequencer here)
   { name: "authtest", tool: "tools/authtest.ts" },   // its own free port
-  { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000, sweepPorts: [8940] },
+  { name: "support-lifecycle", tool: "tools/support-lifecycle-test.ts", timeoutMs: 420_000 },   // its own free port (freePort): nothing to sweep
   { name: "permtest", tool: "tools/permtest.ts" },
 ];
-
-/** Kill whatever LISTENS on `port` (Windows netstat) — self-booting suites
- *  can leak their servers on exit, since Windows children outlive parents. */
-function sweepPort(port: number) {
-  if (process.platform !== "win32") return;
-  try {
-    const out = Bun.spawnSync(["netstat", "-ano"], { stdout: "pipe" }).stdout.toString();
-    for (const line of out.split("\n")) {
-      if (!line.includes(`:${port} `) || !line.includes("LISTENING")) continue;
-      const pid = line.trim().split(/\s+/).pop();
-      if (pid && pid !== "0") {
-        Bun.spawnSync(["taskkill", "/PID", pid, "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
-        console.log(`  \x1b[2m(swept leaked listener on :${port}, pid ${pid})\x1b[0m`);
-      }
-    }
-  } catch { /* sweep is best-effort */ }
-}
 
 const LOGDIR = mkdtempSync(join(tmpdir(), "ew-servergate-"));
 console.log(`\x1b[2mtool logs: ${LOGDIR}\x1b[0m`);
@@ -134,7 +117,6 @@ for (const row of BATTERY) {
     console.log(`\x1b[31m✗\x1b[0m ${row.name.padEnd(18)} — ${String(e)}`);
   } finally {
     reap(seq);
-    for (const p of row.sweepPorts ?? []) sweepPort(p);
     await sleep(300);
     if (scratch) { try { rmSync(scratch, { recursive: true, force: true, maxRetries: 3 }); } catch { /* locks */ } }
   }
