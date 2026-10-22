@@ -638,7 +638,7 @@ copy that was updated and is published again keeps its parts' keys.
   anim (`pose.anim`) rides exactly one packet and is never replayed to a
   joiner. The name `live` is reserved for ad-libbed anims (no clip, def,
   pose or world's or avatar's anim may be called it). Receivers MUST clamp
-  `scale` and `plateY` to their ranges and read a non-number as absent.
+  `scale` (0.5–2) and `plateY` (−0.3…+0.8 m) to those ranges and read a non-number as absent.
 - **Presence touches the log only through checked acts, and only with what
   the world needs.** The authority checks every body request against its
   own cheap track of each body (speed, reach, solids). Arriving is presence:
@@ -735,7 +735,9 @@ Speech in a world is public and **arrival-only**:
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
 - Reading the master log's speech back past your own arrival is a permission, `readChat` (§7: a role holds it; owners
   hold every permission), or a server operator's (`WORLD_ADMIN`). Their join says how many lines the log holds
-  (`state.chatTotal`); everyone else's says 0. No built-in role below owner holds it.
+  (`state.chatTotal`); everyone else's says 0. No built-in role below owner holds it, and a grant whose end has passed
+  holds nothing. A world that turns it on through the newcomer role (`default-role.can`) hands every past line to anyone
+  who joins: an owner's choice, made in the open.
 - There is no private channel in world chat. **`whisper` was removed**: a client that still sends one is refused with
   the registered code `removed` (as the ws error's `refused`, and as the authority's refusal of a request named
   `whisper`), and its text goes nowhere: not delivered, not held, not logged. `say {text, to}` addresses one person in

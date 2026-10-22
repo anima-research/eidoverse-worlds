@@ -225,5 +225,7 @@ await C("K14", "the TRIM path also takes whole components and component keys lea
     && !changedToo.ok && /translator change/.test(changedToo.why),
     { good: good.changelog ?? good.why, unaccounted: unaccounted.why?.slice(0, 120), changedToo: changedToo.why?.slice(0, 80) }]; });
 
+// pre-review of #260 (10-21): the pin's translator drifted (@17 pinned, @18 in the code) while every row stayed green
+ok("K16", pin?.translator === TV1.TRANSLATOR, "the kernel pin names the translator the code runs (a translator bump re-pins: `kernel-check --pin`)", { pinned: pin?.translator, code: TV1.TRANSLATOR });
 console.log(`\nkernel: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

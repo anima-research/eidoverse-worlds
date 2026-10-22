@@ -295,8 +295,10 @@ updates; VRChat splits them the same way):
   *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
   body delivers a `shove` to that body's client, if that body's consent
   allows it (actor: the thing's live authority, carrying the thing's `id` and
-  `v`); the thing's own motion ignores the body. Carrying a person and
-  simulated bodies are direction (`docs/PHYSICS-DIRECTION.md`).
+  `v`); the thing's own motion ignores the body. Carrying a person is reserved,
+  and whatever form it takes, the carried person may stop it at any moment;
+  how it would work, and simulated bodies, are direction
+  (`docs/PHYSICS-DIRECTION.md`).
 - **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
   - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
     `grab` is refused (`held`) until a `launch` or a settlement.

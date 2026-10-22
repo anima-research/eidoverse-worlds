@@ -363,7 +363,14 @@ export class WorldLog {
   }
   /** The role the authority gives this identity (the authority is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
-  may(actor: string, permission: string): boolean { return effectiveIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true; }
+  /** does `actor` hold `permission` now: an ended timed grant is absent at `now`, as the door reads it (access.ts listedIn),
+   *  before the authority's sweep writes its end (pre-review of #260: readChat read an ended grant for up to a sweep) */
+  may(actor: string, permission: string, now = Date.now()): boolean {
+    const st: Any = this.live.state(); const wc = st?.entities?.["@world"]?.c ?? {}; const g = wc[`roles:${actor}`];
+    const ended = g && typeof g === "object" && Number.isSafeInteger(g.until) && g.until <= now;
+    const view = ended ? { ...st, entities: { ...st.entities, "@world": { ...st.entities["@world"], c: Object.fromEntries(Object.entries(wc).filter(([k]) => k !== `roles:${actor}`)) } } } : st;
+    return effectiveIn(view, actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true;
+  }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
    *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
    *  requestwire.ts whois — is scoped to these, never the whole directory. */
