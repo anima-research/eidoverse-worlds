@@ -10,11 +10,12 @@ it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun r
 | --- | --- |
 | `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
 | `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes an `imported` act (`body {verb, args, from}`: its verb and args, kept as provenance) or a `say`, and one change entry that brings the v4 fold to the same place, checked after every entry. `DEFERRED` + `deferredFeatures(log)`: the features v4 does not carry yet (water volumes, air boxes, climb routes, vehicles, collision toggles) and every use of one in a log; `translateV1World` refuses on any |
-| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which since @10 runs her sim (the first eidosim, `eidosim-v1.js` here) beside the v1 fold whenever a log enters a physics `epoch` — a punt becomes a logged launch with its exact state, every rest a logged result, the epoch `@world physics-engine` and each collider's stamped box its `physics.shape`. A log with no epoch translates byte-for-byte as @9 did |
+| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which runs her sim (the first eidosim, `eidosim-v1.js` here) beside the v1 fold whenever a log enters a physics `epoch`. Since @11 a punt stays its `imported` act and each rest is a plain change by `sim` caused by it: no launch, no digest, nothing that asks a reader to fly her engine. The epoch becomes `@world physics-engine` (today's eidosim from then on), and each collider's stamped box its `physics.shape`, `dynamic` for a thing v1 ever punted and `static` otherwise. A log with no epoch translates as one without her sim would |
 | `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
-| `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here |
+| `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here (suite `eidosim-v1`) |
+| `forecast-v1.js`, `captions-v1.js`, `shown-v1.js` | main's sky and caption helpers, frozen beside `fold.js` as the v1 fold read them, so a change to the live ones never changes what an old log means |
 | `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
-| `world.ts` | `reportV1World(src, {name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {name, approval})`: refuses a founder key (a translation names none), reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the authority's own sim layer, which re-checks every rest), maps every old name to a door identity, then writes `dest/world.jsonl` |
+| `world.ts` | `reportV1World(src, {name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {name, approval})`: refuses a founder key (a translation names none), reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the live host's sim layer, which must read the whole history without a disagreement and find nothing to fly: each rest is already a plain change), maps every old name to a door identity, then writes `dest/world.jsonl`; a failure after that removes what it made again |
 | `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. Given a world translated in place, it reads the kept originals (`log.original.jsonl`, `snapshot.original.json`). `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
 
 The operator runs it, in place, in two steps (review of PR #260, item 6: the approval is bound to the exact dry-run
@@ -66,8 +67,11 @@ identities into the shared directory (`.directory.json`). `translation.json` is 
 every made file with the sha256 it was made with, the identities, the report hash and the approval.
 `WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world>` (stop the server first) removes the made files, renames
 the originals back (the same files: bytes, inode and mtime unchanged), forgets the minted identities that nobody has bound
-or renamed since (`directory.forgetPlanned`), and removes the manifest: the world directory and the shared directory are
-byte-identical to before the translation (inplace-check IP24 proves it file by file), and the world translates again. A
+or renamed since (`directory.forgetPlanned`), and removes the manifest: the world directory is byte-identical to before
+the translation (inplace-check IP24 proves it file by file), and the world translates again. The shared directory is not
+restored from a copy: it is rewritten without the forgotten identities, so it holds the entries it held before (the same
+bytes when nothing else changed it meanwhile, as IP24 checks), and a directory file the translation itself created stays,
+holding none of them. A
 made file the server has written to since (the v4 world's acts, places, bans) refuses the rollback unless
 `--discard-changes`. The content-address index (`OPT_DIR/eido-index.json`) is a cache of library bytes, not world state,
 and is left. A directory translated before 2026-10-18 has no manifest: `rollback` says so and what to rename by hand. At boot the server prints, for
@@ -91,8 +95,9 @@ Commons was founded by **antra**; its owners (antra, fable, janus, mica, from th
 come across as `roles:<id>`, because roles are rights inside the world and governance keys are a separate list (§7, "two
 owner lists, never confused"). Neither R's key nor Burrow's goes in tier 0.
 
-Before the cut-over, **back up the host's custody** (`keys/custody.json` under the worlds directory) off this machine: it
-holds the sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
+Before the cut-over, **back up the host's custody** (`WORLDS_DIR/.custody.json`: the file `.custody.json` in the worlds
+directory itself; a worlds dir saved before the 2026-10-07 names pass may still hold it as `.v4-custody.json`, renamed
+on first use) off this machine: it holds the sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
 
 ### A founder's own key, for a world FOUNDED new
 
