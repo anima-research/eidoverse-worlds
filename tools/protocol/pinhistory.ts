@@ -23,11 +23,20 @@ export function baseOf(root: string, argv: string[] = process.argv.slice(2)) {
   return git(root, ["merge-base", "HEAD", "origin/main"])?.trim() || null;
 }
 
+/** Where a branch's own history starts: HEAD, except under a CI checkout of a pull request, where HEAD is a merge commit
+ *  whose first parent is the base (GitHub's pull_request ref). There the branch is the SECOND parent: walking first parents
+ *  would walk the base's history, where a pin the branch brought never existed, and judge nothing. */
+export function tipOf(root: string, argv: string[] = process.argv.slice(2)) {
+  const second = git(root, ["rev-parse", "--verify", "-q", "HEAD^2"])?.trim(); if (!second) return "HEAD";
+  const first = git(root, ["rev-parse", "--verify", "-q", "HEAD^1"])?.trim(); const base = baseOf(root, argv);
+  return first && base && first === base ? second : "HEAD";
+}
+
 /** The commit holding the files' version before their current one (current = the working tree), or null (never changed). */
-export function previousOf(root: string, files: string[], readNow: (f: string) => string | null) {
+export function previousOf(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
   const now = files.map(readNow); const same = (rev: string) => files.every((f, k) => showAt(root, rev, f) === now[k]);
   if (!same("HEAD")) return git(root, ["rev-parse", "HEAD"])?.trim() || null;
-  for (const r of (git(root, ["log", "--first-parent", "--format=%H", "--", ...files]) ?? "").split("\n").filter(Boolean)) {
+  for (const r of (git(root, ["log", "--first-parent", "--format=%H", tipOf(root, argv), "--", ...files]) ?? "").split("\n").filter(Boolean)) {
     const p = git(root, ["rev-parse", "--verify", "-q", `${r}^1`])?.trim(); if (!p) return null; if (!same(p)) return p; }
   return null;
 }
@@ -41,7 +50,7 @@ export function addedSince(root: string, rev: string, file: string) {
 /** The earlier versions to judge: [{rev, why, was: {file: parsed|null}}], the base's and the previous one (deduplicated;
  *  an earlier version where none of the files existed is left out, since a file's first version changes nothing). */
 export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
-  const base = baseOf(root, argv); const prev = previousOf(root, files, readNow);
+  const base = baseOf(root, argv); const prev = previousOf(root, files, readNow, argv);
   const out: { rev: string; why: string; was: Record<string, any> }[] = [];
   for (const [rev, why] of [[base, "the base"], [prev, "the previous version"]] as const) {
     if (!rev || out.some((o) => o.rev === rev)) continue;
