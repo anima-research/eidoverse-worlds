@@ -50,8 +50,10 @@ const anonEvent = ({ by: _by, ...rest }) => rest;
 const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
   : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${cfg.capped?.budget !== undefined ? `this server's ceiling: the owner's @world.script-settings.budget asks ${cfg.capped.budget}, and this server caps it` : "which the world's owner sets in @world.script-settings.budget"}`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
-// A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run
-const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; set it again to install it, or an owner may adopt it (adopt {id, script})";
+// A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run.
+// Nobody is on record as its creator then, so only an owner may write the key, and adopt is the recovery that names a
+// sponsor: a set of the same value changes nothing more than `paused`, and sponsorOf passes over such a write
+const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; an owner may adopt it (adopt {id, script}), which makes them its sponsor";
 // Why a script is paused for failing, with the last failure, since a deterministic one fails the same way when retried
 const pausedWhy = (rt) => `paused after ${rt.fails} failed activations in a row${rt.lastFail ? ` (the last: ${rt.lastFail.code}: ${rt.lastFail.why})` : ""}; ` +
   "fix what failed, then set the script again; setting the same value only retries, which helps if the cause has passed";

@@ -980,6 +980,20 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const v = s.call("olive", "scripts", { id: "qc" }); const view = (v?.scripts ?? []).find((x: any) => x.script === "script:p");
       return { act, view: view?.status, why: view?.why ?? null }; },
     good: (o) => o.act > 0 && o.view === "not-installed" && /answers for it/.test(o.why ?? "") },
+  { id: "Q2b", what: "the remedy a purged install's why gives works: its installer can't set it again, an owner's set of the same value names no sponsor, and an owner's adopt makes it active", run(s) { cast(s);
+      s.call("bob", "create", { id: "qd", model: "crate", place: { at: [0, 0] } });
+      const { src } = install(s, "bob", "qd", "p", onUse(`world.say("d");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
+      const act = s.entries().findLastIndex((e: any) => e?.kind === "act" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      s.w().append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: act }] } });
+      const view = () => (s.call("olive", "scripts", { id: "qd" })?.scripts ?? []).find((x: any) => x.script === "script:p");
+      const why = view()?.why ?? null;
+      const value = { src, scope: { ids: "self", comps: [] }, on: ["use"] };
+      const bobSet = s.call("bob", "set", { id: "qd", component: "script:p", value });
+      const ownerSame = s.call("olive", "set", { id: "qd", component: "script:p", value });
+      const afterSame = view()?.status;
+      const adopt = s.call("olive", "adopt", { id: "qd", script: "p" });
+      return { act, why, bobSet: bobSet?.ok ? "ok" : bobSet?.refused?.code, ownerSame: ownerSame?.ok ? "ok" : ownerSame?.refused?.code, afterSame, adopt: adopt?.ok ? "ok" : adopt?.refused?.code, after: view()?.status }; },
+    good: (o) => o.act > 0 && /adopt/.test(o.why ?? "") && !/set it again/.test(o.why ?? "") && o.bobSet === "rights" && o.afterSame === "not-installed" && o.adopt === "ok" && o.after === "active" },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
