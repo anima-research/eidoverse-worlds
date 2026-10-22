@@ -68,8 +68,9 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
 
 /** Takes out of `pose.reach` (in place) every limb aimed at a body that hasn't consented to it. Then tells the authority
  *  which bodies a relayed limb rests on: a yes to an ask is one touch, and ends on the first packet without its hand
- *  (an absent reach is "nobody is reaching", reachwire.js). */
-/** `quiet`: the server re-holding a standing pose to the tables (after a request), not a packet the reacher sent: a limb that
+ *  (an absent reach is "nobody is reaching", reachwire.js).
+ *
+ *  `quiet`: the server re-holding a standing pose to the tables (after a request), not a packet the reacher sent: a limb that
  *  no longer may rest is taken out without a refusal said or an attempt recorded, and no grant is let go here. */
 export function gateReach(c: Client, pose: Record<string, unknown>, { quiet = false } = {}): void {
   const log = c.world?.log, aimed = new Set<string>();
