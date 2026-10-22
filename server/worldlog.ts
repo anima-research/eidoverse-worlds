@@ -71,6 +71,8 @@ export type LogHost = {
  *  when the connection changed under the request; when the door, the role or operator status changed, sending again from
  *  a new connection meets the same answer. */
 export function recheckFix(reason: string): string {
+  // operator status granted while it waited (house 6340433633): sending again is decided anew, as a role change is
+  if (/became a server operator/.test(reason)) return "send it again if you still mean it, as the operator this account is now";
   if (/door no longer lets|operator status changed|needs a server operator/.test(reason)) return "sending it again won't change this: what this account may do here changed";
   if (/role here changed/.test(reason)) return "send it again if you still mean it, under your role as it is now";
   return "reconnect, then send it again from the connection that is in the world now";

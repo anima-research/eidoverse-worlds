@@ -38,7 +38,10 @@ export function recheck(cap: ReqCap, now = Date.now(), { role = true } = {}): st
   if (c.actorId !== cap.actorId || (c.account ?? null) !== cap.account || !!c.spectator !== cap.spectator || (c.auth?.nativeWorld ?? null) !== cap.nativeWorld)
     return "this connection is someone else now (it joined again while the request waited); nothing was written";
   // operator status (operator-repair's right, and the door's bypass)
-  if (isOperator(cap.account) !== cap.operator) return "this account's operator status changed while the request waited; nothing was written";
+  // which way it went (house 6340433633): a grant isn't a refusal sending again would meet (recheckFix reads the words)
+  if (isOperator(cap.account) !== cap.operator) return cap.operator
+    ? "this account stopped being a server operator while the request waited (operator status changed); nothing was written"
+    : "this account became a server operator while the request waited (operator status changed); nothing was written — send it again if you still mean it";
   // the door: the same decision the join made (access.ts entryFor), asked again with the captured who
   const door = entryFor(doorOfWorld(w), { account: cap.account, actorId: cap.actorId, addr: cap.addr, nativeWorld: cap.nativeWorld, trustedRenderer: cap.trustedRenderer },
     cap.spectator ? "watch" : "embody", { now });
