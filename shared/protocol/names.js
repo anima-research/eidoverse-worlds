@@ -24,7 +24,8 @@ import { isComponent } from "./fold.js";
 
 const ESC = /^[xh]--/;
 // a hashed id is the one spelling the view can't decode (dec gives null), so readers hold it and send it back as it is:
-// enc keeps it. A name of that exact form is a sha256 prefix of something else, which nobody can choose
+// enc keeps it. Anyone can compute a name's sha256 and write that spelling as a literal name, which then encodes to the
+// same key as the name it was computed from: an old world holding both folds them into one at import
 const HASHED = /^h--[0-9a-f]{61}$/;
 const escape = (s) => { const hex = utf8Hex(s); return hex.length + 3 <= 64 ? `x--${hex}` : `h--${sha256(s).slice(0, 61)}`; };
 
