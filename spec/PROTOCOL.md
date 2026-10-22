@@ -408,7 +408,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@17`, §14) writes its
+  its name). The translator (`translate-v1@18`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,

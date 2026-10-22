@@ -2,8 +2,8 @@
 // A translated log is a regenerable cache of the v1 log (R9); it names the translator AND the v1 fold that read the
 // old log, so a later engine can tell whether re-translating would give the same bytes. The build is the sha256 of
 // the importer's fold.js and every module it imports (followed through relative imports), in a fixed order, first 16
-// hex. NOTE: most of those modules are shared runtime modules (forecast, captions, blueprint, components…), so the stamp
-// moves whenever they change, not only when the old fold does; the importer is temporary (README.md), so this stays.
+// hex. Every one of them is a frozen copy under ./frozen/ (6dab22f5, README.md), so the stamp moves only when the old fold
+// or a frozen copy does.
 // (a hash of its source files).
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
