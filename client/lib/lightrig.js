@@ -762,7 +762,9 @@ let lastCasterPass = 0;
 /** The models realizer registers every realized model here; retire releases. */
 export function registerCaster(id, obj) {
   const meshes = [];
-  obj.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  // the record starts not casting, so its meshes do too (a realizer may hand them in casting): the budget pass flips only
+  // where want !== casting, and a mesh left casting would draw a shadow no budget counts
+  obj.traverse((o) => { if (o.isMesh) { o.castShadow = false; meshes.push(o); } });
   casters.set(id, { id, obj, meshes, casting: false, warm: 'none', released: false, fade: 0 });
 }
 export function releaseCaster(id) {

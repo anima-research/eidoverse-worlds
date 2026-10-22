@@ -53,6 +53,12 @@ console.log('MATERIALS — one mask node, marked');
   mats.prepareMaterial(clone);
   check('re-preparing a clone keeps the ONE node (never FADE.and(FADE))', clone.maskShadowNode === a.maskShadowNode, clone.maskShadowNode?.tag); }
 
+console.log('REGISTER — a mesh handed in casting starts not casting (house I172, #260)');
+{ const g = new THREE.Group(); const m = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial()); m.castShadow = true;   // realize/models.js primitives
+  g.add(m); g.position.set(500, 0, 0); g.updateMatrixWorld(true); registerCaster('pre-cast', g);
+  check('registerCaster leaves its meshes as its record says (casting false)', m.castShadow === false && rigDebug().casterList.find((c) => c.id === 'pre-cast')?.casting === false);
+  rig.releaseCaster('pre-cast'); }
+
 console.log('ENABLE — fades in from 0');
 let t = 1000;
 const near = makeCaster('near', 2);
