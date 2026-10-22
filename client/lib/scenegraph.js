@@ -214,18 +214,21 @@ function paintScene(force = false) {
   // semantic editors wire their own controls
   for (const e of eds) { try { e.wire(sceneBody); } catch { /* an editor must not break the panel */ } }
 
-  // transform: commit on change — one `place` per gesture, carrying the full
-  // pose the fields show (pos triple always; yaw/scale when present). No
-  // local preview: place is cheap and the echo lands in a frame or two.
-  const tf = (f) => sceneBody.querySelector(`[data-tf="${f}"]`);
+  // transform: commit on change — one `place` per gesture, carrying only the field that changed (house review I18: the
+  // shown yaw is whole degrees and the shown scale one number, so resubmitting them on a pos edit flattened a tilt and a
+  // per-axis scale). transformOf keeps the rest as the fold has it. No local preview: the echo lands in a frame or two.
   for (const el of sceneBody.querySelectorAll('[data-tf]')) {
     el.addEventListener('change', () => {
-      const patch = { pos: [Number(tf('x').value), Number(tf('y').value), Number(tf('z').value)] };
-      if (tf('yaw')) patch.yaw = Number(tf('yaw').value) * Math.PI / 180;
-      if (tf('scale')) patch.scale = Number(tf('scale').value);
-      if (patch.pos.some(Number.isNaN) || Number.isNaN(patch.yaw ?? 0) || Number.isNaN(patch.scale ?? 1)) return;
-      const id = selected;
-      sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
+      const f = el.dataset.tf, v = Number(el.value), id = selected;
+      if (Number.isNaN(v)) return;
+      const cur = state.st.entities?.[id] ?? {};
+      const axis = ['x', 'y', 'z'].indexOf(f);
+      let patch;
+      if (axis >= 0) { const pos = Array.isArray(cur.pos) && cur.pos.length === 3 ? [...cur.pos] : [0, 0, 0]; pos[axis] = v; patch = { pos }; }
+      else if (f === 'yaw') patch = { yaw: v * Math.PI / 180 };
+      else if (f === 'scale') patch = { scale: v };
+      else return;
+      sendOps([OP.setTransform(cur, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
     });
   }
 
