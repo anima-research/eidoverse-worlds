@@ -38,6 +38,19 @@ export function encName(s) {
   s = String(s);
   return HASHED.test(s) || (isComponent(s) && !ESC.test(s)) ? s : escape(s);
 }
+/** enc and encName for a name that was never an id: an old log's (the translator's, tools/protocol/import-v1). Old logs
+ *  never held a hashed id, so a name already in that form is escaped like any other, never kept: a raw name equal to a long
+ *  name's hashed form would otherwise be that long name's id (house 6340433633).
+ *  @param {unknown} s @returns {string} */
+export function encRaw(s) {
+  s = String(s);
+  return /^[a-z0-9-]{1,64}$/.test(s) && !ESC.test(s) ? s : escape(s);
+}
+/** @param {unknown} s @returns {string} */
+export function encNameRaw(s) {
+  s = String(s);
+  return isComponent(s) && !ESC.test(s) ? s : escape(s);
+}
 /** The local tag of the component that moves one node of a thing's model: motion:<partSlot(node)> {node, …}. A node's name
  *  comes from a model file and is DATA (any characters: tripo_part_3, "Seat Plank", 座席); the key needs a §2.3 tag
  *  ([a-z0-9-]{1,64}). A name that already is one, and isn't an escape, is its own tag ("seat", "arm-2"); any other is
