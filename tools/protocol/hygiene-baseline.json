@@ -38,10 +38,6 @@
  "tools/door-is-error-test.ts": {
   "bare-wait": 1
  },
- "tools/door-wording-test.ts": {
-  "bare-wait": 2,
-  "own-until": 1
- },
  "tools/grant-command-test.ts": {
   "bare-wait": 1
  },

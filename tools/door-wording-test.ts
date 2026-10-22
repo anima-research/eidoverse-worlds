@@ -11,6 +11,7 @@
 // with this protocol's facts: o.pose.clip is a clip (anim plays it), a seat
 // is left with detach, and releasing a reach is reach {release: true}.
 import { mkCheck } from "./harness.ts";
+import { tryUntil } from "./protocol/wait.ts";
 import { handleTool, screenshotTool, TOOLS } from "../mcpl/tools.ts";
 import { shown } from "../shared/shown.js";
 import { WorldAgent } from "../mcpl/agent.ts";
@@ -613,8 +614,6 @@ try {
     JSON.stringify(fall));
 
   console.log("\nTHE CONNECTION");
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  const until = async (ok: () => boolean, ms: number) => { const end = Date.now() + ms; while (!ok() && Date.now() < end) await sleep(100); return ok(); };
 
   // A stand-in world on a WebSocket: each body's name picks how the join is answered.
   // A join's snapshot carries the authority's cut of the world here (replica.adopt): an empty world's.
@@ -666,13 +665,13 @@ try {
   }
   const kicked = body("kicked");
   const kickedJoin = await outcome(kicked.connect());
-  await until(() => kicked.closed, 3000);
+  await tryUntil("the kicked body has closed", () => kicked.closed, { ms: 3000 });
   const afterKick = thrown(send(kicked));
   check("a body the world removes (4006) has ended for good, and calling again won't help",
     kickedJoin === "joined" && kicked.closed === true && /has ended for good .* calling again won't change that$/.test(afterKick), `${kickedJoin} / ${afterKick}`);
   const denied = body("denied");
   denied.connect().catch(() => {});
-  await until(() => denied.closed, 3000);
+  await tryUntil("the denied body has closed", () => denied.closed, { ms: 3000 });
   const afterDenial = thrown(send(denied));
   check("a body whose join the world refuses (4005) has ended for good too",
     denied.closed === true && /has ended for good .* calling again won't change that$/.test(afterDenial), afterDenial);
@@ -683,15 +682,15 @@ try {
   check("rights withdrawn in a snapshot read as the world's act",
     groundedJoin === "joined" && `* ${groundedNotice?.who} ${groundedNotice?.text}`.startsWith("* world withdrew your flight while you were aloft"), `${groundedJoin} / ${JSON.stringify(groundedNotice)}`);
   check("a join the world answers is a join", await droppedJoin === "joined");
-  await until(() => !dropped.joined, 3000);
+  await tryUntil("the dropped body has left the world", () => !dropped.joined, { ms: 3000 });
   const reconnecting = thrown(send(dropped));
   check("a body whose connection dropped says it's reconnecting",
     /^this body is reconnecting to the world, so nothing was sent; it rejoins on its own once the world answers/.test(reconnecting), reconnecting);
   const lateOutcome = await lateJoin;
   check("a join the world doesn't answer within 8 seconds says so", lateOutcome === "the world didn't answer the join within 8 seconds", lateOutcome);
-  check("...and the world's late answer still joins the body", await until(() => late.joined, 4000));
+  check("...and the world's late answer still joins the body", !!(await tryUntil("the late answer joins the body", () => late.joined, { ms: 4000 })));
   check("a reconnecting body rejoins on its own once the world answers, though its own join timed out first",
-    await until(() => dropped.joined, 6000) && joins.get("dropped") === 2 && thrown(send(dropped)) === "",
+    !!(await tryUntil("the dropped body rejoins on its own", () => dropped.joined, { ms: 6000 })) && joins.get("dropped") === 2 && thrown(send(dropped)) === "",
     `joined ${dropped.joined}, joins ${joins.get("dropped")}`);
   for (const a of bodies) a.close();
   wsWorld.stop(true);
