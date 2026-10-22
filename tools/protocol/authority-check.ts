@@ -1643,6 +1643,19 @@ for (const [name, steps] of [
   // the undo's own skip, for bob's work on the shelf: nothing else stopped it
   const skip = u?.refused?.code === "conflict" && (u.refused.skipped ?? []).some((x) => x.id === "shelf" && x.by === "bob");
   ok(mk.ok && made.every((r) => r.ok) && skip && !!st.entities.bobhook && !!st.entities.shelf, `${name.toUpperCase()} undoing ann's shelf leaves bob's socket on it, made in two writes or one batch, and the shelf with it: the undo skips it for bob's work`, { mk: mk.ok, made, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
+// SRU3e: the control: one batch makes a socket under the shelf and hangs it on another thing before it ends. The change
+// leaves no socket under the shelf, so it's no work on the shelf, and ann's undo removes the shelf, the socket staying put
+{ const name = "sru3e";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: name });
+  for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
+  const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
+  const made = [call("bob", "create", { id: "post", model: "crate", place: { at: [5, 5] } }), call("bob", "batch", { ops: [
+    { verb: "create", args: { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
+    { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "post" } } }] })];
+  const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
+  ok(mk.ok && made.every((r) => r.ok) && u.ok && !st.entities.shelf && st.entities.bobhook?.c.parent?.to === "post",
+    "SRU3E a socket made under the shelf and hung elsewhere in the same batch is no work on the shelf: ann's undo removes the shelf, and the socket stays on its new host", { mk: mk.ok, made: made.map((r) => r.ok ?? r.refused), u: u.ok ?? u.refused, shelf: !!st.entities.shelf, parent: st.entities.bobhook?.c.parent }); }
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
