@@ -15,7 +15,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { idAliases } from "./idalias.ts";
@@ -138,7 +138,7 @@ if (argv.includes("--control")) {
   // the base commit's shared/ (default: the authority before scripts, where every server case must FAIL). --control <commit>
   // runs against a later base (a round's start) and lists what is red there, with --want <ids> naming what must be
   const at = opt("control") && !opt("control")!.startsWith("--") ? opt("control")! : BASE; const want = opt("want")?.split(",") ?? null;
-  const d = scratch("ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${at} shared | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("ctl"); const r0 = archiveTo(ENGINE, at, ["shared"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${at}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));

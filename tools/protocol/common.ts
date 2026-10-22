@@ -32,11 +32,17 @@ export function scratch(tag: string) {
   return d;
 }
 
+/** `git archive <commit> <files…> | tar -x -C <dir>`, with every value passed as an argument to sh, never pasted into its
+ *  script: a Windows path's backslashes are shell escapes, and a space splits a word (scale G3, CI Windows 10-22). */
+export function archiveTo(cwd: string, commit: string, files: string[], dir: string) {
+  return Bun.spawnSync(["sh", "-c", 'c=$1; d=$2; shift 2; git archive "$c" "$@" | tar -x -C "$d"', "sh", commit, dir, ...files], { cwd });
+}
+
 /** Extract lab files at a commit into a scratch dir (the control arm). Null when PROTOCOL_LAB isn't set. */
 export function labAt(commit: string, files: string[], tag: string) {
   if (!LAB) return null;
   const d = scratch(`lab-${tag}`);
-  const r = Bun.spawnSync(["sh", "-c", `git archive ${commit} ${files.join(" ")} | tar -x -C ${d}`], { cwd: LAB });
+  const r = archiveTo(LAB, commit, files, d);
   if (r.exitCode !== 0) throw new Error(`PROTOCOL_LAB: git archive ${commit} failed: ${r.stderr.toString().slice(0, 200)}`);
   return d;
 }

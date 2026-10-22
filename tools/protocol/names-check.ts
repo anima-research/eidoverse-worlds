@@ -36,7 +36,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -188,7 +188,7 @@ if (argv.includes("--mutants")) {
   console.log(`[names-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("namesctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server mcpl client spec docs AGENTS.md DESIGN.md tools/protocol/import-v1 | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }

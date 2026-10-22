@@ -21,7 +21,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -103,7 +103,7 @@ if (argv.includes("--mutants")) {
   console.log(`[batch2-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("b2ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server tools client/lib | tar -x -C ${d} && ln -s ${fs.realpathSync(path.join(ENGINE, "node_modules"))} ${d}/node_modules`], { cwd: ENGINE });
+  const d = scratch("b2ctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));

@@ -19,7 +19,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -139,7 +139,7 @@ if (argv.includes("--mutants")) {
 }
 if (argv.includes("--control")) {
   // the base commit's shared/ (the authority before roles): every case must be red there except K (kept: green there too)
-  const d = scratch("rctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("rctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const r = await runSelf(d, null);

@@ -20,7 +20,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, archiveTo } from "./common.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -67,7 +67,7 @@ if (argv.includes("--mutants")) {
   console.log(`[build-check --mutants] ${MUTANTS.length} mutations, ${bad} wrong`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--base")) {
-  const d = scratch("bbase"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server tools defs client package.json | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("bbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}`); process.exit(1); }
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   // the base tree has no build-check: run this file against it
