@@ -53,7 +53,7 @@ function syncDir(dir: string) {
  *  crash can lose like any other new name, taking the directory and what was written in it. So each parent that gained an
  *  entry is synced, from `dir`'s own parent up to the parent of the first directory made. `dir` itself is the caller's to
  *  sync once its file is in it. */
-function mkdirDurable(dir: string) {
+export function mkdirDurable(dir: string) {
   const first = fs.mkdirSync(dir, { recursive: true });
   if (first === undefined) return;
   const top = path.dirname(path.resolve(first));

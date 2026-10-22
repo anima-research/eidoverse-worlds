@@ -10,7 +10,8 @@
 //   T6  the connection becomes someone else while the request waits → refused; nothing under either identity
 //   T7  static: no await in the authority; none between worldlog's recheck and the synchronous commit
 //   T8  a short write is looped to the end, and a write that takes nothing throws
-//   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too
+//   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too,
+//       a founded world's own directory included (and nothing is synced on win32, where the server can't sync a directory)
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T9d operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
@@ -31,6 +32,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["identity read after the await: recheck without it", "server/reqcap.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
   ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
+  ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);   // the world's", "  fs.mkdirSync(dir, { recursive: true });   // the world's", ["T8c"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9d"]],
@@ -232,12 +234,15 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   nodefs.openSync = function (p, flags, ...r) { const fd = o.openSync.call(nodefs, p, flags, ...r); if (flags === "r") dirFds.set(fd, path.resolve(String(p))); return fd; };
   nodefs.fsyncSync = function (fd) { if (dirFds.has(fd)) synced.push(dirFds.get(fd)); return o.fsyncSync.call(nodefs, fd); };
   const base = path.join(root, "t8c"); fs.mkdirSync(base, { recursive: true });
-  try { appendDurable(path.join(base, "a", "b", "c", "world.jsonl"), '{"n":1}'); putBlobFile(path.join(base, "x", "blobs", "h.txt"), "blob", "sha256:unused"); }
+  // a world founded in a worlds directory that already exists: its own directory is the only new name, in that directory
+  const worlds = path.join(base, "worlds"); fs.mkdirSync(worlds);
+  try { appendDurable(path.join(base, "a", "b", "c", "world.jsonl"), '{"n":1}'); putBlobFile(path.join(base, "x", "blobs", "h.txt"), "blob", "sha256:unused");
+    foundWorld(path.join(worlds, "t8c"), "t8c", "olive"); }
   finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; }
-  const want = [base, "a", "a/b", "a/b/c", "x", "x/blobs"].map((d) => d === base ? base : path.join(base, d));
+  const want = process.platform === "win32" ? [] : [base, "a", "a/b", "a/b/c", "x", "x/blobs", "worlds"].map((d) => d === base ? base : path.join(base, d));
   const missing = want.filter((d) => !synced.includes(d));
-  ok(!missing.length && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
-    "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
+  ok(!missing.length && (process.platform !== "win32" || !synced.length) && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
+    "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made, a founded world's directory too (none on win32)", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");
