@@ -4090,7 +4090,7 @@ export class WorldAgent {
     for (const { id, h, ps } of this.placeHolders(now)) {
       const e = { id };
       if (!h) continue;
-      const s3 = (h.scale ?? 1) ** 3;
+      const s3 = Array.isArray(h.scale) ? h.scale[0] * h.scale[1] * h.scale[2] : (h.scale ?? 1) ** 3;   // the thing's volume factor, per axis when stretched
       for (const p of ps) {
         if (!inRegion(h, p, w)) continue;
         out.push({ entity: e, place: p, vol: s3 * (p.max![0] - p.min![0]) * (p.max![1] - p.min![1]) * (p.max![2] - p.min![2]) });

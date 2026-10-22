@@ -7,9 +7,12 @@
  * stretches that frame along each axis. So the place a walk goes to, and the
  * coordinates name_place stores, follow the stretch on every axis, and the
  * hand's width a region allows below its floor stays a hand's width in metres.
+ * Every thing's frame carries its per-axis scale (a uniform one is three of
+ * itself), so where a walk goes to reach a room or a seat, and which room a
+ * body stands in first, read the scale per axis too.
  */
 import { WorldAgent } from "./agent.ts";
-import { toWorld, toLocal, inRegion } from "./places.ts";
+import { toWorld, toLocal, inRegion, destinationOf } from "./places.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -28,12 +31,35 @@ ag.entities.set("mirror", { id: "mirror", model: "zz/mirror.glb", kind: "thing",
 const mh = ag.placeHolder(ag.entities.get("mirror"));
 check("a mirrored thing's places keep its one-number scale, as places.ts frames only positive axes", mh && same(toWorld(mh, [1, 0, 1]), [2, 0, 2]), JSON.stringify(mh && toWorld(mh, [1, 0, 1])));
 
-ag.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 1, scale3: [1, 2, 1] });
+ag.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, scale3: [1, 2, 1] });
 const hall = ag.placeHolder(ag.entities.get("hall"));
 const room = { name: "hall", kind: "region", min: [-1, 0, -1], max: [1, 2, 1] } as any;
 check("a region on a thing stretched ×2 in height reaches its drawn top", inRegion(hall, room, [0, 3.9, 0]) && !inRegion(hall, room, [0, 4.1, 0]));
 check("...and allows a hand's width (0.1 m) below its floor, not twice that",
   inRegion(hall, room, [0, -0.05, 0]) && !inRegion(hall, room, [0, -0.15, 0]));
+
+console.log("where a walk goes");
+{
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  const box = { name: "room", kind: "region", min: [-1, 0, -1], max: [1, 2, 1] } as any;
+  const seat = { name: "chair", kind: "seat", at: [0, 0.5, 0] } as any;
+  ag.entities.set("big", { id: "big", model: "zz/big.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2 });
+  const big = ag.placeHolder(ag.entities.get("big"));
+  const r = destinationOf(big, box), c = destinationOf(big, seat);
+  check("a room on a thing scaled ×2 is reached anywhere on its doubled floor", near(r.reach!, Math.hypot(4, 4) / 2), String(r.reach));
+  check("...and its seat from its doubled half-width, with a doubled margin below it", near(c.reach!, 0.7 + 0.3 * 2) && near(c.y, 1 - 0.05 * 2), JSON.stringify(c));
+  const rs = destinationOf(h, box), cs = destinationOf(h, seat);   // the shed, stretched [2, 1, 4]
+  check("a room on a stretched thing is reached across its stretched floor", near(rs.reach!, Math.hypot(4, 8) / 2), String(rs.reach));
+  check("...and its seat from the wider of its stretched half-widths", near(cs.reach!, 0.7 + 0.3 * 4), String(cs.reach));
+}
+{
+  // a booth inside a hall scaled ×2: a body in both is in the booth first, the smaller
+  const ag2: any = new WorldAgent({ name: "walker", world: "w" });
+  ag2.entities.set("hall", { id: "hall", model: "zz/hall.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, places: { hall: { min: [-5, 0, -5], max: [5, 3, 5] } } });
+  ag2.entities.set("booth", { id: "booth", model: "zz/booth.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 1, places: { booth: { min: [-1, 0, -1], max: [1, 2, 1] } } });
+  const at = ag2.placesAt([0, 1, 0]).map((x: any) => x.place.name);
+  check("the rooms a body stands in come smallest first, a scaled thing's by its scaled size", at.join() === "booth,hall", at.join());
+}
 
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
 process.exit(failures ? 1 : 0);
