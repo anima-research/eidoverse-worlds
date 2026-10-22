@@ -242,6 +242,10 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   });
   const cdp = cdpOn(cws);
   await Promise.all([cdp.send("Runtime.enable"), cdp.send("Page.enable"), cdp.send("Log.enable"), cdp.send("Network.enable")]);
+  // EIDO_CPU_THROTTLE=<n>: slow only the page n times (Chrome's own CPU throttle), so a slow CI runner's page can be
+  // reproduced on a fast host without starving the server or the runner too
+  const throttle = Number(process.env.EIDO_CPU_THROTTLE);
+  if (throttle > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttle });
   // THE SKY GUARD, before any module reads localStorage: a cloudy sky bakes on the CPU in headless Chromium and has
   // frozen Burrow (memory: feedback_headless_sky_oom). Every page this browser loads from here on starts clouds-off.
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {}" });

@@ -107,8 +107,7 @@
   "raw-symlink": 3
  },
  "tools/protocol/party-probe.ts": {
-  "bare-wait": 36,
-  "own-until": 1
+  "bare-wait": 32
  },
  "tools/protocol/presence-check.ts": {
   "bare-wait": 10

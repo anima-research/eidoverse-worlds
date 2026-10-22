@@ -463,8 +463,9 @@ function duplicate(id) {
   const n = (dupCount.get(id) ?? 0) + 1; dupCount.set(id, n);
   const nudge = n === 2 && !rec?.['copy-of'] ? html` · copies are <b>independent</b>: for copies that stay in step, <b>Save as blueprint</b> and place them from Build ▸ Blueprints` : '';
   // the authority copies it, and what's attached to it: create {from: id}, one act
+  const since = Sel.mark();
   Edits.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
-    const out = Edits.idOut(nid); flashHint(html`<b>${called(out)}</b> — a copy of ${called(id)}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+    const out = Edits.idOut(nid); flashHint(html`<b>${called(out)}</b> — a copy of ${called(id)}${nudge}`, nudge ? 8000 : 4000); setTimeout(() => { if (entities.has(out) && Sel.mark() === since) sceneSelect(out); }, 400); });
 }
 
 // a lock's strength is its setter's rank now (recut B2): the authority's inspect says it (lock.rank); this only keeps

@@ -19,6 +19,7 @@ import { bus } from '../base.js';
 let ids = [];
 let kind = null;
 let act = null;   // the ACTIVE id: the last one clicked (R, gym 10-17 20:39). null = the primary stands in
+let gen = 0;      // bumped on every change: a selection made later (when an async reply lands) checks it hasn't moved
 
 const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const dedupe = (list) => { const out = []; for (const id of list ?? []) if (id != null && !out.includes(id)) out.push(id); return out; };
@@ -27,7 +28,7 @@ function commit(next, k, a = act) {
   const nk = next.length ? k : null;
   const na = a != null && a !== next[0] && next.includes(a) ? a : null;   // the primary as active is the default: stored as null, so it is no change
   if (nk === kind && same(next, ids) && na === act) return false;
-  ids = next; kind = nk; act = na;
+  ids = next; kind = nk; act = na; gen++;
   bus.emit('selection', selection());
   return true;
 }
@@ -61,3 +62,9 @@ export function toggle(id, k = 'things') {
   return ids.includes(id) ? commit(ids.filter((x) => x !== id), k) : commit([...ids, id], k, id);   // an add is the one clicked: active
 }
 export function clear() { return commit([], null, null); }
+
+/** A mark of the selection as it stands now. */
+export const mark = () => gen;
+/** Select `list` only if the selection hasn't changed since `since` (a `mark()`): a selection that follows an async step
+ *  (a duplicate's reply, a placed thing appearing) must not undo what the person picked while it was in flight. */
+export function setIfUnchanged(since, list, k = 'things', a = null) { return gen === since ? set(list, k, a) : false; }

@@ -546,8 +546,8 @@ function commitSpawn() {
   cancelGhost();
 }
 function selectWhenHere(id, ms = 3000) {
-  const t0 = performance.now();
-  const go = () => { if (entities.has(id)) { if (editMode) Sel.set([id]); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
+  const t0 = performance.now(), since = Sel.mark();
+  const go = () => { if (entities.has(id)) { if (editMode) Sel.setIfUnchanged(since, [id]); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
   go();
 }
 

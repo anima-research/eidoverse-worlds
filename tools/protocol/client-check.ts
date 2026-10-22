@@ -30,6 +30,7 @@ process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
 import { idAliases, inPage } from "./idalias.ts";
+import { pause } from "./wait.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
@@ -227,6 +228,18 @@ try {
   check("D1 Alt+D = create {from: <the thing>}: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create" && myActs().at(-1).e.body.request.from === crate), myActs().slice(n0).map((a) => a.e.body.request));
   const st1 = disk(); const dup = Object.keys(st1.entities).find((k) => k !== crate && k !== IDS.of("cup") && st1.entities[k].c.model === st1.entities[crate].c.model);   // the stored model: the door keeps CRATE as its content address
   check("D2 …a copy 0.5 m along x, drawn in the page", !!dup && Math.abs(st1.entities[dup].c.transform.pos[0] - st1.entities[crate].c.transform.pos[0] - 0.5) < 1e-6 && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${dup}'))`), dup);
+
+  // ---- D3: a late reply doesn't undo a newer pick. The copy is selected 400 ms after its reply; a person who has picked
+  // something else by then keeps it (CI 10-22: on a slow page the copy's select replaced a two-thing selection) ----
+  { await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); return true;`);
+    const nd = myActs().length; await key("KeyD", { altKey: true });
+    await page(`(await import('/lib/scenegraph.js')).sceneSelect('${IDS.of("cup")}'); return true;`);
+    await waitDisk(() => myActs().length === nd + 1);
+    await pause("past the copy's 400 ms select, and its reply", 1500);
+    check("D3 a duplicate's late select doesn't replace what was picked after it", await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${IDS.of("cup")}')`), await evalJson(`import('/lib/editpanels.js').then((m) => m.selection())`));
+    const st3 = disk(); const extra = Object.keys(st3.entities).filter((k) => !st1.entities[k] && st3.entities[k].c.model === st3.entities[crate].c.model);
+    for (const x of extra) await page(`(await import('/lib/net.js')).sendRequest('delete', { id: '${x}' }); return true;`).catch(() => null);
+    await waitDisk(() => extra.every((x) => !disk().entities[x])); }
 
   // ---- M: multi-delete is one batch ----
   n0 = myActs().length;

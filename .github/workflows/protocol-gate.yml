@@ -66,9 +66,11 @@ jobs:
           # extra flags for the harness's headless Chrome, CI only:
           #  Linux: Ubuntu 23.10+ disables the user namespaces Chrome's sandbox needs ("No usable sandbox!";
           #         playwright launches without it there for the same reason)
-          #  macOS: the runner VM has no GPU; navigating to the client hung (10-19), so render in software
+          #  macOS: nothing. 10-19 forced SwiftShader here for a hang whose cause was the keychain (harness.ts passes
+          #         --use-mock-keychain); SwiftShader itself then blocked the page's main thread > 60 s, and the browser
+          #         lane failed 5/10 for days. Default GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
           EIDO_METER_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}   # the hosted Windows VM is ~3x slower per request (access A8/A14 hit the 3000 ms cap)
-          EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || runner.os == 'macOS' && '--use-angle=swiftshader --enable-unsafe-swiftshader' || '' }}
+          EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || '' }}
         run: |
           # one known temp dir under /tmp so failed suites' scratch can be uploaded. With $RUNNER_TEMP/gate-tmp here,
           # browser-check (playwright) closed at launch on Linux, and passed with the default /tmp (10-19). Not the
