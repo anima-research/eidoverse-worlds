@@ -126,11 +126,17 @@ function buildUndo(ctx, a, w) {
   // a host's seats after the cut are its socket children, and nobody writes its `sockets` key (review 10-12 S2-2): later
   // work by others on them (a socket made under it, or any write to one of its socket children, deleted ones included)
   // is a change to what a pre-cut `sockets` edit set, so undoing that edit skips, as it did before the cut
+  // A socket made under it counts however its two halves were written: its `socket` and its `parent` in one change, or
+  // either one set on a thing that already had the other
   const socketWorkBy = (host) => {
     for (const i of X.changes.slice(firstAfter(X.changes, res.seq))) { if (!others(i)) continue; const ops = opsQuiet(E[i]);
       for (const o of ops) {
-        if (o.verb === "set" && o.comp === "parent" && o.value?.to === host && ops.some((b) => b.id === o.id && b.comp === "socket")) return E[i].actor;
-        const was = o.verb === "create" ? null : entityBefore(w, o.id, i, X); if (was && isSocketC(was.c) && was.c.parent?.to === host) return E[i].actor; } }
+        const was = o.verb === "create" ? null : entityBefore(w, o.id, i, X);
+        if (was && isSocketC(was.c) && was.c.parent?.to === host) return E[i].actor;
+        if (o.verb !== "set" || (o.comp !== "parent" && o.comp !== "socket")) continue;
+        const setHere = (comp) => ops.find((b) => b.verb === "set" && b.id === o.id && b.comp === comp);
+        const socket = setHere("socket"), parent = setHere("parent");
+        if ((socket ? isSocketC({ socket: socket.value }) : isSocketC(was?.c)) && (parent ? parent.value : was?.c.parent)?.to === host) return E[i].actor; } }
     return null; };
   const groups = [], skipped = [];
   const keys = new Map();
