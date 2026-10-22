@@ -36,7 +36,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a doorway is the absence of a box (every wall edge solid)", "shared/structure.js", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(...wallBoxes(edge, ap, g, floorY));", "    const ap = level.apertures.get(k);\n    if (!ap) continue;\n    boxes.push(edgeSpan(edge.axis, (edge.axis === 0 ? edge.z : edge.x) * g.tile, (edge.axis === 0 ? edge.x : edge.z) * g.tile, (edge.axis === 0 ? edge.x + 1 : edge.z + 1) * g.tile, -g.wallT / 2, g.wallT / 2, floorY, floorY + g.wallH, edge.mat, 'wall'));", ["W1", "W2"]],
   ["floors are surfaces", "shared/protocol/authority/catalogue.js", "      surfaces.push({ y, x: [x0, x1], z: [z0, z1] }); floors.push", "      floors.push", ["W3"]],
   ["a key already taken falls back (no twins)", "shared/protocol/authority/blueprints.js", "const k = taken.has(want) ? null : want;", "const k = want;", ["N4"]],
-  ["a new script never takes over the thing's own use", "shared/protocol/newscript.js", "  if (!r.use || mine(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
+  ["a new script never takes over the thing's own use", "shared/protocol/newscript.js", "  if (free(\"use\")) return \"use\";", "  return \"use\";", ["K2"]],
   ["a use script gets its reaction", "shared/protocol/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
   ["update merges a part's parent", "shared/protocol/authority/blueprints.js", "const unmerged = new Set([\"copy-of\"]);", "const unmerged = new Set([\"copy-of\", \"parent\"]);", ["U1"]],
   ["a lineage's parts advance with the root", "shared/protocol/authority/blueprints.js", "if (id !== a.copy && T[key] && c?.from === was)", "if (false)", ["U2"]],
@@ -247,6 +247,19 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const r = s.w().state().entities.gate2.c.reactions;
       return { action: plan.action, inst: show(inst), use: r?.use?.kind ?? null, chime: r?.chime?.kind ?? null, mine: r?.[plan.action] ?? null }; },
     good: (o) => o.action === "chime-2" && o.inst === "ok" && o.use === "toggle" && o.chime === "toggle" && o.mine?.kind === "script" && o.mine?.script === "chime" },
+  { id: "K3", what: "…and its batch's expect is the thing as planned (client/lib/scriptnew.js sends base: the thing at Create): a use reaction someone added during the upload refuses the batch, not overwritten (house 6340433633)", run(s) { cast(s);
+      if (!NS) return { planner: "absent" };
+      s.call("olive", "create", { id: "bell", model: "crate", components: { transform: T0([0, 0, 0]), openable: { open: false } } });
+      const thing = s.w().state().entities.bell.c;
+      const plan = NS.planNewScript({ id: "bell", name: "chime", text: NS.TEMPLATES.use, trigger: "use", comps: ["t/counter"], say: true }, thing);
+      const up = s.call("olive", "upload", plan.upload.args);
+      const theirs = s.call("bob", "set", { id: "bell", component: "reactions", value: { use: { kind: "toggle", component: "openable" } } });   // meanwhile
+      const ops = plan.install(up.src);
+      // editwrites.js expectOf over what the batch sets, read from base: a component the thing lacked is expected absent
+      const expect = [...new Set(ops.map((o: any) => o.args.component))].map((k) => (k in thing ? { id: "bell", component: k, value: thing[k] } : { id: "bell", component: k }));
+      const inst = s.call("olive", "batch", { ops, expect });
+      return { action: plan.action, theirs: show(theirs), inst: inst.refused?.code ?? show(inst), use: s.w().state().entities.bell.c.reactions?.use?.kind ?? null }; },
+    good: (o) => o.action === "use" && o.theirs === "ok" && o.inst === "changed" && o.use === "toggle" },
   { id: "U1", what: "update {copy, to} carries a reparent: a part moved under another part upstream lands under it here (not 3 m off, under its old parent)", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
       s.call("bob", "create", { id: "shade", model: "book", components: { transform: T0([3, 0, 0]), parent: { to: "lamp" } } });
