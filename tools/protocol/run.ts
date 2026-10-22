@@ -368,10 +368,13 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
 const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
 const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
 let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
-if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
+// suites outside the browser lane that read the asset library, read-only: knockdown's ragdoll needs a real rig (with none
+// it falls back to the canned slump, which is what its rows reject)
+const READS_LIBRARY = new Set(["knockdown"]);
+if (SUITES.some(([n]) => selected(n) && (laneOf(n) === "browser" || READS_LIBRARY.has(n)))) {
   const want = process.env.EIDOVERSE_DIR;
   const fix = `git clone ${LIBRARY_REPO} <dir> && git -C <dir> checkout ${LIBRARY_PIN}, then EIDOVERSE_DIR=<dir>`;
-  if (!want) problems.push(`the browser lane needs the asset library: set EIDOVERSE_DIR (${fix})`);
+  if (!want) problems.push(`the browser lane (and ${[...READS_LIBRARY].join(", ")}) needs the asset library: set EIDOVERSE_DIR (${fix})`);
   else if (!fs.existsSync(path.join(want, "eidoverse", "terrain.js"))) problems.push(`EIDOVERSE_DIR=${want} is not an eidoverse-video checkout (no eidoverse/terrain.js): ${fix}`);
   else {
     LIBRARY = path.resolve(want);
@@ -415,7 +418,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (PY) env.PYTHON = PY;
   if (CHROME) env.CHROME = CHROME;
-  if (LIBRARY && laneOf(name) === "browser") env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other lane keeps its empty library
+  if (LIBRARY && (laneOf(name) === "browser" || READS_LIBRARY.has(name))) env.EIDOVERSE_DIR = LIBRARY;   // read-only use; every other suite keeps its empty library
   const [script, ...args] = file.split(" ");
   let cmd = [process.execPath, path.resolve(ENGINE, "tools/protocol", script), ...args];
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
