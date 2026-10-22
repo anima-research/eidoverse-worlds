@@ -13,7 +13,7 @@ import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
 import { waterParams, vector, MAX_AIR } from "../shared/water.js";
-import { normalizeParticles } from "../shared/particles.js";
+import { resolveParticles } from "../shared/particle_effects.js";
 import { normalizePicture } from "../shared/picture.js";
 import { normalizeSound } from "../shared/sound.js";
 import type { Client, World } from "./world.ts";
@@ -73,7 +73,7 @@ export function projectComponentData(comp: any, entityId = "") {
   const data: Record<string, unknown> = {};
   // Presentation components, normalized by the same shared laws the browser uses
   // (a bag that does not normalize renders nothing there either).
-  if (comp?.particles) { const r = normalizeParticles(comp.particles, { entityId }); if (r.ok) data.particles = r.emitter; }
+  if (comp?.particles) { const { ok, ...r } = resolveParticles(comp.particles, { entityId }) as any; if (ok) data.particles = r; }
   if (comp?.picture) { const r = normalizePicture(comp.picture); if (r.ok) data.picture = r.picture; }
   if (comp?.sound) { const r = normalizeSound(comp.sound); if (r.ok) data.sound = r.sound; }
   // Named-part motions (motion.js): every motion:<part> key, plus motion with a part.
