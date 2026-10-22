@@ -10,6 +10,7 @@
 //   T6  the connection becomes someone else while the request waits → refused; nothing under either identity
 //   T7  static: no await in the authority; none between worldlog's recheck and the synchronous commit
 //   T8  a short write is looped to the end, and a write that takes nothing throws
+//   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
 //   T11 (r14 M1) server.ts writes only through requestwire (voice-moderate via requestAs); no direct w.log.request caller
@@ -28,6 +29,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["recheck without the role", "server/reqcap.ts", "  if (role && w.log.roleOf(cap.actorId) !== cap.role) return", "  if (false) return", ["T4b"]],
   ["identity read after the await: recheck without it", "server/reqcap.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
+  ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
@@ -220,6 +222,20 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   nodefs.writeSync = function () { return 0; };
   let threw2 = null; try { appendDurable(f, '{"b":1}'); } catch (e) { threw2 = e; } finally { nodefs.writeSync = o; }
   ok(/short write/.test(String(threw2?.message)), "T8b a write that takes nothing throws (never a silent torn line)", String(threw2)); }
+// ---------------- T8c ----------------
+// a directory mkdir makes is named by an entry in its parent: a first write into new directories is durable only once
+// every one of those entries is synced, the topmost new directory's parent included
+{ const { putBlobFile } = await import("../../server/durable.ts");
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync }; const dirFds = new Map(); const synced = [];
+  nodefs.openSync = function (p, flags, ...r) { const fd = o.openSync.call(nodefs, p, flags, ...r); if (flags === "r") dirFds.set(fd, path.resolve(String(p))); return fd; };
+  nodefs.fsyncSync = function (fd) { if (dirFds.has(fd)) synced.push(dirFds.get(fd)); return o.fsyncSync.call(nodefs, fd); };
+  const base = path.join(root, "t8c"); fs.mkdirSync(base, { recursive: true });
+  try { appendDurable(path.join(base, "a", "b", "c", "world.jsonl"), '{"n":1}'); putBlobFile(path.join(base, "x", "blobs", "h.txt"), "blob", "sha256:unused"); }
+  finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; }
+  const want = [base, "a", "a/b", "a/b/c", "x", "x/blobs"].map((d) => d === base ? base : path.join(base, d));
+  const missing = want.filter((d) => !synced.includes(d));
+  ok(!missing.length && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
+    "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");

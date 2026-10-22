@@ -35,7 +35,7 @@ export function writeAll(fd: number, buf: Uint8Array) {
 /** Append one line and fsync before returning: the caller broadcasts only after this. Any throw from here leaves the line's
  *  disk state unknown (open, write, sync and close are not one step): the authority wedges the file and calls it ambiguous. */
 export function appendDurable(logPath: string, line: string) {
-  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  mkdirDurable(path.dirname(logPath));
   const fresh = !fs.existsSync(logPath);
   const fd = fs.openSync(logPath, "a");
   try { writeAll(fd, Buffer.from(line + "\n", "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
@@ -49,10 +49,21 @@ function syncDir(dir: string) {
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
+/** Make `dir` and any missing parents, durably: a directory mkdir just made is named by an entry in its parent, which a
+ *  crash can lose like any other new name, taking the directory and what was written in it. So each parent that gained an
+ *  entry is synced, from `dir`'s own parent up to the parent of the first directory made. `dir` itself is the caller's to
+ *  sync once its file is in it. */
+function mkdirDurable(dir: string) {
+  const first = fs.mkdirSync(dir, { recursive: true });
+  if (first === undefined) return;
+  const top = path.dirname(path.resolve(first));
+  for (let d = path.dirname(path.resolve(dir)); ; d = path.dirname(d)) { syncDir(d); if (d === top || d === path.dirname(d)) break; }
+}
+
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
 export function putBlobFile(file: string, s: string, h: string) {
   if (fs.existsSync(file)) { try { if (`sha256:${sha256(fs.readFileSync(file, "utf8"))}` === h) return; } catch {} }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  mkdirDurable(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
   const fd = fs.openSync(tmp, "w");
   try { writeAll(fd, Buffer.from(s, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
