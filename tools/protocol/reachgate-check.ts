@@ -261,6 +261,14 @@ let tierNobody, perPerson;   // recut A2: the two ways to be refused are my swit
   ok(asked?.ok === true && !!shoulder(val, "Uma")?.reach, "RG16 within the minute Val's reach is delivered and the hand relays", asked);
   skew += 61000; const out = shoulder(val, "Uma");
   ok(out && !out.reach, "RG16 past the minute it is stripped: the grant ended with the allowance", out); }
+// RG16b: a yes to an ask asked after an allowance ran out is that yes, not the old allowance's end (review of #260, house
+// 6340433633 Q1: the cap read the stale allowance and ended the fresh yes at once)
+{ const ola = person("Ola", "h2", [-14, 0, -14]), pim = person("Pim", "j2", [-14.6, 0, -14]);
+  req(ola, "consent", { switch: "ask" });
+  ok(req(ola, "consent", { allow: pim.actorId, class: "touch", for: 60000 })?.ok === true, "(RG16b setup) Ola allows Pim touch for a minute, and asks everyone else");
+  ok(grant(pim, ola), "(RG16b setup) past that minute Pim's reach is an ask, and Ola says yes");
+  const out = shoulder(pim, "Ola");
+  ok(!!out?.reach, "RG16b the yes stands: the hand relays (the run-out allowance doesn't end it)", out); }
 // RG17: an ask's id names it alone, even when another ask made in the same millisecond was answered first
 { const wes = person("Wes", "k", [-12, 0, -12]), xa = person("Xa", "l", [-12.6, 0, -12]), yo = person("Yo", "m", [-11.4, 0, -12]), zu = person("Zu", "n", [-12, 0, -11.4]);
   req(wes, "consent", { switch: "ask" });

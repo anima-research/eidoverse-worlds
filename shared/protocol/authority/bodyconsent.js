@@ -69,11 +69,12 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet
   if (!C.ENFORCED.includes(cls) || (cls !== "touch" && cls !== "intimate")) return { ok: false, code: "shape", class: cls, reason: `a reach is touch or intimate, not '${cls}'` };
   const granted = P.reaches?.[from];
   if (granted?.to && !(granted.until > now)) delete P.reaches[from];   // F3 (d): a yes lapses after C.REACH_GRANT_MS, held or not
-  else if (granted && granted.to === to && (granted.cls === cls || (granted.cls === "intimate" && cls === "touch"))) { granted.seen = true; return { ok: true, consent: "asked" }; }
+  else if (granted?.asked && granted.to === to && (granted.cls === cls || (granted.cls === "intimate" && cls === "touch"))) { granted.seen = true; return { ok: true, consent: "asked" }; }
   let r;
   if (P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" };
   else { const d = C.decide(P, from, to, cls, now);
     if (d.mode === "allow") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
+    if (granted?.to === to && !granted.asked) delete P.reaches[from];   // admitted by an answer that no longer admits it: not under way
     r = d.mode === "ask"
       ? { code: "consent", reason: `${to}'s ${cls} for you is ask: a hand isn't streamed onto them until they say yes`, fix: `ask first with the reach request: reach {who: "${to}", point: "${point ?? "<point>"}"} (they have 20 s; silence is no)` }
       : { code: "consent", reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX, why: d.why }; }
@@ -109,9 +110,9 @@ function deliver(w, from, to, kind, cls, extra, consent) {
   if (cls === "pose") { b.poseBy = from; if (extra.sponsor) b.poseSponsor = extra.sponsor; else delete b.poseSponsor; }
   if (cls === "displace") { b.draggedBy = from; if (extra.sponsor) b.dragSponsor = extra.sponsor; else delete b.dragSponsor; }
   if (cls === "shove") b.tumble = { by: from, ts: w.now() };
-  // a grant the relay caches ends no later than the timed allowance it came from (reachAdmits takes the cached grant first)
-  if (cls === "touch" || cls === "intimate") { const o = C.tableOf(P, to).overrides[from]?.[cls]; const cap = o?.mode === "allow" && o.until !== undefined ? o.until : Infinity;
-    (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: Math.min(w.now() + C.REACH_GRANT_MS, cap), ...sponsor }; }
+  // a touch under way is recorded (touchedBy, revokeAfter); only an ask's yes is a GRANT the relay answers from: anything
+  // else the table admitted is decided again at every packet, so an allowance's end ends it (review of #260, house Q1)
+  if (cls === "touch" || cls === "intimate") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, until: w.now() + C.REACH_GRANT_MS, ...(consent === "asked" ? { asked: true } : {}), ...sponsor };
   inboxPush(P, to, { type: "body", from, kind, cls, consent, ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
 // After any change to `to`'s table: whatever someone is doing to them that the table now says nobody to ends NOW, and the
