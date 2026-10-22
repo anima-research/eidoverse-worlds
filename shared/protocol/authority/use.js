@@ -161,8 +161,9 @@ const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless]
 const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSocketC(e?.c) ? e.c.parent?.to : id;
   return socketsOf(st, host).filter((x) => host === id || x.id === id).map((x) => ({ ...x, slot: x.name, body: bodyOf(x.station) })).filter((x) => x.body); };
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
-// 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
-const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
+// 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it"). It is barred
+// while openable.locked is on, as the registry's `locked` reads: "bars opening while on (an open handler with unless: 'locked')"
+const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open", unless: "locked" });
 function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {
   const e = st.entities[id];
