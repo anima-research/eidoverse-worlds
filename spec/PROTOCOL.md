@@ -1102,17 +1102,8 @@ activation never becomes an attendance list (an `enter` / `leave`
 activation, and a grab that isn't itself logged, records no trigger actor
 and no `event.by`; a release always has its own act, so it keeps its
 trigger). What a script writes with the identities it receives live is its
-own act, signed with its sponsor's rights. An auditor may re-run the source with the recorded
-event, clock, seed and stand-ins for the presence reads and for an identity
-the act doesn't record. A result that doesn't depend on who was there is
-verified. An arrival whose re-run differs from the log is re-run with a
-second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a
-short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2): if the
-two differ, it is reported as not re-runnable; if they agree, the mismatch
-is flagged `rerun-anon`, a difference to look at, never `rerun` (proof of a
-forgery), since two inputs can't show a result is the same for every
-identity. Nothing that depends on who was there is ever reported as
-verified. A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
+own act, signed with its sponsor's rights. An auditor's re-run of a script is a
+check, never the record; its procedure is `docs/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.
 
 ## 9. Conventions

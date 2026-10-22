@@ -169,6 +169,10 @@ how much came back (`{near: [{r, n}], count: [n], names: k}`), never who: so a r
 and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
 read who was near or a name, the auditor lists it as `skipped` (it can't be re-run to that result), never as verified.
 
+## Auditing a script
+
+Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that replay never re-runs code). An auditor may re-run the source with the recorded event, clock, seed and stand-ins for the presence reads and for an identity the act doesn't record. A result that doesn't depend on who was there is verified. An arrival whose re-run differs from the log is re-run with a second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2): if the two differ, it is reported as not re-runnable; if they agree, the mismatch is flagged `rerun-anon`, a difference to look at, never `rerun` (proof of a forgery), since two inputs can't show a result is the same for every identity. Nothing that depends on who was there is ever reported as verified.
+
 ## Determinism (why some JavaScript behaves differently here)
 
 - `Date.now()`, `new Date()` and `world.now` are **frozen** at the activation's own timestamp.
