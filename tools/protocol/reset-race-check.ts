@@ -86,5 +86,20 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const w2 = hw.log.requestSync(owner, "say", { text: "in the fresh world" });
   ok(errs.length === 1 && fs.existsSync(path.join(dir, "world.jsonl")) && kept.length === 1 && w2?.ok === true,
     "PR3 resetting again finishes the erase (a fresh world that takes writes); the old log stays in the first archive", { errs, archives, kept, w2: w2?.ok ?? w2?.refused }); }
+// PR4 (review of the house fixes): a failure at the SECOND rename (poses.json), twice. The second attempt finds no world.jsonl to
+// move, so "did this attempt move the log" is no; the world is still retired, and the answer must say so, not "goes on as before"
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const dir = path.join(process.env.WORLDS_DIR, "half2"); const { owner } = foundWorld(dir, "half2", "olive");
+  fs.writeFileSync(path.join(dir, "poses.json"), "{}");
+  const hw = new World("half2");
+  const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
+  const rename = fs.renameSync; const reset = () => REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half2" });
+  fs.renameSync = function (a, b) { if (String(a).endsWith("poses.json")) throw new Error("EIO: injected (poses.json)"); return rename.call(fs, a, b); };
+  try { reset(); reset(); } finally { fs.renameSync = rename; }
+  const w1 = hw.log.requestSync(owner, "say", { text: "after two failed resets" });
+  ok(errs.length === 2 && errs.every((e) => /takes no writes/.test(e)) && !/goes on as before/.test(errs[1]) && !w1?.ok,
+    "PR4 a second failed attempt, with the log already moved by the first, still says the world takes no writes (and it doesn't)", { errs, w1: w1?.ok ?? w1?.refused });
+  reset(); const w2 = hw.log.requestSync(owner, "say", { text: "fresh" });
+  ok(errs.length === 2 && w2?.ok === true, "PR4 …and a third attempt that succeeds leaves a fresh world that takes writes", { errs, w2: w2?.ok ?? w2?.refused }); }
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`[reset-race-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

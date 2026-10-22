@@ -595,8 +595,9 @@ export function resetWorld(log: WorldLog): string {
     for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
     fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
   } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh;
-    // whether the old log itself left (its rename is the first): if it didn't, the world is as it was and stays live
-    err.logMoved = fs.existsSync(path.join(arch, "world.jsonl")); throw err; }
+    // whether the old log is gone from its place (this attempt moved it, or an earlier failed one did): if not, the world is
+    // as it was and stays live
+    err.logMoved = fs.existsSync(path.join(arch, "world.jsonl")) || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
   fs.rmSync(fresh, { recursive: true, force: true });
   return arch;
 }
