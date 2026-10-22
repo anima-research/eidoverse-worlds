@@ -16,6 +16,9 @@
 //   colon-list    a list of directories split on ":": `C:\\…` splits at its drive letter. Use common.ts pathList.
 //   slash-path    a resolved filesystem path tested with a `/`-only pattern (`/\/tools\//.test(p)`): never matches on
 //                 Windows, so the check quietly does nothing there.
+//   lab-clock     the authority's clock env set or deleted by hand: 124 inline "advance then pin" copies in 34 files (10-22),
+//                 where a helper that forgot to advance (or two sharing one counter) could run time backwards silently. Use
+//                 tools/protocol/clock.ts (labClock().advance, pin, unpinned).
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
@@ -28,10 +31,11 @@ export const RULES: Record<string, RegExp> = {
   "shell-interp": /\[\s*["']sh["']\s*,\s*["']-c["']\s*,\s*`[^`]*\$\{/g,
   "raw-symlink": /\bsymlinkSync\s*\(/g,
   "colon-list": /[^\n]*(?:process\.env\.\w+|\broots\b|\bdirs\b)[^\n]*\.split\(\s*["']:["']\s*\)/g,
+  "lab-clock": /\bdelete\s+process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])|process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])\s*=(?!=)/g,
   "slash-path": /[^\n]*\\\/(?:tools|shared|server|client|mcpl|spec|worlds?)\\\/[^\n]*\.test\(\s*(?:p|f|file|abs|full|dir|d)\s*\)/g,
 };
 const SELF = "tools/protocol/hygiene-check.ts";   // its fixtures are the bad shapes on purpose
-const EXEMPT: Record<string, string[]> = { "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"] };
+const EXEMPT: Record<string, string[]> = { "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"], "lab-clock": ["tools/protocol/clock.ts"] };
 const SUITE_ONLY = new Set(["bare-wait", "own-until"]);   // the waiting rules are about tests; server code may wait on purpose
 
 export function scan(text: string): Record<string, number> {
@@ -82,7 +86,7 @@ if (import.meta.main) {
   let pass = 0, fail = 0;
   const check = (name: string, ok: boolean, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}`); if (info !== undefined) console.log("     ", typeof info === "string" ? info : JSON.stringify(info)); } };
 
-  // H1–H6: each rule catches the shape it names, and leaves the right way alone
+  // H1–H8: each rule catches the shape it names, and leaves the right way alone
   const bad: Record<string, string> = {
     "bare-wait": "await new Promise((r) => setTimeout(r, 500)); await Bun.sleep(20); await sleep(100); await page.waitForTimeout(50);",
     "own-until": "async function until(fn) {}  const waitFor = async (e) => {};",
@@ -90,16 +94,17 @@ if (import.meta.main) {
     "shell-interp": 'Bun.spawnSync(["sh", "-c", `git archive ${c} | tar -x -C ${d}`]);',
     "raw-symlink": 'fs.symlinkSync(target, at);',
     "colon-list": "const roots = (process.env.PROTOCOL_WORLDS ?? \"\").split(\":\");",
+    "lab-clock": 'T += 100; process.env.PROTOCOL_NOW = String(T); process.env["PROTOCOL_NOW"] = "1"; delete process.env.PROTOCOL_NOW;',
     "slash-path": 'if (/\\/tools\\/[^/]+\\.(ts|mjs)$|\\/tools\\/protocol\\//.test(p)) walk(p);',
   };
-  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "slash-path": 1 };
-  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS);';
+  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "lab-clock": 3, "slash-path": 1 };
+  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); clock.advance(100); pin(LAB_EPOCH); const t = pinned(); if (process.env.PROTOCOL_NOW === "1") unpinned(f);';
   let i = 1;
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
   // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop
   // and isn't a gate suite. The good string carries it so a broadened pattern shows up here first.
 
-  // H7: the gate's code against the baseline (may only go down)
+  // H9–H10: the gate's code against the baseline (may only go down)
   const now = measure();
   const base = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, "utf8")) : {};
   if (process.argv.includes("--write")) {
@@ -108,8 +113,8 @@ if (import.meta.main) {
     fs.writeFileSync(BASE, JSON.stringify(now, null, 1) + "\n"); console.log(`wrote ${rel(BASE)}`);
   }
   const { over, under } = compare(now, JSON.parse(fs.existsSync(BASE) ? fs.readFileSync(BASE, "utf8") : "{}"));
-  check("H7 no file is over its baseline (new debt of a known class can't land)", over.length === 0, over.join("\n      "));
-  check("H8 no file is under its baseline without the baseline following (`hygiene-check --write` locks in what was paid off)", under.length === 0, under.join("\n      "));
+  check("H9 no file is over its baseline (new debt of a known class can't land)", over.length === 0, over.join("\n      "));
+  check("H10 no file is under its baseline without the baseline following (`hygiene-check --write` locks in what was paid off)", under.length === 0, under.join("\n      "));
   const tot: Record<string, number> = {}; for (const f of Object.values(now)) for (const [k, n] of Object.entries(f)) tot[k] = (tot[k] ?? 0) + n;
   console.log(`[hygiene] debt still in the tree: ${Object.entries(tot).map(([k, n]) => `${k} ${n}`).join(", ") || "none"}`);
   console.log(`[hygiene-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
