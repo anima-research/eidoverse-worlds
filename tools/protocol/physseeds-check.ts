@@ -17,6 +17,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
+import { tryUntil } from "./wait.ts";
 
 const argv = process.argv.slice(2);
 const only = (() => { const i = argv.indexOf("--only"); return i >= 0 ? argv[i + 1].split(",") : null; })();
@@ -162,30 +163,29 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   const logf = path.join(root, "srv.log");
   const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   process.on("exit", () => { try { proc.kill(); } catch {} });
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let up = false; for (let i = 0; i < 80 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok; } catch {} }
+  const up = !!(await tryUntil("the server answers /version", async () => (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 }));
   ok("SV0b", up, "(setup) the server is up");
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   const send = (m) => ws.send(JSON.stringify(m));
   send({ type: "join", world: "glade", id: "Ann", avatar: "", replica: true });
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+  await tryUntil("Ann's join is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   send({ type: "pose", pose: { p: [0, 0, 0], yaw: 0, speed: 0, t: lastTs + 5, seq: 42 } });
-  for (let i = 0; i < 60 && !msgs.some((m) => m.type === "frame"); i++) await sleep(50);
+  await tryUntil("a frame arrives", () => msgs.some((m) => m.type === "frame"), { ms: 3000, step: 50 });
   const fr = msgs.find((m) => m.type === "frame");
   ok("SV1", fr && fr.t >= lastTs, "a frame's t is the authority's clock, never behind the log (it was raw Date.now(): flights were drawn an hour early)", [fr?.t - lastTs, msgs.map((m) => m.type)]);
   const mine = fr && Object.values(fr.poses ?? {})[0];
   ok("SV2", mine?.t === lastTs + 5 && mine?.seq === 42, "a pose's capture time and sequence ride the frame", mine);
   send({ type: "clock", t0: 12345.5 });
-  for (let i = 0; i < 40 && !msgs.some((m) => m.type === "clock"); i++) await sleep(50);
+  await tryUntil("the clock message is answered", () => msgs.some((m) => m.type === "clock"), { ms: 2000, step: 50 });
   const ck = msgs.find((m) => m.type === "clock");
   ok("SV3", ck && ck.t0 === 12345.5 && ck.t >= lastTs, "clock {t0} is answered with {t0, t}: t on the authority's clock (a round trip, not a one-way guess)", ck ?? msgs.filter((m) => m.type === "error"));
   const k0 = msgs.length;
-  send({ type: "state", s: [{ ...S0, q: [0, 0, 0, 2] }] }); await sleep(300);
+  send({ type: "state", s: [{ ...S0, q: [0, 0, 0, 2] }] }); await tryUntil("the malformed state is refused", () => msgs.slice(k0).some((m) => m.type === "error"), { ms: 2000 });
   const e1 = msgs.slice(k0).find((m) => m.type === "error");
   const k1 = msgs.length;
-  send({ type: "state", s: [S0] }); await sleep(300);
+  send({ type: "state", s: [S0] }); await tryUntil("the well-formed state is refused as reserved", () => msgs.slice(k1).some((m) => m.type === "error"), { ms: 2000 });
   const e2 = msgs.slice(k1).find((m) => m.type === "error");
   ok("SV4", /q/.test(e1?.error ?? "") && /reserved/.test(e2?.error ?? "") && /PHYSICS/.test(e2?.error ?? ""), "a state message is checked against the sample shape, then refused as reserved (no live authority yet), and says where it's specified", [e1, e2]);
   ws.close(); proc.kill();

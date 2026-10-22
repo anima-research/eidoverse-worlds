@@ -25,6 +25,7 @@ const { Document, NodeIO } = await import("@gltf-transform/core");
 const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
 type Box = [number, number, number, number, number, number];
 const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
+const { tryUntil, pause } = await import("./protocol/wait.ts");
 const { check, tally } = mkCheck();
 
 const bounds = (p: Float32Array) => {
@@ -74,7 +75,7 @@ console.log("\nmodel downloads, governed:");
     const u = new URL(req.url);
     if (u.pathname === "/library/huge.glb") return new Response(huge);
     open++; most = Math.max(most, open); served++;
-    await Bun.sleep(150);
+    await pause("each fetch is held open, so loads overlap", 150);
     open--;
     return new Response(glb);
   } });
@@ -107,7 +108,7 @@ try {
   // the building sits on the ground under its own origin, wherever that is
   const gy = a.heightAt(0, 0);
   await legacyVerb(a, "spawn", { id: "tower", lib: path, pos: [0, gy, 0], yaw: 0 });
-  for (let i = 0; i < 100 && !a.supportIds?.get("tower"); i++) await sleep(50);
+  await tryUntil("the tower's support is registered", () => a.supportIds?.get("tower"), { ms: 5000, step: 50 });
   await a.supportReady();
   await sleep(300);                                     // the fit itself is a detached registration
   // y: which floor at the destination, where it has more than one (navgrid)
@@ -127,8 +128,8 @@ try {
   await legacyVerb(a, "comp", { id: "tower", type: "sockets", data: { bench: { pos: [-0.8, UPPER + 0.45, -2.4], body: { pose: "sitchair" } } } });
   await sleep(200);
   await legacyVerb(a, "mount", { id: "walker", to: "tower", slot: "bench" });
-  for (let i = 0; i < 40 && !!!a.myOccupancy; i++) await sleep(50);
-  await sleep(500);                                     // seated for a few ticks
+  await tryUntil("the walker is seated", () => !!a.myOccupancy, { ms: 2000, step: 50 });
+  await pause("seated for a few ticks", 500);
   check("sits on an upstairs seat", !!a.myOccupancy);
   check("stands up from it upstairs, not on the ground floor beneath",
     await walk(-0.2, -2.4) && near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
@@ -208,7 +209,7 @@ try {
       check("(at the test ground, x 19)", there && Math.abs(a.pos.x - 19) < 0.15, `at (${a.pos.x.toFixed(2)}, ${a.pos.z.toFixed(2)})`);
       const wy = a.heightAt(20, 10);
       await legacyVerb(a, "spawn", { id: "wall", lib: wallLib, pos: [21, wy, 10], yaw: 0, collide: "exact" });
-      for (let i = 0; i < 40 && !a.entities.get(sceneId(a, "wall")); i++) await sleep(25);
+      await tryUntil("the agent holds the wall", () => a.entities.get(sceneId(a, "wall")), { ms: 1000, step: 25 });
       const crossed = await walk(21, 10);
       check("a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes through its wall",
         // (the protocol merge: the authority walks this body too, and its own solids stop a walk at the pen's wall either

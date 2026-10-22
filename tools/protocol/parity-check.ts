@@ -18,6 +18,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { ENGINE, scratch, copyTree } from "./common.ts";
+import { tryUntil } from "./wait.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -135,7 +136,7 @@ async function sock(port: number) {
     const t0 = Date.now(); const look = () => { const m = msgs.slice(k).find((x) => x.type === "reply" && x.id === id); if (m) return res(m.reply); if (Date.now() - t0 > 4000) return res({ timeout: true }); setTimeout(look, 30); }; look(); });
   return { msgs, req, close: () => ws.close(),
     async join(id: string, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world: "glade", id, avatar: "", replica: true, ...extra }));
-      for (let i = 0; i < 80; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error")) break; await sleep(50); }
+      await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; } };
 }
 /** `who` joins with `extra` while an observer is here; a late joiner then reads the present list. What each saw of `who`. */
@@ -144,7 +145,7 @@ async function seen(name: string, extra: any) {
   const obs = await sock(port); await obs.join(`obs${name.toLowerCase()}`);
   const s = await sock(port); const j = await s.join(name, extra);
   const you = j.snapshot?.you;
-  for (let i = 0; i < 40 && !obs.msgs.some((m) => m.type === "arrive" && m.id === you); i++) await sleep(50);
+  await tryUntil(`the observer sees ${name} arrive`, () => obs.msgs.some((m) => m.type === "arrive" && m.id === you), { ms: 2000, step: 50 });
   const arrive = obs.msgs.find((m) => m.type === "arrive" && m.id === you) ?? null;
   const late = await sock(port); const lj = await late.join(`late${name.toLowerCase()}`);
   const present = lj.snapshot?.present?.find((p: any) => p.id === you) ?? null;

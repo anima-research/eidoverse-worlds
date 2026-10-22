@@ -19,6 +19,7 @@ import { ENGINE, scratch, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { idAliases } from "./idalias.ts";
+import { tryUntil, pause } from "./wait.ts";
 const IDS = idAliases();   // the real-server rows: the suite's names ride as placeholders and minted ids (R 10-17)
 
 const argv = process.argv.slice(2);
@@ -1211,13 +1212,13 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
   const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...env, PORT: String(port) }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   try {
-    let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch { /* not yet */ } }
+    const up = !!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 }));
     if (!up) return { up: false, err: fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : "" };
     const client = async (name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
       await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
       ws.send(JSON.stringify({ type: "join", world: "chimes", id: name, avatar: "", replica: true }));
-      for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+      await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
       return { ws, msgs, you: msgs.find((m) => m.type === "snapshot")?.cut?.you, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 8000); }),
         send: (m: any) => ws.send(JSON.stringify(m)) }; };
     const ann = await client("Ann");
@@ -1232,7 +1233,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
     // path failing: on a slow or loaded host the enter script's first run can spend this world's share, so the use waits
     // for the next second and asks again (nothing was written by the refused one, so rung stays exact)
     let ring: any, ringBusy = 0;
-    for (;;) { ring = await bob.req("use", { id: "bell1", action: "ring" }); if (ring.script?.code !== "busy" || ringBusy >= 10) break; ringBusy++; await sleep(1100); }
+    for (;;) { ring = await bob.req("use", { id: "bell1", action: "ring" }); if (ring.script?.code !== "busy" || ringBusy >= 10) break; ringBusy++; await pause("the next second of script duty", 1100); }
     const B1 = IDS.of("bell1");   // the id the authority minted for the suite's bell1 (R 10-17)
     const readWorld = () => { const L = F.readLog(fs.readFileSync(path.join(W4, "chimes", "world.jsonl"))); const st = F.fold(L).entities[B1]?.c ?? {};
       return { L, st0: st, tickActs: L.filter((e: any) => e.kind === "act" && e.actor === `script:${B1}` && e.body?.on === "tick").length }; };
@@ -1265,13 +1266,13 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
     const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...env, PORT: String(port) }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     try {
-      let up = false; for (let i = 0; i < 100 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok; } catch { /* not yet */ } }
+      const up = !!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 }));
       if (!up) return { up: false };
       const client = async (world: string, name: string) => { const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = []; const waiters = new Map(); let n = 0;
         ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") { const fn = waiters.get(m.id); if (fn) { waiters.delete(m.id); fn(m.reply); } } };
         await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
         ws.send(JSON.stringify({ type: "join", world, id: name, avatar: "", replica: true }));
-        for (let i = 0; i < 60 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+        await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
         return { ws, req: (verb: string, args: any = {}) => new Promise<any>((res) => { const rid = `${name}-${++n}`; waiters.set(rid, (r: any) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id: rid, verb, args: IDS.out(verb, args) })); setTimeout(() => { if (waiters.delete(rid)) res({ ok: false, refused: { code: "timeout" } }); }, 30000); }) }; };
       const ann = await client("alpha", "Ann"), bea = await client("beta", "Bea");
       await ann.req("create", { id: "box" });
@@ -1284,9 +1285,9 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
       // but no verdict on the script, so it doesn't count toward the three; at most 8 rounds in all)
       for (let i = 0; i < 8 && rounds.filter((r: any) => r.code !== "unavailable").length < 3; i++) {
         const t0 = performance.now(); let done: any = null; const p = ann.req("use", { id: "box", action: "spin" }).then((r) => { done = { r, ms: performance.now() - t0 }; });
-        const lat: number[] = []; while (!done && performance.now() - t0 < 20000) { const t1 = performance.now(); await bea.req("look", {}); lat.push(performance.now() - t1); await sleep(20); }
+        const lat: number[] = []; while (!done && performance.now() - t0 < 20000) { const t1 = performance.now(); await bea.req("look", {}); lat.push(performance.now() - t1); await pause("the other world's looks are paced while the script spins", 20); }
         await p; rounds.push({ status: done.r.script?.status, code: done.r.script?.code, ms: Math.round(done.ms), maxOther: Math.round(Math.max(...lat)), looks: lat.length });
-        await sleep(1100); // a new second of script duty
+        await pause("a new second of script duty", 1100);
       }
       const sv = await ann.req("scripts", { id: "box" });
       ann.ws.close(); bea.ws.close();

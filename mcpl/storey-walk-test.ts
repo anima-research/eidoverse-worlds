@@ -14,6 +14,7 @@
  * height.
  */
 import { WorldAgent } from "./agent.ts";
+import { tryUntil, pause } from "../tools/protocol/wait.ts";
 import { describeHere, planStructure } from "../shared/structure.js";
 import { NAV_STEP } from "./navgrid.ts";
 import { destinationOf } from "./places.ts";
@@ -65,7 +66,7 @@ function landing(ag: any, want: number) {
  *  (a target installed), without ticking it anywhere. */
 async function tryWalk(ag: any, x: number, z: number, y?: number, near: any = {}) {
   const receipt = { refusal: null as string | null };
-  const r = await Promise.race([ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt), Bun.sleep(20).then(() => "walking")]);
+  const r = await Promise.race([ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt), pause("a refused walk answers at once; past 20 ms it is walking", 20).then(() => "walking")]);
   const setOff = r === "walking" && ag.target != null;
   if (r === "walking") ag.stop();
   return { refusal: r === false ? String(receipt.refusal ?? ag.walkRefusal ?? "") : "", setOff };
@@ -312,7 +313,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     ag.joined = true;
     const walk = ag.walkTo(x, z, false, 30_000, 0.05, y, near, receipt);
     for (let i = 0; i < 3000 && ag.target; i++) ag.tick();
-    const r = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+    const r = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     ag.joined = false;
     return { r, refusal: receipt.refusal ?? ag.walkRefusal };
   };
@@ -587,7 +588,7 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
     const receipt = { refusal: null as string | null };
     const toThem = ag.walkTo(d.x, d.z, false, 30_000, 0.05, d.y, { reach: d.reach, above: d.above, below: d.below, bodyAt: d.bodyAt }, receipt);
     for (let i = 0; i < 3000 && ag.target; i++) ag.tick();
-    const reached = await Promise.race([toThem, Bun.sleep(300).then(() => "pending")]);
+    const reached = await Promise.race([toThem, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     check(`on a placed model's upper floor, a walk to someone ${what} on it goes to them there, not to the hall beneath`,
       fitted && Math.abs(stood - UPPER) < 0.02 && receipt.refusal === null && reached === true && Math.abs(ag.pos.y - UPPER) < 0.02
         && Math.hypot(ag.pos.x - 20, ag.pos.z - 21.5) < 1.6,
@@ -783,7 +784,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   check("the walk across the upper room bends round the chest", legs.length >= 2, JSON.stringify(legs));
   const ys: number[] = [];
   for (let i = 0; i < 600 && ag.target; i++) { ag.tick(); ys.push(ag.pos.y); }
-  const arrived = await Promise.race([walk, Bun.sleep(200).then(() => "pending")]);
+  const arrived = await Promise.race([walk, pause("the walk's answer has had 200 ms to come", 200).then(() => "pending")]);
   check("…and arrives", arrived === true, `${String(arrived)} at (${ag.pos.x.toFixed(2)}, ${ag.pos.z.toFixed(2)}) ${ag.walkStall ?? ""}`);
   check("…with the feet on the upper floor all the way", ys.length > 0 && ys.every((y) => Math.abs(y - up) < 1e-6), String(ys.find((y) => Math.abs(y - up) >= 1e-6)));
   await removeSupport("storey-walk-test", chest);
@@ -856,7 +857,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
     const receipt = { refusal: null as string | null };
     const walked = w.walkTo(x, z, false, 30_000, 0.05, y, {}, receipt);
     for (let i = 0; i < 3000 && w.target; i++) w.tick();
-    const got = await Promise.race([walked, Bun.sleep(300).then(() => "pending")]);
+    const got = await Promise.race([walked, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     check(`a walk across the deck to ${what} arrives there`, got === true && Math.hypot(w.pos.x - x, w.pos.z - z) <= 0.05, `${String(got)} ${receipt.refusal ?? ""}`);
     w.joined = false;
   }
@@ -925,7 +926,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   ag.joined = true;
   const walk = ag.walkTo(3.5, 0.5, false, 30_000, 0.05);
   for (let i = 0; i < 600 && ag.target; i++) ag.tick();
-  const walked = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+  const walked = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("a floor walk whose only way round a chest is off the deck is refused, not routed over the ground beside it",
     walked === false && /no walkable way/.test(ag.walkRefusal ?? ""), `${String(walked)} ${ag.walkRefusal}`);
   await removeSupport("storey-walk-test", chest);
@@ -975,7 +976,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   shoved.body = null;
   shoved.pos = { x: 7, y: 0, z: 7 };
   shoved.knockDown("tester", [1, 0, 0], "(shoved over)");
-  for (let i = 0; i < 1000 && shoved.pos.x === 7; i++) await Bun.sleep(5);   // at most 1000 waits of 5 ms, done once it moves
+  await tryUntil("the shoved body moves", () => shoved.pos.x !== 7, { ms: 5000, step: 5 });
   check("setup: with no body, the fallback moves the slump 0.4 m along the shove, still under the table, at the same height",
     Math.abs(shoved.pos.x - 7.4) < 1e-9 && shoved.pos.z === 7 && shoved.pos.y === 0, `${shoved.pos.x}, ${shoved.pos.y}, ${shoved.pos.z}`);
   shoved.setPosture("idle");
@@ -1024,7 +1025,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     const walk = ag.walkTo(toX, 0.5, false, 30_000, 0.05);
     const ys: number[] = [];
     for (let i = 0; i < 2000 && ag.target; i++) { ag.tick(); ys.push(ag.pos.y); }
-    const walked = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+    const walked = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
     for (const [part] of parts) await removeSupport("storey-walk-test", `${ag.world}/${name}-${part}`);
     ag.joined = false;
     return { walked, refusal: ag.walkRefusal ?? "", ys, end: { ...ag.pos } };
@@ -1102,7 +1103,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     ag.tick(); ys.push(ag.pos.y);
     if (ag.pos.x > 1.55 && ag.pos.x < 2.45 && ag.pos.z > 0.55 && ag.pos.z < 1.45) overTable.push(ag.pos.y);
   }
-  const arrived = await Promise.race([walk, Bun.sleep(300).then(() => "pending")]);
+  const arrived = await Promise.race([walk, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("…and walks on from it across the upper floor, its feet on the table's top while over it, never below the floor, ending on it",
     arrived === true && overTable.length > 0 && overTable.every((y) => Math.abs(y - (up + 0.75)) < 0.02)
       && ys.every((y) => y >= up - 1e-6) && Math.abs(ag.pos.y - up) < 1e-6,
@@ -1126,7 +1127,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
   const alongLegs = [onStage.target, ...onStage.legs].filter(Boolean).length;
   const sy: number[] = [];
   for (let i = 0; i < 3000 && onStage.target; i++) { onStage.tick(); sy.push(onStage.pos.y); }
-  const alongDone = await Promise.race([along, Bun.sleep(300).then(() => "pending")]);
+  const alongDone = await Promise.race([along, pause("the walk's answer has had 300 ms to come", 300).then(() => "pending")]);
   check("a body standing on a stage upstairs walks along its top in one leg, its feet on it all the way",
     alongDone === true && alongLegs === 1 && sy.length > 0 && sy.every((y) => Math.abs(y - (up + 0.75)) < 0.02),
     `${String(alongDone)} ${onStage.walkRefusal ?? ""} legs ${alongLegs}, lowest ${sy.length ? Math.min(...sy) : NaN}, stage ${up + 0.75}`);

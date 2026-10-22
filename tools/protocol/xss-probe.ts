@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
+import { pageWaiter } from "./wait.ts";
 
 const WORLD = "xss3";
 // the reviewer's payload, and a <svg onload> (fires synchronously on insertion, no network) for the seam stage
@@ -24,7 +25,7 @@ const SVG = `<svg onload="window.__xss=(window.__xss||0)+1">`;
 const { cdp, evalJson, cleanup, die, BASE } = await scratchBench("xss", { worlds: [WORLD], owner: "owner", cspExpected: true });   // stage C causes violations on purpose; boot asserts none of its own
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
-const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+const waitFor = pageWaiter(evalJson);
 const hint = `(document.getElementById('hintbar')?.textContent ?? '')`;
 // nothing made from a payload: no element carrying an inline handler anywhere in the document, and the flag unset
 const clean = `(window.__xss === undefined && !document.querySelector('[onerror],[onload]'))`;

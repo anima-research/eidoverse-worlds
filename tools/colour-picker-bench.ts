@@ -6,16 +6,13 @@
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 import { pagedEval } from './protocol/idalias.ts';
+import { pageWaiter } from './protocol/wait.ts';
 
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('colourpick', { worlds: ['pickbench'], owner: 'pickbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
 // R 10-17: the page names its lamp with a placeholder (tools/protocol/idalias.ts pageIds); 'picklamp' in page code is its id
 const evalJson = pagedEval(evalRaw, ['picklamp']);
 const { check, tally } = mkCheck();
-const waitFor = async (expr: string, ms = 6000) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (await evalJson(expr)) return true; await sleep(100); }
-  return false;
-};
+const waitFor = pageWaiter(evalJson, 6000);
 const painted = () => evalJson(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
 
 await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message)); const ce = console.error.bind(console); console.error = (...a) => { __errs.push('console: ' + a.map(String).join(' ')); ce(...a); };` });

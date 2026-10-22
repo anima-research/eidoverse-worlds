@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratch } from "./common.ts";
+import { tryUntil } from "./wait.ts";
 const root = scratch("resetrace");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
 fs.mkdirSync(process.env.WORLDS_DIR, { recursive: true });
@@ -74,25 +75,24 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const tab = (gen) => { const replies = []; const c = { id: "olive", world: tw, actorId: owner, gen, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "reply") replies.push(m); } } };
     tw.clients.add(c); return { c, replies }; };
   const send = (t, rid, label) => REQUEST_MESSAGES.request({ c: t.c, ws: t.c.ws, now: Date.now(), expel: () => {} }, { id: rid, verb: "create", args: { components: { description: label } } });
-  const until = async (f) => { for (let i = 0; i < 200 && !f(); i++) await new Promise((r) => setTimeout(r, 10)); return f(); };
   const described = (label) => Object.values(tw.log.live.state().entities).some((e) => e.c?.description === label);
   const hold = () => { gate = new Promise((r) => { release = r; }); };
   // superseded: the old tab's request is waiting when the same account's new tab takes over
   hold(); const oldTab = tab(1); const n0 = tw.log.live.entries.length;
-  let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); await until(() => entered > e0);   // it is inside the await now
+  let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); await tryUntil("the old tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 });   // it is inside the await now
   oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts admitJoin)
-  release(); await until(() => oldTab.replies.length);
+  release(); await tryUntil("the old tab's request is answered", () => oldTab.replies.length, { ms: 2000, step: 10 });
   const r1 = oldTab.replies[0];
   ok(r1?.ok === false && r1?.reply?.refused?.code === "superseded" && !described("from-the-old-tab") && tw.log.live.entries.length === n0,
     "SR1 a request waiting when its connection is superseded is refused (superseded) and writes nothing", { reply: r1, wrote: described("from-the-old-tab"), entries: [n0, tw.log.live.entries.length] });
   // closed: close takes the connection out of the world's clients but leaves c.world set
   hold(); const closing = tab(3); const n1 = tw.log.live.entries.length;
-  e0 = entered; send(closing, "b1", "from-a-closed-tab"); await until(() => entered > e0); tw.clients.delete(closing.c);
-  release(); await until(() => closing.replies.length);
+  e0 = entered; send(closing, "b1", "from-a-closed-tab"); await tryUntil("the closed tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 }); tw.clients.delete(closing.c);
+  release(); await tryUntil("the closed tab's request is answered", () => closing.replies.length, { ms: 2000, step: 10 });
   ok(closing.replies[0]?.reply?.refused?.code === "superseded" && !described("from-a-closed-tab") && tw.log.live.entries.length === n1,
     "SR2 a request waiting when its connection closes writes nothing", { reply: closing.replies[0], wrote: described("from-a-closed-tab") });
   // the control: a connection that stays writes
-  hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await until(() => stays.replies.length);
+  hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await tryUntil("the live tab's request is answered", () => stays.replies.length, { ms: 2000, step: 10 });
   ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]); }
 // ---- PR (house 6340433633): a reset that fails after the old log was moved aside. The old log stayed live in memory and kept
 // taking writes, which appendDurable (it opens by path) put in a NEW world.jsonl holding only the tail: a broken chain on disk.

@@ -11,6 +11,7 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, RISE, GOING, STAIR_FOOT, boxes, buildGlb } = await import("./two-storey-fixture.ts");
 const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
+const { tryUntil } = await import("./protocol/wait.ts");
 const { check, tally } = mkCheck();
 
 const h = await scratchSequencer("navgrid", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["navgrid"], owner: "router", portFrom: 9460 });
@@ -31,7 +32,7 @@ try {
     [-2.5, 0.2, -2.5, -2.3, 3, 2.5], [2.3, 0.2, -2.5, 2.5, 3, 2.5],
     [-2.3, 0.2, -2.5, 2.3, 3, -2.3], [-2.3, 0.2, 2.3, 2.3, 3, 2.5],
   ]), pos: [SX, a.heightAt(SX, 0), 0], yaw: 0 });
-  for (let i = 0; i < 100 && !(a.supportIds?.get("tower") && a.supportIds?.get("vault")); i++) await sleep(50);
+  await tryUntil("the tower's and vault's supports are registered", () => a.supportIds?.get("tower") && a.supportIds?.get("vault"), { ms: 5000, step: 50 });
   await a.supportReady();
   await sleep(300);
 

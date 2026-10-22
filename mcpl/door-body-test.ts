@@ -12,6 +12,7 @@ import { WorldAgent } from "./agent.ts";
 import { pointClass } from "../shared/protocol/consent.js";
 import { wireState } from "../shared/protocol/replica.js";
 import { emptyState } from "../shared/protocol/fold.js";
+import { tryUntil } from "../tools/protocol/wait.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -19,7 +20,6 @@ const check = (label: string, ok: boolean, detail?: string) => {
   if (!ok) failures++;
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const until = async (ok: () => boolean, ms: number) => { const end = Date.now() + ms; while (!ok() && Date.now() < end) await sleep(20); return ok(); };
 
 console.log("a tracks loop");
 {
@@ -165,7 +165,7 @@ console.log("a walk carried across a rejoin");
     const before = sockets.get(name);
     io.held = false;
     before.close(1001, "restarting");
-    return until(() => ag.joined && sockets.get(name) !== before, 5000);
+    return !!(await tryUntil(`${name} rejoined on a new socket`, () => ag.joined && sockets.get(name) !== before, { ms: 5000, step: 20 }));
   };
   {
     // Tracked at the drop: a stretch asked on the old connection is still out, and a shove in flight holds the gate.
@@ -178,7 +178,7 @@ console.log("a walk carried across a rejoin");
     const rejoined = await rejoin("tracked", ag, io);
     const asked = io.moves;
     // the resumed walk asks where it stands (one move), then for its next stretch (another)
-    const goesOn = await until(() => io.moves >= asked + 2, 3000);
+    const goesOn = !!(await tryUntil("the resumed walk asks where it stands and for its next stretch", () => io.moves >= asked + 2, { ms: 3000, step: 20 }));
     check("a walk carried across a rejoin asks for its next stretch", rejoined && goesOn, JSON.stringify({ rejoined, moves: io.moves, asked, gate: ag.walkGate }));
     const late = await answerLate(io);
     check("...and the old connection's late answer doesn't end it", late === 1 && ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
@@ -195,7 +195,7 @@ console.log("a walk carried across a rejoin");
     ag.syncWalkGate(ag.walkGate);   // where it stands, asked on the old connection
     const rejoined = await rejoin("syncing", ag, io);
     const asked = io.moves;
-    const goesOn = await until(() => io.moves >= asked + 2, 3000);
+    const goesOn = !!(await tryUntil("the resumed walk asks where it stands and for its next stretch", () => io.moves >= asked + 2, { ms: 3000, step: 20 }));
     check("a walk still finding where it stands at the drop is resumed too, and asks for its next stretch", rejoined && goesOn, JSON.stringify({ rejoined, moves: io.moves, asked, gate: ag.walkGate }));
     const late = await answerLate(io);
     check("...and the old connection's late answer doesn't end it", late === 1 && ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",

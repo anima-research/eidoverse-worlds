@@ -32,6 +32,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
+import { tryUntil, pause } from "./wait.ts";
 
 const root = scratch("access");
 let pass = 0, fail = 0;
@@ -61,7 +62,7 @@ async function sock(port) {
   return {
     msgs, get closed() { return closed; },
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
-      for (let i = 0; i < 60; i++) { if (msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null) break; await sleep(50); }
+      await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 3000, step: 50 });
       await sleep(80); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
     raw: (m) => ws.send(JSON.stringify(m)),
@@ -71,7 +72,6 @@ async function sock(port) {
 const you = (j) => j.snapshot?.cut?.you;
 const worldsAs = async (port, bearer?) => (await (await fetch(`http://127.0.0.1:${port}/worlds`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {})).json()).worlds ?? [];
 const accessAs = async (port, world, bearer?) => { const r = await fetch(`http://127.0.0.1:${port}/access?world=${world}`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {}); return { status: r.status, body: await r.json().catch(() => null) }; };
-const waitFor = async (f, ms = 4000) => { for (let t = 0; t < ms; t += 50) { if (f()) return true; await sleep(50); } return !!f(); };
 
 ok(tool(["found", "keep", "--owner", "Ann"]).code === 0, "(setup) found keep, Ann owns it");
 const srv = await start();
@@ -91,7 +91,7 @@ ok((await own.req("set", { id: "@world", component: `roles:${ids.Rowan}`, value:
 const bob = await sock(srv.port); const jb = await bob.join("keep", "Bob");
 ok(!!jb.snapshot, "(A4 setup) Bob, not listed, is in the open world");
 const close = await own.req("set", { id: "@world", component: "access", value: { join: "listed" } });
-const removed = await waitFor(() => bob.closed != null);
+const removed = !!(await tryUntil("Bob is removed", () => bob.closed != null, { ms: 4000, step: 50 }));
 ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type === "error" && /isn't open to you/.test(m.error)) && own.closed == null,
   "A4 closing the door removes Bob (4010, in the door's words); the owner stays", [close.ok, bob.closed, bob.msgs.filter((m) => m.type === "error").map((m) => m.error), own.closed]);
 
@@ -133,8 +133,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 // ---- A5: a timed grant ----
 { const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "inhabitant", until: Date.now() + 2500 } });
   const p = await sock(srv.port); const jp = await p.join("keep", "Pip");
-  const told = await waitFor(() => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), 2000);
-  const gone = await waitFor(() => p.closed != null, 6000);
+  const told = !!(await tryUntil("Pip is told the grant ends", () => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), { ms: 2000, step: 50 }));
+  const gone = !!(await tryUntil("Pip is removed when the grant ends", () => p.closed != null, { ms: 6000, step: 50 }));
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8");
   const ended = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === "act" && e.verb === "expire-roles");
   const role = (await own.req("look", {})) && null;
@@ -145,7 +145,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 
 // ---- A7: a reset keeps a members-only world's door and members ----
 { const k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
-  await waitFor(() => own.closed != null || own.msgs.slice(k0).some((m) => m.type === "world-reset" || m.type === "error"), 6000);
+  await tryUntil("the reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k0).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
@@ -155,7 +155,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
   const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
-  await waitFor(() => own.closed != null || own.msgs.slice(k1).some((m) => m.type === "world-reset" || m.type === "error"), 6000);
+  await tryUntil("the second reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k1).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
   const log2 = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const ops2 = log2.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));
@@ -194,7 +194,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!s2.dead && !anon.some((x) => x.name === "keep") && member?.loaded === false && member?.access === "invite-only" && member?.you === "enter" && a1.body?.you === "none",
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
-  while (Date.now() <= fenUntil + 50) await sleep(50);
+  await pause("Fen's timed grant runs out, with no sweep to write its end", Math.max(0, fenUntil + 51 - Date.now()));
   { const logHas = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes(`"roles:${ids.Fen}"`) && !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const map = await worldsAs(s2.port, "tok-fen"), acc = await accessAs(s2.port, "keep", "tok-fen"), g = await geomAs(s2.port, "keep", "tok-fen");
     const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
@@ -231,7 +231,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const s3 = await start({ WORLD_ADMIN: "agent:token:fen" });
   const fen = await sock(s3.port); const jf = await fen.join("keep", "Fen", { agentToken: "tok-fen" }); const fenId = you(jf);
   let k = 0; const repair = async (s, verb, args) => { const id = `op${++k}`; s.raw({ type: "operator-repair", id, verb, args });
-    await waitFor(() => s.msgs.some((m) => m.type === "reply" && m.id === id), 4000); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
+    await tryUntil(`the reply to operator-repair ${verb}`, () => s.msgs.some((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
   const plain = await fen.req("set", { id: "@world", component: `roles:${fenId}`, value: { role: "owner" } });
   const unban = await repair(fen, "unban", { who: ids.Moss });
   const list = await repair(fen, "set", { id: "@world", component: `roles:${fenId}`, value: { role: "inhabitant" } });
@@ -249,18 +249,18 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   // A12 (security review 10-18 H1): a GLOBAL ban binds to the account now. Rowan is present: removed, and refused on reconnect;
   // Moss is absent: the directory knows the account wearing that name, and the join is refused; the record names the account
   const modMsgs = () => fen.msgs.filter((m) => m.type === "mod" || m.type === "error").map((m) => m.text ?? m.error);
-  const k0 = fen.msgs.length; fen.raw({ type: "global-ban", id: "Rowan", reason: "A12" }); await waitFor(() => row.closed != null, 3000);
+  const k0 = fen.msgs.length; fen.raw({ type: "global-ban", id: "Rowan", reason: "A12" }); await tryUntil("Rowan is removed by the global ban", () => row.closed != null, { ms: 3000, step: 50 });
   const row2 = await sock(s3.port); const jr2 = await row2.join("keep", "Rowan", { agentToken: "tok-rowan" });
-  fen.raw({ type: "global-ban", id: "Moss", reason: "A12" }); await waitFor(() => fen.msgs.length > k0 + 1, 2000);
+  fen.raw({ type: "global-ban", id: "Moss", reason: "A12" }); await tryUntil("Fen hears back on both global bans", () => fen.msgs.length > k0 + 1, { ms: 2000, step: 50 });
   const moss = await sock(s3.port); const jm = await moss.join("keep", "Moss", { agentToken: "tok-moss" });
-  fen.raw({ type: "global-ban", id: "Nobody-Here-At-All" }); await waitFor(() => modMsgs().some((t) => /nothing a ban could bind to/.test(t)), 2000);
+  fen.raw({ type: "global-ban", id: "Nobody-Here-At-All" }); await tryUntil("a ban on a name nothing wears is refused", () => modMsgs().some((t) => /nothing a ban could bind to/.test(t)), { ms: 2000, step: 50 });
   const bans = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
   const recR = Object.values(bans).find((b) => b.account === "agent:token:rowan"), recM = Object.values(bans).find((b) => b.account === "agent:token:moss");
   ok(row.closed === 4006 && !jr2.snapshot && row2.closed === 4006 && /banned from these worlds/.test(jr2.errors.join(" ")) && !jm.snapshot && moss.closed === 4006 && /these worlds/.test(jm.errors.join(" "))
     && !!recR && recR.name === "Rowan" && !!recM && Object.values(bans).every((b) => b.account || b.addr) && modMsgs().some((t) => /nothing a ban could bind to/.test(t)),
     "A12 a global ban binds now: the present target is removed (4006) and refused on reconnect, the absent target's join is refused, each record names the account (never a bare name), and a name nothing wears is refused",
     { rowClosed: row.closed, reconnect: [jr2.errors, row2.closed], moss: [jm.errors, moss.closed], bans, said: modMsgs().slice(-3) });
-  const k1 = fen.msgs.length; fen.raw({ type: "global-unban", id: "Rowan" }); fen.raw({ type: "global-unban", id: "agent:token:moss" }); await waitFor(() => fen.msgs.length >= k1 + 2, 2000);
+  const k1 = fen.msgs.length; fen.raw({ type: "global-unban", id: "Rowan" }); fen.raw({ type: "global-unban", id: "agent:token:moss" }); await tryUntil("Fen hears back on both global unbans", () => fen.msgs.length >= k1 + 2, { ms: 2000, step: 50 });
   const row3 = await sock(s3.port); const jr3 = await row3.join("keep", "Rowan", { agentToken: "tok-rowan" }); const moss2 = await sock(s3.port); const jm2 = await moss2.join("keep", "Moss", { agentToken: "tok-moss" });
   ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
   row2.close(); row3.close(); moss.close(); moss2.close();
@@ -318,7 +318,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const s = await start({ WORLD_ADMIN: "agent:token:fen" });
   const op = await sock(s.port); const jo = await op.join("keep", "Fen", { agentToken: "tok-fen" });
   const k = op.msgs.length; op.raw({ type: "global-unban", id: "aid1:https://id.example.org:agent-7f3a" }); op.raw({ type: "global-unban", id: "Nine" });
-  await waitFor(() => op.msgs.length >= k + 2, 3000);
+  await tryUntil("the operator hears back on both global unbans", () => op.msgs.length >= k + 2, { ms: 3000, step: 50 });
   const left = Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8")));
   ok(!!jo.snapshot && left.length === 1 && left[0] === "old-c",
     "A13c (door) the global unban lifts a ban from before accounts by the aid1 account it holds against, and by a name that account wears here; another stays",
@@ -327,7 +327,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const body = await sock(s.port); const jb = await body.join("d12", LONG);   // its account, local:l…l, wears the long name
   const watch = await sock(s.port); const jw = await watch.join("d12", LONG, { spectate: true, account: "watcher" });   // local:watcher
   const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
-  await waitFor(() => nameOf("local:watcher") !== undefined, 5000);   // the spectator's record is written
+  await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });   // the spectator's record is written
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
   ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith("-cher") && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (-cher), within the limit, never the other account's name",
@@ -393,8 +393,8 @@ const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
 // ---- A13h: while a live process holds the lock no one mints; released, six processes minting into one keys file at once keep every key ----
 { const { dir, f, lock, go } = scratchKeys(), N = 6, EACH = 8; holdLock(lock);
   const kids = Array.from({ length: N }, (_, i) => minter(dir, f, go, i, EACH));
-  const ready = await waitFor(() => marks(dir, "ready") === N, 60_000); fs.writeFileSync(go, "");
-  const met = await waitFor(() => marks(dir, "met-lock") === N, 60_000);   // each child's own sign: it met the held lock
+  const ready = !!(await tryUntil("every minter has its handle open", () => marks(dir, "ready") === N, { ms: 60_000, step: 50 })); fs.writeFileSync(go, "");
+  const met = !!(await tryUntil("every minter meets the held lock", () => marks(dir, "met-lock") === N, { ms: 60_000, step: 50 }));   // each child's own sign: it met the held lock
   const during = Object.keys(keysIn(f).holders ?? {}).length, waiting = kids.every((k) => k.exitCode === null);
   fs.rmSync(lock, { force: true });   // released: the six take it in turn, from the same instant
   const minted = await Promise.all(kids.map(resultOf)), disk = keysIn(f);
@@ -411,10 +411,10 @@ const gonePid = await exitedPid();
 // (one step) and given the right back, the waiter leaves the live lock too, and mints when it's released
 { const { dir, f, lock, go } = scratchKeys(); const stale = holdLock(lock, gonePid); holdLock(`${lock}.${stale}`);
   fs.writeFileSync(go, ""); const kid = minter(dir, f, go, 0, 1);
-  const metRight = await waitFor(() => marks(dir, "met-right") === 1, 60_000);   // its own sign: it found the right held
+  const metRight = !!(await tryUntil("the waiter finds the removal right held", () => marks(dir, "met-right") === 1, { ms: 60_000, step: 50 }));   // its own sign: it found the right held
   const kept = textOf(lock).endsWith(stale), waited = kid.exitCode === null;
   const mine = replaceLock(lock); fs.rmSync(`${lock}.${stale}`); const n0 = triesOf(dir, 0);
-  const tried = await waitFor(() => triesOf(dir, 0) >= n0 + 3, 60_000);   // …and has met the live lock three times since
+  const tried = !!(await tryUntil("the waiter meets the live lock three more times", () => triesOf(dir, 0) >= n0 + 3, { ms: 60_000, step: 50 }));   // …and has met the live lock three times since
   const live = textOf(lock).endsWith(mine), stillWaiting = kid.exitCode === null;
   fs.rmSync(lock, { force: true }); const got = await resultOf(kid);
   ok(metRight && kept && waited && tried && live && stillWaiting && got.code === 0 && !got.error && typeof got["u-p0-0"] === "string" && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !besideKeys(f).length,
@@ -423,9 +423,9 @@ const gonePid = await exitedPid();
 // the waiter holds the right, and the stale lock is replaced before it removes it: the nonce it rechecks stops the removal
 { const { dir, f, lock, go } = scratchKeys(); const stale = holdLock(lock, gonePid);
   fs.writeFileSync(go, ""); const kid = minter(dir, f, go, 0, 1, { pause: true });
-  const holds = await waitFor(() => marks(dir, "holds-right") === 1, 60_000);   // it holds the right to remove the stale lock, paused
+  const holds = !!(await tryUntil("the waiter holds the right to remove the stale lock", () => marks(dir, "holds-right") === 1, { ms: 60_000, step: 50 }));   // it holds the right to remove the stale lock, paused
   const mine = replaceLock(lock); const n0 = triesOf(dir, 0); fs.writeFileSync(path.join(dir, "resume-0"), "");
-  const tried = await waitFor(() => triesOf(dir, 0) >= n0 + 3, 60_000);
+  const tried = !!(await tryUntil("the waiter meets the live lock three more times", () => triesOf(dir, 0) >= n0 + 3, { ms: 60_000, step: 50 }));
   const live = textOf(lock).endsWith(mine), rightGone = !fs.existsSync(`${lock}.${stale}`), stillWaiting = kid.exitCode === null;
   fs.rmSync(lock, { force: true }); const got = await resultOf(kid);
   ok(holds && tried && live && rightGone && stillWaiting && got.code === 0 && !got.error && typeof got["u-p0-0"] === "string" && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !besideKeys(f).length,
@@ -444,7 +444,7 @@ const gonePid = await exitedPid();
   const C = scratchKeys(); holdLock(C.lock, process.pid); const c = mint(C.f);
   ok(good(c, C), "A13f a lock naming this process, which none of its calls holds (a restart got its old pid back), is taken over without the 10 s wait", { ...c, left: besideKeys(C.f) }); }
 // ---- A13g: …the refusal that ends the wait: after its 10 s by the child's own clock, naming the lock and its holder ----
-{ const met = await waitFor(() => marks(T.dir, "met-lock") === 1, 60_000), metAt = met ? fs.statSync(path.join(T.dir, "met-lock-0")).mtimeMs : Date.now();
+{ const met = !!(await tryUntil("A13g's child meets the held lock", () => marks(T.dir, "met-lock") === 1, { ms: 60_000, step: 50 })), metAt = met ? fs.statSync(path.join(T.dir, "met-lock-0")).mtimeMs : Date.now();
   const got = await Promise.race([timedOut, sleep(Math.max(0, metAt + 30_000 - Date.now())).then(() => ({ hung: true }))]);
   if (got.hung) tKid.kill();
   ok(met && typeof got.error === "string" && got.error.includes(T.lock) && got.error.includes(`by process ${process.pid}`) && /held .* for 10 s/.test(got.error) && got.ms >= 9_500 && !keysIn(T.f).holders,
@@ -509,7 +509,7 @@ const gonePid = await exitedPid();
   // none, his rejoin is refused, and the log holds the delete
   const r = await sock(s4.port); const jr = await r.join("door", "Rowan", { agentToken: "tok-rowan" });
   const del = await ann.req("delete", { id: "@world", component: `roles:${who.Rowan}` });
-  const out = await waitFor(() => r.closed != null, 4000);
+  const out = !!(await tryUntil("Rowan is removed by the revoke", () => r.closed != null, { ms: 4000, step: 50 }));
   const acc = await accessAs(s4.port, "door", "tok-rowan");
   const back = await sock(s4.port); const jb = await back.join("door", "Rowan", { agentToken: "tok-rowan" });
   const logged = fs.readFileSync(path.join(W, "door", "world.jsonl"), "utf8").split("\n").filter(Boolean)
