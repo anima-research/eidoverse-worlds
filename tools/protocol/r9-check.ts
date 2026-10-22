@@ -22,6 +22,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { translatorVersion } from "./import-v1/translate-v1.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -284,7 +285,7 @@ const cases: Case[] = [
   { id: "L4", what: "(claims O3) the translator that writes the repair-shapes marker is named @13 or later (both names; @14 renamed a motion type)", async run() {
       const f = fs.existsSync(TREE + "tools/protocol/import-v1/translate-v1.js") ? TREE : ENGINE;
       const TV = await import(f + "tools/protocol/import-v1/translate-v1.js"); return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM }; },
-    good: (o) => /@(1[3-9]|[2-9]\d)$/.test(o.t) && /@(1[3-9]|[2-9]\d)$/.test(o.s) },
+    good: (o) => translatorVersion(o.t) >= 13 && translatorVersion(o.s) >= 13 },
 ];
 
 let pass = 0, fail = 0;

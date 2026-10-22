@@ -39,6 +39,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { translatorVersion } from "./import-v1/translate-v1.js";
 
 const BASE = "a6d05a6b";
 const EM = "em" + "ote";   // the old word, built so this file never spells it (row E3 scans every file, this one too)
@@ -677,8 +678,8 @@ const cases: Case[] = [
         { seq: 2, ts: 3, actor: "antra", verb: "comp", args: { id: "drone", type: "motion", data: { type: "bob", amp: 0.4, period: 3 } } },
         { seq: 3, ts: 4, actor: "antra", verb: "comp", args: { id: "drone", type: "motion:Rotor", data: { type: "bob", amp: 0.1 } } }];
       const r = TV.translate(v1, {}); const e = r.final.translated.drone ?? {};
-      return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
-    good: (o) => /@(1[4-9]|[2-9][0-9])$/.test(o.t) && /@(1[4-9]|[2-9][0-9])$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
+      return { t: translatorVersion(TV.TRANSLATOR), s: translatorVersion(TV.TRANSLATOR_SIM), whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
+    good: (o) => o.t >= 14 && o.s >= 14 && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
       const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md");
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;

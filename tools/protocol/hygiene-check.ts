@@ -14,6 +14,8 @@
 //                 (common.ts archiveTo shows how).
 //   raw-symlink   symlinkSync outside common.ts: EPERM on Windows without Developer Mode. Use common.ts linkInto.
 //   colon-list    a list of directories split on ":": `C:\\…` splits at its drive letter. Use common.ts pathList.
+//   version-regex a version floor written as a regex of digits (`@(1[4-9]|[2-9][0-9])`): it breaks at the next decade. Parse
+//                 the number (translate-v1.js translatorVersion) and compare.
 //   slash-path    a resolved filesystem path tested with a `/`-only pattern (`/\/tools\//.test(p)`): never matches on
 //                 Windows, so the check quietly does nothing there.
 import fs from "node:fs";
@@ -28,6 +30,7 @@ export const RULES: Record<string, RegExp> = {
   "shell-interp": /\[\s*["']sh["']\s*,\s*["']-c["']\s*,\s*`[^`]*\$\{/g,
   "raw-symlink": /\bsymlinkSync\s*\(/g,
   "colon-list": /[^\n]*(?:process\.env\.\w+|\broots\b|\bdirs\b)[^\n]*\.split\(\s*["']:["']\s*\)/g,
+  "version-regex": /@\(\d\[\d-\d\]\|/g,
   "slash-path": /[^\n]*\\\/(?:tools|shared|server|client|mcpl|spec|worlds?)\\\/[^\n]*\.test\(\s*(?:p|f|file|abs|full|dir|d)\s*\)/g,
 };
 const SELF = "tools/protocol/hygiene-check.ts";   // its fixtures are the bad shapes on purpose
@@ -90,10 +93,11 @@ if (import.meta.main) {
     "shell-interp": 'Bun.spawnSync(["sh", "-c", `git archive ${c} | tar -x -C ${d}`]);',
     "raw-symlink": 'fs.symlinkSync(target, at);',
     "colon-list": "const roots = (process.env.PROTOCOL_WORLDS ?? \"\").split(\":\");",
+    "version-regex": "ok(/@(1[4-9]|[2-9][0-9])$/.test(TRANSLATOR));",
     "slash-path": 'if (/\\/tools\\/[^/]+\\.(ts|mjs)$|\\/tools\\/protocol\\//.test(p)) walk(p);',
   };
-  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "slash-path": 1 };
-  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS);';
+  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "version-regex": 1, "slash-path": 1 };
+  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14);';
   let i = 1;
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
   // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop

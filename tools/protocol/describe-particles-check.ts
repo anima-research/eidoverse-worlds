@@ -17,6 +17,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { translatorVersion } from "./import-v1/translate-v1.js";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -220,7 +221,7 @@ const cases: Case[] = [
       const r = TV1.translate(L); const ents = r.final?.translated ?? {}; const c = Object.values<any>(ents).find((x) => x.particles) ?? {};
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
     // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
-    good: (o) => /@(1[4-9]|[2-9][0-9])$/.test(o.tr) && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
+    good: (o) => translatorVersion(o.tr) >= 14 && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
   { id: "X13", what: "upstream #256: a v1 thing's named emitter (particles:<name>) is translated as a child thing carrying it (one particles per thing), lit and put out on its own; v2's scale is the instance's, its look knobs ride in imported:particles", run(s) {
       const L = [{ seq: 0, ts: 1, actor: "door", verb: "genesis", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "hearth", lib: "x.glb", pos: [0, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire", origin: [0, 0.25, 0], scale: 0.5, wobble: 0.1 } } },

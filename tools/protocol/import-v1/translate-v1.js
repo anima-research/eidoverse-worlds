@@ -118,6 +118,9 @@ function newReactions(rx) {
 }
 
 export const TRANSLATOR = "eidoverse/translate-v1@20";
+/** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
+ *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
+export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(name ?? "")); return m ? Number(m[1]) : NaN; };
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
 // that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
 // already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
