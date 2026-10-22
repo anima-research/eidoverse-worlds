@@ -34,6 +34,7 @@ import { rigBonesFor } from "./rigbones.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
 import * as OP from "../shared/protocol/requests.js";
+import { PURGED } from "../shared/protocol/fold.js";
 import { childrenOf } from "../shared/hierarchy.js";
 import { WORLD_ID, worldSchema, worldEditOps, describeWorld } from "../shared/worldentity.js";
 /** Every folded record by id — what the hierarchy maths reads (a child's
@@ -303,6 +304,15 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 /** A call that didn't do what it was asked: a host shows the result as failed. */
 const fail = (t: string) => ({ content: [{ type: "text", text: t }], isError: true });
+// expect's limit, the authority's (authority.js expectCheck): a request pins at most this many components
+const EXPECT_MAX = 256;
+/** expect entries pinning these components of one thing to `read`, the plan's read of it (agent componentsOf): its value,
+ *  or absent when the read hadn't it. A purged component is left out: the authority counts a purged value equal to
+ *  nothing, so a pin on one would be refused as changed every time, and replacing it could never go through. */
+function pinsOf(id: string, comps: string[], read: Record<string, unknown> | null): { id: string; component: string; value?: unknown }[] {
+  return comps.filter((k) => !(read && read[k] === PURGED))
+    .map((k) => read && k in read ? { id, component: k, value: read[k] } : { id, component: k });
+}
 /** An act's answer, failed when the call didn't do what it asked. */
 const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 /** The most speech say sends in one call, as it always has: 4000 UTF-16 units. A cut never ends in half of a
@@ -1231,6 +1241,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // that lands meanwhile is refused as changed, not overwritten (a person's edit pins the same way)
       const wireId = id === WORLD_ID ? id : encId(id);   // the authority's own id, as the ops carry it (requests.js)
       const base = ag.componentsOf(wireId);
+      // a host's sockets are its socket children: a write of the sockets map changes the children it names and retires the
+      // rest (authority/sockets.js liftOps), so the plan's read of them is pinned too
+      const sockets = id === WORLD_ID ? {} : ag.socketChildrenOf(wireId);
       const { ops, errors, asks } = id === WORLD_ID
         ? { ...worldEditOps(ag.worldFold(), (a.set ?? {}) as Record<string, unknown>, { now: Date.now() }), asks: undefined }
         : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
@@ -1243,8 +1256,25 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!ops.length) return { content: [{ type: "text", text: L.length ? L.join("\n") : "edit: nothing to change" }], isError: errors.length > 0 };
       // ONE request for the whole edit (a batch when it took several ops): one act, one undo — what a person's edit sends
       const req: any = OP.batch(ops);
-      const pins = [...new Set(ops.filter((o: any) => o.verb === "set" && o.args?.id === wireId).map((o: any) => String(o.args.component)))]
-        .map((k) => base && k in base ? { id: wireId, component: k, value: base[k] } : { id: wireId, component: k });
+      // every component an op sets or unsets is pinned to the value the plan read: an unset planned from a read (an openable's
+      // reactions taken away) erases whatever landed since as surely as a set does
+      const touched = [...new Set(ops.filter((o: any) => (o.verb === "set" || o.verb === "delete") && o.args?.id === wireId && o.args?.component != null)
+        .map((o: any) => String(o.args.component)))];
+      const writesSockets = touched.includes("sockets");
+      if (writesSockets) {
+        // a socket child added or taken away while the plan awaited the model's box: the map would retire one it never read,
+        // and no pin can name a child the plan didn't see, so nothing is sent
+        const now = Object.keys(ag.socketChildrenOf(wireId)).sort().join("\n");
+        if (now !== Object.keys(sockets).sort().join("\n"))
+          return fail(`edit: ${id}'s sockets changed while the edit was being prepared (a socket was added or taken away), so nothing was sent: look again and redo it`);
+      }
+      const pins = [
+        ...pinsOf(wireId, touched, base),
+        // each socket child the map was planned from, as liftOps writes it: its socket, its transform and its station
+        ...(writesSockets ? Object.entries(sockets).flatMap(([kid, c]) => pinsOf(kid, ["socket", "transform", "station"], c)) : []),
+      ];
+      if (pins.length > EXPECT_MAX)
+        return fail(`edit: ${id} has more sockets than one edit can pin (${pins.length} pins; a request carries at most ${EXPECT_MAX}), so nothing was sent: edit its socket children one at a time (each is a thing of its own)`);
       const r: any = await ag.sendOps(ops, { ...(a.dry ? { dry: true } : {}), ...(a.throughLock ? { throughLock: true } : {}), ...(pins.length ? { expect: pins } : {}) });
       L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
       if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/protocol/refusal.js)

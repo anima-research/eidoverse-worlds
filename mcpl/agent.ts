@@ -92,6 +92,7 @@ import { isFiniteVec3 } from "./shape.ts";
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
 import { makeReplica } from "../shared/protocol/replica.js";
+import { PURGED } from "../shared/protocol/fold.js";
 import { diffView } from "../shared/protocol/viewdiff.js";
 import { emptyView, idOut } from "../shared/protocol/view.js";
 import { hear } from "../shared/chatwindow.js";
@@ -1725,10 +1726,21 @@ export class WorldAgent {
   }
   /** A thing's components as this body's replica folds them now (a copy), or null: what a write planned from them pins
    *  with expect, as a person's edit does (client/lib/editwrites.js compsOf). id and the component
-   *  names are the authority's own, as requests.js encodes them. */
+   *  names are the authority's own, as requests.js encodes them. A purged component is the fold's PURGED itself, not a
+   *  copy: the authority's expect counts a purged value equal to nothing, so a pin has to tell one apart and leave it out. */
   componentsOf(id: string): Record<string, unknown> | null {
     const c = this.replica?.st?.entities?.[id]?.c;
-    return c ? structuredClone({ ...c }) : null;
+    return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === PURGED ? PURGED : structuredClone(v)])) : null;
+  }
+  /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
+   *  (componentsOf). A write of the host's sockets map changes the children it names and retires the rest
+   *  (shared/protocol/authority/sockets.js liftOps), so it pins these. */
+  socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
+      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== PURGED)
+        out[k] = this.componentsOf(k)!;   // a socket child as liftOps counts one (isSocketC)
+    return out;
   }
 
   private reconcileFromFold() {
