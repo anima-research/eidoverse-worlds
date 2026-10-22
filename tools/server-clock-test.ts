@@ -457,22 +457,41 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     const stamp = stamped.buf.at(-1)?.t;
     check("a pose with no t is stamped at serverNow()", stamp >= stampFrom && stamp <= stampTo,
       `stamp ${stamp}, serverNow ${stampFrom} to ${stampTo}`);
-    // updateRemotes draws a remote body at serverNow() less INTERP_MS: between
-    // two poses stamped 2 s either side of that point, it's drawn halfway. With
-    // performance.now() held still from placing the poses to drawing, that
-    // point doesn't move, so the body is drawn at x = 5 exactly: with no buffer
-    // it would stand at 5.275.
+    // updateRemotes draws a remote body at serverNow() less its interpolation delay: 110 ms while its samples arrive on
+    // time. Two samples, each stamped as it arrives (no lateness), half a second apart on a held clock: the body is drawn
+    // 110 ms behind the newer one, at x = 10 * 390/500 = 7.8 (10 with no buffer).
+    const heldAt = <T>(p: number, fn: () => T): T => { const real = performance.now; performance.now = () => p; try { return fn(); } finally { performance.now = real; } };
     const drawn = await remotesMod.ensureRemote("drawn", null);
     drawn.avatar = { root: new stubs.THREE.Object3D(), pitch: 0,
       update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
-    const x = heldStill(() => {
-      const renderPoint = remotesMod.serverNow() - 110;
-      remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, renderPoint - 2_000);
-      remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, renderPoint + 2_000);
-      remotesMod.updateRemotes(0.016);
-      return drawn.avatar.root.position.x;
-    });
-    check("a remote body is drawn 110 ms behind serverNow()", Math.abs(x - 5) < 1e-6, `x = ${x}, want 5 (5.275 with no buffer, 10 at its newer pose)`);
+    const p0 = performance.now();
+    heldAt(p0, () => remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, remotesMod.serverNow()));
+    const x = heldAt(p0 + 500, () => { remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, remotesMod.serverNow()); remotesMod.updateRemotes(0.016); return drawn.avatar.root.position.x; });
+    // (serverNow() may still be slewing from the checks above: the expected point is read off the two stamps it gave)
+    const [ta, tb] = drawn.buf.slice(-2).map((s: any) => s.t), want = 10 * (1 - 110 / (tb - ta));
+    check("a remote body whose samples arrive on time is drawn 110 ms behind serverNow()", Math.abs(x - want) < 1e-6 && Math.abs(want - 7.8) < 0.3, `x = ${x}, want ${want} (10 with no buffer)`);
+    // house review of #260, client/lib I46: a fixed 110 ms starved the buffer on a slow link (samples arriving 300 ms
+    // after their capture were all newer than the render point: the body froze at its newest pose, then jumped). The
+    // delay follows the observed lateness: up fast, down slowly, never under 110 ms nor over the cap.
+    // Mutation (must go red): make interpDelay return INTERP_MS always.
+    const ID: any = await import("../client/lib/interpdelay.js");
+    let est: number | null = null;
+    check("no samples yet: the floor", ID.interpDelay(est) === ID.INTERP_MS);
+    for (let i = 0; i < 20; i++) est = ID.noteLateness(est, 20);
+    check("samples 20 ms late: still the 110 ms floor", ID.interpDelay(est) === ID.INTERP_MS, `delay ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 12; i++) est = ID.noteLateness(est, 300);
+    check("samples 300 ms late: within a second at 15 Hz the delay covers them, with room", ID.interpDelay(est) >= 300 + 40 && ID.interpDelay(est) <= ID.INTERP_MAX_MS, `delay ${ID.interpDelay(est)}`);
+    const high = ID.interpDelay(est); est = ID.noteLateness(est, 20);
+    check("one quick sample after a slow spell lowers it only a little (a jitter buffer drains slowly)", ID.interpDelay(est) < high && ID.interpDelay(est) > high - 20, `${high} -> ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 50; i++) est = ID.noteLateness(est, 5000);
+    check("…and never past the cap", ID.interpDelay(est) === ID.INTERP_MAX_MS);
+    check("a non-finite lateness changes nothing", ID.noteLateness(42, NaN) === 42 && ID.noteLateness(null, Infinity) === null);
+    // end to end: a body whose samples arrive 300 ms late is drawn between them, not frozen at the newest
+    const slow = await remotesMod.ensureRemote("slow", null);
+    slow.avatar = { root: new stubs.THREE.Object3D(), pitch: 0, update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
+    let xs = NaN;
+    for (let i = 0; i <= 30; i++) xs = heldAt(p0 + 1000 + i * 66, () => { remotesMod.pushPose("slow", { p: [i, 0, 0], yaw: 0 }, remotesMod.serverNow() - 300); remotesMod.updateRemotes(0.016); return slow.avatar.root.position.x; });
+    check("samples 300 ms late: the body is drawn between two of them, not stuck at the newest", xs < 30 - 0.5 && xs > 20, `x = ${xs} (30 is the newest sample)`);
   }
 
   // The lite client keeps its estimate by the same rule (participants_lite.js).

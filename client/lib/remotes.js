@@ -25,9 +25,8 @@ export const remotes = new Map(); // id -> RemoteBody
 const DEFAULT_AVATAR = 'eidoverse/assets/vrms/claude.vrm';
 // ?capsule=1: every remote arrives as the capsule too (owner, 09-19) — the flag is about seeing the floor, not one body
 const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(id, path);
-/** How far behind the newest sample we render. One frame of slack at 15Hz is
- *  66ms; 110 gives room for one dropped packet without a visible stall. */
-const INTERP_MS = 110;
+// How far behind serverNow() each body is drawn: at least 110 ms, more on a slow link (interpdelay.js; house review I46).
+import { noteLateness, interpDelay } from './interpdelay.js';
 const BUF_MAX = 12;
 
 // Server-to-local clock offset, smoothed: client/lib/serverclock.js (one clock for every realizer). Re-exported here,
@@ -201,6 +200,7 @@ export function pushPose(id, pose, t) {
   const stamp = sampleTime(pose, typeof t === 'number' ? t : serverNow());
   const last = r.buf[r.buf.length - 1];
   if (last && stamp <= last.t) return;    // out of order — drop
+  r.late = noteLateness(r.late ?? null, serverNow() - stamp);
   r.buf.push({ ...pose, t: stamp });
   setBodySeat(id, pose.seat ?? null);   // a seat rides the frame while it holds (presence; world.js)
   while (r.buf.length > BUF_MAX) r.buf.shift();
@@ -376,7 +376,7 @@ export const draggedLocal = new Set();
 
 const _eye = new THREE.Vector3();
 export function updateRemotes(dt, now = performance.now()) {
-  const renderAt = serverNow() - INTERP_MS;
+  const now0 = serverNow();
   // animation LOD by distance from the camera's WORLD position (in XR camera.position is the head's offset inside the
   // rig: remotes near the world origin animated at full rate, the ones beside you at a quarter; review 10a M4)
   const eye = camera.getWorldPosition(_eye);
@@ -385,6 +385,7 @@ export function updateRemotes(dt, now = performance.now()) {
     if (!r.avatar) continue;
     if (draggedLocal.has(r.id)) { r.avatar.update(dt, now); continue; }
     const buf = r.buf;
+    const renderAt = now0 - interpDelay(r.late ?? null);
 
     // A mounted body is DERIVED, not streamed: its transform comes from the
     // parent entity's live transform (already ticked by motion.js this frame)
