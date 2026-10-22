@@ -51,6 +51,14 @@ console.log("where a walk goes");
   const rs = destinationOf(h, box), cs = destinationOf(h, seat);   // the shed, stretched [2, 1, 4]
   check("a room on a stretched thing is reached across its stretched floor", near(rs.reach!, Math.hypot(4, 8) / 2), String(rs.reach));
   check("...and its seat from the wider of its stretched half-widths", near(cs.reach!, 0.7 + 0.3 * 4), String(cs.reach));
+  // a seat stretched in height alone: its margin below is by its height, its standoff its own half-width
+  ag.entities.set("tall-chair", { id: "tall-chair", model: "zz/chair.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 2, scale3: [1, 2, 1] });
+  const ct = destinationOf(ag.placeHolder(ag.entities.get("tall-chair")), seat);
+  check("a seat stretched ×2 in height has a doubled margin below it and its own standoff", near(ct.y, 1 - 0.05 * 2) && near(ct.reach!, 0.7 + 0.3), JSON.stringify(ct));
+  // widest along x: its standoff by that, its margin by its height (×1)
+  ag.entities.set("bench", { id: "bench", model: "zz/bench.glb", kind: "thing", pos: [0, 0, 0], yaw: 0, actor: "x", scale: 1, scale3: [4, 1, 2] });
+  const cb = destinationOf(ag.placeHolder(ag.entities.get("bench")), seat);
+  check("...and one stretched widest along x is reached from that width, with the margin of its height", near(cb.reach!, 0.7 + 0.3 * 4) && near(cb.y, 0.5 - 0.05), JSON.stringify(cb));
 }
 console.log("which room a body is in first");
 {
