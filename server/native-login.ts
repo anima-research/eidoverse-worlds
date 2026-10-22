@@ -5,7 +5,7 @@ import type { HnSession } from "./auth.ts";
 
 // A session issued to a native client: `native`, or `nativeWorld` on one paired before native sessions became
 // ordinary ones (auth.ts). It may not approve another pairing. Kept here, so loading the handler runs nothing of auth.ts.
-const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
+export const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
 
 type Options = {
   origin: string; login: string; enabled: boolean;

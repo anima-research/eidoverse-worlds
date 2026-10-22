@@ -45,7 +45,10 @@ export type Effective =
       /** for seated BODIES only (#101): whether the profile correction is in
        *  this composition, or the declared reason it is not. Things never
        *  carry it. */
-      seat?: { state: "profiled" | "approximate"; reason?: string } }
+      seat?: { state: "profiled" | "approximate"; reason?: string };
+      /** a turned mount on an unequally stretched parent (here or up the chain): the true shape is a shear, so `scale3` is
+       *  its diagonal (approximate); pos and quat are exact */
+      sheared?: true }
   | { ok: false; why: string; link: string };
 
 const fin3 = (v: unknown): v is [number, number, number] =>
@@ -59,6 +62,11 @@ const scale3Of = (e: { scale?: number; scale3?: number[] }, s: number): [number,
 /** Default local offset when the mount gives none: the parent's origin — for a body on a socket, the socket itself
  *  (the browser: world.js mountTransform reads the socket's own frame; realize/models.js execMount [0,0,0]). */
 const DEFAULT_OFFSET: [number, number, number] = [0, 0, 0];
+/** What a refusal built on a part-riding socket's why adds (house 6340433633): the why alone left an agent to retry. */
+export const PART_UNAVAILABLE = "part geometry unavailable here";
+export const partHint = (why: string) => (why.includes(PART_UNAVAILABLE)
+  ? "; asking again won't change that (this door can't place a model's parts), but a point near it will: face {x, z} or move {to: [x, z]} at coordinates beside it"
+  : "");
 const socketOf = (e: { comp?: Record<string, any> } | undefined) => {
   const s = e?.socket; return s && typeof s === "object" && !Array.isArray(s) ? s : undefined; };
 
@@ -81,7 +89,7 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   // when the geometry does. Everything on it (an occupant, cargo) inherits the refusal through the chain.
   const ownSock = socketOf(e);
   if (ownSock && typeof ownSock.part === "string")
-    return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — part geometry unavailable here`, link: m?.to ?? id };
+    return { ok: false, why: `socket "${ownSock.name}" rides part "${ownSock.part}" of ${m?.to ?? "its host"} — ${PART_UNAVAILABLE}`, link: m?.to ?? id };
 
   // ---- mounted: the parent's frame is the truth, recursively -----------------
   // A mounted entity's OWN root motion is deliberately inert here — the
@@ -134,13 +142,23 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
       } else seat = { state: "approximate", reason: g.reason };
     }
     // the whole relative rotation where the mount carries one (a tilted socket, cargo at an angle), else its heading
-    const quat = qMul(parent.quat, rawQ ?? qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
+    const localQ = rawQ ?? qAxisAngle([0, 1, 0], rawYaw);
+    const quat = qMul(parent.quat, localQ) as [number, number, number, number];
     const yaw = yawOfQuat(quat);
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
+    // the parent's stretch as the child's own axes see it (house 6340433633: it was composed axis by axis, right only while
+    // the mount adds no turn): S' = Rᵀ · diag(parent) · R for the mount's turn R. A quarter turn swaps the stretched axes; a
+    // turn that mixes two unequally stretched axes makes a shear no rotation and scale can hold: the thing's position and
+    // turn above are exact, its scale is the shear's diagonal, and the answer says so (`sheared`) rather than refusing a
+    // read of content that exists (review of the house fixes; a body has no extent of its own either way)
+    const ax = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((v) => qApply(localQ, v));
+    const sp = (i: number, j: number) => ax[i][0] * ax[j][0] * parent.scale3[0] + ax[i][1] * ax[j][1] * parent.scale3[1] + ax[i][2] * ax[j][2] * parent.scale3[2];
+    const big = Math.max(...parent.scale3.map(Math.abs));
+    const sheared = !!e && [[0, 1], [0, 2], [1, 2]].some(([i, j]) => Math.abs(sp(i, j)) > 1e-6 * big);
     const own3 = e ? scale3Of(e, ownScale) : [1, 1, 1];
-    const scale3: [number, number, number] = [parent.scale3[0] * own3[0], parent.scale3[1] * own3[1], parent.scale3[2] * own3[2]];
+    const scale3: [number, number, number] = [sp(0, 0) * own3[0], sp(1, 1) * own3[1], sp(2, 2) * own3[2]];
     if (!fin3(scale3)) return { ok: false, why: "non-finite scale", link: id };
-    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}) };
+    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, scale3, moving: parent.moving, ...(seat ? { seat } : {}), ...(sheared || parent.sheared ? { sheared: true } : {}) };
   }
 
   // ---- unmounted: the folded base, plus the thing's own whole-entity motion --

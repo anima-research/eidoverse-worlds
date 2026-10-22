@@ -87,7 +87,11 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const { expireRoles: expireW } = await import("../../shared/protocol/authority.js"); const n5 = other2.entries.length; let threw: any = null, e5: any;
   try { e5 = expireW(other2); } catch (x: any) { threw = String(x?.refused?.code ?? x?.code ?? x?.message ?? x); }
   ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 });
-  // K4c: …and a read there works when a thing is due to return home: the settlement a request runs first skips the
+  // the setup (house 6340433633): the grant has run out, so the sweep that holds the key ends it; without the custody guard
+  // the keyless one reaches the same branch and throws custody (seen by planting it: K4b red, threw "custody")
+  const swept = expireW(w);
+  ok(JSON.stringify(swept) === JSON.stringify([lee]) && !w.state().entities["@world"].c[`roles:${lee}`], "K4c …and the grant has run out: the sweep that holds the key ends it", { swept });
+  // K4f: …and a read there works when a thing is due to return home: the settlement a request runs first skips the
   // return it can't write, as the engine's settlement does
   const steps: any[] = [request(w, me, "create", { id: "ball", model: "ball", components: { grabbable: { who: "inhabitant", returnAfter: 30 } }, place: { at: [0, 0] } })];
   T += 1000; steps.push(request(w, me, "move", { to: [0, 0, 0.5] })); T += 1000; steps.push(request(w, me, "grab", { id: "ball" }));
@@ -95,10 +99,10 @@ const file = path.join(tmp, "worlds", ".directory.json");
   T += 60000;
   const other3: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const n6 = other3.entries.length; let r6: any; try { r6 = request(other3, me, "look", {}); } catch (x: any) { r6 = { threw: String(x?.message ?? x) }; }
-  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4c a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 });
+  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4f a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 });
   // the control: the server that holds the key, reading at the same clock, sends it home, so the return was due
   const n7 = w.entries.length; const r7 = request(w, me, "look", {}); const home = w.entries.slice(n7).some((e: any) => e?.verb === "return-home" && e.body?.id === "ball");
-  ok(r7.ok && home, "K4c …the return was due: the server that holds the key, reading at the same clock, logs it", { r7: r7.ok ?? r7.refused, logged: w.entries.slice(n7).map((e: any) => e?.verb) }); }
+  ok(r7.ok && home, "K4f …the return was due: the server that holds the key, reading at the same clock, logs it", { r7: r7.ok ?? r7.refused, logged: w.entries.slice(n7).map((e: any) => e?.verb) }); }
 // K4d, K4e: a world with an engine, served by a server without its key: a read with a thrown thing's rest due, and the
 // load's settlement of a hold its holder left, skip what they can't log
 { let T = 1800000000000; const d = directoryAt(file); const { ENGINES } = await import("../../shared/protocol/simlayer.js");

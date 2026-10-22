@@ -125,10 +125,10 @@ const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 // ---- a real server on the scratch worlds dir ----
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-async function boot(tag: string) {
+async function boot(tag: string, extra: Record<string, string> = {}) {
   const port = await freePort(9240); const log = path.join(root, `${tag}.log`);
   const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "", ...extra }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
   process.on("exit", () => { try { proc.kill(); } catch {} });
   for (let i = 0; i < 100; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok) return { port, proc, log }; } catch {} }
   throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);
@@ -161,6 +161,18 @@ const srv1 = await boot("boot1");
   ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
 ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /a world of the current protocol, and/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
   "IP27 a native (Unreal) session gets the truthful text: the Unreal client hasn't been ported to this protocol yet, nothing is wrong with it or the world", noFoldRefusal("current", true));
+// IP27c (review of the house fixes): a native session issued since main #255 carries native: true, not nativeWorld, and is
+// told the Unreal text on the wire
+{ const sf = path.join(root, "native-sessions.json"), sid = "c".repeat(64);
+  fs.writeFileSync(sf, JSON.stringify({ [sid]: { sub: "human:test:nat", name: "Nat", scopes: ["worlds:join"], exp: Date.now() + 3600_000, native: true } }), { mode: 0o600 });
+  const srvN = await boot("bootN", { SESSIONS_PATH: sf });
+  const ws = new WebSocket(`ws://127.0.0.1:${srvN.port}/ws`, { headers: { cookie: `ew_sess=${sid}` } } as any); const msgs: any[] = []; ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  ws.send(JSON.stringify({ type: "join", world: "current", id: "Nat", avatar: "" }));
+  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); ws.close();
+  const err = msgs.find((m) => m.type === "error")?.error ?? "";
+  try { srvN.proc.kill(); } catch {}
+  ok(err === noFoldRefusal("current", true), "IP27c a native session marked native: true (issued since #255) is told on the wire that the Unreal client hasn't been ported yet", err); }
 
 // ================= IP19–IP21: the dry run and the approval it binds =================
 { const d = oldWorld("careful"); const fp = fingerprint(d);
@@ -168,7 +180,7 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   const ha = /^report-hash ([0-9a-f]{64})$/m.exec(a.out)?.[1], hb = /^report-hash ([0-9a-f]{64})$/m.exec(b.out)?.[1];
   let rep: any = null; try { rep = JSON.parse(a.out.slice(a.out.indexOf("{"), a.out.lastIndexOf("}") + 1)); } catch {}
   ok(a.code === 0 && !!ha && ha === hb && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d), "IP19 --dry-run prints the report hash, the same on a second run, and writes nothing (the directory is as it was, no temporary directory)", { code: a.code, ha, hb, keys: Object.keys(fingerprint(d)) });
-  ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@18",
+  ok(rep && rep.source?.sha256 === fp["log.jsonl"][0] && rep.entries?.old === L.length && rep.guards && rep.dropped && Object.keys(rep.dropped).length >= 10 && Array.isArray(rep.deferred) && rep.deferred.length === 0 && rep.refused === null && rep.translator === "eidoverse/translate-v1@19",
     "IP19 the report names the old log's bytes (sha256), the counts, the translator, the DROPPED table (what every translation drops by design) and an empty deferred list", rep && { source: rep.source, entries: rep.entries, dropped: Object.keys(rep.dropped ?? {}).length, deferred: rep.deferred, refused: rep.refused });
   ok(rep && /trial period/.test(rep.trial ?? "") && /translate this world again/.test(rep.trial) && /^trial period: .*Approving this report accepts that/m.test(a.out),
     "IP19t the report (so the hash the owner signs) says the protocol is in a trial period and the world may be translated again, and --dry-run prints it (Mica, #260: alpha worlds should know they accepted translation churn)", rep && rep.trial);

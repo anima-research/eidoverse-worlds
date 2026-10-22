@@ -28,7 +28,7 @@ Rights *inside* the authority are therefore never stale: they are read in the sa
 | X4 | `durable.ts:26` | `fs.writeSync` return value ignored: a short write is treated as a full write (torn line in `entries`, trimmed only at next reopen). |
 | X5 | `requestwire.ts:142,163-164` | `actorOf(c)` is read **after** both awaits, from the mutable `c.actorId` (reset at `server.ts:414`, reassigned at :563 on a re-join over the same socket). `gen` catches a *completed* re-join; a re-join in flight yields `undefined` → throw → X3's path. The identity should be captured once. |
 | X6 | `requestwire.ts:119`, `:206-210` | `c.spectator`, `c.account`/`isOperator` are checked before the queue only; the post-await recheck (:210) doesn't repeat them. |
-| X7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, `nativeWorld` narrowing, account age, global bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
+| X7 | `requestwire.ts:135` vs `server/access.ts:109-140` | Door entry (members mode, account age, global bans) is decided at join only; a later `@world.access` change is enforced by `sweepAccess` (1 s cadence). A queued request from a now-unentitled connection can commit in that window: the authority checks role, not the door. |
 
 ## 3. Design (smallest honest change)
 
@@ -36,7 +36,7 @@ Rights *inside* the authority are therefore never stale: they are read in the sa
 
 ```ts
 export type ReqCap = Readonly<{ c: Client; w: World; gen: number; actorId: string; account: string|null;
-  spectator: boolean; operator: boolean; nativeWorld: string|null; addr: string|null; role: string }>;
+  spectator: boolean; operator: boolean; addr: string|null; role: string }>;
 export function capture(c: Client, w: World): ReqCap          // Object.freeze; actorOf(c) throws if no id
 export function recheck(cap: ReqCap, now = Date.now()): string | null   // null = may proceed, else refusal words
 ```
@@ -44,7 +44,7 @@ export function recheck(cap: ReqCap, now = Date.now()): string | null   // null 
 - liveness (today's `still`): `cap.c.world===cap.w && !cap.c.superseded && cap.w.clients.has(cap.c) && cap.c.gen===cap.gen`;
 - identity: `cap.c.actorId===cap.actorId && cap.c.account===cap.account && cap.c.spectator===cap.spectator`;
 - operator (for operator-repair): `isOperator(cap.account)===cap.operator`;
-- door: `entryFor(doorOf(cap.w), {account, actorId, addr, nativeWorld}, cap.spectator?"watch":"embody", {now}) === null` — the same decision the join made (X7), now re-asked with the captured who;
+- door: `entryFor(doorOf(cap.w), {account, actorId, addr}, cap.spectator?"watch":"embody", {now}) === null` — the same decision the join made (X7), now re-asked with the captured who;
 - `cap.w.log.roleOf(cap.actorId) === cap.role` (a role change mid-request is a refusal, code `superseded`, not a silent commit under the new role: the asker was admitted under the old role; refusing is the conservative choice).
 
 `captureCap` happens once at `requestwire.ts:134` (replacing `gen`/`still`) and once at :208. The authority then receives `cap.actorId` (never `actorOf(c)` again: fixes X5). Seams rechecked: (1) `requestwire.ts:138` (after await #1), (2) `worldlog.ts:158` (after await #2, before `requestSync`) — `request()` keeps its `still?: () => string|null` signature and is passed `() => recheck(cap)`. There are no other awaits between admission and `w.append`; `ctx.js:5` documents that invariant and the test row T7 pins it.
@@ -100,8 +100,8 @@ Outside it, today:
   rolled back with a request. An in-place translation defers its identities until the swap has succeeded (world.ts), so a
   failed translation leaves none behind — that is a sequencing rule, not a transaction.
 - **The HTTP door's `Who`** (`server/access.ts`): HTTP reads (`/geom`, `/heightmap`, `/snap`, `/worlds`) decide with a
-  `Who`, not a `ReqCap`. They write nothing, so they have no commit seam to recheck at; `Who` carries the same narrowing
-  (`nativeWorld`) and is recomputed per request.
+  `Who`, not a `ReqCap`. They write nothing, so they have no commit seam to recheck at; `Who` is recomputed per request.
+  (A native session's `nativeWorld` narrowed both once; since main #255 a native sign-in is an ordinary one and narrows nothing.)
 - **Capability expiry**: `ReqCap` carries no `expiry` field. A timed grant (`roles:<id>.until`) is rechecked *through the
   role* at both seams (`reqcap.ts recheck`: `w.log.roleOf(cap.actorId) !== cap.role`), and the role ends when the
   authority writes `expire-roles` — the server's one-second sweep (`server/access.ts sweepAccess`,

@@ -13,7 +13,7 @@ import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { modelOf, boxOfM, geomE } from "./catalogue.js";
 import { CHANGE, clone, createOps, delOp, followUp, lockedC, nonce16, qr3, scratch, setOp, versionSeq } from "./storage.js";
-import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, rectHolds, surfacesOf, worldT, yawQ } from "./math.js";
+import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, inRect, surfacesOf, worldT, yawQ } from "./math.js";
 import { groundReady, hitsIx, near, spatial, spend, supportBelow } from "./spatial.js";
 import { isSocketC, liftOps, socketsOf } from "./sockets.js";
 import { madeBy, roleOf } from "./rights.js";
@@ -57,6 +57,20 @@ function changeEntry(w, plan, cause) {
 const actEntry = (w, actor, verb, body) => ({ kind: "act", actor, verb, body });
 const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { request: stripDry(args), ...(extra ?? {}) });
 
+// house 6340433633 (the lead's decision): what an imported world's translation carried for the world's sky, terrain, grass
+// or water (imported:<it>) fills that slot in the view while it's empty (view.js). A request that sets or deletes the world's
+// own one deletes the leftovers in the same change, so a deleted sky leaves the slot empty instead of showing them. A
+// capability's writes are scoped to what they name, so a reaction's or script's write is left as it is.
+const NATIVE_WORLD = ["sky", "terrain", "grass", "water"];
+function dropImportedShadows(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops; const wc = ctx.st.entities["@world"]?.c; if (!wc) return ops;
+  const add = [];
+  for (const k of NATIVE_WORLD) { const imp = `imported:${k}`;
+    if (!(imp in wc) || ops.some((o) => o.id === "@world" && o.comp === imp)) continue;
+    if (!ops.some((o) => o.id === "@world" && o.comp === k && (o.verb === "set" || o.verb === "delete"))) continue;
+    add.push(delOp("@world", imp)); ctx.notes.push({ id: "@world", component: imp, why: `the imported world's leftover ${k} goes with the world's own ${k}` }); }
+  return add.length ? [...ops, ...add] : ops;
+}
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
   CTX.mintW = w;
@@ -65,7 +79,7 @@ function commit(w, actor, verb, args, build) {
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   // the old spelling's writes (a sockets map) are lifted here, before the references are cleared below, so a socket child the
   // lift takes away has the references to it cleared too, as a delete's are; admit then takes the ops as lifted
-  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))))), w.everIds());
+  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx))))))), w.everIds());
   const ops = pre.ops;
   // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
   if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
@@ -439,6 +453,9 @@ function buildPlace(ctx, a) {
     let best = null, lastBlock = null; const whatWas = CTX.work.what;
     for (let pass = 0; pass < 2; pass++) {
       const [hx, hz] = half(yaw);
+      // the footprint's own corners, turned by yaw (house 6340433633: a turned top tested the box of them, so a long thing
+      // laid along a turned top was refused where it fits)
+      const fq = yawQ(yaw), foot = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sx, sz]) => { const r = qrot(fq, [sx * S[0] / 2, 0, sz * S[2] / 2]); return [r[0], r[2]]; });
       // the 2.5 cm grid as ever (positions by the same running sum), searched nearest-first: ring by ring out from the
       // cell nearest `want`, stopping once no further ring can hold a nearer cell. The answer is the full scan's (the
       // nearest free cell, ties to the earlier in its x-then-z order); the work is the cells near the answer, not the
@@ -453,7 +470,7 @@ function buildPlace(ctx, a) {
         const region = near(st, [s.min[0], s.y, s.min[1]], [s.max[0], s.y + S[1], s.max[1]]); const local = region.length <= 32 ? region : null;
         const cell = (i, k) => { spend(1); const x = xs[i], z = zs[k], d = Math.hypot(x - want[0], z - want[1]), idx = i * nz + k;   // every cell visited is work
           if (best && (d > best.d || (d === best.d && idx > best.idx))) return;
-          if (s.rect && !rectHolds(s, x, z, hx, hz)) return;   // off a turned top's own rectangle, though inside the box of its corners
+          if (s.rect && !foot.every(([dx, dz]) => inRect(s, x + dx, z + dz))) return;   // off a turned top's own rectangle, though inside the box of its corners
           spend(4); const bl = free(x, s.y, z, yaw, NONE, local); if (!bl) best = { x, z, d, idx }; else if (idx > lastIdx) { lastIdx = idx; lastBlock = bl; } };
         // the nearest any cell of a ring's side (columns i0..i1 of a row, or rows k0..k1 of a column) can be to `want`:
         // a ring's cells are never nearer than its sides' clamp, and no ring is nearer than the one inside it (each of
@@ -472,7 +489,7 @@ function buildPlace(ctx, a) {
       if (!best) break; if (a.facing && pass === 0) { yaw = faceYaw([best.x, 0, best.z]); best = null; } else break;
     }
     CTX.work.what = whatWas;
-    if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${r3(2 * hx)}×${r3(2 * hz)} m) doesn't fit free on ${a.on}'s level ${s.level} (${s.rect ? `${r3(2 * s.rect.hx)}×${r3(2 * s.rect.hz)} m, turned` : `${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m`})${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
+    if (!best) { const [hx, hz] = half(yaw); refuse("no-room", `${a.id} (${s.rect ? `${r3(S[0])}×${r3(S[2])}` : `${r3(2 * hx)}×${r3(2 * hz)}`} m) doesn't fit free on ${a.on}'s level ${s.level} (${s.rect ? `${r3(2 * s.rect.hx)}×${r3(2 * s.rect.hz)} m, turned` : `${r3(s.max[0] - s.min[0])}×${r3(s.max[1] - s.min[1])} m`})${lastBlock ? `; ${lastBlock} is in the way` : ""}`, "try another level, a smaller thing, or move what's there"); }
     if (best.d > 0.01) relaxed.push(`moved ${r3(best.d)} m from where you asked to stay clear and fully supported`);
     pos = [best.x, s.y, best.z]; support = a.on; if (a.attach === undefined) a.attach = true; // things rest on what supports them
   } else if (a.hang) {

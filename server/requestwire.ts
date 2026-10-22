@@ -272,7 +272,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
       if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: old log in ${e.movedTo}, new one in ${e.freshAt}:`, e);
-      return err(e?.movedTo ? "the reset failed partway: the world's old log was moved aside, and the server's operator can put it back (its server log says where)" : `the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
+      // what the world does now, and whether to reset again (house 6340433633): world.ts retires a log that was moved aside
+      return err(e?.logMoved
+        ? "the reset failed partway: the world's old log was moved aside (the server's log says where), so this world takes no writes until the server's operator puts it back. Resetting again is safe: it finishes the erase, and the old log stays in the archive this attempt made"
+        : `the reset failed and the world's log is where it was, so the world goes on as before: ${String(e?.message ?? e)}`); }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
     w.broadcast({ type: "world-reset", world: w.name, by: c.id });
   },

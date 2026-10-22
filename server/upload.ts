@@ -440,11 +440,18 @@ export const MAX_IMAGE_PX = 8192;
  *  holds only if every image's size is known. */
 export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): { status: number; why: string } | null {
   const dims = imageDims(b, kind);
-  if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; save it again from an image editor and upload that` };
+  // the remedy is one any uploader can take (house 6340433633: "save it again from an image editor" assumed a person at one)
+  if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; sending these bytes again won't change that. Upload a copy whose header gives its size: any encoder writes one (a PNG always has it), so re-encode it with whatever made it, or a library such as sharp or Pillow` };
   if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
   return null;
 }
+/** …a zero on either side is no size either (house 6340433633, the lead's decision): a 0×0 WebP header, a PNG with width 0
+ *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
 export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const d = headerDims(b, kind);
+  return d && d[0] > 0 && d[1] > 0 ? d : null;
+}
+function headerDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
   const u16 = (i: number) => (b[i] << 8) | b[i + 1], u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
   const le16 = (i: number) => b[i] | (b[i + 1] << 8), le24 = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
   try {

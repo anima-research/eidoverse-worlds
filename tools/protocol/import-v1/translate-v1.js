@@ -3,17 +3,17 @@
 //   - the old entry as sent: an `act` (verb "imported", body {verb, args, from: old seq}, ts: old ts), or a `say`, and
 //   - at most one change entry with the plain results that bring v4 to the same place (cause = that act).
 // The output is in the PROTOCOL-v4 §2.4 wire format, and every name and id follows §2.3: an old id or name the
-// grammar refuses is mapped by `enc` (deterministic, and injective but for a literal name in the hashed form, which
-// encodes as the name it was computed from, so the later thing of such a pair takes the key; a log holding a lone
-// surrogate isn't imported at all: names.js). After every entry it folds the v4 entry with the v4 fold and checks the
-// projections agree. The original log is never written (R9); the output is a regenerable cache.
+// grammar refuses is mapped by `enc`, here names.js's encRaw (deterministic and injective: a name in the hashed form is
+// escaped like any other, and a log holding a lone surrogate, the one pair it maps alike, isn't imported at all). After
+// every entry it folds the v4 entry with the v4 fold and checks the projections agree. The original log is never written (R9); the output is a regenerable cache.
 // Ported from the v4 lab (code/v4-lab/translate-v1.js @ 11db981). Engine changes: the v1 fold is the engine's own
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/protocol/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION } from "../../../shared/protocol/fold.js";
 import { unNegZero } from "../../../shared/protocol/round.js";
-import { enc, encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
+// an old log's names are never ids, so a name in the hashed form is escaped too (encRaw; house 6340433633, @19)
+import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
@@ -117,7 +117,11 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@18";
+export const TRANSLATOR = "eidoverse/translate-v1@19";
+// @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
+// that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
+// already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
+// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -175,7 +179,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@18";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@18";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@19";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key

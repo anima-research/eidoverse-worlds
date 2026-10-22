@@ -15,11 +15,11 @@
 // one always starts with one or the other, and x-- names are distinct hex; h-- names collide only if sha256 does. The
 // cases: a literal name in the hashed form is kept, so it encodes to the same key as the name whose sha256 it prefixes
 // (HASHED, below); and a lone surrogate (half of a UTF-16 pair, with no other half) is written in UTF-8 as U+FFFD's
-// bytes, so names that differ only in which lone surrogate they hold escape alike. At import (translate-v1.js), an old
-// world holding a thing under each name of the hashed pair becomes a world with one thing at that key: the one the old
-// world made later, as the translator projects it, and the other, its later changes included, isn't carried. A world
-// holding a lone surrogate anywhere doesn't import at all: the translated log would carry it in an act's request, which
-// the strict reader refuses (not I-JSON), so nothing is written.
+// bytes, so names that differ only in which lone surrogate they hold escape alike. Import (translate-v1.js) maps an old
+// log's names with encRaw and encNameRaw (below), which escape a name in the hashed form like any other, so the first
+// case can't arise there. Nor can the second: a log holding a lone surrogate anywhere doesn't import at all, since the
+// translated log would carry it in an act's request, which the strict reader refuses (not I-JSON), so nothing is
+// written.
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
@@ -45,6 +45,19 @@ export function enc(s) {
 export function encName(s) {
   s = String(s);
   return HASHED.test(s) || (isComponent(s) && !ESC.test(s)) ? s : escape(s);
+}
+/** enc and encName for a name that was never an id: an old log's (the translator's, tools/protocol/import-v1). Old logs
+ *  never held a hashed id, so a name already in that form is escaped like any other, never kept: a raw name equal to a long
+ *  name's hashed form would otherwise be that long name's id (house 6340433633).
+ *  @param {unknown} s @returns {string} */
+export function encRaw(s) {
+  s = String(s);
+  return /^[a-z0-9-]{1,64}$/.test(s) && !ESC.test(s) ? s : escape(s);
+}
+/** @param {unknown} s @returns {string} */
+export function encNameRaw(s) {
+  s = String(s);
+  return isComponent(s) && !ESC.test(s) ? s : escape(s);
 }
 /** The local tag of the component that moves one node of a thing's model: motion:<partSlot(node)> {node, …}. A node's name
  *  comes from a model file and is DATA (any characters: tripo_part_3, "Seat Plank", 座席); the key needs a §2.3 tag

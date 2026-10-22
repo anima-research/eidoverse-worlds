@@ -209,7 +209,11 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(!map.some((x) => x.name === "keep") && acc.body?.you === "none" && g1 === 404 && g2 === 404 && hm.status === 404 && /no such world/.test(hmText) && still?.loaded === false,
       `A8 after a restart, the world unloaded: the ${who} (still listed) is refused by /worlds, /access, /geom (404, twice) and /heightmap, and the refusal loads nothing`,
       { map: map.map((x) => x.name), access: acc.body, geom: [g1, g2], heightmap: [hm.status, hmText.slice(0, 60)], loaded: still?.loaded }); }
-  { // A10 (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
+  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
+  { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
+    const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
+    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
+  { // A10 (after A14's join, which must be the one that loads keep) (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
     // nativeWorld "water", is the account at every world's door, exactly as the same account's ordinary session
     const cookieGet = (sid, u) => fetch(`http://127.0.0.1:${s2.port}${u}`, { headers: { cookie: `ew_sess=${sid}` } });
     const gN = (await cookieGet(SID_NATIVE, "/geom?world=keep")).status, gF = (await cookieGet(SID_FULL, "/geom?world=keep")).status;
@@ -218,10 +222,6 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(gN === 200 && gF === 200 && mapN.some((x) => x.name === "keep") && mapF.some((x) => x.name === "keep") && aN.you === "enter" && aF.you === "enter",
       "A10 an old native session (nativeWorld water) reads another world as its account does (/geom 200, on /worlds, /access enter): no per-world fence",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
-  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
-  { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
-    const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
-    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
   try { s2.proc.kill(); } catch {} }
 { // A11 (review of PR #260, server.ts:742): an operator (WORLD_ADMIN) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
@@ -281,6 +281,17 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const xffThrough = clientAddress(hdr({ "x-forwarded-for": "198.51.100.66" }), "127.0.0.1", trusted, "x-real-ip");
   ok(forged === "203.0.113.8" && chained === "203.0.113.8" && realThrough === "203.0.113.8" && xffThrough === "127.0.0.1",
     "A13b only the header the proxy writes is read: behind an X-Forwarded-For proxy, a client's own X-Real-IP or left-hand hop is never taken; behind an X-Real-IP proxy, a client's X-Forwarded-For isn't either", { forged, chained, realThrough, xffThrough }); }
+// ---- A13e (house 6340433633): PROXY_ADDRESS_HEADER itself picks the header the routes read: the rows above name the header
+// as an argument, so nothing went through the setting. addressOf (what routes.ts and upload.ts call) in a fresh process per value
+{ const peerTs = new URL("../../server/peer.ts", import.meta.url).pathname;
+  const probe = (env) => { const code = `const { addressOf } = await import(${JSON.stringify(peerTs)});
+    const req = new Request("http://x/", { headers: { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.66, 203.0.113.8" } });
+    console.log(addressOf(req, { requestIP: () => ({ address: "127.0.0.1" }) }));`;
+    const { PROXY_ADDRESS_HEADER: _drop, ...base } = process.env;
+    const r = Bun.spawnSync(["bun", "-e", code], { env: { ...base, ...env }, stdout: "pipe", stderr: "pipe" }); return r.stdout.toString().trim() || r.stderr.toString().trim().slice(0, 200); };
+  const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
+  ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
+    "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
 // ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };

@@ -21,7 +21,7 @@
 import { allowedPictureSrc } from "../shared/picture.js";
 
 import { ownedWorld } from "./probe-harness.mjs";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,12 +38,18 @@ function check(name: string, ok: boolean, detail = "") {
   else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-// A real 1×1 PNG (the smallest well-formed one), a JPEG SOI header with
-// padding, and a WebP RIFF header with padding — the sniffer reads magic, the
-// store does not decode, so headers are enough for the door.
+// A real 1×1 PNG (the smallest well-formed one), a JPEG whose header gives its
+// size (1024×512, tools/protocol/fixtures), and a WebP RIFF header with a VP8
+// frame header that gives its size — the sniffer reads magic and the door reads
+// the size (the pixel cap), the store does not decode, so headers are enough.
+// (house 6340433633: the WebP read 0×0, and the door took that as a size; a zero
+// side is now an unknown size, refused 415 like any unreadable one: WEBP0. The
+// JPEG had no SOF, so the size check refused it since that check landed.)
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
-const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, ...new Array(64).fill(0), 0xff, 0xd9]);
-const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, ...new Array(24).fill(0)]);
+const JPG = new Uint8Array(readFileSync(new URL("./protocol/fixtures/dims-1024x512.jpg", import.meta.url)));
+const vp8 = (w: number, h: number) => new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x20, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 0x14, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x9d, 0x01, 0x2a, w & 0xff, (w >> 8) & 0x3f, h & 0xff, (h >> 8) & 0x3f, ...new Array(10).fill(0)]);
+const WEBP = vp8(64, 48), WEBP0 = vp8(0, 0);
 const GLB = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, ...new Array(24).fill(0)]);
 const JUNK = new Uint8Array(40).map((_, i) => (i * 37) & 0xff);
 
@@ -118,6 +124,8 @@ await new Promise((res) => setTimeout(res, 61_000));
 const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
+r = await post(WEBP0, { as: "image", name: "blank.webp" });
+check("a WebP whose header says 0×0 is an unknown size: refused 415, not landed", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 
 await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);
