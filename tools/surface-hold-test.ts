@@ -13,6 +13,7 @@
 // through handleLiveCause exactly as net.js's 'live-entry' does.
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
+import { tryUntil, pause } from "./protocol/wait.ts";
 
 const STUB = fileURLToPath(new URL("./world-hold-stub.mjs", import.meta.url));
 plugin({
@@ -37,7 +38,6 @@ const check = (name: string, ok: boolean, extra = "") => {
   console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${ok ? "" : "  [" + extra + "]"}`);
   ok ? pass++ : fail++;
 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const HOLD_MS = 2500;                      // world.js's performance window
 const spoken: any[] = [];
 bus.on("speech", (s: any) => spoken.push(s));
@@ -54,7 +54,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 7, retired: null });
   spoken.length = 0;
   await say("norrin", "after the voice leg joined");
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("first voice join enables hold: the say does NOT speak locally at once", spoken.length === 0,
     JSON.stringify(spoken));
   check("…but the caption is logged during the hold (text is never delayed)",
@@ -70,7 +70,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   const receipted = seq;
   await say("norrin", "unreceipted line");
   bus.emit("performed", { actor: "norrin", seq: receipted, gen: 7 });
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   // (the receipt's display-only re-emit carries performed:true — §8; a
   // FALLBACK is a speech event without it)
   check("receipted say never falls back to local speech", !spoken.some((s) => s.text === "receipted line" && !s.performed),
@@ -96,7 +96,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("performed", { actor: "zarniwoop", seq: sWrongActor, gen: 7 }); // wrong actor → ignore
   bus.emit("performed", { actor: "norrin", seq: sPredGen, gen: 6 });       // predecessor (stale) → ignore
   bus.emit("performed", { actor: "norrin", seq: sSuccGen, gen: 9 });       // successor (takeover) → CANCEL
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   check("wrong-actor receipt does not cancel the hold (falls back)",
     spoken.filter((s) => s.text === "wrong-actor receipt").length === 1, JSON.stringify(spoken));
   check("predecessor-generation receipt does not cancel the hold (falls back — stale leg)",
@@ -109,7 +109,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
 {
   spoken.length = 0;
   await say("norrin", "the leg went deaf");
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   check("no receipt: exactly one fallback speech, not zero, not a repeat",
     spoken.filter((s) => s.text === "the leg went deaf").length === 1, JSON.stringify(spoken));
 }
@@ -129,7 +129,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: null, retired: 7 }); // STALE death of gen 7
   spoken.length = 0;
   await say("norrin", "successor should still hold");
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("stale retirement (old gen) does not strip the successor: the say still holds",
     spoken.length === 0, JSON.stringify(spoken));
   bus.emit("performed", { actor: "norrin", seq, gen: 9 });
@@ -141,7 +141,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surface-transition", { actor: "norrin", surface: "voice", gen: 12, retired: 9 });
   spoken.length = 0;
   await say("norrin", "spoken through the successor");
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("takeover (new gen via transition alone) keeps hold working — no reload needed",
     spoken.length === 0, JSON.stringify(spoken));
   bus.emit("performed", { actor: "norrin", seq, gen: 12 });
@@ -158,7 +158,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surfaces", [{ id: "zora", surfaces: [{ surface: "voice", gen: 3 }] }]);
   spoken.length = 0;
   await say("zora", "seeded from snapshot");
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("snapshot-seeded capability holds exactly like transition-built capability",
     spoken.length === 0, JSON.stringify(spoken));
   bus.emit("performed", { actor: "zora", seq, gen: 3 });
@@ -187,10 +187,10 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: 21, retired: null });
   spoken.length = 0;
   await say("miri", "spoken flag, leg deaf", { spoken: true, utt: 2, t0: Date.now() });
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("spoken:true with a live leg still HOLDS (claim is not a receipt)",
     spoken.length === 0, JSON.stringify(spoken));
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   check("…and with no receipt it falls back exactly once (no claim-derived silence)",
     spoken.filter((s) => s.text === "spoken flag, leg deaf").length === 1, JSON.stringify(spoken));
 
@@ -198,7 +198,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   spoken.length = 0;
   await say("miri", "spoken flag, receipted", { spoken: true, utt: 3, t0: Date.now() });
   bus.emit("performed", { actor: "miri", seq, gen: 21 });
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   check("spoken:true with a matching receipt never speaks locally (the leg performed it)",
     spoken.filter((s) => s.text === "spoken flag, receipted").length === 0, JSON.stringify(spoken));
   bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: null, retired: 21 });
@@ -215,18 +215,18 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   spoken.length = 0;
   await say("vex", "performed and visible");
   bus.emit("performed", { actor: "vex", seq, gen: 31 });
-  await sleep(150);
+  await tryUntil("the receipt re-emits a display-only speech", () => spoken.some((s) => s.text === "performed and visible"), { ms: 2000 });
   const disp = spoken.filter((s) => s.text === "performed and visible");
   check("receipt re-emits a display-only speech (performed: true)",
     disp.length === 1 && disp[0].performed === true, JSON.stringify(spoken));
-  await sleep(HOLD_MS + 400);
+  await pause("past the hold window", HOLD_MS + 400);
   check("…exactly once — the cancelled fallback never fires on top",
     spoken.filter((s) => s.text === "performed and visible").length === 1, JSON.stringify(spoken));
 
   spoken.length = 0;
   await say("vex", "caption-paced line", { spoken: true, utt: 9, t0: Date.now() });
   bus.emit("performed", { actor: "vex", seq, gen: 31 });
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("spoken:true + receipt draws NO display re-emit (captions own that plane)",
     spoken.length === 0, JSON.stringify(spoken));
   bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: null, retired: 31 });
@@ -237,7 +237,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   bus.emit("surface-transition", { actor: "rell", surface: "voice-relay", gen: 41, retired: null });
   spoken.length = 0;
   await say("rell", "carried by the relay");
-  await sleep(150);
+  await pause("a held say has had its chance to speak at once", 150);
   check("a voice-relay leg holds the say (no local speech at once)", spoken.length === 0, JSON.stringify(spoken));
   bus.emit("performed", { actor: "rell", seq, gen: 41 });
   bus.emit("surface-transition", { actor: "rell", surface: "voice-relay", gen: null, retired: 41 });

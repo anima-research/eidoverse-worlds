@@ -175,9 +175,6 @@
  "tools/support-swap-test.ts": {
   "bare-wait": 4
  },
- "tools/surface-hold-test.ts": {
-  "bare-wait": 15
- },
  "tools/unknown-comp-test.ts": {
   "bare-wait": 2
  }
