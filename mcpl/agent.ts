@@ -2580,8 +2580,9 @@ export class WorldAgent {
       else if (a.kind === "pose" && !this.wingsFolded) end("stopped");
       else if (a.kind === "live" && !this.heldPose) end(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
       else if ((a.kind === "live" || a.kind === "track") && this.clip === "ragdoll") end("knocked over");
-      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it
-      else if (a.kind === "track" && (this.target || ["walk", "run", "swim", "tread"].includes(this.clip))) this.endTrackLoop("moved");
+      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it. Treading water is a
+      // swimmer at rest, not a move, so a loop started while treading plays on
+      else if (a.kind === "track" && (this.target || ["walk", "run", "swim"].includes(this.clip))) this.endTrackLoop("moved");
     }
   }
   /** End the tracks loop alone (its layer, not a held pose or a clip), and tell the renderers so: a walk ends it, and a
