@@ -209,7 +209,11 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(!map.some((x) => x.name === "keep") && acc.body?.you === "none" && g1 === 404 && g2 === 404 && hm.status === 404 && /no such world/.test(hmText) && still?.loaded === false,
       `A8 after a restart, the world unloaded: the ${who} (still listed) is refused by /worlds, /access, /geom (404, twice) and /heightmap, and the refusal loads nothing`,
       { map: map.map((x) => x.name), access: acc.body, geom: [g1, g2], heightmap: [hm.status, hmText.slice(0, 60)], loaded: still?.loaded }); }
-  { // A10 (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
+  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
+  { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
+    const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
+    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
+  { // A10 (after A14's join, which must be the one that loads keep) (main #255, Mica 10-17: one sign-in, every world): a native session paired before that, which still carries
     // nativeWorld "water", is the account at every world's door, exactly as the same account's ordinary session
     const cookieGet = (sid, u) => fetch(`http://127.0.0.1:${s2.port}${u}`, { headers: { cookie: `ew_sess=${sid}` } });
     const gN = (await cookieGet(SID_NATIVE, "/geom?world=keep")).status, gF = (await cookieGet(SID_FULL, "/geom?world=keep")).status;
@@ -218,10 +222,6 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(gN === 200 && gF === 200 && mapN.some((x) => x.name === "keep") && mapF.some((x) => x.name === "keep") && aN.you === "enter" && aF.you === "enter",
       "A10 an old native session (nativeWorld water) reads another world as its account does (/geom 200, on /worlds, /access enter): no per-world fence",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
-  // A14, the join: the first join loads the world; the door reads Fen's ended grant as absent BEFORE any sweep (4010)
-  { const logHas = !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
-    const f = await sock(s2.port); const jf = await f.join("keep", "Fen", { agentToken: "tok-fen" });
-    ok(logHas && !jf.snapshot && f.closed === 4010 && /isn't open to you/.test(jf.errors.join(" ")), "A14 …and the join that loads the world is refused at the door (4010), the grant unswept until then", { logHas, join: jf.errors, closed: f.closed }); f.close(); }
   try { s2.proc.kill(); } catch {} }
 { // A11 (review of PR #260, server.ts:742): an operator (WORLD_ADMIN) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
