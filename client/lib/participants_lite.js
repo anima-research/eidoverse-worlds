@@ -10,25 +10,15 @@
 // The pose plane is dropped on the floor, and that is the single biggest reason a
 // phone can hold this: presence arrives ~15Hz PER PERSON, and every sample would
 // otherwise buy interpolation nobody can see. We keep the server clock anyway — it
-// costs two numbers and it is what makes timestamps in chat honest.
+// is what makes timestamps in chat honest — and it is the full client's clock, not a copy.
 import { bus } from './base.js';
-import { foldOffset } from '../../shared/clockoffset.js';
 
 export const remotes = new Map(); // id -> LiteRow
 
-// Server-to-local clock offset, as remotes.js keeps it. Its rule is
-// shared/clockoffset.js, which has no dependencies; remotes.js itself isn't
-// imported, since that would pull the engine in. These few lines are the one
-// duplication in this file.
-let clock = null;
-// `at` is the performance.now() when `t`'s message event ran, for a message
-// that waited to be handled (the early socket's drain, net.js connect());
-// otherwise now.
-export function noteServerTime(t, at = performance.now()) {
-  if (typeof t !== 'number') return;
-  clock = foldOffset(clock, t - performance.timeOrigin - at, at);
-}
-export const serverNow = () => performance.timeOrigin + performance.now() + (clock?.offset ?? 0);
+// The server clock is serverclock.js's, re-exported as remotes.js does: it imports only
+// shared/clockoffset.js, and net.js already loads it here, so the one-way samples net.js
+// hands this registry reach the same estimate its round trips and floors do.
+export { noteServerTime, serverNow } from './serverclock.js';
 
 /** Async to match remotes.js, whose caller does `.then(...)` on the arrival path —
  *  the signature is part of the interface even though nothing here awaits. */
