@@ -135,7 +135,7 @@ ok(t1.ok, "S2 create a measured model", t1);
 const c1 = await bob.req("create", { id: "cup", model: "test/cup.glb", place: { on: "tbl" } });
 const placed = c1.notes?.find((n) => n.placed)?.placed;
 ok(c1.ok && Math.abs(placed?.restsAt - 0.75) < 0.002 && placed?.on === IDS.of("tbl"), "S2 place ON it: the engine catalogue measured the GLB's top at 0.75 m", c1);
-await tryUntil("Vic is sent the two log messages", () => vic.of("log").length >= 2, { ms: 2000 });
+await tryUntil("the cup, parented to the table, is in Vic's own fold", () => heldBy(vic)?.view()?.entities?.[IDS.of("cup")]?.parent?.to === IDS.of("tbl"), { ms: 2000 });
 ok(vic.of("log").length >= 2 && vic.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof e.verb === "string" && !("args" in e))), "S2 another client is sent the raw entries (log), every one a typed entry (kind, verb, body; never a v1 {verb, args})", vic.of("log").map((m: any) => m.entries?.map((e: any) => e.kind)));
 { const m = heldBy(vic)?.view()?.entities?.[IDS.of("cup")]?.parent; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")))).entities[IDS.of("cup")].c.transform.pos;
   ok(m?.to === IDS.of("tbl") && Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 in that client's own fold the cup hangs from the table at the authority's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m, loc]); }
