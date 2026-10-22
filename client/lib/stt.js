@@ -172,7 +172,7 @@ export function setSTT(on) {
       // is our intent and `micOn()` is the world's reality; a disagreement
       // between them must resolve to silence.
       if (!wanted || !micIsLive()) continue;
-      if (text) { ++uttSeq; say(`🎙 ${text}`); }
+      if (text) { ++uttSeq; say(`🎙 ${text}`, { spoken: true, utt: uttSeq, live: true }); }
     }
   };
   // Chrome ends recognition on silence — restart while still wanted.

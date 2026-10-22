@@ -159,17 +159,26 @@ function paintPane(pane) {
 const escape = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Which rename this session has (house I180): a signed-in name is the sign-in's (net.js takes identity.name over ours on
+// every load, so a reload would undo a change); an account on a name-trusting server renames by reload, under the
+// door's cooldown (the snapshot's renameAfter says so); anyone else is a guest, someone new on each visit, whose name is
+// all they carry (no cooldown, no roles to keep).
+const renameKind = () => (CONFIG.authed ? 'signin' : net.renameAfter != null ? 'account' : 'guest');
+
 function openRenameDialog() {
   document.querySelector('.pf-rename-dlg')?.remove();
-  const days = net.renameCooldownDays ?? 7, after = net.renameAfter ?? 0, wait = after > Date.now();
+  const kind = renameKind();
+  const days = net.renameCooldownDays ?? 7, after = net.renameAfter ?? 0, wait = kind === 'signin' || (kind === 'account' && after > Date.now());
   const when = new Date(after).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const dlg = document.createElement('div'); dlg.className = 'pf-rename-dlg'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
   dlg.innerHTML = `<div class="pf-rename-card panel">
       <h3>Your name</h3>
-      <p>This is the name everyone sees over your head, in chat and in the history of what you build. You stay the same person
-        whatever it says: your roles and your things stay yours.</p>
+      <p>This is the name everyone sees over your head, in chat and in the history of what you build.${kind === 'account'
+        ? ' You stay the same person whatever it says: your roles and your things stay yours.' : ''}</p>
       <input class="pf-rename-in" maxlength="32" value="${escape(CONFIG.name)}" ${wait ? 'disabled' : ''} aria-label="your name">
-      <p class="pf-rename-warn">${wait ? `You changed it recently. You can change it again on <b>${escape(when)}</b>.`
+      <p class="pf-rename-warn">${kind === 'signin' ? 'Your name comes from the account you signed in with: change it there, and it changes here the next time you come in.'
+        : kind === 'guest' ? 'You\'re a guest: each visit you\'re someone new to the world, so a name is all you carry. Changing it reloads the page.'
+        : wait ? `You changed it recently. You can change it again on <b>${escape(when)}</b>.`
         : `Pick carefully: once you change it, you can't change it again for ${days} days.`}</p>
       <p class="pf-rename-err" hidden></p>
       <div class="pf-rename-btns"><button type="button" class="pf-rename-cancel">${wait ? 'Close' : 'Cancel'}</button>${wait ? '' : '<button type="button" class="pf-rename-ok" disabled>Change my name</button>'}</div>
@@ -181,7 +190,7 @@ function openRenameDialog() {
     err.hidden = !bad; err.textContent = bad; if (ok) ok.disabled = !!bad || !v || v === CONFIG.name; return !bad && v && v !== CONFIG.name ? v : null; };
   const submit = () => { const v = valid(); if (!v) return;
     setName(v); const u = new URL(location.href); if (u.searchParams.has('name')) u.searchParams.set('name', v); history.replaceState(null, '', u); location.reload(); };
-  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } else if (e.key === 'Enter' && document.activeElement === inp) { e.stopPropagation(); e.preventDefault(); submit(); } else e.stopPropagation(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } else if (e.key === 'Enter' && !e.isComposing && document.activeElement === inp) { e.stopPropagation(); e.preventDefault(); submit(); } else e.stopPropagation(); };
   addEventListener('keydown', onKey, true);
   inp.oninput = valid; dlg.querySelector('.pf-rename-cancel').onclick = close; if (ok) ok.onclick = submit;
   dlg.onpointerdown = (e) => { if (e.target === dlg) close(); };

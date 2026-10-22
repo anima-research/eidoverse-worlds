@@ -32,7 +32,7 @@ import {
   net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { serverNow } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
+import { serverNow, serverUntil } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
 import { myState, setPosture, flightReport } from '../controller.js';
 import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
@@ -44,7 +44,7 @@ import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
-import { send } from '../editwrites.js';
+import { send } from '../editwrites.js';   // roles, the door and moderation send record: false: they are not build edits, and Ctrl+Z must never revoke a grant or lift a ban
 import * as OP from '../../../shared/protocol/requests.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
@@ -143,7 +143,7 @@ register('grant', (arg) => {
     if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access invite-only|watch closes a world instead');
     if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
     // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
-    send({ verb: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}` });
+    send({ verb: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}`, record: false });
     return;
   }
   // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
@@ -155,11 +155,11 @@ register('grant', (arg) => {
     // exceptions nor their end): a new duration replaces the end, forever drops it (a set, not a merge: a merge can't
     // remove a field), and new exceptions join the old ones
     const { until: was, ...rest } = cur ?? {};
-    const until = forever ? undefined : dur ? serverNow() + dur : was;
+    const until = forever ? undefined : dur ? serverUntil(dur) : was;
     const exceptions = can || rest.can ? { ...(rest.can ?? {}), ...(can ?? {}) } : null;
     const value = { ...rest, ...(role ? { role } : {}), ...(exceptions ? { can: exceptions } : {}), ...(until !== undefined ? { until } : {}) };
     send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value } },
-      { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}` }); });
+      { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}`, record: false }); });
 });
 
 // /revoke <name> — take back someone's role: they hold this world's default role again (in a world that admits only
@@ -169,7 +169,7 @@ register('revoke', (arg) => {
   if (!id) return logChat('*', 'usage: /revoke <name>');
   onePerson(id, 'revoke').then((who) => { if (!who) return;
     if (!worldComponents()[`roles:${who}`]) return logChat('*', `${id} holds no role here — nothing to take back`);
-    send({ verb: 'delete', args: { id: '@world', component: `roles:${who}` } }, { what: `take back ${id}'s role` }); });
+    send({ verb: 'delete', args: { id: '@world', component: `roles:${who}` } }, { what: `take back ${id}'s role`, record: false }); });
 });
 
 // /access [invite-only|watch|public|open] — who may come into this world (@world.access and default-role; the four doors of
@@ -182,7 +182,7 @@ register('access', (arg) => {
   if (!door) return logChat('*', 'usage: /access invite-only|watch|public|open — or /access to see who can come in');
   const ws = doorWrites(door, worldComponents());
   const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
-  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}` });
+  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}`, record: false });
 });
 register('members', () => showMembers());
 /** Who may come into this world, and until when: the door (shared/protocol/access.js) and everyone listed, from this
@@ -211,7 +211,7 @@ function moderate(cmd, arg) {
   if (cmd === 'mute' && (rest[0] === 'voice' || rest[0] === 'chat')) args.channels = [rest.shift()];
   if (rest.length) args.reason = rest.join(' ');
   if (cmd === 'warn' && !args.reason) return logChat('*', `usage: /warn ${USAGE.warn} — a warning says why`);
-  const go = (who) => send({ verb: cmd, args: { who, ...args } }, { what: `${cmd} ${id}` });
+  const go = (who) => send({ verb: cmd, args: { who, ...args } }, { what: `${cmd} ${id}`, record: false });
   if (cmd === 'kick') { const who = identityOf(id); return who ? go(who) : logChat('*', `${id} isn't here to remove — /ban keeps someone away`); }
   onePerson(id, cmd).then((who) => { if (who) go(who); });
 }
@@ -219,7 +219,7 @@ register('mute', (arg) => moderate('mute', arg));
 register('warn', (arg) => moderate('warn', arg));
 for (const verb of ['unmute']) register(verb, (arg) => { const id = (arg || '').trim();
   if (!id) return logChat('*', `usage: /${verb} <name>`);
-  onePerson(id, verb).then((who) => { if (who) send({ verb: verb, args: { who } }, { what: `${verb} ${id}` }); }); });
+  onePerson(id, verb).then((who) => { if (who) send({ verb: verb, args: { who } }, { what: `${verb} ${id}`, record: false }); }); });
 
 // /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
 // one-word-two-acts overload sent a typo'd object name into the moderation
@@ -266,7 +266,7 @@ register('epoch', (arg) => {
 register('unban', (arg) => {
   const id = (arg || '').trim();
   if (!id) return logChat('*', 'usage: /unban <name>');
-  onePerson(id, 'unban').then((who) => { if (who) send({ verb: 'unban', args: { who } }, { what: `unban ${id}` }); });
+  onePerson(id, 'unban').then((who) => { if (who) send({ verb: 'unban', args: { who } }, { what: `unban ${id}`, record: false }); });
 });
 
 // /bans: what is in force here now — bans, removals cooling down and mutes — from the authority's `bans` (the

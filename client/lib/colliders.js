@@ -276,7 +276,7 @@ function decide(entry, s, fresh = false) {
   // applies `s` below), so one per-vertex walk per LIB answers for every
   // clone, and nothing pays for the probe unless the shape gate consults it
   const { floorShaped } = decideSupportClass({ w, d, h });
-  const shared = entry.model ? libCache.get(entry.model) : null;
+  const shared = entry.lib ? libCache.get(entry.lib) : null;
   if (floorShaped && entry.lie == null) {
     if (shared && shared.lie != null) entry.lie = shared.lie;
     else {
@@ -514,11 +514,11 @@ export function removeCollider(id) {
   const e = colliders.get(id);
   if (e) {
     bucketRemove(id, e);
-    if (e.model) {
-      const c = libCache.get(e.model);
+    if (e.lib) {
+      const c = libCache.get(e.lib);
       // zero refs: no resident entity wears this lib's derivations — drop
       // the CPU-side geometry + BVH for GC (demote/delete land here)
-      if (c && --c.refs <= 0) libCache.delete(e.model);
+      if (c && --c.refs <= 0) libCache.delete(e.lib);
     }
   }
   colliders.delete(id);

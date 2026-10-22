@@ -92,8 +92,12 @@ const current = (id, r) => revision.get(id) === r;
 // is right the whole time, the texture just waits for something to land on.
 const pending = new Map();
 
-async function pictureTexture(picture) {
-  if (/^https:/i.test(picture.src)) return linkTexture(picture.src);
+// `quad`: the picture's own plane. A PlaneGeometry's UVs are WebGL's (v up), so a quad wants the browser flip; a modelled
+// part's are glTF's (no flip). `flip` inverts either. Decided at decode: a store texture is a shared ImageBitmap (its
+// flipY is a no-op after upload), a link's is this picture's own canvas.
+async function pictureTexture(picture, quad = false) {
+  const flipY = quad ? picture.flip !== true : picture.flip === true;
+  if (/^https:/i.test(picture.src)) { const t = await linkTexture(picture.src); t.flipY = flipY; t.needsUpdate = true; return t; }
   await primeFiles([picture.src]);
   const bytes = globalThis.Deno.readFileSync(picture.src);
   // glTF UVs are authored in glTF convention (no vertical flip); the shim's
@@ -101,7 +105,7 @@ async function pictureTexture(picture) {
   // on a modelled part wants the glTF convention, so flipY:false — `flip` is
   // the author's escape hatch for a part whose UVs were exported the other
   // way, which the by-eye check tells you in one glance.
-  return globalThis.loadImageTexture(bytes, { srgb: true, flipY: picture.flip === true });
+  return globalThis.loadImageTexture(bytes, { srgb: true, flipY });
 }
 
 function takeDown(id) {
@@ -134,11 +138,10 @@ async function hang(id, picture, rev) {
     pending.delete(id);
     if (!mayFetch) return;   // an untrusted link without this viewer's opt-in: never fetched
     let tex;
-    try { tex = await pictureTexture(picture); }
+    try { tex = await pictureTexture(picture, true); }
     catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
     if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
     const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;
-    if (picture.flip) { tex.flipY = !tex.flipY; tex.needsUpdate = true; }
     takeDown(id);
     const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
     hung.set(id, { picture, quad: q, root, aspect });

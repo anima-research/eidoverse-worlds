@@ -15,10 +15,11 @@
 // (/pull lever1 → use "lever1 pull").
 
 export const COMMANDS = [
-  // whisper was removed (R 10-18): kept unlisted so a typed /w (or /r) is told why instead of "unknown command"
-  { name: 'w', aliases: ['whisper', 'r', 'reply'], listed: false, help: 'whisper was removed — world chat is public' },
-  // ghost was removed (R 10-20): kept unlisted so a typed /ghost or /unghost is told why
-  { name: 'ghost', aliases: ['unghost'], listed: false, help: 'ghost was removed — nobody in a world is hidden from it' },
+  // RETIRED: kept unlisted so a typed name is told why (chat.js says `retired`) instead of "unknown command" or silence.
+  // whisper was removed (R 10-18); /emote became /anim; ghost was removed (2dc8932f, R 10-20)
+  { name: 'w', aliases: ['whisper', 'r', 'reply'], listed: false, help: 'whisper was removed — world chat is public', retired: 'whisper was removed — world chat is public' },
+  { name: 'emote', listed: false, help: '/emote is /anim now', retired: '/emote is /anim now: /anim <name> plays one of the action bar\'s anims (🎭, or number keys)' },
+  { name: 'ghost', aliases: ['unghost'], listed: false, help: 'ghost was removed', retired: 'ghost was removed: there is no hidden presence in a world' },
   { name: 'name', aliases: ['rename'], help: 'what the world calls you (choose it at the authority: renaming mid-visit isn\'t supported yet)' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'anim', help: '/anim <name> — play one of the action bar\'s anims once (🎭, or number keys)' },

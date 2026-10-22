@@ -821,6 +821,7 @@ function runCommand(raw) {
   const row = resolveCommand(typed);
   const canon = row?.name ?? typed;
   if (CHAT_LOCAL[canon]) { CHAT_LOCAL[canon](rest, arg); return true; }
+  if (row?.retired) { logChat('*', row.retired); return true; }
   if (row) {
     // aliasAsAction (/pull lever1): typing the alias IS the action
     const a = row.aliasAsAction && typed !== row.name ? `${arg} ${typed}`.trim() : arg;

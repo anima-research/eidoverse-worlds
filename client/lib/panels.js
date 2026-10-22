@@ -128,10 +128,13 @@ export function makeSchemaFrame(key, opts) {
       // the input as active, so update() would skip it again and the hold would
       // re-arm on an element that will never blur twice. The input is leaving;
       // a rebuild can no longer eat its caret.
-      a.addEventListener('blur', () => {
+      // a tick later, so the focus move has landed: Tab (or a click) into ANOTHER field of this panel holds again on it
+      // instead of rebuilding the panel under the field just focused (house I198)
+      a.addEventListener('blur', () => setTimeout(() => {
         pendingWhileFocused = false;
+        if (holdUntilBlur()) return;
         if (lastFields) live = { key: shapeKey(lastFields.fields), ...renderDOM(scroll, lastFields.fields, lastFields.edit, ro) };
-      }, { once: true });
+      }, 0), { once: true });
     }
     return true;
   }
@@ -608,6 +611,14 @@ export function resolveDelta(fields, k, payload) {
   if (!f) return null;
   if (f.t === 'vec3') { const v = [...(f.value ?? [0, 0, 0])]; const i = payload.axis ?? 0; v[i] = +v[i] + payload.delta; return v; }
   return +(f.value ?? 0) + payload.delta;
+}
+/** resolveDelta over a multi-selection: each id steps from its OWN value (fieldOf(id), its schema field), not the
+ *  painted (active) thing's, or every selected thing would be set to the active one's value plus the delta. A thing with
+ *  no field of its own falls back to the painted row. Map id → value (null: nothing to step). */
+export function resolveDeltaEach(ids, k, payload, fieldOf, painted) {
+  const out = new Map();
+  for (const id of ids) { const f = fieldOf(id); out.set(id, resolveDelta(f ? [{ ...f, k }] : painted, k, payload)); }
+  return out;
 }
 
 /** Resolve a UV hit (0..1, v measured from the top) against regions. */

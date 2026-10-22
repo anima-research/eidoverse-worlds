@@ -169,5 +169,19 @@ console.log("\nI23. a scrubbed run edits the whole selection, and the world:");
   check("a World run is ONE request, and both fields land", w.ok && H.sent.length === n1 + 1 && t?.exposure === 0.8 && t?.fog === 2, JSON.stringify([w.errors, H.sent.slice(n1), t]));
 }
 
+console.log("\nan edit landing while an undo is in flight (house I162, #260):");
+{
+  H.W.seed({ u1: { model: "chair.glb", pos: [0, 0, 5], yaw: 0 } }); H.sync();
+  await Edits.send({ verb: "set", args: { id: "u1", component: "example.org/note", value: { n: 1 } } }, { what: "note 1" });
+  const target = Edits.stacks().undo.at(-1);
+  // the edit goes out after the undo is sent and before its reply: its act lands on the stack above the one being undone
+  const call = H.W.call; let racer: any = null;
+  H.W.call = (verb: string, args: any, actor: string) => { if (verb === "undo" && !racer) racer = Edits.send({ verb: "set", args: { id: "u1", component: "example.org/note", value: { n: 2 } } }, { what: "note 2" }); return call(verb, args, actor); };
+  const u = await Edits.undo(); await racer; H.W.call = call;
+  const st = Edits.stacks().undo;
+  check("the undo took its own act off the stack", u.ok && !st.includes(target), JSON.stringify({ target, st }));
+  check("…and the racing edit's act is still there to undo", st.length > 0 && st.at(-1) !== target && st.at(-1) > target, JSON.stringify({ target, st }));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

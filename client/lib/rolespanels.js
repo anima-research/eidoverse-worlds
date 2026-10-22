@@ -23,7 +23,7 @@ import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
 import * as R from '../../shared/protocol/roles.js';
 import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';
-import { serverNow } from './serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
+import { serverNow, serverUntil } from './serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
 import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
 import { SIM_ID } from '../../shared/sim.js';
 
@@ -173,7 +173,7 @@ function paintRoles(body) {
     (v === '::remove' ? act('delete', { id: '@world', component: `roles:${who}` }, `${nameOf(who)}: back to the default role`) : act('set', { id: '@world', component: `roles:${who}`, value: { role: v }, ...(wc()[`roles:${who}`] ? { merge: true } : {}) }, `make ${nameOf(who)} ${v}`)).then(() => paintRoles(body)); }; });
   body.querySelectorAll('select.rp-until').forEach((s) => { s.onchange = () => { const v = s.value; if (!v) return; const who = s.dataset.who;
     const { until: _u, ...cur } = wc()[`roles:${who}`] ?? {};
-    act('set', { id: '@world', component: `roles:${who}`, value: v === 'never' ? cur : { ...cur, until: serverNow() + Number(v) } }, `${nameOf(who)}: ${v === 'never' ? 'no end' : `ends ${ends(serverNow() + Number(v))}`}`).then(() => paintRoles(body)); }; });
+    act('set', { id: '@world', component: `roles:${who}`, value: v === 'never' ? cur : { ...cur, until: serverUntil(Number(v)) } }, `${nameOf(who)}: ${v === 'never' ? 'no end' : `ends ${ends(serverNow() + Number(v))}`}`).then(() => paintRoles(body)); }; });
   body.querySelectorAll('button[data-del]').forEach((b) => { b.onclick = () => deleteRole(b.dataset.del, body); });
   body.querySelector('button[data-add]')?.addEventListener('click', () => addRole(body));
 }

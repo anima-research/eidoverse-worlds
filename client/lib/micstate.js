@@ -225,7 +225,8 @@ export async function toggleMic() {
   // voicesfubridge installs __sfuMic at init whatever the server runs, so with the hint below behind `!fn` alone a world
   // without VOICE_TRANSPORT=sfu handed every press to sfuMic, which parks the intent on a pc that never comes and returns
   // off: grey glyph, no word. net.js sets __voiceRelayAbsent from the server's refusal of relay-cred at join.
-  if (!fn || (typeof window !== 'undefined' && window.__voiceRelayAbsent)) {
+  // (only for turning it ON: a mic already live switches off through the hook whatever the relay says)
+  if (!fn || (typeof window !== 'undefined' && window.__voiceRelayAbsent && !micOn())) {
     // no bridge yet. Two very different reasons look identical from here: the
     // relay is still connecting, or this world has none (staging, 09-04 — the
     // glyph stayed off with no prompt and no word). net.js flags the second.

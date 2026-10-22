@@ -11,7 +11,9 @@
 // an orbit moves it and then it turns; a rotating motion on the same node is refused at the authority (one driver per node).
 // The authority's geometry (placing, colliders, what stands on what) uses the logged transform, never the turned one.
 import { THREE, camera } from './core.js';
-import { bus } from './base.js';
+import { bus, CONFIG } from './base.js';
+import { identityOf } from './net.js';
+import { dec } from '../../shared/protocol/names.js';
 import { entities, bags, findPart } from './world.js';
 import { remotes } from './remotes.js';
 import { evalLookAt } from '../../shared/lookat.js';
@@ -27,12 +29,13 @@ function targetOf(la, from) {
   if (T === '@nearest' || /^u-/.test(T)) {
     let best = null, bd = range;
     const consider = (p) => { const d = Math.hypot(p[0] - from[0], p[1] - from[1], p[2] - from[2]); if (d <= bd) { bd = d; best = p; } };
-    if (T === '@nearest') consider(camera.getWorldPosition(_t).toArray());
-    for (const [rid, r] of remotes) { if (!r.avatar?.root) continue; if (T !== '@nearest' && rid !== T) continue;
+    // remotes are keyed by session name, a target names an identity (u-…): compare through identityOf; my own is my eyes
+    if (T === '@nearest' || T === identityOf(CONFIG.name)) consider(camera.getWorldPosition(_t).toArray());
+    for (const [rid, r] of remotes) { if (!r.avatar?.root) continue; if (T !== '@nearest' && identityOf(rid) !== T) continue;
       const p = r.avatar.root.position; consider([p.x, p.y + 1.5, p.z]); }
     return best;
   }
-  const o = entities.get(T); if (!o) return null;   // a deleted target: it rests ("looks at nothing")
+  const o = entities.get(dec(T) ?? T); if (!o) return null;   // the component names the protocol id; the scene keys decoded ones   // a deleted target: it rests ("looks at nothing")
   const off = Array.isArray(la.offset) && la.offset.length === 3 ? la.offset : [0, 0, 0];
   return o.localToWorld(_t.set(off[0], off[1], off[2])).toArray();
 }

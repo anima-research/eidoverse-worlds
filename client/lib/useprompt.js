@@ -32,7 +32,7 @@ export function usable() {
   if (hooks.camera?.getWorldDirection) { hooks.camera.getWorldDirection(_d); fx = _d.x; fz = _d.z; }
   let best = null, bestS = Infinity;
   for (const [id, bag] of bags()) {
-    const rx = bag.reactions; if (!isBag(rx) || !Object.keys(rx).length) continue;
+    const rx = bag.reactions; if ((!isBag(rx) || !Object.keys(rx).length) && !isBag(bag.openable)) continue;   // an openable alone offers open (actionsOf)
     const obj = entities.get(id); if (!obj?.getWorldPosition || outOfMyView(obj)) continue;   // nothing I hid is offered
     obj.getWorldPosition(_v);
     const dx = _v.x - me.x, dz = _v.z - me.z, d = Math.hypot(dx, dz);

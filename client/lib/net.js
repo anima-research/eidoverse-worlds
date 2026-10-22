@@ -2,7 +2,7 @@
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
 import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
-import { avatarMounts } from './world.js';
+import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -118,6 +118,9 @@ export const identities = new Map();
 /** A presence message names its person by IDENTITY too (security pass 3, H2): the server routes it to that identity, and
  *  a name someone else wears never catches it. `key` is the field the server reads (targetActor / toActor). */
 const actorFor = (name, key) => { const a = name ? identities.get(name) : null; return a ? { [key]: a } : {}; };
+// A message about someone's BODY or to them (puppet, bodydrag, typing) goes only to an identity: sent without one the
+// server routes it by name (messages.ts presenceTarget), and a name is whatever someone else chose to wear (house I197).
+const hasActor = (name) => !!(name && identities.get(name));
 /** Display ids of people here without an account (the server marks them on arrive/present): the 'guest' badge. */
 export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
@@ -143,9 +146,14 @@ export function sayRefusalWords(r, text) {
 function sendSay(args) {
   return sendRequest('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
 }
+/** extra: to (a whisper); spoken/utt/t0 (the words were voice-performed: the authority logs the trio, display only);
+ *  live: true for a transcript of speech (stt.js), which is never queued for a reconnect: sent later it would publish
+ *  after the mic went off, with nothing to check it again, so offline it is dropped. */
 export function say(text, extra = {}) {
-  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
+  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}),
+    ...(extra.spoken === true && Number.isSafeInteger(extra.utt) ? { spoken: true, utt: extra.utt, ...(Number.isFinite(extra.t0) ? { t0: extra.t0 } : {}) } : {}) };
   if (net.joined && net.ws?.readyState === 1) return sendSay(args);
+  if (extra.live) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world' } });
   // removed, taken over, or refused at the authority: nothing will reconnect, so nothing is queued (it would wait forever)
   if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
   logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
@@ -170,7 +178,7 @@ export function sendAnim(data) {
  *  the bones sent, over what they already hold (a null bone releases it);
  *  without it the pose replaces theirs whole. */
 export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'puppet', target, ...actorFor(target, 'targetActor'), pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
@@ -248,7 +256,7 @@ export function sendVoiceConsent(recv) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'voice-consent', recv: !!recv }));
 }
 export function sendTyping(to, state) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
+  if (net.joined && net.ws?.readyState === 1 && (!to || hasActor(to))) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
 }
 
 /** Transient, never-logged relay — used while a build drag is in flight so
@@ -346,7 +354,7 @@ let lastPoseSent = 0;
 /** Targeted ragdoll-drag traffic (grab / sim stream / release). Presence
  *  semantics: fire-and-forget, never logged. The target's client decides. */
 export function sendBodyDrag(target, payload) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'bodydrag', target, ...actorFor(target, 'targetActor'), ...payload }));
   }
 }

@@ -97,6 +97,7 @@ export function send(req, opts = {}) {
   const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
   return p;
 }
+const dropAct = (stack, act) => { const i = stack.lastIndexOf(act); if (i >= 0) stack.splice(i, 1); };
 const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
 async function sendNow(req, { what = req.verb, revert = null, record = true } = {}) {
   bus.emit('edit-sending', { req, what });
@@ -163,7 +164,8 @@ async function undo1() {
   const act = undoStack.at(-1);
   if (act === undefined) { flashHint('nothing of yours to undo here'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ verb: 'undo', args: { act } }, { what: 'undo', record: false });
-  if (r.ok) { undoStack.pop(); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
+  // by value, not the top: an edit sent while this undo was in flight may have pushed its act above this one
+  if (r.ok) { dropAct(undoStack, act); redoStack.push(r.act); flashHint(`undid your act ${act}${r.notes?.some((n) => n.skipped) ? ' (some of it had been changed since: kept theirs)' : ''}`); }
   // a refusal that can never change (already undone, or everything changed since) drops it, so the next Ctrl+Z reaches
   // the act before it; a lock or a rate limit leaves it for another try
   else if (['nothing', 'conflict', 'physical', 'founding'].includes(r.refused?.code) && undoStack.at(-1) === act) undoStack.pop();
@@ -174,7 +176,7 @@ async function redo1() {
   const act = redoStack.at(-1);
   if (act === undefined) { flashHint('nothing to redo'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ verb: 'undo', args: { act } }, { what: 'redo', record: false });
-  if (r.ok) { redoStack.pop(); undoStack.push(r.act); flashHint('redone'); }
+  if (r.ok) { dropAct(redoStack, act); undoStack.push(r.act); flashHint('redone'); }
   else if (['nothing', 'conflict'].includes(r.refused?.code) && redoStack.at(-1) === act) redoStack.pop();
   return r;
 }
@@ -226,13 +228,13 @@ globalThis.__editWrites = () => ({ undo: [...undoStack], redo: [...redoStack], a
 /** Set home here (R, 10-10): where each selected thing goes back to when a reset sends it home: where it stands now. */
 export function setHomeHere(ids) {
   const ops = ids.map((id) => { const c = compsOf(id); if (!c) return null; const t = c.transform ?? {};
-    return OP.set(idIn(id), 'home', { pos: (t.pos ?? [0, 0, 0]).slice(), q: (t.q ?? [0, 0, 0, 1]).slice(), ...(c.parent?.to ? { parent: { to: c.parent.to } } : {}) }); }).filter(Boolean);
+    return OP.set(id, 'home', { pos: (t.pos ?? [0, 0, 0]).slice(), q: (t.q ?? [0, 0, 0, 1]).slice(), ...(c.parent?.to ? { parent: { to: c.parent.to } } : {}) }); }).filter(Boolean);
   return ops.length ? sendOps(ops, { what: ids.length > 1 ? `set ${ids.length} homes here` : `set ${ids[0]}'s home here` }) : Promise.resolve({ ok: true, noop: true });
 }
 /** Make a reset button: the button's reactions gain 'reset', sending the targets home (each gets a home where it stands, by the authority). */
 export function makeResetButton(button, targets) {
   const c = compsOf(button) ?? {}; const reactions = { ...(c.reactions ?? {}), reset: { kind: 'reset', targets: targets.map(idIn) } };
-  return sendOps([OP.set(idIn(button), 'reactions', reactions)], { what: `make ${button} a reset button for ${targets.length} thing${targets.length > 1 ? 's' : ''}` });
+  return sendOps([OP.set(button, 'reactions', reactions)], { what: `make ${button} a reset button for ${targets.length} thing${targets.length > 1 ? 's' : ''}` });
 }
 /** One component written whole (the grip editor's grabbable), with expect, undoable. */
-export function setComp(id, comp, value, what) { return sendOps([OP.set(idIn(id), comp, value)], { what }); }
+export function setComp(id, comp, value, what) { return sendOps([OP.set(id, comp, value)], { what }); }

@@ -78,5 +78,15 @@ check("no relay: …returns the honest current state (off)", absent === false);
 check("no relay: …and SAYS so — the no-voice-relay hint, not silence", hints.some((h) => /no voice relay/.test(h)), JSON.stringify(hints));
 delete window.__voiceRelayAbsent;
 
+// ── 5 (house I111, #260): the no-relay guard is for turning the mic ON. A mic that is live when the flag lands (the relay
+// refused after it went live) must still switch OFF through the hook, or the guard pins it on.
+m.gateFor({ synthetic: true }); m.setMicLive(true); sfuOn = true;
+check("precondition: the mic is live", m.micOn() === true);
+window.__voiceRelayAbsent = true;
+const callsLive = sfuCalls;
+const off = await m.toggleMic();
+check("no relay, mic live: the press goes to the hook and turns it off", sfuCalls === callsLive + 1 && off === false && m.micOn() === false, `calls ${sfuCalls - callsLive}, returned ${off}, micOn ${m.micOn()}`);
+delete window.__voiceRelayAbsent;
+
 console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);
