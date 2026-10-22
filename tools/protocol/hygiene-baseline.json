@@ -141,7 +141,7 @@
   "raw-symlink": 2
  },
  "tools/protocol/reachgate-check.ts": {
-  "bare-wait": 11
+  "bare-wait": 2
  },
  "tools/protocol/refusedjoin-check.ts": {
   "bare-wait": 11

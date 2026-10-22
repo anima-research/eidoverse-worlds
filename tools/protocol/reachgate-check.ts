@@ -18,6 +18,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratch } from "./common.ts";
+import { tryUntil, pause } from "./wait.ts";
 const root = scratch("reachgate");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
 process.env.JOIN_TOKEN ??= "test-door";
@@ -320,15 +321,15 @@ let skipped = null; const SKIP = Symbol("skip");
   process.on("exit", () => { try { proc.kill(); } catch {} });
   let ag = null, vs = null;
   try {
-    let up = false; for (let i = 0; i < 80 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok; } catch {} }
+    const up = !!(await tryUntil("the server answers /version", async () => (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 }));
     ok(up, "(AG setup) the server is up");
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
     ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
     await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
     ws.send(JSON.stringify({ type: "join", world: "yard", id: "Vic", avatar: "", replica: true }));
-    for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+    await tryUntil("Vic's join is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
     let rn = 0; const vreq = async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));
-      for (let i = 0; i < 80; i++) { const r = msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return { ok: false, timeout: true }; };
+      const r = await tryUntil(`the reply to Vic's ${verb}`, () => msgs.find((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return r ? r.reply : { ok: false, timeout: true }; };
     vs = ws; if (!msgs.some((m) => m.type === "snapshot")) console.log("  (debug) Vic join:", JSON.stringify(msgs).slice(0, 400));
     const vicPose = () => ws.send(JSON.stringify({ type: "pose", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle" } }));
     vicPose();
@@ -338,8 +339,8 @@ let skipped = null; const SKIP = Symbol("skip");
     try { ({ WorldAgent } = await import("../../mcpl/agent.ts")); ({ HANDLERS } = await import("../../mcpl/tools.ts")); }
     catch (e) { if (!/Cannot find module/.test(String(e))) throw e; skipped = String(e).replace(/^.*Cannot find module /, "").slice(0, 120); throw SKIP; }
     ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-    await ag.connect(); for (let i = 0; i < 60 && !ag.cut; i++) await sleep(50);
-    for (let i = 0; i < 40 && !ag.actorIds.get("Vic"); i++) { vicPose(); await sleep(50); }
+    await ag.connect(); await tryUntil("the agent has its cut", () => ag.cut, { ms: 3000, step: 50 });
+    await tryUntil("the agent knows Vic's identity", () => ag.actorIds.get("Vic") || (vicPose(), false), { ms: 2000, step: 50 });
     ok(!!ag.actorIds.get("Vic"), "(AG setup) the agent knows Vic's identity");
     const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
     const T = (r) => r?.content?.[0]?.text ?? "";
@@ -347,7 +348,7 @@ let skipped = null; const SKIP = Symbol("skip");
     // AG1 (recut A2: Vic sets her switch to refuse; touch for the agent alone is opened in AG2 by a per-person allow)
     const sw = await vreq("consent", { switch: "refuse" }); ok(sw?.ok, "(AG1 setup) Vic sets her body to refuse", sw);
     let k = msgs.length;
-    const r1 = await call("reach", { who: "Vic", point: "chest_front" }); await sleep(600);
+    const r1 = await call("reach", { who: "Vic", point: "chest_front" }); await pause("a relayed hand on Vic's chest has had its time to arrive (none must)", 600);
     ok(!seenReach(k, "chest_front"), "AG1 Vic receives no frame carrying the agent's hand on her chest_front", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-3));
     ok(/not shown/.test(T(r1)) && /intimate/.test(T(r1)) && !ag.reaches.has("rightHand"), "AG1 the reach reply says the hand was not shown and why, and the agent stops streaming it", { text: T(r1), reaches: [...ag.reaches.keys()] });
     // AG2
@@ -356,13 +357,13 @@ let skipped = null; const SKIP = Symbol("skip");
     const op = await vreq("consent", { allow: hep, class: "touch" });
     ok(op?.ok, "(AG2 setup) Vic opens touch to the agent alone (a per-person allow; intimate stays refused)", { op, hep });
     k = msgs.length;
-    const r2 = await call("reach", { who: "Vic", point: "shoulder_l" }); await sleep(600);
+    const r2 = await call("reach", { who: "Vic", point: "shoulder_l" }); await tryUntil("Vic receives the agent's hand on her shoulder", () => seenReach(k, "shoulder_l"), { ms: 3000 });
     ok(seenReach(k, "shoulder_l"), "AG2 with touch open to it, the agent's hand on Vic's shoulder relays", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-2));
     ok(!/not shown/.test(T(r2)) && ag.reaches.has("rightHand"), "AG2 …and the reply claims no refusal", T(r2));
     // AG3 (r2 holes F9): a refusal for one limb withdraws that limb, not a consented one on the same body
-    await sleep(REACH_NOTE_MS + 500);   // the relay says a (reacher, target, class) refusal once per REACH_NOTE_MS: wait out AG1's
+    await pause("the relay says a (reacher, target, class) refusal once per REACH_NOTE_MS: wait out AG1's", REACH_NOTE_MS + 500);
     k = msgs.length;
-    const r3 = await call("reach", { limb: "leftHand", who: "Vic", point: "chest_front" }); await sleep(600);
+    const r3 = await call("reach", { limb: "leftHand", who: "Vic", point: "chest_front" }); await tryUntil("the left hand is withdrawn and the right still relays", () => !ag.reaches.has("leftHand") && seenReach(k, "shoulder_l"), { ms: 3000 });
     ok(/not shown/.test(T(r3)) && !ag.reaches.has("leftHand"), "(AG3 setup) the left hand on Vic's chest_front is refused and withdrawn", T(r3));
     ok(ag.reaches.has("rightHand") && seenReach(k, "shoulder_l"), "AG3 …and the right hand she consented to stays on her shoulder", { reaches: [...ag.reaches.keys()], text: T(r3) });
     // AG4: within REACH_NOTE_MS of that intimate refusal, a TOUCH-class point in Vic's own frame is not refused by memory of it
