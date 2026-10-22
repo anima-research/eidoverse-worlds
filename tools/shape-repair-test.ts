@@ -323,6 +323,11 @@ await tryRow('RP18', () => {
   const r = (amplitude: any) => repairMotion({ type: 'pendulum', amplitude, period: 2 });
   check('RP19 a numeric-string amplitude is kept as amp; a non-number one goes, as the old reader read none', r('0.4').amp === 0.4 && r(0.3).amp === 0.3 && r('wide').amp === undefined && r(null).amp === undefined && !('amplitude' in r('0.4')) && repairMotion({ amp: 0.2, amplitude: '0.9' }).amp === 0.2,
     [r('0.4'), r('wide'), r(null)]); }
+// RP19b: an amp of null reads as no amp, as the old reader read it (m.amp ?? m.amplitude), so the amplitude it fell back
+// to is the one kept
+{ const { repairMotion } = await import('../shared/protocol/shaperepair.js');
+  const m = repairMotion({ type: 'pendulum', amp: null, amplitude: '0.4', period: 2 });
+  check('RP19b an amp of null with a readable amplitude takes that amplitude as amp', m.amp === 0.4 && !('amplitude' in m), m); }
 // RP20 (review of #260): a thing with one purged component still has its other components repaired
 { const { shapeRepairOps } = await import('../shared/protocol/shaperepair.js'); const { PURGED } = await import('../shared/protocol/fold.js');
   const st = { entities: { bob: { c: { label: PURGED, motion: { type: 'pendulum', amplitude: 0.3, period: 2 } } } } };

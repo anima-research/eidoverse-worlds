@@ -49,8 +49,9 @@ const isMotionKey = (k) => k === "motion" || k.startsWith("motion:");
 export function repairMotion(m) {
   if (!bag(m)) return m;
   let out = m; const edit = () => (out === m ? (out = { ...m }) : out);
-  // amp as the old reader read it, Number(m.amp ?? m.amplitude): a numeric string was that number
-  if ("amplitude" in out) { edit(); const v = out.amplitude == null ? NaN : Number(out.amplitude); if (out.amp === undefined && Number.isFinite(v)) out.amp = v; delete out.amplitude; }
+  // amp as the old reader read it, Number(m.amp ?? m.amplitude): a numeric string was that number, and an amp of null was
+  // no amp, so the amplitude was read
+  if ("amplitude" in out) { edit(); const v = out.amplitude == null ? NaN : Number(out.amplitude); if (out.amp == null && Number.isFinite(v)) out.amp = v; delete out.amplitude; }
   if (typeof out.axis === "string" && AXIS_VECTORS[out.axis.toLowerCase()]) { edit(); out.axis = AXIS_VECTORS[out.axis.toLowerCase()].slice(); }
   if (out.type === "pendulum") {
     if (out.period === undefined) { edit(); out.period = OLD_READINGS.pendulumPeriod; }
