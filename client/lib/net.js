@@ -118,6 +118,9 @@ export const identities = new Map();
 /** A presence message names its person by IDENTITY too (security pass 3, H2): the server routes it to that identity, and
  *  a name someone else wears never catches it. `key` is the field the server reads (targetActor / toActor). */
 const actorFor = (name, key) => { const a = name ? identities.get(name) : null; return a ? { [key]: a } : {}; };
+// A message about someone's BODY or to them (puppet, bodydrag, typing) goes only to an identity: sent without one the
+// server routes it by name (messages.ts presenceTarget), and a name is whatever someone else chose to wear (house I197).
+const hasActor = (name) => !!(name && identities.get(name));
 /** Display ids of people here without an account (the server marks them on arrive/present): the 'guest' badge. */
 export const guests = new Set();
 /** Who is muted here now, by identity → until (the server's mod-state; research roles S6: the muted glyph). */
@@ -175,7 +178,7 @@ export function sendAnim(data) {
  *  the bones sent, over what they already hold (a null bone releases it);
  *  without it the pose replaces theirs whole. */
 export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'puppet', target, ...actorFor(target, 'targetActor'), pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
@@ -253,7 +256,7 @@ export function sendVoiceConsent(recv) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'voice-consent', recv: !!recv }));
 }
 export function sendTyping(to, state) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
+  if (net.joined && net.ws?.readyState === 1 && (!to || hasActor(to))) net.ws.send(JSON.stringify({ type: 'typing', to, ...actorFor(to, 'toActor'), ...(state ? { state } : {}) }));
 }
 
 /** Transient, never-logged relay — used while a build drag is in flight so
@@ -351,7 +354,7 @@ let lastPoseSent = 0;
 /** Targeted ragdoll-drag traffic (grab / sim stream / release). Presence
  *  semantics: fire-and-forget, never logged. The target's client decides. */
 export function sendBodyDrag(target, payload) {
-  if (net.joined && net.ws?.readyState === 1) {
+  if (net.joined && net.ws?.readyState === 1 && hasActor(target)) {
     net.ws.send(JSON.stringify({ type: 'bodydrag', target, ...actorFor(target, 'targetActor'), ...payload }));
   }
 }
