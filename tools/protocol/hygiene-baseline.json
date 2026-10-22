@@ -17,9 +17,6 @@
  "tools/buildcheck-route-test.ts": {
   "bare-wait": 3
  },
- "tools/capsule-recovery-test.mjs": {
-  "bare-wait": 11
- },
  "tools/colour-picker-bench.ts": {
   "bare-wait": 3
  },
