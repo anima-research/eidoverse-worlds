@@ -12,6 +12,9 @@
 //   T8  a short write is looped to the end, and a write that takes nothing throws
 //   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too,
 //       a founded world's own directory included (and nothing is synced on win32, where the server can't sync a directory)
+//   T8d the keys file a mint writes is synced before it's renamed into place
+//   T8e …and the directory that holds its name is synced after, as are directories made for it (none on win32, where the
+//       server can't sync a directory)
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
@@ -33,6 +36,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "// A write: build ops against the folded state", "async function __m() { await 0; }\n// A write: build ops against the folded state", ["T7"]],
   ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
   ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);   // the world's", "  fs.mkdirSync(dir, { recursive: true });   // the world's", ["T8c"]],
+  ["a replaced file renamed in unsynced", "server/durable.ts", "writeAll(fd, Buffer.from(data, \"utf8\")); fs.fsyncSync(fd); }", "writeAll(fd, Buffer.from(data, \"utf8\")); }", ["T8d"]],
+  ["the keys file's directory made by plain mkdir", "server/custody.ts", "    mkdirDurable(path.dirname(file));   // the keys file's", "    fs.mkdirSync(path.dirname(file), { recursive: true });   // the keys file's", ["T8e"]],
+  ["a replaced file's new name left unsynced", "server/durable.ts", "  syncDir(path.dirname(file));   // the new name, in its directory", "", ["T8e"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
@@ -40,9 +46,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
-// T8c checks directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only it
-// would turn red have nothing to catch, so their mutants are skipped
-const DIR_SYNC_ROWS = new Set(["T8c"]);
+// T8c and T8e check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
+// they would turn red have nothing to catch, so their mutants are skipped
+const DIR_SYNC_ROWS = new Set(["T8c", "T8e"]);
 if (process.argv.includes("--mutants")) {
   const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0, ran = 0;
   for (const [name, file, find, repl, rows] of MUTANTS) {
@@ -248,6 +254,25 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const missing = want.filter((d) => !synced.includes(d));
   ok(!missing.length && (process.platform !== "win32" || !synced.length) && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
     "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made, a founded world's directory too (none on win32)", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
+
+// ---------------- T8d, T8e ----------------
+// a key a mint hands out must survive a crash, or the genesis it signed (synced) names a key no one holds: the keys file is
+// written to a temp file and synced, renamed into place, and the directory holding its name synced after the rename
+{ const { custodyAt } = await import("../../server/custody.ts");
+  const file = path.join(root, "t8d", "keys", "custody.json"), dir = path.dirname(file);
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync }; const fdPath = new Map(), events = [];
+  nodefs.openSync = function (p, ...r) { const fd = o.openSync.call(nodefs, p, ...r); fdPath.set(fd, path.resolve(String(p))); return fd; };
+  nodefs.fsyncSync = function (fd) { events.push(["fsync", fdPath.get(fd)]); return o.fsyncSync.call(nodefs, fd); };
+  nodefs.renameSync = function (a, b) { events.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.renameSync.call(nodefs, a, b); };
+  let key; try { key = custodyAt(file).sequencer(); } finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; nodefs.renameSync = o.renameSync; }
+  const into = events.findIndex((e) => e[0] === "rename" && e[2] === file), tmp = into >= 0 ? events[into][1] : null;
+  const synced = tmp !== null && events.slice(0, into).some((e) => e[0] === "fsync" && e[1] === tmp);
+  const dirSynced = into >= 0 && events.slice(into + 1).some((e) => e[0] === "fsync" && e[1] === dir)
+    // the keys directory and its parent were made for this file: each is named in the directory above it
+    && [path.dirname(dir), path.dirname(path.dirname(dir))].every((d) => events.some((e) => e[0] === "fsync" && e[1] === d));
+  const onDisk = JSON.parse(fs.readFileSync(file, "utf8")).sequencer?.pub === key;
+  ok(onDisk && synced, "T8d the keys file a mint writes is synced before it's renamed into place", { key, into, tmp, events: events.map((e) => e.map((x) => typeof x === "string" ? path.relative(root, x) : x)) });
+  ok(onDisk && (process.platform === "win32" ? !dirSynced : dirSynced), "T8e …and the directory holding its name is synced after the rename, as are the directories made for it (none on win32)", { dirSynced, events: events.map((e) => e.map((x) => typeof x === "string" ? path.relative(root, x) : x)) }); }
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");

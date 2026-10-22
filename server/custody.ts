@@ -2,7 +2,7 @@
 // One sequencer key per keys file, and one key per identity that founds a world through this server, so two worlds one
 // person founds here carry the same keys and only genesis's nonce tells them apart. Keys never enter a log; the file
 // is written 0600. Same layout and key encoding as the lab's custody (the protocol lab's authority.js custodyOf).
-import { appendDurable, readLogBytes } from "./durable.ts";
+import { appendDurable, readLogBytes, replaceDurable, mkdirDurable } from "./durable.ts";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -65,7 +65,8 @@ function openCustody(file: string) {
   // replace one already on disk
   const sync = () => { if (!fs.existsSync(file)) return; const d = JSON.parse(fs.readFileSync(file, "utf8")) as File;
     c.sequencer ??= d.sequencer; c.operator ??= d.operator; c.holders = { ...(d.holders ?? {}), ...c.holders }; };
-  const save = () => { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(c, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600); };
+  // durably: a key handed out must survive a crash, or the genesis it signed (already synced) names a key no one holds
+  const save = () => replaceDurable(file, JSON.stringify(c, null, 1), 0o600);
   // A mint reads the file, adds a key and writes the whole file back, so two processes minting at once (the server and a
   // found / translate tool) would each write back what it read and the later rename would drop the other's key. The read,
   // the mint and the write therefore run holding `<file>.lock` (take above): a process waits for it, and removes one whose
@@ -73,7 +74,7 @@ function openCustody(file: string) {
   const lock = `${file}.lock`;
   const minting = (missing: () => boolean, mint: () => void) => {
     if (!missing()) return;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    mkdirDurable(path.dirname(file));   // the keys file's directory is named in its parent, which a crash can lose too
     const wait = new Int32Array(new SharedArrayBuffer(4)); const until = Date.now() + LOCK_WAIT_MS;
     while (!take(lock)) {
       if (clearIfGone(lock, lock)) continue;

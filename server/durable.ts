@@ -60,6 +60,16 @@ export function mkdirDurable(dir: string) {
   for (let d = path.dirname(path.resolve(dir)); ; d = path.dirname(d)) { syncDir(d); if (d === top || d === path.dirname(d)) break; }
 }
 
+/** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode`, set before the data goes in)
+ *  and synced, renamed over `file`, and the directory that holds the new name synced. */
+export function replaceDurable(file: string, data: string, mode = 0o644) {
+  mkdirDurable(path.dirname(file));
+  const tmp = `${file}.${process.pid}.tmp`;
+  const fd = fs.openSync(tmp, "w", mode);
+  try { fs.fchmodSync(fd, mode); writeAll(fd, Buffer.from(data, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, file);
+  syncDir(path.dirname(file));   // the new name, in its directory
+}
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
 export function putBlobFile(file: string, s: string, h: string) {
   if (fs.existsSync(file)) { try { if (`sha256:${sha256(fs.readFileSync(file, "utf8"))}` === h) return; } catch {} }
