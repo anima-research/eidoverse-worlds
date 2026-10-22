@@ -16,7 +16,7 @@
 //   M   deleting two selected things is ONE batch act
 //   S   Save as blueprint is the authority's publish; its tile places a copy (create {from: <hash>})
 // The writes go through the real edit code (build.js, gizmo.js, inspect.js, editpanels.js); a few gestures are driven
-// at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns), as editpanels-bench does.
+// at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns).
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -115,7 +115,7 @@ try {
   await sleep(300);
   const under = await evalJson(`(() => { const e = document.elementFromPoint(760, 470); return e ? e.tagName + '#' + e.id + '.' + e.className : null; })()`);
   // the click the canvas listens for (build.js commitSpawn); dispatched on the canvas itself, since headless leaves the
-  // boot splash and frames over the viewport (editpanels-bench drives its gestures at their seams the same way)
+  // boot splash and frames over the viewport
   await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 760, clientY: 470 })), true))`);
   check("P1 a click places it: ONE create act, stamped with me", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create"),
     { acts: myActs().slice(n0).map((a) => a.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), errs: await evalJson(`__errs`), ghost: await evalJson(`import('/lib/build.js').then((m) => m.hasGhost())`), under });
