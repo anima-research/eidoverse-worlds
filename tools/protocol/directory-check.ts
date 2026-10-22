@@ -115,8 +115,11 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const other: any = openLive(path.join(tmp, "worlds", "k5"), "k5", opts("k5-other-custody.json"));
   const n0 = other.entries.length; let r: any; try { r = request(other, me, "look", {}); } catch (x: any) { r = { threw: String(x?.message ?? x) }; }
   ok(steps.every((x) => x.ok) && r?.ok && other.entries.length === n0, "K4d a read on a world this server can't sign for works with a thrown thing's rest due, and appends nothing", { steps: steps.map((x) => x.ok || x.refused?.code), r: r?.ok ?? r?.refused ?? r, appended: other.entries.length - n0 });
+  // the hold the key-holding server had when it stopped, as the second server's presence would hold it (each server keeps
+  // its own presence, so a fresh one starts empty): the cup in Kit's hand, its lift on the log, and Kit gone
+  other.presence.holds.cup = { ...w.presence.holds.cup }; const heldBefore = other.presence.holds.cup?.by === me;
   const { settleOrphans } = await import("../../shared/protocol/authority.js"); let so: any; try { so = settleOrphans(other, []); } catch (x: any) { so = { threw: String(x?.refused?.code ?? x?.message ?? x) }; }
-  ok(!so?.threw && other.entries.length === n0 && !other.presence.holds?.cup, "K4e there, the settlement of a hold whose holder left ends the hold and logs nothing, rather than throwing", { so, appended: other.entries.length - n0, hold: !!other.presence.holds?.cup });
+  ok(heldBefore && !so?.threw && other.entries.length === n0 && !other.presence.holds?.cup && (so ?? []).some((x: any) => x.holder === me && x.left === false), "K4e there, the settlement of a hold whose holder left ends the hold and logs nothing, rather than throwing", { heldBefore, so, appended: other.entries.length - n0, hold: !!other.presence.holds?.cup });
   // the control: the server that holds the key logs the rest at its next read
   const n1 = w.entries.length; const r1 = request(w, me, "look", {});
   ok(r1.ok && w.entries.length > n1, "K4d …the rest was due: the server that holds the key logs it at its next read", { r1: r1.ok ?? r1.refused, logged: w.entries.slice(n1).map((e: any) => e?.verb) }); }
