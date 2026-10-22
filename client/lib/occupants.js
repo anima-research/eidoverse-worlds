@@ -59,7 +59,7 @@ export function occupyCorrectionFor(occ, sock) {
   const g = seatGate({
     sock, verdict,
     pose: typeof sock?.pose === 'string' ? sock.pose : 'sitchair',   // sock: the seat's station
-    currentSlot: occ.av.currentSlot,
+    currentSlot: occ.av.playingSlot?.() ?? occ.av.currentSlot,   // a seat blend clears currentSlot (I2)
     loadedClipSha256: vrmaShaLoaded(SEAT_CLIP_FILE),
     currentClipSha256: verdict?.clipSha256,
   });
