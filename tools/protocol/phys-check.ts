@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
-import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
+import { fold, readLog, digest, PURGED } from "../../shared/protocol/fold.js";
 import { simFold, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT, yawQ, qrot } from "../../shared/protocol/authority/math.js";
@@ -600,19 +600,58 @@ function playground(name) {
   const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
   const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
   let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
-  ok(rest > 0 && L[rest].verb === "set" && fold(P).status === "ok" && !err && v.checks.disagree.length === 0 && rs?.some((r: any) => r.seq === rest),
-    "U7c a purged rest (its launch kept) reads as unknown on replay: no crash, no disagreement, and restsOf still lists it", { rest, verb: L[rest]?.verb, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), rests: rs?.length }); }
+  ok(rest > 0 && L[rest].verb === "set" && fold(P).status === "ok" && !err && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)) && v.st.entities.ball.c.transform === PURGED && rs?.some((r: any) => r.seq === rest),
+    "U7c a purged rest (its launch kept) reads as unknown on replay: no crash, no disagreement, the replayed state the strict fold's (the rest's transform PURGED), and restsOf still lists it", { rest, verb: L[rest]?.verb, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), same: v && digest(v.st) === digest(fold(P)), rests: rs?.length }); }
 // review of #260: a purged launch leaves the rest of its epoch unknown to a replay: the flights after it, even once its own
 // rest is logged, fly in an engine that skipped one body, so their digests and rests are applied, not judged
 { const W = playground("purge-launch-then-more");
-  for (const id of ["ball", "crate-1", "ball"]) { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
-    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); }
+  const fly = (id: string) => { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); };
+  for (const id of ["ball", "crate-1", "ball"]) fly(id);
+  // then a cut (a new tickMs starts a new epoch), and a fourth flight in it
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } }); const cut = log(W).length - 1; fly("crate-1");
   const L = log(W); const last = L[L.length - 1]; const launches = L.map((e: any, i: number) => (e?.kind === "sim" && e.verb === "launch" ? i : -1)).filter((i: number) => i >= 0);
   const base = simFold(L, last.ts + 1000); const ln = launches[0];
   const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
-  const v = simFold(P, last.ts + 1000);
-  ok(launches.length === 3 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0,
-    "U7d a purged first launch, with two more flights after its rest: the replay calls none of the later digests or rests a disagreement", { launches, base: base.checks.disagree.length, agree: base.checks.agree, disagree: v.checks.disagree.slice(0, 3) }); }
+  const v = simFold(P, last.ts + 1000); const after = L.filter((e: any, i: number) => i > cut && e?.kind === "sim" && e.verb === "digest").length;
+  ok(launches.length === 4 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && after > 0 && v.checks.agree === after && digest(v.st) === digest(fold(P)),
+    "U7d a purged first launch, with two more flights after its rest: the replay calls none of that epoch's digests or rests a disagreement, judges the next epoch's again, and its state is the strict fold's", { launches, base: base.checks.disagree.length, agree: v.checks.agree, after, disagree: v.checks.disagree.slice(0, 3), same: digest(v.st) === digest(fold(P)) }); }
+// review of #260: a rest whose transform a purge took leaves the rest of its epoch unknown too: the fold reads that body as
+// gone, where the engine that wrote the log kept it, so a later flight's digests aren't judged against it
+{ const W = playground("purge-rest-then-more");
+  for (const id of ["ball", "crate-1"]) { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); }
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch" && L[e.cause].body?.id === "ball");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  ok(rest > 0 && L[rest].verb === "set" && base.checks.disagree.length === 0 && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)),
+    "U7e a purged rest, then another flight: the replay calls none of the later digests a disagreement, and its state is the strict fold's", { rest, base: base.checks.disagree.length, disagree: v.checks.disagree.slice(0, 3) }); }
+// review of #260: a rest batch whose transform op a purge names by index replays as unknown, as the strict fold reads it
+{ const W = fresh("purge-rest-op"); call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  call(W, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 1] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { on: "table-1" } });
+  call(W, "rowan", "move", { to: [0, 0, 0.3] }); call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, -2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && e.verb === "batch" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch");
+  const k = rest >= 0 ? L[rest].body.ops.findIndex((o: any) => o.comp === "transform") : -1;
+  const P = rest < 0 || k < 0 ? null : copyOf([...L.map((e: any, i: number) => { if (i !== rest) return e; const ops = e.body.ops.map((o: any, j: number) => { if (j !== k) return o; const { value: _v, salt: _s, ...rest2 } = o; return { ...rest2, commit: "0".repeat(64) }; }); return { ...e, body: { ...e.body, ops } }; }),
+    { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest, op: k }] }, ts: last.ts + 100 }]);
+  let v: any = null, err = null; try { v = P && simFold(P, last.ts + 1000); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
+  ok(!!P && fold(P).status === "ok" && fold(P).entities.ball.c.transform === PURGED && !err && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)),
+    "U7f a rest batch whose transform op a purge names by index reads as unknown on replay: no crash, no disagreement, the strict fold's state", { rest, k, err, status: P && fold(P).status, disagree: v?.checks?.disagree?.slice(0, 2) }); }
+// review of #260: a purged lift hides what is held past an epoch's cut: the next epoch's digests aren't judged either
+{ const W = playground("purge-lift-across-cut");
+  call(W, "rowan", "grab", { id: "ball" }); const L0 = log(W); const lift = L0.findLastIndex((e: any) => e?.kind === "sim" && (e.verb === "lift" || e.verb === "catch"));
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } });
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] }); call(W, "rowan", "grab", { id: "crate-1" });
+  call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const P = copyOf([...L.map((e: any, i: number) => (i === lift ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: lift }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  ok(lift > 0 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && v.checks.agree === 0,
+    "U7g a purged lift, then a cut while the thing is held and a flight in the new epoch: the replay judges none of its digests, since which thing is held is unknown", { lift, base: base.checks.disagree.length, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 3) }); }
 // review of #260: a turned table supports things over its own top, not over the box of its corners
 { const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
   const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });
