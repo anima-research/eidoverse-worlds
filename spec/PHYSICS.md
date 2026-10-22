@@ -13,10 +13,11 @@ entries, and the log records where things come to rest.*
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
 reference implementation: `shared/sim.js` over `shared/eidosim.js` (eidosim), `shared/simmath.js`,
 `shared/terrainmath.js`, and the sim layer `shared/protocol/simlayer.js`. MUST /
-SHOULD / MAY are RFC-2119. Parts marked **reserved** are names, shapes and rules
-fixed now, before an implementation, because the log, the registry pin or shipped
-clients would freeze whatever came first (research physics-seeds 10-07): an
-authority refuses what they describe until it implements them.
+SHOULD / MAY are RFC-2119. Parts marked **reserved** are names held now, because
+the log, the registry pin or shipped clients would otherwise freeze whatever took
+them first: an authority refuses what they name until it implements them. How
+the unbuilt parts are expected to work is direction, not protocol, in
+`docs/PHYSICS-DIRECTION.md`.
 
 ## 0. The idea
 
@@ -194,66 +195,25 @@ fixed before any engine writes a shape that isn't a box
 
 ### 3.2. Physical properties
 
-Named now, with units and what their absence means (PROTOCOL §4: a field
-added later states its meaning of absence, and the pin freezes it). The names,
-units and combine rules are the vocabulary the major engines **share**
-(PhysX/Unity, Jolt, Rapier, Godot, Bullet, and Box2D v3 for the 2D analogues),
-in SI units, not any one engine's API: eidosim stays this protocol's engine,
-and whichever engine follows it (most likely a spec-defined deterministic one)
-must be able to carry every field.
-
-**Reserved, not written (shape audit 2026-10-16)**, all but two. `mass` and
-`density` stay open fields: the contact push reads them (`shared/shove.js`
-`massOf`: the authority's contact gate (`punt {contact: true}`), the walker and
-the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
-they are `physics`' *reserved fields*: their names, units, limits and
-meanings of absence below are held (in the registry's `reservedFields`,
-`reservedShape` and `absentMeans`, all pinned), and every write of one is
-refused (code `reserved`) until an engine declares that it reads it. A number
-a builder can type that nothing honours is a number tuned for nothing. Absence
-keeps the behaviour before the field existed: the engine's own law. None will
-ever be a materialized default (a pinned `mass: 1` is wrong for every crate
-ever made). `physics.kind` is **required**: a bare `{}` read as dynamic while
-the component's absence means static or nothing.
+`mass` and `density` are open fields: the contact push reads them
+(`shared/shove.js` `massOf`: the authority's contact gate (`punt {contact:
+true}`), the walker and the agent cap a push by mass), though eidosim's flight
+doesn't yet.
 
 | field | unit | absent means |
 |---|---|---|
 | `mass` | kg, > 0 | `density` × the volume of the stamped shape (`shapes.js shapeVolume`). That shape is the measured **bounding box** today, so a chair weighs as a solid box; eidosim computes exactly this (`shared/sim.js`: 1000 kg/m³ × its box) |
 | `density` | kg/m³, > 0 | its surface's density, else 1000 (water; eidosim's) |
-| `surface` | a `surface:<name>` on `@world` (was `material`, renamed so `material` means appearance only) | friction, restitution and their combine modes from their own fields, else the engine's law |
-| `friction` | ≥ 0, one coefficient (static = dynamic) | its surface's, else the engine's law |
-| `restitution` | 0..1 | its surface's, else the engine's law |
-| `frictionCombine`, `restitutionCombine` | `average` \| `min` \| `multiply` \| `max` | its surface's, else `average` (friction) and `max` (restitution) |
-| `linearDamping`, `angularDamping` | 1/s | the engine's law (eidosim: none) |
-| `centerOfMass` | [x, y, z] m, own frame before scale | the centroid of its stamped shape |
 
-**Cut** (they were named, never read, and 0 values stored them): `ccd` (a
-solver-quality knob no format maps: Unity has four modes, Jolt a motion
-quality, KHR and OMI none; eidosim sweeps every body anyway) and `layers` /
-`mask` (32-bit layers can't explain themselves to a reader of the log, and
-Unity's 32-layer cap is a decade-old complaint; when collision filtering
-arrives it is **named groups**, KHR's `collisionSystems`, probably on
-`collider`). Additive later, each with its meaning of absence: `gravityFactor`
-(absent 1; KHR and OMI), `staticFriction` / `dynamicFriction` (absent:
-`friction`), inertia.
-
-How the names map (recalled from each engine's public API; a mapping, not an
-adoption):
-
-| here | PhysX / Unity | Jolt | Rapier | Godot |
-|---|---|---|---|---|
-| `mass`, `density` | `setMass` + `updateMassAndInertia(density)` / `Rigidbody.mass` | `MassProperties.mMass`; shape `mDensity` | collider `mass` / `density` | `RigidBody3D.mass` (no density) |
-| `friction` | `PxMaterial` static = dynamic / `PhysicsMaterial` both | `mFriction` | `friction` | `PhysicsMaterial.friction` |
-| `restitution` | `restitution` / `bounciness` | `mRestitution` | `restitution` | `bounce` |
-| `*Combine` | `PxCombineMode` AVERAGE/MIN/MULTIPLY/MAX / `PhysicsMaterialCombine` | a combine callback | `CoefficientCombineRule` | `rough` / `absorbent` flags (no general modes) |
-| `linearDamping`, `angularDamping` | `linearDamping`, `angularDamping` | `mLinearDamping`, `mAngularDamping` | `linearDamping`, `angularDamping` | `linear_damp`, `angular_damp` |
-| `centerOfMass` | `cMassLocalPose` / `centerOfMass` | `OffsetCenterOfMassShape` | `MassProperties` local CoM | `center_of_mass` |
-| `kind: kinematic` | `eKINEMATIC` / `isKinematic` | `EMotionType::Kinematic` | `KinematicPositionBased` | `AnimatableBody3D` |
-| `w` | angular velocity, rad/s, world | `GetAngularVelocity` | `angvel` | `angular_velocity` |
-
-Box2D v3 (2D) has the same set: `density`, `friction`, `restitution`, linear
-and angular damping, `isBullet`, `categoryBits`/`maskBits` (64-bit, a
-superset of 32).
+**Reserved names**: `surface`, `friction`, `restitution`, `frictionCombine`,
+`restitutionCombine`, `linearDamping`, `angularDamping` and `centerOfMass` on
+`physics`. Nothing reads them, so every write of one is refused (code
+`reserved`) until an engine declares that it reads it: a number a builder can
+type that nothing honours is a number tuned for nothing. Their expected units,
+limits and meanings of absence, and how the names map to the major engines,
+are direction (`docs/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
+bare `{}` read as dynamic while the component's absence means static or
+nothing.
 
 - **Surfaces.** A world names its materials as `@world surface:<name>
   {friction?, restitution?, density?, frictionCombine?, restitutionCombine?,
@@ -290,7 +250,7 @@ superset of 32).
 - **`physics.kind: kinematic`**: a collider moved only by authored edits and
   `motion`, never by the engine; it pushes dynamic things and is never
   pushed or launched. Under eidosim it is a collider at its transform, like
-  a static. **The authority stamps it** (shape audit 2026-10-16): a thing
+  a static. **The authority stamps it**: a thing
   that has `motion`, `motion:<part>` or `openable`, itself or on anything it
   hangs under, is stamped `kinematic` rather than `static` when the world runs
   physics, and a static thing that starts moving is restamped. Behaviour is
@@ -314,20 +274,8 @@ superset of 32).
   for a cone or a spring. `parent` is a rigid attachment and never a solver
   joint; `openable` is kinematic animation; a *physical* door is a
   physics-joint.
-- **The target shape, sketched so the first engine with joints doesn't
-  invent one (not registered, not pinned).** After OMI/KHR, with both frames
-  stored rather than derived at load (Covenant III: things move after
-  authoring):
-  `{to: ref, a: {pos, q}, b: {pos, q}, limits: [{linear?: [axes], angular?:
-  [axes], min?, max?, stiffness?, damping?}], drives: [{type, mode, axis,
-  maxForce, positionTarget, velocityTarget, stiffness, damping}], collide?:
-  false, breakForce? (N), breakTorque? (N·m)}`. Each frame is in its own
-  body's frame before scale; the authority *stamps* both from one authored
-  world-space anchor at write (as it stamps `physics.shape`), so authoring
-  keeps "place one empty". Limits are m or rad (N/m, N·m/rad). Named types
-  (hinge, slider, ball, fixed) are editor presets that compile to limits,
-  never stored (Unity's ConfigurableJoint-versus-HingeJoint split is the
-  lesson).
+- **The target shape** of a joint is direction (`docs/PHYSICS-DIRECTION.md`), not
+  registered and not pinned.
 
 ## 4. Covenant III — the planes stand
 
@@ -349,7 +297,7 @@ superset of 32).
 - Carrying is presence: a held thing moves with its holder's body and is
   settled into the log by `put`, `drop` or `throw` (AGENTS.md).
 
-### 4.1. Three authorities (design 20, P1–P3)
+### 4.1. Three authorities
 
 Three different things, never conflated (conflating them is how SpatialOS lost
 updates; VRChat splits them the same way):
@@ -362,15 +310,10 @@ updates; VRChat splits them the same way):
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,
   *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
-  body delivers a `shove` to that body's client under its consent table
-  (actor: the thing's live authority, carrying the thing's `id` and `v`);
-  the thing's own motion ignores the body. Carrying a person is a consent
-  class (`carry`, PROTOCOL body consent; reserved): the carried person's
-  client parents their own body to the carrier's hand, and may stop at any
-  moment. When avatar bodies are simulated, they are simulated the way
-  Boneworks does it and Fusion networks it: a physics rig in the presence
-  plane, per client, driven toward its tracked targets, with a force-driven
-  puppet of every other body; never in the engine, never in the log.
+  body delivers a `shove` to that body's client, if that body's consent
+  allows it (actor: the thing's live authority, carrying the thing's `id` and
+  `v`); the thing's own motion ignores the body. Carrying a person and
+  simulated bodies are direction (`docs/PHYSICS-DIRECTION.md`).
 - **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
   - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
     `grab` is refused (`held`) until a `launch` or a settlement.
