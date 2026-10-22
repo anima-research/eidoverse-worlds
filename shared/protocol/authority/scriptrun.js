@@ -479,6 +479,7 @@ function drainScripts(w) {
 /** Whether the sandbox here can run a script: true, or why not (its own available()). One with no available() runs
  *  whatever it's given, as activate runs it, so it counts as available. */
 const sandboxUp = (w) => (typeof w.scripts?.available === "function" ? w.scripts.available() : true);
+const SANDBOX_DOWN = "this server's script sandbox didn't load, so no script runs here; only the server's operator can repair it, and asking again won't change it until then";
 function scriptStatus(w, st, id, name, v) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
   let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
@@ -493,8 +494,9 @@ function scriptStatus(w, st, id, name, v) {
   if (!src) return { ...base, status: "failed", why: sourceWhy(src, unreadable, v.src) };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this server has no script sandbox" };
   // a sandbox that's here but whose runtime didn't load says unavailable to every activation, so its status says so too, as
-  // scriptsOf's `sandbox` line does (review of #260, protocol core I59)
-  { const av = sandboxUp(w); if (av !== true) return { ...base, status: "unavailable", why: `this server's script sandbox is unavailable: ${av}` }; }
+  // scriptsOf's `sandbox` line does (review of #260, protocol core I59). Its own error stays in the server's log: it names
+  // the host's files, and what a script's author needs is that only the operator can mend it
+  if (sandboxUp(w) !== true) return { ...base, status: "unavailable", why: SANDBOX_DOWN };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: pausedWhy(rt) };
   const role = roleOf(st, sp?.sponsor); const lost = [];
   for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
@@ -504,7 +506,7 @@ function scriptStatus(w, st, id, name, v) {
 }
 function scriptsOf(w, st, id) {
   return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v)),
-    ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (sandboxUp(w) === true ? SR.ENGINE : `unavailable: ${sandboxUp(w)}`) : "none" };
+    ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (sandboxUp(w) === true ? SR.ENGINE : "unavailable") : "none" };
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
 export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }
