@@ -297,6 +297,33 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const byOther = bansLiftedBy(R, "aid1:https://id.example.org:agent-7f3a-2", ["aid1:https://id.example.org:agent-7f3a-2"], fold);
   ok(byAgent.length === 1 && byAgent[0] === "old-agent" && byOther.length === 0,
     "A13c …and an unban by the aid1 account it holds against lifts it, while an unban by another account lifts nothing", { byAgent, byOther }); }
+// ---- A13c (door): the operator's global unban, as the door runs it, lifts a ban from before accounts by the aid1 account
+// it holds against, and by a name that account wears here; a third ban stays ----
+// ---- D12 (door, review of #260, server I14): a spectator's first sight under a 64-character name another account wears
+// is recorded as that name cut to keep a tag from its own account, never as the other account's name ----
+{ fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ "old-a": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-b": { by: "op", ts: 1, sub: "agent-9c1d" }, "old-c": { by: "op", ts: 1, sub: "agent-5e2b" } }));
+  const { directoryFor } = await import("../../server/directory.ts");
+  directoryFor(W).resolve({ sub: "aid1:https://id.example.org:agent-9c1d", name: "Nine" });
+  ok(tool(["found", "d12", "--owner", "Ann"]).code === 0, "(D12 setup) found d12");
+  const s = await start({ WORLD_ADMIN: "agent:token:fen" });
+  const op = await sock(s.port); const jo = await op.join("keep", "Fen", { agentToken: "tok-fen" });
+  const k = op.msgs.length; op.raw({ type: "global-unban", id: "aid1:https://id.example.org:agent-7f3a" }); op.raw({ type: "global-unban", id: "Nine" });
+  await waitFor(() => op.msgs.length >= k + 2, 3000);
+  const left = Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8")));
+  ok(!!jo.snapshot && left.length === 1 && left[0] === "old-c",
+    "A13c (door) the global unban lifts a ban from before accounts by the aid1 account it holds against, and by a name that account wears here; another stays",
+    { join: jo.errors, left, said: op.msgs.slice(k).map((m) => m.text ?? m.error) });
+  const LONG = "L".repeat(64);
+  const body = await sock(s.port); const jb = await body.join("d12", LONG);   // its account, local:l…l, wears the long name
+  const watch = await sock(s.port); const jw = await watch.join("d12", LONG, { spectate: true, account: "watcher" });   // local:watcher
+  await sleep(150);
+  const dirFile = JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8"));
+  const nameOf = (sub) => Object.values(dirFile.ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name;
+  const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
+  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith("-cher") && seen.toLowerCase() !== LONG.toLowerCase(),
+    "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (-cher), within the limit, never the other account's name",
+    { joins: [jb.errors, jw.errors], theirs, seen });
+  body.close(); watch.close(); op.close(); try { s.proc.kill(); } catch {} await sleep(300); fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
 { const { custodyAt } = await import("../../server/custody.ts");
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
