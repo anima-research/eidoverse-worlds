@@ -57,6 +57,12 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["mover", "mover-check.ts", 1],       // ONE walker (shared/mover.js) for the agent, the client and the authority: no caller's own numbers; floor rule, walls, arrival; agreement with the real authority
   ["colliders", "../collider-test.ts", 1], // the walker's reading of placed geometry, incl. things a tumbling engine laid on their sides (review of b398d7e3 #1)
   ["lying-support", "../lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin (review of b398d7e3 #1)
+  ["support-swap", "../support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
+  ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one under its switch (the relay answers), hangs from a nail
+  ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
+  ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the load's repairs; ran only as an import before
+  ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
+  ["renderer-cred", "../renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches a members-only world; a stranger's /snap and /heightmap of it are 404
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],
@@ -174,6 +180,8 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["models-field", "../models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
   ["importer", "importer-check.ts", 1], // the house's review of #260 (6291883302), the v1 importer: causes, the approval's hash, one identity per person, nothing left half-written, values read as v1 read them
   ["eidosim-v1", "import-v1/eidosim-v1-test.ts", 1], // the first eidosim's covenant tests, on the copy the importer keeps (house #260, importer I8)
+  ["render-scene-import", "../render-scene-import-test.ts", 1], // #260 I464: server/render-scene.ts links (nothing serves it), and particles project through resolveParticles
+  ["channelbox", "../channelbox-test.ts", 1], // #260 I242: the channel box through the real door; the rotate order is the viewer's (PROTOCOL §9.1), never sent
   ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 

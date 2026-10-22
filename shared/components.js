@@ -19,7 +19,6 @@
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
-import { ROT_MODES } from './euler.js';
 import { kindOf } from './protocol/kind.js';
 import { recordOf, recordComponents } from './protocol/view.js';
 import { materialize, COMPONENTS } from './protocol/componentspec.js';
@@ -62,7 +61,7 @@ export { sha256hex, sha256hexBytes };
 // descriptors.js: which fields the card shows, the editor's spellings — rate, burnsAtNoon, slot — and its translations).
 // This file adds no type, limit, unit or doc of its own for a registered field: paramsOf() throws if a hand entry tries.
 // What a record may still say by hand is the ALIAS LAYER's own: a param the wire doesn't spell as a field (Transform's
-// yaw and rotOrder, a Model's lib, Sockets' slots, a card's whole-value json), and READS — the value a reader uses when
+// yaw, a Model's lib, Sockets' slots, a card's whole-value json), and READS — the value a reader uses when
 // the key is absent and the registry writes nothing (a pendulum's pivot, a path's points): the descriptor's `absent` prose
 // says the same in words (tools/descriptor-defaults-test.ts), and `partDefault` where a part's reading differs.
 const UNIT_OF = { vec3: 'vec3', bool: 'bool', number: 'num', int: 'num', string: 'text', array: 'json', object: 'json', ref: 'ref', refs: 'list', target: 'ref', axis: 'choice', any: 'json', people: 'list', person: 'ref' };
@@ -94,7 +93,7 @@ function paramsOf(card, hand = {}) {
     for (const k of ['default', 'partDefault', 'wire', 'options', 'custom']) if (k in h && !(k === 'default' && dflt !== undefined)) p[k] = h[k];
     out[f.param] = p;
   }
-  for (const [k, v] of Object.entries(hand)) if (!(k in out)) out[k] = v;   // the alias layer's own params (yaw, rotOrder, …)
+  for (const [k, v] of Object.entries(hand)) if (!(k in out)) out[k] = v;   // the alias layer's own params (yaw, …)
   return out;
 }
 /** A world record's params from the registry's world component (sky, terrain, grass): type, limits, unit, doc; the
@@ -119,7 +118,7 @@ const part = { default: null };
 
 const DEFS = [
   { name: 'Transform', category: 'Core', builtin: true, summary: 'where it is: position, heading, size',
-    params: paramsOf('Transform', { yaw: { ...deg, default: 0 }, rotOrder: { t: 'choice', options: ROT_MODES, default: 'XYZ', wire: 'comp.rotOrder', hint: 'how the Rotate channels read q (Maya\'s rotateOrder: XYZ = X applied first); quat = edit the quaternion. Never moves the thing' } }),
+    params: paramsOf('Transform', { yaw: { ...deg, default: 0 } }),   // no rotOrder: the rotate order is the viewer's (PROTOCOL §9.1; client/lib/viewprefs.js)
     fallback: { text: 'at (x, y, z)' } },
   // Pivot (research 52, Roblox's PivotOffset): where it turns and scales from, in its own frame before scale. It never
   // moves the thing or changes how it draws: only the handles, the turn and the size go about it.
@@ -320,12 +319,6 @@ export function componentsOf(ent) {
   ent = recordOf(ent);
   const out = [];
   const tf = pick(ent, ['pos', 'q', 'yaw', 'scale', 'scale3']);   // scale3: a stretched thing's per-axis scale (view.js), kept through the round trip
-  // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
-  // client and replays; design §3) but belongs to the Transform: a valid one is
-  // read here, and anything else under that key stays an Annotation below
-  const ro = ent?.rotOrder;
-  const hasOrder = typeof ro === 'string' && ROT_MODES.includes(ro);
-  if (hasOrder) tf.rotOrder = ro;
   out.push({ type: 'Transform', params: tf });
   if (ent.model !== undefined) out.push({ type: 'Model', params: { lib: ent.model } });
   if (ent.collide !== undefined) out.push({ type: 'Collider', params: { shape: ent.collide } });
@@ -334,7 +327,6 @@ export function componentsOf(ent) {
   for (const key of Object.keys(c)) {
     const data = c[key];
     if (key === 'model' || key === 'parent') continue;   // lifted above (Model, Parent): the record is flat, so they are in c too
-    if (key === 'rotOrder' && hasOrder) continue;   // the Transform's (above)
     if (key in FLAG) { out.push({ type: FLAG[key], key, params: {}, wire: { value: data } }); continue; }
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
     if (key === 'label') { out.push({ type: 'Label', key, params: { text: data } }); continue; }
@@ -396,9 +388,7 @@ export function entityOf({ components, stamps = {} }) {
     const p = inst.params ?? {};
     switch (inst.type) {
       case 'Transform': {
-        const { rotOrder, ...tf } = p;
-        Object.assign(ent, tf);
-        if (rotOrder !== undefined) comp.rotOrder = rotOrder;
+        Object.assign(ent, p);
         break;
       }
       case 'Light': {
@@ -561,10 +551,6 @@ export function compRefusal(type, data, ent = null) {
     if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon; it is stored as daytime)';
     if (data.daytime !== undefined && !COMPONENTS.light.enums.daytime.includes(data.daytime)) return 'light daytime is dim (follows the day) or full (burns at noon too)';
     if (data.decay !== undefined && !(finite(data.decay) && data.decay >= 0 && data.decay <= 4)) return 'light decay is a falloff exponent 0..4 (2 = inverse square)';
-    return null;
-  }
-  if (type === 'rotOrder') {
-    if (!ROT_MODES.includes(data)) return `a rotation order is one of ${ROT_MODES.join(', ')} (Maya's rotateOrder: XYZ applies X first; quat edits the quaternion); remove it (data: null) for XYZ`;
     return null;
   }
   if (type === 'collider') {

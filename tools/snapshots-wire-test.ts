@@ -36,6 +36,7 @@ async function connect(id: string, extras = {}, world = "snapshot-test") {
 // a box with a door key keeps its world reads behind it (identity-check LC): every /snap carries the key
 const KEY = { headers: { authorization: "Bearer snapshot-test-door" } };
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
+const forged = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR42mP4z8DwH4QZYAwAR8oH+Rq28akAAAAASUVORK5CYII=";
 try {
   let ready = false;
   for (let i = 0; i < 100; i++) {
@@ -63,7 +64,8 @@ try {
     const request = donor.messages.find(m => m.type === "capture");
     // a renderer watches a world that EXISTS (watching an unfounded name is 4011, retried): other-world is founded above
     const other = await connect("other-renderer", { renderer: true }, "other-world");
-    other.send({ type: "capture-result", id: request.id, dataUrl: png });
+    // a distinct image from the wrong renderer: were it taken, the response below would carry it (#260 house I338)
+    other.send({ type: "capture-result", id: request.id, dataUrl: forged });
     assert.equal((await fetch(url, KEY)).status, 429);
     donor.send({ type: "capture-result", id: request.id, dataUrl: png });
     const r = await response; assert.equal(r.status, 200); assert.equal(r.headers.get("x-eidoverse-renderer"), "unreal");
@@ -77,7 +79,7 @@ try {
     const pending = fetch(url + "&renderer=unreal", KEY); await wait(() => donor.messages.filter(m => m.type === "capture").length === 2, "second capture");
     donor.ws.close(); assert.equal((await pending).status, 503);
     const log = readFileSync(join(scratch, "worlds", "snapshot-test", "world.jsonl"), "utf8");
-    assert.ok(!log.includes("snap-result") && !log.includes("capture-capabilities"), "capture is ephemeral");
+    assert.ok(!log.includes("capture-result") && !log.includes("capture-capabilities"), "capture is ephemeral");
     console.log("SNAPSHOTS_WIRE_PASS: embodied donor, PNG route, ownership, quota, opt-out, legacy browser, disconnect cleanup, no log writes");
   }
 } finally { control?.stop(true); for (const ws of sockets) ws.close(); child.kill(); await child.exited; }

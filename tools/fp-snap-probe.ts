@@ -64,7 +64,7 @@ const rigOut = join(ROOT, "assets/opt/eidoverse/assets/vrms/bighead75.vrm");
 const rigSrc = join(EIDOVERSE_DIR, "eidoverse/assets/vrms/claude.vrm");
 // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
 // shim whose pid is not the real process — killing the shim orphans the
-// child (paritybench found two abandoned sequencers holding ports this way)
+// child (two abandoned sequencers were once found holding ports this way)
 const mk = Bun.spawnSync([process.execPath, join(ROOT, "tools/make-bighead-vrm.ts"), rigSrc, rigOut, "5"]);
 if (mk.exitCode !== 0) { console.error(mk.stderr.toString()); process.exit(1); }
 

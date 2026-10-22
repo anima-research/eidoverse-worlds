@@ -47,7 +47,7 @@ import { starterModels } from './catalog.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels, modelName } from './assets.js';
 import { offIn } from './realize/models_field.js';
-import { schemaFor, commitEdit, commitMany, planEdit, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
+import { schemaFor, commitEdit, commitMany, planEdit, keepView, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from './xrask.js';
@@ -917,7 +917,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
       const vs = resolveDeltaEach(ids, action, payload, (each) => fieldAt(schemaFor(each), key), painted);
       // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
       const ops = [], errors = [];
-      for (const each of ids) { const v = vs.get(each); if (isDelta && v == null) continue; const plan = planEdit(each, key, v); errors.push(...plan.errors); ops.push(...plan.ops); }
+      for (const each of ids) { const v = vs.get(each); if (isDelta && v == null) continue; const plan = planEdit(each, key, v); keepView(each, plan); errors.push(...plan.errors); ops.push(...plan.ops); }
       if (ops.length) Edits.sendOps(ops, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => Edits.revertPose(x)) });
       if (errors.length) flashHint(errors.join(' · '), 5000);
       repaintAll();
@@ -1351,7 +1351,7 @@ export function initEditPanels() {
   setInterval(() => { if (!lastAway || document.hidden || !frames.get('inspector')?.frame?.el?.getClientRects().length) return; const id = sceneSelected(); const o = id === lastAway.id ? entities.get(id) : null;
     if (!o) { lastAway = null; return; } if (Math.round(o.getWorldPosition(_wp).distanceTo(myState.pos)) !== lastAway.m) repaintAll(); }, 500);
   bus.on('selection', () => { const id = sceneSelected(); if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied']) bus.on(ev, repaintAll);   // log-applied: a world's library lives on @world, which the realizers never touch
+  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied', 'view-prefs']) bus.on(ev, repaintAll);   // view-prefs: this viewer's rotate order   // log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])

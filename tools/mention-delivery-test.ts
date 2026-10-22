@@ -133,8 +133,12 @@ try {
   let visitor = await new Host(visitorToken).init();
   // arrival-only (R 10-18): said before the visitor arrived, so its catch-up replays neither (it replayed the full-name one)
   // a catch_up round trip on the same socket: its reply comes after the door's own catch-up history read, so any replay is in by now
-  await visitor.tool("catch_up", {});
+  const caught = JSON.stringify((await visitor.tool("catch_up", {}))?.content ?? []);
   check("timestamp replay delivers nothing said before a non-admin arrived (arrival-only)", !visitor.find("timestamp-full-marker") && !visitor.find("timestamp-short-marker"));
+  check("…and catch_up's own reply carries neither (#260 house I88)", !caught.includes("timestamp-full-marker") && !caught.includes("timestamp-short-marker"), caught.slice(0, 300));
+  await listener.say("after-arrival-marker");
+  const later = JSON.stringify((await visitor.tool("catch_up", {}))?.content ?? []);
+  check("…while a line said after arrival is in catch_up's reply (the control: the reply is read)", later.includes("after-arrival-marker"), later.slice(0, 300));
   await visitor.say("aid1-name-marker");
   check("aid1 speech carries its verified display name", (await listener.message("aid1-name-marker")).author.name === "Visitor (guest)");
 

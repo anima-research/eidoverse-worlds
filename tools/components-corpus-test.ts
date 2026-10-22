@@ -68,15 +68,25 @@ const cases: [string, any, string[]][] = [
   ['a comp.collider array stays an Annotation', { model: L, pos: [0, 0, 0], yaw: 0, collider: ['box'], ...st0 }, ['Model:', 'Annotation:collider']],
   ['an Empty: nothing but a Transform', { pos: [1, 2, 3], yaw: 0.5, ...st0 }, []],
   ['an Empty with a scale, a q and a comp.light', { pos: [1, 2, 3], yaw: 0, q: [0, 0, 0, 1], scale: 2, light: { intensity: 4 }, placer: { id: 'p' }, ...st0 }, ['Light:light']],
-  // step 3: the Transform's rotation order rides comp.rotOrder (design §3)
-  ['a rotation order is part of the Transform, not a component of its own', { model: L, pos: [0, 0, 0], yaw: 0, q: [0, 0.38, 0, 0.92], rotOrder: 'ZXY', lock: true, ...st0 }, ['Model:', 'Lock:lock']],
-  ['quaternion mode, on an Empty', { pos: [0, 0, 0], yaw: 0, rotOrder: 'quat', ...st0 }, []],
+  // the rotate order is the VIEWER's (PROTOCOL §9.1: Euler channels are a view; client/lib/viewprefs.js keeps it), so the
+  // Transform card has none: a rotOrder a record still carries is an Annotation like any unknown key, bytes kept (#260 I242)
+  ['a stored rotOrder is not part of the Transform: an Annotation, bytes kept', { model: L, pos: [0, 0, 0], yaw: 0, q: [0, 0.38, 0, 0.92], rotOrder: 'ZXY', lock: true, ...st0 }, ['Model:', 'Annotation:rotOrder', 'Lock:lock']],
+  ['…on an Empty too', { pos: [0, 0, 0], yaw: 0, rotOrder: 'quat', ...st0 }, ['Annotation:rotOrder']],
   ['a rotOrder that is not one of the seven names stays an Annotation (bytes kept)', { model: L, pos: [0, 0, 0], yaw: 0, rotOrder: 'zxy', ...st0 }, ['Model:', 'Annotation:rotOrder']],
   ['…as does a non-string one', { model: L, pos: [0, 0, 0], yaw: 0, rotOrder: { order: 'XYZ' }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
 ];
-check('the Transform reads its rotOrder (absent = no key at all, so XYZ is never written back)',
-  componentsOf({ pos: [0, 0, 0], rotOrder: 'YZX' }).components[0].params.rotOrder === 'YZX'
+check('the Transform card has no rotOrder (the order is the viewer\'s), neither a param nor a field to edit',
+  !('rotOrder' in componentsOf({ pos: [0, 0, 0], rotOrder: 'YZX' }).components[0].params)
   && !('rotOrder' in componentsOf({ pos: [0, 0, 0] }).components[0].params) && !('comp' in entityOf(componentsOf({ pos: [0, 0, 0], yaw: 0 }))));
+{
+  // a blueprint record from before (its root Transform says rotOrder): placing it writes no rotOrder, and it isn't refused
+  const rec: any = { kind: 'eido.blueprint', v: 1, name: 'Old', root: { components: [{ type: 'Transform', params: { rotOrder: 'ZXY' } }, { type: 'Model', params: { lib: L } }], children: [] } };
+  const pv: any = placeVerbs(rec, { id: 'old1', pos: [1, 0, 1], yaw: 0 });
+  const all = [...(pv?.verbs ?? []), ...(pv?.rules ?? [])];
+  check('placing a blueprint sends no rotOrder (an older record\'s root Transform said one): the order stays the viewer\'s',
+    placeRefusal(rec) == null && all.length > 0 && !JSON.stringify(all).includes('rotOrder'), JSON.stringify([placeRefusal(rec), all]));
+  check('…and a malformed one there is not a reason to refuse the placement', placeRefusal({ ...rec, root: { ...rec.root, components: [{ type: 'Transform', params: { rotOrder: 'zxy' } }, rec.root.components[1]] } }) == null);
+}
 for (const [name, ent, want] of cases) {
   const view = componentsOf(ent);
   const got = view.components.map((c: any) => `${c.type}:${c.key ?? ''}`);

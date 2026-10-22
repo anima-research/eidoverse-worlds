@@ -258,23 +258,25 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   const ag = new WorldAgent({ name: 'eye' });
   const A = ag as any;
   // the agent's world is the view; its door is this scratch world's real door (dry runs answered by the door itself)
-  const sync = () => { A.st = W.view(); A.reconcileFromFold(); };
+  const sync = () => { A.st = W.view(); A.replica = { st: W.state() }; A.reconcileFromFold(); };   // componentsOf (edit's expect pins) reads the replica's state
   sync();
   A.door = async (verb: string, args: any) => W.call(verb, args);
+  // edit goes sendOps → request, which answers not-joined for an agent that never joined: answer it from the same door (#260 house I457)
+  A.request = async (verb: string, args: any) => W.call(verb, args);
   const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
   const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
   check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
   const one = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6 }, dry: true }));
-  check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"\}/.test(one) && !/refused/.test(one), one);
+  check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"[,}]/.test(one) && !/refused/.test(one), one);
   const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'terrain.amplitude': '+=1' }, dry: true }));
   check('edit @world (dry), two groups: ONE request with the sky verb and set terrain (amplitude 3.6)', /would send batch .*"verb":"sky".*"hours":6.*"component":"terrain".*"amplitude":3\.6/.test(ed), ed);
-  // KNOWN BUG (reported 2026-10-06): that batch carries the `sky` tool, which the door's batch refuses
-  check('…and the door accepts that request (KNOWN BUG: refused, sky can\'t go in a batch)', !/refused|can't go in a batch/.test(ed), ed);
+  // reported 2026-10-06 as refused (sky couldn't go in a batch); answered by the real door it is accepted
+  check('…and the door accepts that request (the sky tool inside a batch)', !/refused|can't go in a batch/.test(ed), ed);
   const bad = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'pos.x': 1 }, dry: true }));
   check('…an address the world has not is refused by name', /refused: pos\.x: no such field on @world/.test(bad), bad);
   const wet = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'terrain.amplitude': '+=1' } }));
   sync();
-  check('edit @world for real: the door accepts it and the world reads back the new amplitude', /the door accepted it/.test(wet) && A.st.terrain?.amplitude === 3.6, wet);
+  check('edit @world for real: the door accepts it and the world reads back the new amplitude', /the authority accepted it/.test(wet) && A.st.terrain?.amplitude === 3.6, wet);
   const hier = out(await HANDLERS.hierarchy(ag as any, {}));
   check('hierarchy pins the world first, then the things', /^\[@world\] World — sky /.test(hier) && /\[pivot\]/.test(hier.split('\n')[1] ?? ''), hier.split('\n').slice(0, 2).join(' / '));
   const filtered = out(await HANDLERS.hierarchy(ag as any, { filter: 'zzz' }));
