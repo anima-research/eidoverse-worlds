@@ -260,6 +260,34 @@ await C("K10", "an account in a value that nothing beside it names is resolved b
     && !/human:discord/.test(text),
     { antra, other, after: after?.actor, planned: r.planned, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
 
+await C("K11", "a name is joined to an account only where v1's server wrote the pair: a builder's data pairing the owner's name with the builder's account, and a behaviour whose own `by` names the owner, move neither the owner's later acts nor the owner's role, and the builder's identity takes no name from them", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k11"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const BOB = "human:discord:77", SRC = "sha256:" + "e".repeat(64);
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    // Ann is known by name only: nothing in this log gives her an account
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } },
+    { seq: 2, ts: 3, actor: "world", verb: "grant", args: { id: "bob", role: "builder", gen: true, sub: BOB } },
+    { seq: 3, ts: 4, actor: "bob", verb: "spawn", args: { id: "board_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: "bob", sub: BOB } } },
+    // bob's data names Ann beside bob's own account, in the shape main's server stamps (a placer's id and sub)
+    { seq: 4, ts: 5, actor: "bob", verb: "comp", args: { id: "board_1", type: "guestbook", data: { line: "hi", id: "Ann", sub: BOB, ownerSub: BOB, owner: "Ann" } } },
+    // a binding: the server stamped bob's account as bySub; the `by` beside it is what bob sent
+    { seq: 5, ts: 6, actor: "bob", verb: "behavior", args: { id: "bell", src: SRC, by: "Ann", bySub: BOB } },
+    { seq: 6, ts: 7, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } },
+    { seq: 7, ts: 8, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => e.name === "Ann").map(([id]) => id);
+  const bob = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(BOB)).map(([id]) => id);
+  const spawn = (id: string) => lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn" && e.body.args?.id === id);
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  const roleDeletes = lines.filter((e: any) => e.kind === "change").flatMap((e: any) => (e.ops ?? e.body?.ops ?? []).filter((o: any) => o.verb === "delete" && String(o.comp ?? "").startsWith("roles:")));
+  return [ann.length === 1 && bob.length === 1 && ann[0] !== bob[0] && r.planned[bob[0]].name === "bob"
+    && spawn("lamp_1")?.actor === ann[0] && spawn("board_1")?.actor === bob[0] && w[`roles:${ann[0]}`]?.role === "owner" && w[`roles:${bob[0]}`]?.role === "builder"
+    && !roleDeletes.length && !/human:discord/.test(text),
+    { ann, bob, planned: r.planned, lamp: spawn("lamp_1")?.actor, roles: Object.fromEntries(Object.entries<any>(w).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => [k, v?.role])), roleDeletes }]; });
+
+
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {

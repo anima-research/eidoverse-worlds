@@ -115,7 +115,13 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@18";
+export const TRANSLATOR = "eidoverse/translate-v1@19";
+// @19: a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
+// a ban's sub beside its id, a spawn's or a light's placer {id, sub}, a behaviour's bySub, the act's own actor's). Elsewhere
+// in an old request's args, inside data a v1 `comp` folded blindly, a name beside an account is data like any other: the
+// account becomes its own person's id, and the name beside it is joined to nothing, so no value in the log moves anyone's
+// later acts or role to another person. A binding's author is its bySub's person; the v1 fold's author is `by` where the
+// request sent one, a name the request chose.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -173,7 +179,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@18";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@18";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@19";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -306,21 +312,19 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 // world.ts's identity mapper reads too). Main's server stamped three into its log (server/verbs.ts at 306a00b0): a grant's or
 // ban's sub, a creation's placer {id, sub}, a binding's bySub (the v1 fold's authorSub). The shape, not the name alone: v1's
 // `comp` folded any data, so `sub` can be a sign's subtitle, and shared/particle_effects.js reserves `sub` as an effect's
-// emitter field. Whose account it is: the field it pairs with, `id` for `sub` and `foo` for `fooSub`, where main wrote one
-// beside it; else the account alone, so a name is never joined to an account the log doesn't pair with it.
+// emitter field. Whose account it is: the account's own (@19); the name beside it is joined to it only where main's server
+// wrote the pair (translate's noAcct), never from a value.
 export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
 const ACCOUNT_KEY = /^sub$|Sub$/;
-const pairedName = (o, k) => { const n = k === "sub" ? o.id : o[k.slice(0, -3)]; return typeof n === "string" ? n : null; };
-/** `v` with every account subject in it, at any depth, replaced by what `map(name, sub)` gives, or dropped where that's
- *  undefined (the default). The same object when nothing in it is an account (the projection's values can be the old
- *  fold's own). */
+/** `v` with every account subject in it, at any depth, replaced by what `map(sub)` gives, or dropped where that's undefined
+ *  (the default). The same object when nothing in it is an account (the projection's values can be the old fold's own). */
 export function withoutAccounts(v, map = () => undefined) {
   if (Array.isArray(v)) { let out = null; v.forEach((x, i) => { const y = withoutAccounts(x, map); if (y !== x) (out ??= v.slice())[i] = y; }); return out ?? v; }
   if (!v || typeof v !== "object") return v;
   let out = null;
   for (const [k, x] of Object.entries(v)) {
     if (ACCOUNT_KEY.test(k) && isAccount(x)) {
-      out ??= { ...v }; const to = map(pairedName(v, k) ?? x, x);
+      out ??= { ...v }; const to = map(x);
       if (to === undefined) delete out[k]; else out[k] = to; continue; }
     const y = withoutAccounts(x, map); if (y !== x) (out ??= { ...v })[k] = y;
   }
@@ -432,8 +436,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   // …and through the account the v1 server stamped on the binding (authorSub, @16), as the author's grant is found, so the
   // two are one identity on every server; the account itself is dropped with every other one below
-  for (const [k, v] of Object.entries(st.behaviors ?? {})) { const sub = typeof v?.authorSub === "string" && v.authorSub ? v.authorSub : undefined;
-    w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, sub ? { sub } : {}) } : v; }
+  // …the account's own person (@19): v1's author is `by` where a request sent one, which a request could name anyone in, so
+  // the name is joined to the account only through the act itself, a behaviour's actor and its bySub (noAcct, below)
+  for (const [k, v] of Object.entries(st.behaviors ?? {})) { const sub = isAccount(v?.authorSub) ? v.authorSub : undefined;
+    w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: sub ? who(sub, { sub }) : who(v.author, {}) } : v; }
   const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
@@ -534,11 +540,19 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
   // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
   // act never re-leaks what the values no longer hold
-  const mapAcct = who ? (name, sub) => who(name, { sub }) : undefined;
-  const noAcct = (a) => { let x = a;
-    if (x && typeof x === "object" && !Array.isArray(x) && "sub" in x) {
-      if (who && typeof x.sub === "string") x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
-      else { const { sub: _s, ...rest } = x; x = rest; } }
+  // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
+  // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
+  const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
+  const noAcct = (e, a) => { let x = a;
+    if (x && typeof x === "object" && !Array.isArray(x)) {
+      if ("sub" in x) {
+        if (who && typeof x.sub === "string") x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
+        else { const { sub: _s, ...rest } = x; x = rest; } }
+      const p = x.placer;
+      if (who && (e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p) && isAccount(p.sub))
+        x = { ...x, placer: { ...p, sub: who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }) } };
+      if (who && e.verb === "behavior" && isAccount(x.bySub))
+        x = { ...x, bySub: who(typeof e.actor === "string" && !SYSTEM.has(e.actor) && !/^bhv:/i.test(e.actor) ? e.actor : x.bySub, { sub: x.bySub }) }; }
     return withoutAccounts(x, mapAcct); };
   const actorFor = (a) => (who && !SYSTEM.has(a ?? "door") ? who(String(a), {}) : actorOf(a ?? "door"));
   // ---- dialect 3 (@10): her sim beside the v1 fold. Inert until an epoch: simEntry ignores everything before one, and
@@ -586,7 +600,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     lifeNow.step(e);
     const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
-      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
+      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(e, clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];
     if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: its rest will be caused by this act
       launchSeq[e.args.id] = tl;
