@@ -49,7 +49,7 @@ const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? a
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["hold-limit is hands-full again", "shared/protocol/authority/bodyverbs.js", "refuse(\"hold-limit\",", "refuse(\"hands-full\",", ["N1", "N2"]],
   ["beneath is underfoot again", "shared/protocol/authority/manipulate.js", "refuse(\"beneath\",", "refuse(\"underfoot\",", ["N2"]],
-  ["no old-word map", "shared/protocol/refusalcodes.js", "export const RENAMED_CODES = Object.freeze({ \"hands-full\": \"hold-limit\", \"underfoot\": \"beneath\", \"no-body\": \"not-pushable\" });", "export const RENAMED_CODES = Object.freeze({});", ["N3"]],
+  ["no old-word map", "shared/protocol/refusalcodes.js", "export const RENAMED_CODES = Object.freeze({ \"hands-full\": \"hold-limit\", \"underfoot\": \"beneath\", \"no-body\": \"not-pushable\", \"no-such\": \"not-found\" });", "export const RENAMED_CODES = Object.freeze({});", ["N3"]],
   ["the door records shove", "shared/protocol/authority/bodyverbs.js", "a = { ...a, contact: a.shove }; delete a.shove; }", "a = { ...a, contact: a.shove }; }", ["P2"]],
   ["no old spelling at the door", "shared/protocol/verbspec.js", ", shove: { type: \"bool\", doc: \"old spelling of contact (recorded as contact)\" }", "", ["P2"]],
   ["both spellings at once taken", "shared/protocol/authority/bodyverbs.js", "if (a.contact !== undefined) refuse(\"shape\", \"contact, or its old spelling shove: not both\", \"send contact: true\");", "", ["P3"]],
