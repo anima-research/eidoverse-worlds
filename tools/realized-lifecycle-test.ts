@@ -218,6 +218,34 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('re-parent rest');
 }
 
+// ---- 9. (house review of #260, client/lib I4) residency distance reads where a parented thing IS: its pos is parent-local
+// (view.js), so a cup 1 m along a crate 40 m away read as 1 m away and was never demoted, loaded at full detail.
+// Mutation (must go red): make entDist read ent.pos alone again.
+{
+  spawnAt('far9', 40); await settle(); drain();
+  door('create', { id: 'cup9', model: lib('cup9'), components: { parent: { to: 'far9' }, transform: { pos: [0, 0, 1] } } }); await settle(); drain();
+  const v = S.state.st.entities.cup9;
+  check('(setup) the child\'s pos is parent-local', JSON.stringify(v?.pos) === JSON.stringify([0, 0, 1]), JSON.stringify(v?.pos));
+  const d = M.residencyDistance(v);
+  check('its residency distance is from where it stands in the world (~41 m), not its local offset', Math.abs(d - 41) < 1e-6, `d = ${d}`);
+  door('delete', { id: 'far9' });
+  noErrors('parented residency');
+}
+
+// ---- 10. (house review of #260, client/lib I34) a switched-off thing casts no light: syncCompLight re-ran on a light edit
+// (and on born/pose) after retire had dropped it, and requested the light again.
+// Mutation (must go red): drop the offIn check in models.js syncCompLight.
+{
+  door('create', { id: 'lamp10', components: { light: { color: 0xffcc88, intensity: 4, range: 6 }, transform: { pos: [0, 1, 5] } } }); await settle(); drain();
+  check('(setup) a lit thing requests its light', stub.lightRequests.has('complight:lamp10'));
+  door('set', { id: 'lamp10', component: 'disabled', value: true }); await settle(); drain();
+  check('switched off: its light is released', !stub.lightRequests.has('complight:lamp10'));
+  door('set', { id: 'lamp10', component: 'light', value: { color: 0x88aaff, intensity: 4, range: 6 } }); await settle(); drain();
+  check('…and a light edit while it is off requests nothing', !stub.lightRequests.has('complight:lamp10'), JSON.stringify(stub.lightRequests.get('complight:lamp10')));
+  door('delete', { id: 'lamp10' });
+  noErrors('disabled light');
+}
+
 console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
 W.close?.();
 process.exit(failures ? 1 : 0);

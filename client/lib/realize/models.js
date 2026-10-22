@@ -593,7 +593,7 @@ function syncCompLight(id) {
   syncInferredLamps(id);
   const ent = state.st.entities[id];
   const L = ent ? lightOf(ent) : null;
-  if (!L) { dropCompLight(id); return; }
+  if (!L || offIn(state.st.entities, id)) { dropCompLight(id); return; }   // a switched-off thing casts nothing (I34)
   const host = entities.get(id) ?? null;
   const spec = {
     color: L.color, intensity: L.intensity, range: L.range, decay: L.decay, keep: L.important, dayAware: L.daytime !== 'full',   // the rig's `keep` tier is light.important; decay is the value's (shape audit 10-16)
@@ -936,8 +936,25 @@ const _cw = new THREE.Vector3();
 const camWorld = () => camera.getWorldPosition(_cw);
 /** Test seam (tools/camera-world-probe): the residency/LOD distance for a folded entity. */
 export const residencyDistance = (ent) => entDist(ent);
+/** Where a folded thing stands in the world: a parented thing's pos is in its parent's frame (view.js), so its carriers'
+ *  transforms are composed onto it (house review I4: a cup on a far crate read as near). */
+const _rq = new THREE.Quaternion(), _rs = new THREE.Vector3(), _rup = new THREE.Vector3(0, 1, 0);
+function foldWorldPos(ent, out) {
+  out.set(...(ent?.pos ?? [0, 0, 0]));
+  const seen = new Set();
+  for (let e = ent; e?.parent?.to && !seen.has(e); ) {
+    seen.add(e);
+    const p = state.st.entities[e.parent.to]; if (!p) break;
+    const s3 = Array.isArray(p.scale3) && p.scale3.length === 3 ? p.scale3 : null, s = typeof p.scale === 'number' ? p.scale : 1;
+    out.multiply(s3 ? _rs.set(s3[0], s3[1], s3[2]) : _rs.setScalar(s));
+    if (Array.isArray(p.q) && p.q.length === 4) _rq.set(p.q[0], p.q[1], p.q[2], p.q[3]); else _rq.setFromAxisAngle(_rup, p.yaw ?? 0);
+    out.applyQuaternion(_rq).add(_rs.set(...(p.pos ?? [0, 0, 0])));
+    e = p;
+  }
+  return out;
+}
 function entDist(ent) {
-  _v.set(...(ent?.pos ?? [0, 0, 0]));
+  foldWorldPos(ent, _v);
   let d = camWorld().distanceTo(_v);
   const p = residencyFocus?.();
   if (p) d = Math.min(d, _f.set(p.x, p.y, p.z).distanceTo(_v));
