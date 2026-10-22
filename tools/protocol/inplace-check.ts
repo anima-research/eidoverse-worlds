@@ -192,7 +192,9 @@ for (const two of [false, true]) { const nm = two ? "racer2" : "racer"; const d 
   const words = two ? [nm, `${nm}-new`] : [nm]; const h = dryHash(words);
   const r = tool(["translate", ...words, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL: "1" });
   const destDir = path.join(W, two ? `${nm}-new` : nm), dirNow = fs.existsSync(dirf) ? fs.readFileSync(dirf, "utf8") : "";
-  ok(r.code !== 0 && /not the bytes the approved report/.test(r.out) && /Nothing was (changed|moved)/.test(r.out) && !isWorldDir(destDir) && !(two && fs.existsSync(destDir)) && !temps().length && !/local:late/.test(dirNow),
+  // two layers refuse it (the importer's own report of the bytes it read, house importer I25; and the byte compare, I206):
+  // either one firing first is the property, refused with nothing written
+  ok(r.code !== 0 && /not the bytes the approved report|the report of the log being translated hashes to/.test(r.out) && /Nothing was (changed|moved)/.test(r.out) && !isWorldDir(destDir) && !(two && fs.existsSync(destDir)) && !temps().length && !/local:late/.test(dirNow),
     `IP21b ${two ? "the two-name form" : "in place"}: a log written to after the approval was checked is refused, nothing written`, { code: r.code, out: r.out.slice(-500) }); }
 
 // ================= IP22, IP28: a translation names no founder (#260 rereview, blocker 1) =================

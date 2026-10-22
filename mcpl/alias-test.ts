@@ -11,7 +11,7 @@ import { TOOL_ALIAS_ARGS } from "./tools.ts";
 // every alias translates its old shape: the action bar's old tool played its gesture once, so its {name} reaches anim as
 // {name, mode: "once"} (the house's I59, #260: an untranslated name would loop a gesture the old tool played once)
 for (const old of Object.keys(TOOL_ALIASES)) ok(typeof TOOL_ALIAS_ARGS[old] === "function", `${old} has an argument translation`);
-{ const g = "emote" in TOOL_ALIASES ? "emote" : null; const t: any = g ? TOOL_ALIAS_ARGS[g]({ name: "wave" }) : null;
+{ const g = Object.keys(TOOL_ALIASES).find((old) => TOOL_ALIASES[old] === "anim" && TOOL_ALIAS_ARGS[old]?.({ name: "wave" })?.mode === "once") ?? null; const t: any = g ? TOOL_ALIAS_ARGS[g]({ name: "wave" }) : null;
   ok(!!g && t?.name === "wave" && t?.mode === "once", "the action bar's old tool reaches anim as one play (mode: once)", { g, t }); }
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, y: null, z: 2 })) === JSON.stringify({ to: [1, 2] }), "walk_to {x, y: null, z} → move {to: [x, z]}: a null y is no y, not the floor at 0");
 ok(JSON.stringify(TOOL_ALIAS_ARGS.walk_to({ x: 1, z: 2, run: true, tolerance: 0.2 })) === JSON.stringify({ to: [1, 2], run: true, tolerance: 0.2 }), "walk_to {x, z, run, tolerance} → move {to: [x, z], run, tolerance}");

@@ -270,7 +270,7 @@ const cases: Case[] = [
       const SK = await import(TREE + "shared/sockbody.js"); const lb = readText("client/lib/localbody.js"), ag = readText("mcpl/agent.ts"), md = readText("spec/PROTOCOL.md"), a = readText("AGENTS.md"), sc = readText("docs/SCRIPTS.md"), wi = readText("docs/WIRE.md");
       return { mine: SK.vacatedFromMine?.({ socket: "s1" }, { to: "s1" }) === true && SK.vacatedFromMine?.({ seat: "s1" }, { to: "s1" }) === false, at: JSON.stringify(SK.vacatedAt?.({ at: [1, 2, 3] })),
         lb: /m\?\.type === 'vacated'/.test(lb) && !/'unseated'/.test(lb), ag: /m\.type === "vacated"/.test(ag) && !/"unseated"/.test(ag),
-        docs: [md.slice(0, md.indexOf("## Version history")), a, sc, wi].every((t) => !/\bunseat/i.test(t)) && /`vacated \{socket, by,\s+why, at\}`/.test(md) && /`vacated`/.test(a) && /`vacated \{socket, host\?, by, why, at\?\}`/.test(wi), vh: /occupy/.test(md.slice(md.indexOf("## Version history"))) }; },
+        docs: [md.slice(0, md.indexOf("## Version history")), a, sc, wi].every((t) => !/\bunseat/i.test(t)) && /`vacated \{socket, by,\s+why, at\}`/.test(md) && /`vacated`/.test(a) && /`vacated \{socket, host\?, by, why, at\?\}`/.test(wi), vh: /occupy/.test(md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md")) }; },
     good: (o) => o.mine && o.at === "[1,2,3]" && o.lb && o.ag && o.docs && o.vh },
   // ---------------- M: move {client} is gone ----------------
   { id: "M1", what: "(research #14) move takes no `client`: arriving leaves no client kind on the authority's track, and `move {client}` is refused unknown-arg; VERBSPEC.move lists no client", run(s) {
@@ -305,7 +305,8 @@ const cases: Case[] = [
   { id: "X2", what: "(research #18) §8, SCRIPTS.md and scriptaudit.js name the stand-ins by shape (minted-shaped and another valid shape), never person- or agent-shaped, and no script \"greets people and not agents\"", run() {
       const md = readText("spec/PROTOCOL.md"), sc = readText("docs/SCRIPTS.md"), au = readText("shared/protocol/scriptaudit.js"); const s8 = section(md, /\n## 8\. /);
       const kindWords = /(person|agent)-\s*shaped|greets people and not\s+agents|stand-ins? of (different|another) KINDS?\b/i;
-      return { s8: /one minted-shaped \(`u-` and 20 lowercase\) and one of another valid shape/.test(s8), md: kindWords.test(md), sc: kindWords.test(sc), au: kindWords.test(au), scMint: /minted-shaped/.test(sc), auMint: /minted-shaped/.test(au) }; },
+      return { s8: /one minted-shaped \(`u-` and 20 lowercase\) and one of another valid shape/.test(sc) && /auditor's re-run of a script is a\s+check/.test(s8),   // the procedure is docs/SCRIPTS.md since the house's view (#260 10-20)
+        md: kindWords.test(md), sc: kindWords.test(sc), au: kindWords.test(au), scMint: /minted-shaped/.test(sc), auMint: /minted-shaped/.test(au) }; },
     good: (o) => o.s8 && !o.md && !o.sc && !o.au && o.scMint && o.auMint },
   { id: "X3", what: "(research #14) verbspec's move says arriving is presence (nothing logged) and only a teleport is an act on the record", run() {
       const d = String(VS.VERBSPEC?.move?.doc ?? ""); return { d: d.slice(0, 400), presence: /Arriving is presence \(nothing is logged\)/.test(d), old: /first move \(arriving\)[^.]*on the record/.test(d) }; },

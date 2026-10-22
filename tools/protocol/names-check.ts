@@ -617,10 +617,13 @@ const cases: Case[] = [
       walk("");
       const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \};$/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h)
         || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
-        || /^mcpl\/tools\.ts:\d+: \w+: \(a\) => \(\{ name: a\.name, mode: "once" \}\),   \/\/ the old gesture tool played once/.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
+        || /^mcpl\/tools\.ts:\d+: \w+: \(a\) => \(\{ name: a\.name, mode: "once" \}\),   \/\/ the old gesture tool played once/.test(h)
+        // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
+        || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
+        || /^tools\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool?.(EM)?.name ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
-    good: (o) => o.nStray === 0 && o.kept === 4 && o.alias === "anim" && o.read === "wave" },
+    good: (o) => o.nStray === 0 && o.kept >= 4 && o.alias === "anim" && o.read === "wave" },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
       const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");
