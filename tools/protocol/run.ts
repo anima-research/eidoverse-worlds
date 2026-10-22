@@ -159,6 +159,19 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)
   ["grant-command", "../grant-command-test.ts", 1], // #260 house client I6/I42: /grant keeps exceptions and the end date unless it changes them
   ["environment-realizer", "../environment-realizer-test.ts", 1], // #260 house client I8/I55: water on the flat floor; a rejoin clears gone terrain and grass
+  ["grant-until", "../grant-until-test.ts", 1], // house client I124: a timed grant's end is a whole millisecond (the authority refused every fractional one)
+  ["lite-graph", "../lite-graph-test.ts", 1], // house client I10 / config I1: the lite client never imports the WebGPU renderer
+  ["say-live", "../say-live-test.ts", 1], // house client I135/I217: a transcript is dropped offline, and its say carries spoken/utt/t0
+  ["presence-actor", "../presence-actor-test.ts", 1], // house client I197: puppet, bodydrag and typing go only with the target's identity
+  ["first-name-account", "../first-name-account-test.ts", 1], // house client I192: the first-run door's name becomes the account
+  ["retired-commands", "../retired-commands-test.ts", 1], // house config I19: a retired command says why it is gone
+  ["animnames-retry", "../animnames-retry-test.ts", 1], // house config I18: a failed defs fetch is retried with back-off
+  ["panels", "../panels-test.ts", 1], // house client I203/I198/I213: steppers per thing, focus keeps the panel, Tab adds to the hidden set
+  ["surface-hold", "../surface-hold-test.ts", 1], // house client I240: a voice-relay leg holds an actor's lines (repaired: it drove the wrong bus)
+  ["particles", "../particles-test.ts", 1], // house client I159: a play/stop change updates the registry key, no rebuild
+  ["shadow-fade", "../shadow-fade-test.mjs", 1], // house client I172: registered shadow casters start not casting
+  ["frames-layout", "../frames-layout-test.ts", 1], // the frames and panels layout
+  ["models-field", "../models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
   ["client-tools", "../run-client.ts --import-only", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 
@@ -183,7 +196,7 @@ const EXPECT: Record<string, number> = {
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
   "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "migrate-identities": 1.7, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
-  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "grant-command": 0.3, "environment-realizer": 0.3, "lookat-forward": 0.5,
+  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "grant-command": 0.3, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
   "role-grammar": 0.3, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
   "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
