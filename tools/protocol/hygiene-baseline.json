@@ -126,7 +126,7 @@
   "bare-wait": 7
  },
  "tools/protocol/presence-check.ts": {
-  "bare-wait": 29
+  "bare-wait": 10
  },
  "tools/protocol/procgroup-check.ts": {
   "bare-wait": 6
