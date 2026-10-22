@@ -1605,11 +1605,15 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
   ok(mk.ok && hook.ok && !!st.entities.bobhook && !!st.entities.shelf, "SRU3 undoing ann's shelf leaves bob's socket on it, and the shelf with it", { mk: mk.ok, hook, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
 // SRU3b: the same when bob's socket is made in two writes: a child under the shelf, then its socket component, or (SRU3c)
-// a socket made on another thing, then hung on the shelf
+// a socket made on another thing, then hung on the shelf, or (SRU3d) both in one batch
 for (const [name, steps] of [
   ["sru3b", [["create", { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] } } }], ["set", { id: "bobhook", component: "socket", value: { name: "hook" } }]]],
   ["sru3c", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["create", { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } }],
     ["set", { id: "bobhook", component: "parent", value: { to: "shelf" } }]]],
+  // SRU3d: one batch makes the socket on another thing and then hangs it on the shelf
+  ["sru3d", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["batch", { ops: [
+    { verb: "create", args: { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
+    { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "shelf" } } }] }]]],
 ] as const) {
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
   call("olive", "create-world", { title: name });
@@ -1617,7 +1621,9 @@ for (const [name, steps] of [
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
   const made = steps.map(([verb, args]) => call("bob", verb, args));
   const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
-  ok(mk.ok && made.every((r) => r.ok) && !!st.entities.bobhook && !!st.entities.shelf, `${name.toUpperCase()} undoing ann's shelf leaves bob's socket on it, made in two writes, and the shelf with it`, { mk: mk.ok, made, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
+  // the undo's own skip, for bob's work on the shelf: nothing else stopped it
+  const skip = u?.refused?.code === "conflict" && (u.refused.skipped ?? []).some((x) => x.id === "shelf" && x.by === "bob");
+  ok(mk.ok && made.every((r) => r.ok) && skip && !!st.entities.bobhook && !!st.entities.shelf, `${name.toUpperCase()} undoing ann's shelf leaves bob's socket on it, made in two writes or one batch, and the shelf with it: the undo skips it for bob's work`, { mk: mk.ok, made, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
