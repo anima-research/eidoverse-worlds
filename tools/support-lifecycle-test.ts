@@ -312,7 +312,7 @@ try {
 
   // ---- 6. (v1: an id removed and respawned as a different lib mid-/geom-fetch kept its OWN geometry. A door
   // never reuses an id — "'swap' existed before in this world; an id is never reused" — so the race has no subject;
-  // syncSupport's lib re-check stays as defence.)
+  // syncSupport's lib re-check stays as defence, pinned headless by tools/support-swap-test.ts.)
 
   // ---- 7. a departing agent takes its world's floors with it -------------
   // The collider map is PROCESS state (physics.ts's declared seam), so one
