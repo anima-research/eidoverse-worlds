@@ -99,9 +99,13 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
   // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
   // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
+  // The other pairs v1's server wrote itself count too (server/verbs.ts at 306a00b0): a spawn's or a light's placer
+  // {id, sub}, and a behaviour's bySub, which is its own actor's account.
   for (const e of old) { const a = e?.args ?? {};
     if (e?.verb === "grant" && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
-    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub }); }
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub });
+    if ((e?.verb === "spawn" || e?.verb === "light") && typeof a.placer?.id === "string" && isAccount(a.placer.sub)) who(a.placer.id, { sub: a.placer.sub });
+    if (e?.verb === "behavior" && typeof e.actor === "string" && !["door", "world", "sim"].includes(e.actor) && !/^bhv:/i.test(e.actor) && isAccount(a.bySub)) who(e.actor, { sub: a.bySub }); }
   return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)) };
 }
 

@@ -337,6 +337,21 @@ await C("K14", "a private server's local: account is an account (translateV1Worl
   return [ann.length === 1 && spawn?.body?.args?.placer?.sub === ann[0] && !/local:ann/.test(text) && TV1.accountIn([{ seq: 3, args: { placer: { id: "x", sub: "local:x" } } }])?.seq === 3,
     { ann, placer: spawn?.body?.args?.placer, planned: r.planned, leaked: /local:ann/.test(text) }]; });
 
+await C("K15", "a person v1 knew by an aid1 account is one identity (translateV1World): a genesis role keyed by the account, and acts whose placer the server stamped with it, land on the one id, and no copy keeps the account, as a key or a value", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k15"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ZED = "aid1:iss:zed";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { [ZED]: { role: "builder" } } } },
+    { seq: 1, ts: 2, actor: "zed", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: "zed", sub: ZED } } },
+    { seq: 2, ts: 3, actor: "zed", verb: "spawn", args: { id: "lamp_2", lib: "a.glb", pos: [1, 0, 0] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const zeds = Object.entries<any>(r.planned).filter(([, e]) => e.name === "zed" || (e.subs ?? []).includes(ZED)).map(([id]) => id);
+  const spawns = lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn").map((e: any) => e.actor);
+  const from = lines.find((e: any) => e.kind === "act" && e.verb === "translated")?.body?.from;
+  return [zeds.length === 1 && r.planned[zeds[0]].subs?.includes(ZED) && spawns.every((a: string) => a === zeds[0])
+    && from?.roles?.[zeds[0]]?.role === "builder" && !text.includes(ZED) && TV1.accountIn([{ seq: 4, body: { roles: { [ZED]: { role: "builder" } } } }])?.seq === 4,
+    { zeds, planned: r.planned, spawns, from: from?.roles, leaked: text.includes(ZED) }]; });
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };

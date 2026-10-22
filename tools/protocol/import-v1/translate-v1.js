@@ -127,6 +127,9 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // A component whose name has an account's (`ownerSub`) and whose whole value is an account is one too: it is left out of the
 // state, an old comp request's data becomes the person's id, and the writer's check reads both shapes.
 // An account is any of the shapes a join wears (server/directory.ts): human:, agent:, aid1:, and a private server's local:.
+// A role or ban keyed by an account is that account's person, and an entry keyed by one in a copied value is keyed by their
+// id; the pairs main's server wrote (a placer, a behaviour's bySub) join a name to its account before any act is read
+// (world.ts), as a grant's do, so a person's acts before them are that one identity too.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -331,6 +334,8 @@ export function withoutAccounts(v, map = () => undefined) {
     if (ACCOUNT_KEY.test(k) && isAccount(x)) {
       out ??= { ...v }; const to = map(x);
       if (to === undefined) delete out[k]; else out[k] = to; continue; }
+    // a map keyed by an account (a genesis role, a ban, as v1 could key them): the entry under its person's id, or dropped
+    if (isAccount(k)) { out ??= { ...v }; delete out[k]; const to = map(k); if (to !== undefined && !Object.hasOwn(out, to)) out[to] = withoutAccounts(x, map); continue; }
     const y = withoutAccounts(x, map); if (y !== x) (out ??= { ...v })[k] = y;
   }
   return out ?? v;
@@ -347,14 +352,14 @@ export function accountIn(entries) {
     if (!v || typeof v !== "object") return null;
     const n = named(v); if (n) return path ? `${path}.${n[1]}` : n[1];
     for (const [k, x] of Object.entries(v)) { const p = path ? `${path}.${k}` : k;
-      if (ACCOUNT_KEY.test(k) && isAccount(x)) return p; const f = find(x, p); if (f) return f; }
+      if ((ACCOUNT_KEY.test(k) && isAccount(x)) || isAccount(k)) return p; const f = find(x, p); if (f) return f; }
     return null; };
   for (const [i, e] of entries.entries()) { const p = find(e, ""); if (p) return { seq: Number.isInteger(e?.seq) ? e.seq : i, path: p }; }
   return null;
 }
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
-const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
+const asSub = (k) => (isAccount(k) ? k : undefined);   // a role or ban keyed by its account (@19: every account shape)
 // @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A
 // v1 world's own inventions (a `heart` comp nobody registered) come across under a namespace, `<namespace>/heart` (the
 // translated world's name; "imported" when the caller gives none), so the registry can promote the word later without
