@@ -365,7 +365,7 @@ const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
-  const person = (k, v) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k) }) : enc(k));
+  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
@@ -428,7 +428,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
       else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
   }
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v)}`] = unsub(v);
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unsub(v);   // the v1 fold lowercased a ban's key
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   // …and through the account the v1 server stamped on the binding (authorSub, @16), as the author's grant is found, so the
   // two are one identity on every server; the account itself is dropped with every other one below

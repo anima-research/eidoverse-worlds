@@ -4,8 +4,11 @@
 //   IM-I25  the writer refuses an approval (validly countersigned) of a report that isn't this log's
 //   IM-I34  the dry-run report counts the renames the real run makes (and its hash is the writer's)
 //   IM-I6   a v1 ban (lowercased by the v1 fold) lands on the person the grant named, not a fresh identity
+//   IM-I6b  …and two different names stay two people: v1 kept roles and acts under the exact name (Ann / ann. / ann_ /
+//           A.N.N, two emoji, Ann and ann with two accounts); a lowered ban key that two names share stays its own
 //   IM-I9   on a TRUST_NAMES server a person's acts and their grant are one identity (a child process)
 //   IM-I5   a v1 agent's home-node sub is filed as the account its live join wears (aid1:<iss>:<sub>)
+//   IM-I5b  an enrolled agent's home-node sub is filed as its enrolment's account (agent:token:<id>)
 //   IM-I35  a failure after world.jsonl lands removes what it made: the error says nothing was written, and a rerun works
 //   IM-I10  the remembered places: a write that fails is reported, not counted; an unreadable file and dropped names are said
 //   IM-I7   lines of the old log that don't parse are counted, in the report and in the result
@@ -26,8 +29,8 @@ const argv = process.argv.slice(2);
 // IM-I9's child: one translation under TRUST_NAMES=1 (read at import), printed as JSON
 if (argv[0] === "--child") {
   const { translateV1World } = await import("./import-v1/world.ts");
-  const r = translateV1World(argv[1], argv[2]);
-  console.log(JSON.stringify({ planned: r.planned, identities: r.identities }));
+  try { const r = translateV1World(argv[1], argv[2]); console.log(JSON.stringify({ planned: r.planned, identities: r.identities })); }
+  catch (x) { console.log(JSON.stringify({ error: String(x?.message ?? x) })); }
   process.exit(0);
 }
 delete process.env.TRUST_NAMES;   // the in-process rows run as a public server does
@@ -55,6 +58,9 @@ function oldWorld(L: any[], { raw = null as string | null, poses = null as any }
 }
 const approvalFor = (w: any, report: string) => { const cust = custodyAt(custodyFileIn(w.worlds));
   return W1.makeApproval("new", report, { operator: { key: cust.operator(), sign: (m: string) => cust.signOperator(m) } }); };
+/** one translation in a child process, under `env` (read at import: TRUST_NAMES, AGENT_TOKENS_PATH, OPT_DIR, EIDOVERSE_DIR) */
+const child = (w: any, env: Record<string, string>) => { const p = Bun.spawnSync(["bun", import.meta.path, "--child", w.src, w.dest], { env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, stdout: "pipe", stderr: "pipe" });
+  try { return JSON.parse(p.stdout.toString().trim().split("\n").pop()!); } catch { return { err: p.stderr.toString().slice(-400) }; } };
 const linesOf = (dest: string) => readLog(fs.readFileSync(path.join(dest, "world.jsonl"), "utf8"));
 const threw = (f: () => any) => { try { f(); return null; } catch (x) { return String(x?.message ?? x); } };
 
@@ -103,6 +109,30 @@ row("IM-I6", () => {
   const role = Object.keys(c).find((k) => k.startsWith("roles:"))?.slice(6), ban = Object.keys(c).find((k) => k.startsWith("imported-bans:"))?.slice(14);
   ok(r.identities === 1 && role && role === ban, "IM-I6 the v1 fold's lowercased ban ('zed') lands on Zed's identity, the one his grant made: one person, one identity", { identities: r.identities, role, ban, planned: r.planned });
 });
+row("IM-I6b", () => {
+  const G = (id: string, role: string, sub?: string) => ({ actor: "world", verb: "grant", args: { id, role, ...(sub ? { sub } : {}) } });
+  const S = (actor: string, id: string) => ({ actor, verb: "spawn", args: { id, lib: "x.glb", pos: [0, 0, 0] } });
+  const run = (L: any[]) => { const w = oldWorld([BASIC[0], ...L]); const r = W1.translateV1World(w.src, w.dest); const ls = linesOf(w.dest);
+    const c = fold(ls).entities["@world"].c; const actor = (id: string) => ls.find((e: any) => e.body?.verb === "spawn" && e.body?.args?.id === id)?.actor;
+    const nameOf = (id: string) => r.planned[id]?.name; const subsOf = (id: string) => r.planned[id]?.subs ?? [];
+    return { r, c, actor, nameOf, subsOf, roleOf: (id: string) => c[`roles:${id}`]?.role }; };
+  const a = run([G("Ann", "owner", "human:discord:111"), G("ann.", "visitor")]);
+  const ids = Object.keys(a.c).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6));
+  const ann = ids.find((i) => a.nameOf(i) === "Ann"), dot = ids.find((i) => a.nameOf(i) === "ann.");
+  ok(a.r.identities === 2 && ann && dot && a.roleOf(ann) === "owner" && a.roleOf(dot) === "inhabitant", "IM-I6b Ann (owner, an account) and a later grant to 'ann.' are two people: Ann stays owner", { n: a.r.identities, roles: ids.map((i) => [a.nameOf(i), a.roleOf(i)]) });
+  const b = run([G("Ann", "owner", "human:discord:111"), S("Ann", "p1"), S("ann_", "p2"), S("A.N.N", "p3")]);
+  ok(b.r.identities === 3 && new Set([b.actor("p1"), b.actor("p2"), b.actor("p3")]).size === 3 && b.subsOf(b.actor("p1")!).includes("human:discord:111") && !b.subsOf(b.actor("p2")!).length,
+    "IM-I6b acts by 'ann_' and 'A.N.N' are not Ann's: three names, three people", { n: b.r.identities, p: [b.actor("p1"), b.actor("p2"), b.actor("p3")] });
+  const e = run([S("🦊", "f"), S("🐺", "g")]);
+  ok(e.r.identities === 2 && e.actor("f") !== e.actor("g") && e.nameOf(e.actor("f")!) === "🦊", "IM-I6b two names of symbols only (two emoji) are two people, never one empty key", { n: e.r.identities, names: Object.values<any>(e.r.planned).map((x) => x.name) });
+  const t = run([G("Ann", "owner", "human:discord:111"), G("ann", "builder", "human:discord:222"), S("Ann", "q1"), S("ann", "q2")]);
+  ok(t.r.identities === 2 && t.subsOf(t.actor("q1")!).includes("human:discord:111") && t.subsOf(t.actor("q2")!).includes("human:discord:222"),
+    "IM-I6b Ann (one account) and ann (another): each one's acts land on their own account", { q1: t.subsOf(t.actor("q1")!), q2: t.subsOf(t.actor("q2")!) });
+  const z = run([S("Zed", "z1"), S("ZED", "z2"), { actor: "world", verb: "ban", args: { id: "Zed" } }]);
+  const ban = Object.keys(z.c).find((k) => k.startsWith("imported-bans:"))?.slice(14);
+  ok(z.r.identities === 3 && ban && ban !== z.actor("z1") && ban !== z.actor("z2") && z.nameOf(ban) === "zed",
+    "IM-I6b a ban key the v1 fold lowercased ('zed') that two names share (Zed, ZED) is not pinned on either: it stays its own", { n: z.r.identities, ban, names: Object.values<any>(z.r.planned).map((x) => x.name) });
+});
 row("IM-I9", () => {
   const w = oldWorld([BASIC[0], { actor: "world", verb: "grant", args: { id: "Ann", role: "owner", sub: "human:discord:111" } },
     { actor: "Ann", verb: "spawn", args: { id: "lamp", lib: "l.glb", pos: [0, 0, 0] } }]);
@@ -119,6 +149,13 @@ row("IM-I5", () => {
   const r = W1.translateV1World(w.src, w.dest); const subs = Object.values<any>(r.planned).flatMap((e) => e.subs);
   ok(r.identities === 1 && JSON.stringify(subs) === JSON.stringify([`aid1:${HN_ISS}:agent:moth@home.test`]),
     "IM-I5 a v1 agent's home-node sub is filed as the account a live join from this host's home node wears (aid1:<iss>:<sub>)", subs);
+});
+
+row("IM-I5b", () => {
+  const w = oldWorld([BASIC[0], { actor: "world", verb: "grant", args: { id: "Moth", role: "builder", sub: "agent:moth@home.test" } }, { actor: "Moth", verb: "spawn", args: { id: "m", lib: "m.glb", pos: [0, 0, 0] } }]);
+  const tok = path.join(w.worlds, "tokens.json"); fs.writeFileSync(tok, JSON.stringify({ "tok-moth": { id: "Moth", subs: ["agent:moth@home.test"] } }));
+  const out = child(w, { AGENT_TOKENS_PATH: tok }); const subs = Object.values<any>(out.planned ?? {}).flatMap((e) => e.subs);
+  ok(out.identities === 1 && JSON.stringify(subs) === JSON.stringify(["agent:token:moth"]), "IM-I5b an enrolled agent's home-node sub is filed as its enrolment's account (agent:token:<id>), the one its live join wears", out);
 });
 
 // ---- IM-I35, IM-I10, IM-I7: what a translation writes, and says ----

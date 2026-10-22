@@ -5,7 +5,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, mintId, foldName, type Entry } from "../../../server/directory.ts";
+import { directoryFor, mintId, type Entry } from "../../../server/directory.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
@@ -63,29 +63,39 @@ function readOld(srcBytes: Buffer) {
   return { old, unparsed };
 }
 
-/** The identity mapper a translation runs with: who(name, {sub}) → the v4 identity, the same key for one person however
- *  they are named (an account; else their name, folded as the directory folds display names). With `dir` it mints into
- *  `planned` and reuses what the directory knows; without one (the dry run) it derives a stable id from the key, so the
- *  report counts exactly what the real run renames and nothing in it varies. */
-function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null) {
+/** The identity mapper a translation runs with: who(name, {sub, lowered}) → the v4 identity. A person with an account is
+ *  that account; a person without one is their EXACT name, as v1 kept roles and acts. `lowered`: the name is one the v1
+ *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
+ *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
+ *  the report counts exactly what the real run renames and nothing in it varies. */
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true }: { mint?: boolean } = {}) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const agents = agentTokens();
-  const nameKey = (n: string) => `name:${foldName(n)}`;
+  const nameKey = (n: string) => `name:${n}`;
+  // every name this log gives a person (actors, grants, genesis roles, a say's addressee): what a lowered ban key may mean
+  const names = new Set<string>();
+  for (const e of old) { const a = e?.args ?? {};
+    if (typeof e?.actor === "string") names.add(e.actor);
+    if (e?.verb === "grant" && typeof a.id === "string") names.add(a.id);
+    if (e?.verb === "say" && typeof a.to === "string") names.add(a.to);
+    if (e?.verb === "genesis") for (const k of Object.keys(a.roles ?? {})) if (k !== "*") names.add(k); }
+  const unlowered = (k: string) => { const c = [...names].filter((n) => n.toLowerCase() === k); return c.length === 1 ? c[0] : k; };
   // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
   const stable = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
-  const who = (name: string, { sub }: { sub?: string } = {}) => {
+  const who = (name0: string, { sub, lowered = false }: { sub?: string; lowered?: boolean } = {}) => {
+    const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
     // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
     const acct = sub !== undefined ? liveAccount(sub) : (isAccount(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
     const display = isAccount(name) ? null : name;   // a role keyed by its account has no name of its own
     const key = acct ?? nameKey(name);
-    // named without an account: whoever this log already knows by that name (a grant's sub, the pre-index below) first
-    let id = (sub === undefined && display ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
-    if (!id) { id = dir ? mintId() : stable(key); planned[id] = { name: display ?? "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
+    // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
+    let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
+    if (!id) { id = mint ? mintId() : stable(key); planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
     if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
-    memo.set(key, id); if (display) memo.set(nameKey(display), id); return id; };
+    memo.set(key, id); if (display !== null) memo.set(nameKey(display), id); return id; };
   // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
   // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
   // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
@@ -127,7 +137,7 @@ export function reportV1World(srcDir: string, { name, content }: { name?: string
   const world = name ?? path.basename(srcDir);
   // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: identityMapper(old, null).who, content: content ?? hostContent });
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: identityMapper(old, directoryFor(path.dirname(path.resolve(srcDir))), { mint: false }).who, content: content ?? hostContent });
   return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r);
 }
 

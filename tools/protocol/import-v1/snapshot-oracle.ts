@@ -68,7 +68,6 @@ const { socketQ } = await import("../../../shared/components.js");
 const { shapeRepairOps, shapesMarked } = await import("../../../shared/protocol/shaperepair.js");
 const FA = await import("../../../shared/flora_args.js");   // the grass reader's own mapping, for C
 const { directoryFileIn } = await import("../../../server/keyfiles.ts");
-const { foldName } = await import("../../../server/directory.ts");
 const { HN_ISS } = await import("../../../server/auth.ts");
 
 const TOL = 1e-9;
@@ -157,13 +156,14 @@ function whoFrom(worldsDir) {
   const f = directoryFileIn(worldsDir);
   const ids = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")).ids ?? {} : {};
   const bySub = new Map(), byName = new Map();
-  for (const [id, e] of Object.entries(ids)) { for (const s of e.subs ?? []) bySub.set(s, id); const k = foldName(e.name); const a = byName.get(k) ?? []; a.push(id); byName.set(k, a); }
+  for (const [id, e] of Object.entries(ids)) { for (const s of e.subs ?? []) bySub.set(s, id); const a = byName.get(e.name) ?? []; a.push(id); byName.set(e.name, a); }
   const unresolved = [];
-  const who = (name, { sub } = {}) => {
+  const who = (name, { sub, lowered = false } = {}) => {
     const acct = sub ?? (/^(human|agent|aid1):/.test(name) ? name : undefined);
     if (acct && bySub.has(acct)) return bySub.get(acct);
     if (acct && bySub.has(`aid1:${HN_ISS}:${acct}`)) return bySub.get(`aid1:${HN_ISS}:${acct}`);   // a v1 agent's home-node sub, as the importer files it
-    const a = byName.get(foldName(name)) ?? [];   // the importer keys a name folded (v1 bans are lowercased)
+    // exact, as v1 kept names; a lowered ban key is the one name that lowercases to it, as the importer reads it
+    const a = byName.get(name) ?? (lowered ? [...byName].filter(([n]) => n.toLowerCase() === name).flatMap(([, ids]) => ids) : []);
     if (a.length === 1) return a[0];
     unresolved.push({ name, sub, candidates: a.length }); return `?unresolved:${name}`; };
   return { who, unresolved, people: Object.keys(ids).length };
