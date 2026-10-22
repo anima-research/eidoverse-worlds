@@ -395,6 +395,27 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     const fallback = remotesMod.serverNow() - machine();
     check("a buffer with no arrival times is still adopted and drained, its clock sampled at the drain",
       outcome === "drained" && netMod.net.ws === older.ws && Math.abs(fallback - OLDER) < MARGIN, `${outcome}, serverNow - machine = ${fallback} ms, want ${OLDER}`);
+    // house review of #260, client/lib I62: requests in flight belong to the socket they went on. A replaced socket's close
+    // (rejoin waits at most 2 s for it, then dials) used to fail the NEW socket's requests too, and mark it unjoined.
+    // Mutation (must go red): make failPending ignore its socket argument (fail every request).
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const A = mk(); (globalThis as any).__ewEarlySocket = A; await netMod.connect();
+      netMod.net.joined = true;
+      const onA = netMod.sendRequest("whois", { name: "x" });
+      const B = mk(); (globalThis as any).__ewEarlySocket = B; await netMod.connect();
+      netMod.net.joined = true;
+      check("(setup) the second socket is the live one", netMod.net.ws === B.ws);
+      let settledB: any = null; const onB = netMod.sendRequest("whois", { name: "y" }).then((r: any) => (settledB = r));
+      const idB = JSON.parse(B.ws.sent.at(-1)).id;
+      A.ws.onclose({ target: A.ws, code: 1006 });   // the replaced socket's close lands late
+      const rA: any = await onA; await Promise.resolve();
+      check("the replaced socket's close answers ITS requests (offline)", rA?.ok === false && rA.refused?.code === "offline", JSON.stringify(rA));
+      check("…and leaves the live socket's requests waiting, and the live socket joined", settledB === null && netMod.net.joined === true, JSON.stringify({ settledB, joined: netMod.net.joined }));
+      await netMod._dispatch({ type: "reply", id: idB, reply: { ok: true, people: [] } });
+      const rB: any = await onB;
+      check("…which its own reply then answers", rB?.ok === true, JSON.stringify(rB));
+    }
   }
   // heldStill runs fn with performance.now() held at one instant, so every
   // clock read inside it reads that instant, however long the process stalls.
