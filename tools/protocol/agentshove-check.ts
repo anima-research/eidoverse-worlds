@@ -219,6 +219,15 @@ try {
     ok(planned, "(AS10 setup) the walk planned straight through it (30 kg: its shove would move it)", { target: ag.target });
     ok(/^arrived/.test(t) && /jam wouldn't move for your shove/.test(t), "AS10 a light crate backed against locked posts: the walk presses it, it doesn't budge, the walk re-plans round it and arrives", t);
     ok(off > 1.2, "AS10 …round its end (the body left the straight line by more than half its length)", { off }); }
+  // AS16 (CI macOS, 10-22): a permit refused too-fast is "not yet". The track refills at its speed, so a walk asked while it
+  // is spent (just after other walking; on a slow host, often) waits for it instead of ending refused. Spend it with two raw
+  // steps out and back (net nowhere, ~3.9 m of allowance), then ask for an ordinary walk at once
+  { const at = Array.isArray(ag.trackAt) ? ag.trackAt.slice() : null; ok(!!at, "(AS16 setup) the authority has the body somewhere", { at });
+    const out = [at[0] - 1.95, at[1], at[2]];
+    const s1 = await ag.request("move", { to: out }), s2 = await ag.request("move", { to: at });
+    ok(s1?.ok && s2?.ok, "(AS16 setup) two steps out and back spend the track", { s1: s1?.refused, s2: s2?.refused });
+    const t = T(await call("move", { to: [at[0] - 3, at[2]] }));
+    ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
   // AS15 (review of #260): a rejoin resends the agent's consent table without a preset. A preset
   // empties the agent's cells, so a cell it closed would stand open until its set landed. The rejoin reads what the
   // authority holds and sets only what differs; the closed cell is closed throughout and after

@@ -4478,8 +4478,10 @@ export class WorldAgent {
       if (this.walkGate !== g) return;
       g.busy = false;
       if (!r?.ok && r?.refused?.code === "solid" && this.walkUpTo(g, from, T, r.refused)) return;
-      // a shove's re-track (shoveNow) spends the track's speed allowance: too fast is "not yet", asked again shortly
-      if (!r?.ok && r?.refused?.code === "too-fast" && Date.now() - (g.retrackAt ?? -Infinity) < 3000 && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
+      // too fast is "not yet": the track refills at its speed, and it is spent by a shove's re-track (shoveNow), by walking
+      // just before, or on a slow host by steps the authority saw bunched up (AS16; CI macOS 10-22). Asked again shortly,
+      // five times at most (2 s refills 12 m, three full tracks), never ended as a refused walk on the first
+      if (!r?.ok && r?.refused?.code === "too-fast" && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
       if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
       g.slow = 0;
       this.trackAt = Array.isArray(r.at) ? r.at : to;
