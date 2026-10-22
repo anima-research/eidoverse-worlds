@@ -40,9 +40,14 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
+// T8c checks directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only it
+// would turn red have nothing to catch, so their mutants are skipped
+const DIR_SYNC_ROWS = new Set(["T8c"]);
 if (process.argv.includes("--mutants")) {
-  const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0;
+  const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0, ran = 0;
   for (const [name, file, find, repl, rows] of MUTANTS) {
+    if (process.platform === "win32" && rows.length && rows.every((x) => DIR_SYNC_ROWS.has(x))) { console.log(`skip mutant '${name}': the server syncs no directory on win32`); continue; }
+    ran++;
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
     fs.mkdirSync(path.join(d, "tools/protocol"), { recursive: true });
@@ -57,7 +62,7 @@ if (process.argv.includes("--mutants")) {
     console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → red: ${red.join(",") || "(none)"} (want ${rows.join(",")})`);
     fs.rmSync(d, { recursive: true, force: true });
   }
-  console.log(`[txn-check --mutants] ${MUTANTS.length} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
+  console.log(`[txn-check --mutants] ${ran} mutations run${ran < MUTANTS.length ? ` (${MUTANTS.length - ran} skipped on ${process.platform})` : ""}, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 const root = scratch("txn");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
