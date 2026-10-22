@@ -6,7 +6,7 @@
 import { isEntityId, isComponent } from "../fold.js";
 import { mintId } from "../ids.js";
 import { COMPONENTS, defOf, isNamespaced, materialize } from "../componentspec.js";
-import { offChain, carried, ENGINES } from "../simlayer.js";
+import { offChain, carried, ENGINES, ends, endsUnder } from "../simlayer.js";
 import { atWrite } from "../assetref.js";
 import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
@@ -108,20 +108,21 @@ function commit(w, actor, verb, args, build) {
 const liftsOf = (w, ctx, plan) => (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id])
   .map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
 
-// The hands a write's ops empty: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:
+// The hands a write's ops empty, by the rule the replay ends a lift by (simlayer's ends() and endsUnder()), so the two
+// agree on what is in a hand: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:
 // moved a held barrel in edit mode; her client let go, the authority didn't, and every throw after was refused from a
 // hand the two no longer agreed on.) Switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing
-// can't be thrown, so it's set down where the record has it. Keep this rule in step with simlayer's ends() and
-// endsUnder(). …And switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held
-// child of a switched-off parent could be neither put, dropped nor thrown; only its parent's return freed the hand).
-// Each once, in that order; `after` is the state the write leaves. A dry run reports them as the write would.
+// can't be thrown, so it's set down where the record has it. …And switching off (or removing) a thing lets go of
+// whatever is held UNDER it (attack-editor S2-1: a held child of a switched-off parent could be neither put, dropped nor
+// thrown; only its parent's return freed the hand). Each once, in that order; `after` is the state the write leaves. (A
+// thing removed with what it hangs under is in the ops itself: buildDelete deletes every descendant.) A dry run reports
+// them as the write would.
 function handsLetGo(w, plan, after) {
-  const out = []; const seen = new Set();
-  for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h || seen.has(o.id)) continue;
-    if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
-      seen.add(o.id); out.push({ id: o.id, by: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
-  const offed = plan.ops.filter((o) => (o.verb === "set" && o.comp === "disabled" && o.value === true) || (o.verb === "delete" && o.comp === undefined)).map((o) => o.id);
-  if (offed.length) for (const [id, h] of Object.entries(w.presence.holds ?? {})) {
+  const out = []; const seen = new Set(); const holds = w.presence.holds ?? {};
+  for (const o of plan.ops) { const h = holds[o.id]; if (!h || seen.has(o.id) || !ends(o)) continue;
+    seen.add(o.id); out.push({ id: o.id, by: h.by, why: "an edit moved it, so it left the hand that held it" }); }
+  const offed = plan.ops.filter(endsUnder).map((o) => o.id);
+  if (offed.length) for (const [id, h] of Object.entries(holds)) {
     if (seen.has(id) || !after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
     seen.add(id); out.push({ id, by: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
   return out;

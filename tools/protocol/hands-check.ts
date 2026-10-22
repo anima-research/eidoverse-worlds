@@ -40,10 +40,29 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
 { const W = "edit"; mk(W); take(W, "a", 0);
   const e = call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [8, 0, 8] } }); const t = call(W, "vic", "throw", { id: "a", v: [0, 2, 3] });
   ok(e.ok && held(W).length === 0 && code(t) === "not-holding" && pos(W, "a")[0] === 8 && e.notes?.some((n) => n.tookFromHand), "H6 an edit that moves a thing in someone's hand takes it out of the hand (and says so): it is where the edit put it", { e: code(e), notes: e.notes, t: code(t), held: held(W), a: pos(W, "a") }); }
-// H6b: a dry run of that edit says so too, and leaves the hand as it is; so does a dry switch-off of what a held thing hangs under
+// H6b: a dry run of that edit says so too, and leaves the hand as it is
 { const W = "edit-dry"; mk(W); take(W, "a", 0);
   const e = call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [8, 0, 8] }, dry: true });
   ok(e.ok && e.dry && held(W).includes("a") && e.notes?.some((n) => n.id === "a" && n.tookFromHand === "vic"), "H6b a dry run of an edit that moves a held thing says it would leave the hand, and leaves it there", { e: code(e), notes: e.notes, held: held(W) }); }
+// H6c: …and a dry switch-off of what a held thing hangs under says the held thing would leave the hand, and leaves it there
+{ const W = "edit-dry-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { on: "b" } });
+  call(W, "vic", "move", { to: [3, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
+  const e = call(W, "rowan", "set", { id: "b", component: "disabled", value: true, dry: true });
+  ok(g.ok && e.ok && e.dry && held(W).includes("top") && (e.notes ?? []).filter((n) => n.id === "top" && n.tookFromHand === "vic").length === 1,
+    "H6c a dry switch-off of what a held thing hangs under says it would leave the hand, once, and leaves it there", { g: code(g), e: code(e), notes: e.notes, held: held(W) }); }
+// H6d: an edit that writes a held thing's parent and its transform together takes it out of the hand once
+{ const W = "edit-twice"; mk(W); take(W, "a", 0);
+  const e = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "a", component: "parent", value: { to: "b" } } },
+    { verb: "set", args: { id: "a", component: "transform", value: { pos: [0, 0.6, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }] });
+  ok(e.ok && held(W).length === 0 && (e.notes ?? []).filter((n) => n.id === "a" && n.tookFromHand).length === 1,
+    "H6d an edit writing a held thing's parent and transform together takes it from the hand once, with one note", { e: code(e), notes: e.notes, held: held(W) }); }
+// H6e: removing what a held thing hangs under removes the held thing too, and empties the hand (a hand left holding a thing
+// that's gone would count toward what it may hold)
+{ const W = "edit-gone-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { on: "b" } });
+  call(W, "vic", "move", { to: [3, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
+  const e = call(W, "rowan", "delete", { id: "b" }); const gone = !fold(openWorld(root, W).entries).entities.top;
+  ok(g.ok && e.ok && gone && !held(W).includes("top") && (e.notes ?? []).filter((n) => n.id === "top" && n.tookFromHand === "vic").length === 1,
+    "H6e removing what a held thing hangs under empties the hand that held it, once, and says so", { g: code(g), e: code(e), gone, notes: e.notes, held: held(W) }); }
 { const W = "edit-other"; mk(W); take(W, "a", 0);
   const e = call(W, "rowan", "set", { id: "a", component: "label", value: "A" });
   ok(e.ok && held(W).includes("a"), "H7 …an edit of something else about it (its label) leaves it in the hand", { e: code(e), held: held(W) }); }
