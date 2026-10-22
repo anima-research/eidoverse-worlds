@@ -23,6 +23,7 @@
 
 import { materialsOf } from './matoverride.js';
 import { isMineMuted, allowUntrusted } from './mediaprefs.js';
+import { rotOrderFor, setRotOrder } from './viewprefs.js';
 import { entities } from './world.js';
 import { boxOf, previewMesh } from './realize/models.js';
 import { state } from './state.js';
@@ -75,7 +76,7 @@ const eulerHints = new Map();   // id → { order, e, q }
 function eulerHint(id, rec) {
   const h = eulerHints.get(id);
   if (!h) return undefined;
-  const order = rec?.rotOrder ?? 'XYZ';
+  const order = rotOrderFor(id);
   // a child's channels read its RELATIVE q (the mount's), so that is the q the hint is for
   const q = rec ? localOf(rec, state.st.entities).q : null;
   // not deleted on a mismatch: the repaint right after a commit reads the fold
@@ -88,6 +89,8 @@ export function liveFor(id) {
   const light = kindOf(rec) === 'light';
   return { casting: lightOf(rec) ? hooks.casting?.(id) : undefined, parts: obj && !light ? namedParts(obj) : undefined, materials: obj && !light ? materialsOf(obj) : undefined,
     euler: eulerHint(id, foldRecord(id)),
+    // this viewer's rotate order (viewprefs.js): how the channels read, never sent
+    rotOrder: rotOrderFor(id),
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths
     world: state.st.entities ?? {},
@@ -131,9 +134,11 @@ export function planEdit(id, key, value) {
   const f = fieldAt(inspectSchema(rec, id, live), key);
   if (f?.deg && typeof value === 'number') value = value * R2D;   // panel steppers speak wire (radians); editOps takes the face
   if (group === 'comp' && k !== '+' && value === '') return { ops: [], errors: [`${k}: empty — use "remove ${k}" to remove it`] };
-  const { ops, errors, euler, asks } = editOps(rec, id, { [key]: value }, live);
-  return { ops, errors, euler, asks };
+  const { ops, errors, euler, asks, rotOrder } = editOps(rec, id, { [key]: value }, live);
+  return { ops, errors, euler, asks, rotOrder };
 }
+/** Keep a rotate-order pick (a planEdit's rotOrder) as this viewer's: nothing is sent. */
+export const keepView = (id, plan) => { if (plan?.rotOrder) setRotOrder(id, plan.rotOrder); };
 /** Does this plan write a transform (a move/turn/scale)? The euler hint follows the pose. */
 export const movesPose = (ops) => ops.some((o) => (o.verb === 'batch' ? o.args.ops : [o]).some((x) => x.args?.component === 'transform'));
 
@@ -168,7 +173,8 @@ export function commitEdit(id, key, value, opts = {}) {
   // planEdit holds the two seam rules: the panel's steppers speak WIRE units (a deg field commits radians) while
   // editOps' contract — a model's — is the FACE, converted once there (review B1: amp/phase/socket yaw landed at 1/57th);
   // and a raw-JSON box cleared and blurred must not delete the component — 'remove <type>' (null) is the deliberate act.
-  const { ops, errors, euler, asks } = planEdit(id, key, value);
+  const { ops, errors, euler, asks, rotOrder } = planEdit(id, key, value);
+  keepView(id, { rotOrder });
   // one edit is ONE request (a batch when it took several ops): one act, one Ctrl+Z, and it waits for the authority;
   // expect names what it changes as this viewer saw it (a scrubbed field: as the scrub began)
   const reply = ops.length ? Edits.sendOps(ops, { what: `${key} of ${id}`, base: baseComps ? { [id]: baseComps } : null, revert: () => Edits.revertPose(id) }) : null;
@@ -180,7 +186,8 @@ export function commitEdit(id, key, value, opts = {}) {
  *  for rotate), as editOps takes them. The transform's reset keys use it. */
 export function commitMany(id, edits, what) {
   const rec = recordFor(id); if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
-  const { ops, errors, euler } = editOps(rec, id, edits, liveFor(id));
+  const { ops, errors, euler, rotOrder } = editOps(rec, id, edits, liveFor(id));
+  keepView(id, { rotOrder });
   if (ops.length) Edits.sendOps(ops, { what: `${what} of ${id}`, revert: () => Edits.revertPose(id) });
   if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
   return { ok: !errors.length, errors, ops };

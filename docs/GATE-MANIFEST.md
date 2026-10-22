@@ -287,16 +287,17 @@ time.
 | 117 | wing-fold-presence | main | `tools/wing-fold-presence-test.ts` | bun | 0.3 s | 180 s |
 | 118 | skystamp | main | `tools/skystamp-test.ts` | bun | 0.5 s | 180 s |
 | 119 | render-scene-import | main | `tools/render-scene-import-test.ts` | bun | ? | 300 s |
-| 120 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
-| 121 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
-| 122 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 126 s | 630 s |
-| 123 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
-| 124 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 125 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 126 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 127 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 128 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 129 | client-tools | browser | `tools/run-client.ts --import-only` | Chromium | 202 s | 1010 s |
+| 120 | channelbox | main | `tools/channelbox-test.ts` | bun | ? | 300 s |
+| 121 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
+| 122 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
+| 123 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 126 s | 630 s |
+| 124 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
+| 125 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 126 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 127 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 128 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 129 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 130 | client-tools | browser | `tools/run-client.ts --import-only` | Chromium | 202 s | 1010 s |
 
-Lanes: core 15 suites (~78 s), main 104 (~1637 s), browser 10 (~1123 s); 129 suites in all.
+Lanes: core 15 suites (~78 s), main 105 (~1637 s), browser 10 (~1123 s); 130 suites in all.
 <!-- END GENERATED -->

@@ -386,10 +386,10 @@ export function inspectSchema(ent, id, live = {}) {
     // entity's rotation order (shared/euler.js); a yaw-only thing reads exactly
     // (0, yaw, 0) in every order. live.euler is the triple this viewer last
     // saw — it picks the Euler branch, so channels don't jump while you work.
-    const order = rotOrderOf(ent);
+    const order = rotOrderOf(live);   // this viewer's (live.rotOrder): Euler channels are a view (PROTOCOL §9.1)
     const q = pv.q ?? qFromYaw(pv.yaw ?? 0);
     rotation.push({ t: 'enum', k: 'order', label: 'rotate order', value: order, def: 'XYZ', options: ROT_MODES.map((v) => ({ v, label: v === QUAT_MODE ? 'quaternion' : v })),
-      hint: locked ? 'locked — changing it asks first (a lock covers every component)' : 'how the Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Changing it never moves the thing, so a mount does not stop it' });
+      hint: 'your view: how YOUR Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Kept on this device, never sent, never moves the thing, so neither a lock nor a mount stops it' });
     if (order !== QUAT_MODE) {
       let e;
       if (!pv.q) e = [0, pv.yaw ?? 0, 0];
@@ -1200,6 +1200,7 @@ export function editOps(ent, id, edits, live = {}) {
   const ops = [];
   const c = recordComponents(ent);
   let place = null;                 // coalesced full pose
+  let viewOrder;                    // a rotate-order pick: the viewer's, returned rather than written
   // a child's channels are LOCAL to its parent (inspectSchema): the pose they
   // edit is the mount's, and a translate/rotate on it is written as a mount
   const L = localOf(ent, live.world ?? null);
@@ -1319,9 +1320,9 @@ export function editOps(ent, id, edits, live = {}) {
       case 'rot': {
         if (k === 'order') {
           if (!ROT_MODES.includes(raw)) { errors.push(`rot.order: one of ${ROT_MODES.join(' ')}`); break; }
-          // only how the channels read: never a place, never q. XYZ is the
-          // absence of the comp (nothing writes XYZ)
-          if (raw !== rotOrderOf(ent)) comps.set('rotOrder', raw === 'XYZ' ? null : raw);
+          // only how THIS viewer's channels read (PROTOCOL §9.1): never a place, never q, never sent. The caller keeps it
+          // (the client's local settings) and hands it back as live.rotOrder
+          if (raw !== rotOrderOf(live)) viewOrder = raw;
           break;
         }
         const n = num(f, raw); if (n == null) break;
@@ -1532,7 +1533,7 @@ export function editOps(ent, id, edits, live = {}) {
   if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
     basePlace();
     const q0 = pv.q ?? qFromYaw(pv.yaw ?? 0);
-    const order = rotOrderOf(ent);
+    const order = rotOrderOf(live);   // this viewer's (live.rotOrder): Euler channels are a view (PROTOCOL §9.1)
     if (Object.keys(quatSet).length) {
       const qn = qNorm(q0.map((v, i) => (quatSet[i] ?? v)));
       if (!qn) { errors.push('rot: a quaternion of zero length is no orientation'); place = null; }   // the pose is one verb: refused whole
@@ -1576,7 +1577,7 @@ export function editOps(ent, id, edits, live = {}) {
   if (place) ops.push(OP.set(id, 'transform', OP.transformOf(pv, { pos: place.pos, ...(place.q ? { q: place.q } : place.yaw != null ? { yaw: place.yaw } : {}), scale: place.scale })));
   for (const [mkey, next] of motions) ops.push(next ? OP.set(id, mkey, next) : OP.unset(id, mkey));
   for (const [type, data] of comps) { if (data == null) { if (c[type] != null) ops.push(OP.unset(id, type)); } else ops.push(OP.set(id, type, type === 'lock' ? true : data)); }
-  return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), };
+  return { ops, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), ...(viewOrder ? { rotOrder: viewOrder } : {}) };
 }
 
 /** A one-screen text rendering of the schema — what a model reads. */
