@@ -30,7 +30,7 @@ process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
 import { idAliases, inPage } from "./idalias.ts";
-import { pause } from "./wait.ts";
+import { pause, tryUntil, pageWaiter } from "./wait.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
@@ -54,8 +54,8 @@ const MY = () => entries().find((e: any) => e?.kind === "act" && e.verb === "cre
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "act" && e.actor === MY() && !e.body?.refused);
 const myRefused = () => entries().filter((e) => e?.kind === "act" && e.actor === MY() && e.body?.refused).length;
 const disk = () => fold(entries());
-const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* page busy */ } await sleep(100); } return false; };
-const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
+const waitFor = pageWaiter(evalJson);
+const waitDisk = async (pred: () => boolean, ms = 8000) => (await tryUntil("the log on disk", pred, { ms })) !== undefined;
 // a press is a keydown AND a keyup: a held D (Alt+D) or Delete would otherwise walk the body on, and the view with it
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
   return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
