@@ -559,7 +559,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     { const dir = directoryFor(WORLDS_DIR);
       const kept = c.spectator && c.account ? dir.idOfSub(c.account) : null;
       c.actorId = kept ?? dir.resolve({ sub: c.account ?? null,
-        name: c.spectator && c.account && dir.claimedByOther(c.id, c.account) ? `${c.id}-${c.account.replace(/[^a-z0-9]/gi, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN) : c.id }); }
+        name: c.spectator && c.account ? dir.spectatorName(c.id, c.account, LIMITS.ID_LEN) : c.id }); }
     if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
     // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
     // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
