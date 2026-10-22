@@ -149,13 +149,16 @@ register('grant', (arg) => {
   // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
   onePerson(id, 'grant').then((who) => { if (!who) return;
     const cur = worldComponents()[`roles:${who}`];
-    if (!role && (dur || forever) && !cur) return logChat('*', `${id} holds no role here to time — /grant ${id} <role> for ${durWord ?? '2h'}`);
-    // forever = the same grant without its end (a set, not a merge: a merge can't remove a field)
-    const { until: _u, ...rest } = cur ?? {};
-    const value = forever ? { ...rest, ...(role ? { role } : {}), ...(can ? { can: { ...(rest.can ?? {}), ...can } } : {}) }
-      : { ...(role ? { role } : {}), ...(can ? { can } : {}), ...(dur ? { until: serverNow() + dur } : {}) };
-    const merge = !forever && !role;
-    send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value, ...(merge ? { merge: true } : {}) } },
+    // a time or exceptions alone change a grant, so there must be one: a role-less record is refused by the authority (I42)
+    if (!role && !cur) return logChat('*', `${id} holds no role here to ${dur || forever ? 'time' : 'add exceptions to'} — /grant ${id} <role>${dur ? ` for ${durWord}` : ''}`);
+    // the whole grant, changed only where the command says (house review I6: a new role kept neither the person's
+    // exceptions nor their end): a new duration replaces the end, forever drops it (a set, not a merge: a merge can't
+    // remove a field), and new exceptions join the old ones
+    const { until: was, ...rest } = cur ?? {};
+    const until = forever ? undefined : dur ? serverNow() + dur : was;
+    const exceptions = can || rest.can ? { ...(rest.can ?? {}), ...(can ?? {}) } : null;
+    const value = { ...rest, ...(role ? { role } : {}), ...(exceptions ? { can: exceptions } : {}), ...(until !== undefined ? { until } : {}) };
+    send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value } },
       { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}` }); });
 });
 
