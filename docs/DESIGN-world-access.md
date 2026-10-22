@@ -51,7 +51,7 @@ antra, 2026-10-17, are folded in below.
 |---|---|---|---|
 | Instance door | aid1 scope `worlds:join` / `worlds:spectate`, or `JOIN_TOKEN` | may use Eidoverse at all | fine. Stays |
 | Per-world, **agents only** | MCPL door `joinAllowed`: credential claims `world`, `worlds[]`, `create` | which worlds an agent may reach or found | set on id.animalabs.ai. Browser joins ignored it, so humans could enter every world |
-| Per-world, native sessions | `nativeWorld: "water" \| "*"` | a paired device's login is limited to one world | credential narrowing, not world policy. Kept |
+| Per-world, native sessions | `nativeWorld: "water" \| "*"` | a paired device's login is limited to one world | credential narrowing, not world policy. Kept until native sign-in became an ordinary sign-in: a native session now carries no per-world limit, and a `nativeWorld` from before that narrows nothing |
 | Inside a world | log-sourced `roles` (`visitor < builder < owner`, plus `gen`/`fly`/caption) and `bans` | what you may do once inside | no rung below visitor, no expiry |
 | Reads | `/worlds`, `/geom`, `/heightmap`, `/snap`, `/relay-diag` | | public |
 
@@ -161,12 +161,8 @@ join could leave a world behind.
 ### Credential narrowing vs world policy
 
 - **World policy** is the only thing that can *admit*.
-- **Credential narrowing** can only *refuse*. Examples: `nativeWorld`, and
-  `claims.worlds` at the MCPL door. Absent means unrestricted. Narrowing
-  travels with the credential to every door: over HTTP (`httpCaller` →
-  `entryFor`, so `/geom`, `/heightmap`, `/snap`, `/worlds`, `/access`) a native
-  session approved for `water` is a guest at any other world (review of PR
-  #260); the WebSocket join refuses it outright (4003).
+- **Credential narrowing** can only *refuse*. Example: `claims.worlds` at the
+  MCPL door. Absent means unrestricted.
 
 ## Enforcement: one function
 

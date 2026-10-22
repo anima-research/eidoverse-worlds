@@ -152,6 +152,26 @@ check("nail pulled: it comes down off the nail",
   ag3.pins.size === 0 && ag3.pos.y < 0.7, `y=${ag3.pos.y.toFixed(2)}`);
 ag3.close?.();
 
+// 6b. an unpin can ride an end (house 6340433633 Q3): both apply, the nail and the release
+const ag5 = new WorldAgent({ url: URL, name: "kd-bot5", world: W });
+await ag5.connect();
+await sleep(400);
+await h.near(ag5);
+h.send({ type: "puppet", target: "kd-bot5", ragdoll: { lean: [2, 0, 0] } });
+await sleep(2000);
+h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
+await sleep(300);
+h.send({ type: "bodydrag", target: "kd-bot5", end: true, pinAt: { joint: "head", at: [ag5.pos.x, 1.9, ag5.pos.z] } });
+await sleep(1500);
+h.send({ type: "bodydrag", target: "kd-bot5", grab: { joint: "head" } });
+await sleep(300);
+const draggedMid = (ag5 as any).draggedBy;
+h.send({ type: "bodydrag", target: "kd-bot5", end: true, unpin: { joint: "head" } });
+await sleep(800);
+check("an unpin sent with an end: the nail comes out AND the drag ends",
+  draggedMid != null && ag5.pins.size === 0 && (ag5 as any).draggedBy == null, `draggedMid=${draggedMid} pins=${ag5.pins.size} draggedBy=${(ag5 as any).draggedBy}`);
+ag5.close?.();
+
 // 7. explicit release carries a FINAL root sample. The dragger streams at
 // ~15Hz, so the hand can move between the last ordinary sample and release.
 // Browser targets apply end.p before rebuilding their sim; agents must not
