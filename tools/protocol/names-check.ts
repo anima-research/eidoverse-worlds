@@ -677,13 +677,13 @@ const cases: Case[] = [
       return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
     good: (o) => /@1[4-9]$/.test(o.t) && /@1[4-9]$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
-      const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history"));
+      const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md");
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
   { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the switch since recut A2, §7a rule 4)", run() {
-      const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")); const body = md.slice(0, md.indexOf("## Version history"));
+      const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md"); const body = md.slice(0, md.indexOf("## Version history"));
       return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`", "`{stop: true}`", "`live`"].every((w) => vh.includes(w)),
         body: /`consent \{switch:\s*\n?\s*accept\|ask\|refuse\}`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },
