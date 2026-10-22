@@ -26,6 +26,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scratch, copyTree } from "./common.ts";
+import { tryUntil } from "./wait.ts";
 // [name, file, find, replace, rows it must turn red]: the mutation each row exists to catch
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["unpublished lines: publish only when the authority returned (no finally)", "server/worldlog.ts", "    finally { this.publish(from, held); }\n    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", "    if (threw === null) this.publish(from, held);\n    const o = txnOutcome(live, from, { threw: threw !== null, error: threw, refused: !!r && typeof r === \"object\" && r.ok === false, wedgedBefore });\n    if (threw !== null) {\n      console.error(", ["T1"]],
@@ -61,7 +62,7 @@ if (process.argv.includes("--mutants")) {
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
     fs.mkdirSync(path.join(d, "tools/protocol"), { recursive: true });
-    for (const f of ["common.ts", "txn-check.ts"]) fs.copyFileSync(path.join(ENGINE, "tools/protocol", f), path.join(d, "tools/protocol", f));
+    for (const f of ["common.ts", "txn-check.ts", "wait.ts"]) fs.copyFileSync(path.join(ENGINE, "tools/protocol", f), path.join(d, "tools/protocol", f));
     fs.copyFileSync(path.join(ENGINE, "package.json"), path.join(d, "package.json")); fs.symlinkSync(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"), "junction");
     const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
@@ -92,7 +93,6 @@ const ok = (c, what, d?) => { if (c) { pass++; console.log(`  ok   ${what}`); } 
 const W = process.env.WORLDS_DIR;
 const logFile = (name) => path.join(W, name, "world.jsonl");
 const lines = (name) => fs.readFileSync(logFile(name), "utf8").split("\n").filter(Boolean);
-const until = async (f) => { for (let i = 0; i < 300 && !f(); i++) await new Promise((r) => setTimeout(r, 10)); return f(); };
 const idOf = (acct, name) => directoryFor(W).resolve({ sub: acct, name });
 
 // every log message any test client is sent: was each line it carries on disk when it was sent? (persist before publish)
@@ -134,10 +134,10 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 
 // ---------------- T1 ----------------
 { const X = world("t1"); const t = tab(X, X.owner, { account: "local:olive" });
-  send(t, "create", { components: { description: "whole" } }); await until(() => t.replies.length);   // a whole act first: undo's target after the reopen
+  send(t, "create", { components: { description: "whole" } }); await tryUntil('the reply to "whole"', () => t.replies.length, { ms: 3000, step: 10 });   // a whole act first: undo's target after the reopen
   const n0 = X.w.log.live.entries.length; const logs0 = t.logs.length;
   const restore = fault("t1", 2, "before");
-  send(t, "create", { components: { description: "half" } }); await until(() => t.replies.length > 1); restore();
+  send(t, "create", { components: { description: "half" } }); await tryUntil('the reply to "half"', () => t.replies.length > 1, { ms: 3000, step: 10 }); restore();
   const r = t.replies[1];
   const actPublished = t.logs.slice(logs0).some((m) => m.from === n0 && m.entries.length === 1 && m.entries[0].kind === "act");
   ok(r?.ok === false && r?.txn === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 + 1 && actPublished
@@ -155,7 +155,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 // ---------------- T2 ----------------
 { const X = world("t2"); const t = tab(X, X.owner, { account: "local:olive" }); const other = tab(X, idOf("local:bea", "bea"), { account: "local:bea" }); const n0 = X.w.log.live.entries.length;
   const restore = fault("t2", 1, "after");
-  send(t, "say", { text: "maybe" }); await until(() => t.replies.length); restore();
+  send(t, "say", { text: "maybe" }); await tryUntil('the reply to "maybe"', () => t.replies.length, { ms: 3000, step: 10 }); restore();
   const r = t.replies[0];
   const anyOk = [...t.replies, ...other.replies].some((m) => m.ok === true);
   ok(r?.ok === false && r?.txn === "ambiguous" && r?.reply?.refused?.code === "ambiguous" && r?.reply?.from === n0 && !!X.w.log.live.wedged?.log && !anyOk
@@ -164,7 +164,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const re = openLive(path.join(W, "t2"), "t2-reopened");
   ok(re.entries.length === n0 + 1 && re.entries[n0]?.kind === "say" && re.entries[n0]?.body?.text === "maybe",
     "T2b reopen finds the line the asker was told is unknown (so 'failed' would have been a lie)", { n: re.entries.length });
-  send(t, "say", { text: "after" }); await until(() => t.replies.length > 1);
+  send(t, "say", { text: "after" }); await tryUntil('the reply to "after"', () => t.replies.length > 1, { ms: 3000, step: 10 });
   const r2 = t.replies[1];
   ok(r2?.ok === false && r2?.txn === "rolled-back" && r2?.reply?.refused?.code === "server-error" && lines("t2").length === n0 + 1,
     "T2c the wedged log refuses the next write before any byte: rolled back, server-error, the file unchanged", r2);
@@ -176,23 +176,23 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 
 // ---------------- T3 ----------------
 { const X = world("t3"); const t = tab(X, X.owner, { account: "local:olive" }); const n0 = X.w.log.live.entries.length;
-  send(t, "inspect", { id: "nothing-here" }); await until(() => t.replies.length);
+  send(t, "inspect", { id: "nothing-here" }); await tryUntil('the reply to "after"', () => t.replies.length, { ms: 3000, step: 10 });
   const r = t.replies[0];
   ok(r?.ok === false && r?.txn === "rolled-back" && r?.reply?.refused && X.w.log.live.entries.length === n0 && !t.logs.length,
     "T3 a refusal: rolled back, nothing appended, nothing published", r);
-  send(t, "say", { text: "ok" }); await until(() => t.replies.length > 1);
+  send(t, "say", { text: "ok" }); await tryUntil('the reply to "ok"', () => t.replies.length > 1, { ms: 3000, step: 10 });
   ok(t.replies[1]?.ok === true && t.replies[1]?.txn === "committed" && t.replies[1]?.reply?.txn === "committed" && t.replies[1]?.reply?.seq === n0,
     "T3b a write that lands: committed (envelope and reply), ok", t.replies[1]);
   const n1 = X.w.log.live.entries.length; const restore = fault("t3", 1, "before");
-  send(t, "say", { text: "lost" }); await until(() => t.replies.length > 2); restore();
+  send(t, "say", { text: "lost" }); await tryUntil('the reply to "lost"', () => t.replies.length > 2, { ms: 3000, step: 10 }); restore();
   ok(t.replies[2]?.txn === "ambiguous" && X.w.log.live.entries.length === n1 && !said(X, "lost") && t.logs.length === 1,
     "T3c a line whose write threw never reaches memory or anyone (persist before publish)", { r: t.replies[2], logs: t.logs.length }); }
 
 // ---------------- T4 ----------------
 { const X = world("t4"); const vic = idOf("local:vic", "vic"); const t = tab(X, vic, { account: "local:vic" }); const n0 = X.w.log.live.entries.length;
-  X.g.hold(); let e0 = X.g.entered; send(t, "say", { text: "from-the-banned" }); await until(() => X.g.entered > e0);
+  X.g.hold(); let e0 = X.g.entered; send(t, "say", { text: "from-the-banned" }); await tryUntil('"from-the-banned" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   ok(ownerDo(X, "ban", { who: vic, reason: "test" })?.ok === true, "(T4 setup) the owner bans the asker while its request waits");
-  X.g.release(); await until(() => t.replies.length);
+  X.g.release(); await tryUntil('the reply to "from-the-banned"', () => t.replies.length, { ms: 3000, step: 10 });
   const r = t.replies[0];
   ok(r?.reply?.refused?.code === "superseded" && /door/.test(r?.reply?.refused?.reason ?? "") && r?.txn === "rolled-back" && !said(X, "from-the-banned"),
     "T4 banned while the request waited: refused at the seam by the door (superseded), nothing written", r);
@@ -201,31 +201,31 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   // she starts an inhabitant (a new world's newcomers are builders, R 10-21: promoting a builder to builder changes nothing)
   ok(ownerDo(X, "set", { id: "@world", component: `roles:${bea}`, value: { role: "inhabitant" } })?.ok === true, "(T4b setup) the asker starts an inhabitant");
   const b = tab(X, bea, { account: "local:bea" });
-  X.g.hold(); e0 = X.g.entered; send(b, "create", { components: { description: "under-the-old-role" } }); await until(() => X.g.entered > e0);
+  X.g.hold(); e0 = X.g.entered; send(b, "create", { components: { description: "under-the-old-role" } }); await tryUntil('"under-the-old-role" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   ok(ownerDo(X, "set", { id: "@world", component: `roles:${bea}`, value: { role: "builder" } })?.ok === true, "(T4b setup) the owner makes the asker a builder while its request waits");
-  X.g.release(); await until(() => b.replies.length);
+  X.g.release(); await tryUntil('the reply to "under-the-old-role"', () => b.replies.length, { ms: 3000, step: 10 });
   ok(b.replies[0]?.reply?.refused?.code === "superseded" && /role/.test(b.replies[0]?.reply?.refused?.reason ?? "") && !described(X, "under-the-old-role"),
     "T4b the role changed while the request waited: refused (superseded), nothing written", b.replies[0]); }
 
 // ---------------- T5 ----------------
 { const X = world("t5"); const vic = idOf("local:vic", "vic"); const t = tab(X, vic, { account: "local:vic" });
-  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "through-a-closed-door" }); await until(() => X.g.entered > e0);
+  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "through-a-closed-door" }); await tryUntil('"through-a-closed-door" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   ok(ownerDo(X, "set", { id: "@world", component: "access", value: { join: "listed" } })?.ok === true, "(T5 setup) the door becomes members-only while the request waits");
-  X.g.release(); await until(() => t.replies.length);
+  X.g.release(); await tryUntil('the reply to "through-a-closed-door"', () => t.replies.length, { ms: 3000, step: 10 });
   ok(t.replies[0]?.reply?.refused?.code === "superseded" && /no-access/.test(t.replies[0]?.reply?.refused?.reason ?? "") && !said(X, "through-a-closed-door"),
     "T5 members-only while it waited, the asker unlisted: refused by the door (the same decision as join), nothing written", t.replies[0]); }
 
 // ---------------- T6 ----------------
 { const X = world("t6"); const vic = idOf("local:vic", "vic"), bea = idOf("local:bea", "bea"); const t = tab(X, vic, { account: "local:vic" }); const n0 = X.w.log.live.entries.length;
-  X.g.hold(); let e0 = X.g.entered; send(t, "say", { text: "whose-line" }); await until(() => X.g.entered > e0);
+  X.g.hold(); let e0 = X.g.entered; send(t, "say", { text: "whose-line" }); await tryUntil('"whose-line" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   t.c.actorId = bea;   // a re-join over the same socket resolved another identity (server.ts admitJoin), its leg not yet re-issued
-  X.g.release(); await until(() => t.replies.length);
+  X.g.release(); await tryUntil('the reply to "whose-line"', () => t.replies.length, { ms: 3000, step: 10 });
   const by = X.w.log.live.entries.slice(n0).map((e) => e.actor);
   ok(t.replies[0]?.reply?.refused?.code === "superseded" && /someone else/.test(t.replies[0]?.reply?.refused?.reason ?? "") && !said(X, "whose-line") && !by.includes(vic) && !by.includes(bea),
     "T6 the connection became someone else while the request waited: refused; nothing under either identity", { r: t.replies[0], by });
-  t.c.actorId = vic; X.g.hold(); e0 = X.g.entered; send(t, "say", { text: "mid-rejoin" }); await until(() => X.g.entered > e0);
+  t.c.actorId = vic; X.g.hold(); e0 = X.g.entered; send(t, "say", { text: "mid-rejoin" }); await tryUntil('"mid-rejoin" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   t.c.actorId = undefined;   // a re-join in flight (server.ts resets actorId before resolving the new one)
-  X.g.release(); await until(() => t.replies.length > 1);
+  X.g.release(); await tryUntil('the reply to "mid-rejoin"', () => t.replies.length > 1, { ms: 3000, step: 10 });
   ok(t.replies[1]?.reply?.refused?.code === "superseded" && !said(X, "mid-rejoin"), "T6b a re-join in flight: refused with the request's id (was an id-less server error)", t.replies[1]); }
 
 // ---------------- T7 ----------------
@@ -318,37 +318,37 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");
-  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "ahead-in-the-queue" }); await until(() => X.g.entered > e0);
+  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "ahead-in-the-queue" }); await tryUntil('"ahead-in-the-queue" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
   send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair");   // queued behind the held request
   OPERATORS.delete("local:opie");   // the account stops being an operator while the repair waits
-  X.g.release(); await until(() => t.replies.length > 1); OPERATORS.add("local:opie");
+  X.g.release(); await tryUntil('the reply to "operator-repair owner"', () => t.replies.length > 1, { ms: 3000, step: 10 }); OPERATORS.add("local:opie");
   const rep = t.replies.find((m) => m.operator);
   ok(rep?.ok === false && rep?.reply?.refused?.code === "superseded" && !X.w.log.live.state().entities["@world"]?.c?.[`roles:${bea}`],
     "T9 operator status revoked while the repair waited: refused, nothing written", rep);
-  send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair"); await until(() => t.replies.filter((m) => m.operator).length > 1);
+  send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair"); await tryUntil('the operator-repair reply (operator-repair owner)', () => t.replies.filter((m) => m.operator).length > 1, { ms: 3000, step: 10 });
   ok(t.replies.filter((m) => m.operator)[1]?.ok === true && t.replies.filter((m) => m.operator)[1]?.txn === "committed", "T9b (control) an operator's repair commits", t.replies.filter((m) => m.operator)[1]);
   // an operator's right is the account's, never the world's role: a second repair queued behind one that changed the
   // operator's own role is not refused for it
   const k0 = t.replies.filter((m) => m.operator).length; const fen = idOf("local:fen", "fen");
-  X.g.hold(); const e1 = X.g.entered; send(t, "say", { text: "ahead-again" }); await until(() => X.g.entered > e1);
+  X.g.hold(); const e1 = X.g.entered; send(t, "say", { text: "ahead-again" }); await tryUntil('"ahead-again" is held at the await', () => X.g.entered > e1, { ms: 3000, step: 10 });
   send(t, "set", { id: "@world", component: `roles:${opie}`, value: { role: "moderator" } }, "operator-repair");
   send(t, "set", { id: "@world", component: `roles:${fen}`, value: { role: "builder" } }, "operator-repair");
-  X.g.release(); await until(() => t.replies.filter((m) => m.operator).length >= k0 + 2);
+  X.g.release(); await tryUntil('the operator-repair reply (operator-repair builder)', () => t.replies.filter((m) => m.operator).length >= k0 + 2, { ms: 3000, step: 10 });
   const two = t.replies.filter((m) => m.operator).slice(k0);
   ok(two.length === 2 && two.every((m) => m.ok === true && m.txn === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two);
   // house 6340433633: the refusal says which way the status went, and its fix follows: revoked, sending again won't
   // change it; granted (an ordinary request queued while the account became an operator), sending again is decided anew
   ok(/stopped being a server operator/.test(rep?.reply?.refused?.reason ?? "") && /won't change this/.test(rep?.reply?.refused?.fix ?? ""), "T9d revoked: said so, and that sending it again won't change it", rep?.reply?.refused);
   const gus = idOf("local:gus", "gus"); const tg = tab(X, gus, { account: "local:gus" });
-  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); await until(() => X.g.entered > e2);
+  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); await tryUntil('"ahead-a-third-time" is held at the await', () => X.g.entered > e2, { ms: 3000, step: 10 });
   const n0 = tg.replies.length; send(tg, "say", { text: "queued" }); OPERATORS.add("local:gus");
-  X.g.release(); await until(() => tg.replies.length > n0); OPERATORS.delete("local:gus");
+  X.g.release(); await tryUntil('the reply to "queued"', () => tg.replies.length > n0, { ms: 3000, step: 10 }); OPERATORS.delete("local:gus");
   const gr = tg.replies[n0];
   ok(gr?.ok === false && /became a server operator/.test(gr?.reply?.refused?.reason ?? gr?.refused?.reason ?? "") && !/won't change/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? "") && /send it again/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? ""),
     "T9e granted while a request waited: said so, and sending it again is the way (not 'won't change this')", gr);
   // T9f: an account that isn't an operator is refused at once, and told who can repair, which is never a world's owner
   const nob = idOf("local:nob", "nob"); const tn = tab(X, nob, { account: "local:nob" });
-  send(tn, "set", { id: "@world", component: `roles:${bea}`, value: { role: "visitor" } }, "operator-repair"); await until(() => tn.replies.some((m) => m.operator));
+  send(tn, "set", { id: "@world", component: `roles:${bea}`, value: { role: "visitor" } }, "operator-repair"); await tryUntil('the operator-repair reply (operator-repair visitor)', () => tn.replies.some((m) => m.operator), { ms: 3000, step: 10 });
   const nr = tn.replies.find((m) => m.operator)?.reply;
   ok(nr?.ok === false && nr?.refused?.code === "rights" && /whoever runs this server/.test(nr?.refused?.fix ?? "") && !/owner/.test(nr?.refused?.fix ?? ""),
     "T9f operator-repair from an account that isn't an operator: refused, and pointed to whoever runs this server, not to an owner", nr); }
@@ -357,7 +357,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
   // reads and writes alike (a guest may say 20 in 10 s: 15 says, 85 reads), each through both recheck seams
   for (let i = 0; i < 100; i++) if (i % 7 === 6 && i < 105) send(t, "say", { text: `n${i}` }); else send(t, "inspect", { id: "@world" });
-  await until(() => t.replies.length === 100);
+  await tryUntil('the reply to "operator-repair visitor"', () => t.replies.length === 100, { ms: 3000, step: 10 });
   const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
 

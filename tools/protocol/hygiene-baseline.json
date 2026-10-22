@@ -162,8 +162,6 @@
   "raw-symlink": 2
  },
  "tools/protocol/txn-check.ts": {
-  "bare-wait": 1,
-  "own-until": 1,
   "raw-symlink": 1
  },
  "tools/protocol/xss-probe.ts": {
