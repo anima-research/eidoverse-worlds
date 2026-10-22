@@ -103,7 +103,7 @@
   "raw-symlink": 7
  },
  "tools/protocol/parity-check.ts": {
-  "bare-wait": 7,
+  "bare-wait": 5,
   "raw-symlink": 3
  },
  "tools/protocol/party-probe.ts": {
