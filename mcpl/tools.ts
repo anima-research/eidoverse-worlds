@@ -1270,8 +1270,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       const pins = [
         ...pinsOf(wireId, touched, base),
-        // each socket child the map was planned from, as liftOps writes it: its socket, its transform and its station
-        ...(writesSockets ? Object.entries(sockets).flatMap(([kid, c]) => pinsOf(kid, ["socket", "transform", "station"], c)) : []),
+        // each socket child the map was planned from, as liftOps reads and writes it: its parent (which host's child it is),
+        // its socket, its transform and its station
+        ...(writesSockets ? Object.entries(sockets).flatMap(([kid, c]) => pinsOf(kid, ["parent", "socket", "transform", "station"], c)) : []),
       ];
       if (pins.length > EXPECT_MAX)
         return fail(`edit: ${id} has more sockets than one edit can pin (${pins.length} pins; a request carries at most ${EXPECT_MAX}), so nothing was sent: edit its socket children one at a time (each is a thing of its own)`);
