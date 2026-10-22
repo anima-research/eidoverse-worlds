@@ -172,22 +172,25 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
-  const unknownFlights = new Set(); let unknownHold = false;   // purged launches whose rest isn't logged yet; a purged lift or catch this epoch
+  // a purged launch, lift or catch this epoch: the engine that read it and this one differ from there on (a body skipped
+  // or seated otherwise moves what the engine allocates and what it collides with, and a later rest doesn't restore that),
+  // so until the next cut nothing this engine computes is set beside the log: no digest, rest or in-flight check
+  let unknownEpoch = false;
   // a thing in someone's hand is nowhere in the engine's world: no rebuild (terrain, epoch, relock) may seat it (review 64d26822 #3)
   const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id]; return v; }, boxesFor = (s) => boxesForM(s, models);
   const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
     if (out.sim) advance(clock);
-    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const b = bodyIn(entries, purged, seq); if (!b || unknownFlights.size || unknownHold) return;   // purged, or the engine's world unknown here: nothing to compare
+    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const b = bodyIn(entries, purged, seq); if (!b || unknownEpoch) return;   // purged, or the engine's world unknown here: nothing to compare
       const mine = digestOf(out.sim); if (mine !== b.digest) disagree({ seq, logged: b.digest, mine }); return; }
     if (e.kind === "change") {
       const ops = opsSafe(e);
       const causeE = entries[e.cause];
       const isRest = isEntry(causeE) && causeE.kind === "sim" && !!bodyIn(entries, purged, e.cause);   // a purged launch's rest can't be checked: unknown
-      unknownFlights.delete(e.cause);   // its rest is on the record: the engines agree again from here
       const wasSpec = JSON.stringify(st.entities["@world"]?.c["physics-engine"] ?? null);
-      if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
+      if (out.sim && unknownEpoch) { /* the engine's world is unknown this epoch: its rests and touches are applied, not judged */ }
+      else if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
         const ids = [...new Set(ops.map((o) => o.id))];
         const after = applyOps(st, ops, seq, purged, e.verb === "batch"), B = boundsIn(st);
         if (causeE.verb !== "launch") disagree({ seq, why: `caused by a ${causeE.verb}, which starts no motion` });
@@ -210,7 +213,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       applyInPlace(st, ops, seq, purged, e.verb === "batch");
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; unknownFlights.clear(); unknownHold = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; unknownEpoch = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
           SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
@@ -258,9 +261,9 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
         for (const id of Object.keys(out.sim.statics ?? {})) if (!!out.sim.statics[id].dyn !== (view.entities[id]?.kind === "dynamic"))
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
     } else if (e.kind === "sim" && out.sim) {
-      // purged whole: the engine can't fly or lift what it can't read, so until that flight's rest (a lift or catch: until the next
-      // cut) the engine that read it and this one may differ, and a digest logged meanwhile is unknown here, as readback reads it
-      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") unknownFlights.add(seq); else if (e.verb === "lift" || e.verb === "catch") unknownHold = true; return; }
+      // purged whole: the engine can't fly or lift what it can't read, so until the next cut the engine that read it and this
+      // one may differ, and what this one computes meanwhile is unknown here, as readback reads it (unknownEpoch)
+      const a = bodyIn(entries, purged, seq); if (!a) { if (["launch", "lift", "catch"].includes(e.verb)) unknownEpoch = true; return; }
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
         out.lifted.delete(a.id);   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;

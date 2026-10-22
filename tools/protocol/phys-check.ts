@@ -582,6 +582,17 @@ function playground(name) {
   let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
   ok(rest > 0 && L[rest].verb === "set" && fold(P).status === "ok" && !err && v.checks.disagree.length === 0 && rs?.some((r: any) => r.seq === rest),
     "U7c a purged rest (its launch kept) reads as unknown on replay: no crash, no disagreement, and restsOf still lists it", { rest, verb: L[rest]?.verb, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), rests: rs?.length }); }
+// review of #260: a purged launch leaves the rest of its epoch unknown to a replay: the flights after it, even once its own
+// rest is logged, fly in an engine that skipped one body, so their digests and rests are applied, not judged
+{ const W = playground("purge-launch-then-more");
+  for (const id of ["ball", "crate-1", "ball"]) { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); }
+  const L = log(W); const last = L[L.length - 1]; const launches = L.map((e: any, i: number) => (e?.kind === "sim" && e.verb === "launch" ? i : -1)).filter((i: number) => i >= 0);
+  const base = simFold(L, last.ts + 1000); const ln = launches[0];
+  const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
+  const v = simFold(P, last.ts + 1000);
+  ok(launches.length === 3 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0,
+    "U7d a purged first launch, with two more flights after its rest: the replay calls none of the later digests or rests a disagreement", { launches, base: base.checks.disagree.length, agree: base.checks.agree, disagree: v.checks.disagree.slice(0, 3) }); }
 // review of #260: a turned table supports things over its own top, not over the box of its corners
 { const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
   const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });
