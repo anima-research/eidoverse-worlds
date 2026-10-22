@@ -132,6 +132,18 @@ console.log("lying down");
   for (let i = 0; i < 50 && !near(g, 2); i++) { await new Promise((r) => setTimeout(r, 10)); g = groundAt(0, 2.05, 0.25); }
   check("a stretched thing lying down is stretched along its own axes, then turned", near(g, 2), String(g));
   ag.dropSupport("log");
+  // A stump whose box runs from its base (z 0) to 1 m along its own z, stretched ×4 and mirrored along that axis, tipped
+  // back a quarter turn so its own z stands up. A mirrored axis is read as its size, as every support reads it, so it
+  // stands 4 m tall from the ground; read signed, its 4 m would run below the ground instead.
+  ag.geomFor = async (model: string) => model === "zz/stump.glb"
+    ? { bbox: { min: [-0.5, -0.5, 0], max: [0.5, 0.5, 1], size: [1, 1, 1] } }
+    : { bbox: { min: [-1, 0, -0.5], max: [1, 0.5, 0.5], size: [2, 0.5, 1] } };
+  ag.entities.set("stump", { id: "stump", model: "zz/stump.glb", kind: "thing", pos: [6, 0, 0], yaw: 0, actor: "x", scale: 1, scale3: [1, 1, -4], q: [-s, 0, 0, s] });
+  await ag.syncSupport("stump");
+  let g2: number | null = null;
+  for (let i = 0; i < 50 && !near(g2, 4); i++) { await new Promise((r) => setTimeout(r, 10)); g2 = groundAt(6, 4.05, 0); }
+  check("...and one mirrored along its length stands at its size, as unmirrored", near(g2, 4), String(g2));
+  ag.dropSupport("stump");
 }
 
 console.log("a summary's floors");
@@ -147,6 +159,37 @@ console.log("a summary's floors");
   for (let i = 0; i < 50 && !near(g, 1.5); i++) { await new Promise((r) => setTimeout(r, 10)); g = groundAt(32, 1.55, 2); }
   check("a mirrored building's summary deck holds a body on its floor", near(g, 1.5), String(g));
   ag.dropSupport("hall");
+  // mirrored in height: its height is its size too, so it is still room-scale, and its deck holds
+  ag.entities.set("hall2", { id: "hall2", model: "zz/hall.glb", kind: "thing", pos: [40, 0, 0], yaw: 0, actor: "x", scale: -1, scale3: [1, -1, 1] });
+  await ag.syncSupport("hall2");
+  let g2: number | null = null;
+  for (let i = 0; i < 50 && !near(g2, 1.5); i++) { await new Promise((r) => setTimeout(r, 10)); g2 = groundAt(42, 1.55, 2); }
+  check("...and so does one mirrored in height", near(g2, 1.5), String(g2));
+  ag.dropSupport("hall2");
+}
+{
+  // A rubble pile (2 × 0.4 × 2 m, its box top 0.4 m above cells at 0.15 m, lie 0.2 m) mirrored in height. Its lie is its
+  // size, so it is uneven and gets its heightfield, never its box top, which floats a body over the rubble.
+  const ag: any = new WorldAgent({ name: "visitor", world: "w" });
+  const pile = (certSpread: number) => ({
+    bbox: { min: [-1, 0, -1], max: [1, 0.4, 1], size: [2, 0.4, 2] }, lie: 0.2,
+    topGrid: { ...gridOf(() => 0.15), certSpread },
+  });
+  ag.meshFor = async () => null;
+  ag.geomFor = async () => pile(0.01);
+  ag.entities.set("rubble", { id: "rubble", model: "zz/rubble.glb", kind: "thing", pos: [50, 0, 0], yaw: 0, actor: "x", scale: -1, scale3: [1, -1, 1] });
+  await ag.syncSupport("rubble");
+  let g: number | null = null;
+  for (let i = 0; i < 50 && !near(g, 0.15); i++) { await new Promise((r) => setTimeout(r, 10)); g = groundAt(50, 0.45, 0); }
+  check("rubble mirrored in height stands a body on its cells, not its box top", near(g, 0.15), String(g));
+  ag.dropSupport("rubble");
+  // stretched ×2 in height and mirrored, a grid certified to 3 cm is 6 cm in the world, past the agreed 5 cm: abstain
+  ag.geomFor = async () => pile(0.03);
+  ag.entities.set("rubble2", { id: "rubble2", model: "zz/rubble.glb", kind: "thing", pos: [60, 0, 0], yaw: 0, actor: "x", scale: -2, scale3: [1, -2, 1] });
+  await ag.syncSupport("rubble2");   // a heightfield is fitted before syncSupport returns, so its absence is final here
+  const g2 = groundAt(60, 0.85, 0);
+  check("...and one stretched past its certification in height abstains, as unmirrored", near(g2, 0), String(g2));
+  ag.dropSupport("rubble2");
 }
 
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
