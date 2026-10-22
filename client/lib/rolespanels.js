@@ -94,12 +94,13 @@ async function paintScripts(body) {
   const r = await sendRequest('scripts', {});
   if (!r?.ok) { body.innerHTML = `<p class="rp-note">${esc(r?.refused?.reason ?? "couldn't read the scripts")}</p>`; return; }
   const rows = (r.scripts ?? []).map((x) => {
-    const paused = x.status === 'paused' && x.pausedBy; const mine = x.sponsor === me().id;
+    // paused by someone or by the world itself (an auto-pause has no pausedBy): either way it is offered Resume (I71)
+    const paused = x.status === 'paused'; const mine = x.sponsor === me().id;
     const may = isOwner() || mine || (has('pauseScripts') && x.sponsor && rankOfId(x.sponsor) < me().rank);
-    const blocked = paused && x.pausedBy !== me().id && rankOfId(x.pausedBy) > me().rank;
+    const blocked = paused && !!x.pausedBy && x.pausedBy !== me().id && rankOfId(x.pausedBy) > me().rank;
     const btn = may && !blocked ? `<button type="button" class="rp-btn" data-id="${esc(x.id)}" data-s="${esc(x.script)}" data-p="${paused ? 0 : 1}">${paused ? 'Resume' : 'Pause'}</button>` : '';
     return `<div class="rp-row"><div class="rp-main"><b>${esc(x.id)}</b> <code>${esc(String(x.script).replace(/^script:/, ''))}</code> <span class="rp-status" data-s="${esc(x.status)}">${esc(x.status)}</span></div>`
-      + `<div class="rp-sub">sponsor ${esc(x.sponsor ? nameOf(x.sponsor) : 'nobody')}${x.sponsor ? badge(x.sponsor) : ''}${paused ? ` · paused by ${esc(nameOf(x.pausedBy))}${x.pausedTs ? `, ${ago(x.pausedTs)}` : ''}` : ''}</div>${btn}</div>`;
+      + `<div class="rp-sub">sponsor ${esc(x.sponsor ? nameOf(x.sponsor) : 'nobody')}${x.sponsor ? badge(x.sponsor) : ''}${paused ? ` · paused${x.pausedBy ? ` by ${esc(nameOf(x.pausedBy))}` : ''}${x.pausedTs ? `, ${ago(x.pausedTs)}` : ''}` : ''}</div>${btn}</div>`;
   }).join('');
   body.innerHTML = rows || '<p class="rp-note">no scripts here</p>';
   body.querySelectorAll('button[data-s]').forEach((b) => { b.onclick = () => act('set', { id: b.dataset.id, component: b.dataset.s, value: { paused: b.dataset.p === '1' }, merge: true }, `${b.dataset.p === '1' ? 'pause' : 'resume'} ${b.dataset.id}`, () => paintScripts(body)); });
@@ -147,8 +148,9 @@ function paintRoles(body) {
   if (narrow(body)) {   // one role at a time (phone, VR, a squeezed panel)
     if (!roles.some((r) => r.id === gridRole)) gridRole = roles[0]?.id;
     const r = roles.find((x) => x.id === gridRole);
+    // the role's own header (holders, reorder, delete) above its one column, as the wide grid shows it (house review I68)
     html = `<label class="rp-field">role <select class="rp-pick">${roles.map((x) => `<option value="${esc(x.id)}" ${x.id === gridRole ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`
-      + `<table class="rp-grid rp-one"><tbody>${R.PERMISSION_NAMES.map((k) => `<tr><th scope="row"><b>${k}</b><div class="rp-dim">${esc(R.PERMISSIONS[k].text)}</div></th>${cell(r, k)}</tr>`).join('')}</tbody></table>${holders(r)}`;
+      + `<table class="rp-grid rp-one"><thead><tr><th></th>${head(r)}</tr></thead><tbody>${R.PERMISSION_NAMES.map((k) => `<tr><th scope="row"><b>${k}</b><div class="rp-dim">${esc(R.PERMISSIONS[k].text)}</div></th>${cell(r, k)}</tr>`).join('')}</tbody></table>${holders(r)}`;
   } else {
     html = `<div class="rp-gridwrap"><table class="rp-grid"><thead><tr><th></th>${roles.map(head).join('')}</tr></thead><tbody>`
       + R.PERMISSION_NAMES.map((k) => `<tr><th scope="row"><b>${k}</b><div class="rp-dim">${esc(R.PERMISSIONS[k].text)}</div></th>${roles.map((r) => cell(r, k)).join('')}</tr>`).join('')
@@ -317,7 +319,9 @@ function paintPlaces(body) {
     if (pos === null && radius !== '') return toast('Spawn: a radius needs a place (x, y, z)', 'warn');
     const ops = [];
     if (pos) ops.push({ verb: 'set', args: { id: '@world', component: 'spawn', value: { pos, ...(radius !== '' ? { radius: Number(radius) } : {}) } } });
+    else if (sp) ops.push({ verb: 'delete', args: { id: '@world', component: 'spawn' } });   // emptied: no spawn (house review I25)
     if (min) ops.push({ verb: 'set', args: { id: '@world', component: 'bounds', value: { min, max } } });
+    else if (bd) ops.push({ verb: 'delete', args: { id: '@world', component: 'bounds' } });   // emptied: no bounds, as the toast says
     if (!ops.length) return toast('Places: nothing to save', 'info');
     act('batch', { ops, label: 'places' }, 'places', () => paintPlaces(body));
   });
