@@ -287,6 +287,23 @@ await C("K11", "a name is joined to an account only where v1's server wrote the 
     && !roleDeletes.length && !/human:discord/.test(text),
     { ann, bob, planned: r.planned, lamp: spawn("lamp_1")?.actor, roles: Object.fromEntries(Object.entries<any>(w).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => [k, v?.role])), roleDeletes }]; });
 
+await C("K12", "an old genesis whose roles carry an account translates (translateV1World): the translated act's copy of it holds the person's id where the account was, and the role and the person's acts are that one identity", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k12"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ANN = "human:discord:42";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner", sub: ANN } } } },
+    { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [1, 0, 1] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  let r: any, threw: string | null = null;
+  try { r = translateV1World(src, path.join(W, "new")); } catch (e: any) { threw = String(e?.message ?? e); }
+  if (threw) return [false, { threw }];
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const ann = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(ANN)).map(([id]) => id);
+  const from = lines.find((e: any) => e.kind === "act" && e.verb === "translated")?.body?.from;
+  const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
+  // (v1's fold never granted a genesis role: only the identity is read from it, before the translation, world.ts)
+  return [ann.length === 1 && from?.roles?.Ann?.sub === ann[0] && from?.roles?.Ann?.role === "owner" && spawn?.actor === ann[0] && !/human:discord/.test(text),
+    { ann, from: from?.roles, spawn: spawn?.actor, planned: r.planned, leaked: /human:discord/.test(text) }]; });
+
 
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };

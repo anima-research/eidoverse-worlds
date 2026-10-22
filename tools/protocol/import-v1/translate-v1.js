@@ -122,6 +122,8 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // account becomes its own person's id, and the name beside it is joined to nothing, so no value in the log moves anyone's
 // later acts or role to another person. A binding's author is its bySub's person; the v1 fold's author is `by` where the
 // request sent one, a name the request chose.
+// The translated act's copy of the old genesis carries no account either: a genesis role's sub becomes its person's id, as an
+// old request's does (the identities were found from it before: world.ts).
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -530,7 +532,11 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
   push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
   const physics = hasEpoch(oldEntries);
-  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
+  // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
+  // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
+  const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
+  // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
+  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
@@ -540,9 +546,6 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
   // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
   // act never re-leaks what the values no longer hold
-  // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
-  // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
-  const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
   const noAcct = (e, a) => { let x = a;
     if (x && typeof x === "object" && !Array.isArray(x)) {
       if ("sub" in x) {
