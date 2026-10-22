@@ -140,9 +140,6 @@
  "tools/protocol/scale-check.ts": {
   "raw-symlink": 3
  },
- "tools/protocol/sclock-check.ts": {
-  "bare-wait": 3
- },
  "tools/protocol/scripts-check.ts": {
   "bare-wait": 15
  },
