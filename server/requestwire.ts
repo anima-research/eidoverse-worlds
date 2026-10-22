@@ -272,9 +272,11 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
       if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: old log in ${e.movedTo}, new one in ${e.freshAt}:`, e);
-      if (e?.resetDone) { console.error(`[world:${w.name}] reset by ${c.id}: erased (history archived in ${e.resetDone}), but reopening it failed:`, e.cause ?? e);
-        return err("the world was erased (its history is archived), but the server couldn't reopen it: the server's operator can restart it, and its server log says what failed"); }
-      return err(e?.movedTo ? "the reset failed partway: the world's old log was moved aside, and the server's operator can put it back (its server log says where)" : `the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
+      if (e?.resetDone && e.opened) {   // the fresh world is open: the reset stands, and its scripts (it has none yet) are the operator's to look at
+        console.error(`[world:${w.name}] reset by ${c.id}: the fresh world is open, but its scripts didn't start:`, e.cause ?? e); arch = e.resetDone; }
+      else if (e?.resetDone) { console.error(`[world:${w.name}] reset by ${c.id}: erased (history archived in ${e.resetDone}), but the fresh log didn't open:`, e.cause ?? e);
+        return err("the world was erased (its history is archived), but the server couldn't open the fresh world, so the world stays closed: ask whoever runs this server to restart it (what failed is in its log). Resetting again erases nothing more, and may open it if what failed has cleared"); }
+      else return err(e?.movedTo ? "the reset failed partway: the world's old log was moved aside, and the server's operator can put it back (its server log says where)" : `the reset failed and nothing changed: ${String(e?.message ?? e)}`); }
     console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
     w.broadcast({ type: "world-reset", world: w.name, by: c.id });
   },

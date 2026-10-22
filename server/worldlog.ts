@@ -588,7 +588,8 @@ export function resetWorld(log: WorldLog): string {
     for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
     fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
   } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh; throw err; }
-  // the fresh log is in place: what's left behind is only the emptied scratch directory
+  // the fresh log is in place, and nothing left in the scratch directory is used again: failing to remove it, whole or in
+  // part, leaves litter for the operator, not a failed reset
   try { fs.rmSync(fresh, { recursive: true, force: true }); } catch (e) { console.warn(`[world] reset left its scratch directory ${fresh}: ${e}`); }
   return arch;
 }
