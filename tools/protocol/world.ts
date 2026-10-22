@@ -248,7 +248,11 @@ function rollback(name: string) {
   for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f)); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
   for (const f of since) { fs.rmSync(path.join(D, f), { recursive: true, force: true }); did.push(`removed ${f} (made by the server since the translation; discarded)`); }
   for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
-  const ids = directoryFor(WORLDS_DIR).forgetPlanned(m.identities ?? {});
+  // an identity this translation minted that another world's files name (a later translation reused it through the same
+  // account, or the person has been there since) is that world's too: forgetting it would hand them a fresh, roleless id
+  const elsewhere = namedElsewhere(name, Object.keys(m.identities ?? {}));
+  const ids = directoryFor(WORLDS_DIR).forgetPlanned(Object.fromEntries(Object.entries(m.identities ?? {}).filter(([id]) => !elsewhere.has(id))));
+  if (elsewhere.size) did.push(`kept ${elsewhere.size} identit${elsewhere.size === 1 ? "y" : "ies"} the translation minted that another world's log names (${[...elsewhere].join(", ")})`);
   if (ids.removed.length) did.push(`forgot ${ids.removed.length} identit${ids.removed.length === 1 ? "y" : "ies"} the translation minted`);
   if (ids.kept.length) did.push(`kept ${ids.kept.length} identit${ids.kept.length === 1 ? "y" : "ies"} the translation minted but someone has bound or renamed since (${ids.kept.join(", ")})`);
   fs.rmSync(mf); did.push(`removed ${MANIFEST}`);
@@ -256,6 +260,15 @@ function rollback(name: string) {
     + `The content-address index (eido-index.json) is a cache of library bytes, not of this world, and was left. If a server was serving "${name}", restart it.`);
 }
 
+/** Which of `ids` another world in WORLDS_DIR names: in its log, its moderator log or its remembered places. */
+function namedElsewhere(name: string, ids: string[]): Set<string> {
+  const found = new Set<string>(); if (!ids.length) return found;
+  for (const w of fs.readdirSync(WORLDS_DIR)) { if (w === name || w.startsWith(".")) continue;
+    for (const f of ["world.jsonl", "world.mod.jsonl", "poses.json"]) { const p = path.join(WORLDS_DIR, w, f); let b: Buffer;
+      try { b = fs.readFileSync(p); } catch { continue; }
+      for (const id of ids) if (!found.has(id) && b.includes(id)) found.add(id); } }
+  return found;
+}
 /** An in-place swap the process didn't live to finish (review r11 L4): world.jsonl landed (the directory is a world) but
  *  the old files weren't all renamed beside it, or the translated files weren't all moved in. Seen by what's left: the
  *  old log.jsonl still beside world.jsonl, or the temporary sibling (`.translating-<name>-*`) whose world.jsonl has gone.

@@ -48,6 +48,7 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
 //   IP30 (r14 M3) a world.mod.jsonl the server made after the translation blocks rollback without --discard-changes, is removed with it, and the world translates again
 //   IP24 `rollback <world>` restores the WHOLE operational set: the renamed originals back (same bytes, inode, mtime), the
 //        made files (world.jsonl, poses.json, world.mod.jsonl, translation.json) removed, the minted identities forgotten: the
@@ -282,6 +283,16 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(r3.code === 0 && same(fingerprint(d), fp) && /changes since the translation discarded/.test(r3.out), "IP25 --discard-changes rolls back anyway, saying what was discarded; the directory is byte-identical to the original again", r3.out.slice(-400));
   const r4 = tool(["rollback", name]);
   ok(r4.code !== 0 && /holds no translation\.json/.test(r4.out) && /Nothing was changed/.test(r4.out) && same(fingerprint(d), fp), "IP25 a directory with no manifest refuses with that reason", r4.out.slice(-300)); }
+// ================= IP24b: rollback keeps an identity another world's translation reused =================
+// (TRUST_NAMES on: a name is an account, so a second world translated after the first wears the first one's id for Zed)
+{ const zed = [{ actor: "Zed", verb: "say", args: { text: "here in both" } }];
+  const d1 = oldWorld("share1", { extra: zed }), d2 = oldWorld("share2", { extra: zed });
+  const t1 = xlate(["share1"]), t2 = xlate(["share2"]);
+  const zedIn = (d: string) => readLog(fs.readFileSync(path.join(d, "world.jsonl"), "utf8")).find((e: any) => e.kind === "say" && e.body?.text === "here in both")?.actor;
+  const id = zedIn(d1), m1 = JSON.parse(fs.readFileSync(path.join(d1, MANIFEST), "utf8"));
+  const r = tool(["rollback", "share1"]); const dirNow = JSON.parse(fs.readFileSync(dirf, "utf8"));
+  ok(t1.code === 0 && t2.code === 0 && !!id && id === zedIn(d2) && id in (m1.identities ?? {}) && r.code === 0 && !!(dirNow.ids ?? dirNow)[id] && /another world/.test(r.out),
+    "IP24b rolling back the first world keeps the identity the second one's log names (minted by the first, reused by the second), and says so", { id, second: zedIn(d2), minted: id in (m1.identities ?? {}), code: r.code, kept: !!(dirNow.ids ?? dirNow)[id], out: r.out.slice(-400) }); }
 // ================= IP30 (r14 M3): a file the server made AFTER the translation (its first ban → world.mod.jsonl) is history too =================
 { const name = "modlater"; const d = oldWorld(name); const fp = fingerprint(d); const r = xlate([name]);
   ok(r.code === 0 && isWorldDir(d) && !fs.existsSync(path.join(d, "world.mod.jsonl")), "IP30 setup: translated in place, no moderator log yet (this old world had no bans)", r.out.slice(-200));
