@@ -157,13 +157,23 @@ export async function setWaterField(f: { level: number; sample: (x: number, z: n
 // same id twice (a re-sync after a place) still counts once.
 const holders = new Map<string, Set<string>>();
 
+/** A stretched thing's per-axis scale (shared/scale3.js); absent is uniform. */
+const finite3 = (v: unknown) => v == null || (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite));
+/** The per-axis scale a support is fitted at, as physics reads a scale (componentspec: a negative axis mirrors, and
+ *  physics reads |scale|), when the thing is stretched; null when every axis is the same, so the one number serves.
+ *  colliders.js's readers take one scale for all three axes, so a stretched support is fitted at scale 1 with the
+ *  stretch already in its own numbers: its box, its grid, its triangles. */
+const stretchOf = (x: { scale3?: number[] }): [number, number, number] | null => {
+  if (!Array.isArray(x.scale3)) return null;
+  const [a, b, c] = x.scale3.map(Math.abs);
+  return a === b && b === c ? null : [a, b, c];
+};
+/** The transform a stretched support is fitted with: its stretch is in its geometry, so the transform carries none. */
+const unstretched = <T extends { scale?: number; scale3?: number[] }>(x: T): T => ({ ...x, scale: 1, scale3: undefined });
+
 /** Register a placed entity's support geometry (a local-frame box + world
  *  transform) so settling bodies rest on it. `holder` is the claiming agent;
  *  the box survives until every holder has removed it. */
-/** A stretched thing's per-axis scale, beside the one number decide() reads (shared/scale3.js); absent is uniform. */
-const finite3 = (v: unknown) => v == null || (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite));
-const perAxis = (x: { scale?: number; scale3?: number[] }) => x.scale3 ?? x.scale ?? 1;
-
 export async function registerSupport(
   holder: string, id: string, min: number[], max: number[],
   xform: { position: number[]; yaw?: number; scale?: number; scale3?: number[] },
@@ -182,7 +192,9 @@ export async function registerSupport(
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
   // re-fit unconditionally: a place moves the box, and the newest claimant's
   // transform is the freshest reading of where the thing actually is
-  m.colliders.fitSupportBox(id, min, max, { ...xform, scale: perAxis(xform) });
+  const k = stretchOf(xform);
+  if (k) m.colliders.fitSupportBox(id, min.map((v, i) => v * k[i]), max.map((v, i) => v * k[i]), unstretched(xform));
+  else m.colliders.fitSupportBox(id, min, max, xform);
   generation++;
   scopeEntry(m, id);
 }
@@ -209,7 +221,15 @@ export async function registerSupportGrid(
   }
   const m = await loadSim();
   if (!m) return false;
-  if (!m.colliders.fitSupportGrid(id, topGrid, { ...xform, scale: perAxis(xform) })) return false;
+  const k = stretchOf(xform);
+  const grid: any = topGrid;
+  // a stretched grid's cells in world sizes, to the millimetre the server rounds them to
+  const mm = (v: number) => Math.round(v * 1000) / 1000;
+  const fitted = k && grid && typeof grid === "object" && Array.isArray(grid.minXZ) && Array.isArray(grid.sizeXZ) && Array.isArray(grid.cells)
+    ? { ...grid, minXZ: [mm(grid.minXZ[0] * k[0]), mm(grid.minXZ[1] * k[2])], sizeXZ: [mm(grid.sizeXZ[0] * k[0]), mm(grid.sizeXZ[1] * k[2])],
+        cells: grid.cells.map((c: unknown) => (typeof c === "number" ? mm(c * k[1]) : c)) }
+    : topGrid;
+  if (!m.colliders.fitSupportGrid(id, fitted, k ? unstretched(xform) : xform)) return false;
   generation++;
   scopeEntry(m, id);
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
@@ -247,17 +267,21 @@ export async function registerMeshSupport(
     geom.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     meshGeometries.set(mesh, geom);
   }
-  const s = xform.scale ?? 1;
+  // a stretched thing's triangles carry its stretch, in a copy of its own: the shared geometry and the lib's shared
+  // fit are for the model at one scale
+  const k = stretchOf(xform);
+  if (k) geom = geom.clone().scale(k[0], k[1], k[2]);
+  const s = k ? 1 : xform.scale ?? 1;
   const root = new THREE.Group();
   root.add(new THREE.Mesh(geom));
   root.position.set(xform.position[0], xform.position[1], xform.position[2]);
   root.rotation.y = xform.yaw ?? 0;
-  if (xform.scale3) root.scale.set(xform.scale3[0], xform.scale3[1], xform.scale3[2]); else root.scale.setScalar(s);   // stretched per axis, as applyScale does
+  root.scale.setScalar(s);
   root.updateMatrixWorld(true);
   // Never throws (#88): a model the fit chokes on (degenerate triangles, a
   // BVH build failure) abstains, and the caller falls back to its summary.
   try {
-    const lib = xform.model ?? null;   // colliders.js shares a fit between spawns of one model by this name
+    const lib = k ? null : xform.model ?? null;   // colliders.js shares a fit between spawns of one model by this name
     m.colliders.fitCollider(id, root, { collide: xform.collide, scale: s, lib, localFrame: true });
     scopeEntry(m, id);
   } catch (err) {

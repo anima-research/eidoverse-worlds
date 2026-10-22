@@ -2407,10 +2407,15 @@ export class WorldAgent {
     const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s, ...(Array.isArray(e.scale3) ? { scale3: s3 } : {}) };
     // lying down (a tumbling engine's rest, or a hand's tilt): its box turned into the frame of its own yaw, and no
     // decks or grid (those are measured upright); read by its yaw alone it was a phantom deck where it no longer stands
-    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, g.bbox.min, g.bbox.max) : null;
+    // A stretch acts on the model's own axes, before its rotation, so a stretched box is stretched first and then turned,
+    // and is registered at scale 1 (the turn would carry a stretch applied afterwards onto the wrong axes).
+    const stretched = Array.isArray(e.scale3) && !(Math.abs(s3[0]) === Math.abs(s3[1]) && Math.abs(s3[1]) === Math.abs(s3[2]));
+    const st = (v: number[]) => stretched ? v.map((x, i) => x * Math.abs(s3[i])) : v;
+    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, st(g.bbox.min), st(g.bbox.max)) : null;
     if (lying) {
       const bid = `${this.world}/${id}`;
-      void registerSupport(this.supportHolder, bid, lying.min, lying.max, { ...xform, yaw: lying.yaw });
+      void registerSupport(this.supportHolder, bid, lying.min, lying.max,
+        stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
       this.supportIds.set(id, [bid]);
       return;
     }
