@@ -104,9 +104,12 @@ function commit(w, actor, verb, args, build) {
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 
-// what an engine's start finds in a hand (buildEpoch), lifted out of its world: one sim entry each, naming its holder
-const liftsOf = (w, ctx, plan) => (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id])
-  .map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
+// what an engine's start finds in a hand (buildEpoch), lifted out of its world: one sim entry each, naming its holder. Only
+// the holds the write itself leaves: a thing the same write takes out of the hand (handsLetGo) is where the edit put it,
+// and the replay seats it in the new engine's world, so a lift logged after the change would take it out again
+const liftsOf = (w, ctx, plan) => { const released = new Set(handsLetGo(w, plan, plan.after).map((g) => g.id));
+  return (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id] && !released.has(id))
+    .map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } })); };
 
 // The hands a write's ops empty, by the rule the replay ends a lift by (simlayer's ends() and endsUnder()), so the two
 // agree on what is in a hand: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:

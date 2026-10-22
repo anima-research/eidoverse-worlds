@@ -564,6 +564,20 @@ function playground(name) {
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" }); const n = log(W).length;
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG, dry: true });
   ok(g.ok && on.ok && on.dry && JSON.stringify(on.lifts) === '["ball"]' && log(W).length === n, "U5e a dry run of an engine's start names what it would lift out of a hand, and logs nothing", { g: g.ok ?? g.refused, on, logged: log(W).length - n }); }
+// U5f: a batch that starts the engine and moves a held thing takes it out of the hand, so it logs no lift for it: the thing
+// is seated in the new engine's world where the edit put it. Its dry run says the same: the release, and no lift
+{ const W = fresh("held-moved-at-start"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
+  const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
+  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { ops });
+  const lift = log(W).slice(n).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W); const w = openWorld(root, W);
+  ok(g.ok && b.ok && !lift && !w.presence.holds?.ball && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
+    "U5f a batch that starts the engine and moves a held thing logs no lift for it: it leaves the hand and is in the engine's world where the edit put it", { g: g.ok ?? g.refused, b: b.ok ?? b.refused, lift: !!lift, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball });
+  ok(dry.ok && dry.dry && !dry.lifts && (dry.notes ?? []).filter((x: any) => x.id === "ball" && x.tookFromHand === "sam").length === 1,
+    "U5f …and its dry run says the thing leaves the hand, and names no lift for it", { lifts: dry.lifts, notes: dry.notes }); }
 
 // review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
 // back, purges nothing in either)
