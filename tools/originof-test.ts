@@ -4,7 +4,8 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/originof-test.ts
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: 'originof-stubs', setup(b) {
   for (const m of ['base', 'icons', 'ui', 'net', 'build', 'chat', 'editwrites'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./originof-stub.mjs') }));

@@ -8,6 +8,7 @@ import { PURGED } from "../fold.js";
 import { baseOf, mapRefs, refsOf, refFields } from "../componentspec.js";
 import { mediaTier, tierWords } from "../../mediasrc.js";
 import { ENGINES, carried } from "../simlayer.js";
+import { refuseForeign } from "./physics.js";
 import { eidoHex } from "../../eido.js";
 import { r3 } from "../round.js";
 import { CTX, UP } from "./ctx.js";
@@ -65,6 +66,10 @@ function planResettle(w, asker, ops, before, after0) { let after = after0; const
     const launches = dropped.map((k) => { const t = was(k); return { id: k, p: t.pos.slice(), yaw: qYaw(t.q), ...(ENGINES[spec.engine]?.rotates ? { q: t.q.slice() } : {}), v: [0, 0, 0], handled: [asker] }; });
     return { actor, asker, hosts, occupants: dropped, admitted, launches, note: { fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" } };
   }
+  // an engine this server doesn't carry (an owner named it): re-dropping them is that engine's to compute, so the reshape is
+  // refused, never answered by setting them down as if the world had no physics (the house's answer on #260, as for a delete
+  // or a grab of a support: writes.js, bodyverbs.js)
+  if (spec && !carried(spec)) refuseForeign(spec, `reshaping that would re-drop ${occupants.join(", ")} (resting on it)`);
   // no engine: set each occupant down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
   // counts faces at or below where the occupant stands; r2 S1.1). A host that lost its body frees its occupants to the world
   const setOps = occupants.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);

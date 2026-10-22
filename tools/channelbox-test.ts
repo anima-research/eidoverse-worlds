@@ -210,7 +210,7 @@ console.log('the heading alias and moves');
   const { after } = doorEdit(ent, { 'pos.yaw': 90 });
   check('pos.yaw on a tilted thing turns it about +Y and keeps the tilt: still tilted, now heading 90° (through the door)', Math.abs(qRotate(after.q, [0, 1, 0])[1] - qRotate(tilt, [0, 1, 0])[1]) < 1e-12 && Math.abs(qHeading(after.q) - Math.PI / 2) < 1e-4, JSON.stringify(after.q));
   const m = editOps(ent, 'e', { 'pos.x': 5 });
-  check('a move carries the thing\'s q unchanged (a move is not a turn)', JSON.stringify(tfOf(m).q) === JSON.stringify(tilt) && tfOf(m).pos[0] === 5 && JSON.stringify(tfOf(m).scale) === '[2,2,2]', JSON.stringify(m.ops));
+  check('a move carries the thing\'s q unchanged (a move is not a turn)', JSON.stringify(tfOf(m).q) === JSON.stringify(tilt) && tfOf(m).pos[0] === 5 && JSON.stringify(tfOf(m).scale) === '[2,2,2]', JSON.stringify({ ops: m.ops, tilt, entQ: ent.q, sameObject: ent.q === tilt }));   // Windows CI 10-22 failed here with only the ops shown: show which q moved
   const both = editOps(ent, 'e', { 'pos.x': 5, 'rot.z': 10, 'pos.scale': 3 });
   check('Translate + Rotate + Scale in one edit = ONE whole set transform', flat(both.ops).length === 1 && tfOf(both).pos[0] === 5 && JSON.stringify(tfOf(both).scale) === '[3,3,3]' && !sameRotation(tfOf(both).q, tilt, 1e-6), JSON.stringify(both.ops));
 }

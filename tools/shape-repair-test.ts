@@ -323,11 +323,13 @@ await tryRow('RP18', () => {
   check('RP18 a durable-write throw inside lift-sockets propagates out of maintain (not swallowed into steps.lift.failed as code "error" while the rest runs on)', !!threw && /EIO/.test(String(threw?.message)) && r === null, [String(threw?.message).slice(0, 200), r?.steps?.lift]);
 });
 // RP19: the repair moves an old amplitude to amp as the old reader read it (Number(m.amp ?? m.amplitude)): a numeric
-// string is that number, and a value the old reader couldn't read is dropped, as before
+// string is that number, null and '' are 0 as Number reads them (house 6340433633: null was dropped, so the motion took
+// today's default amp where the old reader stood it still), an amp of null gave way to the amplitude, and a value the
+// old reader couldn't read is dropped, as before
 { const { repairMotion } = await import('../shared/protocol/shaperepair.js');
   const r = (amplitude: any) => repairMotion({ type: 'pendulum', amplitude, period: 2 });
-  check('RP19 a numeric-string amplitude is kept as amp; a non-number one goes, as the old reader read none', r('0.4').amp === 0.4 && r(0.3).amp === 0.3 && r('wide').amp === undefined && r(null).amp === undefined && !('amplitude' in r('0.4')) && repairMotion({ amp: 0.2, amplitude: '0.9' }).amp === 0.2,
-    [r('0.4'), r('wide'), r(null)]); }
+  check('RP19 a numeric-string amplitude is kept as amp, null and empty are 0; a non-number one goes, as the old reader read none', r('0.4').amp === 0.4 && r(0.3).amp === 0.3 && r('wide').amp === undefined && r(null).amp === 0 && r('').amp === 0 && !('amplitude' in r('0.4')) && !('amplitude' in r(null)) && repairMotion({ amp: 0.2, amplitude: '0.9' }).amp === 0.2 && repairMotion({ amp: null, amplitude: '0.9' }).amp === 0.9,
+    [r('0.4'), r('wide'), r(null), r(''), repairMotion({ amp: null, amplitude: '0.9' })]); }
 // RP20 (review of #260): a thing with one purged component still has its other components repaired
 { const { shapeRepairOps } = await import('../shared/protocol/shaperepair.js'); const { PURGED } = await import('../shared/protocol/fold.js');
   const st = { entities: { bob: { c: { label: PURGED, motion: { type: 'pendulum', amplitude: 0.3, period: 2 } } } } };

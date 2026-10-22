@@ -10,6 +10,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let passed = 0, failed = 0;
 const check = (name, ok, detail = "") => {
@@ -17,7 +18,7 @@ const check = (name, ok, detail = "") => {
   else { failed++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? `\n      ${detail}` : ""}`); }
 };
 
-const ROOT = path.resolve(new URL("..", import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const entry = path.join(ROOT, "client/lite.js");
 const RE = /(?:^|\n)\s*(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g;
 const parent = new Map([[entry, null]]), bare = [];

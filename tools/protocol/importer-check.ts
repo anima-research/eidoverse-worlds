@@ -6,6 +6,7 @@
 //   IM-I6   a v1 ban (lowercased by the v1 fold) lands on the person the grant named, not a fresh identity
 //   IM-I6b  …and two different names stay two people: v1 kept roles and acts under the exact name (Ann / ann. / ann_ /
 //           A.N.N, two emoji, Ann and ann with two accounts); a lowered ban key that two names share stays its own
+//   IM-H1   a long name and a raw name equal to its hashed form stay two (house 6340433633)
 //   IM-I9   on a TRUST_NAMES server a person's acts and their grant are one identity (a child process)
 //   IM-I5   a v1 agent's home-node sub is filed as the account its live join wears (aid1:<iss>:<sub>)
 //   IM-I5b  an enrolled agent's home-node sub is filed as its enrolment's account (agent:token:<id>)
@@ -136,6 +137,16 @@ row("IM-I6b", () => {
   ok(z.r.identities === 3 && ban && ban !== z.actor("z1") && ban !== z.actor("z2") && z.nameOf(ban) === "zed",
     "IM-I6b a ban key the v1 fold lowercased ('zed') that two names share (Zed, ZED) is not pinned on either: it stays its own", { n: z.r.identities, ban, names: Object.values<any>(z.r.planned).map((x) => x.name) });
 });
+// house 6340433633: a name already in the hashed form h--<61 hex> isn't kept as an id by the translator (old logs never held
+// one): a long name and a raw name equal to its hashed form are two people, and two things
+row("IM-H1", () => {
+  const long = "Marigold Thorne, keeper of the very long lantern road", hashed = `h--${new Bun.CryptoHasher("sha256").update(long).digest("hex").slice(0, 61)}`;
+  const S = (actor: string, id: string) => ({ actor, verb: "spawn", args: { id, lib: "x.glb", pos: [0, 0, 0] } });
+  const w = oldWorld([BASIC[0], S(long, "p1"), S(hashed, "p2"), S("Ann", long), S("Ann", hashed)]); const r = W1.translateV1World(w.src, w.dest); const ls = linesOf(w.dest);
+  const actor = (id: string) => ls.find((e: any) => e.body?.verb === "spawn" && e.body?.args?.id === id)?.actor;
+  const things = Object.keys(fold(ls).entities).filter((k) => k !== "@world");
+  ok(TV1.enc(long) === hashed && r.identities === 3 && actor("p1") && actor("p2") && actor("p1") !== actor("p2") && things.length === 4 && new Set(things).size === 4,
+    "IM-H1 a long name and a raw name equal to its hashed form are two people, and two things of those ids are two things", { n: r.identities, p1: actor("p1"), p2: actor("p2"), things }); });
 row("IM-I9", () => {
   const w = oldWorld([BASIC[0], { actor: "world", verb: "grant", args: { id: "Ann", role: "owner", sub: "human:discord:111" } },
     { actor: "Ann", verb: "spawn", args: { id: "lamp", lib: "l.glb", pos: [0, 0, 0] } }]);
@@ -182,7 +193,7 @@ row("IM-I35b", () => {
   const v = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }], { poses: { Ann: { p: [1, 0, 1] } } });
   fs.mkdirSync(v.dest, { recursive: true }); const MOD = JSON.stringify({ ts: T0, actor: "system", verb: "ban", who: "u-aaaaaaaaaaaaaaaaaaaa" }) + "\n"; fs.writeFileSync(path.join(v.dest, "world.mod.jsonl"), MOD); fs.writeFileSync(path.join(v.dest, "poses.json"), "POSES-BEFORE");
   const out2 = child(v, { OPT_DIR: opt, EIDOVERSE_DIR: lib });
-  ok(/Nothing written/.test(out2.error ?? "") && fs.existsSync(v.dest) && fs.readFileSync(path.join(v.dest, "world.mod.jsonl"), "utf8") === MOD && /couldn't|EISDIR/.test(out2.error ?? "") && fs.readFileSync(path.join(v.dest, "poses.json"), "utf8") === "POSES-BEFORE" && !fs.existsSync(path.join(v.dest, "world.jsonl")),
+  ok(/Nothing written/.test(out2.error ?? "") && fs.existsSync(v.dest) && fs.readFileSync(path.join(v.dest, "world.mod.jsonl"), "utf8") === MOD && /couldn't|EISDIR|EPERM/.test(out2.error ?? "") && fs.readFileSync(path.join(v.dest, "poses.json"), "utf8") === "POSES-BEFORE" && !fs.existsSync(path.join(v.dest, "world.jsonl")),
     "IM-I35b …a world.mod.jsonl and poses.json already there get their bytes back, and the destination directory that was there stays", { out2, left: fs.existsSync(v.dest) ? fs.readdirSync(v.dest) : null });
   const e = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }]); fs.mkdirSync(e.dest, { recursive: true });
   child(e, { OPT_DIR: opt, EIDOVERSE_DIR: lib });

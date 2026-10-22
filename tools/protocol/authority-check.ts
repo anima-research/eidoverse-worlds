@@ -503,6 +503,20 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const sv = stateFromWire(JSON.parse(JSON.stringify(wireState(w.state()))));
   ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
+// ---- E: a handler whose author a purge erased acts for nobody (house 6340433633 Q2) ----
+{ let now = T + 7000; const w = openLive(root + "erased/", "erased", { kindOf: LABKIND, now: () => now });
+  const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
+  call("ann", "create-world", { title: "erased" });   // a new world: newcomers build
+  call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
+  call("bob", "set", { id: "box", component: "reactions", value: { evolve: { kind: "set", component: "reactions", value: { tag: { kind: "set", component: "label", value: "tagged" } } } } });
+  ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "E1 (setup) vic's use of bob's evolve installs bob's tag handler");
+  const useSeq = [...w.entries].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic")?.seq;
+  now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
+  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } }).ok, "E1 (setup) bob is made an inhabitant");
+  const r = call("vic", "use", { id: "box", action: "tag" });
+  ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
+    "E1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
+
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };
@@ -605,6 +619,18 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const ws = viewState({ entities: { "@world": { c: { sky: { preset: "dusk" }, "imported:sky": { stars: 3 }, "imported:entities": { x: 1 }, "imported:fog": { d: 1 } } } } });
   ok(JSON.stringify(ws.sky) === JSON.stringify({ preset: "dusk" }) && JSON.stringify(ws.entities) === "{}" && ws.fog?.d === 1,
     "S3e …nor, on the world, its active sky or the view's own entities; one nothing holds still shows", { sky: ws.sky, entities: ws.entities, fog: ws.fog });
+  // house 6340433633 (lead's decision): a request that sets or deletes the world's own sky, terrain, grass or water deletes
+  // the translation's imported:<it> in the same change, so a deleted sky leaves the slot empty (it showed the leftovers)
+  { const iw = (actor: string, verb: string, args: any = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imp-sky"), actor, verb, args); };
+    const wc = () => openWorld(root, "imp-sky").state().entities["@world"].c; const vs = () => viewState(fold(openWorld(root, "imp-sky").entries));
+    iw("ann", "create-world", { title: "imp-sky" });
+    iw("ann", "set", { id: "@world", component: "imported:sky", value: { stars: 3 } }); iw("ann", "set", { id: "@world", component: "imported:water", value: { foam: 1 } });
+    const other = iw("ann", "set", { id: "@world", component: "bounds", value: { min: [-90, 0, -90], max: [90, 40, 90] } }); const keptByOther = "imported:sky" in wc();
+    const set = iw("ann", "set", { id: "@world", component: "sky", value: { hours: 12 } }); const goneBySet = !("imported:sky" in wc()) && "imported:water" in wc();
+    iw("ann", "set", { id: "@world", component: "imported:sky", value: { stars: 4 } });
+    const del = iw("ann", "delete", { id: "@world", component: "sky" }); const v = vs();
+    ok(other.ok && keptByOther && set.ok && goneBySet && del.ok && !("imported:sky" in wc()) && v.sky == null && v.water?.foam === 1,
+      "S3f setting or deleting the world's sky deletes its imported:sky with it: a deleted sky leaves the slot empty (other components and imported:water stay)", { other: other.ok, keptByOther, set: set.ok, goneBySet, del: del.ok, keys: Object.keys(wc()), sky: v.sky, water: v.water }); }
 }
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----

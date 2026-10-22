@@ -78,6 +78,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["editor-range", "../editor-range-test.ts", 1], // D4a: the editor writes what was typed inside the door's range, and refuses outside it with nothing sent
   ["editschema", "../editschema-test.ts", 1], // the Inspector's schema: rows, edit ops, locks; it sat outside the gate and a stale lock expectation hid there since recut B2 (found 10-21)
   ["lookat-forward", "../lookat-forward-check.ts", 1], // D7: the authority and the door give one verdict on every LookAt.forward
+  ["scriptnew-expect", "../scriptnew-expect-test.ts", 1], // house 6340433633: the editor's new-script card sends expect from the thing as planned, not as it stands after the upload
   ["role-grammar", "../role-grammar-test.ts", 1], // D7: one role-id grammar (grab, sockbody, rolespanels, commands)
   ["rot", "../rot-test.ts", 1], // shared/rot.js: quaternion orientation, and no host transcendental (R1: lyingFrame had three)
   ["dismount-height", "../dismount-height-test.ts", 1], // review of PR #260 (localbody.js:151): standing up keeps the height I'm let go at (vacated.at, a socket exit, a leave clip's end)
@@ -152,6 +153,9 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["places", "../places-test.ts", 1],    // #239: named places (move {to: "thing/place"}, which room you're in, name_place), look's places in sight, "?"
   ["places-scale", "../places-scale-test.ts", 1], // #239: a scaled thing's places scale; the walking body's tolerances don't
   ["storey-walk", "../../mcpl/storey-walk-test.ts", 1], // #140/#200 (merged 10-19): the storey a body stands on is the one its walk, its feet, its flights and look reason about; a walk from a floor stays on it
+  ["door-unit", "../../mcpl/door-unit-test.ts", 0.5],   // the agent door's units (house 6340433633 fixes live here: loops, stops, part refusals, speech tags)
+  ["effective-mcpl", "../../mcpl/effective-test.ts", 0.3],   // the agent's composed transforms (mounts, stretch, shear, stored rotation)
+  ["effective", "../effective-test.ts", 0.5],   // the same seen from a seated body (occupant size, seat correction)
   ["shape-attach", "../shape-attach-test.ts", 1], // shape audit 10-16 wave 2: socket/station, one action namespace, one home, grabbable registered, reactions frozen, look-at radians, places closed, spawn, lock, reserved names
   ["shape-physics", "../shape-physics-test.ts", 1], // shape audit 10-16 wave 2: transform pinned (glTF rule), parent −order, pivot {pos}, motion trims + repair, physics kind/reserved/kinematic, physics-engine, collider mesh, physics-joint + joint, structure, surface, stage
   ["shape-repair", "../shape-repair-test.ts", 1], // review r7 (10-16): the load's repair once per world (a marker in the log), per thing, a node's name as data (motion:<slot> {node}); no empty stations by default
@@ -160,6 +164,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["buildcheck-route", "../buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
   ["door-is-error", "../door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
   ["door-wording", "../door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
+  ["consent-replay", "../consent-replay-test.ts", 0.1],   // an agent's switch replay on arrival sends the switch it holds when the read returns (house 6340433633)
   ["history-request", "../history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
   ["wing-fold-presence", "../wing-fold-presence-test.ts", 1], // #159: a held posture rides the presence wire (absence is not release; survives late join, reconnect, swap)
   ["skystamp", "../skystamp-test.ts", 1], // #260 r3 I286: the sky's seq/by come from the log entry that wrote it (the stored value has none)
@@ -206,7 +211,7 @@ const EXPECT: Record<string, number> = {
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
   "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "importer": 1.2, "eidosim-v1": 0.2, "inplace": 15, "migrate-identities": 1.7, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
-  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "grant-command": 0.3, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
+  "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "scriptnew-expect": 0.5, "grant-command": 0.3, "grant-until": 1, "lite-graph": 1, "say-live": 1, "presence-actor": 1, "first-name-account": 1, "retired-commands": 1, "animnames-retry": 2.5, "panels": 1, "surface-hold": 19, "particles": 1, "shadow-fade": 1, "frames-layout": 1, "models-field": 1, "environment-realizer": 0.3, "lookat-forward": 0.5,
   "role-grammar": 0.3, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
   "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,

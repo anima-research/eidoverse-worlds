@@ -71,6 +71,8 @@ export type LogHost = {
  *  when the connection changed under the request; when the door, the role or operator status changed, sending again from
  *  a new connection meets the same answer. */
 export function recheckFix(reason: string): string {
+  // operator status granted while it waited (house 6340433633): sending again is decided anew, as a role change is
+  if (/became a server operator/.test(reason)) return "send it again if you still mean it, as the operator this account is now";
   if (/door no longer lets|operator status changed|needs a server operator/.test(reason)) return "sending it again won't change this: what this account may do here changed";
   if (/role here changed/.test(reason)) return "send it again if you still mean it, under your role as it is now";
   return "reconnect, then send it again from the connection that is in the world now";
@@ -95,8 +97,14 @@ export class WorldLog {
   /** Set by World.resetWorld before the fresh log takes this one's place: a request that was awaiting warm() must not
    *  append the old world's line into the new world's file (review 10-14 C1). */
   retired = false;
-  retire() { this.retired = true; }
+  /** what a write to a retired log is answered (a reset's own retire: RESET; a reset that failed partway: HALF_RESET) */
+  private retiredAs: Any = WorldLog.RESET;
+  retire(as: Any = WorldLog.RESET) { this.retired = true; this.retiredAs = as; }
   private static RESET = { ok: false, refused: { code: "reset", reason: "this world was reset while the request waited; it is a new world now", fix: "reload, then send it again" } };
+  /** A reset that failed after the old log was moved aside (house 6340433633): this log takes no writes, since appendDurable
+   *  opens by path and would start a new world.jsonl holding only what came after (a broken chain on disk). */
+  static HALF_RESET = { ok: false, refused: { code: "reset", reason: "this world's reset failed partway and its log was moved aside, so this world takes no writes until the server's operator puts it back",
+    fix: "sending it again won't change that; the world's senior owner may reset it again, which is safe: it finishes the erase, and the old log stays in the archive the first attempt made" } };
   /** every actor this log names (opaque ids): clients are sent their display names, from the directory (§2.3) */
   private actors = new Set<string>();
   private names(ids: Iterable<string>) { return directoryFor(WORLDS_DIR).names(ids); }
@@ -185,7 +193,7 @@ export class WorldLog {
    *  entries is published here in a finally, whether the authority returned or threw (a durable line is never left
    *  unpublished: every client's chain would be behind the server's). Never throws. */
   requestSync(actor: string, verb: string, args: Record<string, unknown> = {}) {
-    if (this.retired) return { ...WorldLog.RESET, txn: "rolled-back" };
+    if (this.retired) return { ...this.retiredAs, txn: "rolled-back" };
     this.stats.requests++;
     const live = this.live;
     const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = wedgedOf(live);
@@ -216,7 +224,7 @@ export class WorldLog {
    *  recorded as the operator's act with operator: true). Only server/requestwire.ts's operator-repair reaches it, behind
    *  isOperator. Synchronous, like requestSync: there is no await between the check and the write. */
   operatorRepair(actor: string, verb: string, args: Record<string, unknown> = {}) {
-    if (this.retired) return { ...WorldLog.RESET, txn: "rolled-back" };
+    if (this.retired) return { ...this.retiredAs, txn: "rolled-back" };
     const live = this.live;
     const from = live.entries.length; const held = this.holdsKey(); const wedgedBefore = wedgedOf(live);
     let r: Any = null; let threw: unknown = null;
@@ -363,7 +371,14 @@ export class WorldLog {
   }
   /** The role the authority gives this identity (the authority is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
-  may(actor: string, permission: string): boolean { return effectiveIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true; }
+  /** does `actor` hold `permission` now: an ended timed grant is absent at `now`, as the door reads it (access.ts listedIn),
+   *  before the authority's sweep writes its end (pre-review of #260: readChat read an ended grant for up to a sweep) */
+  may(actor: string, permission: string, now = Date.now()): boolean {
+    const st: Any = this.live.state(); const wc = st?.entities?.["@world"]?.c ?? {}; const g = wc[`roles:${actor}`];
+    const ended = g && typeof g === "object" && Number.isSafeInteger(g.until) && g.until <= now;
+    const view = ended ? { ...st, entities: { ...st.entities, "@world": { ...st.entities["@world"], c: Object.fromEntries(Object.entries(wc).filter(([k]) => k !== `roles:${actor}`)) } } } : st;
+    return effectiveIn(view, actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true;
+  }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
    *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
    *  requestwire.ts whois — is scoped to these, never the whole directory. */
@@ -579,7 +594,10 @@ export function resetWorld(log: WorldLog): string {
   try {
     for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
     fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
-  } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh; throw err; }
+  } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh;
+    // whether the old log is gone from its place (this attempt moved it, or an earlier failed one did): if not, the world is
+    // as it was and stays live
+    err.logMoved = fs.existsSync(path.join(arch, "world.jsonl")) || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
   fs.rmSync(fresh, { recursive: true, force: true });
   return arch;
 }

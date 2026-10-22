@@ -15,7 +15,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { idAliases } from "./idalias.ts";
@@ -138,7 +138,7 @@ if (argv.includes("--control")) {
   // the base commit's shared/ (default: the authority before scripts, where every server case must FAIL). --control <commit>
   // runs against a later base (a round's start) and lists what is red there, with --want <ids> naming what must be
   const at = opt("control") && !opt("control")!.startsWith("--") ? opt("control")! : BASE; const want = opt("want")?.split(",") ?? null;
-  const d = scratch("ctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${at} shared | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("ctl"); const r0 = archiveTo(ENGINE, at, ["shared"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${at}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
@@ -949,15 +949,28 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const vals = ["0", '""', "null", "undefined", "false"];
       vals.forEach((x, i) => install(s, "bob", "box", `f${i}`, onUse(`world.set("self", "t/n", ${i + 1}); throw ${x};`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] }));
       s.call("bob", "set", { id: "box", component: "reactions", value: Object.fromEntries(vals.map((_, i) => [`f${i}`, { kind: "script", script: `f${i}` }])) });
-      const out = vals.map((_, i) => { const r = s.call("vic", "use", { id: "box", action: `f${i}` }); return { st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null }; });
-      return { out }; },
-    good: (o) => o.out.every((x: any) => x.st !== "ran" && x.n === null) },
-  { id: "B20c", what: "getYear and setYear are UTC too, like every other local-time method: an activation reads the same year on any host's time zone", run(s) { cast(s);
+      const out = vals.map((_, i) => { const r = s.call("vic", "use", { id: "box", action: `f${i}` }); return { st: r.script?.status ?? st(s, r), code: r.script?.code ?? null, n: comp(s, "box", "t/n") ?? null }; });
+      // the control: the same script without the throw runs and its write is kept, so a null above is the rollback (house
+      // 6340433633: "not ran" passed a refusal as well as a throw, so the row never showed each throw ran and was rolled back)
+      install(s, "bob", "box", "fok", onUse(`world.set("self", "t/n", 9);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { fok: { kind: "script", script: "fok" } }, merge: true });
+      const c = s.call("vic", "use", { id: "box", action: "fok" });
+      return { out, control: { st: c.script?.status ?? st(s, c), n: comp(s, "box", "t/n") ?? null } }; },
+    good: (o) => o.out.every((x: any) => x.st === "failed" && x.code === "thrown" && x.n === null) && o.control.st === "ran" && o.control.n === 9 },
+  // house 6340433633: run where a host's zone reaches the script, in this process (the Windows path: an isolated child is
+  // started with TZ=UTC) under UTC+14, so the originals would read 2026 (getYear 126) and set 1999-12-31 local: on a UTC host
+  // the row couldn't tell the replacements from the originals
+  { id: "B20c", what: "getYear and setYear are UTC too, like every other local-time method: an activation reads the same year on any host's time zone (run in-process at UTC+14)",
+    opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, run: SB.runScript, isolated: () => false } : null }, run(s) { cast(s);
+      if (!SB?.SANDBOX) return { absent: true };
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "yr", onUse(`const d = new Date(Date.UTC(2025, 11, 31, 23, 30)); const y = d.getYear(); d.setYear(99); world.set("self", "t/n", { y, set: d.toISOString() });`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { yr: { kind: "script", script: "yr" } } });
-      const r = s.call("vic", "use", { id: "box", action: "yr" }); return { st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null, tz: process.env.TZ ?? null }; },
-    good: (o) => o.st === "ran" && o.n?.y === 125 && o.n?.set === "1999-12-31T23:30:00.000Z" },
+      const was = process.env.TZ; process.env.TZ = "Pacific/Kiritimati";
+      try { const local = new Date(Date.UTC(2025, 11, 31, 23, 30)).getYear();   // the setup: this host's zone is +14 now
+        const r = s.call("vic", "use", { id: "box", action: "yr" }); return { local, st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null }; }
+      finally { if (was === undefined) delete process.env.TZ; else process.env.TZ = was; } },
+    good: (o) => o.local === 126 && o.st === "ran" && o.n?.y === 125 && o.n?.set === "1999-12-31T23:30:00.000Z" },
   { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });

@@ -47,6 +47,13 @@ import { type ActResult, type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
 import type { Destination } from "./places.ts";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { shown } from "../shared/shown.js";
+import { partHint } from "./effective.ts";
+/** A world's read door refusing this body (house 6340433633: 401 and 403 both said it "didn't take this body's read key"):
+ *  401, it didn't take the key (none, or not one it knows: the host's operator issues it); 403, it read the key and doesn't
+ *  let this body in (the world's owners decide that). Either way calling again won't change it. */
+const keyRefused = (status: number) => status === 403
+  ? "this world shows its state only to the people it lets in; it read this body's key and doesn't let this body in (403). Calling again won't change that: the world's owners decide who comes in"
+  : "this world shows its state only to the people it lets in, and it didn't take this body's read key (401). Calling again won't change that: the host's operator issues this body's key, and the world's owners decide who comes in";
 
 /** The slice of WorldAgent the tools touch — typed loosely on purpose: the
  *  agent's surface is the contract, not this file's re-declaration of it. */
@@ -268,7 +275,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
     // as this identity (readHeaders): a world that admits only people listed answers its own people only
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}${at ? `&at=${encodeURIComponent(at)}` : ""}`, { headers: ag.readHeaders });
     // a 401 or 403 is who this body is, which calling again doesn't change: say who can
-    if (r.status === 401 || r.status === 403) return fail(`screenshot: no picture was taken; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
+    if (r.status === 401 || r.status === 403) return fail(`screenshot: no picture was taken; ${keyRefused(r.status)}`);
     if (!r.ok) {
       // The server's text in parentheses, where its own quoted names can't
       // nest in ours; the remedy is the status's (server/snapshots.ts).
@@ -743,7 +750,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // a thing's world point, as move reads it: a child's pos is local to its parent
         const person = ag.people.get(tid)?.pose?.p;
         let p: number[] | undefined = person;
-        if (!p && ag.entities.has(tid)) { const w = ag.worldPointOf(tid); if ("why" in w) return fail(`face: you didn't turn, since where ${a.target} is can't be worked out here: ${w.why}`); p = w.pos; }
+        if (!p && ag.entities.has(tid)) { const w = ag.worldPointOf(tid); if ("why" in w) return fail(`face: you didn't turn, since where ${a.target} is can't be worked out here: ${w.why}${partHint(w.why)}`); p = w.pos; }
         if (!p) return fail(`nothing here is called "${a.target}", so you didn't turn; look lists who and what is around you`);
         ag.face(p[0], p[2]);
       } else if (a.x != null && a.z != null) ag.face(Number(a.x), Number(a.z));
@@ -1170,7 +1177,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       let status = 0;
       try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); status = r.status;
         // who this body is, which calling again doesn't change: say who can
-        if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
+        if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
         try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
       if (d.error) return fail(`measure: the world server answered ${status} (${d.error}), so nothing was measured`);

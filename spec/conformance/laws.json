@@ -1,4 +1,23 @@
 {
+ "laws": {
+  "ground": "ground@1",
+  "sky": "forecast@1"
+ },
+ "columns": {
+  "terrain[].heights[]": [
+   "x (m)",
+   "z (m)",
+   "height (m, float64 bits)"
+  ],
+  "sky[].segments[]": [
+   "index (segments since the epoch)",
+   "startMs",
+   "endMs",
+   "state",
+   "intensity k (float64 bits)"
+  ]
+ },
+ "contract": "The ground: each row's args are normalised by terrainParams (shared/terrainmath.js) before the height law makeHeightField reads them, and the heights pinned are of the normalised params. A missing or non-finite number takes its default: size 80, amplitude 3, flatRadius 0, flatHeight 0, frequency 2.5; seed, default 1, is truncated toward zero and then read as a 32-bit integer (seed | 0), where 0 reads as 1; octaves is truncated and clamped to 1..8, default 4. Any other key (scale in one row here) is not a parameter and changes nothing. Shaping (shared/terrainshape.js shapeParams) is carried only when the args use it: the first 64 features, in order; an unknown type is dropped; radius is clamped to 0..2000 and a feature with radius <= 0.05 dropped; height is clamped to -500..500; a ridge needs finite x1, z1, x2, z2, a hill or flatten finite x, z, or it is dropped; a flatten's edge defaults to radius * 0.5, clamped to 0.01..2000. The features then apply in order over the noise (shapeHeight). The sky: each policy is read through normalizePolicy (shared/forecast.js) with its epoch kept, and segments are walked from the epoch, each starting where the last ended.",
  "note": "heights and intensities are IEEE-754 float64 bits, big-endian hex; times are epoch ms",
  "terrain": [
   {

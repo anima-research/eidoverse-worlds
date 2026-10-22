@@ -25,7 +25,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import { ENGINES } from "../../shared/protocol/simlayer.js";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -151,7 +151,7 @@ if (argv.includes("--mutants")) {
 }
 if (argv.includes("--control")) {
   // the base commit's shared/ (the authority before grabbable): every NEW case must be red there, every M case green
-  const d = scratch("gctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server/posecheck.ts | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("gctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server/posecheck.ts"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));

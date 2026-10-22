@@ -97,6 +97,15 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
   return [...out];
 }
 
+/** The tags a world's say and act are delivered with (net-server.ts's onEvent): a say is ambient, or addressed when it
+ *  mentions this body; an act is ambient and eidoverse:act; each with the sender's facet (senderFacet). Here so the lists
+ *  themselves are tested, not only the facet (house 6340433633). */
+export function speechTags(kind: "say" | "act", declares: string | null | undefined, mention = false): string[] {
+  const from = senderFacet(declares);
+  if (kind === "act") return tags(CHAT.ambient, EIDO.act, from);
+  return mention ? tags(CHAT.mention, CHAT.addressed, from) : tags(CHAT.ambient, from);
+}
+
 // ---- capability paths (§6.2) -----------------------------------------------
 
 /** The complete, closed set of legal `uses` values (SPEC §6.2 / Appendix B.2).

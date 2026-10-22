@@ -13,6 +13,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 process.env.WORLDS_DIR = join(mkdtempSync(join(tmpdir(), "ew-grant-until-")), "worlds");
 let passed = 0, failed = 0;
@@ -44,7 +45,7 @@ performance.now = realNow;
 // 3. no client writer computes until from the raw clock
 const files = [];
 const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith(".js")) files.push(p); } };
-walk(new URL("../client/lib", import.meta.url).pathname);
+walk(fileURLToPath(new URL("../client/lib", import.meta.url)));
 const hits = files.filter((f) => /until:\s*serverNow\(\)\s*\+/.test(readFileSync(f, "utf8")));
 check("no client file writes until: serverNow() + …", hits.length === 0, hits.join(", "));
 

@@ -32,9 +32,9 @@
    "request.label",
    "request.id",
    "request.component",
-   "request (a physics-engine build it typed)"
+   "request (a physics-engine version it typed)"
   ],
-  "unknown": "no label match; an unknown chooser of an engine build is the owner's: never restamped"
+  "unknown": "no label match; an unknown chooser of an engine version is the owner's: never restamped"
  },
  "act:system": {
   "fields": [

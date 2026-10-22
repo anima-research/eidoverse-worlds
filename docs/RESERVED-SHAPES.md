@@ -28,3 +28,30 @@ the shape each was sketched with, verbatim from the registry before it was unpin
       ranges: { friction: { min: 0, max: 10 }, restitution: { min: 0, max: 1 }, linearDamping: { min: 0, max: 1000 }, angularDamping: { min: 0, max: 1000 }, surface: { maxLen: 64 } },
       enums: { frictionCombine: COMBINE, restitutionCombine: COMBINE } },
 ```
+
+## How surfaces would combine (moved from PHYSICS §3.2)
+
+Verbatim when moved: the pre-review of #260 found §3.2 still defining a shape the registry no longer pins.
+
+- **Surfaces.** A world names its materials as `@world surface:<name>
+  {friction?, restitution?, density?, frictionCombine?, restitutionCombine?,
+  label?}` (Marrow's Surface Data Cards: one name bundles a surface's
+  numbers, and content names materials rather than raw per-object numbers).
+  `surface` is **reserved** with `physics`' reserved fields (writes closed;
+  both open together). A `physics.surface` naming no surface reads as none.
+  The registry may later add built-in surface names; a world's own
+  `surface:<name>` wins.
+- **Combining two surfaces is the protocol's, not the engine's.** The modes
+  are the four every engine can carry (PhysX's, Unity's and Rapier's enums;
+  Jolt and Box2D v3 take any rule as a callback): `average`, `min`,
+  `multiply`, `max`. When two touching surfaces name different modes, the
+  later in that list wins (PhysX's and Unity's priority). Absent everywhere,
+  friction averages (the PhysX, Unity and Rapier default) and restitution
+  takes the max (the Jolt and Box2D default: a bouncy ball stays bouncy on
+  any floor). Geometric mean, Jolt's and Box2D's friction default, isn't
+  offered: three of the engines can't express it. **KHR_physics_rigid_bodies
+  names the same four modes (`average`, `minimum`, `maximum`, `multiply`) but
+  resolves a mismatch the other way round** (if either says average, average;
+  then minimum, maximum, multiply). We keep the engines' order, which three of
+  them carry natively; an importer of KHR materials resolves each touching
+  pair to one mode, never maps mode to mode.

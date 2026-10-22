@@ -26,7 +26,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 
 import { CAPACITY, CAPACITY_CEILING } from "../../shared/protocol/authority.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
@@ -451,7 +451,7 @@ const cases: Case[] = [
 
 if (argv.includes("--control")) {
   // the base commit's tree: every case but the guards (G) must be red there; each case alone, with a time limit
-  const d = scratch("sctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server tools defs client package.json | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("sctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const ids = cases.map((c) => c.id).filter((id) => !opt("only") || opt("only")!.split(",").includes(id)); let wrong = 0;
@@ -519,7 +519,7 @@ async function realGlbs() {
 // reply keys the names pass renamed (PROPOSAL-conventional-names-2026-10-07): base spelling → today's
 const RENAMED_KEYS: Record<string, string> = { teach: "fix", touchI: "intimate" };
 async function sameAsBase() {
-  const d = scratch("sbase"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server package.json | tar -x -C ${d}`], { cwd: ENGINE });
+  const d = scratch("sbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "package.json"], d);
   if (r0.exitCode !== 0) return { error: String(r0.stderr) }; fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const run = (tree: string) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/scale-check.ts"), "--tree", tree, "--scenario"], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };

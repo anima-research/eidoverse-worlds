@@ -73,7 +73,9 @@ export function openNewScript(id) {
       try {
         const up = await Edits.send(plan.upload, { what: `upload the script '${plan.name}'`, record: false });
         if (!up.ok) { err.textContent = refusalText(`upload the script '${plan.name}'`, up); return; }
-        const r = await Edits.sendOps(plan.install(up.src), { what: `script '${plan.name}' on ${id}` });
+        // expect is the thing as planned (`thing`, read at Create), not as it stands after the upload: the action was picked
+        // from it, so a reaction someone added meanwhile refuses the batch instead of being overwritten (house 6340433633)
+        const r = await Edits.sendOps(plan.install(up.src), { what: `script '${plan.name}' on ${id}`, base: { [id]: thing } });
         if (!r.ok) { err.textContent = refusalText(`script '${plan.name}' on ${id}`, r); return; }
         finish({ ok: true, id, name: plan.name, action: plan.action });
       } finally { okB.disabled = false; }

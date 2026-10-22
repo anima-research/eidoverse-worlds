@@ -106,7 +106,7 @@ import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
-import { effectiveWorldTransform, type Effective } from "./effective.ts";
+import { effectiveWorldTransform, partHint, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
@@ -1179,9 +1179,7 @@ export class WorldAgent {
             if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
             // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
             // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
-            { const want = this.consentSwitch;
-              if (want) void (async () => { const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
-                if (held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null); })(); }
+            void this.replaySwitch();
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -1260,7 +1258,7 @@ export class WorldAgent {
               // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
               if (this.pins.delete(j)) this.body?.setPin(j, null);
-              break;
+              if (msg.end == null) break;   // an unpin can ride an end: apply the end too (house 6340433633 Q3)
             }
             if (msg.end != null) {
               if (this.draggedBy === msg.by) {
@@ -2547,7 +2545,8 @@ export class WorldAgent {
     // folding the wings open waits for the bones: a walk (it bumps bodyEpoch) or an anim begun meanwhile keeps its clip
     const epoch = this.bodyEpoch, before = new Set(this.anims);
     if ((which == null || kinds.has("pose")) && this.wingsFolded) await this.foldWings(false);
-    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a));
+    // …a tracks loop plays in its own layer and takes no clip, so one begun meanwhile doesn't (house 6340433633)
+    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a) && a.kind !== "track");
     if ((which == null || kinds.has("clip")) && !newer) {
       if (this.clip === "ragdoll") this.setPose(null);   // a slump ends in the rest too (setPose stands it, and stops its sim)
       const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }
@@ -4086,7 +4085,8 @@ export class WorldAgent {
     }
     const at = (e: Entity, p: Place): Destination | { refusal: string } => {
       const h = this.placeHolder(e, now);
-      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${(this.eff(e.id, now) as { why: string }).why})` };
+      const why = h ? "" : (this.eff(e.id, now) as { why: string }).why;
+      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${why})${partHint(why)}` };
     };
     if (slash > 0) {
       const tr = this.thingRef(q.slice(0, slash));   // its id, its label or a unique id prefix (R 10-17); a shared label is refused with the candidates
@@ -4149,7 +4149,7 @@ export class WorldAgent {
     const me = this.pos, box = footprint(this.replica?.st, x.id), w = this.worldPointOf(x.id, now);
     // where it stands: its effective point, else the middle of its footprint; never its saved pos, a child's offset
     const at = "pos" in w ? w.pos : box ? [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2] : null;
-    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? w.why : "no frame"}` };
+    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? `${w.why}${partHint(w.why)}` : "no frame"}` };
     let px = at[0], pz = at[2], off = THING_STOP;
     if (box) {
       const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
@@ -4478,8 +4478,10 @@ export class WorldAgent {
       if (this.walkGate !== g) return;
       g.busy = false;
       if (!r?.ok && r?.refused?.code === "solid" && this.walkUpTo(g, from, T, r.refused)) return;
-      // a shove's re-track (shoveNow) spends the track's speed allowance: too fast is "not yet", asked again shortly
-      if (!r?.ok && r?.refused?.code === "too-fast" && Date.now() - (g.retrackAt ?? -Infinity) < 3000 && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
+      // too fast is "not yet": the track refills at its speed, and it is spent by a shove's re-track (shoveNow), by walking
+      // just before, or on a slow host by steps the authority saw bunched up (AS16; CI macOS 10-22). Asked again shortly,
+      // five times at most (2 s refills 12 m, three full tracks), never ended as a refused walk on the first
+      if (!r?.ok && r?.refused?.code === "too-fast" && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
       if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
       g.slow = 0;
       this.trackAt = Array.isArray(r.at) ? r.at : to;
@@ -4667,6 +4669,15 @@ export class WorldAgent {
   }
   /** This body's switch as it last set it (recut A2), resent on every arrival so a reconnect keeps it. */
   private consentSwitch: string | null = null;
+  /** On every arrival, as a person's client does (consentsync.js): read what the authority holds for my body's switch and
+   *  send mine only if it differs. Unset = never chosen: the world's default stands. */
+  async replaySwitch(): Promise<void> {
+    if (!this.consentSwitch) return;
+    const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
+    // read mine when the answer is back: a switch set while the read was out is newer than the one this began with
+    const want = this.consentSwitch;
+    if (want && held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null);
+  }
   private noteConsent(args: Record<string, unknown>) { if (typeof args.switch === "string") this.consentSwitch = args.switch; }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();

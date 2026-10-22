@@ -14,7 +14,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
@@ -22,7 +22,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "f6777f13";
 if (argv.includes("--control")) {
-  const d = scratch("dpctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server tools client/lib | tar -x -C ${d} && ln -s ${fs.realpathSync(path.join(ENGINE, "node_modules"))} ${d}/node_modules`], { cwd: ENGINE });
+  const d = scratch("dpctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/describe-particles-check.ts"), "--tree", d], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const lines = (r.stdout.toString() + r.stderr.toString()).split("\n").filter((l) => /^(ok|FAIL) /.test(l));

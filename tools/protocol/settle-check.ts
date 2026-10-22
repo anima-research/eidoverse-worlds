@@ -166,5 +166,21 @@ for (const verb of ["delete", "grab"]) { const W = `straddle-foreign-${verb}`; c
   ok(sw.ok && ["l", "r"].includes(on) && !r.ok && r.refused?.code === "foreign-engine" && r.refused.reason.includes(foreign) && r.refused.reason.includes("top") && /set one this server carries|carries/.test(r.refused.fix ?? "") && !openWorld(root, W).entries.slice(n0).some((e: any) => e.kind === "change") && !!st(W).entities[other],
     `SE${verb === "delete" ? 19 : 20} under a version this server doesn't carry, a ${verb} that would set a resting thing falling is refused, naming the engine and what would fall (only that engine computes the fall); nothing is ${verb === "delete" ? "deleted" : "picked up"}`, { sw: sw.ok ?? sw.refused, on, r, n0, n1, added: openWorld(root, W).entries.slice(n0).map((e: any) => [e.kind, e.verb, e.actor, JSON.stringify(e.body).slice(0, 160)]) }); }
 
+// pre-review of #260 (10-21): the same holds for a reshape. Resizing what a thing rests on re-drops it, which only the
+// world's engine computes; under a version this server doesn't carry it was set straight down kinematically (followups.js's
+// no-engine branch), a quiet substitute. Now it is refused like the delete and the grab, and the host keeps its shape.
+{ const W = "reshape-foreign"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
+  call(W, "rowan", "create", { id: "plinth", components: { physics: { kind: "static" }, mesh: { shape: "box", size: [1.5, 0.6, 1.5] }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  call(W, "rowan", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" }, transform: { pos: [0, 1.0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  call(W, "vic", "move", { to: [0, 0, -1.2] }); call(W, "vic", "punt", { id: "crate", v: [0, 0.5, 0] }); T += 8000; call(W, "vic", "look", {});
+  const on = st(W).entities.crate.c.parent?.to;
+  const foreign = `${ENG.engine!.split("@")[0]}@99.0.0`;
+  const sw = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: foreign } });
+  const n0 = openWorld(root, W).entries.length;
+  const r = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } });
+  const added = openWorld(root, W).entries.slice(n0);
+  ok(sw.ok && on === "plinth" && !r.ok && r.refused?.code === "foreign-engine" && r.refused.reason.includes(foreign) && r.refused.reason.includes("crate") && !added.some((e: any) => e.kind === "change") && st(W).entities.plinth.c.mesh.size[1] === 0.6,
+    "SE21 under a version this server doesn't carry, reshaping what a thing rests on is refused, naming the engine and what rests on it (only that engine re-drops it); the host keeps its shape", { sw: sw.ok ?? sw.refused, on, r: r.ok ?? r.refused, added: added.map((e: any) => [e.kind, e.verb]) }); }
+
 console.log(`[settle-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
