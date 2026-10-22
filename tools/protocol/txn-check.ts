@@ -241,12 +241,15 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 // a directory mkdir makes is named by an entry in its parent: a first write into new directories is durable only once
 // every one of those entries is synced, the topmost new directory's parent included
 { const { putBlobFile } = await import("../../server/durable.ts");
+  const base = path.join(root, "t8c"); fs.mkdirSync(base, { recursive: true });
+  // a world founded in a worlds directory that already exists: its own directory is the only new name, in that directory.
+  // The directory's keys exist already, as for any founding after its first, so the first founding is made before the
+  // syncs are watched: it mints the keys, and saving the keys file syncs this directory too, which would hide whether
+  // founding synced the world's own name
+  const worlds = path.join(base, "worlds"); fs.mkdirSync(worlds); foundWorld(path.join(worlds, "t8c-first"), "t8c-first", "olive");
   const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync }; const dirFds = new Map(); const synced = [];
   nodefs.openSync = function (p, flags, ...r) { const fd = o.openSync.call(nodefs, p, flags, ...r); if (flags === "r") dirFds.set(fd, path.resolve(String(p))); return fd; };
   nodefs.fsyncSync = function (fd) { if (dirFds.has(fd)) synced.push(dirFds.get(fd)); return o.fsyncSync.call(nodefs, fd); };
-  const base = path.join(root, "t8c"); fs.mkdirSync(base, { recursive: true });
-  // a world founded in a worlds directory that already exists: its own directory is the only new name, in that directory
-  const worlds = path.join(base, "worlds"); fs.mkdirSync(worlds);
   try { appendDurable(path.join(base, "a", "b", "c", "world.jsonl"), '{"n":1}'); putBlobFile(path.join(base, "x", "blobs", "h.txt"), "blob", "sha256:unused");
     foundWorld(path.join(worlds, "t8c"), "t8c", "olive"); }
   finally { nodefs.openSync = o.openSync; nodefs.fsyncSync = o.fsyncSync; }
