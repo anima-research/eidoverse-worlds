@@ -104,7 +104,8 @@ function buildUse(ctx, a) {
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
     if (!ops.length) { const list = skipped.map((x) => `${x.id} (${x.why})`).join(", ");
-      if (!skipped.length) refuse("nothing-to-reset", "everything is already home", "");
+      if (!skipped.length && !atHome) refuse("nothing-to-reset", `${a.id}'s '${action}' names no targets, so there is nothing to send home`, "someone who may edit it can give it targets (set its reactions); pressing again won't change that");
+      if (!skipped.length) refuse("nothing-to-reset", `everything is already home (${atHome === 1 ? "its 1 target" : `all ${atHome} targets`})`, "there is nothing to send home: pressing again won't change that until one of them is moved");
       refuse("nothing-to-reset", `nothing was reset: skipped ${list}${atHome ? `; the rest ${atHome === 1 ? "is" : "are"} already home` : ""}`, "each skip says why; press again once that has changed"); }
     return ops;
   }

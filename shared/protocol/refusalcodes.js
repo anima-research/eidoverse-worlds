@@ -78,7 +78,7 @@ export const REFUSAL_CODES = Object.freeze({
   "exists":         { meaning: "already there", when: "create-world on a world that exists, or a create of an id that does" },
   "reused":         { meaning: "an id is never reused", when: "a create of an id this world has had before" },
   "nothing":        { meaning: "that changes nothing", when: "a write whose ops all elide, an undo with nothing of yours to take back" },
-  "nothing-to-reset": { meaning: "everything is already home", when: "a reset whose targets are all at home" },
+  "nothing-to-reset": { meaning: "nothing was reset: every target was already home or was skipped, each skip saying why", when: "a reset whose targets are all at home or all skipped, or that names none" },
   "changed":        { meaning: "it changed since you started", when: "expect: a component isn't the value the gesture started from" },
   "stale":          { meaning: "someone changed it since the version you read", when: "a set with a base older than the component's last write" },
   "other-branch":   { meaning: "that version is from another history", when: "a version {seq, head} whose head this log doesn't have" },

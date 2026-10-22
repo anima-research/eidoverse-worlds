@@ -258,8 +258,8 @@
    "when": "a write whose ops all elide, an undo with nothing of yours to take back"
   },
   "nothing-to-reset": {
-   "meaning": "everything is already home",
-   "when": "a reset whose targets are all at home"
+   "meaning": "nothing was reset: every target was already home or was skipped, each skip saying why",
+   "when": "a reset whose targets are all at home or all skipped, or that names none"
   },
   "changed": {
    "meaning": "it changed since you started",
