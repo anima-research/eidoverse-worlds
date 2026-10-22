@@ -175,13 +175,14 @@ function roleMenu(display, surface) {
 // The row answers the ask it showed, by its id (consent {answer: <id>}): never "whatever this person asks now", which
 // could be a newer, different ask the person never saw (review of #260). If that one is gone, nothing is sent.
 async function answerAsk(item, display, askId) {
-  const them = personOf(display); const k = askId ? consentInbox.asks().find((x) => x.id === askId) ?? null : null;
+  const k = askId ? consentInbox.asks().find((x) => x.id === askId) ?? null : null;
   if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
   const yes = item === 'ask-allow'; const words = askWords(k);
   const r = await consentInbox.answer(k.id, yes, sendRequest);
   // Never's standing no is filed whatever became of the answer: an ask that lapsed (or was refused) a moment before the
-  // press is still a person I said Never to (house review I60)
-  if (item === 'ask-never') { const d = await sendRequest('consent', { deny: them.id, class: k.cls });
+  // press is still a person I said Never to (review of #260). It goes to the ask's own sender (k.from), never to whoever
+  // holds that display name now, which a guest who left can have passed to another within the ask's 20 s.
+  if (item === 'ask-never') { const d = await sendRequest('consent', { deny: k.from, class: k.cls });
     const gone = r?.ok ? '' : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
     deps.toast(d?.ok ? `${gone}${display} may not ${words} — not now, and not when they ask again` : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
     return r; }
