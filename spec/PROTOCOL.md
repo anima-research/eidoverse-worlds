@@ -1358,7 +1358,11 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   by the translator, and the old log is kept beside the new one, never written.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume,
   an air box, a climb route, a vehicle or a collision toggle (`water`/`air`/`traversal`/`vehicle`/`collision` on an
-  entity; `water` on `@world` is the world's water level and is carried). No approval overrides the refusal.
+  entity; `water` on `@world` is the world's water level and is carried). No approval overrides the refusal. Carried
+  inert as `imported:<name>` they would change the world in a way that matters: a pool nobody can swim in, a ladder nobody
+  can climb, a car nobody can drive, a wall the old world let people through. A translated world would look whole and
+  play broken, so the translation waits until this protocol carries each feature, rather than translating a world that
+  silently lost them.
 - **A translation names no founder and carries no owner's signature.** First-protocol logs record accounts, never keys,
   so nothing can bind a key to the old world's owner: the new world's tier 0 is empty (§13), and the approval is the
   host operator's countersignature alone, an ed25519 signature by the custody operator key (never the sequencer key)
