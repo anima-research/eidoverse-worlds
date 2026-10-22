@@ -434,7 +434,9 @@ for (const name of order) {
   console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
   for (const l of fails.slice(0, 20)) console.log(l);
   for (const l of rowSkips.slice(0, 20)) console.log(l);
-  for (const l of lines.slice(-tail)) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
+  // a suite that failed without one FAIL line crashed: its last line is the runtime's banner, so show enough to read the error (CI 10-21: six Windows reds read 'Bun v1.3.14' and nothing else)
+  const crashed = status === "fail" && !fails.length && !r.timedOut;
+  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : tail))) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
   if (lane === "core" && status !== "pass") stopped = `not run: the core lane failed at ${name}`;
 }
 
