@@ -59,6 +59,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one under its switch (the relay answers), hangs from a nail
   ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
   ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the load's repairs; ran only as an import before
+  ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
   ["sweep", "sweep.ts", 4],
