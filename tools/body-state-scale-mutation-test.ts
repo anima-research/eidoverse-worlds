@@ -25,7 +25,7 @@ const cases = [
     to: "if (frame) target = rootPoint(e.t.p.map((v: number) => v * clampBodyScale(frame.scale)), frame);",
     test: SCALE, witness: "a point in the owner's root frame is the same metres at any size" },
   { name: "unjoined agent path ignores the target's size", file: "mcpl/agent.ts",
-    from: "?.pose ?? null, pose?.scale);", to: "?.pose ?? null);",
+    from: "?.pose ?? null, pose?.scale, pose?.clip !== \"ragdoll\");", to: "?.pose ?? null, undefined, pose?.clip !== \"ragdoll\");",
     test: SCALE, witness: "unjoined path: a 2× body's contact target scales" },
   { name: "seat correction ignores occupant size", file: "mcpl/effective.ts",
     from: "const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);",
