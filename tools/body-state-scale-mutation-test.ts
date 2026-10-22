@@ -2,7 +2,9 @@
 // (source rewrite at load, tools/contact-mutation-preload.ts) and the named product check must go red.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/body-state-scale-mutation-test.ts
 import { join } from "node:path";
-const SCALE = "body-state-scale-test.ts", EFF = "../mcpl/effective-test.ts";
+// EFF is tools/effective-test.ts, where the seated-occupant rows live and the agent is loaded (house 6340433633: it named
+// mcpl/effective-test.ts, which has neither, so both its mutations were missed, the agent's one never even applied)
+const SCALE = "body-state-scale-test.ts", EFF = "effective-test.ts";
 const cases = [
   { name: "FK drops body scale (the pivot never sizes)", file: "mcpl/physics.ts",
     from: "this.av.pivot.scale.setScalar(u);", to: "this.av.pivot.scale.setScalar(1);",
