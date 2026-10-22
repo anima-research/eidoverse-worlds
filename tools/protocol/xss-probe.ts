@@ -272,8 +272,9 @@ try {
       const n0 = await evalJson(`__creq.length`);
       await evalJson(`(() => { window.__neverR?.click(); return true; })()`);
       let denies: any[] = []; for (const t0 = Date.now(); Date.now() - t0 < 5000 && !denies.length; await sleep(100)) denies = (await evalJson(`__creq.slice(${n0})`)).filter((a: any) => a?.deny !== undefined);
-      check("Q8b Never files its standing no against the ask's own sender, though another guest holds that name by the press",
-        typeof askR === "string" && !!actorA && !!actorB && actorA !== actorB && handed && denies.length === 1 && denies[0].deny === actorA && denies[0].class === "pose", { askR, actorA, actorB, handed, denies });
+      const told = await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('the one who asked as Rook may not'))`, 5000);
+      check("Q8b Never files its standing no against the ask's own sender, though another guest holds that name by the press, and its toast names them as the one who asked",
+        typeof askR === "string" && !!actorA && !!actorB && actorA !== actorB && handed && denies.length === 1 && denies[0].deny === actorA && denies[0].class === "pose" && told, { askR, actorA, actorB, handed, denies, told });
       rookB.ws.close(); }
     // the Consent ▸ sub-list (recut A2): my body's switch as three choices, ✓ on the current one; a press sets it
     const sub = await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent === 'Consent ▸').click(); return [...document.querySelectorAll('.sp-ctx[data-consent] .sp-ctx-item')].map((b) => b.textContent); })`);

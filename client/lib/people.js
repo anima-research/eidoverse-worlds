@@ -179,12 +179,15 @@ async function answerAsk(item, display, askId) {
   if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
   const yes = item === 'ask-allow'; const words = askWords(k);
   const r = await consentInbox.answer(k.id, yes, sendRequest);
-  // Never's standing no is filed whatever became of the answer: an ask that lapsed (or was refused) a moment before the
-  // press is still a person I said Never to (review of #260). It goes to the ask's own sender (k.from), never to whoever
-  // holds that display name now, which a guest who left can have passed to another within the ask's 20 s.
+  // Never's standing no is filed whatever became of the answer to an ask still here at the press: if the authority
+  // refuses the answer (its ask lapsed or was answered there a moment before), that is still a person I said Never to
+  // (review of #260). An ask already gone here by the press (answered, or past its 20 s) returned above, with nothing
+  // sent, so no standing no is filed for it.
+  // The deny goes to the ask's own sender (k.from), never to whoever holds that display name now, which a guest who
+  // left can have passed to another within the ask's 20 s; so the toast names them as the one who asked as `display`.
   if (item === 'ask-never') { const d = await sendRequest('consent', { deny: k.from, class: k.cls });
     const gone = r?.ok ? '' : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
-    deps.toast(d?.ok ? `${gone}${display} may not ${words} — not now, and not when they ask again` : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
+    deps.toast(d?.ok ? `${gone}the one who asked as ${display} may not ${words} — not now, and not when they ask again` : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
     return r; }
   if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
   deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
