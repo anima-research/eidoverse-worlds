@@ -56,6 +56,7 @@ const LIST = [
   ["kick", "remove someone now; they can't come back for a while (up to 60 min); warn them", []],
   ["ban", `keep someone out for up to ${MOD_BAN_MAX_DAYS} days (owners: any length); lift bans you may; warn them`, ["kick"]],
   ["grantRoles", "give or take roles ranked below yours, with only permissions you hold", []],
+  ["readChat", "read back what was said here before you arrived (the world's chat history)", []],
   ...(CAPTION_ON_SCREENS ? [] : [["caption", "caption a screen", []]]),
 ];
 export const PERMISSIONS = Object.freeze(Object.fromEntries(LIST.map(([k, text, needs]) => [k, Object.freeze({ text, needs: Object.freeze(needs) })])));

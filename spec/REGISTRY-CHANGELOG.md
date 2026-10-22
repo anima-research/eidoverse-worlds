@@ -299,3 +299,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - terrain-grid.extent: type array → gone
   - terrain-grid.limits: type object → gone
   - terrain-tile.mm: type array → gone
+- 2026-10-22: readChat joins the closed permission list: reading speech back past your arrival is a permission a role holds, not 'the owner' named in the protocol (the house's view, #260 10-20)
+  - roles.permissions: vocabulary ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles"] → ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles","readChat"]

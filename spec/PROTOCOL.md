@@ -732,9 +732,9 @@ Speech in a world is public and **arrival-only**:
   said before a connection arrived is read back to it, by any route: the chat-history message, the authority's
   `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log head at its join;
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
-- Only an **admin** reads the master log's speech back: the world's owner, or a server operator (`WORLD_ADMIN`). An
-  admin's join says how many lines the log holds (`state.chatTotal`); everyone else's says 0. A moderator is not an
-  admin for this.
+- Reading the master log's speech back past your own arrival is a permission, `readChat` (§7: a role holds it; owners
+  hold every permission), or a server operator's (`WORLD_ADMIN`). Their join says how many lines the log holds
+  (`state.chatTotal`); everyone else's says 0. No built-in role below owner holds it.
 - There is no private channel in world chat. **`whisper` was removed**: a client that still sends one is refused with
   the registered code `removed` (as the ws error's `refused`, and as the authority's refusal of a request named
   `whisper`), and its text goes nowhere: not delivered, not held, not logged. `say {text, to}` addresses one person in
@@ -1025,7 +1025,7 @@ made), `editWorld` (sky, weather, ground, the card, spawn, bounds), `generate`
 edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
 sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, up to the ban limit; owners any
 length), `grantRoles` (give or take roles below yours, with only permissions
-you hold). Captions are granted per screen (`captioners`), not by role. An owner holds all
+you hold), `readChat` (read back what was said before you arrived, §5). Captions are granted per screen (`captioners`), not by role. An owner holds all
 of them. A guest (no account) starts as `inhabitant`, even where newcomers build; a world may raise all guests to at most its newcomer role (`default-role.guests`), and an owner may give one guest any role.
 
 **2. The thing: who made it.** For a change to an entity the authority asks,

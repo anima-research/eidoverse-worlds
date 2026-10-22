@@ -363,6 +363,7 @@ export class WorldLog {
   }
   /** The role the authority gives this identity (the authority is what admits writes). */
   roleOf(actor: string): string { return roleIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" }); }
+  may(actor: string, permission: string): boolean { return effectiveIn(this.live.state(), actor, { anon: directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon" })?.can?.[permission] === true; }
   /** Every identity this world knows: the actors its log names, the roles it holds, the people its moderator log
    *  names, and everyone whose body it remembers (they were here, even if they never wrote anything). A name lookup —
    *  requestwire.ts whois — is scoped to these, never the whole directory. */
