@@ -9,6 +9,12 @@
 //   IM-I35  a failure after world.jsonl lands removes what it made: the error says nothing was written, and a rerun works
 //   IM-I10  the remembered places: a write that fails is reported, not counted; an unreadable file and dropped names are said
 //   IM-I7   lines of the old log that don't parse are counted, in the report and in the result
+//   IM-I15  a deferred feature removed on the old server (comp null, or the thing removed) no longer refuses
+//   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
+//   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
+//   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
+//   IM-I3   the old fold reads captions with main's frozen helpers (a window), and the translation holds its current line
+//   IM-I14  a rest tick from an earlier epoch never dates a later epoch's rest
 //   IM-I17  the oracle counts a lifted world's repairNeeded as a failure
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/importer-check.ts
 // @ts-nocheck
@@ -31,6 +37,7 @@ const { readLog, fold } = await import("../../shared/protocol/fold.js");
 const { custodyAt } = await import("../../server/custody.ts");
 const { custodyFileIn } = await import("../../server/keyfiles.ts");
 const { HN_ISS } = await import("../../server/auth.ts");
+const { emptyState: v1Empty, foldEntry: v1Fold } = await import("./import-v1/fold.js");
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 600)}` : ""}`); } };
@@ -137,6 +144,71 @@ row("IM-I7", () => {
   const text = seqd(BASIC).map((e) => JSON.stringify(e)).join("\n") + "\n{torn line\n";
   const w = oldWorld([], { raw: text }); const rep = W1.reportV1World(w.src, { name: "new" }); const r = W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
   ok(rep.report.source.unparsedLines === 1 && r.unparsed === 1 && r.source.unparsedLines === 1, "IM-I7 a line that doesn't parse is counted in the report the operator approves and in the result", { report: rep.report.source, result: r.unparsed });
+});
+
+// ---- IM-I15: the deferred refusal's remedy works ----
+row("IM-I15", () => {
+  const vol = { center: [0, 0, 0], size: [4, 2, 4] };
+  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: vol } }];
+  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: null } }]);
+  const L2 = seqd([...set, { actor: "Ann", verb: "remove", args: { id: "pool" } }]);
+  const L3 = seqd(set);
+  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: vol } }]);
+  const d = [L1, L2, L3, L4].map((L) => TV1.deferredFeatures(L));
+  ok(d[0].length === 0 && d[1].length === 0 && d[2].length === 1 && d[2][0].seq === 2 && d[3].length === 1 && d[3][0].seq === 4,
+    "IM-I15 a water volume removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
+});
+
+// ---- IM-I36, IM-I37, IM-I13, IM-I3: values read as v1 read them ----
+const finalOf = (L: any[]) => TV1.translate(seqd(L)).final.translated;
+row("IM-I36", () => {
+  const F = finalOf([BASIC[0], { actor: "a", verb: "spawn", args: { id: "fan", lib: "f.glb", pos: [0, 0, 0] } },
+    { actor: "a", verb: "comp", args: { id: "fan", type: "motion", data: { type: "spin", rpm: "10" } } },
+    { actor: "a", verb: "spawn", args: { id: "mill", lib: "f.glb", pos: [2, 0, 0] } },
+    { actor: "a", verb: "comp", args: { id: "mill", type: "motion", data: { type: "spin", rpm: "fast" } } }]);
+  ok(F.fan?.motion?.degPerSec === 60 && !("rpm" in (F.fan?.motion ?? {})) && F.mill?.["imported:motion"]?.rpm === "fast" && F.mill?.motion?.degPerSec === undefined,
+    "IM-I36 a numeric-string rpm spins at rpm × 6 as the renderer coerced it; a rate that isn't a number is carried in imported:motion", { fan: F.fan, mill: F.mill });
+});
+row("IM-I37", () => {
+  const F = finalOf([BASIC[0], { actor: "a", verb: "spawn", args: { id: "bench", lib: "b.glb", pos: [0, 0, 0] } },
+    { actor: "a", verb: "comp", args: { id: "bench", type: "sockets", data: { left: { pos: [0, 0.5, 0], yaw: "1.5" }, right: { pos: [1, 0.5, 0], yaw: "east" } } } }]);
+  const s = F.bench?.sockets, q = s?.left?.q;
+  ok(Array.isArray(q) && Math.abs(q[1] - Math.sin(0.75)) < 1e-12 && !s?.right?.q && F.bench?.["imported:sockets"]?.right?.yaw === "east",
+    "IM-I37 a numeric-string seat yaw turns the seat as the renderer coerced it; a yaw that can't turn is carried in imported:sockets", { s, imp: F.bench?.["imported:sockets"] });
+});
+row("IM-I13", () => {
+  const L = [BASIC[0], { actor: "a", verb: "spawn", args: { id: "tv", lib: "s.glb", pos: [0, 0, 0] } },
+    { actor: "world", verb: "grant", args: { id: "cap", role: "builder", caption: { id: "tv", born: 1 } } },
+    { actor: "world", verb: "grant", args: { id: "old", role: "builder", caption: { id: "tv", born: 99 } } },
+    { actor: "world", verb: "grant", args: { id: "tmp", role: "builder", until: T0 + 9e9, caption: { id: "tv" } } }];
+  const F = finalOf(L); const w = F["@world"]; const imp = (id: string) => w[`imported:${TV1.enc(`roles:${id}`)}`];
+  ok(JSON.stringify(F.tv?.captioners) === JSON.stringify({ ids: ["cap"] }) && !w["roles:cap"]?.caption && !imp("cap") && imp("old")?.caption?.born === 99 && imp("tmp")?.caption?.id === "tv",
+    "IM-I13 a caption deed on the screen it was granted for is a place in its captioners; one for a replaced incarnation, or on a timed grant, stays carried", { tv: F.tv?.captioners, cap: w["roles:cap"], old: imp("old"), tmp: imp("tmp") });
+});
+row("IM-I3", () => {
+  const S = "2026-09-16T20:00:00.000Z-k3f9";
+  const L = [BASIC[0], { actor: "a", verb: "spawn", args: { id: "tv", lib: "s.glb", pos: [0, 0, 0] } },
+    { actor: "door", verb: "caption", args: { id: "tv", session: S, n: 1, t0: 0, t1: 2, text: "first" } },
+    { actor: "door", verb: "caption", args: { id: "tv", session: S, n: 2, t0: 2, t1: 4, text: "second" } }];
+  const st = v1Empty(); for (const e of seqd(L)) v1Fold(st, e);
+  const bag = st.entities.tv?.comp?.captions; const F = finalOf(L);
+  ok(Array.isArray(bag?.window) && bag.window.length === 2 && bag.mediaTime === 4 && F.tv?.captions?.line?.text === "second" && !("window" in (F.tv?.captions ?? {})) && !F.tv?.["imported:captions"],
+    "IM-I3 the old fold reads captions as main did (its frozen helpers: a window of lines, the playhead), and the translation holds the current line", { bag, now: F.tv?.captions, imp: F.tv?.["imported:captions"] });
+});
+
+// ---- IM-I14: an earlier epoch's rest tick never dates a later epoch's rest ----
+row("IM-I14", () => {
+  const box = [[-0.5, 0, -0.5], [0.5, 1, 0.5]]; const E = (ts: number) => ({ verb: "epoch", actor: "fixture", ts, args: { sim: "eidosim@0.5.0", tickMs: 66, boxes: { "crate.glb": box } } });
+  const head = [{ seq: 0, ts: T0, actor: "world", verb: "genesis", args: { v: 3, dialect: "eidoverse-log" } },
+    { seq: 1, ts: T0 + 10, actor: "fixture", verb: "spawn", args: { id: "far", lib: "crate.glb", pos: [0, 0, 0], yaw: 0, box } },
+    { seq: 2, ts: T0 + 20, actor: "fixture", verb: "spawn", args: { id: "near", lib: "crate.glb", pos: [0, 0, 20], yaw: 0, box } }];
+  const tail = (s: number) => [{ seq: s, ...E(T0 + 60_000) }, { seq: s + 1, ts: T0 + 60_100, actor: "fixture", verb: "punt", args: { id: "near", power: 2, dir: [1, 0.2, 0] } }];
+  const withFar = [...head, { seq: 3, ...E(T0 + 30) }, { seq: 4, ts: T0 + 100, actor: "fixture", verb: "punt", args: { id: "far", power: 25, dir: [1, 1, 0] } },
+    { seq: 5, ts: T0 + 30_000, actor: "fixture", verb: "say", args: { text: "later" } }, ...tail(6)];
+  const without = [...head, { seq: 3, ...E(T0 + 30) }, { seq: 4, ts: T0 + 30_000, actor: "fixture", verb: "say", args: { text: "later" } }, ...tail(5)];
+  const restOf = (L: any[]) => { const r = TV1.translate(L); return r.out.filter((e: any) => e.kind === "change" && e.actor === "sim").map((e: any) => e.ts); };
+  const a = restOf(withFar), b = restOf(without);
+  ok(a.length === 2 && b.length === 1 && a[1] === b[0] && a[0] <= T0 + 30_000, "IM-I14 the later epoch's rest is dated by its own tick, whatever an earlier epoch's body left behind", { withFar: a, without: b });
 });
 
 // ---- IM-I17: the oracle's lift check ----

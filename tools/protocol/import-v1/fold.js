@@ -5,8 +5,8 @@
 // Every timestamp comes off the entry, so a fold is a pure function of the log. The old protocol's spec
 // (spec/PROTOCOL.md, spec/fixtures/*) is what it was written against.
 
-import { foldSkyEntry } from '../../../shared/forecast.js';
-import { normalizeCaptionArgs, captionRefusal, foldCaption } from '../../../shared/captions.js';
+import { foldSkyEntry } from './forecast-v1.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions-v1.js';
 import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from '../../../shared/rot.js';
 import { blueprintHash } from '../../../shared/blueprint.js';
 
