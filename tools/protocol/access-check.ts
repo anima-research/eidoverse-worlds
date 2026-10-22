@@ -316,9 +316,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const LONG = "L".repeat(64);
   const body = await sock(s.port); const jb = await body.join("d12", LONG);   // its account, local:l…l, wears the long name
   const watch = await sock(s.port); const jw = await watch.join("d12", LONG, { spectate: true, account: "watcher" });   // local:watcher
-  await sleep(150);
-  const dirFile = JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8"));
-  const nameOf = (sub) => Object.values(dirFile.ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name;
+  const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
+  await waitFor(() => nameOf("local:watcher") !== undefined, 5000);   // the spectator's record is written
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
   ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith("-cher") && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (-cher), within the limit, never the other account's name",
