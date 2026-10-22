@@ -150,10 +150,6 @@
  "tools/protocol/refusedjoin-check.ts": {
   "bare-wait": 11
  },
- "tools/protocol/reset-race-check.ts": {
-  "bare-wait": 1,
-  "own-until": 1
- },
  "tools/protocol/roles-check.ts": {
   "raw-symlink": 2
  },
