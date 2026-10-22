@@ -12,7 +12,7 @@
   "bare-wait": 6
  },
  "tools/buildcheck-route-test.ts": {
-  "bare-wait": 3
+  "bare-wait": 1
  },
  "tools/colour-picker-bench.ts": {
   "bare-wait": 3
