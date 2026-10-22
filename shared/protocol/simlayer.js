@@ -95,6 +95,15 @@ export function lostPlace(st, id) {
     if (c.transform === PURGED || c.parent === PURGED) return true; k = c.parent?.to; }
   return false;
 }
+// a body this layer's engine lacks only because a purge took what it is read from (purgedPhysical, lostPlace): the engine
+// that wrote the log had it, so what this one computes beside it is unknown (review of #260). A thing that would be no
+// body either way (physics none, switched off, a model that isn't a collider) is no loss
+function lostBody(st, id, models) {
+  const e = st.entities[id], c = e?.c; if (!c || !(purgedPhysical(c) || lostPlace(st, id))) return false;
+  if (c.physics !== PURGED && c.physics?.kind === "none") return false;
+  if (offChain(st, id)) return false;
+  return c.model === PURGED || c.physics === PURGED || !!(models[c.model] || engineBox(c.physics) || sphereShape(c.physics));
+}
 function engineEntity(st, id, models = MODELS, fixed = null) {
   const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
   if (offChain(st, id)) return null;
@@ -141,14 +150,16 @@ export function simFold(entries, now, opts = {}) {
 // advancing early for a read and then folding a later entry is the same as folding it first: advancement is
 // schedule-independent. opts.models: the catalogue whose models count as colliders (default the lab's; the server
 // passes {} so geometry enters the sim only through the log's physics.shape, Covenant III).
-// opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched}, simCutOf's shape):
+// opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched, lifted, unknownEpoch,
+// unknownHold}, simCutOf's shape):
 // a joining client can't refold the whole log, so it adopts the authority's sim where the authority's clock stood, then feeds
 // every later entry (their ts are never earlier than that clock). Advancement is schedule-independent, so this is exact.
 // opts.purged: the log's purges (purgesIn), so a replay writes PURGED where the strict fold does; a live host that sees a new purge
 // builds a fresh folder with them (a purge is retroactive), rather than feeding it.
 export function simFolder(entries, { models = MODELS, from = null, purged = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
-  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
+  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {},
+    unknownEpoch: !!from?.unknownEpoch, unknownHold: !!from?.unknownHold };
   const E = () => eidosim;
   // every engine write counts (out.rev): a client re-copies its presentation sim only when this moved, not on every entry
   // (STRIKES PH-S2: ~100 JSON copies of the whole sim during a cascade, one per chat line too)
@@ -174,13 +185,18 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
   const disagree = (x) => out.checks.disagree.push(x);
   // Where a purge took what the engine read, the engine that wrote the log and this one differ from there on (a body skipped
   // or seated otherwise moves what the engine allocates and what it collides with, and nothing later restores that), so
-  // nothing this engine computes is set beside the log: no digest, rest or in-flight check. unknownEpoch, until the next
-  // cut: a purged launch, or a rest whose transform was purged (the fold reads that body as gone, purgedPhysical, where the
-  // engine that wrote the log kept it). unknownHold, to the log's end: a purged lift or catch hides which thing is held,
-  // and a hold outlives an epoch while its end can't be read from the log
-  let unknownEpoch = false, unknownHold = false; const unknown = () => unknownEpoch || unknownHold;
+  // nothing this engine computes is set beside the log: no digest, rest or in-flight check. out.unknownEpoch, until the
+  // next cut: a purged launch, or an engine view built while a body is lost to a purge (lostBody: a rest's transform
+  // purged, say, which the fold reads as gone where the engine that wrote the log kept it), the new epoch's own view
+  // included, so a cut leaves it unknown while such a body stands. out.unknownHold, to the log's end: a purged lift or
+  // catch hides which thing is held, and a hold outlives an epoch while its end can't be read from the log. Both ride in
+  // a cut (simCutOf), so a folder resumed from one judges what an uninterrupted one does
+  const unknown = () => out.unknownEpoch || out.unknownHold;
+  const mayLose = !!from?.st || (purged?.size ?? 0) > 0;   // a value reads PURGED only where a purge names it, or in a cut's state
   // a thing in someone's hand is nowhere in the engine's world: no rebuild (terrain, epoch, relock) may seat it (review 64d26822 #3)
-  const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id]; return v; }, boxesFor = (s) => boxesForM(s, models);
+  const engineView = (s) => { const v = engineViewM(s, models); for (const id of out.lifted) delete v.entities[id];
+    if (mayLose && !out.unknownEpoch && Object.keys(s.entities).some((id) => !v.entities[id] && !out.lifted.has(id) && lostBody(s, id, models))) out.unknownEpoch = true;
+    return v; }, boxesFor = (s) => boxesForM(s, models);
   const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
@@ -204,7 +220,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
           // a body still flying past the world's edge is lost there: its rest is where it crossed (view(), restCheck's `lost`)
           else if (!b || (!b.resting && !(B && outside(B, b.p)))) disagree({ seq, id, why: "the engine still has it in flight" });
           // a rest whose transform a purge took is unknown here: there is no logged pose to set beside the engine's
-          else if (after.entities[id]?.c.transform === PURGED) unknownEpoch = true;
+          else if (after.entities[id]?.c.transform === PURGED) out.unknownEpoch = true;
           else { const wp = worldPose(after, id), mine = wp?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p) || (b.q && JSON.stringify(wp?.q) !== JSON.stringify(b.q))) disagree({ seq, id, logged: mine, engine: b.p, ...(b.q ? { loggedQ: wp?.q, engineQ: b.q } : {}) }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
         }
       } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)
@@ -223,7 +239,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       }
       const spec = st.entities["@world"]?.c["physics-engine"] ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The authority makes it a real cut: nothing in flight (P6).
-        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; unknownEpoch = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
+        out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null; out.rev++; out.unknownEpoch = false;   // a cut: nothing in flight   // a lift outlives an epoch (authority orphanLifts says the same); the view keeps it out
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
           SE(out.sim, { seq, ts: clock, actor: "system", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, engineView(st));
@@ -266,10 +282,10 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
           SE(out.sim, { seq, ts: clock, actor: e.actor, verb: view.entities[id] ? "place" : "remove", args: { id } }, view); }
     } else if (e.kind === "sim" && out.sim) {
       // purged whole: the engine can't fly or lift what it can't read, so until the next cut the engine that read it and this
-      // one may differ, and what this one computes meanwhile is unknown here: a launch until the next cut (unknownEpoch), a lift
-      // or catch to the log's end (unknownHold). The authority's readback reads such a body as unknown too, for its own
+      // one may differ, and what this one computes meanwhile is unknown here: a launch until the next cut (out.unknownEpoch), a
+      // lift or catch to the log's end (out.unknownHold). The authority's readback reads such a body as unknown too, for its own
       // question: restampEngine counts a purged launch as a flight its cut ends (endedUnknown), which this needn't follow
-      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") unknownEpoch = true; else if (e.verb === "lift" || e.verb === "catch") unknownHold = true; return; }
+      const a = bodyIn(entries, purged, seq); if (!a) { if (e.verb === "launch") out.unknownEpoch = true; else if (e.verb === "lift" || e.verb === "catch") out.unknownHold = true; return; }
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
         out.lifted.delete(a.id);   // thrown or dropped: out of the hand, into the engine (before the view, which hides lifted things)
         const view = engineView(st); const base = view.entities[a.id]; if (!base) return;
@@ -352,7 +368,8 @@ export function enginePoses(sf) {
 export function simCutOf(sf, entries) {
   const launched = JSON.parse(JSON.stringify(sf.launched ?? {}));
   const launches = {}; for (const l of Object.values(launched)) if (entries[l.seq]) launches[l.seq] = entries[l.seq];
-  return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches, lifted: [...(sf.lifted ?? [])].sort() };
+  return { clock: sf.clock ?? 0, spec: sf.spec ?? null, foreign: !!sf.foreign, sim: sf.sim ? JSON.parse(JSON.stringify(sf.sim)) : null, launched, launches, lifted: [...(sf.lifted ?? [])].sort(),
+    ...(sf.unknownEpoch ? { unknownEpoch: true } : {}), ...(sf.unknownHold ? { unknownHold: true } : {}) };   // what the replay can't judge from here (simFolder)
 }
 export const digestOf = (sim) => sha256(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
 // A cut, in our own format: the engine state as plain JSON, restorable. (For eidosim the format IS its snapshot.)
