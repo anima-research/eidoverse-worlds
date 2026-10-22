@@ -120,6 +120,8 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 // the first path that loads: today's name, then the base commit's (before the 10-07 names pass)
 const imp1 = async (...ps: string[]) => { let err: unknown; for (const p of ps) { try { return await import(TREE + p); } catch (e) { err = e; } } throw err; };
 const D = await imp1("shared/protocol/authority.js", "shared/" + "v4/door.js");   // (split: the base's path, not a stale one)
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const L = await imp1("server/livehost.ts", "server/" + "v4/live.ts");
 const SB = await imp1("shared/protocol/sandbox.js", "shared/" + "v4/sandbox.js");
 const SOL = await imp1("server/solids.ts", "server/" + "v4/solids.ts").catch(() => null);         // absent at the base commit

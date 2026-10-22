@@ -165,6 +165,8 @@ if (argv.includes("--control")) {
 // ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
