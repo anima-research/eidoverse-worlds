@@ -265,5 +265,22 @@ console.log("\nfields updated IN PLACE revert to the CURRENT value, not the one 
   check("…and commits nothing", calls.length === 0, JSON.stringify(calls));
 }
 
+console.log("\na held rebuild waits while focus moves to another field of the same panel (house I198):");
+{
+  const sf = makeSchemaFrame("t-hold", { title: "t", x: 10, y: 10, w: 300, h: 200 });
+  const edit = () => {};
+  const two = (extra = false) => [{ t: "text", k: "a", label: "a", value: "1" }, { t: "text", k: "b", label: "b", value: "2" }, ...(extra ? [{ t: "info", label: "new", value: "row" }] : [])];
+  sf.set(two(), edit);
+  const [a, b] = [...sf.frame.body.querySelectorAll(".sp-text")] as HTMLInputElement[];
+  a.focus();
+  sf.set(two(true), edit);                      // a new shape while a field is focused: held
+  b.focus();                                   // Tab to the panel's other field
+  await new Promise((r) => setTimeout(r, 5));
+  check("the panel was not rebuilt under the field just focused", b.isConnected && document.activeElement === b, `connected ${b.isConnected}, active ${(document.activeElement as any)?.className}`);
+  b.blur();
+  await new Promise((r) => setTimeout(r, 5));
+  check("…and focus leaving the panel paints the held state", !b.isConnected && /new/.test(sf.frame.body.textContent ?? ""), `connected ${b.isConnected}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

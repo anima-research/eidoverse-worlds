@@ -128,10 +128,13 @@ export function makeSchemaFrame(key, opts) {
       // the input as active, so update() would skip it again and the hold would
       // re-arm on an element that will never blur twice. The input is leaving;
       // a rebuild can no longer eat its caret.
-      a.addEventListener('blur', () => {
+      // a tick later, so the focus move has landed: Tab (or a click) into ANOTHER field of this panel holds again on it
+      // instead of rebuilding the panel under the field just focused (house I198)
+      a.addEventListener('blur', () => setTimeout(() => {
         pendingWhileFocused = false;
+        if (holdUntilBlur()) return;
         if (lastFields) live = { key: shapeKey(lastFields.fields), ...renderDOM(scroll, lastFields.fields, lastFields.edit, ro) };
-      }, { once: true });
+      }, 0), { once: true });
     }
     return true;
   }
