@@ -42,7 +42,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the broker reads the sequencer's view (components on the record), not a fold record's c", "server/videosources.ts", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.video;", "const videoOf = (world: any, entity: string): any => world?.state?.entities?.[entity]?.c?.video;", ["B3", "B4", "B5"]],
   ["the broker adds the operator's read credential", "server/videosources.ts", "headers: { \"content-type\": \"application/sdp\", ...(basic(src) ? { authorization: basic(src)! } : {}) }", "headers: { \"content-type\": \"application/sdp\" }", ["B3"]],
   ["one offer every OFFER_GAP_MS", "server/videosources.ts", "if (now - last < OFFER_GAP_MS) return", "if (false) return", ["B4"]],
-  ["at most VIEWER_SESSION_CAP sessions a viewer", "server/videosources.ts", "if (mine.length >= VIEWER_SESSION_CAP) return", "if (false) return", ["B4"]],
+  ["at most VIEWER_SESSION_CAP sessions a viewer", "server/videosources.ts", "if (screens.size >= VIEWER_SESSION_CAP) return", "if (false) return", ["B4", "B8"]],
+  ["an offer at the appliance holds its slot", "server/videosources.ts", "  for (const e of inFlight.keys()) screens.add(e);\n", "", ["B8"]],
+  ["an answer for a replaced offer is closed when it lands", "server/videosources.ts", "if (inFlight.get(msg.id) !== token) {", "if (false) {", ["B8"]],
+  ["a new session for a screen replaces the viewer's older one there", "server/videosources.ts", "  for (const old of [...SESSIONS.values()]) if (old.client === c && old.entity === msg.id) await closeSession(old, \"replaced by a newer offer\");\n", "", ["B4", "B8"]],
   ["a session ends when its screen's video changes", "server/videosources.ts", "else if (boundOf(s.world, s.entity) !== s.bound) await closeSession(s, \"the screen's video changed\");", "", ["B5"]],
   ["a session ends when its viewer leaves", "server/videosources.ts", "if (!s.world?.clients?.has?.(s.client) || s.client.world !== s.world) await closeSession(s, \"the viewer left\");\n    else ", "", ["B5"]],
   ["a revoke closes the source's sessions", "server/videosources.ts", "for (const s of [...SESSIONS.values()]) if (s.source === id) void closeSession(s, \"the operator revoked this source\");", "", ["B6"]],
@@ -127,10 +130,11 @@ const sayLines = (s: any, id: string) => (s.call("olive", "look", {}).things ?? 
 const admit = (ids: string[]) => V.admitVideoSources?.(ids);
 
 // ---- a fake appliance: WHEP (POST → 201 + Location; DELETE) and mediamtx's paths API, recording every request ----
-const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false };
+const FAKE = { log: [] as any[], paths: {} as Record<string, any>, whepStatus: 201, apiDown: false, delays: [] as number[] };
 const fake = Bun.serve({ port: 0, async fetch(req) {
   const u = new URL(req.url); const body = req.method === "POST" ? await req.text() : "";
   FAKE.log.push({ method: req.method, path: u.pathname, auth: req.headers.get("authorization"), body });
+  if (req.method === "POST" && FAKE.delays.length) await new Promise((r) => setTimeout(r, FAKE.delays.shift()));   // a slow appliance, per offer
   if (u.pathname.startsWith("/v3/paths/get/")) { if (FAKE.apiDown) return new Response("down", { status: 503 }); const p = FAKE.paths[u.pathname.slice(14)]; return p ? Response.json(p) : new Response("not found", { status: 404 }); }
   if (req.method === "POST" && u.pathname.endsWith("/whep")) return FAKE.whepStatus === 201 ? new Response("v=0\r\nanswer-for:" + body.slice(0, 20), { status: 201, headers: { location: `${u.pathname.replace(/whep$/, "")}whep/session-${FAKE.log.length}` } }) : new Response("no", { status: FAKE.whepStatus });
   if (req.method === "DELETE") return new Response(null, { status: 200 });
@@ -143,7 +147,7 @@ const install = (doc: any) => VS.installSources?.(VS.parseRegistry(doc).sources)
 // a viewer: a connection in a world whose state holds a thing with a video
 function viewer(world: any, sent: any[] = []) { const c: any = { world, spectator: false, ws: { send: (s: string) => sent.push(JSON.parse(s)) } }; world.clients.add(c); return { c, sent }; }
 // the sequencer's World.state is the VIEW (viewOf: components on the record, beside pos), so the fake is that shape exactly
-function fakeWorld(video: any) { return { state: { entities: { screen: { pos: [0, 0, 0], yaw: 0, video } } }, clients: new Set() }; }
+function fakeWorld(video: any, more: string[] = []) { const entities: any = { screen: { pos: [0, 0, 0], yaw: 0, video } }; for (const id of more) entities[id] = { pos: [0, 0, 0], yaw: 0, video: { ...video } }; return { state: { entities }, clients: new Set() }; }
 const tick = () => new Promise((r) => setTimeout(r, 5));
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
@@ -242,11 +246,12 @@ const cases: Case[] = [
       const post = FAKE.log.find((x) => x.method === "POST"); const said = JSON.stringify(r);
       return { type: r?.type, sdp: r?.sdp, auth: post?.auth, body: post?.body, leak: [APP, String(fake.port), "s3cret", "whep", "Basic"].filter((x) => said.includes(x)) }; },
     good: (o) => o.type === "video-answer" && /answer-for:v=0 the-offer/.test(o.sdp ?? "") && o.auth === "Basic " + Buffer.from(SECRET).toString("base64") && o.body === "v=0 the-offer" && o.leak.length === 0 },
-  { id: "B4", what: "a viewer offers at most once every 2 s and holds at most 4 screens; a spectator, an unadmitted source (before anything reaches an appliance) and a missing video are refused in words", async run() {
-      install(REG()); FAKE.whepStatus = 201; const w = fakeWorld({ source: "solstice" }); const { c } = viewer(w);
-      const t = 2e9; const a = await VS.offer?.(c, { id: "screen", sdp: "o" }, t); const b = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 500);
-      for (let i = 1; i <= 4; i++) await VS.offer?.(c, { id: "screen", sdp: "o" }, t + i * 3000);
-      const capped = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 20000);
+  { id: "B4", what: "a viewer offers at most once every 2 s and holds at most 4 screens (a new offer for a screen it holds replaces that one); a spectator, an unadmitted source (before anything reaches an appliance) and a missing video are refused in words", async run() {
+      install(REG()); FAKE.whepStatus = 201; FAKE.delays = []; const w = fakeWorld({ source: "solstice" }, ["s2", "s3", "s4", "s5"]); const { c } = viewer(w);
+      const t = 2e9; const a = await VS.offer?.(c, { id: "screen", sdp: "o" }, t); const b = await VS.offer?.(c, { id: "s2", sdp: "o" }, t + 500);
+      for (const [i, id] of ["s2", "s3", "s4"].entries()) await VS.offer?.(c, { id, sdp: "o" }, t + (i + 1) * 3000);
+      const capped = await VS.offer?.(c, { id: "s5", sdp: "o" }, t + 20000);
+      const again = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 25000);
       const spec = await VS.offer?.({ world: w, spectator: true }, { id: "screen", sdp: "o" }, t);
       const posts = FAKE.log.filter((x) => x.method === "POST").length;
       const w2 = fakeWorld({ source: "elsewhere" }); const { c: c2 } = viewer(w2); const unadm = await VS.offer?.(c2, { id: "screen", sdp: "o" }, t);
@@ -254,8 +259,25 @@ const cases: Case[] = [
       const w3 = { state: { entities: { screen: { pos: [0, 0, 0], yaw: 0 } } }, clients: new Set() }; const { c: c3 } = viewer(w3); const novid = await VS.offer?.(c3, { id: "screen", sdp: "o" }, t);
       const held = VS.sessionCount?.(c);
       for (const s of [...w.clients]) w.clients.delete(s); await VS.sweep?.();
-      return { a: a?.type, b: b?.why, capped: capped?.why, spec: spec?.why, unadm: unadm?.why, novid: novid?.why, held, prefetch }; },
-    good: (o) => o.prefetch === 0 && o.a === "video-answer" && /too soon/.test(o.b ?? "") && /at most 4/.test(o.capped ?? "") && o.held === 4 && /only someone in this world/.test(o.spec ?? "") && /isn't admitted/.test(o.unadm ?? "") && /has no video/.test(o.novid ?? "") },
+      return { a: a?.type, b: b?.why, capped: capped?.why, again: again?.type, spec: spec?.why, unadm: unadm?.why, novid: novid?.why, held, prefetch }; },
+    good: (o) => o.prefetch === 0 && o.a === "video-answer" && /too soon/.test(o.b ?? "") && /at most 4/.test(o.capped ?? "") && o.again === "video-answer" && o.held === 4 && /only someone in this world/.test(o.spec ?? "") && /isn't admitted/.test(o.unadm ?? "") && /has no video/.test(o.novid ?? "") },
+  { id: "B8", what: "offers at the appliance together: they hold slots (the cap can't be passed by overlapping them), and for one screen only the newest offer's session is kept, whichever answer lands first (I.M.'s two finds on #5)", async run() {
+      install(REG()); FAKE.whepStatus = 201; const t = 3e9;
+      const held = async (delays: number[], ids: string[], more: string[] = []) => {
+        FAKE.log = []; FAKE.delays = [...delays]; const w = fakeWorld({ source: "solstice" }, more); const { c, sent } = viewer(w);
+        const rs = await Promise.all(ids.map((id, i) => VS.offer?.(c, { id, sdp: "o", req: `r${i}` }, t + i * 3000))); await tick();
+        const out = { rs: rs.map((r: any) => r?.type === "video-answer" ? "answer" : r?.why), held: VS.sessionCount?.(c), posts: FAKE.log.filter((x) => x.method === "POST").length,
+          dels: FAKE.log.filter((x) => x.method === "DELETE").length, closed: sent.filter((m) => m.type === "video-closed").map((m) => m.why) };
+        w.clients.delete(c); await VS.sweep?.(); return out; };
+      return { overlap: await held([200, 200, 200, 200, 200, 200], ["screen", "s2", "s3", "s4", "s5", "s6"], ["s2", "s3", "s4", "s5", "s6"]),
+        oldLate: await held([300, 0], ["screen", "screen"]), oldFirst: await held([100, 300], ["screen", "screen"]), settled: await held([], ["screen"]).then(async () => {
+          FAKE.log = []; FAKE.delays = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);
+          await VS.offer?.(c, { id: "screen", sdp: "o" }, t); const r = await VS.offer?.(c, { id: "screen", sdp: "o" }, t + 3000); await tick();
+          const out = { r: r?.type, held: VS.sessionCount?.(c), dels: FAKE.log.filter((x) => x.method === "DELETE").length, closed: sent.filter((m) => m.type === "video-closed").map((m) => m.why) };
+          w.clients.delete(c); await VS.sweep?.(); return out; }) }; },
+    good: (o) => o.overlap.held === 4 && o.overlap.posts === 4 && o.overlap.rs.filter((x: string) => x === "answer").length === 4 && o.overlap.rs.filter((x: string) => /at most 4/.test(x ?? "")).length === 2
+      && ["oldLate", "oldFirst"].every((k) => o[k].held === 1 && o[k].posts === 2 && o[k].dels === 1 && /replaced/.test(o[k].rs[0] ?? "") && o[k].rs[1] === "answer")
+      && o.settled.r === "video-answer" && o.settled.held === 1 && o.settled.dels === 1 && /replaced/.test(o.settled.closed[0] ?? "") },
   { id: "B5", what: "a session ends, its appliance resource is DELETEd and the viewer told, when the screen's source changes, when the video comes down, and when the viewer leaves", async run() {
       install(REG({ "movie-night": { whep: `${APP}/movie/whep` } })); FAKE.whepStatus = 201;
       const run1 = async (mutate: (w: any, c: any) => void) => { FAKE.log = []; const w = fakeWorld({ source: "solstice" }); const { c, sent } = viewer(w);

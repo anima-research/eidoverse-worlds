@@ -49,6 +49,9 @@ const SOURCES = new Map<string, Source>();
 const SESSIONS = new Map<string, Session>();
 const LAST_BYTES = new Map<string, number>();
 const LAST_OFFER = new WeakMap<object, number>();
+// each viewer's newest offer per screen that is still at the appliance: it holds a slot, and an older answer for that
+// screen is closed when it lands (a rebuilt screen drops the late answer, and only the server can be relied on to close it)
+const IN_FLIGHT = new WeakMap<object, Map<string, string>>();
 let FILE = "";
 let FILE_STAMP = "";
 
@@ -154,8 +157,19 @@ export async function offer(c: any, msg: any, now = Date.now()): Promise<object>
   const src = SOURCES.get(v.source);
   if (!src) return no(`the source '${String(v.source).slice(0, 40)}' isn't admitted on this server`);
   if (src.ended) return no(`the source '${src.id}' has ended`);
-  const mine = [...SESSIONS.values()].filter((s) => s.client === c);
-  if (mine.length >= VIEWER_SESSION_CAP) return no(`at most ${VIEWER_SESSION_CAP} screens at once`);
+  let inFlight = IN_FLIGHT.get(c); if (!inFlight) IN_FLIGHT.set(c, inFlight = new Map());
+  // screens this viewer holds or is connecting, the one offered aside (a new offer replaces its own screen's session)
+  const screens = new Set([...SESSIONS.values()].filter((s) => s.client === c).map((s) => s.entity));
+  for (const e of inFlight.keys()) screens.add(e);
+  screens.delete(msg.id);
+  if (screens.size >= VIEWER_SESSION_CAP) return no(`at most ${VIEWER_SESSION_CAP} screens at once`);
+  const token = randomUUID(); inFlight.set(msg.id, token);
+  try { return await connect(c, msg, src, token, inFlight, no); }
+  finally { if (inFlight.get(msg.id) === token) inFlight.delete(msg.id); }
+}
+
+async function connect(c: any, msg: any, src: Source, token: string, inFlight: Map<string, string>, no: (why: string) => object): Promise<object> {
+  const req = typeof msg?.req === "string" ? msg.req.slice(0, 64) : null;
   const bound = boundOf(c.world, msg.id)!;
   let r: Response;
   try { r = await fetch(src.whep, { method: "POST", headers: { "content-type": "application/sdp", ...(basic(src) ? { authorization: basic(src)! } : {}) }, body: msg.sdp, signal: AbortSignal.timeout(APPLIANCE_TIMEOUT_MS) }); }
@@ -168,6 +182,10 @@ export async function offer(c: any, msg: any, now = Date.now()): Promise<object>
   const s: Session = { id: randomUUID(), resource, source: src.id, world: c.world, entity: msg.id, client: c, bound, auth: basic(src) };
   // the value may have changed, or the viewer gone, while the appliance answered: the sweep would close it, but say so now
   if (boundOf(c.world, msg.id) !== bound || !c.world.clients?.has?.(c)) { SESSIONS.set(s.id, s); await closeSession(s, "the screen changed while connecting"); return no("the screen changed while connecting"); }
+  // a newer offer for this screen was made while this one was at the appliance: its answer will be the one used
+  if (inFlight.get(msg.id) !== token) { SESSIONS.set(s.id, s); await closeSession(s, "replaced by a newer offer"); return no("replaced by a newer offer"); }
+  // one session per viewer per screen: a new one replaces any the viewer still holds there
+  for (const old of [...SESSIONS.values()]) if (old.client === c && old.entity === msg.id) await closeSession(old, "replaced by a newer offer");
   SESSIONS.set(s.id, s);
   return { type: "video-answer", req, id: msg.id, session: s.id, sdp: answer };
 }
