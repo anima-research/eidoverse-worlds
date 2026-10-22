@@ -38,11 +38,16 @@ function check(name: string, ok: boolean, detail = "") {
   else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-// A real 1×1 PNG (the smallest well-formed one), a JPEG SOI header with
-// padding, and a WebP RIFF header with padding — the sniffer reads magic, the
-// store does not decode, so headers are enough for the door.
+// A real 1×1 PNG (the smallest well-formed one), a JPEG whose headers are
+// whole (JFIF, then a baseline frame header saying 1×1), and a WebP RIFF header
+// with padding — the sniffer reads magic and the size check reads the pixel
+// size a header states; the store does not decode, so headers are enough for
+// the door.
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
-const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, ...new Array(64).fill(0), 0xff, 0xd9]);
+const JPG = new Uint8Array([0xff, 0xd8,                                                                      // SOI
+  0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,   // APP0 (JFIF 1.1)
+  0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x01, 0x00, 0x01, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,   // SOF0: 8-bit, 1×1, 3 components
+  0xff, 0xd9]);                                                                     // EOI
 const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, ...new Array(24).fill(0)]);
 const GLB = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 0x02, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, ...new Array(24).fill(0)]);
 const JUNK = new Uint8Array(40).map((_, i) => (i * 37) & 0xff);
