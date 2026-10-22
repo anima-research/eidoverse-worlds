@@ -422,13 +422,20 @@ await C("K18", "the pairs v1's server stamped join a name to its account before 
   const light = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "light");
   return [dee.length === 1 && r.planned[dee[0]].subs?.includes(DEE) && actors.length === 2 && actors.every((a: string) => a === dee[0]) && light?.body?.args?.placer?.sub === dee[0] && !text.includes(DEE),
     { dee, actors, planned: r.planned, placer: light?.body?.args?.placer }]; });
-await C("K19", "with no identity mapper (the pure translation), every account is dropped where it sits: a genesis role's sub, a component an account names and fills, an entry keyed by an account; and with a mapper an entry keyed by an account whose id is already a key keeps that one", () => {
+await C("K19", "with no identity mapper (the pure translation), every account is dropped where it sits: a genesis role's sub, a component an account names and fills (under a name read as written where it isn't a real escape), an entry keyed by an account, an old grant's, ban's and unban's id; and with a mapper an entry keyed by an account whose id is already a key keeps that one", () => {
   const ANN = "human:discord:42";
   const log = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { Ann: { role: "owner", sub: ANN }, [ANN]: { role: "builder" } } } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
     { seq: 2, ts: 3, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ownerSub", data: ANN } },
-    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { [ANN]: "paid", note: "kept" } } }];
+    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { [ANN]: "paid", note: "kept" } } },
+    // a name shaped like an escape that isn't one (x--qq…) is read as written, so it still has an account's name
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "x--qqSub", data: ANN } },
+    // a person named by their account, in an old grant, ban and unban
+    { seq: 5, ts: 6, actor: "world", verb: "grant", args: { id: ANN, role: "builder", gen: true } },
+    { seq: 6, ts: 7, actor: "world", verb: "ban", args: { id: ANN, reason: "spam" } },
+    { seq: 7, ts: 8, actor: "world", verb: "unban", args: { id: ANN } }];
   const pure = TV1.translate(log); const ptext = pure.out.map((e: any) => JSON.stringify(e)).join("\n");
+  const personArgs = pure.out.filter((e: any) => e.kind === "act" && ["grant", "ban", "unban"].includes(e.body?.verb)).map((e: any) => e.body.args);
   const st = FOLD.fold(FOLD.readLog(ptext + "\n")); const lamp = st.entities?.[TV1.enc("lamp_1")]?.c ?? {};
   const ledger: any = Object.values(lamp).find((v: any) => v && typeof v === "object" && v.note === "kept");
   // a mapper whose id for ANN is fixed, so a map can already hold it as a key beside the account
@@ -437,8 +444,9 @@ await C("K19", "with no identity mapper (the pure translation), every account is
   const both = TV1.withoutAccounts({ [ANN]: "the account's", [ID]: "the id's" }, (sub: string) => who(sub, { sub }));
   const mapped = TV1.translate(log, { who }); const from = mapped.out.find((e: any) => e.verb === "translated")?.body?.from;
   return [!ptext.includes(ANN) && ledger && !(ANN in ledger) && !Object.values(lamp).includes(ANN) && JSON.stringify(both) === JSON.stringify({ [ID]: "the id's" })
+    && personArgs.length === 3 && personArgs.every((a: any) => a && !("id" in a))
     && from?.roles?.Ann?.sub === ID && from?.roles?.[ID]?.role === "builder" && !Object.keys(from?.roles ?? {}).includes(ANN),
-    { leaked: ptext.includes(ANN), ledger, lamp: Object.keys(lamp), both, from: from?.roles }]; });
+    { leaked: ptext.split("\n").filter((l: string) => l.includes(ANN)).map((l: string) => l.slice(0, 200)), personArgs, ledger, lamp: Object.keys(lamp), both, from: from?.roles }]; });
 await C("K20", "a person whose name begins local: is a name, not an account (translateV1World): a private server's local: account is one only where an account sits (a sub), so 'local:ann' keeps their acts on one named identity with no account", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k20"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
@@ -517,6 +525,27 @@ await C("K23", "the snapshot oracle reads the translated world's people as the i
   return [alice.length === 1 && acct.length === 1 && named.length === 1 && acct[0] !== named[0] && !(r.planned[named[0]].subs ?? []).length && lamp2?.actor === named[0]
     && got.ban === alice[0] && got.name === named[0] && got.sub === acct[0] && !o.unresolved.length,
     { planned: r.planned, got, unresolved: o.unresolved, lamp2: lamp2?.actor }]; });
+await C("K24", "an account's place in a request is read as the scrub reads it (translateV1World): a placer whose name is itself an account is that person's id, name and account alike; an id elsewhere in a value is data, as any key not named sub or *Sub; a top-level sub that isn't an account stays, with a mapper or without; and a key naming a person called 'local:ann' stays", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k24"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const A = "human:discord:42", B = "human:discord:44";
+  const log = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: A, verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: A, sub: A } } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "board_1", lib: "a.glb", pos: [1, 0, 0], sub: "bob" } },
+    { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "board_1", type: "guestbook", data: { entries: [{ id: B, line: "hi" }] } } },
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "board_1", type: "ledger", data: { "local:ann": "paid", note: "kept" } } }];
+  fs.writeFileSync(path.join(src, "log.jsonl"), log.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  let r: any; try { r = translateV1World(src, path.join(W, "new")); } catch (e: any) { return [false, { threw: String(e?.message ?? e).slice(0, 300) }]; }
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const a = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(A)).map(([id]) => id);
+  const act = (verb: string, id: string) => lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb && e.body.args?.id === id);
+  const comps = lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "comp").map((e: any) => e.body.args?.data);
+  const board = FOLD.fold(FOLD.readLog(text)).entities?.[TV1.enc("board_1")]?.c ?? {};
+  const ledger: any = Object.values(board).find((v: any) => v && typeof v === "object" && v.note === "kept");
+  const pure = TV1.translate(log).out.find((e: any) => e.kind === "act" && e.body?.verb === "spawn" && e.body.args?.id === "board_1");
+  return [a.length === 1 && act("spawn", "lamp_1")?.actor === a[0] && JSON.stringify(act("spawn", "lamp_1")?.body?.args?.placer) === JSON.stringify({ id: a[0], sub: a[0] }) && !text.includes(A)
+    && comps[0]?.entries?.[0]?.id === B && act("spawn", "board_1")?.body?.args?.sub === "bob" && pure?.body?.args?.sub === "bob" && ledger?.["local:ann"] === "paid",
+    { a, placer: act("spawn", "lamp_1")?.body?.args?.placer, guest: comps[0], sub: [act("spawn", "board_1")?.body?.args?.sub, pure?.body?.args?.sub], ledger }]; });
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {
