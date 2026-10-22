@@ -6,27 +6,27 @@
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "./procgroup.ts";
 import * as PG from "./procgroup.ts";
+import { tryUntil } from "./wait.ts";
 import fs from "node:fs";
 let pass = 0, fail = 0;
 const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}`); if (info !== undefined) console.log("     ", JSON.stringify(info)); } };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const win = process.platform === "win32";
 
 // PG1: a detached child that starts a grandchild; both are found, then both are gone after killSuite
 {
   const script = "const {spawn}=require('node:child_process'); spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); setInterval(()=>{},1000);";
   const child = spawn(process.execPath, ["-e", script], { detached: true, stdio: "ignore" });
-  await sleep(1500);
+  await tryUntil("the suite's process and the one it starts are both running", () => suiteMembers(child.pid!).length >= 2, { ms: 7500 });
   const before = suiteMembers(child.pid!);
   killSuite(child.pid!, "SIGKILL");
-  let after = suiteMembers(child.pid!); for (let i = 0; i < 20 && after.length; i++) { await sleep(150); after = suiteMembers(child.pid!); }
+  let after = suiteMembers(child.pid!); await tryUntil("none of the suite's processes is left", () => !(after = suiteMembers(child.pid!)).length, { ms: 3000, step: 150 });
   check(`PG1 (${process.platform}) a suite's process and the one it started are both found (${before.length}), and none is left after the kill`, before.length >= 2 && after.length === 0, { before, after });
 }
 
 // PG2: on POSIX, the ps reading (the macOS path) agrees with the OS's own table for a live group
 if (!win && spawnSync("ps", ["-A", "-o", "pid="]).status === 0) {
   const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { detached: true, stdio: "ignore" });
-  await sleep(800);
+  await tryUntil("the child is in the OS's table", () => suiteMembers(child.pid!, processTable(process.platform), process.platform).length >= 1, { ms: 4000 });
   const viaOs = suiteMembers(child.pid!, processTable(process.platform), process.platform).sort();
   const viaPs = suiteMembers(child.pid!, parsePsTable(spawnSync("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], { encoding: "utf8" }).stdout), "darwin").sort();
   killSuite(child.pid!, "SIGKILL");
@@ -62,10 +62,10 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
 {
   const script = "const {spawn}=require('node:child_process'); spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); setInterval(()=>{},1000);";
   const child = spawn(process.execPath, ["-e", script], { detached: true, stdio: "ignore" });
-  await sleep(1500);
+  await tryUntil("the suite's process and the one it starts are both running", async () => ((await (PG as any).suiteMembersAsync?.(child.pid!)) ?? []).length >= 2, { ms: 7500 });
   const before = await (PG as any).suiteMembersAsync?.(child.pid!) ?? [];
   await (PG as any).killSuiteAsync?.(child.pid!, "SIGKILL");
-  let after = await (PG as any).suiteMembersAsync?.(child.pid!) ?? ["none"]; for (let i = 0; i < 20 && after.length; i++) { await sleep(150); after = await (PG as any).suiteMembersAsync(child.pid!); }
+  let after = await (PG as any).suiteMembersAsync?.(child.pid!) ?? ["none"]; if (after.length) await tryUntil("none of the suite's processes is left", async () => !(after = await (PG as any).suiteMembersAsync(child.pid!)).length, { ms: 3000, step: 150 });
   if (after.length) killSuite(child.pid!, "SIGKILL");
   check(`PG7 (${process.platform}) the async kill ends a suite's process and the one it started`, before.length >= 2 && after.length === 0, { before, after });
 }

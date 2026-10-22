@@ -113,9 +113,6 @@
  "tools/protocol/presence-check.ts": {
   "bare-wait": 10
  },
- "tools/protocol/procgroup-check.ts": {
-  "bare-wait": 6
- },
  "tools/protocol/r10-check.ts": {
   "raw-symlink": 4
  },
