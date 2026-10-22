@@ -209,11 +209,15 @@ export class World {
    *  the archive directory. */
   resetWorld(): string {
     const arch = resetWorld(this.log);
-    this.log.retire();           // a request still awaiting warm() on the old log refuses instead of writing into the new file
-    this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
-    this.log = this.openLog();
-    this.scripts = new WorldScripts(this.log);
-    this.scripts.sync();
+    // the fresh log is in place from here: a failure now has erased the world, and only reopening it failed, so the
+    // error says so (`resetDone`, the archive) rather than reading as a reset that changed nothing
+    try {
+      this.log.retire();           // a request still awaiting warm() on the old log refuses instead of writing into the new file
+      this.scripts.disposeAll();   // the old world's scripts stop with it: the fresh world has none
+      this.log = this.openLog();
+      this.scripts = new WorldScripts(this.log);
+      this.scripts.sync();
+    } catch (e) { const err = Object.assign(new Error(String((e as Error)?.message ?? e)), { resetDone: arch, cause: e }); throw err; }
     return arch;
   }
 }

@@ -30,6 +30,16 @@ ok(r?.ok === false && r?.refused?.code === "reset", "RR2 the straggler is refuse
 ok(lines("race").length === before, "RR3 the new world's file gained no line from the old log", { before, after: lines("race").length });
 ok(!fresh.live.state().entities.straggler && fresh.live.entries.length === before, "RR4 the fresh log never saw it", { head: fresh.live.entries.length });
 ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset", "RR5 the old log stays retired for every later request");
+// RR6: a failure after the fresh log is in place has erased the world; the owner is told it was, not that nothing changed
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "reopen"), "reopen", "olive");
+  const rw = new World("reopen"); rw.openLog = () => { throw new Error("injected: the fresh log won't open"); };
+  const sent = []; const c = { id: "olive", world: rw, actorId: owner, spectator: false, ws: { send: (d) => sent.push(JSON.parse(d)) } };
+  REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "reopen" });
+  const e = sent.find((m) => m.type === "error")?.error ?? "";
+  const archived = fs.readdirSync(path.join(process.env.WORLDS_DIR, "reopen")).some((n) => n.startsWith("reset-"));
+  ok(/was erased/.test(e) && !/nothing changed/.test(e) && archived && !sent.some((m) => m.type === "world-reset"),
+    "RR6 reopening fails after the reset swapped the log: the owner is told the world was erased and couldn't be reopened, never that nothing changed", { e, archived }); }
 
 // ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260, requestwire.ts:135;
 // Antra's repro: the old tab's request still committed, wrote:true, ok reply). The await is held by a gate in front of the
