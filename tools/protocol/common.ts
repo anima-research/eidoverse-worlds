@@ -36,7 +36,11 @@ export function scratch(tag: string) {
 /** `git archive <commit> <files…> | tar -x -C <dir>`, with every value passed as an argument to sh, never pasted into its
  *  script: a Windows path's backslashes are shell escapes, and a space splits a word (scale G3, CI Windows 10-22). */
 export function archiveTo(cwd: string, commit: string, files: string[], dir: string) {
-  return Bun.spawnSync(["sh", "-c", 'c=$1; d=$2; shift 2; git archive "$c" "$@" | tar -x -C "$d"', "sh", commit, dir, ...files], { cwd });
+  try { return Bun.spawnSync(["sh", "-c", 'c=$1; d=$2; shift 2; git archive "$c" "$@" | tar -x -C "$d"', "sh", commit, dir, ...files], { cwd }); }
+  catch (e) {   // a plain Windows PATH has no sh: say which one, rather than a bare ENOENT
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new Error("archiveTo needs `sh` (and `tar`) on PATH to extract a base commit. On Windows they come with Git for Windows: put its usr\\bin on PATH (e.g. C:\\Program Files\\Git\\usr\\bin)");
+    throw e;
+  }
 }
 
 /** Extract lab files at a commit into a scratch dir (the control arm). Null when PROTOCOL_LAB isn't set. */
