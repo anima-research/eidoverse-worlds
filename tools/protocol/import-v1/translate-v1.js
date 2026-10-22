@@ -576,9 +576,10 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
         if (who && typeof x.sub === "string" && (e.verb === "grant" || e.verb === "ban")) x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
         else if (who && isAccount(x.sub)) x = { ...x, sub: who(x.sub, { sub: x.sub }) };
         else { const { sub: _s, ...rest } = x; x = rest; } }
-      // a person named by their account (a grant, ban or unban keyed by it): their id, as a role or ban keyed by it is
+      // a person named by their account (a grant, ban or unban keyed by it): their id, as a role or ban keyed by it is. v1
+      // matched a ban's and an unban's id in any case, so theirs is the account whatever its case in the log (world.ts)
       if (PERSON_VERBS.has(e.verb) && isAccountName(x.id)) {
-        if (who) x = { ...x, id: who(x.id, { sub: x.id }) }; else { const { id: _i, ...rest } = x; x = rest; } }
+        if (who) x = { ...x, id: e.verb === "grant" ? who(x.id, { sub: x.id }) : who(x.id.toLowerCase(), { lowered: true }) }; else { const { id: _i, ...rest } = x; x = rest; } }
       const p = x.placer;
       if (who && (e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p) && isAccount(p.sub))
         x = { ...x, placer: { ...p, sub: who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }) } };

@@ -72,16 +72,21 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const agents = agentTokens();
   const nameKey = (n: string) => `name:${n}`;
-  // every name this log gives a person (actors, grants, bans, genesis roles, a say's addressee), and every account it
-  // gives one (a sub, a placer's, a bySub): what a lowered ban key may mean, an account's case included
-  const names = new Set<string>();
+  // every name this log gives a person (actors, grants, genesis roles, a say's addressee), and every account it gives one
+  // (a sub, a placer's, a bySub): what a lowered ban key may mean, an account's case included. A ban's or an unban's own
+  // id is how its sender typed the name, which v1 matched in any case, so it counts only when nothing else names them.
+  const names = new Set<string>(), banned = new Set<string>();
   for (const e of old) { const a = e?.args ?? {};
     if (typeof e?.actor === "string") names.add(e.actor);
-    if ((e?.verb === "grant" || e?.verb === "ban") && typeof a.id === "string") names.add(a.id);
+    if (e?.verb === "grant" && typeof a.id === "string") names.add(a.id);
+    if ((e?.verb === "ban" || e?.verb === "unban") && typeof a.id === "string") banned.add(a.id);
     if (e?.verb === "say" && typeof a.to === "string") names.add(a.to);
     for (const s of [a.sub, a.placer?.sub, a.bySub]) if (isAccount(s)) names.add(s);
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*") { names.add(k); if (isAccount(v?.sub)) names.add(v.sub); } }
-  const unlowered = (k: string) => { const c = [...names].filter((n) => n.toLowerCase() === k); return c.length === 1 ? c[0] : k; };
+  const unlowered = (k: string) => {
+    const among = (set: Set<string>) => [...set].filter((n) => n.toLowerCase() === k);
+    const c = among(names); if (c.length) return c.length === 1 ? c[0] : k;
+    const b = new Set(among(banned)); return b.size === 1 ? [...b][0] : k; };
   // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);

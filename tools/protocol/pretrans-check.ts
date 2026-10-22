@@ -472,6 +472,51 @@ await C("K21", "the sweep's independent reading agrees with the translator on ac
   const got = OR.whoFrom?.(path.join(W, "worlds"))?.who("Ann", { sub: "local:ann" });
   return [p.status === 0 && counted && / lossy 0,/.test(out) && !fails.length && ann.length === 1 && got === ann[0], { status: p.status, counted, fails: fails.slice(0, 4), tail: out.slice(-400), ann, got }]; });
 
+await C("K22", "a ban's key, which the old fold lowercased, is the person it names whatever case its sender typed (translateV1World): 'ann' banned after 'Ann' was granted bans Ann, an account granted as written and banned and unbanned in lowercase is one identity, and a name only its ban gives keeps its case", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
+  const W = scratch("k22"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
+  const ALICE = "aid1:issuer:Alice";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "Ann", role: "owner", gen: true } },
+    { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
+    { seq: 3, ts: 4, actor: "world", verb: "ban", args: { id: "ann", reason: "spam" } },
+    { seq: 4, ts: 5, actor: "world", verb: "grant", args: { id: ALICE, role: "builder", gen: true } },
+    { seq: 5, ts: 6, actor: "world", verb: "ban", args: { id: ALICE.toLowerCase(), reason: "spam" } },
+    { seq: 6, ts: 7, actor: "world", verb: "unban", args: { id: ALICE.toLowerCase() } },
+    { seq: 7, ts: 8, actor: "world", verb: "ban", args: { id: "Zed", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "new"));
+  const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const named = (n: string) => Object.entries<any>(r.planned).filter(([, e]) => e.name === n).map(([id]) => id);
+  const holding = (a: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(a)).map(([id]) => id);
+  const ann = named("Ann"), alice = holding(ALICE), zed = named("Zed");
+  const ids = (verb: string) => lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === verb).map((e: any) => e.body.args?.id);
+  const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
+  return [ann.length === 1 && !named("ann").length && w[`imported-bans:${ann[0]}`] !== undefined
+    && alice.length === 1 && !holding(ALICE.toLowerCase()).length && ids("ban").includes(alice[0]) && ids("unban")[0] === alice[0]
+    && zed.length === 1 && w[`imported-bans:${zed[0]}`] !== undefined && Object.keys(r.planned).length === 3,
+    { planned: r.planned, bans: Object.keys(w).filter((k) => k.startsWith("imported-bans:")), ban: ids("ban"), unban: ids("unban") }]; });
+await C("K23", "the snapshot oracle reads the translated world's people as the importer filed them (snapshot-oracle.ts whoFrom): a lowered ban key that is an account finds the account filed in its case; a person named 'local:ann' is the person of that name, not the local:ann account; and an account seen alone takes no name, so that person is their own identity", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts"); const OR = await imp("tools/protocol/import-v1/snapshot-oracle.ts");
+  const W = scratch("k23"), src = path.join(W, "worlds", "old"); fs.mkdirSync(src, { recursive: true });
+  const ALICE = "aid1:issuer:Alice";
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: ALICE, role: "builder", gen: true } },
+    { seq: 2, ts: 3, actor: "world", verb: "ban", args: { id: ALICE, reason: "spam" } },
+    { seq: 3, ts: 4, actor: "Bea", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0] } },
+    // the local:ann account, alone: a component that names it, with no name beside it
+    { seq: 4, ts: 5, actor: "Bea", verb: "comp", args: { id: "lamp_1", type: "ownerSub", data: "local:ann" } },
+    // someone whose name is local:ann
+    { seq: 5, ts: 6, actor: "local:ann", verb: "spawn", args: { id: "lamp_2", lib: "a.glb", pos: [1, 0, 0] } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "worlds", "new"));
+  const text = fs.readFileSync(path.join(W, "worlds", "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
+  const holding = (a: string) => Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes(a)).map(([id]) => id);
+  const alice = holding(ALICE), acct = holding("local:ann"), named = Object.entries<any>(r.planned).filter(([, e]) => e.name === "local:ann").map(([id]) => id);
+  const lamp2 = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn" && e.body.args?.id === "lamp_2");
+  const o = OR.whoFrom(path.join(W, "worlds"));
+  const got = { ban: o.who(ALICE.toLowerCase(), { lowered: true }), name: o.who("local:ann", {}), sub: o.who("someone", { sub: "local:ann" }) };
+  return [alice.length === 1 && acct.length === 1 && named.length === 1 && acct[0] !== named[0] && !(r.planned[named[0]].subs ?? []).length && lamp2?.actor === named[0]
+    && got.ban === alice[0] && got.name === named[0] && got.sub === acct[0] && !o.unresolved.length,
+    { planned: r.planned, got, unresolved: o.unresolved, lamp2: lamp2?.actor }]; });
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {
