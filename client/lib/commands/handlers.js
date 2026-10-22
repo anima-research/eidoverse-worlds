@@ -32,7 +32,7 @@ import {
   net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { serverNow } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
+import { serverNow, serverUntil } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
 import { myState, setPosture, flightReport } from '../controller.js';
 import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
@@ -153,7 +153,7 @@ register('grant', (arg) => {
     // forever = the same grant without its end (a set, not a merge: a merge can't remove a field)
     const { until: _u, ...rest } = cur ?? {};
     const value = forever ? { ...rest, ...(role ? { role } : {}), ...(can ? { can: { ...(rest.can ?? {}), ...can } } : {}) }
-      : { ...(role ? { role } : {}), ...(can ? { can } : {}), ...(dur ? { until: serverNow() + dur } : {}) };
+      : { ...(role ? { role } : {}), ...(can ? { can } : {}), ...(dur ? { until: serverUntil(dur) } : {}) };
     const merge = !forever && !role;
     send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value, ...(merge ? { merge: true } : {}) } },
       { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}` }); });

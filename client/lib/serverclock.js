@@ -49,6 +49,9 @@ function shownOffset() {
   return shown.v;
 }
 export const serverNow = () => localNow() + shownOffset();
+/** A time `ms` from now on the authority's clock, in whole milliseconds: what a written time (a timed grant's until) must
+ *  be, since the authority refuses a fraction (Number.isSafeInteger) and serverNow() carries performance.now()'s. */
+export const serverUntil = (ms) => Math.round(serverNow() + ms);
 // A floor: anything the authority stamped (a log entry's ts, a frame's t) was true on its clock no later than now, so the
 // offset is at least t − localNow(). A floor above the estimate by more than its slack means the clock stepped since the
 // last round trip: ask again at once (net.js hands askClock in) instead of drawing what the replica already folded seconds
