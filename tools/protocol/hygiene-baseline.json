@@ -99,9 +99,6 @@
  "tools/protocol/inspectharness.ts": {
   "bare-wait": 1
  },
- "tools/protocol/mover-check.ts": {
-  "bare-wait": 1
- },
  "tools/protocol/names-check.ts": {
   "raw-symlink": 7
  },

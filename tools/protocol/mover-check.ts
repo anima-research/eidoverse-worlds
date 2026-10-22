@@ -28,6 +28,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
+import { pause } from "./wait.ts";
 
 let pass = 0, fail = 0;
 const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 600)}` : ""}`); } };
@@ -167,7 +168,7 @@ if (M) {
       ok(request(w, "olive", "create-world", { title: "pace" }).ok, "A6 a live world");
       arrived = request(w, "ann", "move", { to: [0, 0, 0] });
       const back = 1500; Date.now = () => realNow() - back;   // the host's clock sync steps the wall back
-      for (let i = 1; i <= 4; i++) { await new Promise((r) => setTimeout(r, 400)); const m = request(w, "ann", "move", { to: [0, 0, 2 * i] }); steps.push(m.ok ? "ok" : m.refused?.reason); }
+      for (let i = 1; i <= 4; i++) { await pause("2 m every 0.4 s: a walk's pace", 400); const m = request(w, "ann", "move", { to: [0, 0, 2 * i] }); steps.push(m.ok ? "ok" : m.refused?.reason); }
     } finally { Date.now = realNow; if (pinned !== undefined) process.env.PROTOCOL_NOW = pinned; }
     ok(arrived?.ok && steps.length === 4 && steps.every((s) => s === "ok"), "A6 a wall clock stepped back doesn't freeze the speed track: 2 m every 0.4 s is accepted throughout", { arrived: arrived?.refused, steps });
   }
