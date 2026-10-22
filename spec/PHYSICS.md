@@ -74,7 +74,7 @@ the working domain. `shared/terrainmath.js` is the terrain height law
 re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 `hypot` → `sqrt`, since hypot is implementation-approximated).
 
-## 3. Covenant II — the engine is named and hashed
+## 3. Covenant II — the engine is named and versioned
 
 A physics change silently rewrites what old intents mean, so the engine is
 versioned in the log itself:
@@ -131,7 +131,7 @@ eidosim@1.0.0, the law (its constants are its version):
   (colliders and sleeping bodies) by conservative advancement, so a fast body
   doesn't cross a thin wall between ticks. Two moving bodies are not swept
   against each other: thrown at each other fast enough, they can pass (body–body
-  time of impact is a later build).
+  time of impact is a later version).
 - **A height-field ground** (`shared/terrainmath.js`).
 - **Waking and knocking**: a dynamic thing at rest that no hand rule holds fixed
   (not locked, under nothing locked, holding nothing locked) is a sleeping body.
@@ -215,28 +215,11 @@ are direction (`docs/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
 bare `{}` read as dynamic while the component's absence means static or
 nothing.
 
-- **Surfaces.** A world names its materials as `@world surface:<name>
-  {friction?, restitution?, density?, frictionCombine?, restitutionCombine?,
-  label?}` (Marrow's Surface Data Cards: one name bundles a surface's
-  numbers, and content names materials rather than raw per-object numbers).
-  `surface` is **reserved** with `physics`' reserved fields (writes closed;
-  both open together). A `physics.surface` naming no surface reads as none.
-  The registry may later add built-in surface names; a world's own
-  `surface:<name>` wins.
-- **Combining two surfaces is the protocol's, not the engine's.** The modes
-  are the four every engine can carry (PhysX's, Unity's and Rapier's enums;
-  Jolt and Box2D v3 take any rule as a callback): `average`, `min`,
-  `multiply`, `max`. When two touching surfaces name different modes, the
-  later in that list wins (PhysX's and Unity's priority). Absent everywhere,
-  friction averages (the PhysX, Unity and Rapier default) and restitution
-  takes the max (the Jolt and Box2D default: a bouncy ball stays bouncy on
-  any floor). Geometric mean, Jolt's and Box2D's friction default, isn't
-  offered: three of the engines can't express it. **KHR_physics_rigid_bodies
-  names the same four modes (`average`, `minimum`, `maximum`, `multiply`) but
-  resolves a mismatch the other way round** (if either says average, average;
-  then minimum, maximum, multiply). We keep the engines' order, which three of
-  them carry natively; an importer of KHR materials resolves each touching
-  pair to one mode, never maps mode to mode.
+- **Surfaces.** `surface` (on `@world`, keyed by name) is reserved by name
+  only, with `physics`' reserved fields: no shape is pinned until a world
+  needs one, and a `physics.surface` naming no surface reads as none. The
+  shape it was sketched with, and how two surfaces' modes would combine, are
+  `docs/RESERVED-SHAPES.md`.
 - **Angular velocity is `w`: [x, y, z] in rad/s about world axes, everywhere**
   (acts, launches, state samples). Orientation is `q`, a unit quaternion
   (PROTOCOL §9.1).

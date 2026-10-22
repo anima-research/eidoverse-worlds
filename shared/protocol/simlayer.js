@@ -8,8 +8,8 @@
 // never running backwards: an entry without one happens at the latest time stated before it.
 // The engine is eidosim (shared/sim.js, its adapter, over shared/eidosim.js, its core): rigid bodies that tumble and
 // roll, soft contacts after Box3D, swept against what rests, on terrain; things at rest that are dynamic and free can be
-// knocked. Its build hash is a pinned constant: tools/protocol/sweep.ts recomputes it from the files and fails if they
-// changed without a new build (Covenant II). The first eidosim (eidosim@0.1.0–0.5.0, PROTOCOL_v2 dialect 3) is no longer
+// knocked. It is named name@version; a version is carried when this server reproduces its conformance digests
+// (spec/conformance/physics/, engine-check), and a change meant to alter results is a new version (Covenant II). The first eidosim (eidosim@0.1.0–0.5.0, PROTOCOL_v2 dialect 3) is no longer
 // carried at runtime (R 2026-10-09: "stomp the existing eidosim engine"); the old-world importer keeps its own copy, to
 // say where old punts came to rest, and writes those rests as plain changes.
 import { sha256 } from "./hash.js";
