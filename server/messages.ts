@@ -28,7 +28,7 @@ import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { snapshots } from "./snapshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS } from "./moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
@@ -453,7 +453,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (msg.type === "global-unban") {
       // by the name it was filed under, by the account named, or by an account wearing that name here
       const accts = new Set([id, ...dir.accountsNamed(id)]);
-      const gone = Object.entries(globalBans).filter(([k, b]) => k === id.toLowerCase() || (b.name && fold(b.name) === fold(id)) || (b.account && accts.has(b.account)) || (b as any).sub === id).map(([k]) => k);
+      const gone = bansLiftedBy(globalBans, id, accts, fold);
       for (const k of gone) delete globalBans[k];
       saveGlobalBans();
       console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);

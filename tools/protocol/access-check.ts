@@ -288,7 +288,14 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const R = restoreBans ? restoreBans(was) : Object.fromEntries(Object.entries(was).filter(([, b]) => b.sub).map(([k, b]) => [k, { ...b, account: b.sub }]));
   const agent = findBan(R, "aid1:https://id.example.org:agent-7f3a"), person = findBan(R, "discord|123");
   const other = findBan(R, "aid1:https://id.example.org:agent-7f3a-2"), human = findBan(R, "human:agent-7f3a");
-  ok(!!agent && !!person && !other && !human && !R.namesake, "A13c a ban from before accounts holds against the aid1 agent whose sub it named and the person whose account is that sub, and against no one else", { agent: !!agent, person: !!person, other: !!other, human: !!human, keys: Object.keys(R) }); }
+  ok(!!agent && !!person && !other && !human && !R.namesake, "A13c a ban from before accounts holds against the aid1 agent whose sub it named and the person whose account is that sub, and against no one else", { agent: !!agent, person: !!person, other: !!other, human: !!human, keys: Object.keys(R) });
+  // …and an unban by the account it holds against lifts it: the same rule the door checks
+  const { bansLiftedBy } = await import("../../server/moderation.ts");
+  const fold = (s) => s.toLowerCase();
+  const byAgent = bansLiftedBy(R, "aid1:https://id.example.org:agent-7f3a", ["aid1:https://id.example.org:agent-7f3a"], fold);
+  const byOther = bansLiftedBy(R, "aid1:https://id.example.org:agent-7f3a-2", ["aid1:https://id.example.org:agent-7f3a-2"], fold);
+  ok(byAgent.length === 1 && byAgent[0] === "old-agent" && byOther.length === 0,
+    "A13c …and an unban by the aid1 account it holds against lifts it, while an unban by another account lifts nothing", { byAgent, byOther }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
 { const { custodyAt } = await import("../../server/custody.ts");
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
