@@ -40,6 +40,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a use script gets its reaction", "shared/protocol/newscript.js", "...(action ? [set(form.id, \"reactions\"", "...(false ? [set(form.id, \"reactions\"", ["K1", "K2"]],
   ["update merges a part's parent", "shared/protocol/authority/blueprints.js", "const unmerged = new Set([\"copy-of\"]);", "const unmerged = new Set([\"copy-of\", \"parent\"]);", ["U1"]],
   ["a lineage's parts advance with the root", "shared/protocol/authority/blueprints.js", "if (id !== a.copy && T[key] && c?.from === was)", "if (false)", ["U2"]],
+  ["a resolve key that names no conflict is refused", "shared/protocol/authority/blueprints.js", "filter(([k, v]) => !keys.has(k) || (v !== \"yours\"", "filter(([k, v]) => (v !== \"yours\"", ["U4"]],
+  ["what the authority stamped doesn't keep a dropped part", "shared/protocol/authority/blueprints.js", "|| onlyStamp(k, mineE.c[k])", "", ["U3b"]],
   ["an old record's twin keys each get an id", "shared/protocol/authority/blueprints.js", "if (!seen.has(p.key)) { seen.add(p.key); return ids.get(p.key); }", "return ids.get(p.key);", ["N3"]],
 ];
 
@@ -351,13 +353,14 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
       s.call("bob", "set", { id: "b", component: "pivot", value: { pos: [0, 2, 0] }, merge: true });
       const plain = s.call("bob", "update", { copy: "b", to: v2 });
-      const stray = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.axis": "theirs" } });
+      // the stray key rides beside the one conflict, resolved: only the names-no-conflict guard can refuse it (house 6340433633)
+      const stray = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.pos": "theirs", "b.pivot.axis": "theirs" }, dry: true });
       const word = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.pos": "mine" } });
       const none = s.call("bob", "update", { copy: "b", to: v2, resolve: null, dry: true });
       const left = s.call("bob", "update", { copy: "b", to: v2, resolve: {} });
       const good = s.call("bob", "update", { copy: "b", to: v2, resolve: { "b.pivot.pos": "theirs" } });
-      return { plain: plain?.refused?.code ?? show(plain), stray: stray?.refused?.code ?? show(stray), word: word?.refused?.code ?? show(word), none: none?.refused?.code ?? show(none), left: left?.refused?.code ?? show(left), good: show(good), i: JSON.stringify(s.w().state().entities.b?.c.pivot?.pos) }; },
-    good: (o) => o.plain === "conflicts" && o.stray === "shape" && o.word === "shape" && o.none === "conflicts" && o.left === "shape" && o.good === "ok" && o.i === "[0,1,0]" },
+      return { plain: plain?.refused?.code ?? show(plain), stray: stray?.refused?.code ?? show(stray), strayWhy: stray?.refused?.reason ?? null, word: word?.refused?.code ?? show(word), none: none?.refused?.code ?? show(none), left: left?.refused?.code ?? show(left), good: show(good), i: JSON.stringify(s.w().state().entities.b?.c.pivot?.pos) }; },
+    good: (o) => o.plain === "conflicts" && o.stray === "shape" && /b\.pivot\.axis/.test(o.strayWhy ?? "") && o.word === "shape" && o.none === "conflicts" && o.left === "shape" && o.good === "ok" && o.i === "[0,1,0]" },
 ];
 
 let pass = 0, fail = 0;
