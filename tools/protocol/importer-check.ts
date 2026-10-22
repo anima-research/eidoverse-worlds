@@ -10,6 +10,8 @@
 //   IM-I5   a v1 agent's home-node sub is filed as the account its live join wears (aid1:<iss>:<sub>)
 //   IM-I5b  an enrolled agent's home-node sub is filed as its enrolment's account (agent:token:<id>)
 //   IM-I35  a failure after world.jsonl lands removes what it made: the error says nothing was written, and a rerun works
+//   IM-I35b a model index that can't be written fails the translation with no identity added; a world.mod.jsonl or
+//           poses.json that was already there gets its bytes back, and a destination directory that was there stays
 //   IM-I10  the remembered places: a write that fails is reported, not counted; an unreadable file and dropped names are said
 //   IM-I7   lines of the old log that don't parse are counted, in the report and in the result
 //   IM-I15  a deferred feature removed on the old server (comp null, or the thing removed) no longer refuses
@@ -168,6 +170,22 @@ row("IM-I35", () => {
     "IM-I35 a failure after world.jsonl landed removes it again, adds no identity, and says nothing was written", { why, left: fs.existsSync(w.dest) ? fs.readdirSync(w.dest) : null });
   fs.rmSync(path.join(w.dest, "world.mod.jsonl"), { recursive: true });
   ok(!threw(() => W1.translateV1World(w.src, w.dest)), "IM-I35 …so a rerun isn't refused as 'already holds a world', and translates");
+});
+row("IM-I35b", () => {
+  const lib = path.join(root, `lib${++n}`), opt = path.join(root, `opt${n}`); fs.mkdirSync(lib, { recursive: true }); fs.mkdirSync(path.join(opt, "eido-index.json"), { recursive: true });
+  fs.writeFileSync(path.join(lib, "a.glb"), "glTF stand-in bytes " + n);
+  const w = oldWorld(BASIC);   // BASIC spawns a.glb: its bytes are on this host, so the model index is written
+  const out = child(w, { OPT_DIR: opt, EIDOVERSE_DIR: lib }); const dirf = path.join(w.worlds, ".directory.json");
+  const ids = fs.existsSync(dirf) ? Object.keys(JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}) : [];
+  ok(/Nothing written/.test(out.error ?? "") && !ids.length && !fs.existsSync(path.join(w.dest, "world.jsonl")), "IM-I35b a model index that can't be written fails the translation with no identity in the directory and no world.jsonl", { out, ids });
+  const v = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }], { poses: { Ann: { p: [1, 0, 1] } } });
+  fs.mkdirSync(v.dest, { recursive: true }); const MOD = JSON.stringify({ ts: T0, actor: "system", verb: "ban", who: "u-aaaaaaaaaaaaaaaaaaaa" }) + "\n"; fs.writeFileSync(path.join(v.dest, "world.mod.jsonl"), MOD); fs.writeFileSync(path.join(v.dest, "poses.json"), "POSES-BEFORE");
+  const out2 = child(v, { OPT_DIR: opt, EIDOVERSE_DIR: lib });
+  ok(/Nothing written/.test(out2.error ?? "") && fs.existsSync(v.dest) && fs.readFileSync(path.join(v.dest, "world.mod.jsonl"), "utf8") === MOD && /couldn't|EISDIR/.test(out2.error ?? "") && fs.readFileSync(path.join(v.dest, "poses.json"), "utf8") === "POSES-BEFORE" && !fs.existsSync(path.join(v.dest, "world.jsonl")),
+    "IM-I35b …a world.mod.jsonl and poses.json already there get their bytes back, and the destination directory that was there stays", { out2, left: fs.existsSync(v.dest) ? fs.readdirSync(v.dest) : null });
+  const e = oldWorld([...BASIC, { actor: "Ann", verb: "ban", args: { id: "Troll" } }]); fs.mkdirSync(e.dest, { recursive: true });
+  child(e, { OPT_DIR: opt, EIDOVERSE_DIR: lib });
+  ok(fs.existsSync(e.dest) && !fs.readdirSync(e.dest).length, "IM-I35b …and an empty destination directory that was there is left there, empty", fs.existsSync(e.dest) ? fs.readdirSync(e.dest) : "removed");
 });
 row("IM-I10", () => {
   const w = oldWorld(BASIC, { poses: { Ann: { p: [1, 0, 1] }, Nobody: { p: [0, 0, 0] } } });

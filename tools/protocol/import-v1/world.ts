@@ -211,13 +211,14 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
     sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
   }
+  const madeDir = !fs.existsSync(destDir);
   fs.mkdirSync(destDir, { recursive: true });
   const tmp = path.join(destDir, "world.jsonl.tmp");
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
-  // from here every file this call makes in destDir is removed again on a failure, so a rerun isn't refused as "already
-  // holds a world"; the shared directory and the model index are written last, once nothing else can fail
-  const made: string[] = [path.join(destDir, "world.jsonl")];
+  // from here a failure puts destDir back as it found it (a file this call made is removed, one it changed gets its bytes
+  // back), so a rerun isn't refused as "already holds a world"; the shared directory is written last, once nothing can fail
+  const touched: Touched = [{ file: path.join(destDir, "world.jsonl"), before: null }];
   try {
     // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
     // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
@@ -230,26 +231,30 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
     // translated world quietly unbans everyone (component review, world-settings #3)
     const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
-    if (banned.length) { const modFile = path.join(destDir, "world.mod.jsonl"); if (!fs.existsSync(modFile)) made.push(modFile); const ml = modLogAt(modFile);
+    if (banned.length) { const modFile = path.join(destDir, "world.mod.jsonl"); touched.push({ file: modFile, before: fs.existsSync(modFile) ? fs.readFileSync(modFile) : null }); const ml = modLogAt(modFile);
       for (const [k, v] of banned) ml.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
     // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
     // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
-    const places = carryPoses(srcDir, destDir, idOfName, made);
-    if (!deferIdentities) dir.put(planned);
+    const places = carryPoses(srcDir, destDir, idOfName, touched);
+    // the model index is a cache of library bytes (what is recorded stays true); the identities go in last
     for (const [h, p] of addressed) recordEido(h, p);
+    if (!deferIdentities) dir.put(planned);
     // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
     // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
     return { source, unparsed, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
   } catch (x) {
-    for (const f of made.reverse()) try { fs.rmSync(f, { force: true }); } catch { /* best effort: named below */ }
-    try { if (!fs.readdirSync(destDir).length) fs.rmdirSync(destDir); } catch { /* not empty, or gone */ }
-    throw new Error(`${(x as Error)?.message ?? x}. Nothing written (${made.map((f) => path.basename(f)).join(", ")} removed again)`);
+    const undone: string[] = [];
+    for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }
+    if (madeDir) try { if (!fs.readdirSync(destDir).length) fs.rmdirSync(destDir); } catch { /* not empty, or gone */ }
+    const left = touched.map((t) => path.basename(t.file)).filter((f) => !undone.includes(f));
+    throw new Error(`${(x as Error)?.message ?? x}. Nothing written (${undone.join(", ")} put back as they were${left.length ? `; NOT put back: ${left.join(", ")}` : ""})`);
   }
 }
 
 /** The old world's remembered places (poses.json, by display name) under each person's id: {poses: how many carried,
  *  posesDropped: names this log never knew as one person, posesUnread?: why the file couldn't be read or written}. */
-function carryPoses(srcDir: string, destDir: string, idOfName: (n: string) => string | undefined, made: string[]) {
+type Touched = { file: string; before: Buffer | null }[];   // a file this call wrote, and its bytes before (null: it made it)
+function carryPoses(srcDir: string, destDir: string, idOfName: (n: string) => string | undefined, touched: Touched) {
   const oldPoses = path.join(srcDir, "poses.json");
   if (!fs.existsSync(oldPoses)) return { poses: 0, posesDropped: 0 };
   let P: Any;
@@ -259,6 +264,6 @@ function carryPoses(srcDir: string, destDir: string, idOfName: (n: string) => st
   const n = Object.keys(out).length;
   if (!n) return { poses: 0, posesDropped: dropped };
   const to = path.join(destDir, "poses.json");
-  try { fs.writeFileSync(to, JSON.stringify(out)); made.push(to); } catch (x) { return { poses: 0, posesDropped: dropped, posesUnread: `poses.json couldn't be written: ${(x as Error).message}` }; }
+  try { const before = fs.existsSync(to) ? fs.readFileSync(to) : null; fs.writeFileSync(to, JSON.stringify(out)); touched.push({ file: to, before }); } catch (x) { return { poses: 0, posesDropped: dropped, posesUnread: `poses.json couldn't be written: ${(x as Error).message}` }; }
   return { poses: n, posesDropped: dropped };
 }
