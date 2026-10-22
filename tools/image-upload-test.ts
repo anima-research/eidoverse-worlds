@@ -73,21 +73,24 @@ console.log(`\nimage door — ${HTTP}\n`);
 // ---- the door judges by bytes ------------------------------------------------
 // The upload window is 4/min per IP and every POST past the token check
 // spends it (refusals included), so the door is exercised four at a time
-// with a window's rest between.
+// with a window's rest between: three windows, twelve uploads.
 let r = await post(PNG, { as: "image", name: "hearth at dusk.png" });
 check("a PNG lands: 200 with a store path", r.status === 200 && typeof r.json?.path === "string", r.text);
 const pngPath: string = r.json?.path ?? "";
 check("…content-addressed under store/images/, extension from the bytes", /^store\/images\/[a-f0-9]{16}\.png$/.test(pngPath), pngPath);
 check("…and the picture allow-list admits exactly that path", allowedPictureSrc(pngPath) === true, pngPath);
 
-const again = await post(PNG, { as: "image", name: "different name.png" });
-check("re-uploading the same bytes is idempotent (same path, whatever the name)", again.json?.path === pngPath, again.text);
-
+// the same bytes again under another name, and one that says it's a model
 r = await post(PNG, { as: "image", name: "lies.glb" });
+check("re-uploading the same bytes is idempotent (same path, whatever the name)", r.json?.path === pngPath, r.text);
 check("a PNG named .glb is still a .png in the store (the name is not evidence)", r.json?.path === pngPath, r.text);
 
 r = await post(JPG, { as: "image", name: "photo.jpg" });
 check("a JPEG lands as .jpg", r.status === 200 && /\.jpg$/.test(r.json?.path ?? ""), r.text);
+
+r = await post(WEBP, { as: "image", name: "photo.webp" });
+check("a WebP lands as .webp", r.status === 200 && /\.webp$/.test(r.json?.path ?? ""), r.text);
+const webpPath: string = r.json?.path ?? "store/images/none.webp";
 
 r = await post(PNG, { as: "image" }, null);
 check("no token: 401 (the image door is the same door)", r.status === 401, `${r.status} ${r.text}`);
@@ -98,14 +101,12 @@ const served = new Uint8Array(await g.arrayBuffer());
 check("GET /library/<path> serves it: 200 image/png", g.status === 200 && (g.headers.get("content-type") ?? "").startsWith("image/png"), `${g.status} ${g.headers.get("content-type")}`);
 check("…byte-identical", served.length === PNG.length && served.every((b, i) => b === PNG[i]), `${served.length} vs ${PNG.length}`);
 check("…under the store's immutable cache policy (content-addressed)", /immutable/.test(g.headers.get("cache-control") ?? ""), g.headers.get("cache-control") ?? "none");
+const gw = await fetch(`${HTTP}/library/${webpPath}`);
+check("a served .webp says image/webp", (gw.headers.get("content-type") ?? "").startsWith("image/webp"), gw.headers.get("content-type") ?? "none");
 
+// ---- refused by what the bytes are ---------------------------------------------
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
-
-r = await post(WEBP, { as: "image", name: "photo.webp" });
-check("a WebP lands as .webp", r.status === 200 && /\.webp$/.test(r.json?.path ?? ""), r.text);
-const gw = await fetch(`${HTTP}/library/${r.json?.path ?? "store/images/none.webp"}`);
-check("a served .webp says image/webp", (gw.headers.get("content-type") ?? "").startsWith("image/webp"), gw.headers.get("content-type") ?? "none");
 
 r = await post(GLB, { as: "image", name: "model.png" });
 check("a GLB named .png is refused at the image door (415)", r.status === 415 && /not a PNG/.test(r.text), `${r.status} ${r.text}`);
@@ -113,6 +114,11 @@ r = await post(JUNK, { as: "image", name: "x.png" });
 check("junk bytes are refused (415)", r.status === 415, `${r.status} ${r.text}`);
 r = await post(PNG, {});
 check("a PNG at the MODEL door is refused as not-a-GLB (the doors are distinct)", r.status === 415 && /GLB/.test(r.text), `${r.status} ${r.text}`);
+// The pixel cap is read from the header (a tiny file can decode to a huge
+// image), so an image whose header gives no size is refused.
+const JPG_NO_SIZE = new Uint8Array([...JPG.subarray(0, 20), 0xff, 0xd9]);   // SOI, JFIF, EOI: no frame header
+r = await post(JPG_NO_SIZE, { as: "image", name: "no size.jpg" });
+check("a JPEG whose header gives no pixel size: 415", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 
 // ---- the manifest remembers who ----------------------------------------------
 // owned child: the scratch OPT_DIR above; a live door: only if the caller
@@ -125,27 +131,19 @@ if (MANIFEST_DIR) {
 } else console.log("  (OPT_DIR not set — manifest check skipped)");
 
 // ---- the caps -----------------------------------------------------------------
+// the byte cap, then the pixel cap on each side: one past 8192 px is refused,
+// one at 8192 lands
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
 const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
-
-// The pixel cap is read from the header (a tiny file can decode to a huge
-// image), so an image whose header gives no size is refused, and one past
-// 8192 px on either side is refused while one at 8192 lands.
-const JPG_NO_SIZE = new Uint8Array([...JPG.subarray(0, 20), 0xff, 0xd9]);   // SOI, JFIF, EOI: no frame header
-r = await post(JPG_NO_SIZE, { as: "image", name: "no size.jpg" });
-check("a JPEG whose header gives no pixel size: 415", r.status === 415 && /pixel size/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
 r = await post(pngSized(1, 8193), { as: "image", name: "tall.png" });
 check("a PNG 8193 px tall: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
-r = await post(pngSized(8192, 8192), { as: "image", name: "at the cap.png" });
-check("a PNG 8192 px on each side lands", r.status === 200 && /\.png$/.test(r.json?.path ?? ""), `${r.status} ${r.text.slice(0, 120)}`);
-// …and the cap holds on the width too (the window is spent: one more rest)
-console.log("  (resting out the 4/min upload window…)");
-await new Promise((res) => setTimeout(res, 61_000));
 r = await post(pngSized(8193, 1), { as: "image", name: "wide.png" });
 check("a PNG 8193 px wide: 413", r.status === 413 && /8193/.test(r.text), `${r.status} ${r.text.slice(0, 120)}`);
+r = await post(pngSized(8192, 8192), { as: "image", name: "at the cap.png" });
+check("a PNG 8192 px on each side lands", r.status === 200 && /\.png$/.test(r.json?.path ?? ""), `${r.status} ${r.text.slice(0, 120)}`);
 
 await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);
