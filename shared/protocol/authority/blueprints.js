@@ -128,6 +128,8 @@ function buildUpdate(ctx, a, w) {
   const B = Object.fromEntries(base.parts.map((p) => [p.key, inIds(p.components)])), T = Object.fromEntries(theirs.parts.map((p) => [p.key, inIds(p.components)]));
   const eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
   const ops = [], made = [], conflicts = [], kept = [], orphaned = [];
+  const unstamp = (k, v) => (k === "physics" && v && typeof v === "object" && !Array.isArray(v) ? (({ shape, ...rest }) => rest)(v) : v);
+  const onlyStamp = (k, v) => k === "physics" && eq(Object.keys(unstamp(k, v) ?? {}), ["kind"]) && (v.kind === "static" || v.kind === "kinematic");
   const skipComp = new Set(["copy-of", "parent"]);   // "is this gone part still as the record left it?" (copy-of, parent: placement)
   const unmerged = new Set(["copy-of"]);
   for (const key of new Set([...Object.keys(B), ...Object.keys(T)])) {
@@ -135,8 +137,10 @@ function buildUpdate(ctx, a, w) {
     if (!B[key]) { const c = clone(T[key]); c["copy-of"] = { from: a.to, key };   // its parent is already in ids (inIds)
       made.push(...createOps(id, c)); continue; }   // made first: an existing part may be reparented onto a new one
     // a part the newer version drops goes only if this copy left it as it came: each component it came with unchanged, and
-    // none added since
-    if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(B[key][k], mineE.c[k])) && Object.keys(mineE.c).every((k) => skipComp.has(k) || Object.hasOwn(B[key], k))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
+    // none added since. What the authority stamps isn't this copy's change (house 6340433633): physics.shape is its measure
+    // of the model, and physics {kind: static | kinematic, shape} alone is what it gives every modelled thing in a world that
+    // runs physics (followups.js stampShapes)
+    if (!T[key]) { if (mineE && Object.keys(B[key]).every((k) => skipComp.has(k) || eq(unstamp(k, B[key][k]), unstamp(k, mineE.c[k]))) && Object.keys(mineE.c).every((k) => skipComp.has(k) || Object.hasOwn(B[key], k) || onlyStamp(k, mineE.c[k]))) ops.push(delOp(id)); else if (mineE) orphaned.push(id); continue; }
     if (!mineE) { kept.push({ id, why: "you deleted it in this copy" }); continue; }
     for (const comp of new Set([...Object.keys(B[key]), ...Object.keys(T[key])])) {
       if (unmerged.has(comp) || (key === base.root && (comp === "transform" || comp === "parent"))) continue;

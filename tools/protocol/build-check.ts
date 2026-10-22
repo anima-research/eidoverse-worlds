@@ -329,6 +329,20 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       const up = s.call("bob", "update", { copy: "b", to: v2 });
       return { del: show(del), add: show(add), up: show(up), kept: !!E()[bb], label: E()[bb]?.c.label ?? null }; },
     good: (o) => o.del === "ok" && o.add === "ok" && o.up === "ok" && o.kept && o.label === "mine" },
+  { id: "U3b", what: "…and what the authority stamped on a part (physics {kind, shape} when the world runs physics) isn't a change of this copy's: the dropped part goes (house 6340433633)", run(s) { cast(s);
+      s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]) } });
+      s.call("bob", "create", { id: "bulb", model: "book", components: { transform: T0([0, 0.6, 0]), parent: { to: "lamp" } } });
+      const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      for (const [id, x] of [["a", 5], ["b", 9]] as const) s.call("bob", "create", { id, from: v1, at: { pos: [x, 0, 5] } });
+      const E = () => s.w().state().entities;
+      const partOf = (copy: string, key: string) => Object.keys(E()).find((k) => E()[k].c["copy-of"]?.key === key && E()[k].c.parent?.to === copy);
+      const eng = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } });   // stamps every modelled thing
+      const bb = partOf("b", "bulb"); const stamped = E()[bb]?.c.physics ?? null;
+      const del = s.call("bob", "delete", { id: partOf("a", "bulb") });
+      const v2 = s.call("bob", "publish", { from: "a", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
+      const up = s.call("bob", "update", { copy: "b", to: v2 });
+      return { eng: show(eng), stamped, del: show(del), up: show(up), gone: !E()[bb], orphaned: up.notes?.find((n: any) => n.orphaned)?.orphaned ?? null }; },
+    good: (o) => o.eng === "ok" && o.stamped?.shape && o.del === "ok" && o.up === "ok" && o.gone && !o.orphaned },
   { id: "U4", what: "a resolve that names no conflict, a word other than yours/theirs, or leaves a conflict out is refused rather than silently meaning yours (null is no resolve)", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", model: "crate", components: { transform: T0([0, 0, 0]), pivot: { pos: [0, 0, 0] } } });
       const v1 = s.call("bob", "publish", { from: "lamp", name: "lamp" }).notes?.find((n: any) => n.record)?.record;
