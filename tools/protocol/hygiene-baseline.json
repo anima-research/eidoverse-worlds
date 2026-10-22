@@ -91,7 +91,7 @@
   "raw-symlink": 2
  },
  "tools/protocol/fork-reset-check.ts": {
-  "bare-wait": 8
+  "bare-wait": 2
  },
  "tools/protocol/grab-check.ts": {
   "raw-symlink": 1

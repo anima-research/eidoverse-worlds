@@ -12,6 +12,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
 import { idAliases } from "./idalias.ts";
+import { tryUntil } from "./wait.ts";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const root = scratch("forkreset");
@@ -27,7 +28,7 @@ async function start(extra = {}) {
   let port = 9410; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
   const logf = path.join(root, `srv-${port}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
-  for (let i = 0; i < 80; i++) { await sleep(150); try { if ((await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p }; } catch {} }
+  if (await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 })) return { port, proc: p };
   throw new Error("server didn't start: " + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : ""));
 }
 async function sock(port) {
@@ -36,10 +37,10 @@ async function sock(port) {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
     async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true }));
-      for (let i = 0; i < 60 && !msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50); await sleep(50);
+      await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 }); await sleep(50);
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, (r) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
-    async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); for (let i = 0; i < ms / 50; i++) { const hit = msgs.slice(k).find((x) => x.type === wantType || x.type === "error"); if (hit) return hit; await sleep(50); } return null; },
+    async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); return (await tryUntil(`a ${wantType} (or an error) in answer to ${m.type}`, () => msgs.slice(k).find((x) => x.type === wantType || x.type === "error"), { ms, step: 50 })) ?? null; },
     close: () => ws.close() };
 }
 const logOf = (name) => (fs.existsSync(path.join(W, name, "world.jsonl")) ? readLog(fs.readFileSync(path.join(W, name, "world.jsonl"))) : []);
@@ -102,7 +103,8 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }
 { const c2 = await sock(S.port); const j0 = await c2.join("copy", "Ann");
-  const r = await c2.req("use", { id: "bell1", action: "ring" }); await sleep(200);
+  const r = await c2.req("use", { id: "bell1", action: "ring" });
+  await tryUntil("the copy's bell has rung twice, on disk", () => fold(logOf("copy")).entities[IDS.of("bell1")]?.c["t/bell"]?.rung === 2, { ms: 2000 });
   ok(r.ok && fold(logOf("copy")).entities[IDS.of("bell1")]?.c["t/bell"]?.rung === 2, "FK9 the scripted bell rings in the copy (its script and source travelled; its count carried on from 1)", [r.refused, fold(logOf("copy")).entities[IDS.of("bell1")]?.c["t/bell"]]);
   c2.close(); }
 { const c2 = await sock(S.port); const j = await c2.join("copy", "Ann");
@@ -117,7 +119,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const r1 = await ann.raw({ type: "world-reset", name: "wrong" }, "world-reset"); ok(r1?.type === "error" && /confirmation mismatch/.test(r1.error), "RS1 the reset must name the world", r1);
   const k = watcher.msgs.length;
   const r = await ann.raw({ type: "world-reset", name: "src" }, "world-reset", 8000);
-  await sleep(300);
+  await tryUntil("the watcher is told of the reset", () => watcher.msgs.slice(k).some((m) => m.type === "world-reset" && m.world === "src"), { ms: 2000 });
   ok(r?.type === "world-reset" && watcher.msgs.slice(k).some((m) => m.type === "world-reset" && m.world === "src"), "RS2 the owner resets it, and everyone present is told", r);
   const arch = fs.readdirSync(path.join(W, "src")).filter((d) => d.startsWith("reset-"));
   ok(arch.length === 1 && fs.existsSync(path.join(W, "src", arch[0], "world.jsonl")) && readLog(fs.readFileSync(path.join(W, "src", arch[0], "world.jsonl"))).some((e) => e.kind === "say"),
@@ -133,7 +135,8 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   // the fresh world's scripts run (the server's tick and arrivals reach THIS world's script host, not the archived one's)
   const up = await again.req("upload", { text: 'world.on("enter", (e) => { world.set("self", "t/greet", { last: e.by }); });' });
   const inst = await again.req("set", { id: "new-crate", component: "script:greeter", value: { src: up.src, scope: { ids: "self", comps: ["t/greet"] }, on: ["enter"] } });
-  const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee"); await sleep(1500);
+  const arriving = await sock(S.port); const jr = await arriving.join("src", "Dee");
+  await tryUntil("the greeter greets Dee, on disk", () => !!jr.snapshot && fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"]?.last === jr.snapshot.cut?.you, { ms: 7500 });
   const greet = fold(logOf("src")).entities[IDS.of("new-crate")]?.c["t/greet"];
   ok(up.ok && inst.ok && !!jr.snapshot && greet?.last === jr.snapshot.cut?.you, "RS7 scripts run in the fresh world: an arrival reaches its greeter (the script host was rebuilt with the log)", [up.refused, inst.refused, greet]);
   arriving.close();
