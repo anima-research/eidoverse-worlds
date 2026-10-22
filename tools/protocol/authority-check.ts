@@ -1452,6 +1452,20 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // record until it's restored was a policy no world asked for, so it came out with the recut
   ok(role === PURGED && before === PURGED && write.ok && read.ok && op.ok && w.state().diagnostics.some(([q, c]) => q === k && c === "commit-unpurged"),
     "RA1 a value stripped to its commit with no purge reads as unknown and the fold names the line (commit-unpurged); writes and reads go on, and so does the operator's repair", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
+// ---- RA2 (review of #260): a state view that already folded the log meets a new line holding a value stripped to its
+// commit: it reads the whole log again, as the fold reads such a line, rather than throwing out of the state getter ----
+{ const name = "altered-live";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: name }); call("olive", "create", { id: "sign", model: "crate", components: { label: "hello" } });
+  const w = openWorld(root, name); w.state();   // folded once: the next new plain lines are applied incrementally
+  const L = w.entries, last = L[L.length - 1], at = L.length;
+  const line = (e) => { const x = readLog(JSON.stringify(e) + "\n")[0]; Object.defineProperty(x, "seq", { value: L.length, enumerable: false, configurable: true }); L.push(x); };
+  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, verb: "set", body: { id: "sign", comp: "label", commit: "0".repeat(64) } });
+  let st1 = null, err = null; try { st1 = w.state(); } catch (x) { err = `${x?.constructor?.name}: ${x?.message}`.slice(0, 120); }
+  line({ world: last.world, kind: "purge", ts: last.ts + 2, actor: "system", verb: "purge", body: { values: [{ seq: at }] } });
+  const st2 = err ? null : w.state();
+  ok(!err && st1?.entities.sign.c.label === PURGED && st1.diagnostics.some(([q, c]) => q === at && c === "commit-unpurged") && st2?.entities.sign.c.label === PURGED && !st2.diagnostics.some(([, c]) => c === "commit-unpurged"),
+    "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commit-unpurged until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
 // ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.

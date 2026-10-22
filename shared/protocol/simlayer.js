@@ -189,7 +189,7 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
       const wasSpec = JSON.stringify(st.entities["@world"]?.c["physics-engine"] ?? null);
       if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
         const ids = [...new Set(ops.map((o) => o.id))];
-        const after = applyOps(st, ops), B = boundsIn(st);
+        const after = applyOps(st, ops, seq, purged, e.verb === "batch"), B = boundsIn(st);
         if (causeE.verb !== "launch") disagree({ seq, why: `caused by a ${causeE.verb}, which starts no motion` });
         else for (const id of ids) {
           const b = out.sim.bodies[id], l = out.launched[id];
@@ -197,6 +197,8 @@ export function simFolder(entries, { models = MODELS, from = null, purged = null
           else if (!l || l.seq !== e.cause) disagree({ seq, id, why: "its launch is not this body's current flight (caught, re-thrown or moved since)" });
           // a body still flying past the world's edge is lost there: its rest is where it crossed (view(), restCheck's `lost`)
           else if (!b || (!b.resting && !(B && outside(B, b.p)))) disagree({ seq, id, why: "the engine still has it in flight" });
+          // a rest whose transform a purge took is unknown here: there is no logged pose to set beside the engine's
+          else if (after.entities[id]?.c.transform === PURGED) continue;
           else { const wp = worldPose(after, id), mine = wp?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p) || (b.q && JSON.stringify(wp?.q) !== JSON.stringify(b.q))) disagree({ seq, id, logged: mine, engine: b.p, ...(b.q ? { loggedQ: wp?.q, engineQ: b.q } : {}) }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
         }
       } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)

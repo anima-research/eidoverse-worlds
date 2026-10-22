@@ -571,6 +571,17 @@ function playground(name) {
   const v = simFold(P, last.ts + 1000); const digests = P.filter((e: any) => e?.kind === "sim" && e.verb === "digest").length;
   ok(ln > 0 && digests > 0 && v.checks.disagree.length === 0, "U7b a purged launch makes the digests logged during its flight unknown, not disagreements", { ln, digests, disagree: v.checks.disagree.slice(0, 2) }); }
 
+// review of #260: a rest whose transform a purge took is unknown to a replay: the folder reads it as the strict fold does
+// (absent, purged), and it neither crashes nor is called a disagreement, and the log's other rests still read
+{ const W = playground("purge-rest");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
+  ok(rest > 0 && L[rest].verb === "set" && fold(P).status === "ok" && !err && v.checks.disagree.length === 0 && rs?.some((r: any) => r.seq === rest),
+    "U7c a purged rest (its launch kept) reads as unknown on replay: no crash, no disagreement, and restsOf still lists it", { rest, verb: L[rest]?.verb, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), rests: rs?.length }); }
 // review of #260: a turned table supports things over its own top, not over the box of its corners
 { const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
   const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });
