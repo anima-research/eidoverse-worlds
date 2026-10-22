@@ -57,6 +57,20 @@ function changeEntry(w, plan, cause) {
 const actEntry = (w, actor, verb, body) => ({ kind: "act", actor, verb, body });
 const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { request: stripDry(args), ...(extra ?? {}) });
 
+// house 6340433633 (the lead's decision): what an imported world's translation carried for the world's sky, terrain, grass
+// or water (imported:<it>) fills that slot in the view while it's empty (view.js). A request that sets or deletes the world's
+// own one deletes the leftovers in the same change, so a deleted sky leaves the slot empty instead of showing them. A
+// capability's writes are scoped to what they name, so a reaction's or script's write is left as it is.
+const NATIVE_WORLD = ["sky", "terrain", "grass", "water"];
+function dropImportedShadows(ctx, ops) {
+  if (ctx.cap || !ops.length) return ops; const wc = ctx.st.entities["@world"]?.c; if (!wc) return ops;
+  const add = [];
+  for (const k of NATIVE_WORLD) { const imp = `imported:${k}`;
+    if (!(imp in wc) || ops.some((o) => o.id === "@world" && o.comp === imp)) continue;
+    if (!ops.some((o) => o.id === "@world" && o.comp === k && (o.verb === "set" || o.verb === "delete"))) continue;
+    add.push(delOp("@world", imp)); ctx.notes.push({ id: "@world", component: imp, why: `the imported world's leftover ${k} goes with the world's own ${k}` }); }
+  return add.length ? [...ops, ...add] : ops;
+}
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
   CTX.mintW = w;
@@ -65,7 +79,7 @@ function commit(w, actor, verb, args, build) {
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   // the old spelling's writes (a sockets map) are lifted here, before the references are cleared below, so a socket child the
   // lift takes away has the references to it cleared too, as a delete's are; admit then takes the ops as lifted
-  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, build(ctx)))))), w.everIds());
+  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx))))))), w.everIds());
   const ops = pre.ops;
   // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
   if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));
