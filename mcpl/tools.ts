@@ -269,7 +269,19 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}${at ? `&at=${encodeURIComponent(at)}` : ""}`, { headers: ag.readHeaders });
     // a 401 or 403 is who this body is, which calling again doesn't change: say who can
     if (r.status === 401 || r.status === 403) return fail(`screenshot: no picture was taken; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
-    if (!r.ok) return fail(`screenshot: no picture was taken; the world server answered "${(await r.text()).slice(0, 200)}" (${r.status}), so try again in a while`);
+    if (!r.ok) {
+      // The server's text in parentheses, where its own quoted names can't
+      // nest in ours; the remedy is the status's (server/snapshots.ts).
+      const said = (await r.text()).slice(0, 200).replace(/\s+/g, " ").trim();
+      const remedy = r.status === 429 ? "try again in a few seconds"
+        // an Unreal-only request summons no roaming renderer, and "auto" can pick the same Unreal
+        // renderer again; "browser" takes a browser renderer, or summons one (server/snapshots.ts)
+        : r.status === 503 && renderer === "unreal" ? `try again in a while, or ask for renderer "browser"`
+        : r.status === 404 ? "calling again works only once what it says has changed"
+        : r.status < 500 ? "calling again with the same arguments won't change that"
+        : "try again in a while";
+      return fail(`screenshot: no picture was taken; the world server answered ${r.status}${said ? ` (${said})` : ""}, so ${remedy}`);
+    }
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
@@ -902,13 +914,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const hasName = a.who != null || a.point != null;
       const hasXYZ = typeof a.x === "number" && typeof a.y === "number" && typeof a.z === "number";
       if (!hasName && !hasXYZ) {
-        return fail("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
+        // a point given as strings, or short a coordinate, isn't a target either: say what came
+        const sent = [a.x, a.y, a.z].some((v) => v !== undefined) ? `; you sent x ${shown(a.x)}, y ${shown(a.y)}, z ${shown(a.z)}` : "";
+        return fail(`reach needs a target, so nothing was reached: point for a contact point on your own body, who and point for one on someone else's, or x, y and z as numbers for a point (space 'world' by default, 'self' for your own frame, or a participant id for theirs)${sent}`);
       }
       let target: Record<string, unknown>;
       if (hasName) {
-        if (a.point == null) return fail("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
+        if (a.point == null) return fail(`reaching for someone needs point too, the contact point on them, so nothing was reached: reach {who: ${JSON.stringify(String(a.who))}, point: "shoulder_l"}; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         const pt = canonicalPoint(String(a.point));
-        if (!pt) return fail(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
+        if (!pt) return fail(`there's no contact point called ${shown(a.point)}, so nothing was reached; the points are ${Object.keys(CONTACT_POINTS).join(", ")}`);
         target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
       } else {
         target = { p: [a.x, a.y, a.z], ...(typeof a.space === "string" ? { space: a.space } : {}) };
@@ -1147,12 +1161,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // an answer that isn't geometry, or its own error.
       // as this identity (readHeaders): a members-only world's geometry answers only its members. One request
       let d: any;
-      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders });
+      let status = 0;
+      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); status = r.status;
         // who this body is, which calling again doesn't change: say who can
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; this world shows its state only to the people it lets in, and it didn't take this body's read key (${r.status}). Calling again won't change that: the world's owners decide who comes in, and the host's operator issues this body's key`);
         try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
-      if (d.error) return fail(`measure: the world server answered "${d.error}", so nothing was measured`);
+      if (d.error) return fail(`measure: the world server answered ${status} (${d.error}), so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];

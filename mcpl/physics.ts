@@ -888,7 +888,7 @@ export class ReachBody {
 
   private solveNormalized(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number }) {
     const ch = this.chain(limb);
-    if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
+    if (!ch) return { ok: false as const, why: `this body's rig has no measurable ${limb} chain (an upper bone, a lower bone hanging from it, and its end), so the solver can't move this limb; another limb may have one` };
     const tw = Array.isArray(target) ? target : target.pos;
     const n = !Array.isArray(target) && opts.palm !== false ? target.normal : null;
     const palm = Array.isArray(n) && n.length === 3 ? { dir: [-n[0], -n[1], -n[2]] } : null;
