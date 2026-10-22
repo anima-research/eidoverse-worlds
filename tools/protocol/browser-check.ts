@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import { chromium } from "playwright";
 import { ENGINE } from "./common.ts";
+import { findChrome, platformArgs } from "./chrome.ts";
 import { sha256 } from "../../shared/protocol/hash.js";
 
 // the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
@@ -62,18 +63,9 @@ const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const f = ENGINE + p.slice(1); if (!fs.existsSync(f)) return new Response("missing", { status: 404 });
   return new Response(fs.readFileSync(f), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
 } });
-// playwright's own build if it's installed; else the newest headless shell already in its cache (a version bump of
-// the package shouldn't fail this check for want of a download); CHROME overrides both
-function fallbackChrome() {
-  try { if (fs.existsSync(chromium.executablePath())) return undefined; } catch {}
-  const cache = (process.env.HOME ?? "") + "/.cache/ms-playwright/";
-  const dirs = fs.existsSync(cache) ? fs.readdirSync(cache).filter((d) => /^chromium_headless_shell-\d+$/.test(d)).sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1])) : [];
-  for (const d of dirs) { const f = `${cache}${d}/chrome-headless-shell-linux64/chrome-headless-shell`; if (fs.existsSync(f)) return f; }
-  return undefined;
-}
 let browser: any = null, page: any, fails: string[] = [], errors: string[] = [];
 try {
-  browser = await chromium.launch({ executablePath: process.env.CHROME ?? fallbackChrome(), args: ["--disable-gpu"] });
+  browser = await chromium.launch({ executablePath: findChrome() ?? undefined, args: ["--disable-gpu", ...platformArgs()] });
   page = await browser.newPage();
   page.on("pageerror", (e: any) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m: any) => { if (m.type() === "error") errors.push(`console.error ${m.text()}`); });

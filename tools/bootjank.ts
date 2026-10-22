@@ -27,6 +27,8 @@ import { existsSync, mkdtempSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromeArgs, findChrome } from "./protocol/chrome.ts";
+import { killChild } from "./protocol/procgroup.ts";
 
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
@@ -51,28 +53,7 @@ const SECS = num("secs", WIDE ? 25 : HEAVYJOIN ? 50 : GRASSDIAG ? 75 : 40);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
-// A WebGPU-capable Chromium, wherever this machine keeps one — CHROME env
-// wins, else the first candidate that exists (the tools stay self-contained).
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  win32: [
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  ],
-  darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  ],
-  linux: [
-    "/usr/bin/google-chrome", "/usr/bin/microsoft-edge",
-    "/usr/bin/chromium-browser", "/usr/bin/chromium",
-  ],
-};
-const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p))
-  ?? BROWSER_CANDIDATES[process.platform]?.[0] ?? "chrome";
+const CHROME = findChrome() ?? "";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -82,7 +63,7 @@ const mb = (b: number) => `${(b / 1048576).toFixed(1)}MB`;
 if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
   console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
 }
-if (!existsSync(CHROME)) { console.error(`✗ no browser at ${CHROME}`); process.exit(2); }
+if (!CHROME || !existsSync(CHROME)) { console.error(CHROME ? `✗ no browser at ${CHROME}` : "✗ no Chromium found (set CHROME=/path/to/chrome)"); process.exit(2); }
 if (!WIDE && !existsSync(join(ROOT, "worlds", "commons", "log.jsonl"))) {
   console.error("✗ worlds/commons/log.jsonl not found — bootjank replays the real commons"); process.exit(2);
 }
@@ -122,13 +103,7 @@ const SCRATCH = mkdtempSync(join(tmpdir(), "ew-bootjank-"));
 let seq: Bun.Subprocess | null = null;
 let edge: Bun.Subprocess | null = null;
 let cleaned = false;
-function reap(p: Bun.Subprocess | null) {
-  if (!p) return;
-  try { p.kill(); } catch { /* gone */ }
-  if (process.platform === "win32" && typeof p.pid === "number") {
-    try { Bun.spawnSync(["taskkill", "/PID", String(p.pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }); } catch { /* fine */ }
-  }
-}
+const reap = killChild;
 async function cleanup() {
   if (cleaned) return;
   cleaned = true;
@@ -224,12 +199,8 @@ function cdpOn(ws: WebSocket): Cdp {
 
 edge = Bun.spawn([
   CHROME,
-  ...(HEADED ? [] : ["--headless=new"]),
-  `--remote-debugging-port=${DEBUG_PORT}`,
-  `--user-data-dir=${join(SCRATCH, "edge-profile")}`,   // fresh profile = cold HTTP + shader caches
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-  "--disable-background-networking", "--disable-sync", "--mute-audio",
-  "--window-size=1280,800", "--enable-unsafe-webgpu",
+  // a fresh profile = cold HTTP + shader caches
+  ...chromeArgs({ headed: HEADED, port: DEBUG_PORT, profile: join(SCRATCH, "edge-profile"), extra: ["--window-size=1280,800", "--enable-unsafe-webgpu"] }),
   "about:blank",
 ], { stdout: "ignore", stderr: "ignore" });
 

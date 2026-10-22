@@ -54,31 +54,26 @@ jobs:
           bun node_modules/playwright/cli.js install chromium
       - name: asset library (pinned in run.ts)
         shell: bash
-        run: |
-          pin=$(grep -oE 'LIBRARY_PIN = "[0-9a-f]{40}"' tools/protocol/run.ts | grep -oE '[0-9a-f]{40}')
-          git clone --filter=blob:none https://github.com/SkyeShark/eidoverse-video.git "$RUNNER_TEMP/eidoverse-video"
-          git -C "$RUNNER_TEMP/eidoverse-video" checkout "$pin"
+        run: bun tools/protocol/run.ts --library "$RUNNER_TEMP/eidoverse-video"
       - name: gate
+        id: gate
         shell: bash
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
           PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
-          # extra flags for the harness's headless Chrome, CI only:
-          #  Linux: Ubuntu 23.10+ disables the user namespaces Chrome's sandbox needs ("No usable sandbox!";
-          #         playwright launches without it there for the same reason)
-          #  macOS: nothing. 10-19 forced SwiftShader here for a hang whose cause was the keychain (harness.ts passes
-          #         --use-mock-keychain); SwiftShader itself then blocked the page's main thread > 60 s, and the browser
-          #         lane failed 5/10 for days. Default GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
+          # no EIDO_CHROME_ARGS: each OS's Chrome flags are in tools/protocol/chrome.ts platformArgs (Linux --no-sandbox,
+          # macOS --use-mock-keychain). macOS takes the default GL: 10-19 forced SwiftShader here for a hang whose cause was
+          # the keychain; SwiftShader then blocked the page's main thread > 60 s and the lane failed 5/10 for days. Default
+          # GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
           # no EIDO_METER_SCALE: it was 3 on Windows for access A8/A14 (10-19); A14's cause was test order (a2b496e5, 10-22).
           # The knob stays for an operator whose host is slow; the gate runs the cap as shipped.
-          EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || '' }}
         run: |
-          # one known temp dir under /tmp so failed suites' scratch can be uploaded. With $RUNNER_TEMP/gate-tmp here,
-          # browser-check (playwright) closed at launch on Linux, and passed with the default /tmp (10-19). Not the
+          # Not the upload path (run.ts names its scratch below, on every OS). Kept because with TMPDIR=$RUNNER_TEMP/gate-tmp,
+          # browser-check (playwright) closed at launch on Linux and passed with the default /tmp (10-19). Not the
           # socket-path limit: a CI-length path passes on Burrow. Cause unknown; /tmp/g is nearest the known-good setup.
           # Not on Windows: TEMP/TMP pointed elsewhere hung gov-reserved for 300 s with no output (cause unknown).
           if [ "$RUNNER_OS" != "Windows" ]; then mkdir -p /tmp/g; export TMPDIR=/tmp/g; fi
-          bun tools/protocol/run.ts --receipt "gate-receipt-${{ matrix.os }}.json"
+          bun tools/protocol/run.ts --receipt "gate-receipt-${{ matrix.os }}.json" --scratch-out "$GITHUB_OUTPUT"
       - name: receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,11 +82,12 @@ jobs:
           path: gate-receipt-${{ matrix.os }}.json
           if-no-files-found: warn
       - name: scratch logs of failed suites
-        if: failure()
+        # empty when the gate stopped before making its scratch (a preflight failure): the path would be "/**"
+        if: failure() && steps.gate.outputs.scratch != ''
         uses: actions/upload-artifact@v4
         with:
           name: gate-scratch-${{ matrix.os }}
           path: |
-            /tmp/g/eido-gate-*/**/*.log
-            /tmp/g/eido-gate-*/**/*.jsonl
+            ${{ steps.gate.outputs.scratch }}/**/*.log
+            ${{ steps.gate.outputs.scratch }}/**/*.jsonl
           if-no-files-found: ignore

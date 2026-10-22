@@ -10,6 +10,8 @@
 // disabled and the link throttled, and reads the client's own `[boot]` line, so
 // the phases it reports are the ones a person actually waits through.
 
+import { chromeArgs, findChrome } from "./protocol/chrome.ts";
+
 const args = process.argv.slice(2);
 const flag = (n: string, d: number) => {
   const i = args.indexOf(`--${n}`);
@@ -20,7 +22,8 @@ const RUNS = flag("runs", 1);
 const LATENCY = flag("latency", MBIT ? 40 : 0);
 const BASE = process.env.URL ?? "http://localhost:8941";
 const WORLD = process.env.WORLD ?? "scene1";
-const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = findChrome() ?? "";
+if (!CHROME) { console.error("no Chromium found (set CHROME=/path/to/chrome)"); process.exit(2); }
 const PORT_BASE = 9444;
 
 type Boot = { ms: number; marks: Record<string, number>; bytes: number; requests: number };
@@ -42,9 +45,7 @@ async function once(run: number): Promise<Boot> {
   const PORT = PORT_BASE + run;   // a fresh port per run; the last Chrome may still be dying
   const profile = `/tmp/ew-bootbench-${Date.now()}-${run}`;
   const chrome = Bun.spawn([
-    CHROME, "--headless=new", `--remote-debugging-port=${PORT}`,
-    `--user-data-dir=${profile}`, "--no-first-run", "--disable-extensions",
-    "--disable-gpu-shader-disk-cache", "about:blank",
+    CHROME, ...chromeArgs({ port: PORT, profile, extra: ["--disable-gpu-shader-disk-cache"] }), "about:blank",
   ], { stdout: "ignore", stderr: "ignore" });
 
   // wait for the debugger

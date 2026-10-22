@@ -53,10 +53,11 @@
 // (ew-cloud-quality=off) and the GPU-loss guard (sessionStorage ew-gpu-lost) from tools/harness.ts:220-226 are applied
 // to every page. Run one headless browser at a time: the script checks memory but takes no lock.
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, cpSync, copyFileSync, mkdtempSync, rmSync, symlinkSync, readdirSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, resolve, basename } from "node:path";
 import { PNG } from "pngjs";
 import { cdpOn, freePort, sleep, bold, dim } from "../harness.ts";
+import { chromeArgs, chromeCandidates, isBrowser } from "./chrome.ts";
 
 // ---- flags -----------------------------------------------------------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -127,19 +128,10 @@ console.log(`\n${bold("surface parity")} — ${OLD_GIVEN ? OLD_GIVEN : OLD_REF} 
 console.log(dim(`  new  ${NEW}\n  old  ${OLD_GIVEN ? resolve(OLD_GIVEN) : `a worktree of ${OLD_REF}`}\n  out  ${OUT}`));
 
 // ---- 1. the browser binary -----------------------------------------------------------------------------------------
-// The paths the other probes use: CHROME env (tools/harness.ts:15), Playwright's managed build
-// (tools/probe-harness.mjs:8), then harness.ts's list. On some distros /usr/bin/chromium-browser is a 2 KB shell stub
-// that only says "snap install chromium" — a path that EXISTS and is not a browser, which is exactly how a green would lie.
-const CANDIDATES = [
-  process.env.CHROME, process.env.SFU_TEST_CHROME,
-  ...(existsSync(join(homedir(), ".cache/ms-playwright")) ? readdirSync(join(homedir(), ".cache/ms-playwright")).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse().map((d) => join(homedir(), ".cache/ms-playwright", d, "chrome-linux64/chrome")) : []),
-  "/usr/bin/google-chrome", "/usr/bin/microsoft-edge", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-].filter((p): p is string => !!p);
-const isStub = (p: string) => { try { const head = readFileSync(p).subarray(0, 64).toString("latin1"); return head.startsWith("#!"); } catch { return true; } };
-const CHROME = CANDIDATES.find((p) => existsSync(p) && !isStub(p));
-if (!CHROME) await missing("browser binary", `none of these is a real Chromium: ${CANDIDATES.map((p) => `${p}${existsSync(p) ? (isStub(p) ? " (exists, but is a shell stub)" : "") : " (absent)"}`).join("\n      ")}`,
+// a path that exists and is not a browser (a shell stub) is exactly how a green would lie: chrome.ts refuses those
+const CANDIDATES = [process.env.CHROME, process.env.SFU_TEST_CHROME, ...chromeCandidates()].filter((p): p is string => !!p);
+const CHROME = CANDIDATES.find(isBrowser);
+if (!CHROME) await missing("browser binary", `none of these is a real Chromium: ${CANDIDATES.map((p) => `${p}${existsSync(p) ? " (exists, but is a shell stub)" : " (absent)"}`).join("\n      ")}`,
   `set CHROME=/path/to/chrome (Windows: msedge.exe)`);
 ok("browser binary", CHROME);
 
@@ -280,9 +272,7 @@ if (CHECK) { console.log(`\n  ${bold("--check: every prerequisite up to the brow
 const DEBUG_PORT = freePort(9960);
 const PROFILE = join(scratch, "profile");
 const firstURL = `${newS.base}/health?bench=${newS.nonce}`;
-const browser = Bun.spawn([CHROME, ...(HEADED ? [] : ["--headless=new"]), `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${PROFILE}`,
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-sync", "--mute-audio",
-  `--window-size=${VIEW.width},${VIEW.height}`, "--enable-unsafe-webgpu", firstURL],
+const browser = Bun.spawn([CHROME, ...chromeArgs({ headed: HEADED, port: DEBUG_PORT, profile: PROFILE, extra: [`--window-size=${VIEW.width},${VIEW.height}`, "--enable-unsafe-webgpu"] }), firstURL],
   { stdout: Bun.file(join(scratch, "browser.log")), stderr: Bun.file(join(scratch, "browser.stderr.log")) });
 procs.push(browser);
 let target: any = null;
