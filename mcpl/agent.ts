@@ -3987,7 +3987,9 @@ export class WorldAgent {
   private resumeWalkGate() {
     const old = this.walkGate;
     if (!old || old.mode === "open") return;   // open: the authority keeps no track of this body, so there is nothing to ask
-    const g: WalkGate = { ...old, busy: false, permit: null, blocker: null };
+    // nothing in flight carries over: a stretch or a shove the old connection sent settles on the old gate, so the new one
+    // starts with no permit asked for and no shove holding it
+    const g: WalkGate = { ...old, busy: false, permit: null, blocker: null, hold: 0 };
     this.walkGate = g;
     this.syncWalkGate(g);
   }
