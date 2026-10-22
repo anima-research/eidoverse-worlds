@@ -36,6 +36,17 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
     stopped ? "a stopped walk isn't tried again beside what holds it up, and says it was stopped" : "a refused route is tried again beside what holds it up", { walks, text: out.content[0].text });
 }
 
+// house 6340433633: each attempt answered on its own (the rows above answered every one with one refusal): the first
+// route refused, then the walk stopped during the fallback beside what holds it up: the tries end there (not the next
+// spot beside), and the stop is what's said, not the first refusal
+{ const walks: number[][] = []; const answers = ["no route: the way there is sealed", "superseded by a newer walk or a stop", "no route: never asked"];
+  const ag: any = { pos: { x: 0, z: 0 }, myOccupancy: null,
+    destination: () => ({ x: 1, z: 1, y: 1, label: "cup", orBeside: { x: 2, z: 2, y: 0, label: "cup", orBeside: { x: 3, z: 3, y: 0, label: "cup" } } }),
+    walkTo: async (x: number, z: number, _r: boolean, _t: number, _tol: number, _y: unknown, _n: unknown, receipt: any) => { receipt.refusal = answers[walks.length]; walks.push([x, z]); return false; } };
+  const out: any = await handleTool({ agent: ag } as any, "move", { to: "cup" });
+  ok(walks.length === 2 && out.isError && out.content[0].text.includes("superseded") && !out.content[0].text.includes("sealed"),
+    "a walk stopped during the fallback ends the tries, and the stop is what's said", { walks, text: out.content[0].text }); }
+
 // act's say {to} and body {to} name a person, so a thing sharing their name isn't sent in their place
 { const sent: any[] = [];
   const ag: any = { thingRef: (v: string) => v === "Mira" ? { id: "lamp-7f3a" } : {}, request: async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true }; } };
