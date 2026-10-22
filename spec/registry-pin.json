@@ -34,6 +34,15 @@
     "max": 1000
    }
   },
+  "docs": {
+   "pos": "where it stands, [x, y, z] in metres, in its parent's frame (the world's when it has no parent)",
+   "q": "its orientation, a unit quaternion [x, y, z, w] (glTF order), in its parent's frame; normalized on write",
+   "scale": "its size per axis, [x, y, z] (1 = as made), each within ±1000 and never within 1e-4 of zero; a negative one mirrors (physics reads its size, |scale|)"
+  },
+  "units": {
+   "pos": "m",
+   "scale": "×"
+  },
   "on": "thing"
  },
  "model": {
@@ -74,6 +83,9 @@
   "absentMeans": {
    "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)"
   },
+  "docs": {
+   "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide"
+  },
   "on": "thing"
  },
  "stage": {
@@ -88,6 +100,9 @@
   },
   "absentMeans": {
    "speaker": "no stage cue: the caption bot uses its own speaker"
+  },
+  "docs": {
+   "speaker": "who is speaking here, a name (≤ 80; the caption bot's mark, WebVTT's <v Name>)"
   },
   "on": "thing"
  },
@@ -128,6 +143,12 @@
   "absentMeans": {
    "pos": "it turns and scales about its origin, [0, 0, 0]"
   },
+  "docs": {
+   "pos": "the point it turns and scales about, [x, y, z] metres in its own frame before scale"
+  },
+  "units": {
+   "pos": "m"
+  },
   "on": "thing"
  },
  "parent": {
@@ -139,6 +160,10 @@
   "required": [
    "to"
   ],
+  "docs": {
+   "to": "the thing it rides: its transform becomes local to this parent",
+   "socket": "the old spelling of a socket attachment: parent to the socket child instead"
+  },
   "on": "thing"
  },
  "light": {
@@ -212,6 +237,22 @@
    "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load",
    "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
   },
+  "docs": {
+   "kind": "point (shines every way) or spot (a cone along its -Z)",
+   "color": "its colour, 0xRRGGBB, sRGB",
+   "intensity": "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise",
+   "range": "a hard cutoff, metres: nothing beyond it is lit",
+   "angle": "a spot's cone half-angle, radians",
+   "inner": "where a spot's edge starts to soften, radians",
+   "decay": "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all",
+   "important": "always casts: first claim on a light slot, never governor-shed",
+   "daytime": "dim (it dims by day, follows the day cycle) | full (it burns at noon too)"
+  },
+  "units": {
+   "range": "m",
+   "angle": "rad",
+   "inner": "rad"
+  },
   "on": "thing"
  },
  "mesh": {
@@ -246,6 +287,13 @@
   "absentMeans": {
    "origin": "the centre of its base: it stands on its own origin (every referent centres primitives; ours stands, as a model does)",
    "ignored": "a sphere ignores size[1] and size[2], a cylinder and a capsule size[2], a plane size[1]"
+  },
+  "docs": {
+   "shape": "box, sphere, cylinder, plane (flat on the ground, drawn on both sides) or capsule; it stands on its own origin",
+   "size": "its size [x, y, z] in metres; a sphere reads x as its diameter, a cylinder or capsule x as diameter and y as height, a plane x × z"
+  },
+  "units": {
+   "size": "m"
   },
   "on": "thing"
  },
@@ -456,6 +504,43 @@
    "node": "a keyed motion: the node its key's tag names (the reading before 10-16, when the key was the node's name); the door writes that down. A whole motion never has one",
    "points": "fewer than 2 points: it stands still"
   },
+  "docs": {
+   "type": "pendulum | spin | orbit | oscillate | path (oscillate: back and forth along its axis, a sine)",
+   "axis": "the axis it moves about or along, a direction [x, y, z] in its own frame (x, y, z, -x, -y or -z is taken and stored as one)",
+   "amp": "how far it swings (a pendulum: radians) or travels each way from where it stands (an oscillate: metres)",
+   "period": "seconds for one swing, one turn or one lap",
+   "damp": "how fast a swing dies down, 1/s; 0 swings forever",
+   "maxAmp": "the most a push may swing it, radians",
+   "phase": "where in its cycle it starts, radians",
+   "t0": "when it started, epoch ms on the authority's clock (the authority stamps it)",
+   "radius": "the circle's radius, metres",
+   "degPerSec": "degrees a second (a lap of 30 s is 12°/s)",
+   "pivot": "a part's motion only: the point the part turns about, metres in the part's own frame (a whole thing turns about its pivot component)",
+   "center": "what it circles, in its parent's frame (absent: where it stands)",
+   "node": "a keyed motion only (motion:<slot>): the node of its model it moves, its name exactly as the model file spells it (any characters: data, never part of the key; the key's <slot> is a short tag of your choosing, the editors' is partSlot of the name)",
+   "face": "turns to face along the way it moves",
+   "points": "the path's control points, 2–64, in its parent's frame",
+   "speed": "metres a second along the path",
+   "duration": "seconds for the whole path (instead of speed)",
+   "loop": "loop | pingpong | once"
+  },
+  "units": {
+   "amp": {
+    "pendulum": "rad",
+    "oscillate": "m"
+   },
+   "period": "s",
+   "degPerSec": "°/s",
+   "radius": "m",
+   "speed": "m/s",
+   "duration": "s",
+   "pivot": "m",
+   "center": "m",
+   "phase": "rad",
+   "maxAmp": "rad",
+   "damp": "1/s",
+   "t0": "ms"
+  },
   "keyed": "optional",
   "on": "thing"
  },
@@ -487,6 +572,15 @@
    "part": "it rides its host's root, not a moving node of the host's model",
    "accepts": "nothing snaps in by fits",
    "radius": "0.15 m (read only with accepts)"
+  },
+  "docs": {
+   "name": "letters, digits, - and _ (≤ 32), unique among its host's sockets: what use {args: {socket}} names",
+   "part": "a node of its host's model it rides",
+   "accepts": "keywords (≤ 8): a released thing whose grabbable.fits shares one snaps in",
+   "radius": "how near a released thing must be to snap in, metres"
+  },
+  "units": {
+   "radius": "m"
   },
   "on": "thing"
  },
@@ -582,6 +676,17 @@
    "who": "anyone who may use the host",
    "anim": "the action's default, materialized at write (sit/ride/drive sitchair, lie lie, kneel sit, stand idle); a value stored before 10-17 says pose, renamed anim at load"
   },
+  "docs": {
+   "action": "the verb use calls it (sit, lie, ride, stand…): a label; at write it picks the default anim",
+   "anim": "what the body holds: a pose or clip by name (an open name: one the body doesn't know is its default); {clip, time?: loop|phase, offset?}; or a blend {by: <signal>, clips: [[key, clip], …], time?, offset?}",
+   "anchor": "the body point that lands on the socket: root (where every seat put a body), hips, feet, head, or surface (the body's measured seat contact)",
+   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame",
+   "leaveBy": "jump | menu | script: how the occupant may leave (script: only when the world lets go; the occupant's escape, a held get-up or a second one, always works)",
+   "who": "who may take it: a role id (this rank or above)"
+  },
+  "units": {
+   "exit": "m"
+  },
   "on": "thing",
   "reservedFields": [
    "poses",
@@ -611,11 +716,26 @@
    "q": "no turn: [0, 0, 0, 1]",
    "parent": "goes home under no parent (the world root)"
   },
+  "docs": {
+   "pos": "where it goes back to, [x, y, z] in its home parent's frame",
+   "q": "which way it faces at home, [x, y, z, w]",
+   "scale": "its size at home, [x, y, z] (1 is the model as made); a number is taken and stored as one",
+   "parent": "what it hangs under at home: {to}"
+  },
+  "units": {
+   "pos": "m"
+  },
   "on": "thing"
  },
  "places": {
   "status": "trial",
-  "keyPattern": "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$"
+  "keyPattern": "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$",
+  "docs": {},
+  "units": {
+   "at": "m",
+   "min": "m",
+   "max": "m"
+  }
  },
  "params": {
   "status": "trial",
@@ -693,6 +813,20 @@
     "max": 10
    }
   },
+  "docs": {
+   "open": "its state now; anyone using it flips this (its reactions); false reads the same as absent",
+   "locked": "bars opening while on (an open handler with unless: 'locked'): the door's own lock for the people using it; pinning it in place is the Lock component's; false reads the same as absent",
+   "angle": "how far it turns when open, radians; negative turns the other way",
+   "axis": "the hinge axis in its own frame: y an upright hinge (a door), x a lid or a hatch",
+   "slide": "how far it moves when open, [x, y, z] metres in its own frame (instead of turning)",
+   "time": "seconds to open or close",
+   "part": "a node of its model that moves instead of the whole thing"
+  },
+  "units": {
+   "angle": "rad",
+   "slide": "m",
+   "time": "s"
+  },
   "on": "thing"
  },
  "physics": {
@@ -747,6 +881,17 @@
    "linearDamping": "1/s; absent, the engine's own law (eidosim: none)",
    "angularDamping": "1/s; absent, the engine's own law (eidosim: none; it doesn't spin)",
    "centerOfMass": "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape"
+  },
+  "docs": {
+   "kind": "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)",
+   "who": "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
+   "shape": "its collision shape, measured from its model by the authority (you never send it)",
+   "mass": "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size",
+   "density": "kg/m³; blank: water's (1000)"
+  },
+  "units": {
+   "mass": "kg",
+   "density": "kg/m³"
   },
   "grammar": {
    "shape": "shape"
@@ -849,6 +994,29 @@
    "use": "the use button does nothing while it is held",
    "prompt": "Pick up <its label>"
   },
+  "docs": {
+   "anim": "how a body without tracked hands holds it: a pose or clip by name (hand, carry, torch, pistol, shoulder built in); one the body doesn't know is held by size",
+   "grips": "named places the palm goes, in its own frame: {pos, q?, hand?, role?, grasp?, part?}",
+   "carries": "true: what rests on it rides with it when it is picked up",
+   "fits": "keywords: it snaps into a socket whose accepts shares one",
+   "use": "what the use button fires while it is held: a reactions action, or {down, up}",
+   "prompt": "the hover text (≤ 40)",
+   "enabled": "off: nobody can pick it up for now (a loose ball can still be punted)",
+   "who": "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own",
+   "steal": "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
+   "range": "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand",
+   "priority": "when several things are in reach the highest wins: the key, not the table it sits on",
+   "hold": "auto (grip in VR, sticky on desktop) | press (only while gripping) | toggle (sticky everywhere: a tool)",
+   "twoHanded": "on: both hands may hold it at once (a rifle, a broom): the first carries, the second aims",
+   "throw": "how hard it flies when thrown: 1 is normal, 2 twice as fast, 0 can only be dropped",
+   "release": "drop (it falls or is set down) | stay (where you let go) | return (it goes home)",
+   "returnAfter": "left unheld this many seconds it goes home; 0 never"
+  },
+  "units": {
+   "range": "m",
+   "throw": "×",
+   "returnAfter": "s"
+  },
   "on": "thing",
   "reservedFields": [
    "fx"
@@ -885,6 +1053,13 @@
   "absentMeans": {
    "gravity": "not a field: the engine's own (eidosim: [0, −9.81, 0] m/s², world frame)"
   },
+  "docs": {
+   "engine": "the engine and its version, name@semver (eidosim@1.0.0); a request may name the engine alone (eidosim), and the authority stamps the version it carries. A version is what its conformance digests say it computes (spec/conformance/physics/)",
+   "tickMs": "milliseconds a step (33 = 30 steps a second)"
+  },
+  "units": {
+   "tickMs": "ms"
+  },
   "on": "world"
  },
  "surface": {
@@ -912,6 +1087,10 @@
    "key"
   ],
   "writtenBy": "server",
+  "docs": {
+   "from": "the blueprint record it was copied from, sha256:<64 hex>",
+   "key": "which part of that record it is"
+  },
   "grammar": {
    "from": "sha256"
   },
@@ -970,6 +1149,23 @@
   "absentMeans": {
    "law": "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt"
   },
+  "docs": {
+   "src": "the sound file: store/audio/…, eidoverse/assets/…, or an https link",
+   "playing": "it plays now (false: paused)",
+   "loop": "plays again when it ends",
+   "volume": "linear amplitude gain (not dB): 0 silent to 1 full",
+   "pitch": "playback rate: 2 = an octave up and twice as fast",
+   "near": "full volume within this many metres",
+   "radius": "silent at and beyond this many metres: nobody further hears it at all",
+   "spatial": "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)",
+   "t0": "when it started, epoch ms (the authority stamps it)",
+   "alt": "what is playing, in words: for people who can't hear it and for agents"
+  },
+  "units": {
+   "near": "m",
+   "radius": "m",
+   "t0": "ms"
+  },
   "on": "thing"
  },
  "picture": {
@@ -1005,6 +1201,15 @@
   "required": [
    "src"
   ],
+  "docs": {
+   "src": "the image: store/images/…, eidoverse/assets/…, or an https link",
+   "width": "the quad's width, metres; its height follows the image",
+   "alt": "what it shows, in words: for people who can't see it and for agents",
+   "lit": "scene (takes the scene's light) | self (a screen, unlit)"
+  },
+  "units": {
+   "width": "m"
+  },
   "on": "thing"
  },
  "story": {
@@ -1029,6 +1234,11 @@
    "title",
    "text"
   ],
+  "docs": {
+   "title": "its headline, ≤ 80 characters",
+   "text": "why it is here, ≤ 1000 characters of plain text, a blank line between paragraphs",
+   "marks": "what it marks or commemorates: up to 8 things' ids"
+  },
   "on": "thing"
  },
  "text": {
@@ -1102,6 +1312,22 @@
    "outlineColor": "the edge takes the colour that contrasts with the text colour: black behind light text, white behind dark",
    "anchor": "the block is centred on its origin in its local X–Y plane, facing +Z (horizontally by align's box of width, vertically on the middle of its lines): pinned (shape audit 10-16)"
   },
+  "docs": {
+   "text": "what it says, ≤ 400 characters and ≤ 16 lines",
+   "size": "the height of a line, metres",
+   "width": "where lines wrap, metres",
+   "align": "left | center | right",
+   "color": "the letters' colour, 0xRRGGBB",
+   "outline": "an edge around the letters, so they read on any background",
+   "outlineColor": "the edge's colour, 0xRRGGBB; left alone, the one that contrasts with the text colour",
+   "background": "a plate behind the words, 0xRRGGBB; absent: none",
+   "billboard": "off (flat, readable from both sides) | yaw (turns to face each viewer) | full (always faces each viewer)",
+   "lit": "self (glows, unlit) | scene (takes the scene's light)"
+  },
+  "units": {
+   "size": "m",
+   "width": "m"
+  },
   "on": "thing"
  },
  "look-at": {
@@ -1158,6 +1384,22 @@
   "required": [
    "target"
   ],
+  "docs": {
+   "target": "what it turns to face: a thing's id, @viewer (each viewer's own eyes), @nearest (whoever is nearest within range), or a person's identity",
+   "mode": "yaw (turns about its up only, stays upright) | aim (tilts too)",
+   "forward": "which of its own axes points at the target, [x, y, z] (a letter x, y or z is taken and stored as its vector); [0, 0, 1] is its front",
+   "up": "its up axis, [x, y, z]",
+   "yaw": "[min, max] radians it may turn from rest, within ±π",
+   "pitch": "[min, max] radians it may tilt from rest, within ±π/2",
+   "speed": "radians a second; 0 = turns at once",
+   "range": "a person further than this many metres: it turns back to rest"
+  },
+  "units": {
+   "speed": "rad/s",
+   "range": "m",
+   "yaw": "rad",
+   "pitch": "rad"
+  },
   "keyed": "optional",
   "on": "thing"
  },
@@ -1183,12 +1425,25 @@
   "absentMeans": {
    "line": "an older value's window [{t0, t1, text, speaker?}]: its last entry is the line on screen"
   },
+  "docs": {
+   "session": "the captioning session's id",
+   "n": "the line's number in its session",
+   "gen": "the generation of the feed",
+   "title": "what is playing",
+   "line": "the line on screen now: {t0, t1 (seconds of media time), text (≤ 240), speaker? (≤ 48)}"
+  },
+  "units": {
+   "gen": "the leg's generation"
+  },
   "on": "thing"
  },
  "captioners": {
   "status": "trial",
   "fields": {
    "ids": "people"
+  },
+  "docs": {
+   "ids": "the identities who may caption this screen, beside anyone who may edit it"
   },
   "on": "thing"
  },
@@ -1280,6 +1535,29 @@
    "override": "no manual weather inside the current forecast segment",
    "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
+  "docs": {
+   "hours": "the hour of day at ts, 0 ≤ h ≤ 24",
+   "rate": "world hours a real hour (0: the sun stands still)",
+   "ts": "the instant hours held, epoch ms (stamped by the authority)",
+   "tz": "an IANA time zone: present, the world's hour is that zone's wall clock",
+   "clouds": "clear | cumulus | stratus | cirrus",
+   "weather": "clear | fair | sunshower | overcast | rain | storm | cyclone | darkstorm",
+   "weatherK": "the weather's intensity, 0..2",
+   "transition": "how long a change of weather eases in, seconds",
+   "azimuth": "where the sun stands round the horizon, radians (π: the default)",
+   "fog": "× this renderer's own fog curve",
+   "exposure": "× this renderer's tone mapping",
+   "ambient": "× this renderer's ambient curve",
+   "forecast": "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}",
+   "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)"
+  },
+  "units": {
+   "hours": "h",
+   "rate": "world hours per real hour",
+   "ts": "ms",
+   "azimuth": "rad",
+   "transition": "s"
+  },
   "on": "world"
  },
  "grass": {
@@ -1345,6 +1623,30 @@
    "preset": "no preset: the value's own strokes, else one stroke",
    "heading": "-0.6 rad for sunflowers (they face one way together)"
   },
+  "docs": {
+   "species": "what grows (a flora def: grass, corn, sunflower, galleta_dry…)",
+   "width": "the field's width, metres",
+   "depth": "the field's depth, metres",
+   "size": "width and depth when they aren't given, metres",
+   "center": "[x, z] of the field's middle, metres",
+   "height": "plant height, metres",
+   "density": "how thickly it grows (0..4)",
+   "wind": "how much it sways (×)",
+   "color": "a palette name (defs/flora/_colors.json) or a multiplier [r, g, b]",
+   "seed": "the planting's random seed",
+   "rows": "a crop's rows {spacing, plant, stride?, phase?}",
+   "corn": "corn's own knobs {peel?, peelChance?}",
+   "heading": "the way sunflowers face, radians",
+   "preset": "a named planting (defs/flora/_presets.json: mojave, …), stored by its name and composed into strokes by the reader; an unknown name is refused",
+   "strokes": "the plantings this field is made of: [{species, width, depth, center, seed, density, variant?, footprint?}] (they win over a preset)"
+  },
+  "units": {
+   "width": "m",
+   "depth": "m",
+   "size": "m",
+   "height": "m",
+   "heading": "rad"
+  },
   "on": "world"
  },
  "structure": {
@@ -1382,6 +1684,20 @@
   },
   "absentMeans": {
    "slabT": "0.10 m (structure.js GRID_DEFAULTS; never written by the editor)"
+  },
+  "docs": {
+   "tile": "metres a cell",
+   "wallH": "wall height, floor to floor, metres",
+   "wallT": "wall thickness, metres",
+   "slabT": "floor slab thickness, metres (its top at the level's y)",
+   "labels": "room names by cell",
+   "levels": "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls"
+  },
+  "units": {
+   "tile": "m",
+   "wallH": "m",
+   "wallT": "m",
+   "slabT": "m"
   },
   "on": "thing",
   "nestedEnums": {
@@ -1450,6 +1766,19 @@
    "scale": "1: the effect at its own size",
    "params": "none: the effect's own defaults"
   },
+  "docs": {
+   "effect": "an Essentials name (fire, sparks, embers, smoke, dust, snow, magic, stars, muzzle), stored as written, or the content address sha256:<64 hex> of a document uploaded here (an Essential's eido:sha256/… address stored before 10-17 still reads as that Essential)",
+   "part": "a node of its model it emits from",
+   "at": "where it emits, [x, y, z] metres in its own frame, each within ±8",
+   "seed": "the random seed; absent: derived from its id",
+   "playing": "off: no new particles; the living finish",
+   "scale": "every length in the effect (positions, sizes, speeds, accelerations) × this, on top of the thing's own transform scale; 0.01..100",
+   "params": "the effect's own knobs {<name>: value}"
+  },
+  "units": {
+   "at": "m",
+   "scale": "×"
+  },
   "on": "thing",
   "reservedFields": [
    "t0"
@@ -1466,6 +1795,15 @@
    "ts": "number",
    "state": "object"
   },
+  "docs": {
+   "src": "the old script's source, as the translation carried it",
+   "attach": "the thing it was bound to",
+   "caps": "the capabilities it was granted",
+   "knobs": "its settings",
+   "author": "who wrote it, as the old world recorded",
+   "ts": "when it was bound (epoch ms)",
+   "state": "its saved state"
+  },
   "keyed": true,
   "on": "world"
  },
@@ -1474,6 +1812,10 @@
   "fields": {
    "name": "string",
    "path": "string"
+  },
+  "docs": {
+   "name": "the asset's display name",
+   "path": "its library path"
   },
   "keyed": true,
   "on": "world"
@@ -1502,6 +1844,12 @@
   },
   "absentMeans": {
    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
+  },
+  "docs": {
+   "role": "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines",
+   "can": "{<permission>: true|false}: exceptions on top of the role, for this person",
+   "note": "a note on the grant (≤ 80)",
+   "until": "when the grant ends, epoch ms; never on owner"
   },
   "vocab": {
    "rank": {
@@ -1546,6 +1894,11 @@
    "can": "object",
    "guests": "string"
   },
+  "docs": {
+   "role": "the newcomer role: what anyone without their own grant holds; never owner",
+   "can": "{<permission>: true|false} on top of that role, for everyone holding it this way (not guests)",
+   "guests": "the role people without an account start as; never above role"
+  },
   "on": "world"
  },
  "role-defs": {
@@ -1588,6 +1941,13 @@
   "absentMeans": {
    "watch": "watching follows join: whoever join turns away can't watch either, and a world that admits only people listed is invisible to everyone else (what every access before 10-17 meant)"
   },
+  "docs": {
+   "join": "who may come in: anyone, signed-in, or listed (people the world has granted a role, unexpired)",
+   "watch": "anyone: whoever join turns away may still watch, with no body",
+   "max": "most bodies at once (1–200)",
+   "soft": "the recommended capacity (≤ max)",
+   "minAccountDays": "an account must be at least this many days old to come in (0–365; 0 is off)"
+  },
   "on": "world"
  },
  "about": {
@@ -1604,6 +1964,10 @@
     "maxLen": 2000
    }
   },
+  "docs": {
+   "name": "the world's name, ≤ 80 characters",
+   "text": "its blurb, ≤ 2000 characters"
+  },
   "on": "world"
  },
  "trusted-components": {
@@ -1615,6 +1979,9 @@
    "components": {
     "maxItems": 64
    }
+  },
+  "docs": {
+   "components": "the namespaced draft component names trusted in this world (≤ 64, each once)"
   },
   "on": "world"
  },
@@ -1628,6 +1995,14 @@
    "min",
    "max"
   ],
+  "docs": {
+   "min": "the box's low corner [x, y, z], world metres",
+   "max": "its high corner [x, y, z], world metres"
+  },
+  "units": {
+   "min": "m",
+   "max": "m"
+  },
   "on": "world"
  },
  "spawn": {
@@ -1647,6 +2022,14 @@
   ],
   "absentMeans": {
    "radius": "2 m"
+  },
+  "docs": {
+   "pos": "where visitors arrive, [x, y, z] world metres",
+   "radius": "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)"
+  },
+  "units": {
+   "pos": "m",
+   "radius": "m"
   },
   "on": "world"
  },
@@ -1720,6 +2103,26 @@
    "layers": "one plain layer, 0x4a5d33 repeated 16 times across its size",
    "law": "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
   },
+  "docs": {
+   "kind": "the base's kind: noise (a raster kind is reserved)",
+   "seed": "the noise seed",
+   "size": "the ground's size, metres",
+   "amplitude": "its relief: how high the ground rises, metres",
+   "segments": "samples per side (the drawn mesh's resolution)",
+   "flatRadius": "flat within this many metres of the centre",
+   "flatHeight": "the height of that flat centre, metres",
+   "octaves": "noise octaves (1–8)",
+   "frequency": "noise frequency",
+   "layers": "its colour layers, at most 8: [{color: 0xRRGGBB (sRGB), repeat: tiles across its size}]",
+   "features": "placed shapes over the base, in order (at most 64): {type: hill|ridge|flatten, …} (shared/terrainshape.js)",
+   "heightmap": "an uploaded grayscale grid as the base: {grid: 'store/heightmaps/<hash>.json', min, max} (m)"
+  },
+  "units": {
+   "size": "m",
+   "amplitude": "m",
+   "flatRadius": "m",
+   "flatHeight": "m"
+  },
   "on": "world",
   "reservedKinds": [
    "raster"
@@ -1763,6 +2166,17 @@
    "opacity": "0.82",
    "kind": "decided from the ground it fills (shared/waterkind.js)",
    "flow": "still: no current"
+  },
+  "docs": {
+   "level": "the water's surface height, metres (world y)",
+   "color": "its colour, 0xRRGGBB (sRGB)",
+   "opacity": "0.1..1",
+   "kind": "still | river | ocean",
+   "flow": "a current [x, z], metres a second"
+  },
+  "units": {
+   "level": "m",
+   "flow": "m/s"
   },
   "on": "world"
  },
@@ -1817,6 +2231,18 @@
    "say": "bool",
    "bodies": "array"
   },
+  "docs": {
+   "src": "the source blob's name",
+   "scope": "what it may touch: {ids, comps, create?, say?, bodies?}",
+   "on": "the events that wake it (use, say, enter, leave, grab, release, changed:<comp>)",
+   "every": "seconds between ticks (≥ 5)",
+   "always": "true: it runs with nobody present (owner)",
+   "knobs": "its settings (≤ 4 KiB)",
+   "paused": "true: it doesn't run"
+  },
+  "units": {
+   "every": "s"
+  },
   "grammar": {
    "src": "sha256"
   },
@@ -1860,6 +2286,16 @@
    "guestEntities": "this server's current default (schema reports it); it may change",
    "avatar": "this server's current default (schema reports it); it may change. Not enforced yet"
   },
+  "docs": {
+   "entities": "the whole world's entities: every one but @world, sockets included (absent: this server's default; at most the server's ceiling)",
+   "guestEntities": "all account-less people's entities together: what people without an account made that still stands here, sockets included (absent: this server's default)",
+   "avatar": "one worn avatar's entity tree, at most: the largest one avatar may be, checked when it's worn and not counted in entities (absent: this server's default); not enforced yet: no avatar trees exist"
+  },
+  "units": {
+   "entities": "entities",
+   "guestEntities": "entities",
+   "avatar": "entities"
+  },
   "on": "world"
  },
  "script-settings": {
@@ -1886,6 +2322,16 @@
    "max": "this server's current default (schema reports it)",
    "budget": "this server's current default (schema reports it)",
    "cpu": "this server's current default (schema reports it)"
+  },
+  "docs": {
+   "run": "false stops every script here",
+   "max": "how many scripts this world may hold",
+   "budget": "script entries per hour, each sponsor a fair share",
+   "cpu": "ms of the authority's time each sponsor's scripts may use a minute (the world 3×)"
+  },
+  "units": {
+   "budget": "script entries per hour",
+   "cpu": "ms of authority time per sponsor per minute"
   },
   "on": "world"
  },

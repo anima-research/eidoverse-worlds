@@ -253,8 +253,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 
 - **Bare names are the protocol's registry.** An authority refuses an unregistered bare name
   (a typo of a registered one with a "did you mean"). The registered components,
-  their fields, defaults and meanings are in `shared/protocol/componentspec.js`; a
-  authority answers `schema {component?}` with the same. Among them: `transform
+  their fields, types, defaults, units and what each field means are pinned in
+  `registry-pin.json` beside this document (the field's `docs` and `units`): that pin
+  is a component's meaning, and an authority answers `schema {component?}` with the same. Among them: `transform
   {pos, q, scale}`, `model` (a library path, stored as written; `model-hash`
   `sha256:<64 hex>` beside it when the server knows the bytes), `label`, `description`, `parent {to}`,
   `pivot {pos}`, `light`, `mesh`, `motion` (a whole thing's; `motion:<slot> {node, …}` moves one node of its model: `node` is the node's name as the model file spells it, any characters, DATA and never part of a key; `<slot>` is a short local tag, and readers find the part by `node`), `socket {name, part?, accepts?, radius?}` (an attach point: a

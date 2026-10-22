@@ -364,6 +364,14 @@ await C("D8", "a definition's meaning is pinned: a changed default, type or enum
   const am0 = CAT.COMPONENTS.light.absentMeans;   // light has its own absentMeans since the shape audit (10-16): put them back after the probe
   CAT.COMPONENTS.light.fields.extra = "number"; CAT.COMPONENTS.light.absentMeans = { ...(am0 ?? {}), extra: "no extra" }; const added = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? ["x"]; delete CAT.COMPONENTS.light.fields.extra; if (am0) CAT.COMPONENTS.light.absentMeans = am0; else delete CAT.COMPONENTS.light.absentMeans;
   return [!g.length && moved.some((x: string) => /light\.intensity/.test(x)) && !added.length, { now: g.slice(0, 4), moved, added }]; });
+await C("D12", "every field of an open component has a written meaning, pinned with its unit (spec/registry-pin.json docs/units: the normative home of what a field means, the house's view #260 10-20), and a changed meaning is a break", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const now = CAT.pinOf();
+  const bare = Object.entries(now).filter(([, p]: any) => p.status !== "reserved" && p.status !== "retired").flatMap(([n, p]: any) => Object.keys(p.fields ?? {}).filter((f) => !(typeof p.docs?.[f] === "string" && p.docs[f].trim())).map((f) => `${n}.${f}`));
+  const unpinned = Object.entries(now).flatMap(([n, p]: any) => Object.keys(p.docs ?? {}).filter((f) => pin[n]?.docs?.[f] !== p.docs[f]).map((f) => `${n}.${f}`));
+  const changed = JSON.parse(JSON.stringify(pin)); const lit = changed.light; const f0 = Object.keys(lit?.docs ?? {})[0]; if (f0) lit.docs[f0] = lit.docs[f0] + " (it once meant something else)";
+  const caught = f0 ? CAT.pinBreakList(changed).some((b: any) => b.text.startsWith(`light.${f0}: its meaning`)) : false;
+  return [!bare.length && !unpinned.length && caught, { bare: bare.slice(0, 8), unpinned: unpinned.length, caught }];
+});
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
