@@ -30,7 +30,7 @@ if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WORLD = 'plates';
 
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' }, worlds: [WORLD] });
 const { browser, close } = await launchBrowser();
 
 // ---- fake peers: a socket each, a pose every 66 ms (the client's own cadence) ------------------------------------
@@ -40,7 +40,7 @@ function peer(id, pose) {
   const ws = new WebSocket(`${world.origin.replace(/^http/, 'ws')}/ws`);
   const p = { ws, pose, timer: null };
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key }));
+    ws.send(JSON.stringify({ type: 'join', world: WORLD, id, token: world.key, replica: true }));
     p.timer = setInterval(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pose', pose: p.pose })); }, 66);
   };
   ws.onmessage = (e) => {
