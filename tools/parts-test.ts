@@ -144,5 +144,40 @@ console.log('\n━━ regression: whole-entity motion unchanged ━━');
   check('root bob still works', Math.abs(root.position.y - 0.3) < 0.02, `y=${root.position.y.toFixed(3)}`);
 }
 
+// house review of #260, client/lib I37: every parented thing carries userData.mountedTo (models.js execMount), and a
+// parent record is only ever the hierarchy (sitting and holding are presence), so skipping mountedTo froze every child's
+// own motion. A child moves in its parent's frame: its base is the local pose the mount gave it.
+// Mutation (must go red): restore `|| obj.userData.mountedTo` in motion.js's skip.
+console.log('\n━━ a parented thing keeps its own motion, in its parent\'s frame ━━');
+{
+  const parent = new THREE.Object3D(); parent.position.set(40, 0, 0);
+  const child = new THREE.Object3D(); child.position.set(1, 2, 0);
+  parent.add(child); child.userData.mountedTo = 'carrier';
+  child.userData.base = { pos: [1, 2, 0], yaw: 0, q: [0, 0, 0, 1] };
+  entities.set('kid', child);
+  comps.set('kid', { motion: { type: 'oscillate', axis: [0, 1, 0], amp: 0.3, period: 4, phase: Math.PI / 2, t0: Date.now() } });
+  tickMotion();
+  check('the child oscillates about its LOCAL base (not frozen, not thrown to a world pose)', Math.abs(child.position.y - 2.3) < 0.02 && Math.abs(child.position.x - 1) < 1e-9, `pos=${child.position.toArray()}`);
+  // the distance gate reads where it IS: a child 1 m from a carrier 200 m away is far, though its local pos is near
+  parent.position.set(200, 0, 0); child.position.set(1, 2, 0); parent.updateMatrixWorld(true);
+  tickMotion();
+  check('…and the 90 m gate reads its world position', child.position.y === 2, `pos=${child.position.toArray()}`);
+}
+
+// I37, the openable half (openable.js skipped userData.mountedTo the same way): a lid parented to its box still opens
+// Mutation (must go red): restore `|| obj.userData.mountedTo` in openable.js apply().
+{
+  const { tickOpenables } = await import('../client/lib/openable.js');
+  const box = new THREE.Object3D(); const lid = new THREE.Object3D(); lid.position.set(0, 1, 0);
+  box.add(lid); lid.userData.mountedTo = 'box'; lid.userData.base = { pos: [0, 1, 0], yaw: 0, q: [0, 0, 0, 1] };
+  entities.set('lid', lid);
+  const bag: Record<string, any> = { openable: { open: false, angle: Math.PI / 2, axis: [1, 0, 0], time: 0 } };
+  comps.set('lid', bag);
+  tickOpenables(0); bag.openable.open = true; tickOpenables(1);
+  const turned = 2 * Math.acos(Math.min(1, Math.abs(lid.quaternion.w)));
+  check('a parented lid opens (turned about its local hinge)', Math.abs(turned - Math.PI / 2) < 0.02, `angle=${turned.toFixed(3)}`);
+  comps.delete('lid'); entities.delete('lid');
+}
+
 console.log(fail ? `\n\x1b[31m${fail} failure(s)\x1b[0m` : `\n\x1b[32mall ${pass} checks passed\x1b[0m`);
 process.exit(fail ? 1 : 0);

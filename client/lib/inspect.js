@@ -178,11 +178,24 @@ export function commitEdit(id, key, value, opts = {}) {
 
 /** Several channels of one thing in ONE request (so one undo step): {'pos.x': 0, 'pos.y': 0, …}, FACE values (degrees
  *  for rotate), as editOps takes them. The transform's reset keys use it. */
+// `id` may be an array (a multi-select: each thing edited from its own record) or WORLD_ID (worldEditOps over every field
+// at once, so two fields of one component are one write, not two that each set the whole of it): a scrubbed run of
+// channels edits whatever the Inspector shows (house review I23). Either way ONE request, one Ctrl+Z.
 export function commitMany(id, edits, what) {
-  const rec = recordFor(id); if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
-  const { ops, errors, euler } = editOps(rec, id, edits, liveFor(id));
-  if (ops.length) Edits.sendOps(ops, { what: `${what} of ${id}`, revert: () => Edits.revertPose(id) });
-  if (euler) eulerHints.set(id, euler); else if (movesPose(ops)) eulerHints.delete(id);
+  if (id === WORLD_ID) {
+    const { ops, errors } = worldEditOps(state.st, edits, worldLive());
+    if (ops.length) Edits.sendOps(ops, { what: `${what} of the world`, expect: false });
+    return { ok: !errors.length, errors, ops };
+  }
+  const ids = Array.isArray(id) ? id : [id];
+  const ops = [], errors = [];
+  for (const one of ids) {
+    const rec = recordFor(one); if (!rec) { errors.push(`${one} is not in the fold`); continue; }
+    const r = editOps(rec, one, edits, liveFor(one));
+    ops.push(...r.ops); errors.push(...r.errors);
+    if (r.euler) eulerHints.set(one, r.euler); else if (movesPose(r.ops)) eulerHints.delete(one);
+  }
+  if (ops.length) Edits.sendOps(ops, { what: `${what} of ${ids.length > 1 ? `${ids.length} things` : ids[0]}`, revert: () => ids.forEach((x) => Edits.revertPose(x)) });
   return { ok: !errors.length, errors, ops };
 }
 

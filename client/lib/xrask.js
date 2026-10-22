@@ -38,6 +38,9 @@ function settle(v) {
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?domquads=0)
+// leaving the headset answers the open question with its cancel: nobody can see it now, and an unsettled ask holds every
+// later undo behind it (editwrites settled(); house review I19)
+bus.on('xr:state', (on) => { if (!on && pending) settle(pending.cancel); });
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
 export function initXRAsk() {
   if (api) return api;

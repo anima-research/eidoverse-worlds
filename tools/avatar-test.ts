@@ -1057,5 +1057,21 @@ console.log('\nmeasured jump take-off (#196 review B2):');
     wa.time === 0, `walk time = ${wa.time}`);
 }
 
+// house review of #260, client/lib I2: setSeatBlend clears currentSlot, and occupants.js gated the seat profile on it, so
+// a seated body never met the gate (seatGate: currentSlot !== pose). playingSlot is the slot actually carrying the body:
+// currentSlot outside a blend, the blend's heaviest clip (by the slot it really is) inside one.
+// Mutation (must go red): make playingSlot return this.currentSlot always.
+{
+  const sitchair = { n: 'sitchair' }, sit = { n: 'sit' }, idle = { n: 'idle' };
+  const play = (Avatar.prototype as any).playingSlot;
+  const off = { currentSlot: 'walk', _sb: null, actions: { sitchair, sit, idle } };
+  check('no seat blend: playingSlot is currentSlot', play.call(off) === 'walk');
+  const on = { currentSlot: null, _sb: { w: new Map<any, number>([[idle, 0.2], [sitchair, 0.8]]) }, actions: { sitchair, sit, idle } };
+  check('in a seat blend: the heaviest clip\'s slot', play.call(on) === 'sitchair', String(play.call(on)));
+  const fell = { currentSlot: null, _sb: { w: new Map<any, number>([[sit, 1]]) }, actions: { sitchair: undefined, sit, idle } };
+  check('…a fallback reads as the slot it really is (the gate then says pose fallback)', play.call(fell) === 'sit');
+  check('…and a blend with nothing in it yet is no slot', play.call({ currentSlot: null, _sb: { w: new Map() }, actions: {} }) === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -147,17 +147,18 @@ const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, ico
 // Here they are @world's components, so they hang under the World row; a click opens their card, ✕ removes them.
 const ENV = [
   { key: 'sky', label: 'Sky', icon: 'sun', gone: 'a plain clear sky' },
-  { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather' },
+  { key: 'weather', label: 'Weather', icon: 'sparkle', gone: 'clear weather (a forecast stops too)' },
   { key: 'terrain', label: 'Terrain', icon: 'mountains', gone: 'the default flat ground' },
   { key: 'grass', label: 'Grass', icon: 'plant', gone: 'no grass' },
 ];
 const wxOf = () => state.st.sky?.weather ?? state.st.sky?.override?.weather ?? null;
 /** Remove one environment component (sky/weather/terrain/grass): the same edit from the Hierarchy row's ✕, the World section's
- *  button and the card's remove button (mow, for grass; clear, for weather). */
+ *  button and the card's remove button (mow, for grass). */
 function removeEnv(key) {
   const e = ENV.find((x) => x.key === key); if (!e) return;
-  const path = key === 'weather' ? 'weather.state' : key === 'grass' ? 'grass.mow' : `${key}.remove`;
-  const r = commitEdit(WORLD_ID, path, key === 'weather' ? 'clear' : true);
+  // weather.remove, not a clear pick: under a forecast a pick is an override its next segment undoes (house review I95)
+  const path = key === 'grass' ? 'grass.mow' : `${key}.remove`;
+  const r = commitEdit(WORLD_ID, path, true);
   flashHint(r.errors?.length ? r.errors.join(' · ') : `${e.label} removed: ${e.gone} (Ctrl+Z brings it back)`, r.errors?.length ? 5000 : 2600, r.errors?.length ? 'attn' : undefined);
   repaintAll();
 }
@@ -211,6 +212,9 @@ export function selection() {
   const s = Sel.selection();
   return s.kind === 'things' ? s.ids.filter((id) => entities.get(id)) : [];
 }
+/** …and for a delete, every selected thing the fold holds: a switched-off (or not yet loaded) thing has no realized object
+ *  but is still in the Hierarchy, and must still be removable (house review I30). */
+const removable = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids.filter((id) => state.st.entities?.[id]) : []; };
 /** Shift-click in the Hierarchy: every displayed row from the anchor (the last row clicked; else the active thing) to
  *  `id`, replacing the selection (Ctrl+Shift: added to it). The anchor stays where it is, so a second Shift-click re-ranges
  *  from it; the row clicked is active. false when there is no anchor among the displayed rows (the caller selects `id`). */
@@ -411,7 +415,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       break;
     }
     case 'detach': reparent(payload ?? sel, null); break;
-    case 'remove': { const ids = payload && !Sel.isSelected(payload) ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
+    case 'remove': { const ids = payload && !Sel.isSelected(payload) ? [payload] : removable(); if (ids.length) removeMany(ids); break; }
     case 'drop': reparent(payload?.id, payload?.onto); break;
     case 'filter': filter = String(payload ?? ''); break;
     case 'open': { const id = typeof payload === 'object' ? payload?.id : payload, deep = typeof payload === 'object' && !!payload?.deep;
@@ -502,12 +506,16 @@ function findSelected() {
  *  'rot' → rotate 0, 'scale' → scale 1, 'all' → the three. The keys follow the tools': G move, E rotate, R scale, so
  *  Alt+G / Alt+E / Alt+R; Ctrl+G is all of it. One request per thing, so one Ctrl+Z each. */
 const RESET = { pos: { 'pos.x': 0, 'pos.y': 0, 'pos.z': 0 }, rot: { 'rot.x': 0, 'rot.y': 0, 'rot.z': 0 }, scale: { 'pos.sx': 1, 'pos.sy': 1, 'pos.sz': 1 } };
+// quaternion order shows no rotate x/y/z: rotate 0 is the identity quaternion there (house review I90)
+const RESET_Q = { 'rot.qx': 0, 'rot.qy': 0, 'rot.qz': 0, 'rot.qw': 1 };
 function resetTransform(what) {
   const ids = selection(); if (!ids.length) { flashHint('select something first: Alt+G resets its translate, Alt+E rotate, Alt+R scale, Ctrl+G all three', 3500); return; }
   const want = what === 'all' ? { ...RESET.pos, ...RESET.rot, ...RESET.scale } : RESET[what]; if (!want) return;
   for (const id of ids) {
     // only the channels this thing has (quaternion order has no rotate x/y/z)
-    const have = new Set(channels(schemaFor(id)).map((c) => c.key)); const edits = Object.fromEntries(Object.entries(want).filter(([k]) => have.has(k)));
+    const have = new Set(channels(schemaFor(id)).map((c) => c.key));
+    const wantHere = 'rot.x' in want && !have.has('rot.x') ? { ...want, ...RESET_Q } : want;
+    const edits = Object.fromEntries(Object.entries(wantHere).filter(([k]) => have.has(k)));
     if (Object.keys(edits).length) commitMany(id, edits, what === 'all' ? 'transform reset' : `${{ pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset`);
   }
   flashHint(`${what === 'all' ? 'transform' : { pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset${ids.length > 1 ? ` on ${ids.length} things` : ''} — Ctrl+Z undoes`, 2200);
@@ -843,9 +851,11 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   const id = worldSel() ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
   // a scrubbed RUN of channels (Maya's channel box): one edit for all of them, FACE values, one Ctrl+Z (panels.js commitRun)
-  if (action === '__run' && id && id !== WORLD_ID && payload && typeof payload === 'object') {
+  // the whole selection, or the world (house review I23: only the primary thing was edited, and a World run was dropped)
+  if (action === '__run' && id && payload && typeof payload === 'object') {
     const edits = Object.fromEntries(Object.entries(payload).map(([k, v]) => [String(k).replace(/^(ch|ed):/, ''), v]));
-    const r = commitMany(id, edits, 'channels'); endGesture(); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); repaintAll(); return; }
+    const ids = id === WORLD_ID ? null : selection();
+    const r = commitMany(id === WORLD_ID ? WORLD_ID : ids.length > 1 ? ids : id, edits, 'channels'); endGesture(); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000, 'attn'); repaintAll(); return; }
   if (action === 'history') { bus.emit('edit-righttab', 'history'); return; }
   if (action === 'goto') {   // a driven field's ~: open the driver's card and bring it into view
     const g = `c:${payload}`; if (!isOpen(id, g)) toggleFold(id, g);
@@ -1018,7 +1028,7 @@ function consoleDispatch(action, payload) {
 
 function removeMany(ids) {
   // a locked thing is asked about by the authority's refusal ("This is locked. Delete anyway?"), not filtered out here
-  const go = ids.filter((id) => entities.get(id));
+  const go = ids.filter((id) => state.st.entities?.[id]);
   if (!go.length) return false;
   Edits.del(go); if (selection().length > 1) Sel.set([selection()[0]]); return true;   // one request: delete, or a batch of them (one act)
 }
@@ -1373,7 +1383,7 @@ export function initEditPanels() {
   bus.on('edit-mode', (on) => { if (!on) { armingRef = null; const p = sceneSelected(); if (p) Sel.set([p]); else Sel.clear(); } });
   setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
-  setRemoveHook(() => removeMany(selection()));
+  setRemoveHook(() => removeMany(removable()));
   bus.on('edit-find', () => findSelected());              // F in the viewport
   bus.on('edit-reset', (what) => resetTransform(what));   // Alt+G / Alt+E / Alt+R, Ctrl+G in the viewport
   bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark

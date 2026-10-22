@@ -281,5 +281,31 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   check('…even under a filter that matches nothing else', /^\[@world\]/.test(filtered) && /no placed thing matches "zzz"/.test(filtered), filtered);
 }
 
+// ------------------------------------------------------------ house review of #260, client/lib I95
+// Removing Weather (the Hierarchy row's ✕, editpanels.js removeEnv) wrote `weather.state: clear`: under a forecast that is
+// a manual override the next segment undoes (and the door refuses a weather pick under a forecast: section 1's KNOWN BUG),
+// so the Weather never went. `weather.remove` takes the weather off: the forecast stops too (a sky request that keeps
+// every sky field but the weather's), and Ctrl+Z (the door's undo) brings the forecast back. With no forecast it is the
+// clear weather it always was.
+// Mutation (must go red): in shared/worldentity.js make weather.remove send weatherOp('clear') under a forecast too.
+console.log('\nI95. removing the Weather removes it, forecast and all:');
+{
+  const W = scratchWorld('worldentity');
+  const s0 = W.call('sky', { hours: 8, clouds: 'stratus', exposure: 0.7, weather: 'storm', forecast: { seed: 7, states: ['clear', 'rain'], dwellSec: [600, 1800], transitionSec: 45 } });
+  check('(setup) a sky with a storm and a forecast', s0.ok && !!W.view().sky.forecast, JSON.stringify(s0.refused));
+  const sch = worldSchema(W.view(), { now: Date.now() });
+  check('the Weather card offers remove', fieldAt(sch, 'weather.remove')?.t === 'btn', JSON.stringify(fieldAt(sch, 'weather.remove')));
+  const r = worldEditOps(W.view(), { 'weather.remove': true }, { now: Date.now() });
+  check('under a forecast it is ONE sky request, with no forecast and no weather in it', r.errors.length === 0 && r.ops.length === 1 && r.ops[0].verb === 'sky' && r.ops[0].args.forecast === undefined && r.ops[0].args.weather === undefined, JSON.stringify(r));
+  const sent = W.sendAll(r.ops);
+  const sky = W.view().sky;
+  check('the door takes it: no forecast, clear, and the sky\'s own fields kept', sent.ok && !sky.forecast && (sky.weather ?? 'clear') === 'clear' && sky.clouds === 'stratus' && sky.exposure === 0.7, JSON.stringify([sent.refused, sky]));
+  check('…and the Weather row has nothing to remove', fieldAt(worldSchema(W.view(), { now: Date.now() }), 'weather.remove') == null);
+  check('the door\'s undo brings the forecast back', W.call('undo', {}).ok && !!W.view().sky?.forecast && W.view().sky?.weather === 'storm', JSON.stringify(W.view().sky));
+  const M = scratchWorld('worldentity'); M.call('weather', { weather: 'rain' });
+  const r2 = worldEditOps(M.view(), { 'weather.remove': true }, { now: Date.now() });
+  check('with no forecast it is the clear weather it always was', canon(r2.ops) === canon([{ verb: 'weather', args: { weather: 'clear' } }]), JSON.stringify(r2));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

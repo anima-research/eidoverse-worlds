@@ -21,13 +21,16 @@ import { applyTerrainState, applyGrassState, applySkyFolded, applyAssetState } f
 // the sky and still had clouds (10-11 14:05). The same at join, so a removal looks the same after a reload.
 const NO_SKY = Object.freeze({ clouds: 'clear' });
 
-// the ground's builder fills water on the ground it builds: the world's water component (shape audit 10-16) rides on its args
-const groundArgs = (st) => (st.terrain ? (st.water ? { ...st.terrain, water: st.water } : st.terrain) : null);
+// the ground's builder fills water on the ground it builds: the world's water component (shape audit 10-16) rides on its args,
+// and in a world with no terrain on the stage floor ({stageFloor, water}: house review I8)
+const groundArgs = (st) => (st.terrain ? (st.water ? { ...st.terrain, water: st.water } : st.terrain) : st.water ? { stageFloor: true, water: st.water } : null);
 
+// every join hands over what the fold says, absence included: a rejoin into a world whose terrain or grass went while we
+// were away clears them, instead of keeping the last session's (house review I55)
 function reconcileEnvironment() {
   const st = state.st;
-  if (st.terrain) applyTerrainState(groundArgs(st));
-  if (st.grass) applyGrassState(st.grass);
+  applyTerrainState(groundArgs(st));
+  applyGrassState(st.grass ?? { clear: true });
   applySkyFolded(st.sky ?? NO_SKY, st.sky?.ts);
   for (const a of st.assets ?? []) applyAssetState(a);
 }

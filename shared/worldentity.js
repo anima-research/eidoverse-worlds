@@ -208,6 +208,7 @@ export function worldSchema(st, live = {}) {
       ...(f && !ro.hint ? { hint: 'a forecast governs: a pick holds until the next segment boundary, then the forecast resumes' } : {}) },
     { t: 'info', label: 'now', value: eff ? `${eff.weather ?? 'clear'} — ${eff.source === 'forecast' ? 'the forecast\'s' : eff.source === 'manual' ? `set by ${eff.by ?? '?'} until the next segment` : 'authored'}` : 'clear — no sky authored yet' },
     ...(f ? [{ t: 'info', label: 'forecast', value: `seed ${f.seed ?? '?'} · ${(f.states ?? []).map((x) => (typeof x === 'string' ? x : x?.state)).join(', ')} · by ${f.by ?? '?'} — set or cleared by the authority's sky tool (its forecast)` }] : []),
+    ...(f || (eff?.weather && eff.weather !== 'clear') ? [{ t: 'btn', k: 'remove', label: 'remove the weather', danger: true, hint: f ? 'clear weather, and the forecast stops' : 'back to clear weather', ...ro }] : []),
   ];
   groups.push({ group: 'weather', label: 'Weather', fields: wxFields });
 
@@ -273,7 +274,7 @@ export function worldEditOps(st, edits, live = {}) {
   const now = live.now ?? 0;
   const schema = worldSchema(st, live);
   const errors = [];
-  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false, noSky = false, noGround = false;   // ground: the terrain patch
+  let skyPatch = null, weather = null, ground = null, grassPatch = null, mow = false, noSky = false, noGround = false, noWeather = false;   // ground: the terrain patch
   let untrust = null;   // names to take off @world.trusted-components
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
@@ -308,7 +309,7 @@ export function worldEditOps(st, edits, live = {}) {
         else if (k === 'azimuth') skyPatch.azimuth = round(v / DEG, 6);   // shown in degrees, stored in radians
         else skyPatch[k] = v;
         break;
-      case 'weather': weather = v; break;
+      case 'weather': if (k === 'remove') noWeather = true; else weather = v; break;
       case 'terrain':
         if (k === 'remove') { noGround = true; break; }
         ground ??= {};
@@ -321,8 +322,12 @@ export function worldEditOps(st, edits, live = {}) {
   }
   const ops = [];
   // R 10-11: "no way to get rid of the weather, sky, or terrain once created": remove is a plain component delete
+  // removing the weather (house review I95): a clear pick under a forecast is an override its next segment undoes, so the
+  // forecast goes too; that is the sky's to say, in the same re-authored sky as any sky edit in this gesture
+  const dropForecast = noWeather && !noSky && isBag(sky?.forecast);
+  if (noWeather) weather = dropForecast || noSky ? null : 'clear';
   if (noSky) { if (sky != null) ops.push(OP.unset(WORLD_ID, 'sky')); }
-  else if (skyPatch) ops.push(skyOp(skyReissue(sky, skyPatch, now)));
+  else if (skyPatch || dropForecast) ops.push(skyOp(skyReissue(sky, dropForecast ? { ...skyPatch, ...Object.fromEntries(WEATHER_KEYS.map((k) => [k, undefined])) } : skyPatch, now)));
   if (weather != null) ops.push(weatherOp(weather));
   if (noGround) { if (terrain != null) ops.push(OP.unset(WORLD_ID, 'terrain')); }
   else if (ground) ops.push(terrainOp({ ...clone(terrain), ...ground }));

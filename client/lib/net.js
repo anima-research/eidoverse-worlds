@@ -294,14 +294,14 @@ export function sendRequest(verb, args = {}, { timeoutMs = 15000 } = {}) {
   const id = ++requestSeq;
   return new Promise((resolve) => {
     const timer = setTimeout(() => { pendingRequests.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the authority didn't answer '${verb}' in ${timeoutMs / 1000} s`, fix: 'it may still land: look before trying again' } }); }, timeoutMs);
-    pendingRequests.set(id, { resolve, timer, verb });
+    pendingRequests.set(id, { resolve, timer, verb, ws: net.ws });   // the socket it went on: only that one's close fails it (I62)
     net.ws.send(JSON.stringify({ type: 'request', id, verb, args }));
   });
 }
 // The socket closed: no reply can come on it (request ids don't carry over to the next one), so every request still in flight
 // is answered now, not by its 15 s timer (which held the body track that long after a reconnect, then spoke a stale timeout)
-function failPending() {
-  for (const [id, p] of pendingRequests) { pendingRequests.delete(id); clearTimeout(p.timer);
+function failPending(ws = null) {
+  for (const [id, p] of pendingRequests) { if (ws && p.ws !== ws) continue; pendingRequests.delete(id); clearTimeout(p.timer);
     p.resolve({ ok: false, refused: { code: 'offline', reason: `the connection dropped before the authority answered '${p.verb}'`, fix: 'it may have landed: look before trying again' } }); }
 }
 function onReply(msg) {
@@ -614,9 +614,13 @@ function showRefusal(text) {
 
 /** The socket's close, live or the early socket's (connect()). One place decides what each close code means. */
 function onSocketClosed(ev) {
+  // a socket already replaced (rejoin dials before the old close lands: it waits at most 2 s) answers its own requests
+  // and nothing else: the live socket's requests, its join and its clock are not its to end (house review I62)
+  const sock = ev?.target ?? null;
+  failPending(sock);
+  if (sock && net.ws && sock !== net.ws) { intentionalClose = false; return; }
   clearInterval(clockTimer); clockTimer = null;
   net.joined = false;
-  failPending();
   if (intentionalClose) { intentionalClose = false; return; } // rejoin() drives its own reconnect
   // 4002 = session takeover: this identity re-arrived elsewhere. Retrying
   // would kick THAT session and ping-pong forever.
@@ -709,9 +713,8 @@ function onSocketClosed(ev) {
  *  VRM), then the voice peer and its analyser, then the body itself
  *  (avatar root, nameplate, bubbles, typing dots and held poses all hang
  *  off the avatar and dispose with it). Ownership stays explicit — each
- *  line names the table it clears. Logged body-mounts are deliberately NOT
- *  touched: avatarMounts mirrors folded world state, and the seat renders
- *  through the remote, which is now gone.
+ *  line names the table it clears. A body's seat (avatarMounts) is presence,
+ *  fed by its frames: dropRemote clears it with the body.
  *  `expected` makes the drop generation-conditional (see dropRemote). */
 export function teardownParticipant(id, expected) {
   // The generation check comes BEFORE any side effect: a predecessor's stale

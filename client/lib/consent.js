@@ -23,7 +23,7 @@ export const setPushable = (b) => setSwitch(b ? 'accept' : 'refuse');
 export const setPosable = setPushable;
 // what an incoming ask is for, in words (an ask still names its act; the answer is mine, per ask)
 export const CLASS_WORDS = {
-  near: 'stand close to me', follow: 'follow me around', touch: 'touch me (hands, shoulders, back)',
-  intimate: 'touch me intimately (face, eyes, chest, waist, hips)', pose: 'pose my body', shove: 'knock me over',
+  near: 'stand close to me', follow: 'follow me around', touch: 'touch me (hands, shoulders, back, face)',
+  intimate: 'touch me intimately (chest, waist, hips)', pose: 'pose my body', shove: 'knock me over',   // INTIMATE_POINTS (shared consent.js): I39
   displace: 'drag or carry me', voice: 'speak into my ear',
 };

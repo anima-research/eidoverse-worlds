@@ -164,6 +164,7 @@ export const anyBuildsPending = () => buildDepth + skyGate;
 // Guards so a re-join (avatar switch, reconnect) that replays the log doesn't
 // regenerate an identical world.
 let lastTerrainArgs = null;
+let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
 
 // ---- world-scope state application ------------------------------------------
@@ -175,7 +176,15 @@ let lastGrassArgs = null;
 /** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
  *  a re-join replaying the same world does not regenerate identical ground. */
 export function applyTerrainState(args) {
-  if (!args) { if (lastTerrainArgs !== null) { lastTerrainArgs = null; setTerrain(null); } return; }   // removed: the stage floor returns
+  // no terrain: the stage floor returns, with the world's water on it when it has some (environment.js groundArgs
+  // {stageFloor, water}; house review I8) and without the old ground's water when it doesn't
+  if (!args || args.stageFloor === true) {
+    const key = args ? JSON.stringify(args) : null;
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); }
+      try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
+    return;
+  }
+  stageFloor = false;
   const key = JSON.stringify(args);
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
@@ -229,7 +238,7 @@ export function applyTerrainState(args) {
     // re-seat only ground-level entities — anything with a meaningful y
     // (seated on furniture, elevated) keeps its logged height
     for (const [id, obj] of entities) {
-      if (obj && Math.abs(obj.position.y) < 0.02) {
+      if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
         if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
         reindexCollider(id);
