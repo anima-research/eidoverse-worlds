@@ -54,9 +54,11 @@ Retry-After; missing renderers 503; missing participants 404; invalid images 502
 Every response is tied to the exact renderer client/session/world and pending
 target. Retirement, travel, takeover, disconnect, and opt-out release requests.
 An image travels base64 in one websocket message, so it is capped at what fits
-in one: three quarters of `EW_WS_MESSAGE_BYTES` less 64 KiB, which at the 2 MiB
-default is 1,523,712 bytes (about 1.45 MiB). Raising `EW_WS_MESSAGE_BYTES` raises
-it. PNG container and dimension checks run before HTTP
+in one: 64 KiB of `EW_WS_MESSAGE_BYTES` is kept for the rest of the message, and
+the image may be three quarters of what remains (base64 turns 3 bytes into 4),
+rounded down to a multiple of 3: `floor((EW_WS_MESSAGE_BYTES − 65,536) / 4) × 3`.
+At the 2 MiB default that is 1,523,712 bytes (about 1.45 MiB). Raising
+`EW_WS_MESSAGE_BYTES` raises it. PNG container and dimension checks run before HTTP
 delivery. This is not full PNG decoding, CRC validation, or image attestation.
 No screenshots are written to the world log or server filesystem.
 
