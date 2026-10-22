@@ -6,6 +6,7 @@
 //   N5 PROTOCOL.md never calls a code file normative (code is informative: NORMATIVE.md says so)
 //   N6–N9 (recut C12) the refusal codes and the readback table are PINNED in spec/ (refusal-codes.json, readback.json): the
 //   pins equal the code, a removal or a changed meaning re-pins only with --ack (a REGISTRY-CHANGELOG line), an addition freely
+//   N10 that line is in the record: a break between an earlier pin (the base's, the previous version) and now has a changelog line
 //   bun tools/protocol/normative-check.ts --pin [--ack "<why>"]   re-pin both from the code
 // A failing row means one of the two moved: change the other in the same commit, or mark the row's status.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/normative-check.ts
@@ -16,6 +17,7 @@ import * as R from "../../shared/protocol/roles.js";
 import * as RC from "../../shared/protocol/refusalcodes.js";
 import * as VC from "../../shared/protocol/verbclasses.js";
 import { writeFileSync, appendFileSync } from "node:fs";
+import * as PH from "./pinhistory.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 // ---- C12: the two pins, and the one rule for moving them ----
@@ -107,5 +109,11 @@ check("N5", "PROTOCOL.md never calls a code file normative", !codeNormative.leng
   const setFiles = rows(section("## The normative set")).slice(1).map((r) => r[0].replace(/`/g, ""));
   check("N9", "NORMATIVE.md lists both pins in the set, and PROTOCOL.md cites the pins (not the code) for the refusal codes and the readback table",
     setFiles.includes(RC_PIN) && setFiles.includes(RB_PIN) && proto.includes(RC_PIN) && proto.includes(RB_PIN), { set: [setFiles.includes(RC_PIN), setFiles.includes(RB_PIN)], proto: [proto.includes(RC_PIN), proto.includes(RB_PIN)] }); }
+
+// N10: N6/N7 compare the pins to the code, so the code and a pin edited together, with no changelog line, passed them
+{ const files = [RC_PIN, RB_PIN]; const now = (f: string) => (existsSync(ROOT + f) ? readFileSync(ROOT + f, "utf8") : null);
+  const r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {}, renamed: {} }, is[RB_PIN] ?? {}));
+  check("N10", `a pin break is acknowledged in the record: every break between an earlier ${RC_PIN} / ${RB_PIN} (the base's, where this branch left origin/main; and the previous version, before the newest change) and now is a \`  - <break>\` line spec/REGISTRY-CHANGELOG.md gained since then`,
+    r.judged.length >= 1 && !r.out.length, { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }); }
 
 console.log(`[normative-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
