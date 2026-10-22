@@ -12,7 +12,11 @@ import { sinT, cosT, atan2T, PI } from './simmath.js';
  *  nothing" rule: a malformed q shapes nothing). */
 export function qNorm(q) {
   if (!Array.isArray(q) || q.length !== 4 || !q.every(Number.isFinite)) return null;
-  const n = Math.sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+  const n2 = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+  // already unit (to a few ulps): returned as it is, so a quaternion that needs nothing is never moved by one ulp, which
+  // happened differently per platform (Windows rounded a unit q's re-normalisation the other way: channelbox, 10-22)
+  if (Math.abs(n2 - 1) <= 8 * Number.EPSILON) return [q[0], q[1], q[2], q[3]];
+  const n = Math.sqrt(n2);
   if (!(n > 1e-9)) return null;
   return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
 }

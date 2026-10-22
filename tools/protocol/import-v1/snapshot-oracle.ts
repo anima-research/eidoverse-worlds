@@ -49,7 +49,7 @@ const opt = path.join(SCRATCH, "opt"); fs.mkdirSync(opt, { recursive: true });
 // compared as its path on both sides, and the header says so)
 const realStore = path.join(realOpt, "store");
 const STORE = fs.existsSync(realStore) ? realStore : null;
-if (STORE) fs.symlinkSync(STORE, path.join(opt, "store"));
+if (STORE) fs.symlinkSync(STORE, path.join(opt, "store"), "junction");   // a directory: a junction needs no privilege on Windows
 process.env.OPT_DIR = opt;
 process.env.WORLDS_DIR = path.join(SCRATCH, "worlds");
 
@@ -242,7 +242,10 @@ function originalsOf(dir) {
   if (fs.existsSync(path.join(dir, "log.jsonl")) || !fs.existsSync(path.join(dir, "log.original.jsonl"))) return dir;
   const d = path.join(SCRATCH, "originals-" + crypto.randomBytes(3).toString("hex"), path.basename(dir)); fs.mkdirSync(d, { recursive: true });
   for (const [from, to] of [["log.original.jsonl", "log.jsonl"], ["snapshot.original.json", "snapshot.json"], ["poses.original.json", "poses.json"]])
-    if (fs.existsSync(path.join(dir, from))) fs.symlinkSync(path.join(dir, from), path.join(d, to));
+    if (fs.existsSync(path.join(dir, from))) {
+      // a file link needs Developer Mode on Windows (EPERM without it): the original is read only, so a copy reads the same
+      try { fs.symlinkSync(path.join(dir, from), path.join(d, to)); }
+      catch (e) { if (e?.code !== "EPERM") throw e; fs.copyFileSync(path.join(dir, from), path.join(d, to)); console.log(`(copied ${from}: this host can't link files)`); } }
   return d;
 }
 
