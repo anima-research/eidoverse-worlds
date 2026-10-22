@@ -6,7 +6,7 @@
   "bare-wait": 10
  },
  "tools/agent-mesh-collision-test.ts": {
-  "bare-wait": 15
+  "bare-wait": 10
  },
  "tools/animnames-retry-test.ts": {
   "bare-wait": 1
