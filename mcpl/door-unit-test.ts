@@ -129,6 +129,12 @@ for (const kind of ["track", "clip"]) {
   ok(["approach", "depart", "touch", "reach"].every((k) => pingDelivery(P(k), "agent")!.tags.includes("chat:from-agent")), "a declared agent's pings carry chat:from-agent");
   ok(!JSON.stringify([pingDelivery(P("touch"), "ai"), pingDelivery(P("touch"), null)]).includes("from-agent") && pingDelivery(P("touch"), "ai")!.declares === "ai", "\"ai\" or no word: no facet, the word as sent");
   ok(senderFacet("agent") === "chat:from-agent" && senderFacet("Agent") === null && senderFacet(null) === null, "senderFacet reads the word \"agent\" itself, nothing near it");
+  // house 6340433633: the tag lists say and act are sent with (net-server.ts's onEvent builds them here), not the helper alone
+  const { speechTags } = await import("./declaration.ts") as any; const has = (l: string[] | undefined, t: string) => !!l?.includes(t);
+  const say = speechTags?.("say", "agent", false), knock = speechTags?.("say", "agent", true), act = speechTags?.("act", "agent"), plain = [speechTags?.("say", "ai", false), speechTags?.("act", null)];
+  ok(has(say, "chat:from-agent") && has(say, "chat:ambient") && has(knock, "chat:from-agent") && has(knock, "chat:mention") && has(knock, "chat:addressed") && !has(knock, "chat:ambient")
+    && has(act, "chat:from-agent") && has(act, "eidoverse:act") && has(act, "chat:ambient") && plain.every((l) => Array.isArray(l) && !has(l, "chat:from-agent")),
+    "say (ambient and addressed) and act from a declared agent carry chat:from-agent; \"ai\" or no word, none", { say, knock, act, plain });
   ok(JSON.stringify(MCPL_ADVERTISEMENT).includes("chat:from-agent"), "the advertisement lists chat:from-agent among the core tags it emits"); }
 
 // edit pins what its plan read, taken before the plan awaits anything, so a change that lands
