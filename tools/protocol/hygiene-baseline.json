@@ -159,7 +159,7 @@
   "bare-wait": 22
  },
  "tools/protocol/server-check.ts": {
-  "bare-wait": 61
+  "bare-wait": 28
  },
  "tools/protocol/shiplist-check.ts": {
   "raw-symlink": 2
