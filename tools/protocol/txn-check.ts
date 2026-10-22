@@ -13,7 +13,7 @@
 //   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too,
 //       a founded world's own directory included (and nothing is synced on win32, where the server can't sync a directory)
 //   T9  operator-repair: operator status revoked while queued → refused
-//   T9d operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
+//   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
 //   T11 (r14 M1) server.ts writes only through requestwire (voice-moderate via requestAs); no direct w.log.request caller
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/txn-check.ts
@@ -35,7 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);   // the world's", "  fs.mkdirSync(dir, { recursive: true });   // the world's", ["T8c"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
-  ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9d"]],
+  ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
@@ -269,12 +269,22 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   X.g.release(); await until(() => t.replies.filter((m) => m.operator).length >= k0 + 2);
   const two = t.replies.filter((m) => m.operator).slice(k0);
   ok(two.length === 2 && two.every((m) => m.ok === true && m.txn === "committed"), "T9c an operator's repairs queued behind one that changed their own role both commit (no role compare for repairs)", two);
-  // T9d: an account that isn't an operator is refused at once, and told who can repair, which is never a world's owner
+  // house 6340433633: the refusal says which way the status went, and its fix follows: revoked, sending again won't
+  // change it; granted (an ordinary request queued while the account became an operator), sending again is decided anew
+  ok(/stopped being a server operator/.test(rep?.reply?.refused?.reason ?? "") && /won't change this/.test(rep?.reply?.refused?.fix ?? ""), "T9d revoked: said so, and that sending it again won't change it", rep?.reply?.refused);
+  const gus = idOf("local:gus", "gus"); const tg = tab(X, gus, { account: "local:gus" });
+  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); await until(() => X.g.entered > e2);
+  const n0 = tg.replies.length; send(tg, "say", { text: "queued" }); OPERATORS.add("local:gus");
+  X.g.release(); await until(() => tg.replies.length > n0); OPERATORS.delete("local:gus");
+  const gr = tg.replies[n0];
+  ok(gr?.ok === false && /became a server operator/.test(gr?.reply?.refused?.reason ?? gr?.refused?.reason ?? "") && !/won't change/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? "") && /send it again/.test(gr?.reply?.refused?.fix ?? gr?.refused?.fix ?? ""),
+    "T9e granted while a request waited: said so, and sending it again is the way (not 'won't change this')", gr);
+  // T9f: an account that isn't an operator is refused at once, and told who can repair, which is never a world's owner
   const nob = idOf("local:nob", "nob"); const tn = tab(X, nob, { account: "local:nob" });
   send(tn, "set", { id: "@world", component: `roles:${bea}`, value: { role: "visitor" } }, "operator-repair"); await until(() => tn.replies.some((m) => m.operator));
   const nr = tn.replies.find((m) => m.operator)?.reply;
   ok(nr?.ok === false && nr?.refused?.code === "rights" && /whoever runs this server/.test(nr?.refused?.fix ?? "") && !/owner/.test(nr?.refused?.fix ?? ""),
-    "T9d operator-repair from an account that isn't an operator: refused, and pointed to whoever runs this server, not to an owner", nr); }
+    "T9f operator-repair from an account that isn't an operator: refused, and pointed to whoever runs this server, not to an owner", nr); }
 
 // ---------------- T10 ----------------
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;

@@ -90,7 +90,11 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const other2: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const { expireRoles: expireW } = await import("../../shared/protocol/authority.js"); const n5 = other2.entries.length; let threw: any = null, e5: any;
   try { e5 = expireW(other2); } catch (x: any) { threw = String(x?.refused?.code ?? x?.code ?? x?.message ?? x); }
-  ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 }); }
+  ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 });
+  // the setup (house 6340433633): the grant has run out, so the sweep that holds the key ends it; without the custody guard
+  // the keyless one reaches the same branch and throws custody (seen by planting it: K4b red, threw "custody")
+  const swept = expireW(w);
+  ok(JSON.stringify(swept) === JSON.stringify([lee]) && !w.state().entities["@world"].c[`roles:${lee}`], "K4c …and the grant has run out: the sweep that holds the key ends it", { swept }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },

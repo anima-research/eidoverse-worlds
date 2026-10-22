@@ -217,17 +217,18 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // what follows a grab is held to the same table (review of #260): pulling a nail (unpin) takes the body as a
     // grab does, so it needs displace allowed or a drag this person granted; and once displace is deny, nothing more of a
     // drag reaches them ("only deny ends it": a grant by an ask outlives a later ask cell). An end always goes through, but
-    // an unpin riding it is checked like any unpin and dropped from it when refused (house 6340433633 Q3)
-    else if ((msg.end == null || msg.unpin != null) && !(c.actorId && c.actorId === tc.actorId)) {
-      const endAlone = () => { if (msg.end == null) return true; delete msg.unpin; return false; };   // refused: an end still goes, bare
+    // a nail riding it (unpin, pinAt, pins) is checked like any nail and dropped from it when refused (house 6340433633 Q3)
+    else if ((msg.end == null || msg.unpin != null || msg.pinAt != null || msg.pins != null) && !(c.actorId && c.actorId === tc.actorId)) {
+      const nail = msg.unpin != null || msg.pinAt != null || msg.pins != null;
+      const endAlone = () => { if (msg.end == null) return true; delete msg.unpin; delete msg.pinAt; delete msg.pins; return false; };   // refused: an end still goes, bare
       // fails closed as bodyRefusal does: with no live log or no identity on either side, nothing can say yes
       const live = c.world.log?.live;
-      if (!live || !c.actorId || !tc.actorId) { if (msg.unpin != null) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` })); if (endAlone()) return; }
+      if (!live || !c.actorId || !tc.actorId) { if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` })); if (endAlone()) return; }
       else {
       const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", live.now());
       const granted = (live.presence as any)?.bodies?.[tc.actorId]?.draggedBy === c.actorId;
-      if (d.mode === "deny" || (msg.unpin != null && d.mode !== "allow" && !granted)) {
-        if (msg.unpin != null) ws.send(JSON.stringify({ type: "error", error: d.mode === "deny" ? refusalWords(tc.id, "displace") : `${tc.id} asks first for displace: ask with the body request — body {to: "${tc.actorId}", kind: "drag"}` }));
+      if (d.mode === "deny" || (nail && d.mode !== "allow" && !granted)) {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: d.mode === "deny" ? refusalWords(tc.id, "displace") : `${tc.id} asks first for displace: ask with the body request — body {to: "${tc.actorId}", kind: "drag"}` }));
         if (endAlone()) return;
       }
     } }

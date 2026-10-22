@@ -33,7 +33,7 @@ import {
   type ChannelsPublishResult,
 } from "@animalabs/mcpl-core";
 import {
-  CHAT, EIDO, CAP, tags, senderFacet, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
+  CHAT, EIDO, CAP, tags, speechTags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { shown } from "../shared/shown.js";
@@ -775,22 +775,21 @@ class Session {
       // declaration (PROTOCOL §6a rule 3), relayed by the world as sent; it
       // rides along as metadata.declares, its word verbatim. A sender whose
       // word is "agent" also carries chat:from-agent, the facet hosts' wake
-      // rules read (declaration.ts senderFacet); no other
+      // rules read (declaration.ts senderFacet, through speechTags); no other
       // word is read as a kind (review r11 L2). chat:from-human never comes
       // from an absence.
       const declares = this.agent.declaresOf(ev.who);
       const md = declares ? { metadata: { declares } } : {};
-      const from = senderFacet(declares);
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true, ...md }
-          : { tags: tags(CHAT.ambient, from), ...md });
+          ? { tags: speechTags("say", declares, true), mentioned: true, ...md }
+          : { tags: speechTags("say", declares), ...md });
       } else if (ev.kind === "act") {
         // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act, from), ...md });
+          { tags: speechTags("act", declares), ...md });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,

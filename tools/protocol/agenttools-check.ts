@@ -91,9 +91,9 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
     // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
     // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
-    // (review of #260). The arrival is the block under its comment, up to the seat cache, with comment lines left out.
-    const at = agentSrc.indexOf("my body's switch (recut A2), as a person's client sends it"), end = agentSrc.indexOf("this.seatCache.init", at);
-    const arrival = at < 0 || end < 0 ? "" : agentSrc.slice(at, end);
+    // (review of #260). The arrival calls replaySwitch() (lifted out for house 6340433633); that method is read here.
+    const at = agentSrc.indexOf("async replaySwitch()"), end = agentSrc.indexOf("\n  }", at);
+    const arrival = at < 0 || end < 0 || !/void this\.replaySwitch\(\)/.test(agentSrc) ? "" : agentSrc.slice(at, end);
     ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", \{ switch: want \}\)/.test(arrival) && !/\bpreset\b|\{ set \}/.test(arrival) && !/DEFAULT_PRESET/.test(agentSrc),
       "AT7b (recut A2) an arrival reads the authority and sends the agent's switch only if it differs; no preset, no cells", arrival.slice(0, 300));
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);

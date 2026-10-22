@@ -86,5 +86,42 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   // the control: a connection that stays writes
   hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await until(() => stays.replies.length);
   ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]); }
+// ---- PR (house 6340433633): a reset that fails after the old log was moved aside. The old log stayed live in memory and kept
+// taking writes, which appendDurable (it opens by path) put in a NEW world.jsonl holding only the tail: a broken chain on disk.
+// The failure is injected at the last rename (the fresh world's log into place); the rest is the real wire handler and reset.
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const dir = path.join(process.env.WORLDS_DIR, "half"); const { owner } = foundWorld(dir, "half", "olive");
+  const hw = new World("half"); const n0 = hw.log.live.entries.length;
+  const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
+  const rename = fs.renameSync;
+  fs.renameSync = function (a, b) { if (String(a).includes(".refound-")) throw new Error("EIO: injected (the fresh log into place)"); return rename.call(fs, a, b); };
+  try { REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" }); } finally { fs.renameSync = rename; }
+  const said = errs[0] ?? "";
+  const w1 = hw.log.requestSync(owner, "say", { text: "after the failed reset" });
+  const file = fs.existsSync(path.join(dir, "world.jsonl"));
+  ok(!w1?.ok && !file, "PR1 after a reset that failed partway a write is refused and no world.jsonl appears", { w1: w1?.ok ?? w1?.refused, file, lines: file ? lines("half").length : 0, n0 });
+  ok(/takes no writes until the server's operator puts it back/.test(said) && /resetting again is safe/i.test(said) && /takes no writes/.test(w1?.refused?.reason ?? ""),
+    "PR2 the answer and the refusal say the world takes no writes until the operator puts its log back, and whether resetting again is safe", { said, refused: w1?.refused });
+  // resetting again finishes the erase; the old log stays in the first attempt's archive
+  REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" });
+  const archives = fs.readdirSync(dir).filter((f) => f.startsWith("reset-")); const kept = archives.filter((a) => fs.existsSync(path.join(dir, a, "world.jsonl")));
+  const w2 = hw.log.requestSync(owner, "say", { text: "in the fresh world" });
+  ok(errs.length === 1 && fs.existsSync(path.join(dir, "world.jsonl")) && kept.length === 1 && w2?.ok === true,
+    "PR3 resetting again finishes the erase (a fresh world that takes writes); the old log stays in the first archive", { errs, archives, kept, w2: w2?.ok ?? w2?.refused }); }
+// PR4 (review of the house fixes): a failure at the SECOND rename (poses.json), twice. The second attempt finds no world.jsonl to
+// move, so "did this attempt move the log" is no; the world is still retired, and the answer must say so, not "goes on as before"
+{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
+  const dir = path.join(process.env.WORLDS_DIR, "half2"); const { owner } = foundWorld(dir, "half2", "olive");
+  fs.writeFileSync(path.join(dir, "poses.json"), "{}");
+  const hw = new World("half2");
+  const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
+  const rename = fs.renameSync; const reset = () => REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half2" });
+  fs.renameSync = function (a, b) { if (String(a).endsWith("poses.json")) throw new Error("EIO: injected (poses.json)"); return rename.call(fs, a, b); };
+  try { reset(); reset(); } finally { fs.renameSync = rename; }
+  const w1 = hw.log.requestSync(owner, "say", { text: "after two failed resets" });
+  ok(errs.length === 2 && errs.every((e) => /takes no writes/.test(e)) && !/goes on as before/.test(errs[1]) && !w1?.ok,
+    "PR4 a second failed attempt, with the log already moved by the first, still says the world takes no writes (and it doesn't)", { errs, w1: w1?.ok ?? w1?.refused });
+  reset(); const w2 = hw.log.requestSync(owner, "say", { text: "fresh" });
+  ok(errs.length === 2 && w2?.ok === true, "PR4 …and a third attempt that succeeds leaves a fresh world that takes writes", { errs, w2: w2?.ok ?? w2?.refused }); }
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`[reset-race-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

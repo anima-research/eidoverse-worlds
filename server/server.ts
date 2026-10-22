@@ -27,6 +27,7 @@ import { summarizeGlb } from "./geometry.ts";
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
 import { oldWorldAt, bootNotice, noFoldRefusal } from "./oldworlds.ts";
+import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
 import { withoutOnceAnim } from "../shared/onceanim.js";
@@ -994,7 +995,7 @@ const server = Bun.serve({
           // with the reason; 4005 = a refused join, which clients know not to redial
           // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
           if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
-            ws.send(JSON.stringify({ type: "error", error: noFoldRefusal(w.name, !!auth?.nativeWorld) }));
+            ws.send(JSON.stringify({ type: "error", error: noFoldRefusal(w.name, !!auth && isNativeSession(auth)) }));
             ws.close(4005, "this client doesn't fold the log");
             clients.delete(ws);
             return;

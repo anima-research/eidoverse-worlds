@@ -38,6 +38,17 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
     stopped ? "a stopped walk isn't tried again beside what holds it up, and says it was stopped" : "a refused route is tried again beside what holds it up", { walks, text: out.content[0].text });
 }
 
+// house 6340433633: each attempt answered on its own (the rows above answered every one with one refusal): the first
+// route refused, then the walk stopped during the fallback beside what holds it up: the tries end there (not the next
+// spot beside), and the stop is what's said, not the first refusal
+{ const walks: number[][] = []; const answers = ["no route: the way there is sealed", "superseded by a newer walk or a stop", "no route: never asked"];
+  const ag: any = { pos: { x: 0, z: 0 }, myOccupancy: null,
+    destination: () => ({ x: 1, z: 1, y: 1, label: "cup", orBeside: { x: 2, z: 2, y: 0, label: "cup", orBeside: { x: 3, z: 3, y: 0, label: "cup" } } }),
+    walkTo: async (x: number, z: number, _r: boolean, _t: number, _tol: number, _y: unknown, _n: unknown, receipt: any) => { receipt.refusal = answers[walks.length]; walks.push([x, z]); return false; } };
+  const out: any = await handleTool({ agent: ag } as any, "move", { to: "cup" });
+  ok(walks.length === 2 && out.isError && out.content[0].text.includes("superseded") && !out.content[0].text.includes("sealed"),
+    "a walk stopped during the fallback ends the tries, and the stop is what's said", { walks, text: out.content[0].text }); }
+
 // act's say {to} and body {to} name a person, so a thing sharing their name isn't sent in their place
 { const sent: any[] = [];
   const ag: any = { thingRef: (v: string) => v === "Mira" ? { id: "lamp-7f3a" } : {}, request: async (verb: string, args: any) => { sent.push([verb, args]); return { ok: true }; } };
@@ -70,6 +81,36 @@ for (const dur of [2, undefined]) {
   ok(dur ? calls.join(",") === "end:replaced,animate,began" : !calls.includes("end:replaced"),
     dur ? "a new loop ends the earlier one first, then plays" : "a loop refused for want of dur leaves the earlier one playing", calls);
 }
+// house 6340433633: the other refusal, a loop with dur but no usable track (every bone unknown), leaves it playing too
+{ const calls: string[] = [];
+  const ag: any = { anims: [{ name: "live", kind: "track" }], endTrackLoop: (why: string) => calls.push(`end:${why}`), animate: () => calls.push("animate"),
+    animBegan: () => calls.push("began") };
+  await handleTool({ agent: ag } as any, "anim", { tracks: { notABone: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, 0, 0, 1] }] }, mode: "loop", dur: 2 });
+  ok(!calls.includes("end:replaced"), "a loop refused for want of a usable track leaves the earlier one playing", calls); }
+
+// house 6340433633: the replacement through the agent's own endTrackLoop (it was stubbed): the renderers are sent the
+// stop before the new loop, and only the tracks layer ends: a clip playing beside it goes on
+{ const { WorldAgent } = await import("./agent.ts");
+  const sent: string[] = []; const ag: any = Object.create(WorldAgent.prototype);
+  Object.assign(ag, { name: "me", inbox: [], animStops: [], modeTracker: { declared: null, declare() {} }, joined: true, anims: [{ name: "live", kind: "track" }, { name: "dance", kind: "clip", clip: "dance" }],
+    ws: { readyState: 1, send: (m: string) => sent.push(m) }, animate: () => sent.push("animate") });
+  await handleTool({ agent: ag } as any, "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }, { t: 1, q: [0, 0, 0, 1] }] }, mode: "loop", dur: 2 });
+  ok(sent[0] === JSON.stringify({ type: "anim", stop: true }) && sent.indexOf("animate") > 0, "a new loop sends the renderers its stop before the new one", sent);
+  ok(ag.anims.some((a: any) => a.name === "dance") && ag.animStops.some((x: any) => x.name === "live" && x.why === "replaced") && !ag.animStops.some((x: any) => x.name === "dance"),
+    "…and ends the tracks layer alone: the clip beside it goes on", { anims: ag.anims, stops: ag.animStops }); }
+
+// house 6340433633: anim {stop} with folded wings waits for them to open; a tracks loop begun meanwhile plays in its own
+// layer and takes no clip, so the rest clip still comes back (a clip begun meanwhile, the control, keeps its own)
+for (const kind of ["track", "clip"]) {
+  const { WorldAgent } = await import("./agent.ts"); const ag: any = Object.create(WorldAgent.prototype);
+  Object.assign(ag, { name: "me", inbox: [], animStops: [], modeTracker: { declared: null, declare() {} }, joined: false, bodyEpoch: 0, heldPose: null,
+    anims: [{ name: "fold", kind: "pose" }, { name: "dance", kind: "clip", clip: "dance" }], wingsFolded: true, clip: "dance",
+    restClip: () => "idle-rest", bodyModeNow: () => "stand", stop() { this.clip = "idle"; },
+    foldWings: async (fold: boolean) => { await Promise.resolve(); ag.wingsFolded = fold;
+      ag.anims.push(kind === "track" ? { name: "live", kind: "track" } : { name: "wave", kind: "clip", clip: "wave" }); if (kind === "clip") ag.clip = "wave"; return { ok: true, text: "" }; } });
+  await ag.stopAnims(null);
+  ok(kind === "track" ? ag.clip === "idle-rest" : ag.clip === "wave",
+    kind === "track" ? "anim {stop}: a tracks loop begun while the wings opened doesn't keep the rest clip from coming back" : "…a clip begun meanwhile keeps its own (the control)", { clip: ag.clip, anims: ag.anims }); }
 
 // attach on a thing with no seat teaches a whole edit call, id and set
 { const ag: any = { socketRec: () => null, thingRef: () => ({ id: "crate-0a1b2c3d" }), foldRecord: () => ({}), socketsOf: () => [], mounts: new Map(),
@@ -90,6 +131,12 @@ for (const dur of [2, undefined]) {
   ok(["approach", "depart", "touch", "reach"].every((k) => pingDelivery(P(k), "agent")!.tags.includes("chat:from-agent")), "a declared agent's pings carry chat:from-agent");
   ok(!JSON.stringify([pingDelivery(P("touch"), "ai"), pingDelivery(P("touch"), null)]).includes("from-agent") && pingDelivery(P("touch"), "ai")!.declares === "ai", "\"ai\" or no word: no facet, the word as sent");
   ok(senderFacet("agent") === "chat:from-agent" && senderFacet("Agent") === null && senderFacet(null) === null, "senderFacet reads the word \"agent\" itself, nothing near it");
+  // house 6340433633: the tag lists say and act are sent with (net-server.ts's onEvent builds them here), not the helper alone
+  const { speechTags } = await import("./declaration.ts") as any; const has = (l: string[] | undefined, t: string) => !!l?.includes(t);
+  const say = speechTags?.("say", "agent", false), knock = speechTags?.("say", "agent", true), act = speechTags?.("act", "agent"), plain = [speechTags?.("say", "ai", false), speechTags?.("act", null)];
+  ok(has(say, "chat:from-agent") && has(say, "chat:ambient") && has(knock, "chat:from-agent") && has(knock, "chat:mention") && has(knock, "chat:addressed") && !has(knock, "chat:ambient")
+    && has(act, "chat:from-agent") && has(act, "eidoverse:act") && has(act, "chat:ambient") && plain.every((l) => Array.isArray(l) && !has(l, "chat:from-agent")),
+    "say (ambient and addressed) and act from a declared agent carry chat:from-agent; \"ai\" or no word, none", { say, knock, act, plain });
   ok(JSON.stringify(MCPL_ADVERTISEMENT).includes("chat:from-agent"), "the advertisement lists chat:from-agent among the core tags it emits"); }
 
 // edit pins what its plan read, taken before the plan awaits anything, so a change that lands
@@ -194,5 +241,17 @@ for (const where of [{ pos: [10, 0, 10] }, { why: "its parent isn't here" }] as 
   const out: any = await handleTool({ agent: ag } as any, "face", { target: "cup" });
   ok("pos" in where ? JSON.stringify(faced) === "[[10,10]]" && !out.isError : !faced.length && out.isError && out.content[0].text.includes(where.why),
     "pos" in where ? "face turns to a child's world point" : "face whose thing's point can't be worked out turns nowhere and says why", { faced, out: out.content[0].text }); }
+
+// house 6340433633: on a socket that rides a model part, face and beside-thing say a retry won't help and a point near it will
+{ const { effectiveWorldTransform } = await import("./effective.ts"); const { WorldAgent } = await import("./agent.ts");
+  const v: any = { entity: (id: string) => (id === "cup-1" ? { pos: [0, 0, 0], socket: { name: "grip", part: "arm" } } : id === "robot" ? { pos: [0, 0, 0] } : undefined), mount: (id: string) => (id === "cup-1" ? { to: "robot" } : undefined) };
+  const r: any = effectiveWorldTransform("cup-1", v, 0);
+  const faced: number[][] = [];
+  const ag: any = { people: new Map(), thingRef: () => ({ id: "cup-1" }), entities: new Map([["cup-1", { id: "cup-1", pos: [0, 0, 0] }]]), worldPointOf: () => ({ why: r.why }), face: (x: number, z: number) => faced.push([x, z]) };
+  const out: any = await handleTool({ agent: ag } as any, "face", { target: "cup" });
+  const b: any = Object.create(WorldAgent.prototype); Object.assign(b, { pos: { x: 5, y: 0, z: 5 }, replica: null, worldPointOf: () => ({ why: r.why }), refName: (id: string) => id });
+  const beside = b.besideThing({ id: "cup-1", pos: [0, 0, 0] });
+  const says = (t: string) => /part geometry unavailable here/.test(t) && /asking again won't change that/.test(t) && /face \{x, z\}|move \{to: \[x, z\]\}/.test(t);
+  ok(!r.ok && !faced.length && out.isError && says(out.content[0].text) && says(beside.refusal ?? ""), "on a part-riding socket, face and beside say a retry won't help and coordinates near it will", { face: out.content[0].text, beside }); }
 
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

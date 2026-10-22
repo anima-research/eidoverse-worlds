@@ -208,7 +208,11 @@ export class World {
    *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. Returns
    *  the archive directory. */
   resetWorld(): string {
-    const arch = resetWorld(this.log);
+    // a failure after the old log was moved aside retires this log (house 6340433633): it would write a new world.jsonl
+    // holding only what came after. A second reset is safe: it finishes the erase from the in-memory state, and the old
+    // log stays in the first attempt's archive
+    let arch: string;
+    try { arch = resetWorld(this.log); } catch (e: any) { if (e?.logMoved) this.log.retire(WorldLog.HALF_RESET); throw e; }
     // the fresh log is on disk from here, so the world is erased whatever follows: an error carries the archive
     // (`resetDone`) and whether the fresh log opened (`opened`), so no answer reads as a reset that changed nothing
     let opened = false;
