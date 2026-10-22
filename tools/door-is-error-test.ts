@@ -13,6 +13,7 @@
 // takes off first and ends with where the flight stands), so the FLIGHT checks
 // call the agent's acts as main's tools did, answered as the door answers an
 // act, and FLIGHT THROUGH THE DOOR checks the door's own calls.
+import { tryUntil } from './protocol/wait.ts';
 const { WorldAgent } = await import('../mcpl/agent.ts');
 const { handleTool } = await import('../mcpl/tools.ts');
 
@@ -35,7 +36,7 @@ const ok = (r: any) => r != null && r.rejected == null && !failed(r);
 const midway = async (agent: any, start: Promise<any>, happen: () => void) => {
   // A waiter left by an earlier call could answer for this one, so none may be waiting yet.
   if (agent.flightWaiters.length) return { rejected: 'a flight waiter from an earlier call was still registered' };
-  for (let i = 0; i < 400 && !agent.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+  await tryUntil('the act registers a flight waiter', () => agent.flightWaiters.length, { ms: 2000, step: 5 });
   // An act that never waited on the flight answered from something else, so no check here may pass on it.
   if (!agent.flightWaiters.length) return { rejected: 'the act registered no flight waiter' };
   happen(); agent.flightSettle();
@@ -124,7 +125,7 @@ const flownByTicks = async (act: () => Promise<any>) => {
   const answer = act().then((a) => { answered = true; return a; });
   // Ticking starts once the act waits on the flight, so no tick flies its earlier steps. An act that neither waits nor
   // answers within 10 s fails its check, saying so.
-  for (let i = 0; i < 2000 && !waits.length && !answered; i++) await new Promise((res) => setTimeout(res, 5));
+  await tryUntil('the act waits on the flight or answers', () => waits.length || answered, { ms: 10_000, step: 5 });
   if (!waits.length && !answered) {
     ag.flightAwait = realAwait;
     return { waits, answer: { rejected: 'the act neither waited on the flight nor answered within 10 s' } };
@@ -443,20 +444,16 @@ const holdNextWait = () => {
   };
   return h;
 };
-const waitFor = async (cond: () => boolean, ms = 10_000) => {
-  for (let t = 0; t < ms && !cond(); t += 5) await new Promise((res) => setTimeout(res, 5));
-  return cond();
-};
 /** Start the later call, and give back how to settle what it leaves waiting once its check is done. */
 const laterCalls: Record<string, () => Promise<() => Promise<void>>> = {
   climb_to: async () => {
     const p = call('climb_to', { altitude: 30 });
-    await waitFor(() => ag.flightWaiters.length > 0);
+    await tryUntil('the later call registers a flight waiter', () => ag.flightWaiters.length > 0, { step: 5 });
     return async () => { if (ag.flight) { ag.flight.climbTo = null; ag.flightSettle(); } await p; };
   },
   glide_to: async () => {
     const p = call('glide_to', { x: 40, z: 0 });
-    await waitFor(() => ag.flightWaiters.length > 0);
+    await tryUntil('the later call registers a flight waiter', () => ag.flightWaiters.length > 0, { step: 5 });
     return async () => { if (ag.flight) { ag.flight.pos.x = 40; ag.flight.pos.z = 0; ag.flightSettle(); } await p; };
   },
   take_off: async () => { await call('take_off'); return async () => {}; },
@@ -466,7 +463,7 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['down', 'glide_to'
   ag.glideTo = glidesThere;
   const hold = holdNextWait();
   const landing = call('land_at', { x: 5, z: 5 });
-  const flaring = await waitFor(() => hold.held);
+  const flaring = await tryUntil('the landing waits in its flare', () => hold.held, { step: 5 });
   ag.glideTo = realGlide;
   const settleLater = await laterCalls[later]();
   const flight = ag.flight;
@@ -485,7 +482,7 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
   await relaunch(); ag.flight.stamina = 1e6;
   const hold = holdNextWait();
   const first = call('climb_to', { altitude: 20 });
-  const waiting = await waitFor(() => hold.held);
+  const waiting = await tryUntil('the climb waits on the flight', () => hold.held, { step: 5 });
   const settleLater = await laterCalls[later]();
   const flight = ag.flight, climbTo = ag.flight?.climbTo;
   hold.end(end);
@@ -512,14 +509,14 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
   const held: ((v: string) => void)[] = [];
   ag.flightAwait = () => new Promise<string>((res) => { held.push(res); });
   const climbing = call('climb_to', { altitude: 30 });
-  const waiting = await waitFor(() => held.length === 1);
+  const waiting = await tryUntil('the climb waits on the flight', () => held.length === 1, { step: 5 });
   const landing = call('land_at', { x: 5, z: 5 });
-  const gliding = await waitFor(() => held.length === 2);
+  const gliding = await tryUntil("the landing's glide waits on the flight", () => held.length === 2, { step: 5 });
   const cleared = ag.flight?.climbTo == null;
   held[0]('there');
   r = await climbing;
   held[1]('arrived');
-  const flaring = await waitFor(() => held.length === 3);
+  const flaring = await tryUntil("the landing's flare waits on the flight", () => held.length === 3, { step: 5 });
   held[2]?.('down');
   const landed = await landing;
   ag.flightAwait = realAwait;
@@ -538,16 +535,16 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
   const held: ((v: string) => void)[] = [];
   ag.flightAwait = () => new Promise<string>((res) => { held.push(res); });
   const landing = call('land_at', { x: 5, z: 5 });
-  const glideAsked = await waitFor(() => bonesAsked === 2);
+  const glideAsked = await tryUntil("the landing's glide asks for the bones", () => bonesAsked === 2, { step: 5 });
   const climbing = call('climb_to', { altitude: 30 });
-  const climbWaits = await waitFor(() => held.length === 1);
+  const climbWaits = await tryUntil('the climb waits on the flight', () => held.length === 1, { step: 5 });
   releaseBones();
-  const gliding = await waitFor(() => held.length === 2);
+  const gliding = await tryUntil("the landing's glide waits on the flight", () => held.length === 2, { step: 5 });
   const cleared = ag.flight?.climbTo == null;
   held[0]('there');
   r = await climbing;
   held[1]?.('arrived');
-  const flaring = await waitFor(() => held.length === 3);
+  const flaring = await tryUntil("the landing's flare waits on the flight", () => held.length === 3, { step: 5 });
   held[2]?.('down');
   const landed = await landing;
   ag.loadBodyBones = fastBones; ag.flightAwait = realAwait;
@@ -576,7 +573,7 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
   await relaunch(); ag.flight.stamina = 1e6;
   const hold = holdNextWait();
   const climbing = call('climb_to', { altitude: 30 });
-  const waiting = await waitFor(() => hold.held);
+  const waiting = await tryUntil('the climb waits on the flight', () => hold.held, { step: 5 });
   ag.flight.phase = 'GROUND'; ag.flight.wings = 'FOLDED';
   const course = ag.flightCourse;
   const refusedTakeOff = await call('take_off');
@@ -594,7 +591,7 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
   await relaunch(); ag.flight.stamina = 1e6;
   const hold = holdNextWait();
   const landing = call('land_at', { x: 80, z: 0 });
-  const gliding = await waitFor(() => hold.held);
+  const gliding = await tryUntil("the landing's glide waits on the flight", () => hold.held, { step: 5 });
   const settleLater = await laterCalls.climb_to();
   const flight = ag.flight;
   hold.end('arrived');
@@ -656,7 +653,7 @@ for (const [tool, a, words] of [
 ] as const) {
   await relaunch(); ag.flight.stamina = 1e6;
   const waiting = call(tool, a);
-  for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+  await tryUntil(`${tool} registers a flight waiter`, () => ag.flightWaiters.length, { ms: 2000, step: 5 });
   const waited = ag.flightWaiters.length > 0;
   await call('rehearse_down', {});
   const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 5 s after the down' }), 5000))]);
@@ -668,7 +665,7 @@ for (const [tool, a, words] of [
 await relaunch(); ag.flight.stamina = 1e6;
 {
   const waiting = call('climb_to', { altitude: 40 });
-  for (let i = 0; i < 400 && !ag.flightWaiters.length; i++) await new Promise((res) => setTimeout(res, 5));
+  await tryUntil('the climb registers a flight waiter', () => ag.flightWaiters.length, { ms: 2000, step: 5 });
   const waited = ag.flightWaiters.length > 0;
   ag.acceptEffectiveRights({ role: 'builder', fly: false }, 'world');
   const answer = await Promise.race([waiting, new Promise((res) => setTimeout(() => res({ rejected: 'still waiting 5 s after the withdrawal' }), 5000))]);
