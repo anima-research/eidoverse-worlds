@@ -709,9 +709,8 @@ function onSocketClosed(ev) {
  *  VRM), then the voice peer and its analyser, then the body itself
  *  (avatar root, nameplate, bubbles, typing dots and held poses all hang
  *  off the avatar and dispose with it). Ownership stays explicit — each
- *  line names the table it clears. Logged body-mounts are deliberately NOT
- *  touched: avatarMounts mirrors folded world state, and the seat renders
- *  through the remote, which is now gone.
+ *  line names the table it clears. A body's seat (avatarMounts) is presence,
+ *  fed by its frames: dropRemote clears it with the body.
  *  `expected` makes the drop generation-conditional (see dropRemote). */
 export function teardownParticipant(id, expected) {
   // The generation check comes BEFORE any side effect: a predecessor's stale

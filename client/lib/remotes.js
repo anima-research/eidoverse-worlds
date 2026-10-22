@@ -188,6 +188,7 @@ export function dropRemote(id, expected) {
   if (expected && r !== expected) return null;   // a successor owns this id now
   remotes.delete(id);
   r.avatar?.dispose();
+  setBodySeat(id, null);   // its seat rode its frames (presence): gone with the body, or a leave sits on forever (I15)
   return r;
 }
 
