@@ -121,7 +121,22 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
 // that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
 // already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
-// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
+// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 on those two, and on the
+// accounts and names below, which @19 carries too.
+// @19: a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
+// a ban's sub beside its id, a spawn's or a light's placer {id, sub}, a behaviour's bySub, the act's own actor's). Elsewhere
+// in an old request's args, inside data a v1 `comp` folded blindly, a name beside an account is data like any other: the
+// account becomes its own person's id, and the name beside it is joined to nothing, so no value in the log moves anyone's
+// later acts or role to another person. A binding's author is its bySub's person; the v1 fold's author is `by` where the
+// request sent one, a name the request chose.
+// The translated act's copy of the old genesis carries no account either: a genesis role's sub becomes its person's id, as an
+// old request's does (the identities were found from it before: world.ts).
+// A component whose name has an account's (`ownerSub`) and whose whole value is an account is one too: it is left out of the
+// state, an old comp request's data becomes the person's id, and the writer's check reads both shapes.
+// An account is any of the shapes a join wears (server/directory.ts): human:, agent:, aid1:, and a private server's local:.
+// A role or ban keyed by an account is that account's person, and an entry keyed by one in a copied value is keyed by their
+// id; the pairs main's server wrote (a placer, a behaviour's bySub) join a name to its account before any act is read
+// (world.ts), as a grant's do, so a person's acts before them are that one identity too.
 // @18 (the house's review of #260, importer items): an approved translation's translation-approved act is written by translate
 // itself, so every later change's cause is the act it answers (I1); v1's captions bag (a window of lines) is today's current
 // line, the old fold reading its own frozen modules (frozen/, 6dab22f5) (I3); a caption deed is a place in its screen's captioners (I13); a spin's rpm and a
@@ -238,8 +253,9 @@ export const DROPPED = {
   "roles.<person>.caption": "a v1 caption deed (to caption one thing while it is the incarnation the deed was granted for) becomes the person's place in that thing's captioners {ids}; a deed on a timed grant, or for a thing replaced or gone, stays carried in imported:roles:<id> (captioners has no end)",
   "captions.window / captions.mediaTime": "v1's bag kept the session's newest lines and the playhead; v4's captions holds the current line (the window's last). The earlier lines are the log's own caption acts",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
-  "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped",
-  "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays",
+  "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped. A ban's `by`, who banned, stays as v1 kept it, unless it is itself an account: then it is that person's id (@19), or dropped without a mapper",
+  "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays, except a grant's or a ban's own top-level sub, the server's stamp of the person's account (roles.sub / bans.sub)",
+  "an entry keyed by an account in a value, and a component an account names and fills": "an entry keyed by an account in a value, or a component whose name has an account's (`ownerSub`) and whose whole value is one, is person data (PROTOCOL §9.2): in the state it is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it, each dropped without an identity mapper. A role or ban kept by its account isn't a value: it is kept, keyed by its person's id (with a mapper) or by its account, encoded (without one)",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
   "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
@@ -312,41 +328,58 @@ const SYSTEM = new Set(["door", "world", "sim"]);
 // world.ts's identity mapper reads too). Main's server stamped three into its log (server/verbs.ts at 306a00b0): a grant's or
 // ban's sub, a creation's placer {id, sub}, a binding's bySub (the v1 fold's authorSub). The shape, not the name alone: v1's
 // `comp` folded any data, so `sub` can be a sign's subtitle, and shared/particle_effects.js reserves `sub` as an effect's
-// emitter field. Whose account it is: the field it pairs with, `id` for `sub` and `foo` for `fooSub`, where main wrote one
-// beside it; else the account alone, so a name is never joined to an account the log doesn't pair with it.
-export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
+// emitter field. Whose account it is: the account's own (@19); the name beside it is joined to it only where main's server
+// wrote the pair (translate's noAcct), never from a value.
+export const isAccount = (s) => typeof s === "string" && /^(human|agent|aid1|local):/.test(s);
+/** A NAME that is an account (a role or a ban keyed by it, an actor that is one): every shape but local:, which a private
+ *  server gives a bare name in a sub position only, so a person may well be called `local:ann` and isn't an account. */
+export const isAccountName = (s) => typeof s === "string" && /^(human|agent|aid1):/.test(s);
 const ACCOUNT_KEY = /^sub$|Sub$/;
-const pairedName = (o, k) => { const n = k === "sub" ? o.id : o[k.slice(0, -3)]; return typeof n === "string" ? n : null; };
-/** `v` with every account subject in it, at any depth, replaced by what `map(name, sub)` gives, or dropped where that's
- *  undefined (the default). The same object when nothing in it is an account (the projection's values can be the old
- *  fold's own). */
+/** Whether a component's name has an account's, read as written under its namespace and its escape (`imported/x--…`):
+ *  the one reading the scrub and the writer's check share. */
+const accountNamed = (n) => typeof n === "string" && ACCOUNT_KEY.test(dec(n.slice(n.lastIndexOf("/") + 1)) ?? n);
+/** `v` with every account subject in it, at any depth, replaced by what `map(sub)` gives, or dropped where that's undefined
+ *  (the default). The same object when nothing in it is an account (the projection's values can be the old fold's own). */
 export function withoutAccounts(v, map = () => undefined) {
   if (Array.isArray(v)) { let out = null; v.forEach((x, i) => { const y = withoutAccounts(x, map); if (y !== x) (out ??= v.slice())[i] = y; }); return out ?? v; }
   if (!v || typeof v !== "object") return v;
   let out = null;
   for (const [k, x] of Object.entries(v)) {
     if (ACCOUNT_KEY.test(k) && isAccount(x)) {
-      out ??= { ...v }; const to = map(pairedName(v, k) ?? x, x);
+      out ??= { ...v }; const to = map(x);
       if (to === undefined) delete out[k]; else out[k] = to; continue; }
+    // a map keyed by an account (a genesis role, a ban, as v1 could key them): the entry under its person's id, or dropped
+    if (isAccountName(k)) { out ??= { ...v }; delete out[k]; const to = map(k); if (to !== undefined && !Object.hasOwn(out, to)) out[to] = withoutAccounts(x, map); continue; }
     const y = withoutAccounts(x, map); if (y !== x) (out ??= { ...v })[k] = y;
   }
   return out ?? v;
 }
-/** The first account subject a log still carries, as {seq, path} (a property named as above holding an account-shaped
- *  string), or null: the writer's check before anything is written (world.ts translateV1World). */
+/** The first account subject a log still carries, as {seq, path}, or null: the writer's check before anything is written
+ *  (world.ts translateV1World). It reads what the scrub reads: a property named as above holding an account-shaped string;
+ *  a key that is one; an id naming a person that is one (an old grant's, ban's or unban's, or a spawn's or light's
+ *  placer's), and an imported ban's `by` that is one; and a component so named whose value is one (a change's op {comp, value}, an old comp request's {type,
+ *  data}). Elsewhere an `id`, like any key not named as above, holds data. */
 export function accountIn(entries) {
+  const named = (v) => [["comp", "value"], ["component", "value"], ["type", "data"]].find(([n, x]) => accountNamed(v[n]) && isAccount(v[x]));
+  // an id is an account where it names a person, as the scrub (noAcct) maps one; and an imported ban's `by` (project's unby)
+  const banBy = (v) => { const c = v.comp ?? v.component; return typeof c === "string" && c.startsWith("imported-bans:") && v.value && typeof v.value === "object" && isAccountName(v.value.by); };
+  const person = (v) => (banBy(v) ? "value.by" : !v.args || typeof v.args !== "object" ? null : PERSON_REQUESTS.has(v.verb) && isAccountName(v.args.id) ? "args.id"
+    : (v.verb === "spawn" || v.verb === "light") && v.args.placer && typeof v.args.placer === "object" && isAccountName(v.args.placer.id) ? "args.placer.id" : null);
   const find = (v, path) => {
     if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) { const f = find(v[i], `${path}[${i}]`); if (f) return f; } return null; }
     if (!v || typeof v !== "object") return null;
+    const n = named(v); if (n) return path ? `${path}.${n[1]}` : n[1];
+    const pn = person(v); if (pn) return path ? `${path}.${pn}` : pn;
     for (const [k, x] of Object.entries(v)) { const p = path ? `${path}.${k}` : k;
-      if (ACCOUNT_KEY.test(k) && isAccount(x)) return p; const f = find(x, p); if (f) return f; }
+      if ((ACCOUNT_KEY.test(k) && isAccount(x)) || isAccountName(k)) return p; const f = find(x, p); if (f) return f; }
     return null; };
   for (const [i, e] of entries.entries()) { const p = find(e, ""); if (p) return { seq: Number.isInteger(e?.seq) ? e.seq : i, path: p }; }
   return null;
 }
 /** a v1 actor name → the v4 actor, by grammar only (no directory): v1's "door" is v4's `system`, anything else enc() */
 export const actorOf = (a) => (a === "door" ? "system" : enc(a));
-const asSub = (k) => (typeof k === "string" && /^(human|agent):/.test(k) ? k : undefined);
+const asSub = (k) => (isAccountName(k) ? k : undefined);   // a role or ban keyed by its account (@19)
+const PERSON_REQUESTS = new Set(["grant", "ban", "unban"]);   // the old requests whose id names a person
 // @8 (2026-10-07, review H1 + R's ruling): bare names are the registry's, and the authority refuses an unregistered one. A
 // v1 world's own inventions (a `heart` comp nobody registered) come across under a namespace, `<namespace>/heart` (the
 // translated world's name; "imported" when the caller gives none), so the registry can promote the word later without
@@ -371,7 +404,8 @@ const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
   const out = {};
-  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? asSub(k), ...(lowered ? { lowered } : {}) }) : enc(k));
+  // a key the v1 fold lowercased (a ban's) isn't an account as written: who() restores its case first, then reads it
+  const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? (lowered ? undefined : asSub(k)), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
   for (const [id, e] of Object.entries(st.entities ?? {})) {
     const c = {};
@@ -382,6 +416,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
+      if (accountNamed(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
@@ -434,12 +469,19 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
       else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
   }
-  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unsub(v);   // the v1 fold lowercased a ban's key
+  // the v1 fold lowercased a ban's key. Its `by` is who banned, the act's actor as v1 kept it: a name stays as it was, and
+  // one that is itself an account is that person's id, as their acts' actor is (dropped without a mapper)
+  const unby = (v) => (!v || typeof v !== "object" || Array.isArray(v) || !isAccountName(v.by) ? v
+    : who ? { ...v, by: who(v.by, {}) } : (({ by: _b, ...rest }) => rest)(v));
+  for (const [k, v] of Object.entries(st.bans ?? {})) w[`imported-bans:${person(k, v, true)}`] = unby(unsub(v));
   // a binding's author is a person: their identity, not their name (R1), when a who() mapper is given
   // …and through the account the v1 server stamped on the binding (authorSub, @16), as the author's grant is found, so the
   // two are one identity on every server; the account itself is dropped with every other one below
-  for (const [k, v] of Object.entries(st.behaviors ?? {})) { const sub = typeof v?.authorSub === "string" && v.authorSub ? v.authorSub : undefined;
-    w[keyed("imported-behavior", k)] = who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, sub ? { sub } : {}) } : v; }
+  // …the account's own person (@19): v1's author is `by` where a request sent one, which a request could name anyone in, so
+  // the name is joined to the account only through the act itself, a behaviour's actor and its bySub (noAcct, below)
+  for (const [k, v] of Object.entries(st.behaviors ?? {})) { const sub = isAccount(v?.authorSub) ? v.authorSub : undefined;
+    w[keyed("imported-behavior", k)] = who && v && sub ? { ...v, author: who(sub, { sub }) }   // the stamp first: `by` can't make it the system's
+      : who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v; }
   const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
@@ -530,21 +572,48 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const t0 = Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {};
   push({ kind: "genesis", actor: "system", verb: "genesis", ...t0, body: translatedGenesis(oldEntries, { ...(key ? { key } : {}), ...(operator ? { operator } : {}), ...(nonce ? { nonce } : {}) }) });
   const physics = hasEpoch(oldEntries);
-  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
+  // @19: the name beside an account is joined to it only where v1's server wrote both (a grant's or ban's id and sub, a
+  // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
+  const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
+  // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
+  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
   if (approved) push({ kind: "act", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
-  // an old request as sent keeps its words, but never an account: its top-level sub, whatever its shape, as @12 had it (main's
-  // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
-  // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
-  // act never re-leaks what the values no longer hold
-  const mapAcct = who ? (name, sub) => who(name, { sub }) : undefined;
-  const noAcct = (a) => { let x = a;
-    if (x && typeof x === "object" && !Array.isArray(x) && "sub" in x) {
-      if (who && typeof x.sub === "string") x = { ...x, sub: who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }) };
-      else { const { sub: _s, ...rest } = x; x = rest; } }
+  // an old request as sent keeps its words, but never an account: a grant's or a ban's top-level sub, whatever its shape, as
+  // @12 had it (main's server wrote it, always an account); another request's top-level sub, and below the top level any
+  // sub or *Sub, when it is account-shaped (@16: a placer's, a binding's bySub). With a mapper it becomes the person's id
+  // (R1); without one it is dropped, so the imported act never re-leaks what the values no longer hold. A sub that isn't
+  // account-shaped, on any request but a grant or a ban, is ordinary data and stays
+  const noAcct = (e, a) => { let x = a;
+    if (x && typeof x === "object" && !Array.isArray(x)) {
+      // a top-level sub: a grant's or a ban's is the server's own stamp, beside the id it names, read as the person's account
+      // whatever its shape; any other request's is an account alone, joined to no name, or, not being one, ordinary data
+      // that stays (DROPPED)
+      const pair = (e.verb === "grant" || e.verb === "ban") && typeof x.sub === "string";
+      if ("sub" in x && (e.verb === "grant" || e.verb === "ban" || isAccount(x.sub))) {
+        // the pair is one person: an id that is itself an account names them too
+        if (who && pair) { const id = who(typeof x.id === "string" ? x.id : x.sub, { sub: x.sub }); x = { ...x, sub: id, ...(isAccountName(x.id) ? { id } : {}) }; }
+        else if (who && isAccount(x.sub)) x = { ...x, sub: who(x.sub, { sub: x.sub }) };
+        else { const { sub: _s, ...rest } = x; x = rest; } }
+      // a person named by their account (a grant, ban or unban keyed by it): their id, as a role or ban keyed by it is. v1
+      // matched a ban's and an unban's id in any case, so theirs is the account whatever its case in the log (world.ts)
+      if (PERSON_REQUESTS.has(e.verb) && isAccountName(x.id) && !(who && pair)) {
+        if (!who) { const { id: _i, ...rest } = x; x = rest; }
+        else x = { ...x, id: e.verb === "grant" ? who(x.id, { sub: x.id }) : who(x.id.toLowerCase(), { lowered: true }) }; }
+      // a placer is the person the server stamped, {id: their name, sub: their account}: both are that person's id, and a
+      // name that is itself an account is theirs too (dropped without a mapper)
+      const p = x.placer;
+      if ((e.verb === "spawn" || e.verb === "light") && p && typeof p === "object" && !Array.isArray(p)) {
+        if (who && isAccount(p.sub)) { const id = who(typeof p.id === "string" ? p.id : p.sub, { sub: p.sub }); x = { ...x, placer: { ...p, sub: id, ...(isAccountName(p.id) ? { id } : {}) } }; }
+        else if (isAccountName(p.id)) { const { id: _i, ...q } = p; x = { ...x, placer: who ? { ...q, id: who(p.id, {}) } : q }; } }
+      // a v1 comp's data is the component's value: under a name that has an account's, an account is one (@19)
+      if (e.verb === "comp" && accountNamed(x.type) && isAccount(x.data)) {
+        if (who) x = { ...x, data: who(x.data, { sub: x.data }) }; else { const { data: _d, ...rest } = x; x = rest; } }
+      if (who && e.verb === "behavior" && isAccount(x.bySub))
+        x = { ...x, bySub: who(typeof e.actor === "string" && !SYSTEM.has(e.actor) && !/^bhv:/i.test(e.actor) ? e.actor : x.bySub, { sub: x.bySub }) }; }
     return withoutAccounts(x, mapAcct); };
   const actorFor = (a) => (who && !SYSTEM.has(a ?? "door") ? who(String(a), {}) : actorOf(a ?? "door"));
   // ---- dialect 3 (@10): her sim beside the v1 fold. Inert until an epoch: simEntry ignores everything before one, and
@@ -592,7 +661,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     lifeNow.step(e);
     const actor = actorFor(e.actor); if (actor !== e.actor) stats.renamed++;
     const tl = push({ ...(e.verb === "say" ? { kind: "say", actor, verb: "say", body: unNegZero(((b) => (who && typeof b.to === "string" && !SYSTEM.has(b.to) ? { ...b, to: who(b.to, {}) } : b))(clone(e.args) ?? {})) }
-      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
+      : { kind: "act", actor, verb: "imported", body: unNegZero({ verb: e.verb, args: noAcct(e, clone(e.args) ?? null), from: e.seq ?? null }) }), ...(ts !== undefined ? { ts } : {}) });
     const b = sim.bodies[e.args?.id];
     if (e.verb === "punt" && b && b.seq === e.seq) { // her punt started (or kicked) a body: its rest will be caused by this act
       launchSeq[e.args.id] = tl;
