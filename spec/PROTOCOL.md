@@ -1296,8 +1296,11 @@ the thing's (or part's) own frame before scale; `motion.center` and
 
 `bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
 and the Python reader and fails on any difference in status, digest or
-diagnostics. If you disagree with a result, one of us has a bug, and the
-argument will be short.
+diagnostics. **The prose wins; the vectors are its tests**: where they
+disagree, the vector has the bug, and it is fixed to match the prose. A
+conforming reader must give each log's **status and digest**; the diagnostic
+codes in `expected.json` are informative (the two reference readers agree on
+them, and the suite holds them to it), not part of conformance.
 
 ## 12. The chain, signatures and purge
 

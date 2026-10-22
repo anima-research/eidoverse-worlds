@@ -18,7 +18,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/refusal-codes.json` | Every code the authority refuses with: what it means and when (and the words renamed before release). Machine-checked. |
 | `spec/readback.json` | Every place the authority reads an old act's body, and what an unknown (purged) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
-| `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Where the prose and a vector disagree, that is a bug in one of them. |
+| `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
 | `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json`: what each must come to rest as, per engine version. A server carries a version when it reproduces that version's digests. Machine-checked. |
 
 **Informative, never normative:** all code (including `shared/protocol/*`, the reference implementation, even where the
