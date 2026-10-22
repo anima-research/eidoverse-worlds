@@ -1857,6 +1857,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit input[type=checkbox]:checked, .edit-selbar input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
 .frame.edit input[type=checkbox]:focus-visible, .edit-selbar input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
 .frame.edit input[type=checkbox]:disabled { opacity: .45; cursor: not-allowed; }
+.frame.edit input[type=checkbox]:indeterminate, .edit-selbar input[type=checkbox]:indeterminate { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M6 12h12'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
 /* select: a field with a chevron */
 .frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
   background: var(--e-well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e96' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 6px center / 12px no-repeat; }
@@ -2523,6 +2524,9 @@ input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 15px; 
 input[type=checkbox]:checked { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
 input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+/* mixed (a multi-selection that differs, widgets.js sets .indeterminate): a dash, never read as unchecked */
+input[type=checkbox]:indeterminate { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
 input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-offset: 1px; }
 .rp-field textarea { width: 100%; box-sizing: border-box; }
 .rp-v3 { display: inline-flex; gap: 4px; } .rp-v3 input { width: 4.5em; }
