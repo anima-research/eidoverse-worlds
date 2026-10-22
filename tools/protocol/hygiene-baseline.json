@@ -168,7 +168,7 @@
   "bare-wait": 1
  },
  "tools/support-swap-test.ts": {
-  "bare-wait": 4
+  "bare-wait": 2
  },
  "tools/unknown-comp-test.ts": {
   "bare-wait": 2
