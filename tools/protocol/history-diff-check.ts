@@ -5,9 +5,10 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { scratch } from "./common.ts";
+import { labClock } from "./clock.ts";
 let pass = 0, fail = 0; const ok = (c, n, d) => { if (c) pass++; else { fail++; console.log("FAIL", n, JSON.stringify(d)); } };
-const root = scratch("histdiff"); let T = 1800000000000; const W = "h";
-const call = (a, v, args = {}) => { T += 1500; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, W), a, v, args); };
+const root = scratch("histdiff"); const clock = labClock(); const W = "h";
+const call = (a, v, args = {}) => { clock.advance(1500); return request(openWorld(root, W), a, v, args); };
 call("rowan", "create-world", { title: W });
 call("rowan", "create", { id: "sign", components: { label: "Sign", transform: { pos: [0, 1, 0] }, text: { text: "hi", size: 0.2, width: 5.076 } } });
 call("rowan", "set", { id: "sign", component: "text", value: { text: "hi", size: 0.2, width: 3.912 } });

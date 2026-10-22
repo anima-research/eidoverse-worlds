@@ -22,6 +22,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -169,17 +170,17 @@ function openWorld(name: string, o: any = {}) {
   return D.worldOf({ name, entries,
     getBlob: (h: string) => { const s = fs.readFileSync(blobPath(h), "utf8"); if (`sha256:${F.sha256(s)}` !== h) throw new Error("blob mismatch"); return JSON.parse(s); },
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
     kindOf: (id: string) => (id.startsWith("guest") ? "anon" : "human"),
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
-  return { name, call, w: W, advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); }, entries: () => W().entries, now: () => T };
+  return { name, call, w: W, advance: (ms: number) => { clock.advance(ms); }, entries: () => W().entries, now: () => clock.t };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 140)}`);

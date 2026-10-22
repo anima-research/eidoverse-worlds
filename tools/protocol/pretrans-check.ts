@@ -25,6 +25,7 @@ import { createRequire } from "node:module";
 import { ENGINE, scratch } from "./common.ts";
 import { CAPACITY } from "../../shared/protocol/authority.js";
 import { translatorVersion } from "./import-v1/translate-v1.js";
+import { pin, LAB_EPOCH } from "./clock.ts";
 const require = createRequire(import.meta.url);
 
 const argv = process.argv.slice(2);
@@ -175,7 +176,7 @@ await C("K4", "the founder proves the key is theirs before it's baked in: world.
   const good = run(sig), bad = run(Buffer.from(sig, "base64").map((x, i) => (i === 3 ? x ^ 1 : x)).toString("base64"));
   return [good.exitCode === 0 && bad.exitCode !== 0, [good.exitCode, good.stdout.toString().slice(0, 200), bad.exitCode]]; });
 await C("K5", "create-world takes the founder's own key for tier 0 (ownerKey); without one, tier 0 stays empty and the reply says so", async () => {
-  const { openWorld } = await imp("server/filehost.ts"); const root = scratch("k5"); process.env.PROTOCOL_NOW = String(1800000000000);
+  const { openWorld } = await imp("server/filehost.ts"); const root = scratch("k5"); pin(LAB_EPOCH);
   const w1 = openWorld(root, "a"), w2 = openWorld(root, "b"), w3 = openWorld(root, "c");
   const r1 = D.request(w1, "kay", "create-world", { title: "a", ownerKey: FOUNDER });
   const r2 = D.request(w2, "kay", "create-world", { title: "b" });

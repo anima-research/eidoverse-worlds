@@ -11,12 +11,10 @@ import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { SANDBOX } from "../shared/protocol/sandbox.js";
+import { now as hostNow } from "./clock.ts";
 
 /** scripts: the sandbox (default: QuickJS, shared/protocol/sandbox.js); null = an authority with none (activations say unavailable) */
 export type OpenOpts = { now?: () => number; scripts?: unknown; present?: () => { id: string; at: number[] | null }[] };
-
-/** The lab clock: PROTOCOL_NOW pins wall time so physics tests are repeatable. A real authority passes its own clock. */
-const envClock = () => (process.env.PROTOCOL_NOW ? Number(process.env.PROTOCOL_NOW) : Date.now());
 
 export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`);
@@ -36,7 +34,7 @@ export function openWorld(root: string, name: string, opts: OpenOpts = {}) {
   };
   return worldOf({
     name, entries, getBlob, putBlob,
-    now: opts.now ?? envClock,
+    now: opts.now ?? hostNow,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: fs.existsSync(presPath) ? JSON.parse(fs.readFileSync(presPath, "utf8")) : { bodies: {}, holds: {} },

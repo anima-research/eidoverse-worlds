@@ -29,6 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { pause } from "./wait.ts";
+import { labClock, unpinned } from "./clock.ts";
 
 let pass = 0, fail = 0;
 const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 600)}` : ""}`); } };
@@ -103,8 +104,8 @@ if (M) {
   // ---- A: agreement with the real authority, and with the client's body ----
   { const { request } = await import(ENGINE + "shared/protocol/authority.js");
     const { openWorld } = await import(ENGINE + "server/filehost.ts");
-    const root = scratch("mover"); let T = 1_700_000_000_000;
-    const call = (actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "walk"), actor, verb, args); };
+    const root = scratch("mover"); const clock = labClock(1_700_000_000_000);
+    const call = (actor, verb, args = {}, step = 100) => { clock.advance(step); return request(openWorld(root, "walk"), actor, verb, args); };
     call("olive", "create-world", { title: "walk" });
     // a 0.7 m ledge ahead (+z), a 0.9 m one to the side (+x), a wall behind (−z)
     ok(call("olive", "create", { id: "ledge7", components: { mesh: { shape: "box", size: [2, 0.7, 2] }, transform: { pos: [0, 0, 5] } } }).ok, "A0 a 0.7 m ledge");
@@ -162,14 +163,14 @@ if (M) {
     const { openLive } = await import(ENGINE + "server/livehost.ts");
     const root = scratch("mover-pace"), dir = path.join(root, "worlds", "pace"); fs.mkdirSync(dir, { recursive: true });
     const w = openLive(dir, "pace", { custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human", scripts: null });
-    const realNow = Date.now; const pinned = process.env.PROTOCOL_NOW; delete process.env.PROTOCOL_NOW;
+    const realNow = Date.now;
     const steps = []; let arrived = null;
-    try {
+    await unpinned(async () => { try {
       ok(request(w, "olive", "create-world", { title: "pace" }).ok, "A6 a live world");
       arrived = request(w, "ann", "move", { to: [0, 0, 0] });
       const back = 1500; Date.now = () => realNow() - back;   // the host's clock sync steps the wall back
       for (let i = 1; i <= 4; i++) { await pause("2 m every 0.4 s: a walk's pace", 400); const m = request(w, "ann", "move", { to: [0, 0, 2 * i] }); steps.push(m.ok ? "ok" : m.refused?.reason); }
-    } finally { Date.now = realNow; if (pinned !== undefined) process.env.PROTOCOL_NOW = pinned; }
+    } finally { Date.now = realNow; } });
     ok(arrived?.ok && steps.length === 4 && steps.every((s) => s === "ok"), "A6 a wall clock stepped back doesn't freeze the speed track: 2 m every 0.4 s is accepted throughout", { arrived: arrived?.refused, steps });
   }
 }
@@ -223,8 +224,8 @@ if (M) {
   const { terrainParams, makeHeightField } = await import(ENGINE + "shared/terrainmath.js");
   const { request } = await import(ENGINE + "shared/protocol/authority.js");
   const { openWorld } = await import(ENGINE + "server/filehost.ts");
-  const root = scratch("ground"); let T = 1_800_000_000_000;
-  const call = (world, actor, verb, args = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, world), actor, verb, args); };
+  const root = scratch("ground"); const clock = labClock();
+  const call = (world, actor, verb, args = {}, step = 100) => { clock.advance(step); return request(openWorld(root, world), actor, verb, args); };
   const r3 = (n) => Math.round(n * 1000) / 1000;
   // a world's ground: its terrain, and its water as the water component (shape audit 10-16: water split out of terrain; the
   // fixtures below still describe a ground as one bag, {…terrain, water}, as the readers' args carry it)

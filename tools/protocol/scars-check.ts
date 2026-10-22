@@ -22,6 +22,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -85,14 +86,14 @@ function openWorld(name: string) {
   return D.worldOf({ name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `s${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   return { name, call, w: W, reopen: () => { w = openWorld(name); return w; }, entries: () => W().entries };
 }
@@ -241,7 +242,7 @@ const cases: Case[] = [
       const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
       const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
       const actSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "set");
-      const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: actSeq }] } });
+      const w = s.w(); clock.advance(100); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: actSeq }] } });
       s.reopen(); s.call("olive", "look", {});
       const restamp1 = s.entries().filter((e: any) => e.verb === "restamp-engine").length;
       const w2 = s.reopen(); w2.entries[actSeq].body = { commit: "0".repeat(64) }; s.call("olive", "look", {});
@@ -256,7 +257,7 @@ const cases: Case[] = [
       const useSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "use");
       const w = s.reopen(); w.entries[useSeq].body = { commit: "0".repeat(64) };
       const stub = D.creatorOf(w, "lamp", "t/lit");
-      const w2 = s.reopen(); T += 100; process.env.PROTOCOL_NOW = String(T); w2.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
+      const w2 = s.reopen(); clock.advance(100); w2.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
       const idx = D.creatorOf(s.w(), "lamp", "t/lit");
       return { u: show(u), before, stub: stub ? stub.rights : "none", idx: idx ? idx.rights : "none" }; },
     good: (o) => o.u === "ok" && o.before === "bob" && o.stub === null && o.idx === null },
@@ -264,7 +265,7 @@ const cases: Case[] = [
       s.call("bob", "create", { id: "lamp", model: "crate", place: { at: [0, 0] } });
       s.call("bob", "set", { id: "lamp", component: "label", value: "one" });
       const u1 = s.call("bob", "undo", {}); const uSeq = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "undo");
-      const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: uSeq }] } });
+      const w = s.w(); clock.advance(100); w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: uSeq }] } });
       const mem = s.call("bob", "undo", {}); const after1 = s.w().state().entities.lamp?.c.label ?? null;
       const w2 = s.reopen(); w2.entries[uSeq].body = { commit: "0".repeat(64) };
       const stub = s.call("bob", "undo", {});

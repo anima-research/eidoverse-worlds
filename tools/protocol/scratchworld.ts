@@ -12,10 +12,11 @@ import { localOf } from "../../shared/hierarchy.js";
 import { qNorm, qFromYaw } from "../../shared/rot.js";
 
 import { recordComponents } from "../../shared/protocol/view.js";
+import { labClock } from "./clock.ts";
 // a fixture seeds the ids its test reads (seed(), and the suites' own creates), as a fork's copy keeps ids: the authority's
 // in-process fixture seam (R 10-17: a WRITER never chooses an id; ids-check holds runtime files to never calling it)
 fixtureIds(true);
-let T = 1800000000000;
+const clock = labClock();
 // the engine's catalogue is the library's GLB paths (server/modelcatalogue.ts); a scratch world names any path the tests
 // use: the lab's measured models where they exist, else a model the authority can name but not measure (no `size`)
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
@@ -30,7 +31,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
   // one world object for the scratch world's life (its state is kept incrementally); the authority's clock steps a second per
   // request so a long sweep stays inside the authority's rate budget (60 entries / 10 s per actor)
   let w = null;
-  const call = (verb, args = {}, actor = owner) => { T += 1000; process.env.PROTOCOL_NOW = String(T); w ??= open(root, name, catalogue); return request(w, actor, verb, args); };
+  const call = (verb, args = {}, actor = owner) => { clock.advance(1000); w ??= open(root, name, catalogue); return request(w, actor, verb, args); };
   const founded = call("create-world", { title });
   if (!founded.ok) throw new Error(`scratch world: new refused: ${JSON.stringify(founded.refused)}`);
   const W = {

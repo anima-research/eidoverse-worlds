@@ -21,6 +21,9 @@
 //   chrome-flags  a Chromium launched with its own flag list (a quoted headless or remote-debugging-port flag) instead of
 //                 chrome.ts chromeArgs: five launchers each had a different list, and an OS's flag lived in a workflow's env.
 //                 Checked over all of tools/, where the benches that launch browsers outside the gate live.
+//   lab-clock     the authority's clock env set or deleted by hand: 124 inline "advance then pin" copies in 34 files (10-22),
+//                 where a helper that forgot to advance (or two sharing one counter) could run time backwards silently. Use
+//                 tools/protocol/clock.ts (labClock().advance, pin, unpinned).
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
@@ -34,11 +37,12 @@ export const RULES: Record<string, RegExp> = {
   "raw-symlink": /\bsymlinkSync\s*\(/g,
   "colon-list": /[^\n]*(?:process\.env\.\w+|\broots\b|\bdirs\b)[^\n]*\.split\(\s*["']:["']\s*\)/g,
   "version-regex": /@\(\d\[\d-\d\]\|/g,
+  "lab-clock": /\bdelete\s+process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])|process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])\s*=(?!=)/g,
   "slash-path": /[^\n]*\\\/(?:tools|shared|server|client|mcpl|spec|worlds?)\\\/[^\n]*\.test\(\s*(?:p|f|file|abs|full|dir|d)\s*\)/g,
   "chrome-flags": /["'`]--(?:headless\b|remote-debugging-port\b)/g,
 };
 const SELF = "tools/protocol/hygiene-check.ts";   // its fixtures are the bad shapes on purpose
-const EXEMPT: Record<string, string[]> = { "chrome-flags": ["tools/protocol/chrome.ts"], "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"] };
+const EXEMPT: Record<string, string[]> = { "chrome-flags": ["tools/protocol/chrome.ts"], "raw-symlink": ["tools/protocol/common.ts"], "bare-wait": ["tools/protocol/wait.ts"], "own-until": ["tools/protocol/wait.ts"], "lab-clock": ["tools/protocol/clock.ts"] };
 const SUITE_ONLY = new Set(["bare-wait", "own-until"]);   // the waiting rules are about tests; server code may wait on purpose
 const ALL_TOOLS = new Set(["chrome-flags"]);
 
@@ -100,12 +104,13 @@ if (import.meta.main) {
     "raw-symlink": 'fs.symlinkSync(target, at);',
     "colon-list": "const roots = (process.env.PROTOCOL_WORLDS ?? \"\").split(\":\");",
     "version-regex": "ok(/@(1[4-9]|[2-9][0-9])$/.test(TRANSLATOR));",
+    "lab-clock": 'T += 100; process.env.PROTOCOL_NOW = String(T); process.env["PROTOCOL_NOW"] = "1"; delete process.env.PROTOCOL_NOW;',
     "slash-path": 'if (/\\/tools\\/[^/]+\\.(ts|mjs)$|\\/tools\\/protocol\\//.test(p)) walk(p);',
     // split: the whole flag in this file would make suites.ts read the hygiene suite as one that launches a browser
     "chrome-flags": 'Bun.spawn([CHROME, "--headless=new", `--remote-' + 'debugging-port=${port}`, url]);',
   };
-  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "version-regex": 1, "slash-path": 1, "chrome-flags": 2 };
-  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14); Bun.spawn([CHROME, ...chromeArgs({ port, profile }), url]); const n = rows.filter((r) => /chrom(e|ium).*--headless/.test(r)); // a --headless Chrome';
+  const want: Record<string, number> = { "bare-wait": 4, "own-until": 2, "url-path": 1, "shell-interp": 1, "raw-symlink": 1, "colon-list": 1, "version-regex": 1, "slash-path": 1, "chrome-flags": 2, "lab-clock": 3 };
+  const good = 'await until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14); Bun.spawn([CHROME, ...chromeArgs({ port, profile }), url]); const n = rows.filter((r) => /chrom(e|ium).*--headless/.test(r)); // a --headless Chrome clock.advance(100); pin(LAB_EPOCH); const t = pinned(); if (process.env.PROTOCOL_NOW === "1") unpinned(f);';
   let i = 1;
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
   // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop

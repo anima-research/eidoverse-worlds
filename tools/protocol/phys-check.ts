@@ -12,11 +12,12 @@ import { makeReplica, wireState } from "../../shared/protocol/replica.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT, yawQ, qrot, qmul, aabb, surfacesOf } from "../../shared/protocol/authority/math.js";
 import { supportBelow } from "../../shared/protocol/authority/spatial.js";
+import { labClock, pinEnv } from "./clock.ts";
 
 const root = scratch("phys");
-let T = 1800000000000, fails = 0, passes = 0;
+const clock = labClock(); let fails = 0, passes = 0;
 const fresh = (name) => { for (const f of [`${name}.jsonl`, `${name}.presence.json`]) fs.rmSync(`${root}worlds/${f}`, { force: true }); return name; };
-const at = (ms) => { T += ms; process.env.PROTOCOL_NOW = String(T); };
+const at = (ms) => { clock.advance(ms); };
 function call(world, actor, verb, args = {}, step = 100) { at(step); return request(openWorld(root, world), actor, verb, args); }
 function ok(cond, what, detail) { if (cond) passes++; else { fails++; console.log("FAIL", what, detail !== undefined ? JSON.stringify(detail).slice(0, 400) : ""); } }
 const log = (world) => openWorld(root, world).entries;
@@ -258,7 +259,7 @@ function playground(name) {
 
 // I — determinism of the whole pipeline: the same requests at the same times give the same log, byte for byte.
 {
-  const run = (name) => { T = 1800000000000; const W = playground(name);
+  const run = (name) => { clock.t = 1800000000000; const W = playground(name);
     call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [1.3, 2.7, 3.1] });
     call(W, "rowan", "move", { to: [1.6, 0, 0.5] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [-2, 3, 3] });
     call(W, "rowan", "wait", {}, 8000);
@@ -364,8 +365,8 @@ function playground(name) {
   const fv = simFold(forged, w.now());
   ok(fv.checks.disagree.some((d) => d.id === "ball"), "M a forged rest(A) after the catch is rejected by carriers", fv.checks);
   const read = () => { const r = Bun.spawnSync(["bun", "-e", `import fs from "node:fs"; import {simFold} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/simlayer.js").href)}; import {fold, readLog} from ${JSON.stringify(pathToFileURL(ENGINE + "shared/protocol/fold.js").href)};
-    const L = readLog(fs.readFileSync("worlds/${W}.jsonl")); const sf = simFold(L, ${T});
-    console.log(JSON.stringify({ blind: fold(L).entities.ball.c.transform.pos, sim: sf.sim.bodies.ball?.p ?? null, checks: sf.checks }));`], { cwd: root, env: { ...process.env, PROTOCOL_NOW: String(T) } });
+    const L = readLog(fs.readFileSync("worlds/${W}.jsonl")); const sf = simFold(L, ${clock.t});
+    console.log(JSON.stringify({ blind: fold(L).entities.ball.c.transform.pos, sim: sf.sim.bodies.ball?.p ?? null, checks: sf.checks }));`], { cwd: root, env: { ...process.env, ...pinEnv(clock.t) } });
     return r.stdout.toString().trim(); };
   const r1 = read(), r2 = read(); const j = JSON.parse(r1);
   ok(r1 === r2 && JSON.stringify(j.blind) === JSON.stringify(rs[0]?.at) && j.checks.agree === 1 && !j.checks.disagree.length, "M matched receipt: two processes read the same terminal transform, equal to the logged rest, which the carrier checked against the engine", { r1, r2 });

@@ -22,6 +22,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -97,16 +98,16 @@ function openWorld(name: string, presence: any = { bodies: {}, holds: {} }) {
   const w = D.worldOf({ name, entries,
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence, savePresence: () => {}, scripts: null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
   w.catalogue = D.LAB_CATALOGUE;
   return w;
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session() {
   const name = `r${++N}`; let w: any = null; const W = () => (w ??= openWorld(name));
-  const call = (actor: string, verb: string, args: any = {}) => { T += 1000; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}) => { clock.advance(1000);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   const reopen = (presence?: any) => { const p = presence ?? w?.presence; w = openWorld(name, p ?? { bodies: {}, holds: {} }); return w; };
   const append = (lines: any[]) => fs.appendFileSync(path.join(root, "worlds", `${name}.jsonl`), lines.map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -175,7 +176,7 @@ const cases: Case[] = [
         { world: wid, kind: "change", actor: "olive", cause: n, verb: "set", body: { id: "cup", comp: "grabbable", value: gv }, ts: ts + 1 },
         { world: wid, kind: "act", actor: "olive", verb: "set", body: { request: { id: kid, component: "station", value: sv } }, ts: ts + 2 },
         { world: wid, kind: "change", actor: "olive", cause: n + 2, verb: "set", body: { id: kid, comp: "station", value: sv }, ts: ts + 2 }]);
-      T += 1000; process.env.PROTOCOL_NOW = String(T);
+      clock.advance(1000);
       const w1 = s.reopen(); const out = D.maintain(w1); const w2 = s.reopen(); const E = w2.state().entities;
       const act = w2.entries.findLast((e: any) => e.kind === "act" && e.verb === "rename-components");
       return { g: E.cup?.c.grabbable ?? null, st: E[kid]?.c.station ?? null, failed: act?.body?.failed ?? null, renamed: act?.body?.renamed ?? null, out: JSON.stringify(out).slice(0, 300), status: w2.state().status, kid }; },

@@ -28,6 +28,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
+import { labClock, pinned } from "./clock.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -185,17 +186,17 @@ function openWorld(name: string, o: any = {}) {
   return D.worldOf({ name, entries,
     getBlob: (h: string) => { const s = fs.readFileSync(blobPath(h), "utf8"); if (`sha256:${F.sha256(s)}` !== h) throw new Error("blob mismatch"); return JSON.parse(s); },
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: o.presence ?? { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts ?? null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 const ZERO = "sha256:" + "0".repeat(64);
 function install(s: any, who: string, id: string, name: string, text: string, value: any) {
   const u = s.call(who, "upload", { text }); return s.call(who, "set", { id, component: `script:${name}`, value: { src: u.src ?? ZERO, ...value } }); }
 function session(o: any = {}) {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name, o));
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   // walk the authority's track there: steps of at most 3.5 m, a second apart (a first move is an arrival)
   const walk = (actor: string, to: number[]) => { for (let i = 0; i < 40; i++) { const at = W().presence.bodies[actor]?.at; if (!at) return call(actor, "move", { to });
@@ -203,7 +204,7 @@ function session(o: any = {}) {
     const r = call(actor, "move", { to: [at[0] + (to[0] - at[0]) * k, to[1], at[2] + (to[2] - at[2]) * k] }, 1000); if (!r.ok) return r; } };
   // a restart: the same log, a new door; presence as the host kept it (a copy: persisted, as server/filehost.ts; fresh: in memory, as livehost.ts)
   const reopen = (presence: any) => { w = openWorld(name, { ...o, presence: JSON.parse(JSON.stringify(presence ?? { bodies: {}, holds: {} })) }); return w; };
-  return { name, call, walk, reopen, w: W, advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); }, entries: () => W().entries };
+  return { name, call, walk, reopen, w: W, advance: (ms: number) => { clock.advance(ms); }, entries: () => W().entries };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
@@ -230,7 +231,7 @@ const stripLast = (s: any, id: string, comp: string) => {
     if (!o) continue; const c = ST.opCommit(o); delete o.value; delete o.salt; o.commit = c; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n")); return k; }
   return -1; };
 const since = (s: any, n0: number) => s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}`);
-const carrier = (s: any) => { const v = SL.simFold(s.entries(), T + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
+const carrier = (s: any) => { const v = SL.simFold(s.entries(), clock.t + 1e9); /* the authority here folds with the lab catalogue (worldOf: no simModels), so the carrier does too */ return { agree: v.checks.agree, disagree: v.checks.disagree.length }; };
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
 const cases: Case[] = [
@@ -512,7 +513,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "balloon", model: "ball", components: { grabbable: { who: "inhabitant", release: "stay" } }, place: { at: [0.3, 0] } });
       s.call("olive", "create", { id: "torch", model: "book", components: { grabbable: { who: "inhabitant", release: "return" } }, place: { at: [-0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); for (const id of ["ball", "balloon", "torch"]) s.call("vic", "grab", { id }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
-      const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen(s.w().presence); const n0 = s.entries().length; clock.advance(100);
       const r = D.settleOrphans?.(w2, []);
       return { r: r?.length, holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies.vic, after: since(s, n0), by: s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => e.actor),
         ball: tf(s, "ball").pos, balloon: tf(s, "balloon").pos, torch: tf(s, "torch").pos }; },
@@ -524,7 +525,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("ann", "move", { to: [-0.3, 0, 0.5] });
       s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("ann", "grab", { id: "kept" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const annHold = s.w().presence.holds.kept;
-      const w2 = s.reopen({ bodies: {}, holds: { kept: annHold } }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: { kept: annHold } }); const n0 = s.entries().length; clock.advance(100);
       D.settleOrphans?.(w2, ["ann"]); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.actor}:${e.verb}:${e.body?.id}:${L[e.cause]?.verb ?? "-"}`);
       const n1 = s.entries().length; D.settleOrphans?.(w2, ["ann"]);
       return { acts, again: s.entries().length - n1, kept: !!w2.presence.holds.kept, ball: tf(s, "ball").pos, carrier: carrier(s) }; },
@@ -543,7 +544,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "torch", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", release: "return" } }, place: { at: [0.3, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("vic", "grab", { id: "torch" }); s.call("vic", "move", { to: [0, 0, 2] }, 1000);
       const kb = stripLast(s, "ball", "transform"), kt = stripLast(s, "torch", "transform");
-      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       D.settleOrphans?.(w2, []); const L = s.entries(); const acts = L.slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { kb, kt, acts, ball: tf(s, "ball") === F.PURGED, torch: tf(s, "torch") === F.PURGED }; },
     good: (o) => o.kb > 0 && o.kt > 0 && !o.acts.length && o.ball && o.torch },
@@ -561,7 +562,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
       const off = s.call("olive", "set", { id: "tray", component: "disabled", value: true }); const ended = !s.w().presence.holds.cup;
       const on = s.call("olive", "set", { id: "tray", component: "disabled", value: false });
-      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
       D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), off: show(off), on: show(on), ended, lift, acts }; },
@@ -574,7 +575,7 @@ const cases: Case[] = [
       // one batch: the tray comes to hang from the shelf, and the shelf is switched off (read after the whole entry)
       const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }, { verb: "set", args: { id: "shelf", component: "disabled", value: true } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
-      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
       D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
@@ -586,7 +587,7 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
       const b = s.call("olive", "batch", { ops: [{ verb: "set", args: { id: "shelf", component: "disabled", value: true } }, { verb: "set", args: { id: "tray", component: "parent", value: { to: "shelf" } } }] });
       const ended = !s.w().presence.holds.cup; const on = s.call("olive", "set", { id: "shelf", component: "disabled", value: false });
-      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
       D.settleOrphans(w2, []); const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), b: show(b), on: show(on), ended, lift, acts }; },
@@ -595,12 +596,12 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "tray", model: "table", place: { at: [0, 1] } });
       s.call("olive", "create", { id: "cup", model: "book", components: { parent: { to: "tray" }, physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", release: "return" } }, place: { on: "tray" } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "cup" });
-      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w2 = s.reopen({ bodies: {}, holds: {} }); const n0 = s.entries().length; clock.advance(100);
       const lift = s.entries().some((e: any) => e.kind === "sim" && e.verb === "lift" && e.body?.id === "cup");
       D.settleOrphans(w2, []); const after = s.entries().slice(n0), acts = after.filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       // the settlement's change ends the lift on the record: it writes where the cup is, so a second load settles nothing
       const ends = after.some((e: any) => e.kind === "change" && (e.verb === "batch" ? e.body?.ops ?? [] : [e.body]).some((o: any) => o?.id === "cup" && (o.comp === "transform" || o.comp === "parent")));
-      const w3 = s.reopen({ bodies: {}, holds: {} }); const n1 = s.entries().length; T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w3 = s.reopen({ bodies: {}, holds: {} }); const n1 = s.entries().length; clock.advance(100);
       D.settleOrphans(w3, []); const again = s.entries().slice(n1).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), lift, acts, ends, again }; },
     good: (o) => o.g === "ok" && o.lift && o.acts.includes("return-home:cup") && o.ends && !o.again.length },
@@ -812,7 +813,7 @@ const cases: Case[] = [
   { id: "F2", what: "an orphaned hold of a holder banned since is still settled at load (the hold ends; in a physics world the lift is settled too)", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "ban", { who: "vic" });
-      const w2 = s.reopen(s.w().presence); T += 100; process.env.PROTOCOL_NOW = String(T); D.settleOrphans?.(w2, []);
+      const w2 = s.reopen(s.w().presence); clock.advance(100); D.settleOrphans?.(w2, []);
       const acts = s.entries().filter((e: any) => e.kind === "act" && e.actor === "system").map((e: any) => e.verb);
       return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
@@ -823,7 +824,7 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" });
       const pres = JSON.parse(JSON.stringify(s.w().presence)); pres.holds.ball.by = "Vic Old!"; pres.bodies["Vic Old!"] = pres.bodies.vic; delete pres.bodies.vic;
-      const w2 = s.reopen(pres); T += 100; process.env.PROTOCOL_NOW = String(T); const out = D.settleOrphans?.(w2, []);
+      const w2 = s.reopen(pres); clock.advance(100); const out = D.settleOrphans?.(w2, []);
       return { holds: Object.keys(w2.presence.holds), body: !!w2.presence.bodies["Vic Old!"], left: out?.find((x: any) => x.holder === "Vic Old!")?.left, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && !o.body && o.left === false && !o.carrier.disagree },
   { id: "F3", what: "use.up from whoever pressed down is taken after the thing left their hand (taken by someone else): the hose turns off", run(s) { cast(s);

@@ -31,7 +31,8 @@
  * later, a frame too, and that a late sample brings the browser's estimate,
  * and the lite client's, down by the leak for the time between the two
  * samples' handling, the `at` each is given (the browser's raw estimate,
- * before serverclock.js slews what the screen shows toward it). Where a check
+ * before serverclock.js slews what the screen shows toward it), the lite
+ * client's being the same clock. Where a check
  * finer than a millisecond reads a clock, it reads it with performance.now()
  * held still or brackets each read with reads just before and after, so a
  * stalled process can't fail it. It checks that remote bodies are drawn on the
@@ -529,21 +530,12 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     check("samples 300 ms late: the body is drawn between two of them, not stuck at the newest", xs < 30 - 0.5 && xs > 20, `x = ${xs} (30 is the newest sample)`);
   }
 
-  // The lite client keeps its estimate by the same rule (participants_lite.js).
+  // The lite client keeps no clock of its own: net.js hands participants_lite's noteServerTime the one-way samples and reads
+  // serverclock.js's serverNow for round trips, so two estimates there would part (audit 10-22 #10).
   const lite: any = await import("../client/lib/participants_lite.js");
-  lite.noteServerTime(machine() - 120_000 + 5_000, performance.now() - 120_000);
-  const liteAhead = lite.serverNow() - machine();
-  check("the lite client's estimate takes a sample at the time its message's handler ran", Math.abs(liteAhead - 5_000) < MARGIN, `serverNow - machine = ${liteAhead} ms`);
-  lite.noteServerTime(machine() + AHEAD);   // handled as its event runs: no arrival time
-  const liteLive = lite.serverNow() - machine();
-  check("…and a sample with no arrival time is taken now", Math.abs(liteLive - AHEAD) < MARGIN, `serverNow - machine = ${liteLive} ms, want ${AHEAD}`);
-  const liteKeptAt = performance.now(), liteLateAt = liteKeptAt + 20_000;
-  lite.noteServerTime(performance.timeOrigin + liteKeptAt + liteLive, liteKeptAt);
-  const liteBefore = estimateAt(lite.serverNow);
-  lite.noteServerTime(performance.timeOrigin + liteLateAt + liteLive - 200_000, liteLateAt);
-  const liteDown = liteBefore - estimateAt(lite.serverNow);
-  check("…and a sample taken 200 s late, handled 20 s after the previous one, brings it down by the leak for those 20 s",
-    Math.abs(liteDown - LATE_LEAK) < 0.01, `down ${liteDown} ms, the leak ${LATE_LEAK} ms`);
+  const sc: any = await import("../client/lib/serverclock.js");
+  check("the lite client's server clock is serverclock.js's (noteServerTime, serverNow), not a copy that can drift",
+    lite.noteServerTime === sc.noteServerTime && lite.serverNow === sc.serverNow);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

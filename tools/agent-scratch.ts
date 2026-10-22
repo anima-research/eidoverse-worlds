@@ -9,7 +9,7 @@
 //   await act("sky", { hours: 12 }, { at: T0 + 20 * 60e3 });            // …at a chosen door time
 //
 // The door is the real one (shared/protocol/authority.js request over server/filehost.ts openWorld, the tools/protocol/authority-check.ts
-// pattern), its clock pinned through PROTOCOL_NOW: each request is stamped at `at`, or one second after the last. `who` is
+// pattern), its clock pinned through the lab clock (tools/protocol/clock.ts): each request is stamped at `at`, or one second after the last. `who` is
 // the display name the agent's percepts attribute the change to (the door's actor in a scratch world is its founder).
 // @ts-nocheck
 import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -22,15 +22,16 @@ import { qNorm, qFromYaw } from "../shared/rot.js";
 import { makeReplica, wireState } from "../shared/protocol/replica.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
+import { labClock } from "./protocol/clock.ts";
 // any model path the tests name: the lab's measured models where they exist, else one the door can name, unmeasured
 const ANY_MODEL = Object.freeze({ get: (n) => LAB_CATALOGUE.get(n) ?? (typeof n === "string" && n ? { label: n, surfaces: [] } : undefined), list: (q) => LAB_CATALOGUE.list(q) });
 let worldN = 0;
 
 export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start = 1_800_000_000_000 } = {}) {
   const root = scratch(tag); const name = `w${++worldN}`;
-  let T = start, w = null;
+  const clock = labClock(start); let w = null;
   const call = (verb, args = {}, at = null) => {
-    T = at ?? T + 1000; process.env.PROTOCOL_NOW = String(T);
+    clock.set(at ?? clock.t + 1000);
     w ??= Object.assign(openWorld(root, name), { catalogue: ANY_MODEL });
     return request(w, owner, verb, args);
   };
@@ -47,12 +48,12 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
     const E = w.entries;
     if (!joined) { A.replica.adopt({ state: wireState(w.state()), head: E.length - 1 }); head = E.length - 1; }
     else { const r = A.replica.ingest(JSON.parse(JSON.stringify(E.slice(head + 1))), head + 1); head = E.length - 1; if (r.sky) A.skyStamp = r.sky; if (r.resync) A.replica.adopt({ state: wireState(w.state()), head }); }
-    await A.applyView(joined ? live : false, who, ts ?? T);
+    await A.applyView(joined ? live : false, who, ts ?? clock.t);
     joined = true;
   };
   return {
     call, sync,
-    now: () => T,
+    now: () => clock.t,
     state: () => w.state(),
     view: () => viewState(w.state()),
     /** create things from view-form records ({lib?, pos, yaw|q, scale, comp}) as the world the agent joins into */
@@ -68,7 +69,7 @@ export function agentOnDoor(agent: any, tag = "agent", { owner = "olive", start 
     /** one door request (at `at`, door time), then the agent's next view of it (live unless {live: false}) */
     act: async (verb: string, args: any, { who = "someone", at = null as number | null, live = true } = {}) => {
       const r = call(verb, args, at);
-      await sync(live, who, T);
+      await sync(live, who, clock.t);
       return r;
     },
   };

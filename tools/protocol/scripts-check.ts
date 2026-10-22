@@ -20,6 +20,7 @@ import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.t
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { idAliases } from "./idalias.ts";
 import { tryUntil, pause } from "./wait.ts";
+import { labClock, pinned } from "./clock.ts";
 const IDS = idAliases();   // the real-server rows: the suite's names ride as placeholders and minted ids (R 10-17)
 
 const argv = process.argv.slice(2);
@@ -189,16 +190,16 @@ function openWorld(name: string, o: any = {}) {
   return D.worldOf({ name, entries,
     getBlob: (h: string) => { const s = fs.readFileSync(blobPath(h), "utf8"); if (`sha256:${F.sha256(s)}` !== h) throw new Error("blob mismatch"); return JSON.parse(s); },
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
+    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts === undefined ? SB?.SANDBOX ?? null : o.scripts, present: o.present, nameOf: o.nameOf, kindOf: o.kindOf,
     custody: custodyAt(o.custodyFile ?? path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
-let T = 1800000000000, N = 0;
+const clock = labClock(); let N = 0;
 function session(o: any = {}) {
   const name = `w${++N}`; let w: any = null; const W = () => (w ??= openWorld(name, o));
-  const call = (actor: string, verb: string, args: any = {}, step = 100) => { T += step; process.env.PROTOCOL_NOW = String(T);
+  const call = (actor: string, verb: string, args: any = {}, step = 100) => { clock.advance(step);
     try { return D.request(W(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
-  return { name, call, w: W, advance: (ms: number) => { T += ms; process.env.PROTOCOL_NOW = String(T); }, tick: () => (D.tick ? D.tick(W()) : null),
+  return { name, call, w: W, advance: (ms: number) => { clock.advance(ms); }, tick: () => (D.tick ? D.tick(W()) : null),
     logPath: path.join(root, "worlds", `${name}.jsonl`), entries: () => W().entries };
 }
 const ok = (r: any) => r?.ok === true, code = (r: any) => r?.refused?.code;
@@ -322,7 +323,7 @@ const cases: Case[] = [
       const BEAT = (c: string) => `world.on("tick", () => world.set("self", "${c}", { n: (world.get("self", "${c}")?.n ?? 0) + 1 }));\n`;
       install(s, "olive", "heart", "beat", BEAT("t/beat"), { scope: { ids: "self", comps: ["t/beat"] }, every: 30, always: true });
       install(s, "olive", "heart", "beat2", BEAT("t/beat2"), { scope: { ids: "self", comps: ["t/beat2"] }, every: 30, always: true });
-      const t0 = T; const why = new Set();
+      const t0 = clock.t; const why = new Set();
       for (let i = 0; i < 2 * 120; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget") why.add(/world's scripts/.test(r.why) ? "world" : /sponsors here/.test(r.why) ? "sponsor" : "script"); }
       const hours = [0, 0]; for (const e of s.entries()) if (isScriptActor(e.actor) && e.ts > t0) hours[Math.min(1, Math.floor((e.ts - t0) / 3600000))]++;
       return { hours, why: [...why].sort() }; },
@@ -361,9 +362,9 @@ const cases: Case[] = [
       const inst = install(s, "olive", "door", "hi", HI, { scope: { ids: "self", comps: ["t/n"] }, on: ["enter"] });
       const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
       const n0 = other.entries.length; let threw: string | null = null; let out: any = null;
-      T += 100; process.env.PROTOCOL_NOW = String(T); try { out = D.presenceEvent(other, "enter", "vic"); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); }
+      clock.advance(100); try { out = D.presenceEvent(other, "enter", "vic"); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); }
       // the control: the server that holds the key runs it
-      T += 100; process.env.PROTOCOL_NOW = String(T); const own = D.presenceEvent(s.w(), "enter", "vic").filter((x: any) => x.script === "script:hi").map((x: any) => x.status);
+      clock.advance(100); const own = D.presenceEvent(s.w(), "enter", "vic").filter((x: any) => x.script === "script:hi").map((x: any) => x.status);
       return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out: out?.length ?? null, own }; },
     good: (o) => o.installed && !o.threw && o.appended === 0 && o.out === 0 && o.own.length === 1 },
   { id: "B6e", what: "…with no owner value, a ceiling lowered below the server's default is the plain budget, and the refusal names no owner's value", run(s) { cast(s);
@@ -668,13 +669,13 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "olive", "clock", "beat", BEAT, { scope: { ids: "self", comps: ["t/n"] }, every: 5, always: true, on: ["enter"] });
       // a value stored in an old spelling no reader serves (a grabbable's pose: grab.js reads anim), as an old log holds it
       s.call("olive", "create", { id: "cup", model: "crate", place: { at: [2, 0] } });
-      const w = s.w(); T += 100; process.env.PROTOCOL_NOW = String(T);
+      const w = s.w(); clock.advance(100);
       const a = w.append({ kind: "act", actor: "olive", verb: "set", body: { request: { id: "cup", component: "grabbable" } } });
       w.append({ kind: "change", actor: "olive", cause: a, verb: "set", body: { id: "cup", comp: "grabbable", value: { pose: "pistol" } } }, STOR.CHANGE);
       const blocking = D.maintenanceNeeds(w).blocking;
       const req = s.call("olive", "set", { id: "clock", component: "label", value: "x" }), n0 = s.entries().length;   // (its refusal is on the record)
       const ticks: string[] = []; for (let i = 0; i < 3; i++) { s.advance(5000); for (const x of s.tick() ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
-      T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
+      clock.advance(100); const enter = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
       const written = s.entries().slice(n0).map((e: any) => `${e.kind}:${e.verb}:${e.actor}`), n = comp(s, "clock", "t/n") ?? null;
       D.maintain(s.w(), { by: "olive" }); const after: string[] = [];   // once the command has run, the timer writes again
       for (let i = 0; i < 2; i++) { s.advance(5000); for (const x of s.tick() ?? []) after.push(x.status); }
@@ -690,10 +691,10 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       // strip the label's value to a commit, with no purge: as a copy of the log changed by hand would hold it
       const lines = fs.readFileSync(s.logPath, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"label"') && l.includes('"kind":"change"'));
       const e = JSON.parse(lines[k]); const { value: _v, salt: _s, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(s.logPath, lines.join("\n"));
-      const w = openWorld(s.name); const req = (() => { T += 100; process.env.PROTOCOL_NOW = String(T); return D.request(w, "olive", "set", { id: "clock", component: "label", value: "x" }); })();
+      const w = openWorld(s.name); const req = (() => { clock.advance(100); return D.request(w, "olive", "set", { id: "clock", component: "label", value: "x" }); })();
       const n0 = w.entries.length, ticks: string[] = [];
-      for (let i = 0; i < 3; i++) { T += 5000; process.env.PROTOCOL_NOW = String(T); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
-      T += 100; process.env.PROTOCOL_NOW = String(T); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
+      for (let i = 0; i < 3; i++) { clock.advance(5000); for (const x of D.tick(w) ?? []) ticks.push(`${x.status}${x.code ? ` ${x.code}` : ""}`); }
+      clock.advance(100); const enter = D.presenceEvent(w, "enter", "vic").map((x: any) => `${x.status}${x.code ? ` ${x.code}` : ""}`);
       return { req: ok(req) ? "ok" : code(req), ticks, enter, written: w.entries.slice(n0).map((x: any) => `${x.kind}:${x.verb}:${x.actor}`) }; },
     good: (o) => o.req === "ok" && o.ticks.length >= 2 && !o.ticks.some((t: string) => /record-altered/.test(t)) && !o.enter.some((t: string) => /record-altered/.test(t)) && o.written.length > 0 },
   { id: "B27", what: "knobs' 4 KiB is counted in UTF-8 bytes: 3 000 two-byte characters (about 6 000 bytes) are refused too-big where 3 000 ASCII fit", run(s) { cast(s);
@@ -918,8 +919,8 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       if (!D.presenceEvent) return { absent: true };
       s.call("bob", "create", { id: "door1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "door1", "greet", `world.on("enter", (e) => world.set("self", "t/last", "hello " + e.by));\nworld.on("leave", (e) => world.set("self", "t/last", "bye " + e.by));\n`, { scope: { ids: "self", comps: ["t/last"] }, on: ["enter", "leave"] });
-      T += 100; process.env.PROTOCOL_NOW = String(T); const a = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => x.status); const after1 = comp(s, "door1", "t/last");
-      T += 100; process.env.PROTOCOL_NOW = String(T); D.presenceEvent(s.w(), "leave", "vic"); const after2 = comp(s, "door1", "t/last");
+      clock.advance(100); const a = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => x.status); const after1 = comp(s, "door1", "t/last");
+      clock.advance(100); D.presenceEvent(s.w(), "leave", "vic"); const after2 = comp(s, "door1", "t/last");
       return { a, after1, after2 }; },
     good: (o) => JSON.stringify(o.a) === '["ran"]' && o.after1 === "hello vic" && o.after2 === "bye vic" },
   { id: "E3", what: "changed:<comp>: a lever's door opening lights the path (a cascade across scripts, one activation per triggering entry)", run(s) { cast(s);
@@ -1110,7 +1111,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   world.say((world.knobs.greeting ?? "welcome") + ", " + (world.name(e.by) ?? e.by) + " — you are visitor #" + met);
 });
 `, { scope: { ids: "self", comps: ["t/greeter"], say: true }, on: ["enter"], knobs: { greeting: "welcome to the meadow" } });
-      T += 100; process.env.PROTOCOL_NOW = String(T); D.presenceEvent(s.w(), "enter", "vic");
+      clock.advance(100); D.presenceEvent(s.w(), "enter", "vic");
       // lighthouse: world.every(60) → every: 60 in the component; people() → world.count()
       s.call("bob", "create", { id: "lamp1", model: "floor-lamp", place: { at: [-3, 0] } });
       install(s, "bob", "lamp1", "keeper", `world.on("tick", () => {

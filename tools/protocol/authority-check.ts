@@ -35,6 +35,7 @@ import { emptyState as v1Empty, foldEntry as v1fold } from "./import-v1/fold.js"
 import { worldPose } from "../../shared/hierarchy.js";
 import { viewState } from "../../shared/protocol/view.js";
 import { worldPose as worldT } from "../../shared/protocol/simlayer.js";
+import { labClock } from "./clock.ts";
 
 const root = scratch("door");
 // lab worlds name people by bare test names; the directory a real server has would know them (roles:<key> checks it)
@@ -42,7 +43,8 @@ const LABKIND = (_id: string) => "human";
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) pass++; else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 400)}` : ""}`); } };
 const code = (r: any) => r?.refused?.code;
-let T = 1800000000000;
+const clock = labClock();
+const callAt = (world: string) => (actor, verb, args = {}) => { clock.advance(100); return request(openWorld(root, world), actor, verb, args); };
 
 // a translation written into this server's worlds carries THIS door's keys: the authority refuses to sign for a world whose
 // genesis names another sequencer (round-2 R5); filehost.ts keeps custody at <root>/keys/custody.json
@@ -82,7 +84,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // everything that doesn't relocate it stays open (sit, use, motion, other comps); any builder may unlock. The protocol adds:
 // it binds what's attached to it too; throughLock: true lets whoever may remove it act through it.
 { const name = "locks";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   const W = () => openWorld(root, name);
   call("olive", "create-world", { title: "locks" });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -210,7 +212,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(code(u11) === "barred" && u11.refused?.fix === 'use {id: "hatch9", action: "say \\"in\\" \\\\ go"} unlocks it; then "open" opens it. ' + TAIL,
       "P37j an action name with a double quote and a backslash is quoted as JSON in the fix", { u11: code(u11) ?? u11.ok, fix: u11.refused?.fix }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
-    const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
+    const hc = callAt("held");
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     hc("olive", "create", { id: "tbl", model: "table", place: { at: [0, 1] } });
     hc("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "builder" } }, place: { on: "tbl" } });
@@ -224,7 +226,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(code(hc("bob", "put", { id: "cup" })) === "locked", "P44 …and its OWN lock, set while held, still binds it (attack H1h3)"); }
   { // lock levels (R, 10-07): lock {rank} — only that rank and above may change or remove it, or act through it; whoever set
     // it may always lift it. A plain `true` is a builder-level lock (what every existing lock already meant).
-    const lc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "levels"), actor, verb, args); };
+    const lc = callAt("levels");
     const LW = () => openWorld(root, "levels").state();
     lc("olive", "create-world", { title: "levels" });
     for (const [who, role] of [["mo", "moderator"], ["bob", "builder"], ["ben", "builder"], ["vic", "inhabitant"]]) lc("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
@@ -258,7 +260,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   }
   { // the trusted rung (R 10-12 10:09; docs/COMPONENT-LADDER.md): @world.trusted-components {components: [drafts]} is the owner's word,
     // gated like the rest of @world (never a permission); the list is namespaced draft names only, ≤ 64, distinct
-    const tc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "trust"), actor, verb, args); };
+    const tc = callAt("trust");
     const TW = () => openWorld(root, "trust").state();
     tc("olive", "create-world", { title: "trust" }); tc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     tc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "moderator", can: { editWorld: true } } });
@@ -290,7 +292,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(JSON.stringify(f.sign.lock) === '{"rank":"builder"}' && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
     ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
     fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
-    const tc = (actor, verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, verb, args); };
+    const tc = (actor, verb, args) => { clock.advance(100); return request(openWorld(root, "tr-locks"), actor, verb, args); };
     ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §5)"); }
 }
 
@@ -299,7 +301,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // or an agent, so it says the name as the person spells it, and carries the id as a field for whoever needs to match it.
 { const name = "names";
   const R = enc("Marigold");
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call(R, "create-world", { title: "names" });
   call(R, "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   call(R, "create", { id: "statue", model: "crate", place: { at: [0, 2] } });
@@ -349,7 +351,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const r = translate(old, DOORKEYS()); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   maintain(openWorld(root, "tr-mounts"));   // lead 10-18: the load writes nothing; the command lifts the pre-cut spelling before anyone writes
   const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
-  const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
+  const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-mounts"), "ann", verb, args); };
   ok(!r.stats.divergences && r.final.translated.box.parent?.to !== undefined && !("order" in r.final.translated.box.parent) && !("offset" in r.final.translated.box.parent), "M1 a translated mount is door-shaped: parent {to} (no order since the shape audit, 10-16), no offset copy (L2)", r.final.translated.box.parent);
   ok(JSON.stringify(r.final.translated.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.translated.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.translated.bell.parent.socket === "perch",
     "M2 its transform is local: the offset, or (no offset) its socket's pos, and the socket is kept (v1's slot)", [r.final.translated.box.transform, r.final.translated.bell.transform, r.final.translated.bell.parent]);
@@ -365,7 +367,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(chk.filter((x) => x.kind === "floating" && ["box", "bell", "jar"].includes(x.id)).length === 0, "M6 …nor calls a riding thing floating", chk); }
 
 // ---- L: live world vs whole-log re-read ----
-{ const dir = root + "live/"; T += 1000; let now = T;
+{ const dir = root + "live/"; clock.t += 1000; let now = clock.t;
   const w = openLive(dir, "live", { kindOf: LABKIND, now: () => now, simModels: MODELS });
   const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
   const same = (what) => {
@@ -394,7 +396,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(held === st.entities["table-1"] && !("label" in held.c), "L a state a caller holds never changes under it (copy on write)"); same("after a label"); }
 
 // ---- U: the act index (research 37, slice 3 #5): undo and wait without scanning the log ----
-{ const dir = root + "undo/"; let now = T + 3000;
+{ const dir = root + "undo/"; let now = clock.t + 3000;
   const w = openLive(dir, "undo", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   const flat = (x) => JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => !["entries", "bad", "pt"].includes(k)).map(([k, v]) => [k, v instanceof Map ? [...v].sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : v instanceof Set ? [...v].sort() : v])));
@@ -441,7 +443,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   { const X = actIndexOf(w); ok(X.purged.has(b1.act) && X.purgedOps.size === 2, "U9 the index knows both purges (an act body and a set value)", [[...X.purged], [...X.purgedOps]]); } }
 
 // ---- E: expect (§3a: a gesture settles as one act with expect on its starting values), duplicate, redo ----
-{ const dir = root + "expect/"; let now = T + 6000;
+{ const dir = root + "expect/"; let now = clock.t + 6000;
   const w = openLive(dir, "expect", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   const n = () => w.entries.length;
@@ -507,7 +509,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const restart = diffView(thing(t0), thing(t0 + 500)), grass = diffView({ entities: {} }, { entities: {}, grass: {} });
   ok(restart.things.some((x) => x.id === "s1" && x.comp === "sound") && grass.world.includes("grass"), "VD1 a sound restamped 500 ms later is a change, and grass going from absent to {} (the default lawn) is one", { restart, grass }); }
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
-  let now = T + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
+  let now = clock.t + 12000; const w = openLive(root + "client/", "client", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   const c = makeReplica();
@@ -545,7 +547,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(digest(sv) === digest(w.state()) && sv.entities["gap-1"]?.c.label === PURGED, "K6 wireState survives the wire both ways, a purged value still purged (not a value)", sv.entities["gap-1"]?.c); }
 
 // ---- E: a handler whose author a purge erased acts for nobody (house 6340433633 Q2) ----
-{ let now = T + 7000; const w = openLive(root + "erased/", "erased", { kindOf: LABKIND, now: () => now });
+{ let now = clock.t + 7000; const w = openLive(root + "erased/", "erased", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "erased" });   // a new world: newcomers build
   call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
@@ -561,7 +563,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
       "lib/cup.glb": { label: "cup", box: [[-0.05, 0, -0.05], [0.05, 0.1, 0.05]], size: [0.1, 0.1, 0.1], surfaces: [] }, "lib/ghost.glb": { label: "ghost", surfaces: [] } } as any)[n], list: () => [] };
-  let now = T + 5000; const w = openLive(root + "cat/", "cat", { kindOf: LABKIND, now: () => now, catalogue: cat });
+  let now = clock.t + 5000; const w = openLive(root + "cat/", "cat", { kindOf: LABKIND, now: () => now, catalogue: cat });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "cat" });
   ok(call("ann", "create", { id: "desk", model: "lib/desk.glb", place: { at: [0, 0] } }).ok, "C1 an off-centre model is placed");
@@ -582,7 +584,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
       "lib/chair.glb": { label: "chair", box: [[-0.25, 0, -0.25], [0.25, 0.9, 0.25]], size: [0.5, 0.9, 0.5], surfaces: [] },
       "lib/gate.glb": { label: "frame", box: [[4, 0, -0.1], [6, 2.2, 0.1]], size: [2, 2.2, 0.2], solids: [[[4, 0, -0.1], [4.1, 2.2, 0.1]], [[5.9, 0, -0.1], [6, 2.2, 0.1]], [[4, 2.1, -0.1], [6, 2.2, 0.1]]], surfaces: [] },
       "lib/seat.glb": { label: "seat", box: [[-0.3, 0, -0.15], [0.3, 0.05, 0.15]], size: [0.6, 0.05, 0.3], surfaces: [] } } as any)[n], list: () => [] };
-  let now2 = T + 9000; const w2 = openLive(root + "cat2/", "cat2", { kindOf: LABKIND, now: () => now2, catalogue: cat2 });
+  let now2 = clock.t + 9000; const w2 = openLive(root + "cat2/", "cat2", { kindOf: LABKIND, now: () => now2, catalogue: cat2 });
   const c2 = (actor, verb, args = {}) => { now2 += 100; return request(w2, actor, verb, args); };
   c2("ann", "create-world", { title: "cat2" });
   c2("ann", "create", { id: "far", model: "lib/far.glb", place: { at: [0, 0] } });
@@ -602,7 +604,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- SKY (review of #260): a merge that sets the sky's hours or rate restarts its clock at the merge ----
 { const { ratedHoursAt } = await import("../../shared/forecast.js");
-  let now = T + 9000; const w = openLive(root + "skymerge/", "skymerge", { kindOf: LABKIND, now: () => now });
+  let now = clock.t + 9000; const w = openLive(root + "skymerge/", "skymerge", { kindOf: LABKIND, now: () => now });
   request(w, "ann", "create-world", { title: "skymerge" });
   const sky = () => w.state().entities["@world"].c.sky; const at = () => Math.round(ratedHoursAt(sky(), now) * 1000) / 1000;
   const s0 = request(w, "ann", "set", { id: "@world", component: "sky", value: { hours: 6, rate: 24 } });
@@ -616,7 +618,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- V: what changed, said in the protocol's terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/protocol/viewdiff.js");
-  let now = T + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
+  let now = clock.t + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());
   const step = (actor, verb, args) => { now += 100; const r = request(w, actor, verb, args); const next = viewState(w.state()); const d = diffView(held, next); held = next; return { r, d,
     has: (id, what, comp) => d.things.some((c) => c.id === id && c.what === what && (comp === undefined || c.comp === comp)) }; };
@@ -662,7 +664,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     "S3e …nor, on the world, its active sky or the view's own entities; one nothing holds still shows", { sky: ws.sky, entities: ws.entities, fog: ws.fog });
   // house 6340433633 (lead's decision): a request that sets or deletes the world's own sky, terrain, grass or water deletes
   // the translation's imported:<it> in the same change, so a deleted sky leaves the slot empty (it showed the leftovers)
-  { const iw = (actor: string, verb: string, args: any = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imp-sky"), actor, verb, args); };
+  { const iw = callAt("imp-sky");
     const wc = () => openWorld(root, "imp-sky").state().entities["@world"].c; const vs = () => viewState(fold(openWorld(root, "imp-sky").entries));
     iw("ann", "create-world", { title: "imp-sky" });
     iw("ann", "set", { id: "@world", component: "imported:sky", value: { stars: 3 } }); iw("ann", "set", { id: "@world", component: "imported:water", value: { foam: 1 } });
@@ -679,7 +681,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // the planner's ops: a set's value / a delete of the component
   const val = (r) => r.ops[0]?.verb === "set" ? r.ops[0].args.value : r.ops[0]?.verb === "delete" ? null : undefined;
   const { componentsOf, entityOf } = await import("../../shared/components.js");
-  const pw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "pivots"), actor, verb, args); };
+  const pw = callAt("pivots");
   pw("ann", "create-world", { title: "pivots" });
   pw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the authority takes a pivot {pos: [x,y,z]}");
@@ -718,7 +720,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
-{ const tw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "turns"), actor, verb, args); };
+{ const tw = callAt("turns");
   const qm = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
   const aa = (x, y, z, deg) => { const h = deg * Math.PI / 360; return [x * Math.sin(h), y * Math.sin(h), z * Math.sin(h), Math.cos(h)]; };
   const same = (a, b) => Math.abs(Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]) - 1) < 1e-6;
@@ -742,7 +744,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(tw("ann", "turn", { id: "plank", axis: "sideways", deg: 10 })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, space: "screen" })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, about: "pivot" })) === "shape", "TN6 a bad axis, space, or about-pivot without one is refused, naming the fix"); }
 
 // ---- UR: undo after a redo, and an undo that says what it undid (agent lab round 2, Hazel #1) ----
-{ const uw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "undoredo"), actor, verb, args); };
+{ const uw = callAt("undoredo");
   const px = () => openWorld(root, "undoredo").state().entities.box?.c.transform.pos[0];
   uw("ann", "create-world", { title: "undoredo" });
   uw("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -759,7 +761,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(again.refused?.code === "nothing" && /already undone \(by undo \d+, then redo \d+, then undo \d+\)/.test(again.refused.reason), "UR5 undo {act} of something already undone names the chain", again.refused); }
 
 // ---- HG: a hung thing swings from the underside of what's above it, and everyone reads the same hinge (Rowan) ----
-{ const hw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "hinge"), actor, verb, args); };
+{ const hw = callAt("hinge");
   const { evalWholeMotion, qApply } = await import("../../client/lib/motioneval.js");
   hw("ann", "create-world", { title: "hinge" });
   hw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
@@ -782,15 +784,15 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind is reserved since the shape audit (10-16): what remains is
 // the refusal, and the v1 mapping a translated world carries ----
-{ const sw = (actor, verb, args = {}) => { process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "swingpush"), actor, verb, args); };
+{ const sw = callAt("swingpush");
   const { pendulumTheta } = await import("../../client/lib/motioneval.js");
-  T += 100; sw("ann", "create-world", { title: "swingpush" });
-  T += 100; sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  T += 100; sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
+  sw("ann", "create-world", { title: "swingpush" });
+  sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
   // shape audit 10-16: `impulse` is a reserved handler kind (a general name with a pendulum-only meaning; it returns with its
   // general one when an engine carries impulses). A new one is refused; the push rows that wrote one (SW1-SW4) are retired
   // with it. A stored one (a translated v1 swing) is carried as it was and its use path is unchanged code.
-  T += 100; const p0 = sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
+  const p0 = sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
   ok(p0.refused?.code === "reserved", "SW1 an impulse handler is refused as a reserved kind, even on a swing (shape audit 10-16)", p0.refused);
   void pendulumTheta;
   const tx = (await import("./import-v1/translate-v1.js")).translate(
@@ -800,7 +802,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- DU: disk practice (platforms review 10-06 #5): a torn last line is cut at open, not kept as a malformed entry
 // forever; a blob whose bytes don't match its name is rewritten, not skipped forever ----
-{ const du = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "durable"), actor, verb, args); };
+{ const du = callAt("durable");
   du("ann", "create-world", { title: "durable" });
   du("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   const lp = root + "worlds/durable.jsonl"; const n0 = openWorld(root, "durable").entries.length;
@@ -820,7 +822,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 { const { warningText } = await import("../../shared/protocol/refusal.js");
   ok(warningText({ id: "box", kind: "out-of-bounds", bounds: { min: [-20, 0, -20], max: [20, 12, 20] } }) === "box is outside the world's bounds (x -20…20, y 0…12, z -20…20 m)", "WT1 out-of-bounds says which bounds");
   ok(warningText({ id: "cup", kind: "overlap", with: "x--4d617269676f6c64", by: 0.1 }) === "cup overlaps Marigold by 0.1 m", "WT2 an overlap reads as a sentence, names decoded");
-  const ww = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "warnwords"), actor, verb, args); };
+  const ww = callAt("warnwords");
   ww("ann", "create-world", { title: "warnwords" });
   const far = ww("ann", "create", { id: "far", model: "crate", components: { transform: { pos: [500, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   ok((far.warnings ?? []).some((w) => w.kind === "out-of-bounds" && w.bounds?.max), "WT3 the authority's out-of-bounds warning carries the bounds", far.warnings);
@@ -833,11 +835,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 
 // ---- HS: where a value came from, and one thing's history (R 10-04: recent by default, deeper on request) ----
 { const { enc } = await import("../../shared/protocol/names.js");
-  const hw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "histw"), actor, verb, args); };
+  const hw = callAt("histw");
   hw("ann", "create-world", { title: "histw" });
   hw("ann", "set", { id: "@world", component: "roles:" + enc("Rowan"), value: { role: "builder" } });
   hw("ann", "create", { id: "box", model: "crate", components: { label: "box", transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  const tSet = T + 100; hw(enc("Rowan"), "set", { id: "box", component: "transform", value: { pos: [2, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const tSet = clock.t + 100; hw(enc("Rowan"), "set", { id: "box", component: "transform", value: { pos: [2, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
   const ins = hw("ann", "inspect", { id: "box" });
   ok(ins.touched?.transform?.by === enc("Rowan") && ins.touched.transform.ts === tSet, "HS1 inspect says who last changed the transform, and when", ins.touched);
   ok(ins.touched?.transform?.who === "Rowan", "HS1b …by a name a person reads (who), beside the id (by)", ins.touched?.transform);
@@ -848,7 +850,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const all = []; let page = p1; all.push(...page.entries); while (page.next !== undefined) { page = hw("ann", "history", { id: "box", limit: 3, before: page.next }); all.push(...page.entries); }
   ok(all.length === 8 && all.at(-1).changed.includes("(created)") && all.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS4 …paging back reaches its creation, every act once", all.map((x) => [x.seq, x.changed.join()]));
   const { TOUCH_HORIZON } = await import("../../shared/protocol/authority.js");
-  let landed = 0; for (let k = 0; k < TOUCH_HORIZON + 2; k++) { T += 5000; if (hw("ann", "set", { id: "box", component: "label", value: `n${k}` }).ok) landed++; }   // spaced past the rate limit
+  let landed = 0; for (let k = 0; k < TOUCH_HORIZON + 2; k++) { clock.t += 5000; if (hw("ann", "set", { id: "box", component: "label", value: `n${k}` }).ok) landed++; }   // spaced past the rate limit
   ok(landed === TOUCH_HORIZON + 2, "HS5a (setup) every edit past the horizon landed", landed);
   const deep = hw("ann", "inspect", { id: "box" });
   ok(deep.touched?.transform?.beyond > 0 && deep.touched.transform.by === undefined && deep.touched.label?.by === "ann", "HS5 past the horizon it says 'unchanged since before #N' (beyond), never pretends it found nothing", deep.touched);
@@ -856,7 +858,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(far.some((x) => x.by === enc("Rowan") && x.changed.includes("transform")), "HS6 …and the deep search (history paging) still finds the transform change behind the horizon", far.length); }
 
 // ---- H7 (review F3, 2026-10-05): an id is never reused by a NEW thing, but undo brings back the same thing ----
-{ let now = T + 40000; const w = openLive(root + "h7/", "h7", { kindOf: LABKIND, now: () => now });
+{ let now = clock.t + 40000; const w = openLive(root + "h7/", "h7", { kindOf: LABKIND, now: () => now });
   const call = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
   call("ann", "create-world", { title: "h7" }); call("ann", "create", { id: "desk", model: "table", place: { at: [0, 3] } });
   call("ann", "create", { id: "mug", model: "crate", place: { on: "desk" } });
@@ -870,7 +872,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("bob", "create", { id: "mug", model: "crate", place: { at: [6, 3] } }).refused?.code === "reused", "H7d …and after a second delete a stranger's create of a child's id is still refused"); }
 
 // LT: the light every engine shares — a spot's cone (half-angles, rad), and bounds the authority holds for any component
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const L = (a) => request(openWorld(root, "lights"), "ann", "set", { id: "lamp", component: "light", value: a });
+{ clock.advance(100); const L = (a) => request(openWorld(root, "lights"), "ann", "set", { id: "lamp", component: "light", value: a });
   request(openWorld(root, "lights"), "ann", "create-world", { title: "lights" });
   request(openWorld(root, "lights"), "ann", "create", { id: "lamp", components: { label: "lamp" } });   // a light is its own thing (one place per thing, 10-11)
   ok(L({ kind: "spot", angle: 0.5, inner: 0.3, range: 8, intensity: 20 }).ok, "LT1 a spot light with its cone (glTF/Godot half-angles) is taken");
@@ -879,7 +881,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(L({ kind: "spot", angle: 2 }).refused?.code === "bounds", "LT2 a cone wider than a hemisphere (half-angle > π/2) is refused");
   ok(L({ kind: "point", color: 0x1000000 }).refused?.code === "bounds", "LT2 a color past 0xffffff is refused"); }
 // SK: sockets — a named attachment point; with body, a person attaches by using it (chair, swing, saddle, car seat)
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "sockets"), actor, verb, args);
+{ clock.advance(100); const R = (actor, verb, args) => request(openWorld(root, "sockets"), actor, verb, args);
   R("ann", "create-world", { title: "sockets" });
   R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "chair1", model: "chair" });
@@ -942,7 +944,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the station does there", att); }
 const w0 = () => openWorld(root, "tier0");
 // T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (verb, args) => request(openWorld(root, "tier0"), "ann", verb, args);
+{ clock.advance(100); const R = (verb, args) => request(openWorld(root, "tier0"), "ann", verb, args);
   R("create-world", { title: "tier0" }); R("create", { id: "hearth", model: "crate" });
   const S = (id, comp, value) => R("set", { id, component: comp, value }).refused?.code;
   ok(S("@world", "terrain", { kind: "noise", segments: 100000 }) === "bounds", "T0a terrain segments past 512 (10^10 vertices on every client) is refused");
@@ -978,7 +980,7 @@ const w0 = () => openWorld(root, "tier0");
   const q = w0().state().entities.hearth?.c.transform?.q;
   ok(nq.ok && Math.abs(Math.hypot(...q) - 1) < 1e-9, "T0e a non-unit quaternion is stored normalized (the authority and the renderer then agree)", q); }
 // T1 (component review, tier 1): components say what they are, where they go, and nothing the renderer reads is refused
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (verb, args) => request(openWorld(root, "tier1"), "ann", verb, args);
+{ clock.advance(100); const R = (verb, args) => request(openWorld(root, "tier1"), "ann", verb, args);
   R("create-world", { title: "tier1" }); R("create", { id: "chair", model: "crate" });
   const S = (id, comp, value) => R("set", { id, component: comp, value });
   for (const [comp, value] of [["about", { name: "x" }], ["spawn", { pos: [0, 0, 0], radius: 2 }], ["roles:u-aaaaaaaaaaaaaaaaaaaa", { role: "builder" }], ["blueprints:foo", { name: "f" }], ["sky", { hours: 7 }]])
@@ -990,7 +992,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { effect: "dust", params: { area: [2, 0.5, 2] } }).ok && S("chair", "particles", { effect: "dust", params: { area: [2, 99, 2] } }).refused?.code === "bounds", "T1e particles' area param [x,y,z] is taken, and bounded per axis");
   ok(S("chair", "particles", { effect: "fire", params: { texture: "../../etc/x.png" } }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 // CP (Commons parity audit (old world → new), 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
-{ const R = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "cp"), actor, verb, args); };
+{ const R = callAt("cp");
   R("ann", "create-world", { title: "cp" }); R("ann", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });   // vic plays, can't build (R 10-21: newcomers build in a new world)
   R("ann", "create", { id: "rock", model: "crate" });
   const u0 = R("ann", "use", { id: "rock" });
@@ -1028,7 +1030,7 @@ const w0 = () => openWorld(root, "tier0");
     const hv = request(openWorld(root, "cp-tr"), "ann", "history", { verbs: ["comp"] });
     ok(hv.ok && hv.entries.length === 1 && hv.entries[0].verb === "imported" && hv.entries[0].body?.verb === "comp" && hv.entries[0].body?.args?.type === "label", "CP7 a translated v1 entry is found by its v1 verb, its args intact", hv); }
   // the spoken trio rides a say (validated, t0 clamped to the utterance window); anything malformed is a plain say
-  const now = T + 100;
+  const now = clock.t + 100;
   const s1 = R("ann", "say", { text: "spoken one", spoken: true, utt: 3, t0: now - 1000 });
   const s2 = R("ann", "say", { text: "late t0", spoken: true, utt: 4, t0: now - 10_000_000 });
   const s3 = R("ann", "say", { text: "bad utt", spoken: true, utt: -1, t0: now });
@@ -1044,7 +1046,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(got?.spoken === true && got.utt === 3 && got.t0 === now - 1000, "CP8 …and a client's fold hands it on with the chat line", got); }
 // ---- CA: captions (one line of what a screen said). The rights live on the SCREEN (captioners {ids}); the tool writes
 // the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
-{ const cw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "captions"), actor, verb, args); };
+{ const cw = callAt("captions");
   cw("ann", "create-world", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   cw("ann", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });   // vic plays (R 10-21: a new world's newcomers build)
   cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
@@ -1071,7 +1073,7 @@ const w0 = () => openWorld(root, "tier0");
 
 // ---- IM: an imported world's records are carried, never written by hand (review 10-07 M1: a request could plant a guard,
 // imported-bans:<id>, imported-behavior:<name> or imported:* and wake readers that no longer mean anything) ----
-{ const iw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "imported"), actor, verb, args); };
+{ const iw = callAt("imported");
   iw("ann", "create-world", { title: "imported" }); iw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   iw("ann", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
   const tries = [["box", "imported:kind", "light"], ["@world", "imported-behavior:x", { src: "store/scripts/x.js" }], ["@world", "imported-bans:u-aaaaaaaaaaaaaaaaaaaa", { reason: "x" }], ["@world", "imported:epoch", { sim: "eidosim@1.0.0" }]];
@@ -1087,7 +1089,7 @@ const w0 = () => openWorld(root, "tier0");
 // BZ: bounds must enclose a volume. World Settings › Places once saved {min:[0,0,0],max:[0,0,0]} on a world with none
 // (every translated world): accepted, it refused every agent move and sent every landing throw back as "lost" (audit 10-09 A).
 { const name = "bounds-zero";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: "bounds" });
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [0, 0, 0], max: [0, 0, 0] } })) === "shape", "BZ1 a zero-size bounds box is refused");
 ok(code(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-5, 0, -5], max: [5, 0, 5] } })) === "shape", "BZ2 a box flat on one axis (min = max) is refused");
@@ -1095,8 +1097,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 
 // ---- MS: mesh (R 10-12, primitives): a registered parametric body on a model-less thing. One place per thing with a model
 // and a light; it has a size to place and stack on; its physics shape is stamped from the component and re-stamped on resize
-{ const name = "mesh"; T += 1000;
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+{ const name = "mesh"; clock.t += 1000;
+  const call = callAt(name);
   const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c;
   call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   { const r = call("bob", "create", { id: "mb", components: { mesh: { shape: "box" }, transform: { pos: [0, 0, 0] } } });
@@ -1128,8 +1130,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 }
 // ---- MS (no engine): a resized host sets its resting occupants down from above its new top (r2 S1.1: a grown host buried them);
 // a host that loses its body frees them (r2 S2.3); a socketed child is never an occupant (r2 S2.2); a no-op write re-drops nothing (r2 S2.1)
-{ const name = "mesh-noeng"; T += 1000;
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+{ const name = "mesh-noeng"; clock.t += 1000;
+  const call = callAt(name);
   const W = () => openWorld(root, name); const E = (id) => W().state().entities[id]?.c; const wy = (id) => call("bob", "measure", { id }).bounds?.min?.[1];
   call("rowan", "create-world", { title: name }); call("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   call("bob", "create", { id: "plinth", components: { mesh: { shape: "box", size: [1.5, 0.8, 1.5] }, sockets: { perch: { pos: [0.5, 0.8, 0.5] } }, transform: { pos: [0, 0, 0] } } });
@@ -1149,7 +1151,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 }
 
 // SKE: a socket is a child entity {transform, parent: {to: host}, socket: {name, …}} (PLAN-sockets-entities 2026-10-12 §1)
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketents"), actor, verb, args);
+{ clock.advance(100); const R = (actor, verb, args) => request(openWorld(root, "socketents"), actor, verb, args);
   const E = (id) => openWorld(root, "socketents").state().entities[id]?.c;
   R("ann", "create-world", { title: "socketents" });
   R("ann", "create", { id: "bench", model: "crate" });
@@ -1184,7 +1186,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 }
 
 // SKE8-10: the verbs read socket children (socketsOf): use, look, inspect; and a socket is never a thing a hand takes
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const R = (actor, verb, args) => request(openWorld(root, "socketuse"), actor, verb, args);
+{ clock.advance(100); const R = (actor, verb, args) => request(openWorld(root, "socketuse"), actor, verb, args);
   R("ann", "create-world", { title: "socketuse" }); R("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
   R("ann", "create", { id: "sofa", model: "crate" });
   R("ann", "create", { id: "sofa-l", components: { parent: { to: "sofa" }, transform: { pos: [-0.4, 0.5, 0] }, socket: { name: "left", body: { action: "sit", anchor: "hips" } } } });
@@ -1226,7 +1228,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
   r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "inhabitant", home } }] }, ts: last[0].ts }, ...last);
   fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const tc = (verb, args) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
+  const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
   const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
   const home0 = homeAt(openWorld(root, "tr-lift").state(), home);
   const S = () => openWorld(root, "tr-lift").state();
@@ -1251,8 +1253,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // SR1 (review 10-12 S1-1): a socket child is part of its host. Creating one, re-parenting one, or setting its socket or
 // transform is an edit of the host's seats: the host's rights (a builder without editOthers can't seat ann's car) and the
 // locks over the host's chain, in either spelling (the legacy map lifts to creates, and those are judged the same).
-{ T += 100; process.env.PROTOCOL_NOW = String(T); const W = () => openWorld(root, "seatrights");
-  const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+{ clock.advance(100); const W = () => openWorld(root, "seatrights");
+  const R = (actor, verb, args) => { clock.advance(2000); return request(W(), actor, verb, args); };
   const E = (id) => W().state().entities[id]?.c;
   R("ann", "create-world", { title: "seatrights" });
   R("ann", "set", { id: "@world", component: "role-defs", value: { builder: { can: { editOthers: false } }, crew: { name: "Crew", rank: 150, can: { build: true, editOthers: true } } } });
@@ -1305,7 +1307,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 // identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
 // review of #260: the byte limits count the UTF-8 bytes the log stores, not JavaScript's UTF-16 string length, so a value
 // whose characters take two bytes each meets the same cap as ASCII
-{ const W = () => openWorld(root, "utf8cap"); const R = (actor, verb, args) => { T += 20000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+{ const W = () => openWorld(root, "utf8cap"); const R = (actor, verb, args) => { clock.advance(20000); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
   R("ann", "create-world", { title: "utf8cap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
   R("ann", "create", { id: "u1", model: "crate" });
   const big = R("ann", "set", { id: "u1", component: "t/note", value: "é".repeat(40000) });   // 40 000 characters, 80 000 bytes: over the 64 KiB value cap
@@ -1317,18 +1319,18 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(big) === "too-big" && /80\d{3} bytes/.test(big.refused?.reason ?? "") && ascii.ok && code(guest) === "rate" && gAscii.ok,
     "UB1 a value's 64 KiB and a guest's 32 KiB a window are counted in UTF-8 bytes: two-byte characters reach them at half the length ASCII does", { big: big.refused ?? big.ok, ascii: ascii.ok ?? ascii.refused, guest: guest.refused ?? guest.ok, gAscii: gAscii.ok ?? gAscii.refused }); }
 // review of #260: the index audit expects a switched-off thing to be out of the index, as buildIx leaves it
-{ const R = (actor, verb, args) => { T += 1000; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "ixoff"), actor, verb, args); };
+{ const R = (actor, verb, args) => { clock.advance(1000); return request(openWorld(root, "ixoff"), actor, verb, args); };
   R("ann", "create-world", { title: "ixoff" }); R("ann", "create", { id: "box1", model: "crate" }); const off = R("ann", "set", { id: "box1", component: "disabled", value: true });
   const audit = AUTH.indexAudit(openWorld(root, "ixoff"));
   ok(off.ok && Array.isArray(audit) && audit.length === 0, "IX1 a switched-off thing isn't an index defect", audit); }
 // review of #260: following the full refusal's fix raises the one limit and keeps the others
-{ const W = () => openWorld(root, "capfix"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+{ const W = () => openWorld(root, "capfix"); const R = (actor, verb, args) => { clock.advance(2000); return request(W(), actor, verb, args); };
   R("ann", "create-world", { title: "capfix" }); R("ann", "set", { id: "@world", component: "capacity", value: { entities: 2, guestEntities: 7 } });
   R("ann", "create", { id: "c1", model: "crate" }); R("ann", "create", { id: "c2", model: "crate" }); const full = R("ann", "create", { id: "c3", model: "crate" });
   const m = /set (\{.*\})/.exec(full.refused?.fix ?? ""); const args = m ? Function(`return (${m[1].replace("<n>", "5")})`)() : null;
   const raised = args ? R("ann", "set", args) : null; const cap = W().state().entities["@world"].c.capacity;
   ok(full.refused?.code === "full" && raised?.ok && cap?.entities === 5 && cap?.guestEntities === 7, "SR0 the full refusal's fix, followed as written, raises entities and keeps guestEntities", { fix: full.refused?.fix, raised: raised?.ok ?? raised?.refused, cap }); }
-{ const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+{ const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { clock.advance(2000); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
   const nSock = () => Object.values(W().state().entities).filter((e) => e.c.socket).length;
   const nEnt = () => Object.keys(W().state().entities).length - 1;
   R("ann", "create-world", { title: "sockcap" }); R("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
@@ -1351,7 +1353,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // …and a restart doesn't empty the pool: a guest's id lives only in the process that minted it (the directory never writes
   // one), so after a restart the earlier guests are ids nobody knows, and what they made still counts
   { const Wr = () => openWorld(root, "guestrestart"); let gone = new Set<string>();
-    const Rr = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = Wr(); w.kindOf = (id) => (gone.has(id) ? null : id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+    const Rr = (actor, verb, args) => { clock.advance(2000); const w = Wr(); w.kindOf = (id) => (gone.has(id) ? null : id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
     Rr("ann", "create-world", { title: "guestrestart" }); Rr("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
     Rr("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 3 } });
     const before = ["g1", "g2", "g3"].map((g, i) => Rr(g, "create", { id: `gr-${i}`, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
@@ -1362,7 +1364,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // review of #260: the guests' pool is read as the world's own cap is, on the net change: a write that deletes as many of
   // the guests' things as it makes is never refused, and one that grows the pool past its limit is, saying by how much
   { const Wn = () => openWorld(root, "guestnet");
-    const Rn = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); const w = Wn(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
+    const Rn = (actor, verb, args) => { clock.advance(2000); const w = Wn(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
     Rn("ann", "create-world", { title: "guestnet" }); Rn("ann", "set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } });
     Rn("ann", "set", { id: "@world", component: "capacity", value: { guestEntities: 2 } });
     const made = ["gn-0", "gn-1"].map((id, i) => Rn("g1", "create", { id, model: "crate", components: { transform: { pos: [i * 2, 0, 0] } } }));
@@ -1426,7 +1428,7 @@ const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - 
   const moved = { pos: [b0.transform.pos[0], b0.transform.pos[1] + 0.2, b0.transform.pos[2]], q: b0.transform.q, scale: b0.transform.scale };
   precut("sru1", [], [["ann", [{ id: "bell", comp: "transform", value: moved }]]]);
   const before = worldT(fold(readLog(fs.readFileSync(root + "worlds/sru1.jsonl")).slice(0, -2)), "bell");
-  maintain(W()); T += 100; process.env.PROTOCOL_NOW = String(T); const u = request(W(), "ann", "undo", {});
+  maintain(W()); clock.advance(100); const u = request(W(), "ann", "undo", {});
   const st = W().state(); const after = worldT(st, "bell"); const on = st.entities[st.entities.bell.c.parent?.to]?.c.socket?.name;
   ok(u.ok && !(u.skipped?.length) && nearly(after.pos, before.pos) && nearly(after.q, before.q) && on === "perch", "SRU1 undo of a pre-cut move of cargo on a socket puts the bell back exactly (within 1e-8), still on the perch", { u: u.refused ?? u.skipped, before: before.pos, after: after.pos, on }); }
 
@@ -1435,7 +1437,7 @@ const nearly = (a, b, e = 1e-8) => !!a && !!b && a.every((v, i) => Math.abs(v - 
 for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "delete"]]) {
   const W = () => openWorld(root, name);
   precut(name, [{ seq: 6, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 }, seat: { pos: [0, 0.5, 0], sit: true } } } }]);
-  maintain(W()); const R = (actor, verb, args) => { T += 2000; process.env.PROTOCOL_NOW = String(T); return request(W(), actor, verb, args); };
+  maintain(W()); const R = (actor, verb, args) => { clock.advance(2000); return request(W(), actor, verb, args); };
   const kidOf = (n) => { const st = W().state(); return Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === "tbl" && st.entities[k].c.socket?.name === n); };
   const perch = kidOf("perch"), seat = kidOf("seat");
   const b = work === "hook" ? R("bob", "create", { id: "bobhook", components: { parent: { to: "tbl" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } })
@@ -1461,7 +1463,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
     { verb: "set", id: "a-chair", comp: "sockets", value: seat({ who: "crew" }) }, { verb: "set", id: "b-chair", comp: "sockets", value: seat() }, { verb: "delete", id: "@world", comp: "role-defs" }]);
   let threw = null, out = null; try { out = maintain(openWorld(root, "srw1")).steps.lift; } catch (x) { threw = String(x?.message ?? x).slice(0, 200); }
   const st = openWorld(root, "srw1").state(); const kids = (h) => Object.values(st.entities).filter((e) => e.c.parent?.to === h && e.c.socket).length;
-  T += 100; process.env.PROTOCOL_NOW = String(T); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
+  clock.advance(100); const sit = request(openWorld(root, "srw1"), "ann", "use", { id: "b-chair", action: "sit" });
   ok(!threw && kids("a-chair") === 1 && kids("b-chair") === 1 && !st.entities["a-chair"].c.sockets && !st.entities["b-chair"].c.sockets && sit.ok, "SRW1 a seat whose who names a role since deleted lifts anyway (the lift is a carry), and so does the healthy host after it", { threw, out, a: kids("a-chair"), b: kids("b-chair"), sit: sit.refused });
   // a host the lift can't WRITE (here: the first append for it throws, as a full disk would) is not a refused host: the line's
   // disk state is unknown, so the throw PROPAGATES out of maintain (review r14 H1, 10-18; the caller reports ambiguous) and
@@ -1500,7 +1502,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // component). The name is refused like any unregistered bare name, keyed or bare, for everyone; an owner's rollback of a
 // person takes back all of their work (no own-word skip remains).
 { const name = "trainconsent";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   const c = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
   call("olive", "create-world", { title: "consent" });
   call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
@@ -1519,7 +1521,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // ---- BT: a batch checks every child request against its verb's arguments before building anything (review of PR #260,
 // verbs.js:127; Antra's repro): a delete with a misspelt `componnent` was ok:true and deleted the whole entity, children too
 { const name = "batchtypo";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   const ents = () => openWorld(root, name).state().entities;
   call("olive", "create-world", { title: "batch typo" });
   call("olive", "create", { id: "lamp", model: "crate", components: { description: "a lamp" } });
@@ -1555,8 +1557,8 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 
 // ---- RA (review of #260): a log changed outside the purge rule refuses writes, but not the operator's or a read ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
-  const opr = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return operatorRepair(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
+  const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };
   call("olive", "create-world", { title: "altered" }); call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
   // strip the roles: value to a commit, with no purge: as a copy of the log changed by hand would hold it
@@ -1573,7 +1575,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // ---- RA2 (review of #260): a state view that already folded the log meets a new line holding a value stripped to its
 // commit: it reads the whole log again, as the fold reads such a line, rather than throwing out of the state getter ----
 { const name = "altered-live";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: name }); call("olive", "create", { id: "sign", model: "crate", components: { label: "hello" } });
   const w = openWorld(root, name); w.state();   // folded once: the next new plain lines are applied incrementally
   const L = w.entries, last = L[L.length - 1], at = L.length;
@@ -1588,8 +1590,8 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
 { const name = "oprepair";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
-  const opr = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return operatorRepair(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
+  const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };
   const wc = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
   call("olive", "create-world", { title: "orphaned" });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
@@ -1619,7 +1621,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // never reaches memory (the live chain never runs ahead of the disk), and the file, its state now unknown, takes no more
 // writes until it is reopened. The moderator log likewise.
 { let failing = true; const lines: string[] = [], mods: object[] = [];
-  const w = worldOf({ name: "st", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+  const w = worldOf({ name: "st", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => clock.t,
     writeLine: (l: string) => { if (failing) throw new Error("EIO: disk gone"); lines.push(l); },
     appendMod: (r: object) => { if (failing) throw new Error("EIO: disk gone"); mods.push(r); } });
   let threw: any = null; try { request(w, "olive", "create-world", { title: "st" }); } catch (x) { threw = x; }
@@ -1632,7 +1634,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // throw from that durable write is ambiguous (its bytes may be on disk), never "rolled-back"
 { const { txnOutcome, txnRefusal } = await import("../../shared/protocol/authority/storage.js");
   let failing = false; const lines: string[] = [];
-  const w = worldOf({ name: "st4", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+  const w = worldOf({ name: "st4", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => clock.t,
     writeLine: (l: string) => { lines.push(l); }, appendMod: () => { if (failing) throw new Error("EIO: disk gone"); } });
   request(w, "olive", "create-world", { title: "st4" }); const from = w.entries.length;
   failing = true; let threw: any = null; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch (x) { threw = x; }
@@ -1653,7 +1655,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // is ambiguous, not the old wedge's rolled-back refusal
 { const { txnOutcome, wedgedOf } = await import("../../shared/protocol/authority/storage.js");
   let modFails = false, logFails = false;
-  const w = worldOf({ name: "st5", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => T,
+  const w = worldOf({ name: "st5", entries: [], custody: custodyAt(root + "keys/custody.json"), getBlob: () => { throw new Error("no blobs"); }, putBlob: () => "sha256:" + "0".repeat(64), now: () => clock.t,
     writeLine: () => { if (logFails) throw new Error("EIO: disk gone"); }, appendMod: () => { if (modFails) throw new Error("EIO: disk gone"); } });
   request(w, "olive", "create-world", { title: "st5" });
   modFails = true; try { w.appendMod({ actor: "olive", verb: "ban", who: "bob" }); } catch {}
@@ -1669,7 +1671,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // RF2: …reached from requests: a handler keyed "*", set by request, that resets a ball, then the ball's delete, whose follow-ups read
 // every reference to it
 { const name = "rf2";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: "rf2" }); call("olive", "create", { id: "box", model: "crate", place: { at: [1, 1] } }); call("olive", "create", { id: "ball", model: "crate", place: { at: [2, 2] } });
   const set = call("olive", "set", { id: "box", component: "reactions", value: { "*": { kind: "reset", targets: ["ball"] } } }); let del: any = null, threw: any = null;
   try { del = call("olive", "delete", { id: "ball" }); } catch (x) { threw = String(x).slice(0, 80); }
@@ -1677,7 +1679,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // RX1: a refusal's remedy is one the asker can follow: a dynamic thing's look-at names a kind of body that may turn to
 // face something (a part's look-at is refused alike, so "put it on a part" was no remedy)
 { const name = "rx1";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: "rx1" }); call("olive", "create", { id: "ball", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [1, 1] } });
   const look = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
   const kin = call("olive", "set", { id: "ball", component: "physics", value: { kind: "kinematic" } }); const look2 = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
@@ -1686,14 +1688,14 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
 // RX2: sculpt on a thing with no grid says there's nothing to sculpt, and doesn't send the reader to write terrain-grid,
 // a reserved name the gate refuses
 { const name = "rx2";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: "rx2" }); call("olive", "create", { id: "hill", model: "crate", place: { at: [1, 1] } });
   const sc = call("olive", "sculpt", { on: "hill", brush: { kind: "raise" }, path: [[1, 1]] });
   const grid = call("olive", "set", { id: "hill", component: "terrain-grid", value: { spacing: 0.5, tile: 32, origin: [0, 0], extent: [1, 1], limits: { raise: 100, lower: 100 } } });
   ok(sc?.refused?.code === "no-grid" && !/set \{id, component: 'terrain-grid'/.test(sc.refused.fix ?? "") && grid?.refused?.code === "reserved", "RX2 the no-grid refusal names no write of terrain-grid, which is refused as reserved", { sc: sc?.refused, grid: grid?.refused?.code }); }
 // CAR: a captioner's lines are its own requests, charged to it like any write: past the entries cap in the window, refused rate
 { const name = "car";
-  const cw = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const cw = callAt(name);
   cw("ann", "create-world", { title: "car" }); cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
   cw("ann", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } });
   const sess = "2026-10-07T00:00:00.000Z-abc123"; let first = null, n = 0;
@@ -1714,7 +1716,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   ok(ms < 2000 && UP.guess("thing-12x", ids).includes("thing-12"), "G1 an unknown 80,000-character name is guessed against 2,000 ids in under 2 s, and a near name still finds its match", { ms: Math.round(ms), near }); }
 // SRU3: undoing a host's creation leaves a socket someone else made under it since: their work, so the undo skips
 { const name = "sru3";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: "sru3" });
   for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
@@ -1732,7 +1734,7 @@ for (const [name, steps] of [
     { verb: "create", args: { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
     { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "shelf" } } }] }]]],
 ] as const) {
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: name });
   for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
@@ -1744,7 +1746,7 @@ for (const [name, steps] of [
 // SRU3e: the control: one batch makes a socket under the shelf and hangs it on another thing before it ends. The change
 // leaves no socket under the shelf, so it's no work on the shelf, and ann's undo removes the shelf, the socket staying put
 { const name = "sru3e";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   call("olive", "create-world", { title: name });
   for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
@@ -1756,7 +1758,7 @@ for (const [name, steps] of [
     "SRU3E a socket made under the shelf and hung elsewhere in the same batch is no work on the shelf: ann's undo removes the shelf, and the socket stays on its new host", { mk: mk.ok, made: made.map((r) => r.ok ?? r.refused), u: u.ok ?? u.refused, shelf: !!st.entities.shelf, parent: st.entities.bobhook?.c.parent }); }
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";
-  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  const call = callAt(name);
   const bad = call("olive", "create-world", { title: "x".repeat(5000) });
   const again = call("olive", "create-world", { title: "second try" });
   ok(bad?.ok === false && again?.ok === true && again.you === "owner", "F1 a refused founding leaves nothing: the next founding of that name succeeds", { bad, again }); }
