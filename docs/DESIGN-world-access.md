@@ -32,7 +32,7 @@ antra, 2026-10-17, are folded in below.
 1. **No outsiders.** `worlds:join` stays required. A world chooses among
    instance members; it cannot admit someone without the scope. Nothing
    changes on the home node's login.
-2. **Founding:** every member may create worlds, capped per day.
+2. **Founding:** every member may create worlds, capped per day. *(Here: superseded — see Founding below.)*
 3. **Expiry while inside:** warn 5 minutes before, then remove.
 4. **Members-only worlds are unlisted and invisible** to non-members. There
    is therefore no "knock": a refusal says only that the world isn't open to
@@ -43,7 +43,7 @@ antra, 2026-10-17, are folded in below.
    a person Eidoverse has never seen, is handled by that person signing in
    once (opening any world).
 6. **Forks keep the member list.** They do already, since roles ride the
-   copied log. A fork also counts against the founding cap.
+   copied log. A fork also counts against the founding cap (upstream's; not carried over here).
 
 ## What existed before (origin/main 8072c47)
 
@@ -145,11 +145,13 @@ recovery of last resort.
 
 ### Founding
 
-Every member may found worlds, `FOUND_DAILY_CAP` per identity per rolling 24 h
-(default 5; `off` removes the cap; operators are exempt). This applies to
-stepping into a new name and to `/fork`. The ledger is
-`WORLDS_DIR/.founding.json`. For JOIN_TOKEN typed names the cap is per typed
-name, so it can be dodged by retyping. Those doors are operator-trusted.
+*On this server:* upstream's `FOUND_DAILY_CAP` (per identity per rolling 24 h, its ledger
+`WORLDS_DIR/.founding.json`) is not carried over, and nothing reads it: joining never founds a world.
+A signed-in person founds one with the `world-found` request, whose limits are
+`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-'; at most
+`FOUND_PER_ACCOUNT` (3) worlds per account; one every `FOUND_GAP_MS` (10 min) per account; at most
+`FOUND_PER_HOUR` (12) new worlds per server per hour. An agent's account doesn't found (an operator
+founds for it), and `tools/protocol/world.ts found` is the operator's own door.
 Watching a world that doesn't exist founds nothing: it closes with 4011,
 which clients retry, so an observer started early joins once the world
 exists. Founding also now happens only *after* identity, ban and access
@@ -173,7 +175,7 @@ ban → world ban → operator → credential narrowing → the ladder.
 
 | Door | Phase 1 |
 |---|---|
-| browser ws `join` (incl. travel) | identity re-derived per join; `canEnter` against the world's door (read from disk if idle, so a refused join loads nothing); then the founding cap |
+| browser ws `join` (incl. travel) | identity re-derived per join; `canEnter` against the world's door (read from disk if idle, so a refused join loads nothing); a world that doesn't exist is refused (joining never founds one) |
 | agent join via MCPL door | same path. The sub now arrives with the aid1 credential |
 | after any `grant` (owner, agent) | `settleAccess`: push `your-rights`, remove whoever lost entry (4010) |
 | expiry | `sweepAccess` every `ACCESS_SWEEP_MS` (5 s) |
@@ -236,7 +238,7 @@ stays down instead of reconnecting.
 - **The credential only narrows.** A `worlds` list (aid1 claim or tokens.json)
   keeps an agent to those worlds, and no list means no narrowing.
   `create: false` stops founding; anything else founds like any member
-  (daily cap).
+  (upstream's daily cap; here an agent's account doesn't found at all).
 - **⚠️ On deploy, every credentialed agent can reach every open world.** Today
   most credentials carry no `worlds` list, so they could reach only their
   minted world. Owners should close what should be closed first.
