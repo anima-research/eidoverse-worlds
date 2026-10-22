@@ -284,8 +284,9 @@ const cases: Case[] = [
       const moon = new Uint8Array(fs.readFileSync(path.resolve(ENGINE, "tools/protocol/fixtures/dims-1024x512.jpg")).buffer.slice(0));
       const padded = new Uint8Array(moon.length + 3); padded.set(moon.subarray(0, 2), 0); padded.set([0xff, 0xff, 0xff], 2); padded.set(moon.subarray(2), 5);
       const blind = new Uint8Array(64); blind.set([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10], 0);   // a JPEG header with no SOF in reach
-      return { padded: UP.imageDims(padded, "jpg"), blind: UP.imageSizeRefusal(blind, "jpg")?.status ?? null, moon: UP.imageSizeRefusal(moon, "jpg") }; },
-    good: (o) => !o.none && JSON.stringify(o.padded) === "[1024,512]" && o.blind === 415 && o.moon === null },
+      return { padded: UP.imageDims(padded, "jpg"), blind: UP.imageSizeRefusal(blind, "jpg")?.status ?? null, blindWhy: UP.imageSizeRefusal(blind, "jpg")?.why ?? null, moon: UP.imageSizeRefusal(moon, "jpg") }; },
+    // its remedy is one an agent can take, not an image editor (house 6340433633)
+    good: (o) => !o.none && JSON.stringify(o.padded) === "[1024,512]" && o.blind === 415 && o.moon === null && /won't change that/.test(o.blindWhy ?? "") && !/image editor/.test(o.blindWhy ?? "") },
   { id: "P6c", what: "upload (house 6340433633, the lead's decision): a zero dimension is an unknown size, not a size: a 0×0 WebP (VP8), PNG or JPEG is refused 415, a real-size VP8 is measured", async run() {
       const UP = await import(TREE + "server/upload.ts").catch(none); if (!UP.imageSizeRefusal) return { none: true };
       // a lossy WebP: RIFF size WEBP, the VP8 chunk, its frame tag and start code, then width and height (14 bits each)
