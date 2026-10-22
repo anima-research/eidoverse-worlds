@@ -25,6 +25,7 @@ const ME = "b2bot", WORLD = "b2";
 process.env.TRUST_NAMES = "1";
 let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
+import { pageWaiter } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted names in page code are ids
 const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "post", "statue", "kiosk", ...Array.from({ length: 10 }, (_, i) => `loop${i}`)];
 const { cdp, cws, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("batch2", {
@@ -38,7 +39,7 @@ const evalJson = pagedEval(evalRaw, NAMES);
 const { check: check0, tally } = mkCheck();
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const disk = () => fold(readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl"))));
-const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+const waitFor = pageWaiter(evalJson);
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const req = (verb: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${verb}', ${JSON.stringify(args)});`);
 

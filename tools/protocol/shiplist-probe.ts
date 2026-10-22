@@ -21,6 +21,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
+import { pageWaiter } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); every page answer brings the
 // minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
 const NAMES = ["mta", "mtb", "prbox0", "prbox1", "prbox2", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
@@ -38,7 +39,7 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 const check = (name: string, ok: any, detail?: any) => check0(name, !!ok, detail === undefined ? "" : typeof detail === "string" ? detail.slice(0, 600) : (JSON.stringify(detail) ?? "").slice(0, 600));
 const entries = () => readLog(fs.readFileSync(path.join(worldsDir, WORLD, "world.jsonl")));
 const disk = () => fold(entries());
-const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* busy */ } await sleep(100); } return false; };
+const waitFor = pageWaiter(evalJson);
 // a model's entity slot is null until its GLB lands; on a software renderer that can take far longer than 8 s, and a stage
 // that read on past a timed-out wait died later as "Cannot read properties of null" (Nissa, #260). Wait long, then fail BY NAME.
 const needModel = async (expr: string, what: string) => { if (!(await waitFor(expr, 45000))) throw new Error(`setup: ${what} never loaded in 45 s (its GLB never landed: a slow renderer?)`); };
