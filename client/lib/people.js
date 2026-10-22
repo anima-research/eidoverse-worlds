@@ -185,9 +185,12 @@ async function answerAsk(item, display, askId) {
   // sent, so no standing no is filed for it.
   // The deny goes to the ask's own sender (k.from), never to whoever holds that display name now, which a guest who
   // left can have passed to another within the ask's 20 s; so the toast names them as the one who asked as `display`.
+  // A reply that never came (mayHaveLanded) isn't a refusal: the answer or the deny may have landed, so the toast says so.
   if (item === 'ask-never') { const d = await sendRequest('consent', { deny: k.from, class: k.cls });
-    const gone = r?.ok ? '' : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
-    deps.toast(d?.ok ? `${gone}the one who asked as ${display} may not ${words} — not now, and not when they ask again` : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
+    const gone = r?.ok ? '' : r?.refused?.mayHaveLanded ? `the answer may have landed (${r.refused.reason}); ` : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
+    deps.toast(d?.ok ? `${gone}the one who asked as ${display} may not ${words} — not now, and not when they ask again`
+      : d?.refused?.mayHaveLanded ? `${gone}the standing no may have landed (${d.refused.reason}): look before saying Never again`
+      : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
     return r; }
   if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
   deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');

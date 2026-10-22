@@ -279,6 +279,26 @@ try {
       check("Q8b Never files its standing no against the ask's own sender, though another guest holds that name by the press, and its toast names them as the one who asked",
         typeof askR === "string" && !!actorA && !!actorB && actorA !== actorB && left && handed && denies.length === 1 && denies[0].deny === actorA && denies[0].class === "pose" && told, { askR, actorA, actorB, left, handed, denies, told });
       rookB.ws.close(); }
+    // review of #260: a reply that never comes isn't a refusal. Lark asks and I press Never, but neither the answer nor the
+    // deny reaches the authority (the page drops both sends), so each ends in sendRequest's timeout, shortened here to
+    // 300 ms: the toast must say each may have landed, never that the ask had gone or that the no didn't land.
+    { const lark = guest("Lark"); const { snap: sl } = await lark.join(); const larkActor = sl?.cut?.you;
+      await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Lark') === ${JSON.stringify(larkActor)})`, 5000);
+      let lq = 0; const lreq = async (verb: string, args: any) => { const id = `l${++lq}`; lark.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = lark.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
+      await lreq("move", { to: [mine[0] + 1, mine[1], mine[2] + 1] });
+      const rl = await lreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askL = rl?.reply?.ask;
+      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askL)}))`, 5000);
+      await evalJson(`(() => { window.__dropped = []; const send = WebSocket.prototype.send, st = window.setTimeout; window.__restore = () => { WebSocket.prototype.send = send; window.setTimeout = st; };
+        WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'consent') { __dropped.push(m.args); return; } } catch {} return send.call(this, d); };
+        window.setTimeout = (f, ms, ...a) => st(f, ms === 15000 ? 300 : ms, ...a); return true; })()`);
+      await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Lark', 180, 120); const b = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((x) => x.textContent.startsWith('Never')); b?.click(); return !!b; })`);
+      const shown = await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('the standing no may have landed'))`, 5000);
+      const text = await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent).find((x) => x.includes('the standing no may have landed')) ?? null`);
+      const dropped = await evalJson(`(() => { window.__restore(); return __dropped; })()`);
+      check("Q8c a Never whose answer and deny get no reply says each may have landed, not that the ask had gone or the no didn't land",
+        typeof askL === "string" && shown && /the answer may have landed/.test(text ?? "") && !/had gone|didn't land/.test(text ?? "")
+          && ((ad) => ad.length === 2 && ad[0].answer === askL && ad[1].deny === larkActor)(dropped.filter((x: any) => x && ("answer" in x || "deny" in x))), { askL, shown, text, dropped });
+      lark.ws.close(); }
     // the Consent ▸ sub-list (recut A2): my body's switch as three choices, ✓ on the current one; a press sets it
     const sub = await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent === 'Consent ▸').click(); return [...document.querySelectorAll('.sp-ctx[data-consent] .sp-ctx-item')].map((b) => b.textContent); })`);
     check("Q9 Consent ▸ lists the three choices, ✓ on ask (my switch now)", sub?.length === 3 && sub.filter((x: string) => x.startsWith("✓")).length === 1 && sub.includes("✓ ask — ask me first, every time"), sub);
