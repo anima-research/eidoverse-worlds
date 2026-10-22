@@ -1,5 +1,7 @@
 {
  "law": "heading-trig@1",
+ "kernel": "simmath@0.1.0",
+ "contract": "These are the outputs of the reference kernel simmath@0.1.0 (shared/simmath.js: two-word Cody-Waite argument reduction, then fixed-order polynomials, built only from IEEE-754-exact operations), NOT the host libm's sin, cos and atan2, and not correctly rounded (about 1-3 ulp). By design sin(pi/6) here is 3fdfffffffffffff, not 0.5 (3fe0000000000000): identical on every engine matters, perfect does not. A second implementation must reproduce these exact bits: port the kernel (its coefficients, reduction words and evaluation order are its version) or ship this table; a libm call will not match.",
  "note": "inputs and outputs are IEEE-754 float64 bits, big-endian hex",
  "sin": [
   [
