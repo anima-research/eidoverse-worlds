@@ -44,7 +44,8 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (!carry && (comp === "light" || comp === "model" || comp === "mesh")) { const c = s.entities[id]?.c ?? {};
     for (const has of ["model", "light", "mesh"]) if (has !== comp && c[has] !== undefined) refuse("one-place", ONE_PLACE.reason(id, has, comp), ONE_PLACE.fix(id, has, comp)); }
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
-    refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`, "whois {name} finds a person's identity; then set roles:<identity>", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
+    refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`,
+      !isIdentity(comp.slice(6)) ? "whois {name} finds a person's identity; then set roles:<identity>" : "whois {name} finds the identity behind a person's name; a person whose identity this server doesn't know has to join or sign in on this server first, and until then this set is refused again", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
   // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
   // research §4); `none` is gone (R 10-21): refused like any id the world doesn't define (a stored one reads as no grant)

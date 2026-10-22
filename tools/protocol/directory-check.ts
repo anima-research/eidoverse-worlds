@@ -69,9 +69,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 an authority that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work");
-  // K3b: a role for an identity this server doesn't know is refused with the lookup that exists, whois
+  // K3b: a role for an identity this server doesn't know is refused with what makes it known: the person joining or
+  // signing in here. K3c: a typed name of an identity's form ("ann") is refused the same way, so the remedy still names
+  // the lookup that finds an identity, whois
   const unk = request(w, me, "set", { id: "@world", component: "roles:u-ffffffffffffffffffff", value: { role: "builder" } });
-  ok(unk?.refused?.code === "shape" && /^whois \{name\}/.test(unk.refused.fix ?? ""), "K3b an unknown identity's role refusal names whois {name}", unk?.refused);
+  ok(unk?.refused?.code === "shape" && /join or sign in on this server first/.test(unk.refused.fix ?? ""), "K3b an unknown identity's role refusal says the person joins or signs in here first", unk?.refused);
+  const typed = request(w, me, "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
+  ok(typed?.refused?.code === "shape" && /^whois \{name\}/.test(typed.refused.fix ?? ""), "K3c a typed name's role refusal names whois {name}", typed?.refused);
   // K4: nothing it does appends a line: not an unknown verb's logged refusal, nor a read's, nor anything after them
   const n0 = other.entries.length; const uv = request(other, me, "frobnicate", {}); const rd = request(other, me, "look", { id: "nothing-here" });
   ok(other.entries.length === n0, "K4 an authority without the world's key appends nothing for an unknown verb or a refused read", { appended: other.entries.length - n0, uv: uv?.refused?.code, rd: rd?.refused?.code });
