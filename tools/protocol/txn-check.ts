@@ -13,6 +13,7 @@
 //   T8c a log's or blob's first write into directories just made: each new directory's name is synced in its parent too,
 //       a founded world's own directory included (and nothing is synced on win32, where the server can't sync a directory)
 //   T8d the keys file a mint writes is synced before it's renamed into place
+//   T8f a person's founding, a fork (its copied blobs too) and a reset sync each directory a new name lands in (house 6344940039)
 //   T8e …and the directory that holds its name is synced after, as are directories made for it (none on win32, where the
 //       server can't sync a directory)
 //   T9  operator-repair: operator status revoked while queued → refused
@@ -44,11 +45,14 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
+  ["a person's founding as it was: no sync after the rename, the ledger by atomicWrite", "server/worldlog.ts", "    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));", "    fs.renameSync(tmp, dest);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; atomicWrite(foundersPath(), JSON.stringify(L, null, 1));", ["T8f"]],
+  ["a fork's copied blobs left unsynced", "server/worldlog.ts", " syncTree(path.join(tmp, \"blobs\")); }", " }", ["T8f"]],
+  ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "path.join(dir, \"world.jsonl\")); syncDir(dir);", "path.join(dir, \"world.jsonl\"));", ["T8f"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
 // T8c and T8e check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
 // they would turn red have nothing to catch, so their mutants are skipped
-const DIR_SYNC_ROWS = new Set(["T8c", "T8e"]);
+const DIR_SYNC_ROWS = new Set(["T8c", "T8e", "T8f"]);
 if (process.argv.includes("--mutants")) {
   const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0, ran = 0;
   for (const [name, file, find, repl, rows] of MUTANTS) {
@@ -262,6 +266,36 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   const missing = want.filter((d) => !synced.includes(d));
   ok(!missing.length && (process.platform !== "win32" || !synced.length) && fs.readFileSync(path.join(base, "a", "b", "c", "world.jsonl"), "utf8") === '{"n":1}\n',
     "T8c a first write into directories just made syncs each new directory's name in its parent, up to the parent of the first one made, a founded world's directory too (none on win32)", { missing: missing.map((d) => path.relative(root, d)), synced: synced.map((d) => path.relative(root, d)) }); }
+
+// ---------------- T8f (house 6344940039) ----------------
+// a person's founding, a fork and a reset each move new names into place: each is answered only once those names are durable
+// (the directory they land in synced AFTER the rename; a fork's copied blobs synced before its directory moves). None on
+// win32, where the server can't sync a directory
+{ const WL = await import("../../server/worldlog.ts"); const { putBlobFile } = await import("../../server/durable.ts");
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync }; let fdPath = new Map(), ev = [];
+  const watch = () => { fdPath = new Map(); ev = [];
+    nodefs.openSync = function (p, ...r) { const fd = o.openSync.call(nodefs, p, ...r); fdPath.set(fd, path.resolve(String(p))); return fd; };
+    nodefs.fsyncSync = function (fd) { ev.push(["fsync", fdPath.get(fd)]); return o.fsyncSync.call(nodefs, fd); };
+    nodefs.renameSync = function (a, b) { ev.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.renameSync.call(nodefs, a, b); }; };
+  const unwatch = () => Object.assign(nodefs, o);
+  const syncedAfter = (to, dir) => { const i = ev.findIndex((e) => e[0] === "rename" && e[2] === path.resolve(to)); return i >= 0 && ev.slice(i + 1).some((e) => e[0] === "fsync" && e[1] === path.resolve(dir)); };
+  const none = process.platform === "win32";
+  // founding
+  watch(); let f; try { f = WL.foundOwnedWorld("t8f-found", idOf("local:fay", "fay"), "local:fay"); } finally { unwatch(); }
+  const foundOk = f?.ok && (none || (syncedAfter(path.join(W, "t8f-found"), W) && syncedAfter(path.join(W, ".founders.json"), W)));
+  // fork, from a world holding a blob
+  const src = world("t8f-src"); putBlobFile(path.join(W, "t8f-src", "blobs", "ab", "cafe.txt"), "a blob", "sha256:unused");
+  watch(); let k; try { k = WL.forkWorld(src.w.log, "t8f-fork", src.owner); } finally { unwatch(); }
+  const into = ev.find((e) => e[0] === "rename" && e[2] === path.join(W, "t8f-fork")); const tmp = into?.[1] ?? "";
+  const before = into ? ev.slice(0, ev.indexOf(into)) : [];
+  const blobSynced = before.some((e) => e[0] === "fsync" && e[1] === path.join(tmp, "blobs", "ab", "cafe.txt")) && before.some((e) => e[0] === "fsync" && e[1] === path.join(tmp, "blobs"));
+  const forkOk = k?.ok && (none || (syncedAfter(path.join(W, "t8f-fork"), W) && blobSynced));
+  // reset
+  const rs = world("t8f-reset"); watch(); let arch = null; try { arch = WL.resetWorld(rs.w.log); } finally { unwatch(); }
+  const dir = path.join(W, "t8f-reset");
+  const resetOk = !!arch && (none || (syncedAfter(path.join(arch, "world.jsonl"), arch) && syncedAfter(path.join(dir, "world.jsonl"), dir)));
+  ok(foundOk && forkOk && resetOk, "T8f a person's founding, a fork (its copied blobs too) and a reset each sync the directory a new name lands in, after the rename (none on win32)",
+    { foundOk, forkOk, blobSynced, resetOk, tmp }); }
 
 // ---------------- T8d, T8e ----------------
 // a key a mint hands out must survive a crash, or the genesis it signed (synced) names a key no one holds: the keys file is

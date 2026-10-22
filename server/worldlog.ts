@@ -15,7 +15,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
-import { mkdirDurable } from "./durable.ts";
+import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
@@ -485,8 +485,9 @@ export function foundOwnedWorld(name: string, actor: string, account: string, ti
     const r = authorityRequest(w, actor, "create-world", { title: String(title || name).slice(0, 80) });
     if (!r.ok) throw new Error(`the authority refused the founding: ${r.refused?.reason}`);
     if (fs.existsSync(dest)) throw new Error(`there's already a world called "${name}"`);   // taken while this one was built
-    fs.renameSync(tmp, dest);
-    const L = foundersLedger(); L[name] = { account, actor, ts: now }; atomicWrite(foundersPath(), JSON.stringify(L, null, 1));
+    // answered only once durable: the world's new name synced in the worlds directory, the ledger replaced durably (house 6344940039)
+    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);
+    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));
     return { ok: true, worldId: w.worldId };
   } catch (e: Any) {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -539,7 +540,7 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
     const st = src.live.state();
     fs.mkdirSync(tmp, { recursive: true });
     const blobs = path.join(WORLDS_DIR, src.name, "blobs");   // content-addressed (blueprints, script sources): all of them travel
-    if (fs.existsSync(blobs)) fs.cpSync(blobs, path.join(tmp, "blobs"), { recursive: true });
+    if (fs.existsSync(blobs)) { fs.cpSync(blobs, path.join(tmp, "blobs"), { recursive: true }); syncTree(path.join(tmp, "blobs")); }   // cpSync syncs nothing (house 6344940039)
     const w = openLive(tmp, to, { catalogue: ENGINE_CATALOGUE });
     const title = st.entities["@world"]?.c.about?.name ?? to;
     const at = src.live.entries.length - 1;   // genesis.parent {world, seq, head}: the merge base (PROTOCOL §13)
@@ -550,7 +551,7 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
     const acts = copyInto(w, forker, st, skip);
     const back = w.state();
     if (canonOf(back, skip) !== canonOf(st, skip)) throw new Error("the copy doesn't match the source (nothing was kept)");
-    fs.renameSync(tmp, dest);
+    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);   // the fork's name, durable before it is answered (house 6344940039)
     return { ok: true, worldId: w.worldId, things: Object.keys(st.entities).length - 1, acts };
   } catch (e: Any) {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -590,11 +591,12 @@ export function resetWorld(log: WorldLog): string {
     }
   } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-  fs.mkdirSync(arch, { recursive: true });
+  mkdirDurable(arch);
   // from the first rename on, a failure has changed something: it says where the old log went (review of #260, server I19)
   try {
     for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
-    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl"));
+    syncDir(arch);   // the archive's names first, then the world's: a crash never loses the old log (house 6344940039)
+    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl")); syncDir(dir);
   } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh;
     // whether the old log is gone from its place (this attempt moved it, or an earlier failed one did): if not, the world is
     // as it was and stays live

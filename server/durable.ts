@@ -43,10 +43,21 @@ export function appendDurable(logPath: string, line: string) {
 }
 /** fsync a directory, so a file just created or renamed into it survives a crash (POSIX: the entry lives in the directory,
  *  not the file). Windows can't open a directory for this, and NTFS journals names itself: skipped there. */
-function syncDir(dir: string) {
+export function syncDir(dir: string) {
   if (process.platform === "win32") return;
   const fd = fs.openSync(dir, "r");
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+/** fsync every file and directory under `dir`, deepest first, `dir` included: a tree copied with cpSync (a fork's blobs)
+ *  is written but not durable until each file's bytes and each directory's entries are synced. */
+export function syncTree(dir: string) {
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) syncTree(p);
+    else if (ent.isFile()) { const fd = fs.openSync(p, "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+  }
+  syncDir(dir);
 }
 
 /** Make `dir` and any missing parents, durably: a directory mkdir just made is named by an entry in its parent, which a
