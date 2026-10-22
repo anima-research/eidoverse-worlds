@@ -120,6 +120,8 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 // the first path that loads: today's name, then the base commit's (before the 10-07 names pass)
 const imp1 = async (...ps: string[]) => { let err: unknown; for (const p of ps) { try { return await import(TREE + p); } catch (e) { err = e; } } throw err; };
 const D = await imp1("shared/protocol/authority.js", "shared/" + "v4/door.js");   // (split: the base's path, not a stale one)
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const L = await imp1("server/livehost.ts", "server/" + "v4/live.ts");
 const SB = await imp1("shared/protocol/sandbox.js", "shared/" + "v4/sandbox.js");
 const SOL = await imp1("server/solids.ts", "server/" + "v4/solids.ts").catch(() => null);         // absent at the base commit
@@ -135,8 +137,10 @@ function open(name: string, o: any = {}) {
   if (o.presence) Object.assign(w.presence, o.presence);
   return w;
 }
-// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass
-const AT_BASE = path.resolve(TREE) !== path.resolve(ENGINE);
+// G3 runs the scenario against its base commit too, which speaks the names before the 10-07 conventional-names pass. Known
+// by its layout (the base has no shared/protocol/authority.js), never by being another directory: a mutant is a copy of today's tree
+// and speaks today's names (read as "another tree", every case failed in every mutant, so each read as caught)
+const AT_BASE = !fs.existsSync(path.join(TREE, "shared/protocol/authority.js"));
 // the base rung's name in the tree under test (R 10-21: inhabitant; the base commit says visitor): G3 speaks each tree's own word
 const BASE_RUNG = AT_BASE ? "visitor" : "inhabitant";
 const BASE_VERB: Record<string, string> = { "create-world": "new", lint: "check" };

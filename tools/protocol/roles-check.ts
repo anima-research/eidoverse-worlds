@@ -154,6 +154,8 @@ if (argv.includes("--control")) {
 // ---------------- the authority, from a tree (this checkout unless --tree) ----------------
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const RL = await import(TREE + "shared/protocol/roles.js").catch(() => ({}));   // absent at the base commit (--control)
 const TV1 = await import(TREE + "tools/protocol/import-v1/translate-v1.js").catch(() => import(TREE + "shared/protocol/translate-v1.js")).catch(() => ({}));   // moved to tools/protocol/import-v1 on staging (the no-v1 pass)

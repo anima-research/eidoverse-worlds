@@ -306,7 +306,11 @@ for (const p of logs.sort()) {
       if (phys) { eidosim.simEntry(phys.sim, body[k], v1); settle(phys.sim.tick); } }
     else if (e.kind === "change") applyInPlace(now, opsOf(e), s); }
   if (phys?.sim.epoch && !phys.sim.epoch.foreign) settle(phys.sim.tick + 100_000);   // the translator settles at the end, as her replaybench does
-  compareAt(k); if (loss) lossy++;
+  compareAt(k);
+  // the inverse folds the source only as far as the translation's acts led it: a translation that stops early would be
+  // compared with a source folded to the same point and pass, so the whole source must have been consumed
+  if (!loss && k !== body.length - 1) loss = { truncated: { consumed: k + 1, of: body.length } };
+  if (loss) lossy++;
   // the authority takes the translated world as it is: every component of every thing passes the catalogue (a v1 key a
   // closed component doesn't define rides beside it as imported:<component>, so nothing is refused at the first edit)
   { const bad: string[] = []; for (const [id, comps] of Object.entries<any>(r.final.translated)) for (const [k, v] of Object.entries<any>(comps)) {

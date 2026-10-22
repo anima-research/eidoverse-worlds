@@ -62,6 +62,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["sweep", "sweep.ts", 4],
   ["oracle", "import-v1/snapshot-oracle.ts", 2], // owner 10-15: the translator against the OLD ENGINE — every old world whose snapshot.json is a complete fold of its log, compared with its translation (and the server's lifted load)
   ["inplace", "inplace-check.ts", 1],   // R 10-17 13:36: translate <world> in place (the name and links kept, the old log beside it as log.original.jsonl), verified before the swap, everything put back on any failure
+  ["migrate-identities", "migrate-identities-check.ts", 1],   // migrate-identities.ts: one id per person everywhere (actors, role keys, say.to, capability, sponsor, the moderator log), a gate that reads the two logs side by side, refused twice
   ["oldworlds", "../oldworlds-test.ts", 1], // owner 10-15: an old-format world is found and named at boot (the exact translate command), and a visitor is told in plain words             // the old-world importer (tools/protocol/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["descriptors", "../descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
@@ -179,7 +180,7 @@ const EXPECT: Record<string, number> = {
   "agent-mesh-collision": 92, "kernel": 0.5, "trig": 0.2, "laws": 0.3, "engine": 0.6, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,
   "eidosim": 12, "eidosim-live": 1.5, "mover": 4.5, "colliders": 0.2, "lying-support": 16, "replay": 0.4,
-  "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
+  "conformance": 2.9, "sweep": 0.3, "oracle": 0.4, "inplace": 15, "migrate-identities": 1.7, "oldworlds": 1.2, "browser": 1.5, "descriptors": 0.1,
   "light-readers": 0.4, "ghost-mesh-size": 0.5, "boot-init": 0.5, "editor-range": 0.3, "editschema": 0.5, "lookat-forward": 0.5,
   "role-grammar": 0.3, "rot": 0.1, "dismount-height": 0.2, "build-gate": 0.3,
   "capsule-recovery": 10, "debug-tabs": 0.3, "governor-xr": 0.2, "unknown-comp": 1.1, "reach-order": 1.5,

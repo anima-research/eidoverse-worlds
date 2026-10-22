@@ -12,7 +12,7 @@ and L7. Code: `shared/protocol/authority.js` (the "behaviours" section), `shared
 upload {text: "<your JavaScript>"}                        → {src: "sha256:…"}
 set {id: "bell1", component: "script:bell", value: {
   src: "sha256:…",
-  scope: {ids: "self", comps: ["bell"], say: true},       what it may change: this is data, readable before it runs
+  scope: {ids: "self", comps: ["example.org/bell"], say: true},   what it may change: this is data, readable before it runs
   on: ["use"]                                             which events reach it (timers come from `every`)
 }}
 set {id: "bell1", component: "reactions", value: {ring: {kind: "script", script: "bell"}}}
@@ -25,8 +25,8 @@ use {id: "bell1", action: "ring", dry: true}              → the same, as the v
 ```js
 // bell: counts its rings and says who rang it
 world.on("use", (e) => {
-  const rung = (world.get("self", "bell")?.rung ?? 0) + 1;
-  world.set("self", "bell", { rung });
+  const rung = (world.get("self", "example.org/bell")?.rung ?? 0) + 1;
+  world.set("self", "example.org/bell", { rung });
   world.say("the bell tolls for " + e.by + " (" + rung + ")");
 });
 ```
@@ -44,7 +44,8 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
   "src": "sha256:<64 hex>",          // the source blob ({lang: "js", api: 2, text}); upload {text} makes it
   "scope": {
     "ids": "self",                   // "self" | "subtree" | ["self", "<id>", …] (≤ 32)
-    "comps": ["bell", "light"],      // components it may set or delete there (≤ 16); "name:*" for keyed names
+    "comps": ["example.org/bell", "light"],  // components it may set or delete there (≤ 16); "name:*" for keyed names; a
+                                     // name of your own carries a namespace (a bare name is the registry's)
     "create": false,                 // may create things (needs ids: "subtree"; what it makes must hang inside it)
     "say": false,                    // may write say entries
     "bodies": []                     // "shove", "pose": effects on people, each only where that person's consent allows
@@ -201,7 +202,7 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 | | |
 |---|---|
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
-| wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process |
+| wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process (where scripts run isolated: not on Windows, see Isolation) |
 | memory / native stack | 24 MB / 256 KB per activation |
 | reads per activation | 64; writes 32; says 4; body effects 4 |
 | logged activations | 6 per minute per script (server) |
@@ -223,6 +224,10 @@ can't be interrupted, so at 500 ms the authority kills the process and the activ
 takes the next one). The authority's thread is never held longer than that by one activation, and script time across every
 world in the process is capped at 500 ms per second (refused as `busy` past it), so one request that wakes many
 scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
+
+**Except on Windows**, and wherever the host sets `EIDO_SANDBOX=inprocess`: there scripts run in the authority's own
+process (Windows has no named-pipe transport for the sandbox yet). Fuel and the 300 ms backstop still stop script code,
+but nothing can kill a slow native builtin: one such call holds the authority's thread for as long as it takes.
 
 A refused or failed activation writes nothing. Its reason goes to the script's console and the status view.
 `@world.script-settings {run: false}` (owner) stops every script; `paused: true` stops one.

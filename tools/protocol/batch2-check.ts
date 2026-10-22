@@ -118,6 +118,8 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const none = () => ({});
 const D = await import(TREE + "shared/protocol/authority.js");
+// fixture-ids.ts opened the fixture seam on ENGINE's authority; a --tree run (mutants, control) imports another instance
+D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const ES = await import(TREE + "shared/editschema.js");
