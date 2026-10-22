@@ -86,7 +86,16 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const other2: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
   const { expireRoles: expireW } = await import("../../shared/protocol/authority.js"); const n5 = other2.entries.length; let threw: any = null, e5: any;
   try { e5 = expireW(other2); } catch (x: any) { threw = String(x?.refused?.code ?? x?.code ?? x?.message ?? x); }
-  ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 }); }
+  ok(g5.ok && !threw && other2.entries.length === n5, "K4b its role sweep, with a timed grant run out, returns without appending or throwing", { g5: g5.ok ? "ok" : g5.refused, threw, e5 });
+  // K4c: …and a read there works when a thing is due to return home: the settlement a request runs first skips the
+  // return it can't write, as the engine's settlement does
+  const steps: any[] = [request(w, me, "create", { id: "ball", model: "ball", components: { grabbable: { who: "inhabitant", returnAfter: 30 } }, place: { at: [0, 0] } })];
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, 0.5] })); T += 1000; steps.push(request(w, me, "grab", { id: "ball" }));
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, 3] })); T += 1000; steps.push(request(w, me, "put", { id: "ball" }));
+  T += 60000;
+  const other3: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
+  const n6 = other3.entries.length; let r6: any; try { r6 = request(other3, me, "look", {}); } catch (x: any) { r6 = { threw: String(x?.message ?? x) }; }
+  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4c a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
