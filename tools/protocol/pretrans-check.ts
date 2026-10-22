@@ -189,7 +189,7 @@ await C("K7", "no account subject is written (PROTOCOL §9.2): without a mapper 
   const acts = r.out.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "grant");
   const W = world(); const sub = W.call("set", { id: "@world", component: "roles:vic", value: { role: "inhabitant", sub: "human:discord:9" } });
   return [w[`roles:${TV1.enc("janus")}`]?.role === "owner" && !("sub" in w[`roles:${TV1.enc("janus")}`]) && acts.length >= 4 && !JSON.stringify(acts).includes("human:discord") && !sub.ok && sub.refused.code === "schema"
-    && /@1[4-9]$/.test(TV1.TRANSLATOR) && /@1[4-9]$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
+    && /@(1[4-9]|[2-9][0-9])$/.test(TV1.TRANSLATOR) && /@(1[4-9]|[2-9][0-9])$/.test(TV1.TRANSLATOR_SIM), [w[`roles:${TV1.enc("janus")}`], acts.map((a: any) => a.body.args), sub.refused, TV1.TRANSLATOR]]; });
 await C("K8", "no account subject is written wherever it sits (PROTOCOL §9.2): a v1 placer's sub and a behaviour binding's bySub reach neither an imported act nor @world's state, with a mapper or without one; with a mapper, the placer and the binding are the same identity as the person's grant; a sub or *Sub that isn't an account (a comp's own data) is kept as it was, and the mapper is never asked about it", () => {
   // the two places main's server stamped an account below the top level (server/verbs.ts at 306a00b0): a spawn's or light's
   // placer {id, sub}, and a behaviour binding's bySub (which the v1 fold keeps as the binding's authorSub). janus's grant

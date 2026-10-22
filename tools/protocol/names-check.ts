@@ -678,7 +678,7 @@ const cases: Case[] = [
         { seq: 3, ts: 4, actor: "antra", verb: "comp", args: { id: "drone", type: "motion:Rotor", data: { type: "bob", amp: 0.1 } } }];
       const r = TV.translate(v1, {}); const e = r.final.translated.drone ?? {};
       return { t: TV.TRANSLATOR, s: TV.TRANSLATOR_SIM, whole: e.motion?.type ?? null, part: Object.entries(e).filter(([k]) => k.startsWith("motion:")).map(([, v]: any) => v.type), dropped: TV.DROPPED?.["motion.type"] ?? null, div: r.divergences?.length ?? 0 }; },
-    good: (o) => /@1[4-9]$/.test(o.t) && /@1[4-9]$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
+    good: (o) => /@(1[4-9]|[2-9][0-9])$/.test(o.t) && /@(1[4-9]|[2-9][0-9])$/.test(o.s) && o.whole === "oscillate" && JSON.stringify(o.part) === '["oscillate"]' && /oscillate/.test(o.dropped ?? "") },
   { id: "OS7", what: "…the docs say oscillate and never bob as a motion type (AGENTS.md, PROTOCOL.md, PHYSICS.md, DESIGN.md, the agent); the version history and the registry changelog record the rename", run() {
       const files = ["AGENTS.md", "spec/PROTOCOL.md", "spec/PHYSICS.md", "DESIGN.md", "mcpl/agent.ts"]; const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md");
       const motionBob = /pendulum[^\n]{0,40}\bbob\b|\bbob\b[^\n]{0,40}\bpath\b|type: ?['"]bob['"]/;
