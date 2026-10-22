@@ -247,7 +247,7 @@ export const DROPPED = {
   "captions.window / captions.mediaTime": "v1's bag kept the session's newest lines and the playhead; v4's captions holds the current line (the window's last). The earlier lines are the log's own caption acts",
   "comp.door": "renamed `openable` (R 10-07), and a reaction's component 'door' with it: the same value under v4's name (@5)",
   "roles.sub / bans.sub": "an account subject is person data (PROTOCOL §9.2): never written into a value (@12). With an identity mapper it is how the person's id is found (the key); without one it is dropped. A ban's `by`, who banned, stays as v1 kept it, unless it is itself an account: then it is that person's id (@19), or dropped without a mapper",
-  "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays",
+  "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays, except a grant's or a ban's own top-level sub, the server's stamp of the person's account (roles.sub / bans.sub)",
   "an entry keyed by an account in a value, and a component an account names and fills": "an entry keyed by an account in a value, or a component whose name has an account's (`ownerSub`) and whose whole value is one, is person data (PROTOCOL §9.2): in the state it is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it, each dropped without an identity mapper. A role or ban kept by its account isn't a value: it is kept, keyed by its person's id (with a mapper) or by its account, encoded (without one)",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
   "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
@@ -575,14 +575,16 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
   // the operator's approval of this translation (import-v1/world.ts), written here, before any cause is taken
   if (approved) push({ kind: "act", actor: "system", verb: "translation-approved", ts: t0.ts ?? 0, body: approved });
-  // an old request as sent keeps its words, but never an account: its top-level sub, whatever its shape, as @12 had it (main's
-  // server wrote one on a grant and a ban, always an account), and below the top level any account-shaped sub or *Sub (@16:
-  // a placer's, a binding's bySub). With a mapper it becomes the person's id (R1); without one it is dropped, so the imported
-  // act never re-leaks what the values no longer hold
+  // an old request as sent keeps its words, but never an account: a grant's or a ban's top-level sub, whatever its shape, as
+  // @12 had it (main's server wrote it, always an account); another request's top-level sub, and below the top level any
+  // sub or *Sub, when it is account-shaped (@16: a placer's, a binding's bySub). With a mapper it becomes the person's id
+  // (R1); without one it is dropped, so the imported act never re-leaks what the values no longer hold. A sub that isn't
+  // account-shaped, on any request but a grant or a ban, is ordinary data and stays
   const noAcct = (e, a) => { let x = a;
     if (x && typeof x === "object" && !Array.isArray(x)) {
-      // a top-level sub: a grant's or a ban's is the server's own, beside the id it names; any other request's is an
-      // account alone, joined to no name, or, not being an account, ordinary data that stays (DROPPED)
+      // a top-level sub: a grant's or a ban's is the server's own stamp, beside the id it names, read as the person's account
+      // whatever its shape; any other request's is an account alone, joined to no name, or, not being one, ordinary data
+      // that stays (DROPPED)
       const pair = (e.verb === "grant" || e.verb === "ban") && typeof x.sub === "string";
       if ("sub" in x && (e.verb === "grant" || e.verb === "ban" || isAccount(x.sub))) {
         // the pair is one person: an id that is itself an account names them too

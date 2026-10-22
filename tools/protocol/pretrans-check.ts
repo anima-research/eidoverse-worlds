@@ -488,7 +488,7 @@ await C("K21", "the sweep's independent reading agrees with the translator on ac
   const got = OR.whoFrom?.(path.join(W, "worlds"))?.who("Ann", { sub: "local:ann" });
   return [p.status === 0 && counted && / lossy 0,/.test(out) && !fails.length && ann.length === 1 && got === ann[0], { status: p.status, counted, fails: fails.slice(0, 4), tail: out.slice(-400), ann, got }]; });
 
-await C("K22", "a ban's key, which the old fold lowercased, is the person it names whatever case its sender typed (translateV1World): 'ann' banned after 'Ann' was granted bans Ann, an account granted as written and banned and unbanned in lowercase is one identity, and a name only its ban gives keeps its case", async () => {
+await C("K22", "a ban's key, which the old fold lowercased, is the person it names whatever case its sender typed (translateV1World): 'ann' banned after 'Ann' was granted bans Ann, an account granted as written and banned and unbanned in lowercase is one identity, a name only its ban gives keeps its case, as does an account only an unban names, and a name two bans spell differently is neither spelling", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k22"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
   const ALICE = "aid1:issuer:Alice";
@@ -499,7 +499,11 @@ await C("K22", "a ban's key, which the old fold lowercased, is the person it nam
     { seq: 4, ts: 5, actor: "world", verb: "grant", args: { id: ALICE, role: "builder", gen: true } },
     { seq: 5, ts: 6, actor: "world", verb: "ban", args: { id: ALICE.toLowerCase(), reason: "spam" } },
     { seq: 6, ts: 7, actor: "world", verb: "unban", args: { id: ALICE.toLowerCase() } },
-    { seq: 7, ts: 8, actor: "world", verb: "ban", args: { id: "Zed", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    { seq: 7, ts: 8, actor: "world", verb: "ban", args: { id: "Zed", reason: "spam" } },
+    // an account only an unban names keeps its case; a name two bans spell differently is neither spelling
+    { seq: 8, ts: 9, actor: "world", verb: "unban", args: { id: "aid1:issuer:Bob" } },
+    { seq: 9, ts: 10, actor: "world", verb: "ban", args: { id: "Kit", reason: "spam" } },
+    { seq: 10, ts: 11, actor: "world", verb: "ban", args: { id: "KIT", reason: "spam" } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const r = translateV1World(src, path.join(W, "new"));
   const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
   const named = (n: string) => Object.entries<any>(r.planned).filter(([, e]) => e.name === n).map(([id]) => id);
@@ -509,7 +513,10 @@ await C("K22", "a ban's key, which the old fold lowercased, is the person it nam
   const w = FOLD.fold(FOLD.readLog(text)).entities?.["@world"]?.c ?? {};
   return [ann.length === 1 && !named("ann").length && w[`imported-bans:${ann[0]}`] !== undefined
     && alice.length === 1 && !holding(ALICE.toLowerCase()).length && ids("ban").includes(alice[0]) && ids("unban")[0] === alice[0]
-    && zed.length === 1 && w[`imported-bans:${zed[0]}`] !== undefined && Object.keys(r.planned).length === 3,
+    && zed.length === 1 && w[`imported-bans:${zed[0]}`] !== undefined
+    && holding("aid1:issuer:Bob").length === 1 && !holding("aid1:issuer:bob").length && ids("unban").includes(holding("aid1:issuer:Bob")[0])
+    && named("kit").length === 1 && !named("Kit").length && !named("KIT").length && w[`imported-bans:${named("kit")[0]}`] !== undefined
+    && Object.keys(r.planned).length === 5,
     { planned: r.planned, bans: Object.keys(w).filter((k) => k.startsWith("imported-bans:")), ban: ids("ban"), unban: ids("unban") }]; });
 await C("K23", "the snapshot oracle reads the translated world's people as the importer filed them (snapshot-oracle.ts whoFrom): a lowered ban key that is an account finds the account filed in its case; a person named 'local:ann' is the person of that name, not the local:ann account; and an account seen alone takes no name, so that person is their own identity", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts"); const OR = await imp("tools/protocol/import-v1/snapshot-oracle.ts");
@@ -533,7 +540,7 @@ await C("K23", "the snapshot oracle reads the translated world's people as the i
   return [alice.length === 1 && acct.length === 1 && named.length === 1 && acct[0] !== named[0] && !(r.planned[named[0]].subs ?? []).length && lamp2?.actor === named[0]
     && got.ban === alice[0] && got.name === named[0] && got.sub === acct[0] && !o.unresolved.length,
     { planned: r.planned, got, unresolved: o.unresolved, lamp2: lamp2?.actor }]; });
-await C("K24", "an account's place in a request is read as the scrub reads it (translateV1World): a placer whose name is itself an account is that person's id, name and account alike; an id elsewhere in a value is data, as any key not named sub or *Sub; a top-level sub that isn't an account stays, with a mapper or without; and a key naming a person called 'local:ann' stays", async () => {
+await C("K24", "an account's place in a request is read as the scrub reads it (translateV1World): a spawn's and a light's placer whose name is itself an account is that person's id, name and account alike, and with no mapper loses both; an id elsewhere in a value is data, as any key not named sub or *Sub; a top-level sub that isn't an account stays, with a mapper or without; and a key naming a person called 'local:ann' stays", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k24"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
   const A = "human:discord:42", B = "human:discord:44";
@@ -541,7 +548,8 @@ await C("K24", "an account's place in a request is read as the scrub reads it (t
     { seq: 1, ts: 2, actor: A, verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: A, sub: A } } },
     { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "board_1", lib: "a.glb", pos: [1, 0, 0], sub: "bob" } },
     { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "board_1", type: "guestbook", data: { entries: [{ id: B, line: "hi" }] } } },
-    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "board_1", type: "ledger", data: { "local:ann": "paid", note: "kept" } } }];
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "board_1", type: "ledger", data: { "local:ann": "paid", note: "kept" } } },
+    { seq: 5, ts: 6, actor: A, verb: "light", args: { id: "glow_1", pos: [0, 2, 0], color: "#ffcc88", placer: { id: A, sub: A } } }];
   fs.writeFileSync(path.join(src, "log.jsonl"), log.map((e) => JSON.stringify(e)).join("\n") + "\n");
   let r: any; try { r = translateV1World(src, path.join(W, "new")); } catch (e: any) { return [false, { threw: String(e?.message ?? e).slice(0, 300) }]; }
   const text = fs.readFileSync(path.join(W, "new", "world.jsonl"), "utf8"); const lines = text.split("\n").filter(Boolean).map((l: string) => JSON.parse(l));
@@ -550,11 +558,28 @@ await C("K24", "an account's place in a request is read as the scrub reads it (t
   const comps = lines.filter((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "comp").map((e: any) => e.body.args?.data);
   const board = FOLD.fold(FOLD.readLog(text)).entities?.[TV1.enc("board_1")]?.c ?? {};
   const ledger: any = Object.values(board).find((v: any) => v && typeof v === "object" && v.note === "kept");
-  const pure = TV1.translate(log).out.find((e: any) => e.kind === "act" && e.body?.verb === "spawn" && e.body.args?.id === "board_1");
+  const pureOut = TV1.translate(log).out, pureAct = (verb: string, id: string) => pureOut.find((e: any) => e.kind === "act" && e.body?.verb === verb && e.body.args?.id === id);
+  const pure = pureAct("spawn", "board_1");
+  // with no mapper, a placer named by their account loses both, its name and its account
+  const purePlacers = [pureAct("spawn", "lamp_1"), pureAct("light", "glow_1")].map((e: any) => e?.body?.args?.placer);
   return [a.length === 1 && act("spawn", "lamp_1")?.actor === a[0] && JSON.stringify(act("spawn", "lamp_1")?.body?.args?.placer) === JSON.stringify({ id: a[0], sub: a[0] }) && !text.includes(A)
+    && JSON.stringify(act("light", "glow_1")?.body?.args?.placer) === JSON.stringify({ id: a[0], sub: a[0] }) && purePlacers.every((p: any) => p && !Object.keys(p).length)
     && comps[0]?.entries?.[0]?.id === B && act("spawn", "board_1")?.body?.args?.sub === "bob" && pure?.body?.args?.sub === "bob" && ledger?.["local:ann"] === "paid",
-    { a, placer: act("spawn", "lamp_1")?.body?.args?.placer, guest: comps[0], sub: [act("spawn", "board_1")?.body?.args?.sub, pure?.body?.args?.sub], ledger }]; });
+    { a, placer: act("spawn", "lamp_1")?.body?.args?.placer, light: act("light", "glow_1")?.body?.args?.placer, purePlacers, guest: comps[0], sub: [act("spawn", "board_1")?.body?.args?.sub, pure?.body?.args?.sub], ledger }]; });
 
+await C("K25", "the snapshot oracle's case fallback for a lowered account ban key takes only a single match and only a key with no sub of its own (snapshot-oracle.ts whoFrom): two accounts that differ only in case leave it unresolved, and an explicit sub is looked up as given", async () => {
+  const { translateV1World } = await imp("tools/protocol/import-v1/world.ts"); const OR = await imp("tools/protocol/import-v1/snapshot-oracle.ts");
+  const W = scratch("k25"), src = path.join(W, "worlds", "old"); fs.mkdirSync(src, { recursive: true });
+  fs.writeFileSync(path.join(src, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "world", verb: "grant", args: { id: "aid1:issuer:Alice", role: "builder", gen: true } },
+    { seq: 2, ts: 3, actor: "world", verb: "grant", args: { id: "aid1:issuer:ALICE", role: "builder", gen: true } },
+    { seq: 3, ts: 4, actor: "world", verb: "grant", args: { id: "aid1:issuer:Carol", role: "builder", gen: true } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const r = translateV1World(src, path.join(W, "worlds", "new"));
+  const o = OR.whoFrom(path.join(W, "worlds"));
+  const got = { both: o.who("aid1:issuer:alice", { lowered: true }), given: o.who("someone", { sub: "aid1:issuer:carol", lowered: true }), carol: o.who("aid1:issuer:carol", { lowered: true }) };
+  const carol = Object.entries<any>(r.planned).filter(([, e]) => (e.subs ?? []).includes("aid1:issuer:Carol")).map(([id]) => id);
+  return [Object.keys(r.planned).length === 3 && /^\?unresolved:/.test(got.both) && /^\?unresolved:/.test(got.given) && carol.length === 1 && got.carol === carol[0] && o.unresolved.length === 2,
+    { got, unresolved: o.unresolved, planned: r.planned }]; });
 await C("K26", "a grant and a ban keyed by an account beside the sub the server stamped, and a ban by someone named by their account (translateV1World): the grant's and ban's id is the person's id, as their sub is, and the ban's `by` is the banner's id; no account reaches the log", async () => {
   const { translateV1World } = await imp("tools/protocol/import-v1/world.ts");
   const W = scratch("k26"), src = path.join(W, "old"); fs.mkdirSync(src, { recursive: true });
@@ -571,6 +596,7 @@ await C("K26", "a grant and a ban keyed by an account beside the sub the server 
   return [a.length === 1 && b.length === 1 && args("grant")?.id === a[0] && args("grant")?.sub === a[0] && args("ban")?.id === b[0] && args("ban")?.sub === b[0]
     && w[`imported-bans:${b[0]}`]?.by === a[0] && !text.includes(A) && !text.includes(B),
     { a, b, grant: args("grant"), ban: args("ban"), banned: w[`imported-bans:${b[0]}`] }]; });
+
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {
