@@ -143,9 +143,14 @@ export function sayRefusalWords(r, text) {
 function sendSay(args) {
   return sendRequest('say', args).then((r) => { if (!r?.ok) logChat('*', sayRefusalWords(r, args.text)); return r; });
 }
+/** extra: to (a whisper); spoken/utt/t0 (the words were voice-performed: the authority logs the trio, display only);
+ *  live: true for a transcript of speech (stt.js), which is never queued for a reconnect: sent later it would publish
+ *  after the mic went off, with nothing to check it again, so offline it is dropped. */
 export function say(text, extra = {}) {
-  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}) };
+  const args = { text: String(text ?? ''), ...(extra.to ? { to: extra.to } : {}),
+    ...(extra.spoken === true && Number.isSafeInteger(extra.utt) ? { spoken: true, utt: extra.utt, ...(Number.isFinite(extra.t0) ? { t0: extra.t0 } : {}) } : {}) };
   if (net.joined && net.ws?.readyState === 1) return sendSay(args);
+  if (extra.live) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world' } });
   // removed, taken over, or refused at the authority: nothing will reconnect, so nothing is queued (it would wait forever)
   if (sayQueue.length >= SAY_QUEUE_MAX || net.status === 'rejected') { const r = { ok: false, refused: { code: 'offline', reason: 'not connected to the world' } }; logChat('*', sayRefusalWords(r, args.text)); return Promise.resolve(r); }
   logChat('*', `queued ${excerpt(args.text)} — reconnecting… it will be sent when the world is back`);
