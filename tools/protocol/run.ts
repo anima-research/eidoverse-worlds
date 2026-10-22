@@ -4,6 +4,8 @@
 //   bun tools/protocol/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun tools/protocol/run.ts --manifest      print the suite table docs/GATE-MANIFEST.md carries (generated from here)
 //   bun tools/protocol/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
+//   bun tools/protocol/run.ts --siblings      fetch, pin and build mcpl's two sibling repos beside this checkout
+//   bun tools/protocol/run.ts --library <dir>    clone (or move) the asset library to its pin at <dir>, for EIDOVERSE_DIR
 //   bun tools/protocol/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
 //   bun tools/protocol/run.ts --scratch-out <file>   append `scratch=<the gate's temp dir>` to <file> as soon as it exists (CI: $GITHUB_OUTPUT)
 // Lanes, all required: CORE (transaction + security: the authority, access, durability, the reset race, identity, scars,
@@ -91,6 +93,13 @@ function manifestDrift(): string | null {
 }
 
 const argv = process.argv.slice(2);
+const VALUED = ["--lane", "--receipt", "--scratch-out", "--library"];
+const valueOf = (flag: string) => argv.includes(flag) ? argv[argv.indexOf(flag) + 1] ?? null : null;
+const headOf = (dir: string) => { const r = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
+// The browser pages load the asset library (Skye's toolkit modules, sky, avatars): a separate public repo, pinned here.
+// Declared like Chrome: required for the browser lane, fetched only by --library, never read from a guessed path.
+const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
+const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
 // mcpl's package.json takes two sibling repos by path (file:../../<dir>, i.e. beside this checkout). The gate owns that
 // closure (Mica, #260 r3): ONE place pins them; --siblings fetches them there; the preflight refuses a missing or
 // wrong-commit sibling rather than testing whatever happens to sit next to the repo.
@@ -101,7 +110,7 @@ const SIBLINGS: [dir: string, url: string, commit: string, build: boolean][] = [
   ["mcpl-core-ts", "https://github.com/anima-research/mcpl-core-ts.git", "e17f773a9247c41d5c872d760aac7f243748d134", true],
 ];
 const siblingAt = (dir: string) => path.resolve(ENGINE, "..", dir);
-const siblingHead = (dir: string) => { const r = spawnSync("git", ["-C", siblingAt(dir), "rev-parse", "HEAD"], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
+const siblingHead = (dir: string) => headOf(siblingAt(dir));
 if (argv.includes("--siblings")) {
   for (const [dir, url, commit, build] of SIBLINGS) {
     const at = siblingAt(dir);
@@ -120,10 +129,22 @@ if (argv.includes("--siblings")) {
   const m = spawnSync(process.execPath, ["install", "--frozen-lockfile"], { cwd: path.join(ENGINE, "mcpl"), stdio: "inherit" });
   process.exit(m.status ?? 1);
 }
+// --library <dir>: the pinned asset library at <dir> (cloned, or moved to the pin), for EIDOVERSE_DIR=<dir>
+if (argv.includes("--library")) {
+  const want = valueOf("--library");
+  if (!want || want.startsWith("--")) { console.error("--library <dir>: where the asset library goes (then EIDOVERSE_DIR=<dir>)"); process.exit(2); }
+  const at = path.resolve(want);
+  if (!fs.existsSync(at)) { const c = spawnSync("git", ["clone", "-q", "--filter=blob:none", LIBRARY_REPO, at], { stdio: "inherit" }); if (c.status !== 0) { console.error(`--library: cloning ${LIBRARY_REPO} failed`); process.exit(1); } }
+  if (headOf(at) !== LIBRARY_PIN) {
+    if (spawnSync("git", ["-C", at, "cat-file", "-e", `${LIBRARY_PIN}^{commit}`]).status !== 0) spawnSync("git", ["-C", at, "fetch", "-q", "--filter=blob:none", "origin", LIBRARY_PIN], { stdio: "inherit" });
+    const c = spawnSync("git", ["-C", at, "checkout", "-q", LIBRARY_PIN], { stdio: "inherit" });
+    if (c.status !== 0) { console.error(`--library: ${at} could not check out ${LIBRARY_PIN}`); process.exit(1); }
+  }
+  console.log(`  library   ${LIBRARY_PIN.slice(0, 12)}  ${at}`);
+  process.exit(0);
+}
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
-const VALUED = ["--lane", "--receipt", "--scratch-out"];
-const valueOf = (flag: string) => argv.includes(flag) ? argv[argv.indexOf(flag) + 1] ?? null : null;
 const laneArg = valueOf("--lane");
 const only = argv.filter((a, i) => !a.startsWith("--") && !VALUED.includes(argv[i - 1]));
 for (const n of only) if (!SUITES.some(([s]) => s === n)) { console.log(`protocol gate: no suite named "${n}" (bun tools/protocol/run.ts --manifest lists them)`); process.exit(2); }
@@ -191,17 +212,13 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
     CHROME ? CHROME : "the browser lane is REQUIRED: set CHROME=/path/to/chrome (Chromium or Chrome for Testing), or `bunx playwright install chromium`");
   if (CHROME && !v) problems.push(`${CHROME} --version printed nothing: is it a Chromium?`);
 }
-// The browser pages load the asset library (Skye's toolkit modules, sky, avatars): a separate public repo, pinned here.
-// Declared like Chrome: required for the browser lane, never fetched silently, never read from a guessed path.
-const LIBRARY_REPO = "https://github.com/SkyeShark/eidoverse-video.git";
-const LIBRARY_PIN = "9acc1528b2febac11338107645ef500a95985ca5";   // the library's PUBLIC head (10-19: e9f80d02 was a local snapshot, unfetchable by CI)
 let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
 // suites outside the browser lane that read the asset library, read-only: knockdown's ragdoll needs a real rig (with none
 // it falls back to the canned slump, which is what its rows reject)
 const READS_LIBRARY = new Set(["knockdown"]);
 if (SUITES.some(([n]) => selected(n) && (laneOf(n) === "browser" || READS_LIBRARY.has(n)))) {
   const want = process.env.EIDOVERSE_DIR;
-  const fix = `git clone ${LIBRARY_REPO} <dir> && git -C <dir> checkout ${LIBRARY_PIN}, then EIDOVERSE_DIR=<dir>`;
+  const fix = `bun tools/protocol/run.ts --library <dir>, then EIDOVERSE_DIR=<dir>`;
   if (!want) problems.push(`the browser lane (and ${[...READS_LIBRARY].join(", ")}) needs the asset library: set EIDOVERSE_DIR (${fix})`);
   else if (!fs.existsSync(path.join(want, "eidoverse", "terrain.js"))) problems.push(`EIDOVERSE_DIR=${want} is not an eidoverse-video checkout (no eidoverse/terrain.js): ${fix}`);
   else {

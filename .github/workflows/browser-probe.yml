@@ -25,9 +25,7 @@ jobs:
           (cd client && bun install --frozen-lockfile)
           bun tools/protocol/run.ts --siblings
           bun node_modules/playwright/cli.js install chromium
-          pin=$(grep -oE 'LIBRARY_PIN = "[0-9a-f]{40}"' tools/protocol/run.ts | grep -oE '[0-9a-f]{40}')
-          git clone -q --filter=blob:none https://github.com/SkyeShark/eidoverse-video.git "$RUNNER_TEMP/eidoverse-video"
-          git -C "$RUNNER_TEMP/eidoverse-video" checkout -q "$pin"
+          bun tools/protocol/run.ts --library "$RUNNER_TEMP/eidoverse-video"
       - name: probe
         id: probe
         shell: bash

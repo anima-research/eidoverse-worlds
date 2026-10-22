@@ -54,10 +54,7 @@ jobs:
           bun node_modules/playwright/cli.js install chromium
       - name: asset library (pinned in run.ts)
         shell: bash
-        run: |
-          pin=$(grep -oE 'LIBRARY_PIN = "[0-9a-f]{40}"' tools/protocol/run.ts | grep -oE '[0-9a-f]{40}')
-          git clone --filter=blob:none https://github.com/SkyeShark/eidoverse-video.git "$RUNNER_TEMP/eidoverse-video"
-          git -C "$RUNNER_TEMP/eidoverse-video" checkout "$pin"
+        run: bun tools/protocol/run.ts --library "$RUNNER_TEMP/eidoverse-video"
       - name: gate
         id: gate
         shell: bash
