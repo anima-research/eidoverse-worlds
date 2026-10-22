@@ -212,6 +212,9 @@ export function selection() {
   const s = Sel.selection();
   return s.kind === 'things' ? s.ids.filter((id) => entities.get(id)) : [];
 }
+/** …and for a delete, every selected thing the fold holds: a switched-off (or not yet loaded) thing has no realized object
+ *  but is still in the Hierarchy, and must still be removable (house review I30). */
+const removable = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids.filter((id) => state.st.entities?.[id]) : []; };
 /** Shift-click in the Hierarchy: every displayed row from the anchor (the last row clicked; else the active thing) to
  *  `id`, replacing the selection (Ctrl+Shift: added to it). The anchor stays where it is, so a second Shift-click re-ranges
  *  from it; the row clicked is active. false when there is no anchor among the displayed rows (the caller selects `id`). */
@@ -412,7 +415,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       break;
     }
     case 'detach': reparent(payload ?? sel, null); break;
-    case 'remove': { const ids = payload && !Sel.isSelected(payload) ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
+    case 'remove': { const ids = payload && !Sel.isSelected(payload) ? [payload] : removable(); if (ids.length) removeMany(ids); break; }
     case 'drop': reparent(payload?.id, payload?.onto); break;
     case 'filter': filter = String(payload ?? ''); break;
     case 'open': { const id = typeof payload === 'object' ? payload?.id : payload, deep = typeof payload === 'object' && !!payload?.deep;
@@ -503,12 +506,16 @@ function findSelected() {
  *  'rot' → rotate 0, 'scale' → scale 1, 'all' → the three. The keys follow the tools': G move, E rotate, R scale, so
  *  Alt+G / Alt+E / Alt+R; Ctrl+G is all of it. One request per thing, so one Ctrl+Z each. */
 const RESET = { pos: { 'pos.x': 0, 'pos.y': 0, 'pos.z': 0 }, rot: { 'rot.x': 0, 'rot.y': 0, 'rot.z': 0 }, scale: { 'pos.sx': 1, 'pos.sy': 1, 'pos.sz': 1 } };
+// quaternion order shows no rotate x/y/z: rotate 0 is the identity quaternion there (house review I90)
+const RESET_Q = { 'rot.qx': 0, 'rot.qy': 0, 'rot.qz': 0, 'rot.qw': 1 };
 function resetTransform(what) {
   const ids = selection(); if (!ids.length) { flashHint('select something first: Alt+G resets its translate, Alt+E rotate, Alt+R scale, Ctrl+G all three', 3500); return; }
   const want = what === 'all' ? { ...RESET.pos, ...RESET.rot, ...RESET.scale } : RESET[what]; if (!want) return;
   for (const id of ids) {
     // only the channels this thing has (quaternion order has no rotate x/y/z)
-    const have = new Set(channels(schemaFor(id)).map((c) => c.key)); const edits = Object.fromEntries(Object.entries(want).filter(([k]) => have.has(k)));
+    const have = new Set(channels(schemaFor(id)).map((c) => c.key));
+    const wantHere = 'rot.x' in want && !have.has('rot.x') ? { ...want, ...RESET_Q } : want;
+    const edits = Object.fromEntries(Object.entries(wantHere).filter(([k]) => have.has(k)));
     if (Object.keys(edits).length) commitMany(id, edits, what === 'all' ? 'transform reset' : `${{ pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset`);
   }
   flashHint(`${what === 'all' ? 'transform' : { pos: 'translate', rot: 'rotate', scale: 'scale' }[what]} reset${ids.length > 1 ? ` on ${ids.length} things` : ''} — Ctrl+Z undoes`, 2200);
@@ -1021,7 +1028,7 @@ function consoleDispatch(action, payload) {
 
 function removeMany(ids) {
   // a locked thing is asked about by the authority's refusal ("This is locked. Delete anyway?"), not filtered out here
-  const go = ids.filter((id) => entities.get(id));
+  const go = ids.filter((id) => state.st.entities?.[id]);
   if (!go.length) return false;
   Edits.del(go); if (selection().length > 1) Sel.set([selection()[0]]); return true;   // one request: delete, or a batch of them (one act)
 }
@@ -1376,7 +1383,7 @@ export function initEditPanels() {
   bus.on('edit-mode', (on) => { if (!on) { armingRef = null; const p = sceneSelected(); if (p) Sel.set([p]); else Sel.clear(); } });
   setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
-  setRemoveHook(() => removeMany(selection()));
+  setRemoveHook(() => removeMany(removable()));
   bus.on('edit-find', () => findSelected());              // F in the viewport
   bus.on('edit-reset', (what) => resetTransform(what));   // Alt+G / Alt+E / Alt+R, Ctrl+G in the viewport
   bus.on('key', (e) => {   // Ctrl+D duplicates (Maya, Unity, Godot; R 10-04), Alt+D as well; preventDefault stops the bookmark
