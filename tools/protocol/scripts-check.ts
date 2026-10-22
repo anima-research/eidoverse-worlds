@@ -1021,7 +1021,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const afterSame = view()?.status;
       const adopt = s.call("olive", "adopt", { id: "qd", script: "p" });
       return { act, why, bobSet: bobSet?.ok ? "ok" : bobSet?.refused?.code, ownerSame: ownerSame?.ok ? "ok" : ownerSame?.refused?.code, afterSame, adopt: adopt?.ok ? "ok" : adopt?.refused?.code, after: view()?.status }; },
-    good: (o) => o.act > 0 && /adopt/.test(o.why ?? "") && !/set it again/.test(o.why ?? "") && o.bobSet === "rights" && o.afterSame === "not-installed" && o.adopt === "ok" && o.after === "active" },
+    good: (o) => o.act > 0 && /adopt/.test(o.why ?? "") && !/set it again/.test(o.why ?? "") && o.bobSet === "rights" && o.ownerSame === "ok" && o.afterSame === "not-installed" && o.adopt === "ok" && o.after === "active" },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
