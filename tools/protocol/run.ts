@@ -22,7 +22,8 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuite, suiteMembers } from "./procgroup.ts";
+import { killSuiteAsync, suiteMembersAsync } from "./procgroup.ts";
+import { spawn as spawnNow } from "node:child_process";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
@@ -359,18 +360,22 @@ if (problems.length) {
 const GATE_TMP = fs.mkdtempSync(path.join(os.tmpdir(), "eido-gate-"));
 let current: { pid: number } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
-const killGroup = (pid: number, sig: NodeJS.Signals) => killSuite(pid, sig);
-const groupMembers = (pgid: number) => suiteMembers(pgid).length;
+// the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
+const killGroup = (pid: number, sig: NodeJS.Signals) => killSuiteAsync(pid, sig);
+const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
+/** at exit, where nothing can be awaited: signal the group (POSIX) or start a tree kill and leave it running (Windows) */
+const killNow = (pid: number) => { if (process.platform !== "win32") { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } return; }
+  try { spawnNow("taskkill", ["/PID", String(pid), "/T", "/F"], { detached: true, stdio: "ignore", windowsHide: true }).unref(); } catch { /* gone */ } };
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
-const cleanup = () => { if (current) killGroup(current.pid, "SIGKILL"); if (process.env.PROTOCOL_KEEP) return;
+const cleanup = () => { if (current) killNow(current.pid); if (process.env.PROTOCOL_KEEP) return;
   try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
 
 const OPT_TRACKED = (spawnSync("git", ["-C", ENGINE, "ls-files", "-z", "assets/opt"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean).map((f) => f.slice("assets/opt/".length));
 const PATH = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? process.env.Path ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
-async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number }> {
+async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number; stuck?: boolean }> {
   const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
   for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
   // the asset cache starts empty EXCEPT for what the repo itself commits there (props/ball.glb, a fixture since 08-03):
@@ -391,15 +396,18 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   current = { pid: child.pid! };
   let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
-  const timer = setTimeout(() => { timedOut = true; killGroup(child.pid!, "SIGTERM"); setTimeout(() => killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
-  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); }); });
-  clearTimeout(timer);
-  const leftovers = child.pid ? groupMembers(child.pid) : 0;   // anything the suite started and left running
-  if (child.pid) killGroup(child.pid, "SIGKILL");
+  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM"); setTimeout(() => void killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
+  // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
+  let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); });
+    watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
+  clearTimeout(timer); clearTimeout(watchdog);
+  const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
+  if (child.pid) await killGroup(child.pid, "SIGKILL");
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
-  return { code, signal, out, timedOut, leftovers };
+  return { code, signal, out, timedOut, leftovers, stuck };
 }
 
 // ---- the gate ----
@@ -419,11 +427,11 @@ for (const name of order) {
   const optional = lines.filter((l) => /^\s*OPTIONAL\b/.test(l)).map((l) => l.trim());
   const ms = performance.now() - t;
   let status: Result["status"] = r.code === 0 ? "pass" : r.code === 77 ? "skip" : "fail";
-  let why = r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
+  let why = r.stuck ? `timed out after ${timeoutOf(name)} s, and it wouldn't die: left behind after a minute more (its kill didn't land)` : r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
   if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
   if (r.timedOut) status = "fail";
   results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
-  console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? ` · killed ${r.leftovers} leftover process(es)` : ""}`);
+  console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
   for (const l of fails.slice(0, 20)) console.log(l);
   for (const l of rowSkips.slice(0, 20)) console.log(l);
   for (const l of lines.slice(-tail)) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
