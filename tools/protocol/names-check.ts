@@ -111,7 +111,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["stop on a station stands the occupant up", "mcpl/agent.ts", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }", "const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; } else this.setPosture(\"idle\");", ["K1"]],
   ["a pose struck over a sit replaces it", "mcpl/agent.ts", "this.animEnded(\"replaced\", (b) => b.kind === a.kind);", "this.animEnded(\"replaced\");", ["K2", "K3", "K4"]],
   ["stop by name stops every layer", "mcpl/agent.ts", "const hit = this.anims.filter((a) => which == null || a.name === which);", "const hit = this.anims.filter((a) => true);", ["K3", "K4"]],
-  ["the relay isn't told to fade the tracks", "mcpl/agent.ts", "this.ws.send(JSON.stringify({ type: \"anim\", stop: true }));", "void 0;", ["K2", "K4"]],
+  ["the relay isn't told to fade the tracks", "mcpl/agent.ts", "kinds.has(\"track\")) && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: \"anim\", stop: true }));", "kinds.has(\"track\")) && this.joined && this.ws?.readyState === 1) void 0;", ["K2", "K4"]],
   ["a tracks loop is a held frame (ends at the next tick)", "mcpl/tools.ts", "ag.animBegan({ name: \"live\", mode: \"loop\", kind: \"track\" });", "ag.animBegan({ name: \"live\", mode: \"loop\", kind: \"live\" });", ["K2", "K4"]],
   ["live may be a name", "mcpl/tools.ts", "    if (isReservedAnimName(n)) return", "    if (false) return", ["K4"]],
   ["a clip def may be called live", "shared/animdefs.js", "  if (isReservedAnimName(name)) errs.push(", "  if (false) errs.push(", ["K4"]],
