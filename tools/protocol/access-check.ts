@@ -342,65 +342,102 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A13d …a key another process wrote after the handle opened is taken, not minted over", { op, held, after }); }
 // ---- A13e–A13g (review of #260, server I5): custody's lock. A lock file is "<pid> <nonce>", linked into place whole
 // (server/custody.ts take); this process holds one the same way, so the children meet a lock held by a live process ----
-const holdLock = (name, pid = process.pid) => { const nonce = crypto.randomBytes(8).toString("hex"), t = `${name}.${nonce}.held`;
-  fs.writeFileSync(t, `${pid} ${nonce}`); fs.linkSync(t, name); fs.rmSync(t); return nonce; };
 const custodyTs = path.join(ENGINE, "server/custody.ts");
-// a child that opens its handle, says it's ready, waits for `go` (sleeping, not spinning), mints `each` holder keys and the
-// sequencer key, and prints what it got; or prints the error a mint threw
-const minter = (dir, f, go, i, each) => Bun.spawn(["bun", "-e", `const fs = require("node:fs"); const { custodyAt } = await import(${JSON.stringify(custodyTs)});
-  const h = custodyAt(${JSON.stringify(f)}); fs.writeFileSync(${JSON.stringify(dir)} + "/ready-${i}", "");
-  const nap = new Int32Array(new SharedArrayBuffer(4)); while (!fs.existsSync(${JSON.stringify(go)})) Atomics.wait(nap, 0, 0, 5);
-  const out = {}; try { for (let j = 0; j < ${each}; j++) out["u-p${i}-" + j] = h.keyOf("u-p${i}-" + j, true); out.sequencer = h.sequencer(); }
-  catch (e) { out.error = String(e.message ?? e); } console.log(JSON.stringify(out));`], { cwd: ENGINE, stdout: "pipe", stderr: "pipe" });
-const resultOf = async (k) => { await k.exited; return JSON.parse((await new Response(k.stdout).text()) || "{}"); };
-const readyIn = (dir) => fs.readdirSync(dir).filter((n) => n.startsWith("ready-")).length;
+const lockText = (pid) => { const nonce = crypto.randomBytes(8).toString("hex"); return { nonce, text: `${pid} ${nonce}` }; };
+// take `name` as custody does (fails if it's there), or put a new lock in its place in one step (rename over it)
+const holdLock = (name, pid = process.pid) => { const { nonce, text } = lockText(pid), t = `${name}.${nonce}.held`;
+  fs.writeFileSync(t, text); try { fs.linkSync(t, name); } finally { fs.rmSync(t); } return nonce; };
+const replaceLock = (name, pid = process.pid) => { const { nonce, text } = lockText(pid), t = `${name}.${nonce}.held`;
+  fs.writeFileSync(t, text); fs.renameSync(t, name); return nonce; };
+const exitedPid = async () => { const p = Bun.spawn(["bun", "-e", ""]); await p.exited; return p.pid; };
+// A child that opens its handle, marks `ready`, waits for `go` (sleeping, not spinning), mints `each` holder keys and the
+// sequencer key, and prints what it got, any error a mint threw, and how long its mints took by its own clock. Its fs is
+// watched from inside, so it leaves its own signs of where custody's lock has it: `met-lock` the first time the lock is
+// held, a dot in `tries` each time, `met-right` the first time another holds the right to remove a lock, and `holds-right`
+// once it holds one itself (with `pause`, it then waits for `resume` before going on).
+const minter = (dir, f, go, i, each, { pause = false } = {}) => Bun.spawn(["bun", "-e", `const fs = (await import("node:fs")).default;
+  const lock = ${JSON.stringify(`${f}.lock`)}, at = (n) => ${JSON.stringify(dir)} + "/" + n + "-${i}", seen = new Set();
+  const mark = (n) => { if (!seen.has(n)) { seen.add(n); fs.writeFileSync(at(n), ""); } };
+  const nap = new Int32Array(new SharedArrayBuffer(4)), until = (p) => { while (!fs.existsSync(p)) Atomics.wait(nap, 0, 0, 5); };
+  const link = fs.linkSync; fs.linkSync = function (a, b) {
+    const right = String(b).startsWith(lock + ".");
+    try { const r = link.call(fs, a, b); if (right && !seen.has("holds-right")) { mark("holds-right"); if (${pause}) until(at("resume")); } return r; }
+    catch (e) { if (e?.code === "EEXIST") { if (String(b) === lock) { mark("met-lock"); fs.appendFileSync(at("tries"), "."); } else if (right) mark("met-right"); } throw e; } };
+  const { custodyAt } = await import(${JSON.stringify(custodyTs)});
+  const h = custodyAt(${JSON.stringify(f)}); mark("ready"); until(${JSON.stringify(go)});
+  const out = {}, t0 = performance.now();
+  try { for (let j = 0; j < ${each}; j++) out["u-p${i}-" + j] = h.keyOf("u-p${i}-" + j, true); out.sequencer = h.sequencer(); }
+  catch (e) { out.error = String(e.message ?? e); } out.ms = Math.round(performance.now() - t0); console.log(JSON.stringify(out));`], { cwd: ENGINE, stdout: "pipe", stderr: "pipe" });
+// what a child printed, and how it exited: a child that crashed says so rather than printing nothing that compares equal
+const resultOf = async (k) => { const code = await k.exited, out = await new Response(k.stdout).text();
+  try { return { ...JSON.parse(out), code }; } catch { return { crashed: true, code, stderr: (await new Response(k.stderr).text()).slice(-400) }; } };
+const marks = (dir, n) => fs.readdirSync(dir).filter((x) => x.startsWith(`${n}-`)).length;
+const triesOf = (dir, i) => { try { return fs.readFileSync(path.join(dir, `tries-${i}`), "utf8").length; } catch { return 0; } };
 const keysIn = (f) => fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : {};
 const textOf = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return ""; } };   // a lock may be gone: that's a verdict, not a crash
-// A13g first, since it waits out the lock: a lock held by a live process the whole time ends the wait with a refusal that
-// names the lock and its holder
-const tDir = fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), tFile = path.join(tDir, "keys", "custody.json");
-fs.mkdirSync(path.dirname(tFile), { recursive: true }); holdLock(`${tFile}.lock`);
-fs.writeFileSync(path.join(tDir, "go"), ""); const tStart = Date.now(), tKid = minter(tDir, tFile, path.join(tDir, "go"), 0, 1), timedOut = resultOf(tKid);
+const besideKeys = (f) => fs.readdirSync(path.dirname(f)).filter((n) => n !== path.basename(f));
+const scratchKeys = () => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), f = path.join(dir, "keys", "custody.json");
+  fs.mkdirSync(path.dirname(f), { recursive: true }); return { dir, f, lock: `${f}.lock`, go: path.join(dir, "go") }; };
+// A13g's child starts first, since it waits out the lock: one this process holds the whole time
+const T = scratchKeys(); holdLock(T.lock); fs.writeFileSync(T.go, "");
+const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
 // ---- A13e: while a live process holds the lock no one mints; released, six processes minting into one keys file at once keep every key ----
-{ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), f = path.join(dir, "keys", "custody.json"), go = path.join(dir, "go"), N = 6, EACH = 8;
-  fs.mkdirSync(path.dirname(f), { recursive: true }); holdLock(`${f}.lock`);
+{ const { dir, f, lock, go } = scratchKeys(), N = 6, EACH = 8; holdLock(lock);
   const kids = Array.from({ length: N }, (_, i) => minter(dir, f, go, i, EACH));
-  const ready = await waitFor(() => readyIn(dir) === N, 60_000);
-  fs.writeFileSync(go, ""); await sleep(600);   // every child has met the held lock by now, and waits on it
+  const ready = await waitFor(() => marks(dir, "ready") === N, 60_000); fs.writeFileSync(go, "");
+  const met = await waitFor(() => marks(dir, "met-lock") === N, 60_000);   // each child's own sign: it met the held lock
   const during = Object.keys(keysIn(f).holders ?? {}).length, waiting = kids.every((k) => k.exitCode === null);
-  fs.rmSync(`${f}.lock`, { force: true });   // released: the six take it in turn, from the same instant
-  const minted = await Promise.all(kids.map(resultOf));
-  const disk = keysIn(f);
+  fs.rmSync(lock, { force: true });   // released: the six take it in turn, from the same instant
+  const minted = await Promise.all(kids.map(resultOf)), disk = keysIn(f);
   const lost = minted.flatMap((m) => Object.entries(m).filter(([who]) => who.startsWith("u-")).filter(([who, pub]) => disk.holders?.[who]?.pub !== pub).map(([who]) => who));
-  const seqs = new Set(minted.map((m) => m.sequencer)), left = fs.readdirSync(path.dirname(f)).filter((n) => n !== "custody.json");
-  ok(ready && during === 0 && waiting && minted.every((m) => !m.error && Object.keys(m).length === EACH + 1) && lost.length === 0 && seqs.size === 1 && disk.sequencer?.pub === [...seqs][0] && !left.length,
-    "A13e while a live process holds the custody lock, six minters all wait and none mints; released, they mint into one keys file at once, every holder key each minted is on disk, they sign with one sequencer key, and nothing is left beside the file",
-    { ready, during, waiting, errors: minted.map((m) => m.error).filter(Boolean), lost: lost.length, of: N * EACH, seqs: seqs.size, left }); }
-// ---- A13f: a lock whose holder exited is removed, once, by whoever holds the right to remove it (`<lock>.<its nonce>`) ----
-{ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), f = path.join(dir, "keys", "custody.json"), go = path.join(dir, "go"), lock = `${f}.lock`;
-  const gone = Bun.spawn(["bun", "-e", ""]); await gone.exited;   // a pid that has exited
-  fs.mkdirSync(path.dirname(f), { recursive: true }); const stale = holdLock(lock, gone.pid);
-  const right = holdLock(`${lock}.${stale}`);   // this process is part way through removing it
-  fs.writeFileSync(go, ""); const kid = minter(dir, f, go, 0, 1); await waitFor(() => readyIn(dir) === 1, 60_000); await sleep(600);
+  const seqs = new Set(minted.map((m) => m.sequencer)), left = besideKeys(f);
+  ok(ready && met && during === 0 && waiting && minted.every((m) => m.code === 0 && !m.error && Object.keys(m).filter((k) => k.startsWith("u-")).length === EACH && typeof m.sequencer === "string")
+    && lost.length === 0 && seqs.size === 1 && disk.sequencer?.pub === [...seqs][0] && !left.length,
+    "A13e six minters each meet the custody lock a live process holds, and none mints while it's held; released, they mint into one keys file at once, every holder key each minted is on disk, they sign with one sequencer key, and nothing is left beside the file",
+    { ready, met, during, waiting, results: minted.map((m) => m.error ?? (m.crashed ? `crashed ${m.code}` : "ok")), lost: lost.length, of: N * EACH, seqs: seqs.size, left }); }
+// ---- A13f: a lock whose holder exited is removed only by whoever holds the right to remove it (`<lock>.<its nonce>`), and
+// only while the lock is still that one ----
+const gonePid = await exitedPid();
+// while another (live) holds the right, the waiter leaves the stale lock; once that other has put a live lock in its place
+// (one step) and given the right back, the waiter leaves the live lock too, and mints when it's released
+{ const { dir, f, lock, go } = scratchKeys(); const stale = holdLock(lock, gonePid); holdLock(`${lock}.${stale}`);
+  fs.writeFileSync(go, ""); const kid = minter(dir, f, go, 0, 1);
+  const metRight = await waitFor(() => marks(dir, "met-right") === 1, 60_000);   // its own sign: it found the right held
   const kept = textOf(lock).endsWith(stale), waited = kid.exitCode === null;
-  // …it finishes: removes the stale lock, takes the lock itself, gives the right back: the child must not remove a live lock
-  fs.rmSync(lock, { force: true }); let mine = null; try { mine = holdLock(lock); } catch {} fs.rmSync(`${lock}.${stale}`, { force: true }); await sleep(600);
-  const live = !!mine && textOf(lock).endsWith(mine), stillWaiting = kid.exitCode === null;
+  const mine = replaceLock(lock); fs.rmSync(`${lock}.${stale}`); const n0 = triesOf(dir, 0);
+  const tried = await waitFor(() => triesOf(dir, 0) >= n0 + 3, 60_000);   // …and has met the live lock three times since
+  const live = textOf(lock).endsWith(mine), stillWaiting = kid.exitCode === null;
   fs.rmSync(lock, { force: true }); const got = await resultOf(kid);
-  // and a lock whose holder exited, with no one removing it, is taken over at once
-  const g = path.join(dir, "again", "custody.json"); fs.mkdirSync(path.dirname(g), { recursive: true }); holdLock(`${g}.lock`, gone.pid);
-  const { custodyAt } = await import(custodyTs); const t0 = Date.now(); let k2 = null, err2;
-  try { k2 = custodyAt(g).keyOf("u-again", true); } catch (e) { err2 = String(e?.message ?? e); } const took = Date.now() - t0;
-  const leftF = fs.readdirSync(path.dirname(f)).filter((n) => n !== "custody.json"), leftG = fs.readdirSync(path.dirname(g)).filter((n) => n !== "custody.json");
-  ok(kept && waited && live && stillWaiting && !got.error && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !!k2 && keysIn(g).holders?.["u-again"]?.pub === k2 && took < 2000 && !leftF.length && !leftG.length,
-    "A13f a lock whose holder exited is left alone while another holds the right to remove it, and a live lock that replaced it is never removed; with no one removing it, a mint takes it over at once; nothing is left beside the file",
-    { kept, waited, live, stillWaiting, error: got.error, err2, took, leftF, leftG, right }); }
-// ---- A13g: …the refusal that ends the wait ----
-{ const got = await Promise.race([timedOut, sleep(Math.max(0, 25_000 - (Date.now() - tStart))).then(() => ({ hung: true }))]), waited = Date.now() - tStart;
+  ok(metRight && kept && waited && tried && live && stillWaiting && got.code === 0 && !got.error && typeof got["u-p0-0"] === "string" && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !besideKeys(f).length,
+    "A13f a waiter leaves a stale lock while another holds the right to remove it, then leaves the live lock put in its place, and mints once that's released; nothing is left beside the file",
+    { metRight, kept, waited, tried, live, stillWaiting, got, left: besideKeys(f) }); }
+// the waiter holds the right, and the stale lock is replaced before it removes it: the nonce it rechecks stops the removal
+{ const { dir, f, lock, go } = scratchKeys(); const stale = holdLock(lock, gonePid);
+  fs.writeFileSync(go, ""); const kid = minter(dir, f, go, 0, 1, { pause: true });
+  const holds = await waitFor(() => marks(dir, "holds-right") === 1, 60_000);   // it holds the right to remove the stale lock, paused
+  const mine = replaceLock(lock); const n0 = triesOf(dir, 0); fs.writeFileSync(path.join(dir, "resume-0"), "");
+  const tried = await waitFor(() => triesOf(dir, 0) >= n0 + 3, 60_000);
+  const live = textOf(lock).endsWith(mine), rightGone = !fs.existsSync(`${lock}.${stale}`), stillWaiting = kid.exitCode === null;
+  fs.rmSync(lock, { force: true }); const got = await resultOf(kid);
+  ok(holds && tried && live && rightGone && stillWaiting && got.code === 0 && !got.error && typeof got["u-p0-0"] === "string" && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !besideKeys(f).length,
+    "A13f a waiter holding the right to remove a stale lock that has since been replaced leaves the live lock (the nonce differs), gives the right back, and mints once it's released",
+    { holds, tried, live, rightGone, stillWaiting, got, left: besideKeys(f) }); }
+// a stale lock whose removal right was left by a process that exited too, and a stale lock alone: a mint clears each without
+// waiting out the lock's 10 s, and leaves nothing beside the file
+{ const { custodyAt } = await import(custodyTs);
+  const mint = (f) => { const t0 = Date.now(); try { return { key: custodyAt(f).keyOf("u-again", true), ms: Date.now() - t0 }; } catch (e) { return { error: String(e?.message ?? e), ms: Date.now() - t0 }; } };
+  const A = scratchKeys(); const stale = holdLock(A.lock, gonePid); holdLock(`${A.lock}.${stale}`, gonePid); const a = mint(A.f);
+  const B = scratchKeys(); holdLock(B.lock, gonePid); const b = mint(B.f);
+  const good = (r, X) => !r.error && typeof r.key === "string" && keysIn(X.f).holders?.["u-again"]?.pub === r.key && r.ms < 9_000 && !besideKeys(X.f).length;
+  ok(good(a, A), "A13f a stale lock whose removal right was left by a process that exited too is cleared, right first, without the 10 s wait", { ...a, left: besideKeys(A.f) });
+  ok(good(b, B), "A13f a stale lock alone is taken over without the 10 s wait", { ...b, left: besideKeys(B.f) }); }
+// ---- A13g: …the refusal that ends the wait: after its 10 s by the child's own clock, naming the lock and its holder ----
+{ const met = await waitFor(() => marks(T.dir, "met-lock") === 1, 60_000), metAt = met ? fs.statSync(path.join(T.dir, "met-lock-0")).mtimeMs : Date.now();
+  const got = await Promise.race([timedOut, sleep(Math.max(0, metAt + 30_000 - Date.now())).then(() => ({ hung: true }))]);
   if (got.hung) tKid.kill();
-  ok(typeof got.error === "string" && got.error.includes(`${tFile}.lock`) && got.error.includes(`by process ${process.pid}`) && /held .* for 10 s/.test(got.error) && waited >= 9_500 && !keysIn(tFile).holders,
-    "A13g a mint that waits 10 s on a lock a live process holds gives up, naming the lock and its holder, and mints nothing", { got, waited });
-  fs.rmSync(`${tFile}.lock`, { force: true }); }
+  ok(met && typeof got.error === "string" && got.error.includes(T.lock) && got.error.includes(`by process ${process.pid}`) && /held .* for 10 s/.test(got.error) && got.ms >= 9_500 && !keysIn(T.f).holders,
+    "A13g a mint that waits on a lock a live process holds gives up after its 10 s, naming the lock and its holder, and mints nothing", { met, got });
+  fs.rmSync(T.lock, { force: true }); }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
