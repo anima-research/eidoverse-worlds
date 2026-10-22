@@ -28,10 +28,16 @@ export const use = (id, action = null, args = null) => ({ verb: "use", args: { i
  *  (R 10-17: writers never choose ids): pass null, or a placeholder ('$lamp') when the same request (a batch) refers to it
  *  or the reply's ids map should say what it became. */
 export function create(id, { model = null, transform = {}, components = {}, from = null } = {}) {
-  // a transform passed among the components joins the transform argument, so what is written is still whole
-  const comps = {}; let t = transform; for (const [k, v] of Object.entries(components)) { if (encName(k) === "transform" && v && typeof v === "object") t = { ...t, ...v }; else comps[encName(k)] = v; }
+  // a transform passed among the components joins the transform argument, so what is written is still whole. What's absent
+  // defaults; what's malformed (not an object, or a field that isn't one) is passed on as it is, for the authority to refuse
+  // with its reason: never turned into a valid transform at the origin (house 6340433633)
+  const bad = (v) => v != null && (typeof v !== "object" || Array.isArray(v));   // null/undefined: absent, so defaulted
+  const comps = {}; let t = transform == null || bad(transform) ? {} : transform, raw = bad(transform) ? transform : undefined;
+  for (const [k, v] of Object.entries(components)) { if (encName(k) === "transform") { if (bad(v)) raw = v; else if (v != null) t = { ...t, ...v }; } else comps[encName(k)] = v; }
+  const field = (v, ok, dflt) => (v === undefined ? dflt : ok(v) ?? v);
+  const whole = raw !== undefined ? raw : { pos: field(t.pos, (p) => (finite3(p) ? [...p] : undefined), [0, 0, 0]), q: field(t.q, qNorm, [0, 0, 0, 1]), scale: field(t.scale, scale3, [1, 1, 1]) };
   return { verb: "create", args: { ...(id == null ? {} : { id: E(id) }), ...(model ? { model } : {}), ...(from ? { from } : {}),
-    components: { ...comps, transform: { pos: finite3(t.pos) ? [...t.pos] : [0, 0, 0], q: qNorm(t.q) ?? [0, 0, 0, 1], scale: scale3(t.scale) ?? [1, 1, 1] } } } };
+    components: { ...comps, transform: whole } } };
 }
 
 /** The whole transform after a pose edit, from what the view shows (`ent`: {pos, q, yaw, scale, scale3}). `patch`:

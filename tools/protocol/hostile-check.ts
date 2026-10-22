@@ -195,6 +195,16 @@ const probes = [
     base: () => ({ ok: true, v: "(the baseline has no request builders)" }), held: true,
     now: () => createRequest(null, { components: { transform: { pos: [1, 2, 3] } } }).args.components.transform,
     nowGood: (t) => JSON.stringify(t) === JSON.stringify({ pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }) },
+  // house 6340433633 (corrected 6343218893): the builder turned a malformed transform into a valid one at the origin, which
+  // the authority then took. Absent fields still default; a malformed one goes through as it is, for the authority to refuse
+  { id: "R228b", src: "house 6340433633", what: "a create whose transform is malformed (an array, a non-finite pos) is passed on as it is, never turned into the origin", held: false,
+    base: () => ({ ok: true, v: "(the baseline has no request builders)" }),
+    now: () => ({ arr: createRequest(null, { components: { transform: [1, 0, 2] } }).args.components.transform,
+      arg: createRequest(null, { transform: [1, 0, 2] }).args.components.transform,
+      pos: createRequest(null, { components: { transform: { pos: ["x", 0, 0] } } }).args.components.transform,
+      absent: createRequest(null, { components: { transform: { q: [0, 0, 0, 1] } } }).args.components.transform }),
+    nowGood: (r) => JSON.stringify(r.arr) === "[1,0,2]" && JSON.stringify(r.arg) === "[1,0,2]" && JSON.stringify(r.pos?.pos) === '["x",0,0]'
+      && JSON.stringify(r.absent) === JSON.stringify({ pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }) },
   // review of #260: a timed grant past its end that the sweep hasn't removed yet is shown ended, and isn't listed at a clock
   { id: "R194", src: "review of #260", what: "a grant past its end reads 'ended' (not '1 min left'), and listedIn with a clock doesn't list it",
     base: () => ({ ok: true, v: "(the baseline has no timed grants)" }), held: true,
