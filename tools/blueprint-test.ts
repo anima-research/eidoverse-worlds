@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { recordComponents } from "../shared/protocol/view.js";
+import { inspectSchema, fieldAt } from "../shared/editschema.js";
 // config.ts makes WORLDS_DIR at import: keep the bench out of the repo's worlds/
 const SCRATCH = mkdtempSync(join(tmpdir(), 'ew-blueprint-'));
 process.env.WORLDS_DIR = join(SCRATCH, 'worlds');
@@ -270,18 +271,14 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('an edit to one copy\'s part changes that copy only, and the record stays as published', E()[partOf(E(), 'lamp-2', 'bulb')].light.intensity === 2 && E()[partOf(E(), 'lamp-3', 'bulb')].light.intensity === 4 && W.getBlob(HV).parts[1].components.light.intensity === 4);
 }
 {
-  // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a rotation order
-  // (rotOrder is a CLIENT editor preference riding the comp bag — shared/components.js:299, never a registered
-  // protocol component — so it carries a namespace now that the registry refuses unregistered bare names. Note the
-  // spelling: component names are lowercase-with-hyphens, so a capital in `rotOrder` is escaped to x--<hex> by
-  // encName and lands back as an unregistered bare name — `hesperus/rot-order` passes through as itself.)
-  // and a spin, and a glow (an Empty with a light that burns at noon)
+  // a deeper design: a scaled base with a box collider, a tilted half-scale arm, a locked shade with a spin, and a glow
+  // (an Empty with a light that burns at noon). No rotation order rides any part: it is the viewer's (PROTOCOL §9.1)
   const W = scratchWorld('blueprint');
   const tilt = [0.3826834323650898, 0, 0, 0.9238795325112867];
   W.seed({
     desk: { model: LAMP, pos: [50, 0, 50], scale: 2, collider: { shape: 'box' } },
     arm: { model: LAMP, parent: { to: 'desk', offset: [0.2, 0.5, 0], q: tilt }, scale: 0.5 },
-    shade: { model: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, 'hesperus/rot-order': 'ZXY', motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true },
+    shade: { model: LAMP, parent: { to: 'arm', offset: [0, 1, 0] }, motion: { type: 'spin', axis: 'y', degPerSec: 20 }, lock: true },
     glow: { parent: { to: 'shade', offset: [0, -0.1, 0] }, light: { color: 0xff8800, intensity: 6, range: 4, day: false } },
   });
   const p = W.call('publish', { from: 'desk', name: 'Desk' });
@@ -296,7 +293,12 @@ let HV = '';   // the record's hash, "sha256:<hex>"
   check('the tilted arm (root turned 90°, root scale 2; local offset, tilt and scale ½) stands at its composed pose: [10, 1, -2.4], scale 1, tilted',
     near(arm.pos, [10, 1, -2.4]) && Math.abs(arm.scale - 1) < 1e-6 && Math.abs(E[id('arm')!].q[0]) > 0.1, J(arm));
   const shade = E[id('shade')!], glow = E[id('glow')!];
-  check('the shade is locked (lock true is stored {rank: builder}: shape audit 10-16), spins, and keeps its rotation order', J(shade?.lock) === J({ rank: 'builder' }) && shade?.motion?.type === 'spin' && shade?.['hesperus/rot-order'] === 'ZXY', J(shade.comp));
+  check('the shade is locked (lock is a bool again: recut C11), spins, and carries no rotation order (the order is the viewer\'s)',
+    shade?.lock === true && shade?.motion?.type === 'spin' && !Object.keys(shade ?? {}).some((k) => /rot-?order|726f744f72646572/i.test(k)), J(shade));
+  // the viewer's order stays on the viewer: the editor reads the copy in whatever order this viewer chose, and placing
+  // the copy wrote none (PROTOCOL §9.1; client/lib/viewprefs.js keeps it)
+  check('…and a viewer reading the copy in ZXY reads it in ZXY, from its own settings', fieldAt(inspectSchema(shade, id('shade')!, { rotOrder: 'ZXY' }), 'rot.order')?.value === 'ZXY'
+    && fieldAt(inspectSchema(shade, id('shade')!), 'rot.order')?.value === 'XYZ');
   check('the glow is an Empty whose light burns at noon; the base collides as a box', glow.model === undefined && glow?.light?.daytime === 'full' && glow.light.color === 0xff8800 && E.desk2?.collider?.shape === 'box', J([glow, E.desk2.comp]));
   // a lock binds removal (§5), and undoing a create removes: the door refuses the bare undo `locked` (v1's inverses
   // unlocked first). The person is asked "Move anyway?" (editwrites: undo offers through, not unlock); throughLock takes it.
