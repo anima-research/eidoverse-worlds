@@ -45,7 +45,7 @@ export function initXRAsk() {
   api.xr = true;
   const css = document.createElement('style');
   css.textContent = `[data-frame=ask] .fr-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.ask-title { font-weight: 600; } .ask-row { display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
+.ask-title { font-weight: 600; flex: none; } .ask-body { flex: 1; min-height: 0; overflow: auto; } .ask-row { flex: none; display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
   document.head.appendChild(css);
   bus.on('xr:domquads', () => { if (!pending) showXRPanel('ask', false); });   // entering VR: present but hidden until asked
   return api;
