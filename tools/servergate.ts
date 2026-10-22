@@ -7,9 +7,9 @@
 // wire-contract suites, each with its own env header. This runner makes
 // that lattice one command: for every external-server tool it boots a
 // fresh scratch sequencer (own WORLDS_DIR, own port, the tool's exact
-// env), runs the tool, kills the sequencer by child handle (§ Windows:
-// taskkill /T — the PID we hold is bun's own since we spawn
-// process.execPath, never the PATH shim), and prints a PASS/FAIL table.
+// env), runs the tool, kills the sequencer by child handle (§ Windows: its
+// whole tree, procgroup.ts killChild — the PID we hold is bun's own since we
+// spawn process.execPath, never the PATH shim), and prints a PASS/FAIL table.
 // Self-booting suites (smoke, authtest, support-lifecycle) just run. (Protocol v1
 // removed 2026-10-07: the v1 wire matrices — comptest, modtest, locktest, leasetest,
 // worldops, compfold, behaviortest, collide-fold — went with it; their successors
@@ -20,6 +20,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { killChild } from "./protocol/procgroup.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const only = (() => {
@@ -40,13 +41,7 @@ function freePort(from: number): number {
   throw new Error("no free port");
 }
 
-function reap(p: Bun.Subprocess | null) {
-  if (!p) return;
-  try { p.kill(); } catch { /* gone */ }
-  if (process.platform === "win32" && typeof p.pid === "number") {
-    try { Bun.spawnSync(["taskkill", "/PID", String(p.pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }); } catch { /* fine */ }
-  }
-}
+const reap = killChild;
 
 // ---- the battery ------------------------------------------------------------
 // `server: true` → boot a scratch sequencer and hand the tool WORLD_URL/

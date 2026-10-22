@@ -64,14 +64,11 @@ jobs:
         env:
           EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
           PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
-          # extra flags for the harness's headless Chrome, CI only:
-          #  Linux: Ubuntu 23.10+ disables the user namespaces Chrome's sandbox needs ("No usable sandbox!";
-          #         playwright launches without it there for the same reason)
-          #  macOS: nothing. 10-19 forced SwiftShader here for a hang whose cause was the keychain (harness.ts passes
-          #         --use-mock-keychain); SwiftShader itself then blocked the page's main thread > 60 s, and the browser
-          #         lane failed 5/10 for days. Default GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
+          # no EIDO_CHROME_ARGS: each OS's Chrome flags are in tools/protocol/chrome.ts platformArgs (Linux --no-sandbox,
+          # macOS --use-mock-keychain). macOS takes the default GL: 10-19 forced SwiftShader here for a hang whose cause was
+          # the keychain; SwiftShader then blocked the page's main thread > 60 s and the lane failed 5/10 for days. Default
+          # GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
           EIDO_METER_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}   # the hosted Windows VM is ~3x slower per request (access A8/A14 hit the 3000 ms cap)
-          EIDO_CHROME_ARGS: ${{ runner.os == 'Linux' && '--no-sandbox' || '' }}
         run: |
           # Not the upload path (run.ts names its scratch below, on every OS). Kept because with TMPDIR=$RUNNER_TEMP/gate-tmp,
           # browser-check (playwright) closed at launch on Linux and passed with the default /tmp (10-19). Not the

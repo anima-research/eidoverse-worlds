@@ -93,3 +93,15 @@ export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform
   for (const pid of [...members].reverse().filter((p) => p !== root)) await outputOf("taskkill", ["/PID", String(pid), "/T", "/F"], 15_000);
   await outputOf("taskkill", ["/PID", String(root), "/T", "/F"], 15_000);
 }
+/** At exit, where nothing can be awaited: signal the group (POSIX), or start a tree kill and leave it running (Windows). */
+export function killSuiteAtExit(root: number, platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "win32") { try { process.kill(-root, "SIGKILL"); } catch { /* gone */ } return; }
+  try { spawn("taskkill", ["/PID", String(root), "/T", "/F"], { detached: true, stdio: "ignore", windowsHide: true }).unref(); } catch { /* gone */ }
+}
+/** A child that isn't a group leader (spawned without `detached`): the child itself on POSIX, its whole tree on Windows,
+ *  where a browser's or server's own children outlive a plain kill. */
+export function killChild(p: { pid?: number; kill(): void } | null): void {
+  if (!p) return;
+  if (process.platform === "win32" && typeof p.pid === "number") killSuite(p.pid, "SIGKILL", "win32");
+  try { p.kill(); } catch { /* gone */ }
+}

@@ -18,13 +18,13 @@
 // that did not run (host data, the lab's control arm) — counted and listed, never a failure.
 //   PROTOCOL_LAB=<protocol lab checkout>   also run the control arms (common.ts)
 //   PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows)         also sweep / oracle a host's own world logs (the repo's fixtures always)
-//   CHROME=<chromium binary>                the browser lane's Chromium (else playwright's, else /usr/bin/{google-chrome,chromium})
+//   CHROME=<chromium binary>                the browser lane's Chromium (else chrome.ts findChrome: playwright's, else the OS's Chrome/Edge)
 //   PYTHON=<python3>                        the conformance suite's interpreter (else python3 on PATH)
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuiteAsync, suiteMembersAsync } from "./procgroup.ts";
-import { spawn as spawnNow } from "node:child_process";
+import { killSuiteAsync, killSuiteAtExit, suiteMembersAsync } from "./procgroup.ts";
+import { findChrome } from "./chrome.ts";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
@@ -179,9 +179,8 @@ if (SUITES.some(([n]) => selected(n) && NEEDS[n]?.startsWith("python3"))) {
 }
 let CHROME: string | null = null;
 if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
-  const candidates = [process.env.CHROME];
-  if (!process.env.CHROME) { try { const { chromium } = await import("playwright"); candidates.push(chromium.executablePath()); } catch {} candidates.push("/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"); }
-  CHROME = candidates.find((p) => p && fs.existsSync(p)) ?? null;
+  CHROME = findChrome();
+  if (CHROME && !fs.existsSync(CHROME)) CHROME = null;
   let v = CHROME ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
   // Chrome on Windows writes nothing to a console for --version; its version is in the executable's file properties
   if (CHROME && !v && process.platform === "win32")
@@ -229,12 +228,9 @@ let current: { pid: number } | null = null;
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals) => killSuiteAsync(pid, sig);
 const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
-/** at exit, where nothing can be awaited: signal the group (POSIX) or start a tree kill and leave it running (Windows) */
-const killNow = (pid: number) => { if (process.platform !== "win32") { try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ } return; }
-  try { spawnNow("taskkill", ["/PID", String(pid), "/T", "/F"], { detached: true, stdio: "ignore", windowsHide: true }).unref(); } catch { /* gone */ } };
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
-const cleanup = () => { if (current) killNow(current.pid); if (process.env.PROTOCOL_KEEP) return;
+const cleanup = () => { if (current) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
   try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });

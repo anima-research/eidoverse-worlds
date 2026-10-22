@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chrome_args: [""]   # the harness now passes --use-mock-keychain itself on macOS (10-19)
+        chrome_args: [""]   # EIDO_CHROME_ARGS experiments only; each OS's needed flags are in tools/protocol/chrome.ts
     runs-on: windows-latest
     timeout-minutes: 20
     steps:

@@ -2,18 +2,10 @@
 import { existsSync, mkdtempSync, rmSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir, loadavg, cpus } from "node:os";
 import { join, resolve } from "node:path";
+import { chromeArgs, findChrome } from "./protocol/chrome.ts";
 
 export const ROOT = resolve(import.meta.dir, "..");
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-  win32: ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
-  // chromium-browser is the Debian/Ubuntu spelling (and what WSL has); the other three benches already list it.
-  // Without it every harness that imports CHROME from here falls through to the literal "chrome" and dies
-  // "no browser at chrome" on a box that has a working one.
-  linux: ["/usr/bin/google-chrome", "/usr/bin/microsoft-edge", "/usr/bin/chromium-browser", "/usr/bin/chromium"],
-};
-export const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p)) ?? "chrome";
+export const CHROME = findChrome() ?? "";
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
 export const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -199,18 +191,11 @@ export async function scratchSequencer(name: string, opts: ScratchOptions = {}) 
 export async function scratchBench(name: string, opts: ScratchOptions & { headed?: boolean; cspExpected?: boolean } = {}) {
   const run = await scratchSequencer(name, opts);
   const { PORT, SCRATCH, NONCE, track, record, die } = run;
-  if (!existsSync(CHROME)) await die(2, `no browser at ${CHROME}`);
+  if (!CHROME || !existsSync(CHROME)) await die(2, CHROME ? `no browser at ${CHROME}` : "no Chromium found (set CHROME=/path/to/chrome)");
   const DEBUG_PORT = freePort(PORT + 1000);
   const pageURL = `${run.BASE}/health?bench=${NONCE}`;
   const browser = track(Bun.spawn([
-    CHROME, ...(opts.headed ? [] : ["--headless=new"]),
-    // macOS: run.ts gives each suite a fresh HOME, and Chrome then waits on a new login keychain forever (proven 10-19: the
-    // same suite in CI failed with a fresh HOME and passed with this flag; it is what playwright passes too)
-    ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []), ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),   // CI-only extra flags (see the workflow)
-    `--remote-debugging-port=${DEBUG_PORT}`, `--user-data-dir=${join(SCRATCH, "profile")}`,
-    "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-    "--disable-background-networking", "--disable-sync", "--mute-audio",
-    "--window-size=1280,800", "--enable-unsafe-webgpu", pageURL,
+    CHROME, ...chromeArgs({ headed: opts.headed, port: DEBUG_PORT, profile: join(SCRATCH, "profile"), extra: ["--window-size=1280,800", "--enable-unsafe-webgpu"] }), pageURL,
   ], { stdout: Bun.file(join(SCRATCH, "browser.log")), stderr: Bun.file(join(SCRATCH, "browser.stderr.log")) }));
   let target: any = null;
   for (let i = 0; i < 120 && !target; i++) {
