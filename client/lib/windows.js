@@ -1078,7 +1078,8 @@ addEventListener('keydown', (e) => {
 // is a quiet with nothing to reopen, so 'closed' takes the lantern's resting line away and the next Tab brings it back.
 export function panelsToggle() {
   const open = [...frames.values()].filter((f) => f.visible);
-  if (open.length) { panelStash = open.map((f) => f.id); for (const f of open) f.hide(); return 'closed'; }
+  // already quiet (a panel opened since): it joins what the quiet put away, which the next Tab brings back with it
+  if (open.length) { panelStash = [...new Set([...(panelStash ?? []), ...open.map((f) => f.id)])]; for (const f of open) f.hide(); return 'closed'; }
   if (panelStash) { for (const id of panelStash) frames.get(id)?.show(); panelStash = null; return 'restored'; }
   panelStash = [];
   return 'closed';

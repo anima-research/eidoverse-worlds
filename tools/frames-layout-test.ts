@@ -531,6 +531,18 @@ check("…and says that too (the hint stops)", quiet.join() === "closed,restored
   check("…and the next Tab brings that panel back, and the pill", open().join() === "t" && quiet.at(-1) === "restored", `${open().join()} | ${quiet.join()}`);
   f.hide();
 }
+{
+  // house I213 (#260): Tab hides t; a panel opened while quiet, then Tab, adds to the hidden set instead of replacing it
+  for (const x of allFrames()) x.hide();
+  if (panelsToggle() === "closed" && open().length === 0) panelsToggle();   // leave any standing quiet
+  const g = makeFrame("t-second", { title: "second", x: 400, y: 100, w: 200, h: 150 });
+  g.hide(); f.show();
+  tab();                       // t hidden, remembered
+  g.show(); tab();             // second opened while quiet, hidden again
+  tab();                       // back
+  check("a panel opened while quiet joins the hidden set: the next Tab brings both back", open().includes("t") && open().includes("t-second"), open().join());
+  f.hide(); g.hide();
+}
 
 console.log("CHROME COST — the declared anchor");
 {
