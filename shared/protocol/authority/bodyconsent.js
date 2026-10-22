@@ -73,7 +73,8 @@ export function reachAdmits(w, from, to, cls, { point = null, limb = null, quiet
   let r;
   if (P.throttle?.[`${from}:${cls}`] > now) r = { code: "cool-down", reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: "ask people first; this lifts by itself" };
   else { const d = C.decide(P, from, to, cls, now);
-    if (d.mode === "allow") return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" };
+    if (d.mode === "allow") { if (granted?.to === to) granted.seen = true;   // landed: let go like an asked one (reachLetGo)
+      return { ok: true, consent: d.standing === "allow" ? "allowed" : "standing" }; }
     if (granted?.to === to && !granted.asked) delete P.reaches[from];   // admitted by an answer that no longer admits it: not under way
     r = d.mode === "ask"
       ? { code: "consent", reason: `${to}'s ${cls} for you is ask: a hand isn't streamed onto them until they say yes`, fix: `ask first with the reach request: reach {who: "${to}", point: "${point ?? "<point>"}"} (they have 20 s; silence is no)` }

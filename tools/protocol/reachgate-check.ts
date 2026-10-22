@@ -240,7 +240,13 @@ let tierNobody, perPerson;   // recut A2: the two ways to be refused are my swit
   drag({ end: true, unpin: { joint: "hand_l" } });
   const got2 = vic.got.slice(kv2).filter((m) => m.type === "bodydrag");
   ok(got2.length === 1 && got2[0].end != null && got2[0].unpin === undefined && sly.got.slice(ks2).some((m) => m.type === "error"),
-    "RG23b an unpin sent with an end is refused like any unpin (Sly is told); the end still reaches Vic, without it", { got2, sly: sly.got.slice(ks2) }); }
+    "RG23b an unpin sent with an end is refused like any unpin (Sly is told); the end still reaches Vic, without it", { got2, sly: sly.got.slice(ks2) });
+  // RG23c (review of the house fixes): a nail (pinAt) riding an end is the same act: refused, dropped, the end goes bare
+  const kv3 = vic.got.length, ks3 = sly.got.length;
+  drag({ end: true, pinAt: { joint: "head", at: [0, 1.9, 0] } });
+  const got3 = vic.got.slice(kv3).filter((m) => m.type === "bodydrag");
+  ok(got3.length === 1 && got3[0].end != null && got3[0].pinAt === undefined && sly.got.slice(ks3).some((m) => m.type === "error"),
+    "RG23c a nail (pinAt) sent with an end is refused (Sly is told); the end still reaches Vic, without it", { got3, sly: sly.got.slice(ks3) }); }
 
 // ---- (the clock moves on from here: asks are at most 2 a minute) ----
 // RL3: an ask answered no and an ask nobody answered read the same to the asker, and the same as a refusal
@@ -275,6 +281,14 @@ let tierNobody, perPerson;   // recut A2: the two ways to be refused are my swit
   ok(grant(pim, ola), "(RG16b setup) past that minute Pim's reach is an ask, and Ola says yes");
   const out = shoulder(pim, "Ola");
   ok(!!out?.reach, "RG16b the yes stands: the hand relays (the run-out allowance doesn't end it)", out); }
+// RG16c (review of the house fixes): a touch an allowance admitted is let go like an asked one: once its hand has landed and
+// leaves, it is no longer under way (touchedBy, and no body-revoked later for a hand that isn't there)
+{ const rho = person("Rho", "h3", [-16, 0, -16]), sam = person("Sam", "j3", [-16.6, 0, -16]);
+  req(rho, "consent", { allow: sam.actorId, class: "touch" });
+  ok(req(sam, "reach", { who: rho.actorId, point: "shoulder_l" })?.ok === true && !!shoulder(sam, "Rho")?.reach, "(RG16c setup) Rho allows Sam; Sam's hand lands and relays");
+  const during = !!live.presence.reaches?.[sam.actorId];
+  idle(sam);
+  ok(during && !live.presence.reaches?.[sam.actorId], "RG16c after Sam lets go, the allowed touch is no longer under way", { during, after: live.presence.reaches?.[sam.actorId] }); }
 // RG17: an ask's id names it alone, even when another ask made in the same millisecond was answered first
 { const wes = person("Wes", "k", [-12, 0, -12]), xa = person("Xa", "l", [-12.6, 0, -12]), yo = person("Yo", "m", [-11.4, 0, -12]), zu = person("Zu", "n", [-12, 0, -11.4]);
   req(wes, "consent", { switch: "ask" });
