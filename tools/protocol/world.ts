@@ -77,7 +77,7 @@ const reportNow = (D: string, name: string) => reportV1World(D, { name, content:
  *  whoever runs this tool on the host IS the operator), and only when --operator-only-no-owner says so, knowingly; the
  *  translation-approved act and translation.json record that no owner was attested. A report that refuses (deferred features)
  *  can't be approved at all. */
-function approvalFor(D: string, name: string): Approval {
+function approvalFor(D: string, name: string): { approval: Approval; source: { size: number; sha256: string } } {
   const approved = flag("approved"), noOwner = rest.includes("--operator-only-no-owner");
   if (!approved) die(`translating "${name}" needs the operator's approval of its dry-run report first:
   1. bun tools/protocol/world.ts translate ${name} --dry-run --no-founder-key   (writes nothing; prints the report and its hash)
@@ -97,8 +97,12 @@ Nothing was changed.`);
   const cust = custodyAt(custodyFileIn(WORLDS_DIR));
   const approval = makeApproval(name, approved!, { operator: { key: cust.operator(), sign: (m) => cust.signOperator(m) } });
   const bad = approvalProblem(name, approval); if (bad) die(`the approval is refused: ${bad}. Nothing was changed.`);
-  return approval;
+  return { approval, source: report.source };
 }
+/** The importer reads log.jsonl again after the approval was checked: what it translated must be the bytes the approved report
+ *  hashed, or the world would be stamped approved over bytes nobody read (a write in between: an old server still running). */
+const unapproved = (got: { size: number; sha256: string }, approved: { size: number; sha256: string }) => got.size === approved.size && got.sha256 === approved.sha256 ? null
+  : `the old log the translation read is not the bytes the approved report hashed (approved ${approved.size} bytes, sha256 ${approved.sha256.slice(0, 16)}…; read ${got.size} bytes, sha256 ${got.sha256.slice(0, 16)}…): something wrote to it after the approval was checked. If an old server is running, stop it, then run --dry-run again and approve the new report.`;
 /** How a translation says who approved: the operator alone, no owner attested (said plainly). */
 const approvalWords = (a: Approval) => `approved by the operator alone (${a.operator.key}, signature verified): no owner was attested — nothing can yet bind a key to the old world's owner, and --operator-only-no-owner was given; the act records this, and tier 0 is empty`;
 const sha = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
@@ -133,7 +137,7 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
  *  old files are renamed beside it (log.jsonl → log.original.jsonl, snapshot.json → snapshot.original.json, poses.json →
  *  poses.original.json): the same files, never rewritten. Any failure before or during the swap puts back whatever moved,
  *  removes the temporary directory and says why. */
-function translateInPlace(name: string, approval: Approval) {
+function translateInPlace(name: string, approval: Approval, approvedSource: { size: number; sha256: string }) {
   const D = path.join(WORLDS_DIR, name), log = path.join(D, "log.jsonl");
   if (!fs.existsSync(log)) die(`"${name}" holds no old log (${log}): there's nothing to translate here. Nothing was changed.`);
   const fail = (why: string, T?: string): never => {
@@ -161,6 +165,7 @@ function translateInPlace(name: string, approval: Approval) {
   const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
   let r: ReturnType<typeof translateV1World>;
   try { r = translateV1World(D, T, { name, deferIdentities: true, approval }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
+  { const why = unapproved(r.source, approvedSource); if (why) fail(why, T); }
   // 3. the result, opened as the server opens it: a world, folding to the importer's digest
   try { const live = openLive(T, name); const st = live.state();
     if (!isWorldDir(T) || st.status !== "ok" || digest(st) !== r.digest) throw new Error(`opened as the server opens it: ${isWorldDir(T) ? "" : "not a world, "}status ${st.status}, digest ${digest(st)} (the importer said ${r.digest})`); }
@@ -335,11 +340,19 @@ if (cmd === "found") {
   const srcDir = path.join(WORLDS_DIR, src);
   if (!fs.existsSync(path.join(srcDir, "log.jsonl"))) die(`"${src}" holds no old log (${path.join(srcDir, "log.jsonl")}): there's nothing to translate here. Nothing was changed.`);
   if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src); process.exit(0); }
-  const approval = approvalFor(srcDir, dest ?? src);
-  if (dest === undefined) translateInPlace(src, approval);
+  const { approval, source: approvedSource } = approvalFor(srcDir, dest ?? src);
+  if (process.env.WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)   // tests only: a writer appends between the approval's read and the importer's (inplace-check IP21b)
+    fs.appendFileSync(path.join(srcDir, "log.jsonl"), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"written after the approval"}}\n');
+  if (dest === undefined) translateInPlace(src, approval, approvedSource);
   else {
     const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
-    const r = translateV1World(path.join(WORLDS_DIR, src), path.join(WORLDS_DIR, dest), { approval });
+    const destDir = path.join(WORLDS_DIR, dest), had = fs.existsSync(destDir) ? new Set(fs.readdirSync(destDir)) : null;
+    // identities join the shared directory only once the bytes are known to be the approved ones
+    const r = translateV1World(srcDir, destDir, { approval, deferIdentities: true });
+    { const why = unapproved(r.source, approvedSource);
+      if (why) { if (!had) fs.rmSync(destDir, { recursive: true, force: true }); else for (const f of fs.readdirSync(destDir)) if (!had.has(f)) fs.rmSync(path.join(destDir, f), { recursive: true, force: true });
+        die(`${why}\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
+    putIdentities(r.planned);
     const after = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
     report(src, dest, r);
     console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in ${dest}/world.jsonl as the system's translation-approved act`);

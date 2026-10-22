@@ -35,6 +35,8 @@
 //   IP21 an approval of a report that is no longer the world's (the old log changed since) is refused, both hashes named,
 //        nothing moved
 //   —— #260 rereview blocker 1: nothing can yet bind a key to the v1 world's owner, so a translation names no founder ——
+//   IP21b the bytes translated are the bytes the approved report hashed (a write between the approval and the
+//        importer's read is refused, both forms)
 //   IP22 `--founder-key` (dry run, or with --approved and the key's GOOD signature) and `--approve-sig` are REFUSED, truthfully
 //        (no key can be bound to the old owner: v1 logs record accounts, not keys; use --no-founder-key --operator-only-no-owner),
 //        and nothing is written
@@ -181,6 +183,16 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
     "IP21 an approval of a report the world has since outgrown is refused, both hashes named, nothing moved", { code: stale.code, out: stale.out.slice(-700) });
   const good = tool(["translate", "careful", "--no-founder-key", "--operator-only-no-owner", "--approved", now]);
   ok(good.code === 0 && isWorldDir(d), "IP21 …and approving the report as it stands now translates", good.out.slice(-300)); }
+
+// ================= IP21b: the bytes translated are the bytes the approved report hashed =================
+// the importer reads log.jsonl again after the approval was checked: a write between the two reads (WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)
+// would be translated, and stamped approved, from bytes nobody approved
+for (const two of [false, true]) { const nm = two ? "racer2" : "racer"; const d = oldWorld(nm); fs.rmSync(path.join(d, "snapshot.json"));
+  const words = two ? [nm, `${nm}-new`] : [nm]; const h = dryHash(words);
+  const r = tool(["translate", ...words, "--no-founder-key", "--operator-only-no-owner", "--approved", h], { WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL: "1" });
+  const destDir = path.join(W, two ? `${nm}-new` : nm), dirNow = fs.existsSync(dirf) ? fs.readFileSync(dirf, "utf8") : "";
+  ok(r.code !== 0 && /not the bytes the approved report/.test(r.out) && /Nothing was (changed|moved)/.test(r.out) && !isWorldDir(destDir) && !(two && fs.existsSync(destDir)) && !temps().length && !/local:late/.test(dirNow),
+    `IP21b ${two ? "the two-name form" : "in place"}: a log written to after the approval was checked is refused, nothing written`, { code: r.code, out: r.out.slice(-500) }); }
 
 // ================= IP22, IP28: a translation names no founder (#260 rereview, blocker 1) =================
 // Nothing can yet bind a key to the v1 world's owner (v1 logs record accounts, not keys), so `--founder-key` would let the
