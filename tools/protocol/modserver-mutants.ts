@@ -6,7 +6,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto, readLF } from "./common.ts";
 
 const M: [string, string, string, string, string[]][] = [
   ["your-rights from the authority", "server/server.ts", "const e = w.log.rightsOf(c.actorId); const m =", "const e = { role: w.log.roleOf(c.actorId), name: \"\", rank: 0, permissions: [] as string[] }; const m =", ["RS1"]],
@@ -53,8 +53,8 @@ for (const [name, file, find, repl, want] of M) {
   for (const sub of ["shared", "server", "tools", "defs", "client", "mcpl", "assets"]) if (fs.existsSync(path.join(ENGINE, sub)))
     fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true, filter: (p) => !p.includes("node_modules") });
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
-  const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  const f = path.join(d, file); const src = readLF(f);
   if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': text not found exactly once in ${file}`); continue; }
   fs.writeFileSync(f, src.replace(find, repl));
   const r = Bun.spawnSync(["bun", path.join(d, "tools/protocol/identity-check.ts")], { cwd: d, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });

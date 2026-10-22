@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, linkInto, readLF } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
@@ -72,16 +72,16 @@ async function runSelf(tree: string, only: string[] | null) {
 function mutantTree(tag: string) { const d = scratch(tag);
   for (const k of ["shared", "server", "spec", "docs"]) copyTree(path.join(ENGINE, k), path.join(d, k));
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
-  try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
+  try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
   fs.mkdirSync(path.join(d, "client"), { recursive: true });
-  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") fs.symlinkSync(path.join(ENGINE, "client", k), path.join(d, "client", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") linkInto(path.join(ENGINE, "client", k), path.join(d, "client", k));
   fs.cpSync(path.join(ENGINE, "client", "lib"), path.join(d, "client", "lib"), { recursive: true });
-  for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { fs.symlinkSync(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
+  for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { linkInto(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = mutantTree("paritymut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("paritymut"); const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length < 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.split(find).join(repl));
     const r = await runSelf(d, cases.length ? cases : null);

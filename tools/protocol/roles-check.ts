@@ -19,7 +19,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "./clock.ts";
@@ -116,7 +116,7 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "mcpl", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // B1 walks client and mcpl too (#260 393)
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 
@@ -124,7 +124,7 @@ if (argv.includes("--mutants")) {
   let bad = 0, ran = 0; const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cs] of MUTANTS) {
     if (only && !cs.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cs.length)) continue;
-    ran++; const d = mutantTree("rmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("rmut"); const f = path.join(d, "shared", file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cs.length ? cs : null);
@@ -140,7 +140,7 @@ if (argv.includes("--control")) {
   // the base commit's shared/ (the authority before roles): every case must be red there except K (kept: green there too)
   const d = scratch("rctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   const kept = (l: string) => l.slice(5).trim().startsWith("K");

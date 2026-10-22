@@ -81,3 +81,25 @@ export function pathList(v: string | undefined): string[] {
 
   return (v ?? "").split(path.delimiter).filter(Boolean);
 }
+
+/** Link `at` to `target` in a scratch tree, on every OS. A directory becomes a junction (Windows links a directory that way
+ *  without admin rights or Developer Mode; POSIX ignores the type and makes an ordinary symlink). A file becomes a file
+ *  symlink, which Windows refuses (EPERM) without one of those, so there the file is COPIED instead, and the first copy in a
+ *  run says so in one line: a copy doesn't follow later edits to its original, and must never be mistaken for a link. */
+let copiedNoted = false;
+export function linkInto(target: string, at: string): "linked" | "copied" {
+  const abs = path.resolve(target);
+  if (fs.statSync(abs).isDirectory()) { fs.symlinkSync(abs, at, "junction"); return "linked"; }
+  try { fs.symlinkSync(abs, at, "file"); return "linked"; }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EPERM") throw e;
+    fs.copyFileSync(abs, at);
+    if (!copiedNoted) { copiedNoted = true; console.log(`note: linkInto COPIED files into this run's scratch trees: this host can't make a file symlink (EPERM), so a copy won't follow edits to its original (first: ${path.basename(at)})`); }
+    return "copied";
+  }
+}
+
+/** A mutant's source with CRLF read as LF. A find that spans a line is written with `\n`, so on a checkout whose files
+ *  end lines in CRLF (Windows, core.autocrlf) it would never match. Write the result back only into a scratch copy (it
+ *  lands there as LF); a tree a gate reads is never rewritten. */
+export const readLF = (file: string) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");

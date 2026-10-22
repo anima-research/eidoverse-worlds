@@ -14,7 +14,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "./import-v1/translate-v1.js";
@@ -25,7 +25,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "f6777f13";
 if (argv.includes("--control")) {
-  const d = scratch("dpctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
+  const d = scratch("dpctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/describe-particles-check.ts"), "--tree", d], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const lines = (r.stdout.toString() + r.stderr.toString()).split("\n").filter((l) => /^(ok|FAIL) /.test(l));
@@ -79,8 +79,8 @@ if (argv.includes("--mutants")) {
   for (const [name, file, find, repl, want] of MUTANTS) {
     const d = scratch("dpmut");
     for (const sub of ["shared", "server", "tools", "defs", "client/lib", "spec", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // spec + AGENTS: P8 reads them
-    fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
-    const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+    const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { wrongs++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/describe-particles-check.ts"), "--tree", d, ...(want.length ? ["--only", want.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });

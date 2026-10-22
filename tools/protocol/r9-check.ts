@@ -19,7 +19,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "./import-v1/translate-v1.js";
@@ -55,14 +55,14 @@ async function runSelf(tree: string, only: string[] | null) {
 function copyTree(tag: string) { const d = scratch(tag);
   fs.cpSync(path.join(ENGINE, "shared"), path.join(d, "shared"), { recursive: true });
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
-  try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* no node_modules: the import says so */ }
+  try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* no node_modules: the import says so */ }
   // everything else the copied files import from the checkout (server/, client/, node_modules…) is the checkout's own
-  for (const k of fs.readdirSync(ENGINE)) if (!["shared", "mcpl", ".git"].includes(k) && !fs.existsSync(path.join(d, k))) try { fs.symlinkSync(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
+  for (const k of fs.readdirSync(ENGINE)) if (!["shared", "mcpl", ".git"].includes(k) && !fs.existsSync(path.join(d, k))) try { linkInto(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = copyTree("r9mut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = copyTree("r9mut"); const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);

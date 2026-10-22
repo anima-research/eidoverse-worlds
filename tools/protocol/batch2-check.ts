@@ -21,7 +21,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "./clock.ts";
@@ -84,7 +84,7 @@ function mutantTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 if (argv.includes("--mutants")) {
@@ -92,7 +92,7 @@ if (argv.includes("--mutants")) {
   const only = opt("only")?.split(",") ?? null;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("b2mut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("b2mut"); const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -105,7 +105,7 @@ if (argv.includes("--mutants")) {
   console.log(`[batch2-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("b2ctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
+  const d = scratch("b2ctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));

@@ -20,7 +20,7 @@
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, archiveTo } from "./common.ts";
+import { ENGINE, scratch, archiveTo, linkInto, readLF } from "./common.ts";
 import { labClock, pinned } from "./clock.ts";
 import { LAB_CATALOGUE } from "./labmodels.js";   // the suites' model table (a base or mutant tree reads it from here)
 
@@ -51,7 +51,7 @@ function copyTree(tag: string) {
   const d = scratch(tag);
   for (const sub of ["shared", "server", "tools", "defs", "client"]) if (fs.existsSync(path.join(ENGINE, sub))) fs.cpSync(path.join(ENGINE, sub), path.join(d, sub), { recursive: true, filter: (s) => !s.includes("node_modules") });
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
 const runSelf = (tree: string, only: string[] | null) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/build-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -59,7 +59,7 @@ const runSelf = (tree: string, only: string[] | null) => { const r = Bun.spawnSy
 if (argv.includes("--mutants")) {
   let bad = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    const d = copyTree("bmut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    const d = copyTree("bmut"); const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
     fs.writeFileSync(f, src.replace(find, () => repl));
     const r = runSelf(d, cases); const red = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
@@ -73,7 +73,7 @@ if (argv.includes("--mutants")) {
 if (argv.includes("--base")) {
   const d = scratch("bbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   // the base tree has no build-check: run this file against it
   const r = runSelf(d, ONLY); const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l)); let wrong = 0;
   for (const l of lines) { const id = l.split(/\s+/)[1]; const red = l.startsWith("FAIL"); const right = id.startsWith("G") ? !red : red; if (!right) wrong++;

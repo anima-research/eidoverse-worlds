@@ -35,7 +35,7 @@
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "./import-v1/translate-v1.js";
@@ -145,23 +145,23 @@ async function runSelf(tree: string, only: string[] | null) {
 function mutantTree(tag: string) { const d = scratch(tag);
   for (const k of ["shared", "server", "spec", "docs"]) copyTree(path.join(ENGINE, k), path.join(d, k));
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
-  try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
+  try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
   fs.mkdirSync(path.join(d, "client"), { recursive: true });
-  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") fs.symlinkSync(path.join(ENGINE, "client", k), path.join(d, "client", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "client"))) if (k !== "lib") linkInto(path.join(ENGINE, "client", k), path.join(d, "client", k));
   fs.cpSync(path.join(ENGINE, "client", "lib"), path.join(d, "client", "lib"), { recursive: true });
   fs.copyFileSync(path.join(ENGINE, "AGENTS.md"), path.join(d, "AGENTS.md"));
   fs.copyFileSync(path.join(ENGINE, "DESIGN.md"), path.join(d, "DESIGN.md"));
   // tools/protocol/import-v1 copied (the OS rows read the translator), the rest of tools/ linked back, entry by entry
   fs.mkdirSync(path.join(d, "tools", "protocol"), { recursive: true });
-  for (const k of fs.readdirSync(path.join(ENGINE, "tools"))) if (k !== "protocol") fs.symlinkSync(path.join(ENGINE, "tools", k), path.join(d, "tools", k));
-  for (const k of fs.readdirSync(path.join(ENGINE, "tools", "protocol"))) if (k !== "import-v1") fs.symlinkSync(path.join(ENGINE, "tools", "protocol", k), path.join(d, "tools", "protocol", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "tools"))) if (k !== "protocol") linkInto(path.join(ENGINE, "tools", k), path.join(d, "tools", k));
+  for (const k of fs.readdirSync(path.join(ENGINE, "tools", "protocol"))) if (k !== "import-v1") linkInto(path.join(ENGINE, "tools", "protocol", k), path.join(d, "tools", "protocol", k));
   fs.cpSync(path.join(ENGINE, "tools", "protocol", "import-v1"), path.join(d, "tools", "protocol", "import-v1"), { recursive: true });
-  for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { fs.symlinkSync(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
+  for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { linkInto(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = readLF(f);
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -176,8 +176,8 @@ if (argv.includes("--mutants")) {
 if (argv.includes("--control")) {
   const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
-  try { fs.symlinkSync(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+  try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   const guard = (l: string) => /^(ok|FAIL)\s+G\d/.test(l);
