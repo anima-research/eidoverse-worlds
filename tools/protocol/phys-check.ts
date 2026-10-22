@@ -557,6 +557,12 @@ function playground(name) {
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W);
   ok(g.ok && on.ok && lift?.actor === "rowan" && v.lifted.has("ball") && !v.sim?.bodies.ball && !v.sim?.statics?.ball,
     "U5c an engine started inside a batch logs the same lift for a thing in a hand, so the thing stays out of the engine's world", { g: g.ok, on: on.ok ?? on.refused, lift: !!lift, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
+// U5e: a dry run of that start says what it would lift, and logs nothing
+{ const W = fresh("held-dry"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" }); const n = log(W).length;
+  const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG, dry: true });
+  ok(g.ok && on.ok && on.dry && JSON.stringify(on.lifts) === '["ball"]' && log(W).length === n, "U5e a dry run of an engine's start names what it would lift out of a hand, and logs nothing", { g: g.ok ?? g.refused, on, logged: log(W).length - n }); }
 
 // review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
 // back, purges nothing in either)

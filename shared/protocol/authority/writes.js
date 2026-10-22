@@ -77,9 +77,10 @@ function commit(w, actor, verb, args, build) {
   // what the write would do besides its own ops: who it would stand up, what it would re-drop, and what it would wake
   const settle = planResettle(w, actor, plan.ops, st, plan.after);
   if (args.dry) { const woke = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => b.id);
-    return { ok: true, dry: true, would: plan.ops, notes: [...ctx.notes, ...(settle?.note ? [settle.note] : [])],
+    const lifted = liftsOf(w, ctx, plan).map((e) => e.body.id);
+    return { ok: true, dry: true, would: plan.ops, notes: [...ctx.notes, ...(settle?.note ? [settle.note] : []), ...handsLetGo(w, plan, plan.after).map(handNote)],
       ...(plan.vacate.length ? { vacates: plan.vacate.map((u) => ({ who: u.who, socket: u.socket })) } : {}),
-      ...(settle?.occupants?.length ? { resettles: settle.occupants } : {}), ...(woke.length ? { wakes: woke } : {}),
+      ...(settle?.occupants?.length ? { resettles: settle.occupants } : {}), ...(woke.length ? { wakes: woke } : {}), ...(lifted.length ? { lifts: lifted } : {}),
       ...warnOrNot(warnings(plan.after, [...ctx.refs])) }; }
   const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
   const changeE = changeShape(plan, w.entries.length, w);
@@ -88,7 +89,7 @@ function commit(w, actor, verb, args, build) {
   const wakes = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => ({ kind: "sim", actor, cause: w.entries.length, verb: "launch", body: b }));
   // what an engine's start finds in a hand (buildEpoch): lifted out of its world, caused by the act. Each names its holder as
   // actor, as a grab's own lift does, since orphanLifts reads the holder from it
-  const lifts = (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id]).map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
+  const lifts = liftsOf(w, ctx, plan);
   w.fits(actE, changeE, ...resettleEntries(w, settle, w.entries.length), ...wakes, ...lifts); // every line fits, or none is written
   // the budget counts THIS write too, not only what came before it (review 10-14 C0: a 300 KiB batch in an empty window passed a 256 KiB cap)
   if (!ctx.cap || ctx.cap.kind === "reaction" || ctx.cap.kind === "handle" || ctx.cap.kind === "caption") rateCheck(w, actor, "act", JSON.stringify(actE).length + JSON.stringify(changeE).length);
@@ -103,26 +104,37 @@ function commit(w, actor, verb, args, build) {
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 
+// what an engine's start finds in a hand (buildEpoch), lifted out of its world: one sim entry each, naming its holder
+const liftsOf = (w, ctx, plan) => (ctx.lifts ?? []).filter((id) => plan.after.entities[id] && w.presence.holds?.[id])
+  .map((id) => ({ kind: "sim", actor: w.presence.holds[id].by, cause: w.entries.length, verb: "lift", body: { id } }));
+
+// The hands a write's ops empty: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:
+// moved a held barrel in edit mode; her client let go, the authority didn't, and every throw after was refused from a
+// hand the two no longer agreed on.) Switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing
+// can't be thrown, so it's set down where the record has it. Keep this rule in step with simlayer's ends() and
+// endsUnder(). …And switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held
+// child of a switched-off parent could be neither put, dropped nor thrown; only its parent's return freed the hand).
+// Each once, in that order; `after` is the state the write leaves. A dry run reports them as the write would.
+function handsLetGo(w, plan, after) {
+  const out = []; const seen = new Set();
+  for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h || seen.has(o.id)) continue;
+    if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
+      seen.add(o.id); out.push({ id: o.id, by: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
+  const offed = plan.ops.filter((o) => (o.verb === "set" && o.comp === "disabled" && o.value === true) || (o.verb === "delete" && o.comp === undefined)).map((o) => o.id);
+  if (offed.length) for (const [id, h] of Object.entries(w.presence.holds ?? {})) {
+    if (seen.has(id) || !after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
+    seen.add(id); out.push({ id, by: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
+  return out;
+}
+const handNote = (g) => ({ id: g.id, tookFromHand: g.by, why: g.why });
+
 // What a write leaves for the people it touched, whoever wrote it (a person's commit or a script's activation): a thing it
 // moved, re-parented, switched off or removed leaves the hand that held it, and so does what hangs under a thing it switched
 // off or removed; a seat it removed or switched off lets its occupant go. notes: the writer's reply notes (a script has none).
 function letGoEdited(w, plan, act, st, after, actor, notes = []) {
-  // an edit that moves, re-parents or removes a thing in someone's hand takes it out of the hand: it is where the edit
-  // put it now. (R, 10-10: moved a held barrel in edit mode; her client let go, the authority didn't, and every throw
-  // after was refused from a hand the two no longer agreed on.)
-  { let let_go = false;
-    for (const o of plan.ops) { const h = w.presence.holds?.[o.id]; if (!h) continue;
-      // switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing can't be thrown, so it's set down where
-      // the record has it. Keep this rule in step with simlayer's ends() and endsUnder().
-      if (o.verb === "delete" ? (o.comp === undefined || o.comp === "transform" || o.comp === "parent") : (o.comp === "transform" || o.comp === "parent" || (o.comp === "disabled" && o.value === true))) {
-        delete w.presence.holds[o.id]; let_go = true; heldEvent(w, "release", o.id, { by: h.by, how: "edited", seq: act }); notes.push({ id: o.id, tookFromHand: h.by, why: "an edit moved it, so it left the hand that held it" }); } }
-    // …and switching off (or removing) a thing lets go of whatever is held UNDER it (attack-editor S2-1: a held child of a
-    // switched-off parent could be neither put, dropped nor thrown; only its parent's return freed the hand)
-    const offed = plan.ops.filter((o) => (o.verb === "set" && o.comp === "disabled" && o.value === true) || (o.verb === "delete" && o.comp === undefined)).map((o) => o.id);
-    if (offed.length) for (const [id, h] of Object.entries(w.presence.holds ?? {})) {
-      if (!after.entities[id] || !ancestors(after, id).some((p) => offed.includes(p))) continue;
-      delete w.presence.holds[id]; let_go = true; heldEvent(w, "release", id, { by: h.by, how: "edited", seq: act }); notes.push({ id, tookFromHand: h.by, why: "what it hangs under was switched off, so it left the hand that held it" }); }
-    if (let_go) w.savePresence(); }
+  { const gone = handsLetGo(w, plan, after);
+    for (const g of gone) { delete w.presence.holds[g.id]; heldEvent(w, "release", g.id, { by: g.by, how: "edited", seq: act }); notes.push(handNote(g)); }
+    if (gone.length) w.savePresence(); }
   // a seat gone or switched off lets its occupant go: told in their inbox like any vacate (holes r10 L6), with where the track restarts
   for (const who of Object.keys(w.presence.occupants ?? {})) if (!occupantOf(w, after, who)) { const to = w.presence.occupants[who]?.to; const why = "the socket they occupied was switched off or removed";
     const at = typeof to === "string" && st.entities[to] ? vacateAt(w, st, who, to) : null; clearOccupant(w, who); notes.push({ who, vacated: true, socket: to, why });

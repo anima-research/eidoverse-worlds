@@ -40,6 +40,10 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
 { const W = "edit"; mk(W); take(W, "a", 0);
   const e = call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [8, 0, 8] } }); const t = call(W, "vic", "throw", { id: "a", v: [0, 2, 3] });
   ok(e.ok && held(W).length === 0 && code(t) === "not-holding" && pos(W, "a")[0] === 8 && e.notes?.some((n) => n.tookFromHand), "H6 an edit that moves a thing in someone's hand takes it out of the hand (and says so): it is where the edit put it", { e: code(e), notes: e.notes, t: code(t), held: held(W), a: pos(W, "a") }); }
+// H6b: a dry run of that edit says so too, and leaves the hand as it is; so does a dry switch-off of what a held thing hangs under
+{ const W = "edit-dry"; mk(W); take(W, "a", 0);
+  const e = call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [8, 0, 8] }, dry: true });
+  ok(e.ok && e.dry && held(W).includes("a") && e.notes?.some((n) => n.id === "a" && n.tookFromHand === "vic"), "H6b a dry run of an edit that moves a held thing says it would leave the hand, and leaves it there", { e: code(e), notes: e.notes, held: held(W) }); }
 { const W = "edit-other"; mk(W); take(W, "a", 0);
   const e = call(W, "rowan", "set", { id: "a", component: "label", value: "A" });
   ok(e.ok && held(W).includes("a"), "H7 …an edit of something else about it (its label) leaves it in the hand", { e: code(e), held: held(W) }); }
