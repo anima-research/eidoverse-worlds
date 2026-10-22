@@ -1179,9 +1179,7 @@ export class WorldAgent {
             if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
             // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
             // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
-            { const want = this.consentSwitch;
-              if (want) void (async () => { const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
-                if (held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null); })(); }
+            void this.replaySwitch();
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -1260,7 +1258,7 @@ export class WorldAgent {
               // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
               if (this.pins.delete(j)) this.body?.setPin(j, null);
-              break;
+              if (msg.end == null) break;   // an unpin can ride an end: apply the end too (house 6340433633 Q3)
             }
             if (msg.end != null) {
               if (this.draggedBy === msg.by) {
@@ -4669,6 +4667,15 @@ export class WorldAgent {
   }
   /** This body's switch as it last set it (recut A2), resent on every arrival so a reconnect keeps it. */
   private consentSwitch: string | null = null;
+  /** On every arrival, as a person's client does (consentsync.js): read what the authority holds for my body's switch and
+   *  send mine only if it differs. Unset = never chosen: the world's default stands. */
+  async replaySwitch(): Promise<void> {
+    if (!this.consentSwitch) return;
+    const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
+    // read mine when the answer is back: a switch set while the read was out is newer than the one this began with
+    const want = this.consentSwitch;
+    if (want && held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null);
+  }
   private noteConsent(args: Record<string, unknown>) { if (typeof args.switch === "string") this.consentSwitch = args.switch; }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
