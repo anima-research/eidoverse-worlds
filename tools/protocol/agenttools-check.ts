@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
+import { tryUntil, pause } from "./wait.ts";
 
 const root = scratch("agenttools");
 let pass = 0, fail = 0;
@@ -123,7 +124,7 @@ let port = 9540; for (; port < 9640; port++) { try { const s = Bun.listen({ host
 const logf = path.join(root, "srv.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
-let up = false; for (let i = 0; i < 80 && !up; i++) { await sleep(150); try { up = (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok; } catch {} }
+const up = !!(await tryUntil("the server answers /version", async () => (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 }));
 ok(up, "(setup) the server is up");
 
 async function sock(name) {
@@ -131,18 +132,18 @@ async function sock(name) {
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   ws.send(JSON.stringify({ type: "join", world: "yard", id: name, avatar: "", replica: true }));
-  for (let i = 0; i < 80 && !msgs.some((m) => m.type === "snapshot" || m.type === "error"); i++) await sleep(50);
+  await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   const snap = msgs.find((m) => m.type === "snapshot"); let rn = 0;
   return { ws, msgs, snap, actor: snap?.cut?.you ?? null, close: () => ws.close(),
     at: (x, z) => ws.send(JSON.stringify({ type: "pose", pose: { p: [x, 0, z], yaw: 0, speed: 0, clip: "idle" } })),
     req: async (verb, args = {}) => { const id = `q${++rn}`; ws.send(JSON.stringify({ type: "request", id, verb, args }));
-      for (let i = 0; i < 80; i++) { const r = msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return { ok: false, timeout: true }; } };
+      const r = await tryUntil(`the reply to ${verb}`, () => msgs.find((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return r ? r.reply : { ok: false, timeout: true }; } };
 }
 
 const ann = await sock("Ann");
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-await ag.connect(); for (let i = 0; i < 60 && !ag.cut; i++) await sleep(50);
+await ag.connect(); await tryUntil("the agent has its cut", () => ag.cut, { ms: 3000, step: 50 });
 const HEP = ag.cut?.you;
 ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.cut);
 ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "builder" } })).ok, "(setup) Ann makes the agent a builder");
@@ -152,7 +153,7 @@ const ID: Record<string, string> = {};
 const make = async (name: string, args: any) => { const r = await ann.req("create", { ...args, id: `$${name}`, components: { ...(args.components ?? {}), label: name } }); if (r?.ids?.[`$${name}`]) ID[name] = r.ids[`$${name}`]; return r; };
 ok((await make("wall", { model: "test/wall.glb", components: { transform: { pos: [0, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } })).ok, "(setup) Ann builds a wall across z = 3");
 ok((await make("mug", { model: "test/cup.glb", components: { transform: { pos: [6.4, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, grabbable: { who: "inhabitant" } } })).ok, "(setup) …and a mug anyone may carry, at x = 6.4");
-for (let i = 0; i < 60 && !(ag.entities.has(ID.wall) && ag.entities.has(ID.mug)); i++) await sleep(50);
+await tryUntil("the agent holds the wall and the mug", () => ag.entities.has(ID.wall) && ag.entities.has(ID.mug), { ms: 3000, step: 50 });
 ok(/^[a-z2-7]{26}$/.test(ID.mug ?? ""), "(setup) the authority minted the mug an opaque id", ID);
 const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name, a);   // through the door a host uses (aliases included)
 
@@ -162,20 +163,23 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
     const r = await call("create", { id, components: { light: { intensity: 8 } } });
     ok(r.isError && /id/.test(T(r)), `AT5a create refuses a given id that isn't a non-empty string, in its own words: ${JSON.stringify(id)}`, T(r));
   }
-  await sleep(300);
+  await pause("refused creates have had their chance to mint something (they must not)", 300);
   ok([...ag.entities.keys()].length === before, "AT5a …and minted nothing for them", [...ag.entities.keys()].length - before);
   const b2 = [...ag.entities.keys()].length;
   const r = await call("create", { components: { light: { intensity: 8 } } });
-  for (let i = 0; i < 40 && [...ag.entities.keys()].length === b2; i++) await sleep(50);
+  await tryUntil("the agent holds the new light", () => [...ag.entities.keys()].length !== b2, { ms: 2000, step: 50 });
   const lid = (T(r).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   const lrec = lid ? ag.foldRecord(lid) : null;
   ok(!r.isError && [...ag.entities.keys()].length === b2 + 1 && lrec?.light?.intensity === 8 && Number.isFinite(lrec?.pos?.[1]) && lrec.pos[1] > 1, "AT5b create {components: {light}} with nowhere said: one new light, in front of you at about eye height", [T(r), lrec?.pos]);
-  const r2 = await call("create", { components: { light: { color: 0xff5533 } }, at: [1, 2.5, 1] }); await sleep(200);
+  const r2 = await call("create", { components: { light: { color: 0xff5533 } }, at: [1, 2.5, 1] });
+  await tryUntil("the second light is in the agent's fold", () => { const id = (T(r2).match(/ id ([a-z2-7]{26})/) ?? [])[1]; return id && ag.foldRecord(id); }, { ms: 2000 });
   const lid2 = (T(r2).match(/ id ([a-z2-7]{26})/) ?? [])[1]; const p2 = lid2 ? ag.foldRecord(lid2)?.pos : null;
   ok(!r2.isError && Array.isArray(p2) && Math.abs(p2[0] - 1) < 0.01 && Math.abs(p2[1] - 2.5) < 0.01 && Math.abs(p2[2] - 1) < 0.01, "AT5c create {…, at: [x, y, z]} puts it exactly there (no model, so no place solve)", [T(r2), p2]);
-  const e = await call("edit", { id: lid2, set: { "light.intensity": 24 } }); await sleep(200);
+  const e = await call("edit", { id: lid2, set: { "light.intensity": 24 } });
+  await tryUntil("the light is dimmed to 24 in the agent's fold", () => ag.foldRecord(lid2)?.light?.intensity === 24, { ms: 2000 });
   ok(!e.isError && ag.foldRecord(lid2)?.light?.intensity === 24 && ag.foldRecord(lid2)?.light?.color === 0xff5533, "AT5d edit {\"light.intensity\"} dims it and keeps its colour (the old light-update path)", [T(e), ag.foldRecord(lid2)?.light]);
-  const del = await call("act", { verb: "delete", args: { id: lid2 } }); await sleep(200);
+  const del = await call("act", { verb: "delete", args: { id: lid2 } });
+  await tryUntil("the light is gone from the agent's fold", () => !ag.foldRecord(lid2), { ms: 2000 });
   ok(!del.isError && !ag.foldRecord(lid2), "AT5e act delete removes it (the remove tool folded)", T(del).slice(0, 200)); }
 
 // ---- AT1: one body ----
@@ -188,7 +192,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!g.isError, "AT1b after its move, the authority finds the agent's body where it stands: grab works (it said 'your body isn't in the world yet')", T(g).slice(0, 300));
   const away = await call("move", { to: [10, 0], run: true });
   ok(!away.isError && Math.abs(ag.pos.x - 10) < 0.05, "AT1c it walks on carrying the mug", T(away));
-  const put = await call("act", { verb: "put", args: { id: "mug" } }); await sleep(300);
+  const put = await call("act", { verb: "put", args: { id: "mug" } });
+  await tryUntil("the mug is down near x = 10 in the agent's fold", () => Math.abs(ag.foldRecord(ID.mug)?.pos?.[0] - 10) < 1.6, { ms: 3000 });
   const mx = ag.foldRecord(ID.mug)?.pos?.[0];
   ok(!put.isError && Number.isFinite(mx) && Math.abs(mx - 10) < 1.6, "AT1c …and puts it down where it IS (x≈10), not where the authority last saw it (the probe's 'two bodies')", [T(put).slice(0, 200), ag.foldRecord(ID.mug)?.pos]);
   // a body moved without walking (a flight, a seat, a drag): the authority's track is stale; the next walk re-arrives it
@@ -200,20 +205,22 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // the spawn binds those who can't build (bodyverbs: a builder may arrive anywhere), and a new world's newcomers build (R 10-21)
   ok((await ann.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } })).ok, "(AT1e setup) the yard's newcomers are inhabitants");
   const vee = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Vee", world: "yard", avatar: "" });
-  await vee.connect(); for (let i = 0; i < 60 && !vee.replica?.active; i++) await sleep(50);
+  await vee.connect(); await tryUntil("Vee's replica is active", () => vee.replica?.active, { ms: 3000, step: 50 });
   const vm = await HANDLERS.move(vee, { to: [-6, -8], run: true }, { agent: vee, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, "move");
   ok(!vm.isError && /spawn/.test(T(vm)) && Math.abs(vee.pos.x + 6) < 0.05 && Math.abs(vee.pos.z + 8) < 0.05, "AT1e an inhabitant's first walk in a world with a spawn arrives there and walks on (not stuck behind 'spawn')", [T(vm), vee.pos]);
   vee.close(); }
 
 // ---- AT2: duplicate from the tool ----
-{ const d1 = await call("create", { from: "mug", at: [8, 2] }); await sleep(200);   // by its label
+{ const d1 = await call("create", { from: "mug", at: [8, 2] });   // by its label
+  await tryUntil("the copy is in the agent's fold", () => { const id = (T(d1).match(/ id ([a-z2-7]{26})/) ?? [])[1]; return id && ag.foldRecord(id); }, { ms: 2000 });
   const made = (T(d1).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   const p = made ? ag.foldRecord(made)?.pos : null;
   ok(!d1.isError && made && made !== ID.mug && Array.isArray(p) && Math.abs(p[0] - 8) < 0.01 && Math.abs(p[2] - 2) < 0.01, "AT2a create {from: <label>, at: [x, z]} duplicates the thing there", [T(d1), p]);
   // the copy wears the label too: "mug" now names two things, and a lookup by it is refused with both (R 10-17), never one picked
   const amb = await call("create", { from: "mug" });
   ok(amb.isError && /"mug" is the label of 2 things/.test(T(amb)) && T(amb).includes(`[${ag.handle(ID.mug)}]`) && T(amb).includes(`[${ag.handle(made)}]`), "AT2d a label two things share is refused with the candidates (label, what, where, handle)", T(amb));
-  const d2 = await call("create", { from: ag.handle(ID.mug) }); await sleep(200);   // by its handle
+  const d2 = await call("create", { from: ag.handle(ID.mug) });   // by its handle
+  await tryUntil("the second copy is in the agent's fold", () => { const id = (T(d2).match(/ id ([a-z2-7]{26})/) ?? [])[1]; return id && ag.foldRecord(id); }, { ms: 2000 });
   const made2 = (T(d2).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   ok(!d2.isError && made2 && made2 !== made && ag.foldRecord(made2), "AT2b create {from: <handle>} with no at puts the copy beside its source", T(d2));
   const d3 = await call("create", { from: ID.mug.slice(0, 9), at: { pos: [9, 0, 2] } });   // by a longer prefix of its id
@@ -228,7 +235,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const no = await call("act", { verb: "shove", args: { target: "Vic" } });
   ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body refuses: act shove is refused, and the tool says so as an error naming the class", T(no));
   ok((await vic.req("consent", { switch: "accept" })).ok, "(AT3 setup) Vic sets her body back to accept");
-  const k = vic.msgs.length; const yes = await call("act", { verb: "shove", args: { target: "Vic" } }); await sleep(300);
+  const k = vic.msgs.length; const yes = await call("act", { verb: "shove", args: { target: "Vic" } });
+  await tryUntil("Vic is sent the shove's ragdoll", () => vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), { ms: 3000 });
   ok(!yes.isError && vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), "AT3b once Vic allows it, the shove goes through and reports no error", [T(yes), vic.msgs.slice(k).map((m) => m.type)]);
 
   // ---- AT6: the folded modes, live ----
@@ -252,7 +260,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p anim {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
   const up = await call("anim", { name: "stand" });
   ok(!up.isError && ag.clip !== "ragdoll", "AT6p …and standing picks it back up", [T(up), ag.clip]);
-  const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" }); await sleep(300);
+  const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" });
+  await tryUntil("Vic is asked to go limp", () => vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), { ms: 3000 });
   ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q anim {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
   const wings = await call("pose", { wings: "fold" });
   // this body's bones aren't known here, so nothing folds: the door answers that as failed, in the fold's words
@@ -295,12 +304,13 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 
 // ---- AT5: look points at the real tool ----
 { ok((await make("post", { model: "test/cup.glb", components: { transform: { pos: [12, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, lock: true, hidden: true } })).ok, "(AT5 setup) a locked, hidden post");
-  for (let i = 0; i < 60 && !ag.entities.has(ID.post); i++) await sleep(50);
+  await tryUntil("the agent holds the post", () => ag.entities.has(ID.post), { ms: 3000, step: 50 });
   const h = ag.handle(ID.post);
   const line = T(await call("look")).split("\n").find((l) => l.includes(`[${h}]`)) ?? "";
   ok(h.length >= 4 && h.length < 26 && ID.post.startsWith(h) && /"post"/.test(line) && !line.includes(ID.post), "AT5a look reads a thing by its label, what it is and a short handle (a unique prefix of its id, never the whole 26)", [h, line]);
   ok(/locked/.test(line) && line.includes(`edit {id: "${h}", set: {"flags.lock": false}}`) && line.includes(`edit {id: "${h}", set: {"flags.hidden": false}}`) && !/act \{verb: "delete"/.test(line), "AT5 look teaches edit flags.lock / flags.hidden, not act delete", line);
-  const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } }); await sleep(200);   // by its label
+  const un = await call("edit", { id: "post", set: { "flags.lock": false, "flags.hidden": false } });   // by its label
+  await tryUntil("the post is unlocked and shown in the agent's fold", () => !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, { ms: 2000 });
   ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
 
 // ---- AT9: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
@@ -312,11 +322,11 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const n0 = ag.entities.size;
   const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
-  for (let i = 0; i < 60 && !named("alias-cup"); i++) await sleep(50);
+  await tryUntil("the agent knows alias-cup", () => named("alias-cup"), { ms: 3000, step: 50 });
   ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
-  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); for (let i = 0; i < 60 && !named(id); i++) await sleep(50); return { r, rec: ag.foldRecord(named(id)) as any }; };
+  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
   ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
@@ -339,13 +349,13 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 
 // ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });
-  await rid.connect(); for (let i = 0; i < 60 && !rid.joined; i++) await sleep(50);
+  await rid.connect(); await tryUntil("Rid has joined", () => rid.joined, { ms: 3000, step: 50 });
   const t0 = rid.redial?.tries;
   rid.ws.close(1000, "a drop");
-  for (let i = 0; i < 20 && rid.joined; i++) await sleep(10);
+  await tryUntil("Rid knows it was dropped", () => !rid.joined, { ms: 200, step: 10 });
   await sleep(30);
   ok(t0 === 0 && rid.redial?.tries === 1, "AT8 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
-  for (let i = 0; i < 80 && !rid.joined; i++) await sleep(50);
+  await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
   ok(rid.joined && rid.redial?.tries === 0, "AT8 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
   rid.close(); }
 

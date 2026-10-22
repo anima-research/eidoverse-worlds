@@ -63,7 +63,7 @@
   "bare-wait": 39
  },
  "tools/protocol/agenttools-check.ts": {
-  "bare-wait": 29
+  "bare-wait": 6
  },
  "tools/protocol/batch2-check.ts": {
   "raw-symlink": 2
