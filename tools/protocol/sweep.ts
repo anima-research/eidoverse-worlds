@@ -84,7 +84,8 @@ const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex")
 const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor / entity.ts, entity.born, placer
 // DROPPED (translate-v1@16; local: and account-keyed entries since @19): a value never carries an account, a sub or *Sub whose
 // string starts human:, agent:, aid1: or local:, nor an entry keyed by one (human:, agent: or aid1:, the shapes a name can
-// be) (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays
+// be) (written here independently of translate-v1's withoutAccounts); any other string under such a name is data and stays.
+// A role or ban kept by its account isn't a value: it stays, keyed by its person.
 const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
   : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !/^(human|agent|aid1):/.test(k) && !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
@@ -151,6 +152,10 @@ function oldNorm(st: any, phys: any = null) {
     }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
+    // a component whose name (an x-- escape read back, else as written) has an account's and whose whole value is one: dropped (@19)
+    if (n.comp && typeof n.comp === "object") n.comp = Object.fromEntries(Object.entries<any>(n.comp).filter(([k, x]) => {
+      const plain = k.slice(k.lastIndexOf("/") + 1), name = /^x--(?:[0-9a-f]{2})+$/.test(plain) ? dec(plain) : plain;
+      return !((name === "sub" || name.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x)); }));
     const m = noAccounts(n); if (m.comp && !Object.keys(m.comp).length) delete m.comp;   // a bag left empty by an account dropped from it, too
     ents[id] = m;
   }
@@ -160,7 +165,9 @@ function oldNorm(st: any, phys: any = null) {
   // DROPPED "roles.sub / bans.sub" (translate-v1@12): an account subject never reaches a value
   for (const k of ["roles", "bans"]) if (world[k] && typeof world[k] === "object") world[k] = Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, v && typeof v === "object" && !Array.isArray(v) && "sub" in v ? (({ sub, ...r }) => r)(v) : v]));
   // DROPPED "behaviors.authorSub, and any other account in a value" (translate-v1@16; still so at @17): nor does any account-shaped sub or *Sub
-  for (const k of Object.keys(world)) world[k] = noAccounts(world[k]);
+  // …but a role or ban kept by its account is kept (by its person, or its account without a mapper): only its value is read
+  for (const k of Object.keys(world)) world[k] = (k === "roles" || k === "bans") && world[k] && typeof world[k] === "object" && !Array.isArray(world[k])
+    ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(v)])) : noAccounts(world[k]);
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }

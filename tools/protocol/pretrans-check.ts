@@ -460,14 +460,19 @@ await C("K20", "a person whose name begins local: is a name, not an account (tra
   const spawn = lines.find((e: any) => e.kind === "act" && e.verb === "imported" && e.body?.verb === "spawn");
   return [ann.length === 1 && Object.keys(r.planned).length === 1 && !(r.planned[ann[0]].subs ?? []).length && spawn?.actor === ann[0] && w[`roles:${ann[0]}`]?.role === "builder",
     { ann, planned: r.planned, spawn: spawn?.actor, roles: Object.keys(w).filter((k) => k.startsWith("roles:")) }]; });
-await C("K21", "the sweep's independent reading agrees with the translator on accounts (tools/protocol/sweep.ts over a world with a local: placer, an entry keyed by an account, and a component an account names and fills, its only one): no loss, and the snapshot oracle's reading of the directory finds a local: sub's person", async () => {
+await C("K21", "the sweep's independent reading agrees with the translator on accounts (tools/protocol/sweep.ts over a world with a local: placer, an entry keyed by an account, a component an account names and fills, its only one, the same under an escaped name, a role kept by its account, and a local: account in a kept value): no loss, and the snapshot oracle's reading of the directory finds a local: sub's person", async () => {
   const { spawnSync } = await import("node:child_process");
   const W = scratch("k21"), dir = path.join(W, "worlds", "acct"); fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "Ann", verb: "spawn", args: { id: "lamp_1", lib: "a.glb", pos: [0, 0, 0], placer: { id: "Ann", sub: "local:ann" } } },
     { seq: 2, ts: 3, actor: "Ann", verb: "spawn", args: { id: "box_1", lib: "a.glb", pos: [1, 0, 0] } },
     { seq: 3, ts: 4, actor: "Ann", verb: "comp", args: { id: "box_1", type: "ownerSub", data: "human:discord:42" } },
-    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { "human:discord:42": "paid", note: "kept" } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
+    { seq: 4, ts: 5, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "ledger", data: { "human:discord:42": "paid", note: "kept" } } },
+    // a role kept by its account (the translator keys it by its person), a component whose escaped name has an account's,
+    // and a local: account inside a value the state keeps
+    { seq: 5, ts: 6, actor: "world", verb: "grant", args: { id: "human:discord:43", role: "builder", gen: true } },
+    { seq: 6, ts: 7, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "x--" + Buffer.from("ownerSub", "utf8").toString("hex"), data: "human:discord:42" } },
+    { seq: 7, ts: 8, actor: "Ann", verb: "comp", args: { id: "lamp_1", type: "tag", data: { ownerSub: "local:ann", note: "kept" } } }].map((e) => JSON.stringify(e)).join("\n") + "\n");
   const p = spawnSync(process.execPath, [path.join(T, "tools/protocol/sweep.ts")], { cwd: T, env: { ...process.env, PROTOCOL_WORLDS: path.join(W, "worlds") }, encoding: "utf8", timeout: 120000 });
   const out = `${p.stdout}${p.stderr}`; const fails = out.split("\n").filter((l) => /FAIL/.test(l));
   // the sweep counts this world beside the repo's own fixture logs (distinct by content, as it reads them)
@@ -546,6 +551,7 @@ await C("K24", "an account's place in a request is read as the scrub reads it (t
   return [a.length === 1 && act("spawn", "lamp_1")?.actor === a[0] && JSON.stringify(act("spawn", "lamp_1")?.body?.args?.placer) === JSON.stringify({ id: a[0], sub: a[0] }) && !text.includes(A)
     && comps[0]?.entries?.[0]?.id === B && act("spawn", "board_1")?.body?.args?.sub === "bob" && pure?.body?.args?.sub === "bob" && ledger?.["local:ann"] === "paid",
     { a, placer: act("spawn", "lamp_1")?.body?.args?.placer, guest: comps[0], sub: [act("spawn", "board_1")?.body?.args?.sub, pure?.body?.args?.sub], ledger }]; });
+
 // ---- N: names (H1, M7) ----
 const mk = (W: any, id = "box") => { const r = W.call("create", { id, model: "crate" }); if (!r.ok) throw new Error(why(r)); return id; };
 await C("N1", "an unregistered bare name is refused: bare names are the registry's; the fix shows the namespaced form", () => {
