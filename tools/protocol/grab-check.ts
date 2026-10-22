@@ -779,6 +779,19 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [1.5, 0, 0.5] }, 1000); const tray = s.call("vic", "grab", { id: "tray" });
       return { rec, tray: code(tray) }; },
     good: (o) => o.rec?.hand === "left" && !o.rec?.offset && o.tray === "rights" },
+  { id: "F7", what: "the refusals' fixes work as written: following not-grabbable's and rights' suggested grabbable value lets an inhabitant pick the thing up", run(s) { cast(s);
+      // the value a fix suggests, read from its words (`value: {…}` or `.who: '<role>'`)
+      const valueOf = (fix: string) => { const m = /value: (\{[^}]*\})/.exec(fix ?? ""); if (m) try { return JSON.parse(m[1].replace(/'/g, '"').replace(/(\w+):/g, '"$1":')); } catch { return null; }
+        const w = /\.who: '(\w+)'/.exec(fix ?? ""); return w ? { who: w[1] } : null; };
+      s.call("olive", "create", { id: "rock", model: "crate", place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "key", model: "book", components: { grabbable: { who: "builder" } }, place: { at: [1, 0] } });
+      s.call("vic", "move", { to: [0.5, 0, 0.5] });
+      const r1 = s.call("vic", "grab", { id: "rock" }), v1 = valueOf(r1?.refused?.fix), set1 = s.call("olive", "set", { id: "rock", component: "grabbable", value: v1 });
+      const g1 = s.call("vic", "grab", { id: "rock" }); s.call("vic", "put", { id: "rock" });
+      const r2 = s.call("vic", "grab", { id: "key" }), v2 = valueOf(r2?.refused?.fix), set2 = s.call("olive", "set", { id: "key", component: "grabbable", value: v2 });
+      const g2 = s.call("vic", "grab", { id: "key" });
+      return { r1: code(r1), v1, set1: show(set1), g1: show(g1), r2: code(r2), v2, set2: show(set2), g2: show(g2) }; },
+    good: (o) => o.r1 === "not-grabbable" && o.set1 === "ok" && o.g1 === "ok" && o.r2 === "rights" && o.set2 === "ok" && o.g2 === "ok" },
 ];
 
 // ---------------- run ----------------
