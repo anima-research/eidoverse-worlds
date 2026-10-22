@@ -117,13 +117,14 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@19";
+export const TRANSLATOR = "eidoverse/translate-v1@20";
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
 // that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
 // already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
-// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 on those two, and on the
-// accounts and names below, which @19 carries too.
-// @19: a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
+// the old reader read it (shaperepair, 5ba2320f), where @18 dropped it. Output differs from @18 only on those two.
+// @20 (the house's PR #10 into #260, on top of @19): its own output changed again, so it is a version of its own (two
+// translators never share a name):
+// a name is joined to an account only where v1's server wrote the pair itself (server/verbs.ts at 306a00b0: a grant's or
 // a ban's sub beside its id, a spawn's or a light's placer {id, sub}, a behaviour's bySub, the act's own actor's). Elsewhere
 // in an old request's args, inside data a v1 `comp` folded blindly, a name beside an account is data like any other: the
 // account becomes its own person's id, and the name beside it is joined to nothing, so no value in the log moves anyone's
@@ -194,7 +195,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@19";
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@19";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@20";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
