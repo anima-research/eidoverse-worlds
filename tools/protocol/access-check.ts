@@ -305,6 +305,25 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const op = h.operator(), held = h.keyOf("u-cccccccccccccccccccc", true), after = JSON.parse(fs.readFileSync(g, "utf8"));
   ok(op === other.pub && held === other.pub && after.operator?.pub === other.pub && after.holders?.["u-cccccccccccccccccccc"]?.pub === other.pub,
     "A13d …a key another process wrote after the handle opened is taken, not minted over", { op, held, after }); }
+// ---- A13e: processes minting into one keys file at once keep every key each of them minted ----
+{ const dir = fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), f = path.join(dir, "keys", "custody.json"), go = path.join(dir, "go");
+  const custody = path.join(ENGINE, "server/custody.ts"), N = 6, EACH = 8;
+  // each child opens its handle, says it's ready, and mints only once all are ready, so the mints overlap
+  const child = (i) => Bun.spawn(["bun", "-e", `const fs = require("node:fs"); const { custodyAt } = await import(${JSON.stringify(custody)});
+    const h = custodyAt(${JSON.stringify(f)}); fs.writeFileSync(${JSON.stringify(dir)} + "/ready-${i}", "");
+    while (!fs.existsSync(${JSON.stringify(go)})) {}
+    const out = {}; for (let j = 0; j < ${EACH}; j++) out["u-p${i}-" + j] = h.keyOf("u-p${i}-" + j, true);
+    out.sequencer = h.sequencer(); console.log(JSON.stringify(out));`], { cwd: ENGINE, stdout: "pipe", stderr: "pipe" });
+  const kids = Array.from({ length: N }, (_, i) => child(i));
+  await waitFor(() => fs.readdirSync(dir).filter((n) => n.startsWith("ready-")).length === N, 60_000);
+  fs.writeFileSync(go, "");
+  const minted = await Promise.all(kids.map(async (k) => { await k.exited; return JSON.parse((await new Response(k.stdout).text()) || "{}"); }));
+  const disk = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : {};
+  const lost = minted.flatMap((m) => Object.entries(m).filter(([who]) => who !== "sequencer").filter(([who, pub]) => disk.holders?.[who]?.pub !== pub).map(([who]) => who));
+  const seqs = new Set(minted.map((m) => m.sequencer));
+  ok(minted.every((m) => Object.keys(m).length === EACH + 1) && lost.length === 0 && seqs.size === 1 && disk.sequencer?.pub === [...seqs][0] && !fs.existsSync(`${f}.lock`),
+    "A13e processes minting into one keys file at once: every holder key each minted is on disk, they all sign with one sequencer key, and no lock is left behind",
+    { lost: lost.length, of: N * EACH, seqs: seqs.size, holders: Object.keys(disk.holders ?? {}).length, lockLeft: fs.existsSync(`${f}.lock`) }); }
 { // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
