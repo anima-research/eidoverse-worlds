@@ -32,6 +32,7 @@ import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 // a seated person's row in the hierarchy (not an entity: no drag, no lock, no selection)
 const OCC_ROW = 'occupant:';
 import * as Sel from './edit/selection.js';
+import { latestRead } from './edit/latestread.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
 import { handleOf } from '../../shared/thingref.js';
@@ -673,12 +674,13 @@ function worldFields() {
 // the authority's inspect, per thing, re-asked whenever its components change (the key): who made it, and who last changed
 // each component and when (touched: R 10-04, "where a value came from"; within a recent window, beyond = older)
 const inspectCache = new Map();
+const pacedRead = latestRead(250);   // the Inspector's and the History's re-reads: one in flight per thing, the newest wins
 function authorityInspect(id) {
   const key = JSON.stringify(Edits.compsOf(id));
   const c = inspectCache.get(id);
   if (c?.key === key) return c.reply;
   inspectCache.set(id, { key, reply: c?.reply ?? null });   // keep showing the last answer while the new one comes
-  sendRequest('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id));
+  pacedRead(`inspect:${id}`, () => sendRequest('inspect', { id }).then((r) => { if (inspectCache.get(id)?.key === key && r?.ok) { inspectCache.set(id, { key, reply: r }); repaintAll(); } }).catch(() => inspectCache.delete(id)));
   return c?.reply ?? null;
 }
 function placedBy(id) {
@@ -1227,7 +1229,7 @@ function histLoad(id, more = false) {
   const before = more ? hist.next : undefined;
   const gen = more ? hist.gen : ++hist.gen;
   hist.loading = true;
-  sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
+  return sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (!r?.ok || hist.id !== id || (!more && gen !== hist.gen)) return;
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
     if (!id) { hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; }
@@ -1239,7 +1241,7 @@ function historyFields() {
   const id = worldSel() ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(Edits.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
-  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; hist.paged = false; } hist.id = id; histLoad(id); }
+  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; hist.paged = false; } hist.id = id; pacedRead(`history:${id ?? '@'}`, () => histLoad(id)); }
   const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (bagOf(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
   const view = historyView(hist.entries, Edits.nameOf, { mode: hist.mode, who: hist.who });
   const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
