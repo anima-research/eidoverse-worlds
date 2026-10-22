@@ -333,7 +333,7 @@ const cases: Case[] = [
         let why = null; for (let i = 0; i < 120 && !why; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget" && /world's scripts/.test(r.why)) why = r.why; }
         return { set: set?.ok === true, why };
       } finally { D.setScriptConfig(was); } },
-    good: (o) => o.set && /budget is 30/.test(o.why ?? "") && !/asks/.test(o.why ?? "") },
+    good: (o) => o.set && /budget is 30/.test(o.why ?? "") && !/asks/.test(o.why ?? "") && /this server's limit/.test(o.why ?? "") && !/which the world's owner sets/.test(o.why ?? "") },
   { id: "B6b", what: "§3d M3: each sponsor gets a fair share of the world's hour: bob's chatty timer can't starve olive's script", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 40 } });
@@ -585,7 +585,24 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
       && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // review of #260: runs is the server's, so the refusal names no owner field
-      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why) },
+      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why)
+      && /which the world's owner sets in @world\.script-settings\.cpu/.test(o.why) },
+  { id: "B23b", what: "a cpu refusal says whose limit it is: this server's when the owner set none, and this server's ceiling over the owner's value when it lowered theirs", run(s) { cast(s);
+      s.call("ann", "create", { id: "mill2", model: "crate", place: { at: [2, 0] } });
+      install(s, "ann", "mill2", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
+      const last = () => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === "mill2").last.at(-1);
+      const grind = (tag: string) => { const out: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `${tag} ${i}` }, 600); out.push(last()?.status); } return { out, why: last()?.why }; };
+      const was = D.setScriptConfig({ runs: 600, cpu: 25 });   // the operator's cpu: 25 is this server's, and its ceiling
+      try {
+        const server = grind("a");   // the owner has set no cpu
+        s.advance(61000);
+        const set = s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });   // at the ceiling: it stands
+        D.setScriptConfig({ cpu: 20 });   // then the operator lowers the ceiling under it
+        const capped = grind("b");
+        return { server, set: set?.ok === true, capped };
+      } finally { D.setScriptConfig(was); } },
+    good: (o) => o.server.out.at(-1) === "refused" && /this server's limit/.test(o.server.why ?? "") && !/owner sets/.test(o.server.why ?? "")
+      && o.set && o.capped.out.at(-1) === "refused" && /at most 20/.test(o.capped.why ?? "") && /asks 25/.test(o.capped.why ?? "") && /caps it/.test(o.capped.why ?? "") },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
     run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });

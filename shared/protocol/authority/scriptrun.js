@@ -18,7 +18,7 @@ import { worldT } from "./math.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
 import { bodyGate, expireAsks } from "./bodyconsent.js";
-import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
+import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const admit = (...a) => UP.admit(...a);
@@ -47,8 +47,8 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 // it with a stand-in arrival (scriptaudit.js)
 const ANON_EVENTS = new Set(["enter", "leave"]), GRIP_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
-const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
-  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${cfg.capped?.budget !== undefined ? `this server's ceiling: the owner's @world.script-settings.budget asks ${cfg.capped.budget}, and this server caps it` : "which the world's owner sets in @world.script-settings.budget"}`
+const overBudget = (st, B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${limitWhose(st, cfg, "budget")}`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
 // A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run.
 // Nobody is on record as its creator then, so only an owner may write the key, and adopt is the recovery that names a
@@ -88,7 +88,7 @@ function activate(w, id, name, ev) {
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
   if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the authority a run
-  { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
+  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
   if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the authority's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
   if (dry) { const now0 = w.now(), who = requester ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
@@ -109,7 +109,7 @@ function activate(w, id, name, ev) {
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
-  { const why = overBudget(B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
+  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
