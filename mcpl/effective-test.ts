@@ -47,6 +47,12 @@ console.log("unmounted");
   const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90, motion: { type: "pendulum", part: "door" } } }));
   check("a moving thing keeps its stored rotation as its base", r.ok && r.quat.every((v, i) => near(v, qX90[i])), show(r));
 }
+{
+  // house 6340433633: a stored rotation through a WHOLE-root motion (the q hand-off to evalWholeMotion): an oscillate moves
+  // the root along its axis and leaves its rotation as authored, the whole pitched q, not a heading rebuilt from yaw
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90, motion: { type: "oscillate", axis: [0, 1, 0], amp: 0.5, period: 4, phase: Math.PI / 2 } } }));
+  check("a root moving as a whole keeps its stored rotation", r.ok && r.moving === "oscillate" && r.quat.every((v, i) => near(v, qX90[i])) && near(r.pos[1], 0.5), show(r));
+}
 
 console.log("mounted things");
 {
