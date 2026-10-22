@@ -95,6 +95,13 @@ check("(2 m in front of a body is beside it, not in it)", !pointClass([0, 0, 0],
   const r = await ag.reach("rightHand", { p: ahead, space: "self" });
   check("...and so is a point in this body's own frame, by its yaw", fresh(r, "Cal"), r.text);
 }
+{
+  // a reach that streamed, and is refused later by a body its point lands in that it doesn't name
+  const ag = reacher([2, 0, 0], { q: quarter });
+  ag.reaches.set("rightHand", { t: { p: ahead, space: "Ann" } });
+  const dropped = ag.dropReachesAt("a-cal", "rightHand", calThere);
+  check("a later refusal from a body the reach lands in withdraws it", dropped.length === 1 && !ag.reaches.has("rightHand"), JSON.stringify(dropped));
+}
 
 console.log("a walk carried across a rejoin");
 {

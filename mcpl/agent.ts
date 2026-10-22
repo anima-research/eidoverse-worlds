@@ -4712,15 +4712,16 @@ export class WorldAgent {
   reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
   private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
   /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
-   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs aimed at that
+   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
    *  body in the refused class. */
   private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
     const name = this.nameOfActor(actor), out: string[] = [];
     for (const [l, e] of [...this.reaches]) {
-      // a limb's refusal is that reach's only while the reach still aims at the refuser's body (or at a point, which the relay
-      // judges by where it lands): a newer reach on the same hand toward someone else stays
-      const atThem = !!name && (e.t?.who === name || e.t?.space === name), atBody = e.t?.who != null || e.t?.space != null;
-      const hit = limb !== undefined ? l === limb && (atThem || !atBody) : atThem && (!cls || WorldAgent.reachClass(e.t, name!) === cls);
+      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
+      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
+      // lands now: a newer reach on the same hand held to nobody who refused stays
+      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
+      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
       if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
     return out;
   }
