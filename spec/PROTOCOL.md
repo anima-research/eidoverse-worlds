@@ -53,8 +53,8 @@ year, gets the same world from the same log:
    Every change entry names the entry that caused it; the world has one
    sequencer, whose signed hash chain lets readers verify it (§12).
 4. **Requests are open; results are closed.** Anyone may invent a request
-   word; nobody invents a state word — a new feature is a new component
-   (§4, §10).
+   word or a namespaced component; nobody adds a fold operation — a new
+   feature is a new component (§4, §10).
 5. **A name never changes meaning** (§4).
 6. **Presence is not the log** (§5).
 7. **One gate** checks every result before it is written (§7).
@@ -461,7 +461,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   meaning of absence where one is stated and each field's grammar where one
   narrows its type (`physics.shape`), and each name's status, ranges and
   required fields; the conformance suite fails when one is removed, changed or
-  narrowed. Additions re-pin freely. During the alpha a trial or reserved
+  narrowed. Genesis records no registry version, so an old world's trial
+  values are read under the registry of the server reading it: what a trial
+  name means is promised only as far as its pin and changelog say. Additions re-pin freely. During the alpha a trial or reserved
   name's break re-pins only with an acknowledgement, recorded with its reason
   in `REGISTRY-CHANGELOG.md`; a stable name's never re-pins. The name
   `schemas:<name>` on `@world` is **reserved** for a definition's content hash
@@ -592,8 +594,8 @@ copy that was updated and is published again keeps its parts' keys.
   Consent is its person's own: `look` shows each viewer their own switch and
   who poses, drags or touches them, and of anyone else only where they
   stand (and what the viewer is doing to them); another body's switch
-  would undo the uniform words. **Sitting is consent; standing up
-  is the exit** (Second Life's sit, VRChat's station): a seat carries its
+  would undo the uniform words. **A seat may make leaving deliberate, never
+  impossible**, and sitting includes agreeing to be carried by the seat: a seat carries its
   occupant through whatever moves it, and an edit is never refused because a
   body is on the thing. An edit by anyone but the occupant that would move a
   seat — the `transform`, `parent` or `motion` of the seat or of anything
@@ -799,8 +801,8 @@ Speech in a world is public and **arrival-only**:
 
 ## 6a. One kind of participant
 
-The protocol knows **participants**, and only participants: everyone here is
-a person to the protocol. A participant is an identity (§3.1) with a body
+The protocol knows **participants**, and only participants, all treated
+alike (rule 1 below). A participant is an identity (§3.1) with a body
 (§5), whatever is behind it: someone at a browser, someone in a headset, a
 program, or a program someone is steering.
 
@@ -830,8 +832,7 @@ program, or a program someone is steering.
    consent check as a hand placed by a reach descriptor; a seat's escape
    exists for every client (§5). Where a capability exists for only one
    interface (a route planner, asking for touch, a body's size), it is listed
-   as a gap until the other has it. (The reference client's tracked hands do
-   not meet the reach gate yet: a known gap, not a licence.)
+   as a gap until the other has it.
 5. **Policy by kind is a world's choice, in the open.** A world that wants
    different rules for declared agents (to admit only declared agents, to
    require a declaration, or to give declared agents their own rate) says so
