@@ -117,7 +117,7 @@ export function repairSky(sky) {
     delete out.clock; delete out.dormantRated; }
   // a tz with no clock is today's spelling (it governs). The audit's pre-#65 case (a tz that meant nothing without clock) is
   // indistinguishable from it, and no stored sky on Burrow held one (all 16 tz values sat beside clock: 'real'): kept
-  // degrees → radians, once (the load's marker makes it once: liftWorld). A turn more than a full one is the same bearing
+  // degrees → radians, once (the repair's marker makes it once: shapesMarked). A turn more than a full one is the same bearing
   // (400° is 40°), so it lands inside the registry's ±2π instead of refusing the world's whole repair (review r7 F5)
   if (typeof out.azimuth === "number" && Number.isFinite(out.azimuth)) { edit(); out.azimuth = (out.azimuth % 360) * Math.PI / 180; }
   // weatherSeconds → transition; a value today's range can't hold (0, or more than 600 s) is dropped: absent, the
@@ -164,7 +164,7 @@ export const SHAPES_VERSION = 2;
 // skeleton). A founding writes one beside it, and translate-v1 one beside its `translated`. The two older markers (a
 // founding's `shapes`, a translation's translator) are read through `bodyOf`: the authority passes readback, so a purged
 // body is unknown, and unknown is MARKED. Never re-running a one-way rewrite on values written in today's spelling is the safe
-// side; the cost is a world founded before 10-16 whose founding was purged before its first load here, which keeps its old
+// side; the cost is a world founded before 10-16 whose founding was purged before its repair here, which keeps its old
 // values unrepaired (their readers' defaults) rather than having today's values rewritten as if old.
 export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null) {
   const L = entries ?? []; let founded = false;
@@ -179,14 +179,14 @@ export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null
 }
 
 /** Component names renamed before release (protocol minor 0), {old: new}, per the entity they live on ("@world" or "thing").
- *  Unlike the shape repair this is a pure rename, idempotent, so it is NOT marker-gated: every load renames what it finds
- *  (renameOps), as the system's `rename-components` act, and a world with nothing to rename writes nothing. A rename never
+ *  Unlike the shape repair this is a pure rename, idempotent, so it is NOT marker-gated: the maintenance command renames what
+ *  it finds (renameOps), as the system's `rename-components` act, and a world with nothing to rename writes nothing. A rename never
  *  overwrites a value already under the new name (that one wins; the old one is deleted). R 10-17 14:34: @world `trusted`
  *  read as a list of trusted PEOPLE (the consent table's delegates); it lists components. */
 export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trusted: "trusted-components" }) });
 /** Fields renamed before release (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a
  *  clip; grabbable's 'two-hand' → twoHanded: true), a grip's fingers → grasp. One pure function for the door (a write in
- *  the old spelling is taken and stored in the new: writes.js resolve) and the load (renameOps). Idempotent; a value
+ *  the old spelling is taken and stored in the new: writes.js resolve) and the maintenance command (renameOps). Idempotent; a value
  *  already spelled today is returned as the same object; an old field stored as null is removed, never renamed to a null
  *  (to: null in its note). {value, renamed: [{field, from, to}]} */
 export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),

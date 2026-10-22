@@ -117,7 +117,7 @@ function buildUndo(ctx, a, w) {
   const flat = opsOf(res);
   // what others wrote since: a thing's own later history (touch), and, for the spatial check, every change entry since
   // the result (bounded by what happened after the act, never the log before it)
-  // later work by anyone but the act's own author stands; the load-time lift isn't work (it respells, and its old values
+  // later work by anyone but the act's own author stands; the maintenance command's lift isn't work (it respells, and its old values
   // are translated again on the way back in)
   const others = (i) => E[i].actor !== target.actor && E[E[i].cause]?.verb !== "lift-sockets";
   const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;

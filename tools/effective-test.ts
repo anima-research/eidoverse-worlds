@@ -44,7 +44,7 @@ let seqN = 0;
 /** A socket child's id here: "<host>.<slot>" (the door mints its own; any stable id serves a fixture). */
 const SID = (host: string, slot: string) => `${host}.${slot}`;
 /** The scenes are old-protocol entries, so a seat arrives as a `sockets` map and cargo as mount {to, slot}. Every world is
- *  lifted into socket children (PLAN-sockets-entities: the door at load); this does the same to the folded records — a
+ *  lifted into socket children (PLAN-sockets-entities: the maintenance command); this does the same to the folded records — a
  *  socket child {pos, yaw/q, socket: {name, …}, parent: {to: host, offset, yaw/q}}, and cargo on a slot rides it
  *  (no offset: on the socket itself) — so the agent reads exactly what a lifted world gives it. */
 function liftV1(E: Record<string, any>) {

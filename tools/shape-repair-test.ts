@@ -168,7 +168,7 @@ await tryRow('RP9', () => {
 });
 
 // ===================================================================== R 10-17: a model is its library path again. A world stored with
-// content addresses (a translation by translate-v1@8–@11, before the path was kept) gets its paths back at its first load where
+// content addresses (a translation by translate-v1@8–@11, before the path was kept) gets its paths back from the repair where
 // this host's index knows the file, the address kept beside it as model-hash; an address no file here names stays and loads
 await tryRow('RP10', () => {
   const H = '7'.repeat(64), H2 = '8'.repeat(64);

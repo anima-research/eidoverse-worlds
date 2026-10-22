@@ -56,7 +56,7 @@ export function encNameRaw(s) {
  *  ([a-z0-9-]{1,64}). A name that already is one, and isn't an escape, is its own tag ("seat", "arm-2"); any other is
  *  lowercased, its runs of other characters become one dash, cut to 48, and given 8 hex of its sha256 so two names that
  *  sanitize alike ("Tripo_Part", "tripo-part") still differ: tripo_part_3 → tripo-part-3-<8 hex>. Pure: every server, the
- *  load's repair, the translator and the editors write the same key for the same node. Readers never parse it: they read
+ *  maintenance command's repair, the translator and the editors write the same key for the same node. Readers never parse it: they read
  *  the value's `node`.
  *  @param {unknown} node @returns {string} */
 export function partSlot(node) {
@@ -66,8 +66,8 @@ export function partSlot(node) {
   return `${base || "node"}-${sha256(s).slice(0, 8)}`;
 }
 // The node a motion moves, by its key and value (review r7, R 10-16: a node's name is DATA): a keyed motion's `node`
-// (motion:<slot> {node}); a keyed one stored before the node was data, its key's tag (the load's repair writes that
-// down); a whole motion naming `part` (the first spelling, before its first load's repair), that part. Null: the whole
+// (motion:<slot> {node}); a keyed one stored before the node was data, its key's tag (the maintenance command's
+// repair writes that down); a whole motion naming `part` (the first spelling, before that repair), that part. Null: the whole
 // thing. The one reading every reader shares (renderer, seat signals, editor, agent).
 /** @param {string} key @param {any} m @returns {string | null} */
 export function motionNode(key, m) {
@@ -77,8 +77,8 @@ export function motionNode(key, m) {
 }
 
 // A motion's type (R 10-17 21:40: the back-and-forth along an axis is `oscillate`; it was bob before release). The old
-// spelling is READ for one release (a value an older log stored, a replica that folded it before the load's rename); the
-// door takes it and stores today's, and every load renames a stored one (shaperepair.js renameFields, rename-components).
+// spelling is READ for one release (a value an older log stored, a replica that folded it before the rename); the door
+// takes it and stores today's, and the maintenance command renames a stored one (shaperepair.js renameFields, rename-components).
 // The one reading every reader shares (renderer, seat signals, editor, agent): the old word is spelled here and nowhere
 // else in a reader (tools/protocol/vocab-check.ts).
 export const OLD_MOTION_TYPES = Object.freeze({ bob: "oscillate" });

@@ -64,7 +64,7 @@ const DECIDED = {
   // the registry states these two now (shape audit 10-16): read from it, never restated
   'Pivot.pos': COMPONENTS.pivot.absentMeans.pos,
   'Collider.shape': COMPONENTS.collider.absentMeans.shape,
-  'Pendulum.pivot': 'a whole thing swings about its Pivot component, else its origin [0, 0, 0] (before 10-16: [0, 2, 0], written as its pivot at a stored world\'s first load); a part about its own origin',
+  'Pendulum.pivot': 'a whole thing swings about its Pivot component, else its origin [0, 0, 0] (before 10-16: [0, 2, 0], written as its pivot by a stored world\'s maintenance command); a part about its own origin',
   'Spin.pivot': 'it turns about its own Pivot component, else its origin [0, 0, 0]',
   'Path.points': 'no points: it stands still (the authority refuses a path with fewer than 2 points; the record\'s [] is the empty reading)',
   'Particles.at': '[0, 0, 0] in its own frame; in an older value, its origin (the registry says the same)',

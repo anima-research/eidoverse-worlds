@@ -124,7 +124,7 @@ function admit(w, st, who, ops) {
     else if (op.verb === "delete" && op.comp !== undefined && !(op.comp in e.c)) refuse("not-found", `${op.id} has no ${op.comp}`, `it has: ${Object.keys(e.c).join(", ")}`);
     else if (op.verb === "set" && !("value" in op)) refuse("shape", `set ${at} needs a value`, "");
     // a reserved name (componentspec STATUSES) is held, never written: one refusal for every reserved name, before rights
-    // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy, the load's lift) keeps what it
+    // (nobody may write it, so who is asking doesn't matter). A carried value (a fork's copy, the command's lift) keeps what it
     // holds: the refusal is about new writes, not about what an older log stored
     // (a lifted name, sockets, is the lift's: a write of it never gets here as itself unless malformed, and then its own
     // check says what is wrong with it in its own words)

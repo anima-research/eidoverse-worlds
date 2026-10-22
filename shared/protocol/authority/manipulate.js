@@ -131,12 +131,13 @@ function snapTarget(st, id, g, p, w = null) {
   return out;
 }
 // Home (research §3): where a returning thing goes. A system act (actor system, verb return-home) whose cause is the
-// release, then its change entry: the home transform (and the parent it had), with its scale kept. Refused (a lock, a home
-// parent that's gone) means it stays where it is.
+// release, then its change entry: the home transform (and the parent it had), at its home scale (homeScale: home.scale when
+// it has one, else its size in the world kept in the home parent's frame). Refused (a lock, a home parent that's gone) means
+// it stays where it is.
 function returnPlan(w, st, id, g) {
   const e = st.entities[id]; const hp = g.home.parent;
   if (hp && !st.entities[hp.to]) return { plan: null, why: `its home parent ${hp.to} is gone` };
-  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: (e.c.transform?.scale ?? [1, 1, 1]).slice() })];
+  const ops = [...(hp ? [setOp(id, "parent", { ...hp })] : e.c.parent ? [delOp(id, "parent")] : []), setOp(id, "transform", { pos: g.home.pos.slice(), q: g.home.q.slice(), scale: homeScale(st, id, g.home) })];
   try { return { plan: admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform", "parent"] } }, ops) }; }
   catch (x) { if (!(x instanceof Refusal)) throw x; return { plan: null, why: x.reason }; }
 }
@@ -166,7 +167,7 @@ function returnDue(w) {
     const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
     const g = grabOf(e.c); if (!g?.home || w.presence.holds[id] || lostPlace(st, id)) continue;   // where it is now is unknown: it stays
     if (st.entities["@world"]?.c["physics-engine"]) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
-    const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || sameHome(st, id, g.home)) continue;
+    const r = lastRelease(w, id); if (!r || now - r.ts < g.returnAfter * 1000 || (sameHome(st, id, g.home) && atHomeScale(st, id, g.home))) continue;
     const { plan, why } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, r.release); warned?.delete(id); continue; }
     // refused (as when its home parent now sits inside it): it stays, and is tried again at every request, so the operator is told
     // once per thing and release, with the reason
@@ -185,6 +186,10 @@ const chainScale = (st, id) => { let k = [1, 1, 1], p = id, n = 0; while (p && n
 const homeScale = (st, id, home) => { if (home.scale !== undefined) return vec3s(home.scale).slice();
   const world = chainScale(st, id), under = home.parent?.to ? chainScale(st, home.parent.to) : [1, 1, 1];
   return world.map((x, i) => +(x / (under[i] || 1)).toFixed(6)); };
+// a timed return also goes when the thing stands at home's pose at another scale than returnPlan would write (sameHome
+// is about place, as stamping a home reads it)
+const atHomeScale = (st, id, home) => { const s = vec3s(st.entities[id]?.c.transform?.scale), h = homeScale(st, id, home);
+  return s.every((x, i) => Math.abs(x - h[i]) < 1e-3); };
 const homeHere = (st, id) => { const c = st.entities[id]?.c ?? {}; const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
   return { pos: t.pos.slice(), q: t.q.slice(), ...(c.parent?.to ? { parent: { to: c.parent.to } } : {}) }; };
 // a reset handler being written: each target with no home of its own gets one where it stands now (it can be moved with

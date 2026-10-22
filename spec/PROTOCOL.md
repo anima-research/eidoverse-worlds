@@ -1167,7 +1167,7 @@ away from it.
   copy carries its parent's `model-hash` as it stood, or none), and nothing
   breaks when it is absent or the host's index is lost. An
   `eido:sha256/<64 hex>` value stored before is still read (and a model one
-  becomes its path at first load, §4). The door's one rewrite is a spelling,
+  becomes its path when the world's maintenance command runs, §4). The door's one rewrite is a spelling,
   not a resolution (shared/protocol/assetref.js `atWrite`): the first
   protocol's makeGrass knobs → the flora spelling, noted in the reply; an
   unknown grass preset is refused.

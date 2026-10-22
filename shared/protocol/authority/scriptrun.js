@@ -1,5 +1,5 @@
 // shared/protocol/authority/scriptrun.js — scripts, the running half (activation): one activation (activate),
-// withAuthority, the server's settle/tick/checkpoint beat, orphan settlement and liftWorld (the load's lift), the presence
+// withAuthority, the server's settle/tick/checkpoint beat, orphan settlement, liftWorld (the load's report) and maintain (the maintenance command), the presence
 // and hand events and their drains, the status view, and the script verbs (upload, effect, adopt, scripts) as SCRIPT_VERBS,
 // which authority.js spreads into VERBS where they stood (refactor split, 2026-10-17; moved from authority.js's
 // "behaviours" section and the VERBS table unchanged; the standing half is authority/scripts.js). The gate, the engine's
