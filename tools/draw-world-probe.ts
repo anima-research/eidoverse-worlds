@@ -17,7 +17,7 @@ try {
     ws.onmessage = (e) => { const m=JSON.parse(e.data); if(m.type==='snapshot') resolve(m); if(m.type==='error') reject(Error(m.error)); };
     ws.onerror = reject;
   });
-  // the v4 request/reply path (#260 house I420): {type:'request', id, verb, args} → {type:'reply', id, reply}
+  // the request/reply path (#260 house I420): {type:'request', id, verb, args} → {type:'reply', id, reply}
   let reqSeq = 0;
   const request = (verb, args) => new Promise((resolve, reject) => {
     const rid = ++reqSeq;

@@ -18,10 +18,10 @@ const STUB = fileURLToPath(new URL("./world-hold-stub.mjs", import.meta.url));
 plugin({
   name: "world-hold-stub",
   setup(build) {
-    // livechat.js imports ../core.js, ../chat.js and ../base.js (its bus) from realize/, and
-    // ./models.js (PORTED only) — all stubbed, base.js too, so livechat's bus IS the stub's real bus the test drives
-    // (#260 house I394: with base.js unstubbed it listened on another bus and 12 checks were red).
-    for (const f of ["^\\.\\./core\\.js$", "^\\.\\./chat\\.js$", "^\\.\\./base\\.js$", "^\\./models\\.js$"]) {
+    // livechat.js imports ../core.js and ../chat.js (from realize/) and ./models.js (PORTED only), all stubbed; its bus
+    // comes from ../base.js, left REAL so it is the same bus the test drives below (#260 house I394/I240: two repairs of
+    // this one fault met in a merge; one bus, not both fixes)
+    for (const f of ["^\\.\\./core\\.js$", "^\\.\\./chat\\.js$", "^\\./models\\.js$"]) {
       build.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
   },

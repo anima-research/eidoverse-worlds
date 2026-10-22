@@ -55,7 +55,7 @@ check("describe never claims anything about the audio (no 'loud', 'hz', 'wavefor
 
 console.log("— 2. perception —");
 const T0 = 1_754_000_000_000;
-// the agent's v4 path: a scratch v4 door, its cut adopted, and the next view taken after every write (tools/agent-scratch.ts)
+// the agent's path: a scratch door, its cut adopted, and the next view taken after every write (tools/agent-scratch.ts)
 const { agentOnDoor } = await import("./agent-scratch.ts");
 const ag = new WorldAgent({ name: "reader" });
 const { seed, act } = agentOnDoor(ag, "sound");

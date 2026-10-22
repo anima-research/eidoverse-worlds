@@ -890,7 +890,7 @@ try {
       const spawned = await waitDisk(() => JSON.stringify(disk().entities["@world"]?.c.spawn?.pos) === "[3,0.5,-2]");
       const after = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(document.getElementById('__pl')?.remove(), true)`);
-      check("CB1 Places › Save with empty Bounds saves the spawn and leaves bounds as they were (no zero box)", spawned && before === after, { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
+      check("CB1 Places › Save with the Bounds fields cleared saves the spawn and removes the bounds, as the panel says empty means (house I25), never a zero box", spawned && before !== "null" && after === "null", { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
     // EK (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus"): Esc never
     // hides or restores the panel set (Tab does); F11 is the PAGE's full screen, so the browser's own Esc leaves it; Esc still
     // closes the transient things. Out of edit mode (build.js claims Esc there), with two panels open.

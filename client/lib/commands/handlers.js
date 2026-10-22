@@ -155,9 +155,9 @@ register('grant', (arg) => {
     // exceptions nor their end): a new duration replaces the end, forever drops it (a set, not a merge: a merge can't
     // remove a field), and new exceptions join the old ones
     // an owner's grant never ends: the authority refuses an owner with an end, so none is kept or sent
-    if (role === 'owner' && dur) return logChat('*', `ownership never expires — /grant ${id} owner, without a time`);
+    if (isOwner(role) && dur) return logChat('*', `ownership never expires — /grant ${id} owner, without a time`);
     const { until: was, ...rest } = cur ?? {};
-    const until = forever || role === 'owner' ? undefined : dur ? serverUntil(dur) : was;
+    const until = forever || isOwner(role) ? undefined : dur ? serverUntil(dur) : was;
     const exceptions = can || rest.can ? { ...(rest.can ?? {}), ...(can ?? {}) } : null;
     const value = { ...rest, ...(role ? { role } : {}), ...(exceptions ? { can: exceptions } : {}), ...(until !== undefined ? { until } : {}) };
     send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value } },

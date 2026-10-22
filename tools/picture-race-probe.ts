@@ -18,7 +18,7 @@
 //      stale load is refused and the still-authored picture rehangs from
 //      pending (Mica, round 2: {part:true, hung:false, mapSrc:null}).
 //
-// Ported to the v4 request path (#260 house I397/I401): writes go through net.sendRequest with ops built by
+// Ported to the request path (#260 house I397/I401): writes go through net.sendRequest with ops built by
 // shared/protocol/requests.js; the authority mints ids, so the console's id is read from each create's reply. A picture
 // has no part any more (shared/picture.js): it is the thing's own quad, so a hang is judged by that quad's texture,
 // and a held load shows the empty plate (hung, no map) until it lands.
