@@ -72,12 +72,14 @@ export function worldOf(io) {
   w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; durably("moderator log", () => io.appendMod?.(r)); w.mod.push(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
   // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
-  // is what the fold does for them; anything else (a purge, a governance entry, a malformed line) re-folds from scratch
+  // is what the fold does for them; anything else (a purge, a governance entry, a malformed line, or a value stripped to its
+  // commit, which only the whole log's purges can read) re-folds from scratch
   w.state = () => { if (cache?.n === entries.length) return cache.st;
     const fresh = entries.slice(cache?.n ?? 0);
     if (cache && cache.st.status === "ok" && fresh.every((e) => isE(e) && ["change", "act", "sim", "say"].includes(e.kind))) {
-      const st = cloneState(cache.st); fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
-      return (cache = { n: entries.length, st }).st; }
+      const st = cloneState(cache.st);
+      try { fresh.forEach((e, k) => { if (e.kind === "change") applyInPlace(st, opsOf(e), cache.n + k); });
+        return (cache = { n: entries.length, st }).st; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
     return (cache = { n: entries.length, st: fold(entries) }).st; };
   // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
   // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).

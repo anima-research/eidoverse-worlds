@@ -41,12 +41,19 @@ export const scriptDefaults = () => Object.fromEntries(OWNER_SCRIPT_FIELDS.map((
 export const scriptCeiling = () => ({ max: 64, budget: SCRIPTS.budget, cpu: SCRIPTS.cpu });
 /** An operator's (and a test's) script configuration; returns what it was, to restore. Never a world's. */
 export function setScriptConfig(over = {}) { const was = { ...SCRIPTS }; Object.assign(SCRIPTS, over); return was; }
-const scriptsCfg = (st) => { const c = st.entities["@world"]?.c["script-settings"]; const own = c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {};
+// what the owner wrote in @world.script-settings ({} when nothing, or not an object)
+const ownScriptSettings = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}; };
+const scriptsCfg = (st) => { const own = ownScriptSettings(st);
   const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
   // a value above this server's ceiling is lowered to it; when it was the owner's, `capped` keeps what they asked for, so a
   // refusal can say so (a server default above a lowered ceiling is just lowered: the owner wrote nothing)
   for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k]) && out[k] > top) { if (own[k] !== undefined) (out.capped ??= {})[k] = out[k]; out[k] = top; }
   return out; };
+// Whose a limit an owner may set is, for a refusal that quotes it: this server's ceiling when it lowered the owner's
+// value (`capped`), the owner's when their value stands, else this server's own, which the owner may lower but not raise
+const limitWhose = (st, cfg, k) => (cfg.capped?.[k] !== undefined ? `this server's ceiling: the owner's @world.script-settings.${k} asks ${cfg.capped[k]}, and this server caps it`
+  : ownScriptSettings(st)[k] !== undefined ? `which the world's owner sets in @world.script-settings.${k}`
+  : `this server's limit, which the world's owner may lower in @world.script-settings.${k} but not raise`);
 // the registry's lists (componentspec script.itemEnums), read here, never restated
 const BODY_EFFECTS = COMPONENTS.script.itemEnums["scope.bodies"];
 const SCRIPT_EVENTS = COMPONENTS.script.itemEnums.on.filter((e) => !e.endsWith(":*"));
@@ -210,8 +217,8 @@ const DRY = { n: 10, ms: 60000 }; // dry runs (use {dry}, scripts {test}) per pe
 function overCpu(w, now, id, key, sponsor, cfg) {
   const R = (w.presence.scriptRuns ?? []).filter((r) => now - r.ts < 60000); w.presence.scriptRuns = R;
   const runs = R.filter((r) => r.id === id && r.key === key).length; if (runs >= cfg.runs) return `${key} ran ${runs} times in the last minute; at most ${cfg.runs}, this server's limit (its operator sets it, not the world's owner)`;
-  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the authority's time in the last minute; at most ${cfg.cpu} (@world.script-settings.cpu)`;
+  const ms = R.filter((r) => r.sponsor === sponsor).reduce((t, r) => t + r.ms, 0); if (ms >= cfg.cpu) return `${said(sponsor)}'s scripts used ${ms} ms of the authority's time in the last minute; at most ${cfg.cpu}, ${limitWhose(w.state(), cfg, "cpu")}`;
   const all = R.reduce((t, r) => t + r.ms, 0); if (all >= cfg.cpu * 3) return `this world's scripts used ${all} ms of the authority's time in the last minute; at most ${cfg.cpu * 3}`;
   return null;
 }
-export { DRY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect };
+export { DRY, allScripts, budgetOf, dutyLeft, dutyLog, installCheck, limitWhose, logRt, overCpu, particlesCheck, pauseOnly, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptMemo, scriptRights, scriptsCfg, sponsorOf, uploadEffect };

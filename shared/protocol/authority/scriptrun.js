@@ -9,7 +9,7 @@ import { isIdentity, PURGED } from "../fold.js";
 import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
-import { livePoses, digestOf, simCutOf, lostPlace } from "../simlayer.js";
+import { livePoses, digestOf, simCutOf, lostPlace, ends, endsUnder } from "../simlayer.js";
 import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
@@ -18,7 +18,7 @@ import { worldT } from "./math.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
 import { bodyGate, expireAsks } from "./bodyconsent.js";
-import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
+import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const admit = (...a) => UP.admit(...a);
@@ -47,11 +47,13 @@ const recorded = (ev) => { const { text, to, args, ...rest } = ev; return ev.seq
 // it with a stand-in arrival (scriptaudit.js)
 const ANON_EVENTS = new Set(["enter", "leave"]), GRIP_EVENTS = new Set(["grab", "release"]);
 const anonEvent = ({ by: _by, ...rest }) => rest;
-const overBudget = (B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
-  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${cfg.capped?.budget !== undefined ? `this server's ceiling: the owner's @world.script-settings.budget asks ${cfg.capped.budget}, and this server caps it` : "which the world's owner sets in @world.script-settings.budget"}`
+const overBudget = (st, B, cfg, key, sponsor, cost) => (B.mine >= cfg.rate ? `${key} logged ${B.mine} activations in the last minute; the rate is ${cfg.rate}`
+  : B.all + cost > cfg.budget ? `this world's scripts wrote ${B.all} entries in the last hour; the budget is ${cfg.budget}, ${limitWhose(st, cfg, "budget")}`
   : B.bySponsor + cost > B.share ? `${said(sponsor)}'s scripts wrote ${B.bySponsor} entries in the last hour; each of the ${B.sponsors} sponsors here gets ${B.share} of the world's ${cfg.budget}` : null);
-// A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run
-const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; set it again to install it, or an owner may adopt it (adopt {id, script})";
+// A script whose value stands but whom no write in the log answers for (its install act purged, say): it doesn't run.
+// Nobody is on record as its creator then, so only an owner may write the key, and adopt is the recovery that names a
+// sponsor: a set of the same value changes nothing more than `paused`, and sponsorOf passes over such a write
+const UNSPONSORED = "nobody in this world's log answers for it (its install isn't there, as when it was purged), so it doesn't run; an owner may adopt it (adopt {id, script}), which makes them its sponsor";
 // Why a script is paused for failing, with the last failure, since a deterministic one fails the same way when retried
 const pausedWhy = (rt) => `paused after ${rt.fails} failed activations in a row${rt.lastFail ? ` (the last: ${rt.lastFail.code}: ${rt.lastFail.why})` : ""}; ` +
   "fix what failed, then set the script again; setting the same value only retries, which helps if the cause has passed";
@@ -86,7 +88,7 @@ function activate(w, id, name, ev) {
   const actSeq = w.entries.length, seed = SR.seedOf(w.worldId, actSeq, `${id}/${key}`), now = w.nextTs(); // the clock is frozen at the act's own ts
   if (!dry) { const why = overCpu(w, now, id, key, sp.sponsor, cfg); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const B = budgetOf(w, st, now, id, key, sp.sponsor, cfg); // spent already: refused before it costs the authority a run
-  { const why = overBudget(B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
+  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1); if (why) return out("refused", { code: "budget", why, sponsor: sp.sponsor }); }
   const here = presentOf(w), me = worldT(st, id)?.pos ?? [0, 0, 0];
   if (dutyLeft(w.worldId) <= 0) return out("refused", { code: "busy", why: `the authority's scripts have used their share of the last second (${DUTY.maxMs} ms for every world here, ${Math.round(DUTY.maxMs * DUTY.worldShare)} for one); it runs again when there's time`, sponsor: sp.sponsor });
   if (dry) { const now0 = w.now(), who = requester ?? "?"; const D0 = ((w.presence.dryRuns ??= {})[who] ??= []).filter((t) => now0 - t < DRY.ms); w.presence.dryRuns[who] = D0;
@@ -107,7 +109,7 @@ function activate(w, id, name, ev) {
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
-  { const why = overBudget(B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
+  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
@@ -187,7 +189,9 @@ function checkpointSim(w) {
   w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
 }
 export function tick(w) {
-  if (!w.exists || w.state().status !== "ok") return [];
+  // without the world's key nothing a script writes can be logged (storage's append refuses), so, as settle() and
+  // expireRoles() do, the timers don't start what they can't write
+  if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return [];
   return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const now = w.now(), present = presentOf(w).size > 0, ran = [];
@@ -248,7 +252,9 @@ export function settleOrphans(w, present = []) {
     // lifted is settled below by the authority, as leave's own refusal is (review 10-06)
     if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
   withAuthority(w, () => {
-    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
+    // the holds end above (presence is this server's own); what the log lifted is settled by a server that can sign for the
+    // world, since this one can't log the settlement
+    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"] || !holdsCustody(w)) return;
     let settled = 0, waiting = 0;
     for (const [id, lift] of orphanLifts(w)) {
       if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;   // a place the record lost stays where it is
@@ -398,18 +404,24 @@ export function repairShapes(w, { by = null, operator = false, dryRun = false } 
 }
 const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
-// no write to where they are or what they are, no epoch cut (a new epoch builds its bodies from the whole state).
+// and no write that ends the hold (simlayer's ends() and endsUnder(), the replay's own rule). An epoch cut doesn't end
+// one: a hold outlives it, and the new epoch's engine leaves the held thing out, as the replay does.
 function orphanLifts(w) {
-  const lifted = new Map();
+  const lifted = new Map(), parentOf = new Map();   // parentOf: each thing's parent as the log has it so far
+  const under = (k, id) => { for (let p = parentOf.get(k), n = 0; p && n < 33; p = parentOf.get(p), n++) if (p === id) return true; return false; };
   w.entries.forEach((e, seq) => {
     if (!isE(e)) return;
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
-    else if (e.kind === "change") for (const o of opsQuiet(e)) {
-      // the same lifecycle as the engine's (simlayer ends()): what ends a hold is a write that moves it, re-parents it,
-      // switches it off or removes it; an engine change or an edit to its physics or model leaves it in the hand
-      // (review of 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
-      if (o.verb === "create" || (o.verb === "delete" && o.comp === undefined) || ["transform", "parent"].includes(o.comp) || (o.comp === "disabled" && o.verb === "set" && o.value === true)) lifted.delete(o.id); }
+    else if (e.kind === "change") { const ops = opsQuiet(e);
+      for (const o of ops) if (o.comp === "parent") parentOf.set(o.id, o.verb === "set" && typeof o.value?.to === "string" ? o.value.to : null);
+      // the same lifecycle as the engine's (simlayer ends() and endsUnder(), read after the whole entry as the replay reads
+      // them): what ends a hold is a write that moves it, re-parents it, switches it off or removes it, or switches off or
+      // removes a thing it hangs from; an engine change or an edit to its physics or model leaves it in the hand (review of
+      // 64d26822: the two disagreed, and a held thing came back into the engine as a ghost collider)
+      for (const o of ops) { if (o.verb === "create" || ends(o)) lifted.delete(o.id);
+        if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }
+      for (const o of ops) if (o.verb === "delete" && o.comp === undefined) parentOf.delete(o.id); }
   });
   return lifted;
 }
@@ -417,7 +429,8 @@ function orphanLifts(w) {
  *  the act records no identity, ANON_EVENTS). The act's cause is the entry that made the script's sponsor (an arrival isn't
  *  logged on every path). */
 export function presenceEvent(w, kind, who) {
-  if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who)) return [];
+  // a world this server can't sign for: what a script writes can't be logged, so its enter and leave scripts don't start (as tick)
+  if (!w.exists || w.state().status !== "ok" || !["enter", "leave"].includes(kind) || !isIdentity(who) || !holdsCustody(w)) return [];
   return withAuthority(w, () => {
     w.changedQ = []; w.sayQ = []; w.heldQ = []; const ran = [];
     for (const { id, name, v } of allScripts(w.state())) if (Array.isArray(v.on) && v.on.includes(kind)) { const sp = sponsorOf(w, id, `script:${name}`);
@@ -472,6 +485,7 @@ function drainScripts(w) {
 /** Whether the sandbox here can run a script: true, or why not (its own available()). One with no available() runs
  *  whatever it's given, as activate runs it, so it counts as available. */
 const sandboxUp = (w) => (typeof w.scripts?.available === "function" ? w.scripts.available() : true);
+const SANDBOX_DOWN = "this server's script sandbox didn't load, so no script runs here; only the server's operator can repair it, and asking again won't change it until then";
 function scriptStatus(w, st, id, name, v) {
   const key = `script:${name}`, sp = sponsorOf(w, id, key), rt = w.presence.scripts?.[rtKey(id, name)], cfg = scriptsCfg(st);
   let src = null, unreadable = false; try { src = w.getBlob(v.src); } catch (e) { unreadable = e?.code !== "ENOENT"; }
@@ -486,8 +500,9 @@ function scriptStatus(w, st, id, name, v) {
   if (!src) return { ...base, status: "failed", why: sourceWhy(src, unreadable, v.src) };
   if (!w.scripts) return { ...base, status: "unavailable", why: "this server has no script sandbox" };
   // a sandbox that's here but whose runtime didn't load says unavailable to every activation, so its status says so too, as
-  // scriptsOf's `sandbox` line does (review of #260, protocol core I59)
-  { const av = sandboxUp(w); if (av !== true) return { ...base, status: "unavailable", why: `this server's script sandbox is unavailable: ${av}` }; }
+  // scriptsOf's `sandbox` line does (review of #260, protocol core I59). Its own error stays in the server's log: it names
+  // the host's files, and what a script's author needs is that only the operator can mend it
+  if (sandboxUp(w) !== true) return { ...base, status: "unavailable", why: SANDBOX_DOWN };
   if (rt?.fails >= cfg.fails && rt.ver === lastTouch(w, id, key)?.seq) return { ...base, status: "paused", why: pausedWhy(rt) };
   const role = roleOf(st, sp?.sponsor); const lost = [];
   for (const x of scopeIds(st, id, v.scope?.ids)) for (const c of v.scope?.comps ?? []) { if (sp?.sponsor && lacks(w, st, sp.sponsor, { verb: "set", id: x, comp: sampleOf(c) }, null, { viaCap: true })) lost.push(`${x}.${c}`); }
@@ -497,7 +512,7 @@ function scriptStatus(w, st, id, name, v) {
 }
 function scriptsOf(w, st, id) {
   return { scripts: allScripts(st).filter((x) => !id || x.id === id).map((x) => scriptStatus(w, st, x.id, x.name, x.v)),
-    ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (sandboxUp(w) === true ? SR.ENGINE : `unavailable: ${sandboxUp(w)}`) : "none" };
+    ...(id && id !== "@world" ? {} : { imported: importedBehaviours(w, st) }), config: scriptsCfg(st), sandbox: w.scripts ? (sandboxUp(w) === true ? SR.ENGINE : "unavailable") : "none" };
 }
 /** The status view for a host's own readers (a server's debug panel): what `scripts {id?}` answers, without a request. */
 export function scriptsView(w, id) { if (!w.exists || w.state().status !== "ok") return { scripts: [], imported: [] }; return withAuthority(w, () => scriptsOf(w, w.state(), id)); }

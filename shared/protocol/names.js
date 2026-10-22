@@ -8,11 +8,18 @@
 //              An id already in that hashed form is kept as it is: it's what readers hold and send back.
 //   encName(s) a component name: [a-z][a-z0-9-]* (+ domain/version/key per §2.3). A name the grammar accepts is
 //              kept; anything else is escaped the same way (x--/h--, which start with a letter), except the hashed form.
-//   dec(s)     the inverse of enc for x-- names; null for an h-- name (a hash can't be read back).
+//   dec(s)     the inverse of enc for x-- names, but for a lone surrogate (below), which comes back as U+FFFD; null for
+//              an h-- name (a hash can't be read back).
 //
-// Injective: a kept name never starts with x--, and starts with h-- only in the hashed form; an escaped one always
-// starts with one or the other, and x-- names are distinct hex; h-- names collide only if sha256 does, and a literal
-// name in the hashed form collides only with the name whose sha256 it prefixes.
+// Injective but for two cases: a kept name never starts with x--, and starts with h-- only in the hashed form; an escaped
+// one always starts with one or the other, and x-- names are distinct hex; h-- names collide only if sha256 does. The
+// cases: a literal name in the hashed form is kept, so it encodes to the same key as the name whose sha256 it prefixes
+// (HASHED, below); and a lone surrogate (half of a UTF-16 pair, with no other half) is written in UTF-8 as U+FFFD's
+// bytes, so names that differ only in which lone surrogate they hold escape alike. Import (translate-v1.js) maps an old
+// log's names with encRaw and encNameRaw (below), which escape a name in the hashed form like any other, so the first
+// case can't arise there. Nor can the second: a log holding a lone surrogate anywhere doesn't import at all, since the
+// translated log would carry it in an act's request, which the strict reader refuses (not I-JSON), so nothing is
+// written.
 //
 // The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
 // identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
@@ -24,7 +31,8 @@ import { isComponent } from "./fold.js";
 
 const ESC = /^[xh]--/;
 // a hashed id is the one spelling the view can't decode (dec gives null), so readers hold it and send it back as it is:
-// enc keeps it. A name of that exact form is a sha256 prefix of something else, which nobody can choose
+// enc keeps it. Anyone can compute a name's sha256 and write that spelling as a literal name, which then encodes to the
+// same key as the name it was computed from (what import does with both is above)
 const HASHED = /^h--[0-9a-f]{61}$/;
 const escape = (s) => { const hex = utf8Hex(s); return hex.length + 3 <= 64 ? `x--${hex}` : `h--${sha256(s).slice(0, 61)}`; };
 

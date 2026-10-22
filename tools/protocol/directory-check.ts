@@ -69,9 +69,13 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const wr = request(other, me, "set", { id: "@world", component: "about", value: { name: "x", text: "" } });
   ok(!wr.ok && wr.refused?.code === "custody", "K2 an authority that doesn't hold the world's sequencer key refuses to write (it would sign lines the verifier calls forged)", wr.refused);
   ok(request(other, me, "look", {}).ok, "K3 …but reads still work");
-  // K3b: a role for an identity this server doesn't know is refused with the lookup that exists, whois
+  // K3b: a role for an identity this server doesn't know is refused with what makes it known: the person joining or
+  // signing in here. K3c: a typed name of an identity's form ("ann") is refused the same way, so the remedy still names
+  // the lookup that finds an identity, whois
   const unk = request(w, me, "set", { id: "@world", component: "roles:u-ffffffffffffffffffff", value: { role: "builder" } });
-  ok(unk?.refused?.code === "shape" && /^whois \{name\}/.test(unk.refused.fix ?? ""), "K3b an unknown identity's role refusal names whois {name}", unk?.refused);
+  ok(unk?.refused?.code === "shape" && /join or sign in on this server first/.test(unk.refused.fix ?? ""), "K3b an unknown identity's role refusal says the person joins or signs in here first", unk?.refused);
+  const typed = request(w, me, "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
+  ok(typed?.refused?.code === "shape" && /^whois \{name\}/.test(typed.refused.fix ?? ""), "K3c a typed name's role refusal names whois {name}", typed?.refused);
   // K4: nothing it does appends a line: not an unknown verb's logged refusal, nor a read's, nor anything after them
   const n0 = other.entries.length; const uv = request(other, me, "frobnicate", {}); const rd = request(other, me, "look", { id: "nothing-here" });
   ok(other.entries.length === n0, "K4 an authority without the world's key appends nothing for an unknown verb or a refused read", { appended: other.entries.length - n0, uv: uv?.refused?.code, rd: rd?.refused?.code });
@@ -86,7 +90,43 @@ const file = path.join(tmp, "worlds", ".directory.json");
   // the setup (house 6340433633): the grant has run out, so the sweep that holds the key ends it; without the custody guard
   // the keyless one reaches the same branch and throws custody (seen by planting it: K4b red, threw "custody")
   const swept = expireW(w);
-  ok(JSON.stringify(swept) === JSON.stringify([lee]) && !w.state().entities["@world"].c[`roles:${lee}`], "K4c …and the grant has run out: the sweep that holds the key ends it", { swept }); }
+  ok(JSON.stringify(swept) === JSON.stringify([lee]) && !w.state().entities["@world"].c[`roles:${lee}`], "K4c …and the grant has run out: the sweep that holds the key ends it", { swept });
+  // K4f: …and a read there works when a thing is due to return home: the settlement a request runs first skips the
+  // return it can't write, as the engine's settlement does
+  const steps: any[] = [request(w, me, "create", { id: "ball", model: "ball", components: { grabbable: { who: "inhabitant", returnAfter: 30 } }, place: { at: [0, 0] } })];
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, 0.5] })); T += 1000; steps.push(request(w, me, "grab", { id: "ball" }));
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, 3] })); T += 1000; steps.push(request(w, me, "put", { id: "ball" }));
+  T += 60000;
+  const other3: any = openLive(path.join(tmp, "worlds", "k"), "k", { now: () => (T += 100), custodyFile: path.join(tmp, "other-custody.json"), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
+  const n6 = other3.entries.length; let r6: any; try { r6 = request(other3, me, "look", {}); } catch (x: any) { r6 = { threw: String(x?.message ?? x) }; }
+  ok(steps.every((r) => r.ok) && r6?.ok && other3.entries.length === n6, "K4f a read on a world this server can't sign for works when a thing is due to return home, and appends nothing", { steps: steps.map((r) => r.ok || r.refused?.code), r6: r6?.ok ?? r6?.refused ?? r6, appended: other3.entries.length - n6 });
+  // the control: the server that holds the key, reading at the same clock, sends it home, so the return was due
+  const n7 = w.entries.length; const r7 = request(w, me, "look", {}); const home = w.entries.slice(n7).some((e: any) => e?.verb === "return-home" && e.body?.id === "ball");
+  ok(r7.ok && home, "K4f …the return was due: the server that holds the key, reading at the same clock, logs it", { r7: r7.ok ?? r7.refused, logged: w.entries.slice(n7).map((e: any) => e?.verb) }); }
+// K4d, K4e: a world with an engine, served by a server without its key: a read with a thrown thing's rest due, and the
+// load's settlement of a hold its holder left, skip what they can't log
+{ let T = 1800000000000; const d = directoryAt(file); const { ENGINES } = await import("../../shared/protocol/simlayer.js");
+  const opts = (c: string) => ({ now: () => (T += 100), custodyFile: path.join(tmp, c), nameOf: d.nameOf, kindOf: (id: string) => d.entry(id)?.kind ?? null });
+  const w: any = openLive(path.join(tmp, "worlds", "k5"), "k5", opts("k5-custody.json"));
+  const me = d.resolve({ sub: "human:discord:557", name: "Kit" });
+  const steps: any[] = [request(w, me, "create-world", { title: "k5" }),
+    request(w, me, "set", { id: "@world", component: "physics-engine", value: { engine: Object.keys(ENGINES).find((k) => k.startsWith("eidosim@")) } }),
+    request(w, me, "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } }),
+    request(w, me, "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0.4, 0] } })];
+  T += 1000; steps.push(request(w, me, "move", { to: [0, 0, -0.5] })); T += 1000; steps.push(request(w, me, "grab", { id: "cup" }));
+  T += 1000; steps.push(request(w, me, "grab", { id: "ball" })); T += 1000; steps.push(request(w, me, "throw", { id: "ball", v: [0, 2, 3] }));
+  T += 20000;
+  const other: any = openLive(path.join(tmp, "worlds", "k5"), "k5", opts("k5-other-custody.json"));
+  const n0 = other.entries.length; let r: any; try { r = request(other, me, "look", {}); } catch (x: any) { r = { threw: String(x?.message ?? x) }; }
+  ok(steps.every((x) => x.ok) && r?.ok && other.entries.length === n0, "K4d a read on a world this server can't sign for works with a thrown thing's rest due, and appends nothing", { steps: steps.map((x) => x.ok || x.refused?.code), r: r?.ok ?? r?.refused ?? r, appended: other.entries.length - n0 });
+  // the hold the key-holding server had when it stopped, as the second server's presence would hold it (each server keeps
+  // its own presence, so a fresh one starts empty): the cup in Kit's hand, its lift on the log, and Kit gone
+  other.presence.holds.cup = { ...w.presence.holds.cup }; const heldBefore = other.presence.holds.cup?.by === me;
+  const { settleOrphans } = await import("../../shared/protocol/authority.js"); let so: any; try { so = settleOrphans(other, []); } catch (x: any) { so = { threw: String(x?.refused?.code ?? x?.message ?? x) }; }
+  ok(heldBefore && !so?.threw && other.entries.length === n0 && !other.presence.holds?.cup && (so ?? []).some((x: any) => x.holder === me && x.left === false), "K4e there, the settlement of a hold whose holder left ends the hold and logs nothing, rather than throwing", { heldBefore, so, appended: other.entries.length - n0, hold: !!other.presence.holds?.cup });
+  // the control: the server that holds the key logs the rest at its next read
+  const n1 = w.entries.length; const r1 = request(w, me, "look", {});
+  ok(r1.ok && w.entries.length > n1, "K4d …the rest was due: the server that holds the key logs it at its next read", { r1: r1.ok ?? r1.refused, logged: w.entries.slice(n1).map((e: any) => e?.verb) }); }
 { const { translateV1World } = await import("./import-v1/world.ts");
   const W = path.join(tmp, "tw"); fs.mkdirSync(path.join(W, "old"), { recursive: true });
   fs.writeFileSync(path.join(W, "old", "log.jsonl"), [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },

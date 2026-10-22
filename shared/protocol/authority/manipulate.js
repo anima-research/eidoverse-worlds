@@ -13,7 +13,7 @@ import { r3, noNeg0 } from "../round.js";
 import { shapeError, isBoxShape } from "../shapes.js";
 import { UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
-import { readback, delOp, isE, lockedC, opsQuiet, scratch, setOp } from "./storage.js";
+import { readback, delOp, holdsCustody, isE, lockedC, opsQuiet, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, obbs, qYaw, worldT } from "./math.js";
 import { groundOf, groundReady } from "./spatial.js";
 import { allSockets, socketPoint } from "./sockets.js";
@@ -161,6 +161,7 @@ const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.t
 // moved it, the authority sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
 function returnDue(w) {
+  if (!holdsCustody(w)) return;   // a server that can't sign for the world doesn't write to it: its reads still work
   const st = w.state(); const now = w.now(); let sf = null; let warned = w.returnWarned;
   if (warned) for (const id of warned.keys()) if (!st.entities[id]) warned.delete(id);   // forget things that are gone
   for (const [id, e] of Object.entries(st.entities)) {

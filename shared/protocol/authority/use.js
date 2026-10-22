@@ -106,7 +106,8 @@ function buildUse(ctx, a) {
     ctx.cap = { ...ctx.cap, ids: [a.id, ...sent], comps: ["transform", "parent"] };
     if (skipped.length) ctx.notes.push(...skipped.map((x) => ({ ...x, reset: "skipped" })));
     if (!ops.length) { const list = skipped.map((x) => `${x.id} (${x.why})`).join(", ");
-      if (!skipped.length) refuse("nothing-to-reset", "everything is already home", "");
+      if (!skipped.length && !atHome) refuse("nothing-to-reset", `${a.id}'s '${action}' names no targets, so there is nothing to send home`, "someone who may edit it can give it targets (set its reactions); pressing again won't change that");
+      if (!skipped.length) refuse("nothing-to-reset", `everything is already home (${atHome === 1 ? "its 1 target" : `all ${atHome} targets`})`, "there is nothing to send home: pressing again won't change that until one of them is moved");
       refuse("nothing-to-reset", `nothing was reset: skipped ${list}${atHome ? `; the rest ${atHome === 1 ? "is" : "are"} already home` : ""}`, "each skip says why; press again once that has changed"); }
     return ops;
   }
@@ -149,7 +150,7 @@ function buildUse(ctx, a) {
     const { t0, ...rest } = cur; return [setOp(a.id, "sound", { ...rest, playing: true })]; }
   if (h?.kind === "toggle") {
     const { comp, field } = toggleOf(h); ctx.refs.add(a.id);
-    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.fix ?? `someone allowed to may 'use' it with another action first`);
+    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.fix ?? (h === IMPLICIT_OPEN ? unlockFix(e, a.id) : `someone allowed to may 'use' it with another action first`));
     reactionCap(ctx, a.id, comp, action);
     return [setOp(a.id, comp, field === undefined ? !e.c[comp] : { ...objOf(e.c[comp]), [field]: !objOf(e.c[comp])[field] })];
   }
@@ -163,8 +164,25 @@ const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless]
 const bodySockets = (st, id) => { const e = st.entities[id]; const host = isSocketC(e?.c) ? e.c.parent?.to : id;
   return socketsOf(st, host).filter((x) => host === id || x.id === id).map((x) => ({ ...x, slot: x.name, body: bodyOf(x.station) })).filter((x) => x.body); };
 // an openable thing with nothing that opens it offers 'open' on its own: the implicit toggle of openable.open (R 10-11
-// 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it")
-const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open" });
+// 23:17: the gym door had only `openable`; clicking it did nothing, and inspect said "nothing here opens it"). It is barred
+// while openable.locked is on, as the registry's `locked` reads: "bars opening while on (an open handler with unless: 'locked')"
+const IMPLICIT_OPEN = Object.freeze({ kind: "toggle", component: "openable", field: "open", unless: "locked" });
+// the barred implicit open's remedy, saying only what it can see: the reactions on the thing that unlock it (a toggle of
+// openable.locked, a set of it to false, or a set of the whole openable that leaves it off) and that aren't barred
+// themselves, with who may use each; else the edit that unlocks it. A script may unlock it too, unseen here, so the remedy
+// never says nothing does. The open step is worded by state (on an open door the implicit open shuts it), except where a
+// named unlocker sets the whole openable, and with it whether it's open: then it says only that "open" opens or shuts it
+function unlockFix(e, id) {
+  const q = (x) => JSON.stringify(String(x));
+  const unlocks = (h) => (h?.kind === "toggle" && toggleOf(h).comp === "openable" && toggleOf(h).field === "locked" && !barredBy(e, h))
+    || (h?.kind === "set" && h.component === "openable" && (h.field === "locked" ? h.value !== true
+      : h.field === undefined && !!h.value && typeof h.value === "object" && !Array.isArray(h.value) && h.value.locked !== true));
+  const keys = Object.entries(e.c.reactions ?? {}).filter(([, h]) => unlocks(h)), setsOpen = keys.some(([, h]) => h.kind === "set" && h.field === undefined);
+  const may = (h) => { const w = h.who ? whoWords(h.who) : "anyone"; return w === "anyone" ? "" : ` (only ${w} may)`; };
+  const first = keys.length ? keys.map(([k, h]) => `use {id: ${q(id)}, action: ${q(k)}} unlocks it${may(h)}`).join("; or ")
+    : `someone who may edit it can unlock it: set {id: ${q(id)}, component: "openable", value: {locked: false}, merge: true}`;
+  return `${first}; then "open" ${setsOpen ? "opens or shuts" : objOf(e.c.openable).open === true ? "shuts" : "opens"} it. "open" won't change it while it's locked`;
+}
 function handlerOf(e, action) { return e?.c.reactions?.[action] ?? (action === "open" && implicitOpens(e) ? IMPLICIT_OPEN : undefined); }
 function actionsOf(st, id) {
   const e = st.entities[id];

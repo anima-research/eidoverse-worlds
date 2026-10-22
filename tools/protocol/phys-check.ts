@@ -6,8 +6,9 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { request, settle, forkCopy } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
-import { fold, readLog, PURGED } from "../../shared/protocol/fold.js";
-import { simFold, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
+import { fold, readLog, digest, purgesIn, PURGED } from "../../shared/protocol/fold.js";
+import { simFold, simFolder, simCutOf, restsOf, ENGINES } from "../../shared/protocol/simlayer.js";
+import { makeReplica, wireState } from "../../shared/protocol/replica.js";
 import { ENGINE, scratch } from "./common.ts";
 import { worldT, yawQ, qrot, qmul, aabb, surfacesOf } from "../../shared/protocol/authority/math.js";
 import { supportBelow } from "../../shared/protocol/authority/spatial.js";
@@ -543,6 +544,52 @@ function playground(name) {
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
   ok(g.ok && on.ok && lift?.actor === "sam", "U5b the lift an engine's start logs names the holder, not whoever started the engine", { g: g.ok ?? g.refused, on: on.ok, actor: lift?.actor }); }
+{ const W = playground("held-released-at-epoch");
+  call(W, "rowan", "grab", { id: "ball" }); const held = view(W).lifted.has("ball");
+  const b = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }] });
+  const v = view(W); const w = openWorld(root, W);
+  ok(held && b.ok && !!w.presence.holds && !w.presence.holds.ball && !v.lifted.has("ball") && !!v.sim && !!(v.sim.bodies.ball || v.sim.statics?.ball),
+    "U5d a write that changes the engine's epoch and moves a held thing lets go of it in the engine too, as the authority's hold does", { held, b: b.ok ?? b.refused, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
+{ const W = fresh("held-at-batch-start"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
+  // two engine sets in one batch, by someone who isn't holding it: one lift, naming the holder
+  const on = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } }, { verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } }] });
+  const lifts = log(W).filter((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W);
+  ok(g.ok && on.ok && lifts.length === 1 && lifts[0].actor === "sam" && v.lifted.has("ball") && !!v.sim && !!v.sim.statics && !v.sim.bodies.ball && !v.sim.statics.ball,
+    "U5c an engine started inside a batch, twice over, logs one lift for a thing in a hand, naming its holder, so the thing stays out of the engine's world", { g: g.ok, on: on.ok ?? on.refused, lifts: lifts.map((e: any) => e.actor), lifted: [...v.lifted], sim: !!v.sim, body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
+// U5e: a dry run of that start says what it would lift, and logs nothing
+{ const W = fresh("held-dry"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" }); const n = log(W).length;
+  const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG, dry: true });
+  ok(g.ok && on.ok && on.dry && JSON.stringify(on.lifts) === '["ball"]' && log(W).length === n, "U5e a dry run of an engine's start names what it would lift out of a hand, and logs nothing", { g: g.ok ?? g.refused, on, logged: log(W).length - n }); }
+// U5f: a batch that starts the engine and moves a held thing takes it out of the hand, so it logs no lift for it: the thing
+// is seated in the new engine's world where the edit put it. Its dry run says the same: the release, and no lift
+{ const W = fresh("held-moved-at-start"); call(W, "rowan", "create-world", { title: W });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
+  const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
+  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { ops });
+  const lift = log(W).slice(n).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball"); const v = view(W); const w = openWorld(root, W);
+  ok(g.ok && b.ok && !lift && !w.presence.holds?.ball && !v.lifted.has("ball") && !!(v.sim?.bodies.ball || v.sim?.statics?.ball),
+    "U5f a batch that starts the engine and moves a held thing logs no lift for it: it leaves the hand and is in the engine's world where the edit put it", { g: g.ok ?? g.refused, b: b.ok ?? b.refused, lift: !!lift, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball });
+  ok(dry.ok && dry.dry && !dry.lifts && (dry.notes ?? []).filter((x: any) => x.id === "ball" && x.tookFromHand === "sam").length === 1,
+    "U5f …and its dry run says the thing leaves the hand, and names no lift for it", { lifts: dry.lifts, notes: dry.notes }); }
+// U5g: with two things in hand, a batch that starts the engine and moves one lifts the other alone (dry and live)
+{ const W = fresh("held-two-at-start"); call(W, "rowan", "create-world", { title: W });
+  for (const [id, x] of [["ball", 0], ["cup", 0.4]] as const) call(W, "rowan", "create", { id, model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [x, 0] } });
+  call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = [call(W, "sam", "grab", { id: "ball" }), call(W, "sam", "grab", { id: "cup" })];
+  const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
+    { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
+  const dry = call(W, "rowan", "batch", { ops, dry: true }); const n = log(W).length;
+  const b = call(W, "rowan", "batch", { ops });
+  const lifts = log(W).slice(n).filter((e: any) => e?.kind === "sim" && e.verb === "lift").map((e: any) => `${e.body?.id}:${e.actor}`); const v = view(W);
+  ok(g.every((x) => x.ok) && b.ok && JSON.stringify(lifts) === '["cup:sam"]' && JSON.stringify(dry.lifts) === '["cup"]' && v.lifted.has("cup") && !v.lifted.has("ball"),
+    "U5g with two things in hand, a batch that starts the engine and moves one lifts the other alone, dry and live", { g: g.map((x) => x.ok ?? x.refused?.code), b: b.ok ?? b.refused, lifts, dryLifts: dry.lifts, lifted: [...v.lifted] }); }
 
 // review of #260: the purges a replay applies are exactly the fold's (a purge line the fold refuses, here for a ts that steps
 // back, purges nothing in either)
@@ -571,6 +618,204 @@ function playground(name) {
   const v = simFold(P, last.ts + 1000); const digests = P.filter((e: any) => e?.kind === "sim" && e.verb === "digest").length;
   ok(ln > 0 && digests > 0 && v.checks.disagree.length === 0, "U7b a purged launch makes the digests logged during its flight unknown, not disagreements", { ln, digests, disagree: v.checks.disagree.slice(0, 2) }); }
 
+// review of #260: a rest whose transform a purge took is unknown to a replay: the folder reads it as the strict fold does
+// (absent, purged), and it neither crashes nor is called a disagreement, and the log's other rests still read
+{ const W = playground("purge-rest");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
+  ok(rest > 0 && L[rest].verb === "set" && fold(P).status === "ok" && !err && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)) && v.st.entities.ball.c.transform === PURGED && rs?.some((r: any) => r.seq === rest),
+    "U7c a purged rest (its launch kept) reads as unknown on replay: no crash, no disagreement, the replayed state the strict fold's (the rest's transform PURGED), and restsOf still lists it", { rest, verb: L[rest]?.verb, status: fold(P).status, err, disagree: v?.checks?.disagree?.slice(0, 2), same: v && digest(v.st) === digest(fold(P)), rests: rs?.length }); }
+// review of #260: a purged launch leaves the rest of its epoch unknown to a replay: the flights after it, even once its own
+// rest is logged, fly in an engine that skipped one body, so their digests and rests are applied, not judged
+{ const W = playground("purge-launch-then-more");
+  const fly = (id: string) => { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); };
+  for (const id of ["ball", "crate-1", "ball"]) fly(id);
+  // then a cut (a new tickMs starts a new epoch), and a fourth flight in it
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } }); const cut = log(W).length - 1; fly("crate-1");
+  const L = log(W); const last = L[L.length - 1]; const launches = L.map((e: any, i: number) => (e?.kind === "sim" && e.verb === "launch" ? i : -1)).filter((i: number) => i >= 0);
+  const base = simFold(L, last.ts + 1000); const ln = launches[0];
+  const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
+  // checks.agree counts the rests a replay judged: after the cut, the fourth flight's are judged again
+  const v = simFold(P, last.ts + 1000); const after = L.filter((e: any, i: number) => i > cut && e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch").length;
+  ok(launches.length === 4 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && after > 0 && v.checks.agree === after && digest(v.st) === digest(fold(P)),
+    "U7d a purged first launch, with two more flights after its rest: the replay calls none of that epoch's digests or rests a disagreement, judges the next epoch's again, and its state is the strict fold's", { launches, base: base.checks.disagree.length, agree: v.checks.agree, after, disagree: v.checks.disagree.slice(0, 3), same: digest(v.st) === digest(fold(P)) }); }
+// review of #260: a rest whose transform a purge took leaves the rest of its epoch unknown too: the fold reads that body as
+// gone, where the engine that wrote the log kept it, so a later flight's digests aren't judged against it
+{ const W = playground("purge-rest-then-more");
+  for (const id of ["ball", "crate-1"]) { const p = openWorld(root, W).state().entities[id].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id }); call(W, "rowan", "throw", { id, v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); }
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch" && L[e.cause].body?.id === "ball");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  ok(rest > 0 && L[rest].verb === "set" && base.checks.disagree.length === 0 && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)),
+    "U7e a purged rest, then another flight: the replay calls none of the later digests a disagreement, and its state is the strict fold's", { rest, base: base.checks.disagree.length, disagree: v.checks.disagree.slice(0, 3) }); }
+// review of #260: a rest batch whose transform op a purge names by index replays as unknown, as the strict fold reads it
+{ const W = fresh("purge-rest-op"); call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
+  call(W, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 1] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { on: "table-1" } });
+  call(W, "rowan", "move", { to: [0, 0, 0.3] }); call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, -2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && e.verb === "batch" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch");
+  const k = rest >= 0 ? L[rest].body.ops.findIndex((o: any) => o.comp === "transform") : -1;
+  const P = rest < 0 || k < 0 ? null : copyOf([...L.map((e: any, i: number) => { if (i !== rest) return e; const ops = e.body.ops.map((o: any, j: number) => { if (j !== k) return o; const { value: _v, salt: _s, ...rest2 } = o; return { ...rest2, commit: "0".repeat(64) }; }); return { ...e, body: { ...e.body, ops } }; }),
+    { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest, op: k }] }, ts: last.ts + 100 }]);
+  let v: any = null, err = null; try { v = P && simFold(P, last.ts + 1000); } catch (x: any) { err = `${x?.code ?? ""} ${String(x?.message)}`.slice(0, 160); }
+  ok(!!P && fold(P).status === "ok" && fold(P).entities.ball.c.transform === PURGED && !err && v.checks.disagree.length === 0 && digest(v.st) === digest(fold(P)),
+    "U7f a rest batch whose transform op a purge names by index reads as unknown on replay: no crash, no disagreement, the strict fold's state", { rest, k, err, status: P && fold(P).status, disagree: v?.checks?.disagree?.slice(0, 2) }); }
+// review of #260: a purged lift hides what is held past an epoch's cut: the next epoch's digests aren't judged either
+{ const W = playground("purge-lift-across-cut");
+  call(W, "rowan", "grab", { id: "ball" }); const L0 = log(W); const lift = L0.findLastIndex((e: any) => e?.kind === "sim" && (e.verb === "lift" || e.verb === "catch"));
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } });
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] }); call(W, "rowan", "grab", { id: "crate-1" });
+  call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const P = copyOf([...L.map((e: any, i: number) => (i === lift ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: lift }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  ok(lift > 0 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && v.checks.agree === 0,
+    "U7g a purged lift, then a cut while the thing is held and a flight in the new epoch: the replay judges none of its digests, since which thing is held is unknown", { lift, base: base.checks.disagree.length, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 3) }); }
+// review of #260: a cut leaves the epoch unknown while a body the fold reads as gone to a purge still stands: the new
+// epoch's engine lacks it too, where the engine that wrote the log had it
+{ const W = playground("purge-rest-across-cut");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } }); const cut = log(W).length - 1;
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+  call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch" && L[e.cause].body?.id === "ball");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const P = copyOf([...L.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000); const after = L.filter((e: any, i: number) => i > cut && e?.kind === "sim" && e.verb === "digest").length;
+  // the folder still judges what comes before the rest: a wrong digest there is reported (checks.agree counts judged rests,
+  // and this log's two are both unknown, so it can't show that)
+  const dg0 = L.findLastIndex((e: any, i: number) => i < rest && e?.kind === "sim" && e.verb === "digest");
+  const Q = copyOf(P.map((e: any, i: number) => (i === dg0 ? { ...e, body: { ...e.body, digest: "0".repeat(16) } } : e))), vq = simFold(Q, last.ts + 1000);
+  ok(rest > 0 && rest < cut && after > 0 && dg0 > 0 && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && v.checks.agree === 0
+    && vq.checks.disagree.length === 1 && vq.checks.disagree[0].seq === dg0,
+    "U7h a purged rest, then a cut while that body still reads as purged, then a flight: what comes before the rest is still judged (a wrong digest there is reported), and nothing after it, the new epoch's included", { rest, cut, dg0, after, base: base.checks.disagree.length, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 3), q: vq.checks.disagree.slice(0, 2) }); }
+// …and once the thing is written again, the next cut is known: a wrong digest in the new epoch is reported
+{ const W = playground("purge-rest-replaced-cut");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  call(W, "rowan", "set", { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } }); const cut = log(W).length - 1;
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+  call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const rest = L.findIndex((e: any) => e?.kind === "change" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch" && L[e.cause].body?.id === "ball");
+  const dg = L.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "digest");
+  const { value: _v, salt: _s, ...skel } = L[rest]?.body ?? {};
+  const purge = (M: any[]) => copyOf([...M.map((e: any, i: number) => (i === rest ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: rest }] }, ts: last.ts + 100 }]);
+  const P = purge(L), Q = purge(L.map((e: any, i: number) => (i === dg ? { ...e, body: { ...e.body, digest: "0".repeat(16) } } : e)));
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000), vq = simFold(Q, last.ts + 1000);
+  ok(rest > 0 && dg > cut && base.checks.disagree.length === 0 && v.checks.disagree.length === 0 && v.checks.agree > 0 && vq.checks.disagree.some((d: any) => d.seq === dg),
+    "U7i a purged rest, the thing written again, then a cut: the new epoch is judged again, and a wrong digest in it is reported", { rest, cut, dg, base: base.checks.disagree.length, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), q: vq.checks.disagree.slice(0, 2) }); }
+// review of #260: a purged catch hides what is held, as a purged lift does: nothing after it is judged, across a cut too
+{ const W = playground("purge-catch-across-cut");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 5, 0.3] });
+  const p = call(W, "rowan", "look", {}, 250).things.find((x: any) => x.id === "ball").moving.pos;
+  call(W, "jo", "move", { to: [p[0], 0, p[2]] }, 1); const c = call(W, "jo", "grab", { id: "ball" }, 1);
+  const L0 = log(W); const ct = L0.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "catch");
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } }); const cut = log(W).length - 1;
+  const q = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [q[0], 0, q[2] - 0.5] });
+  call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1]; const after = L.filter((e: any, i: number) => i > cut && e?.kind === "sim" && e.verb === "digest").length;
+  const P = copyOf([...L.map((e: any, i: number) => (i === ct ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ct }] }, ts: last.ts + 100 }]);
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  const judgedAfter = (sf: any) => sf.checks.agree - simFold(copyOf(L.slice(0, ct)), L[ct - 1].ts).checks.agree;
+  ok(c.ok && ct > 0 && after > 0 && base.checks.disagree.length === 0 && judgedAfter(base) > 0 && v.checks.disagree.length === 0 && judgedAfter(v) === 0,
+    "U7j a purged catch, then a cut while the thing is held and a flight in the new epoch: nothing after the catch is judged", { c: c.ok, ct, after, base: base.checks.disagree.length, judged: judgedAfter(base), v: judgedAfter(v), disagree: v.checks.disagree.slice(0, 3) }); }
+// review of #260: while the world is unknown, a write that touches a body in flight isn't judged either (L6); known, it is
+{ const W = playground("purge-launch-inflight");
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+  call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  call(W, "rowan", "move", { to: [0, 0, -0.5] }); call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const launches = L.map((e: any, i: number) => (e?.kind === "sim" && e.verb === "launch" ? i : -1)).filter((i: number) => i >= 0);
+  const [lc, lb] = launches; const last = L[L.length - 1];
+  const forged = insertAt(L, lb + 1, { world: L[1].world, kind: "change", ts: L[lb].ts + 200, actor: "rowan", cause: L[lb].cause, verb: "set", body: { id: "ball", comp: "label", value: "mid-air" } });
+  const P = copyOf([...forged.map((e: any, i: number) => (i === lc ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: lc }] }, ts: last.ts + 100 }]);
+  const known = simFold(forged, last.ts + 1000), v = simFold(P, last.ts + 1000);
+  ok(launches.length === 2 && lc < lb && known.checks.disagree.some((d: any) => /in flight/.test(d.why ?? "")) && v.checks.disagree.length === 0,
+    "U7k a write touching a body in flight is reported in a known world, and isn't judged after a purged launch in its epoch", { launches, known: known.checks.disagree.slice(0, 2), disagree: v.checks.disagree.slice(0, 2) }); }
+// review of #260: a folder resumed from a cut (a checkpoint, a joiner) judges what an uninterrupted one does: the cut
+// carries what the replay can't judge from there
+{ const W = playground("purge-lift-resumed");
+  call(W, "rowan", "grab", { id: "ball" }); const L0 = log(W); const lift = L0.findLastIndex((e: any) => e?.kind === "sim" && (e.verb === "lift" || e.verb === "catch"));
+  call(W, "rowan", "say", { text: "a quiet moment" }); const k = log(W).length - 1;
+  call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } });
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] }); call(W, "rowan", "grab", { id: "crate-1" });
+  call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1];
+  const P = copyOf([...L.map((e: any, i: number) => (i === lift ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: lift }] }, ts: last.ts + 100 }]);
+  const purged = purgesIn(P), bad = new Set(fold(P).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).map(([q]: any) => q));
+  const f1 = simFolder(P, { purged }); for (let s = 0; s <= k; s++) if (!bad.has(s)) f1.feed(s);
+  const cut = simCutOf(f1.view(P[k].ts), P);
+  const f2 = simFolder(P, { purged, from: { ...JSON.parse(JSON.stringify(cut)), st: fold(P, { until: k }) } }); for (let s = k + 1; s < P.length; s++) if (!bad.has(s)) f2.feed(s);
+  const whole = simFold(P, last.ts + 1000), v = f2.view(last.ts + 1000);
+  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ state: wireState(fold(P, { until: k })), head: k, sim: cut })));
+  ok(lift > 0 && lift < k && cut.unknownHold === true && v.checks.disagree.length === 0 && v.checks.agree === 0 && whole.checks.disagree.length === 0 && c.sim?.unknownHold === true,
+    "U7l a folder resumed from a cut taken after a purged lift judges nothing after it, as the uninterrupted replay doesn't", { lift, k, hold: cut.unknownHold, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 3), whole: whole.checks.disagree.length }); }
+// review of #260: a cut taken while a purged launch leaves the epoch unknown carries that too, to a resumed folder and to
+// a joiner's replica, so neither judges the rest of that epoch
+{ const W = playground("purge-launch-resumed");
+  call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  call(W, "rowan", "say", { text: "a quiet moment" }); const k = log(W).length - 1;
+  const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+  call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000);
+  const L = log(W); const last = L[L.length - 1]; const ln = L.findIndex((e: any) => e?.kind === "sim" && e.verb === "launch");
+  const P = copyOf([...L.map((e: any, i: number) => (i === ln ? { ...e, body: { commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: ln }] }, ts: last.ts + 100 }]);
+  const purged = purgesIn(P), bad = new Set(fold(P).diagnostics.filter(([, c]: any) => String(c).startsWith("malformed")).map(([q]: any) => q));
+  const f1 = simFolder(P, { purged }); for (let s = 0; s <= k; s++) if (!bad.has(s)) f1.feed(s);
+  const cut = simCutOf(f1.view(P[k].ts), P);
+  const f2 = simFolder(P, { purged, from: { ...JSON.parse(JSON.stringify(cut)), st: fold(P, { until: k }) } }); for (let s = k + 1; s < P.length; s++) if (!bad.has(s)) f2.feed(s);
+  const v = f2.view(last.ts + 1000), base = simFold(L, last.ts + 1000), digestsAfter = L.filter((e: any, i: number) => i > k && e?.kind === "sim" && e.verb === "digest").length;
+  const c = makeReplica(); c.adopt(JSON.parse(JSON.stringify({ state: wireState(fold(P, { until: k })), head: k, sim: cut })));
+  ok(ln > 0 && ln < k && digestsAfter > 0 && base.checks.disagree.length === 0 && cut.unknownEpoch === true && !cut.unknownHold && v.checks.disagree.length === 0 && v.checks.agree === 0
+    && c.sim?.unknownEpoch === true && c.sim?.unknownHold === false,
+    "U7m a cut taken after a purged launch, before the epoch's next boundary, carries the unknown epoch: a resumed folder judges none of it, and a joiner's replica adopts it", { ln, k, digestsAfter, epoch: cut.unknownEpoch, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), replica: { epoch: c.sim?.unknownEpoch, hold: c.sim?.unknownHold } }); }
+// review of #260: a body is lost to a purge however the purge takes it: its model, its physics (a stamped shape, no
+// catalogue model), or the place of a thing it hangs under. Each leaves the epoch's later digests unjudged
+{ const purgeSet = (L: any[], seq: number) => { const last = L[L.length - 1]; const { value: _v, salt: _s, ...skel } = L[seq].body;
+    return copyOf([...L.map((e: any, i: number) => (i === seq ? { ...e, body: { ...skel, commit: "0".repeat(64) } } : e)), { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq }] }, ts: last.ts + 100 }]); };
+  const throwCrate = (W: string) => { const p = openWorld(root, W).state().entities["crate-1"].c.transform.pos; call(W, "rowan", "move", { to: [p[0], 0, p[2] - 0.5] });
+    call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [0.3, 2, 2] }); call(W, "rowan", "wait", {}, 6000); };
+  // a log whose table has no stamped shape (one the authority didn't write, or older): only the catalogue makes it a collider
+  const unstamped = (L: any[], id: string) => copyOf(L.map((e: any) => { if (e?.kind !== "change") return e; const c = JSON.parse(JSON.stringify(e));
+    for (const o of c.verb === "batch" ? c.body?.ops ?? [] : [c.body]) { if (o?.id !== id) continue;
+      if (o.comp === "physics" && o.value && typeof o.value === "object") delete o.value.shape; if (o.components?.physics) delete o.components.physics.shape; }
+    return c; }));
+  const cases: [string, (W: string) => any, ((L: any[]) => any[])?][] = [
+    ["a purged model, the collider the catalogue's (no stamped shape)", (W) => call(W, "rowan", "set", { id: "table-1", component: "model", value: "table" }), (L) => unstamped(L, "table-1")],
+    ["a purged physics value, its shape stamped and no catalogue model", (W) => { call(W, "rowan", "create", { id: "slab", components: { transform: { pos: [-3, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static", shape: [[-0.3, 0, -0.3], [0.3, 0.4, 0.3]] } } });
+      return call(W, "rowan", "set", { id: "slab", component: "physics", value: { kind: "static", shape: [[-0.3, 0, -0.3], [0.3, 0.4, 0.3]] } }); }],
+    ["a collider under a thing whose place was purged (the thing itself no body)", (W) => { call(W, "rowan", "create", { id: "stand", model: "table", components: { physics: { kind: "none" } }, place: { at: [-3, 3] } });
+      call(W, "rowan", "create", { id: "box", model: "crate", components: { parent: { to: "stand" } }, place: { on: "stand" } });
+      return call(W, "rowan", "set", { id: "stand", component: "transform", value: { pos: [-3, 0, 3.2], q: [0, 0, 0, 1], scale: [1, 1, 1] } }); }],
+  ];
+  cases.forEach(([what, write, shape], n) => { const W = playground(`purge-lost-${n}`); const w = write(W); const seq = log(W).length - 1; throwCrate(W);
+    const L = shape ? shape(log(W)) : log(W); const last = L[L.length - 1]; const P = purgeSet(L, seq); const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
+    ok(w.ok && L[seq].kind === "change" && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && v.checks.agree === 0,
+      `U7n ${what}: the epoch after it is unknown, so its digests are neither judged nor disagreements`, { w: w.ok ?? w.refused, seq, shape: shape ? JSON.stringify(fold(L).entities["table-1"]?.c.physics) : null, base: base.checks, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2) }); });
+  // …and a purge that takes nothing the engine had leaves the epoch known: a thing with physics none, one switched off,
+  // and one with no collider at all. A wrong digest after them is still reported
+  const W = playground("purge-no-loss");
+  call(W, "rowan", "create", { id: "mat", model: "rug", components: { physics: { kind: "none" } }, place: { at: [3, 3] } });
+  call(W, "rowan", "create", { id: "spare", model: "crate", place: { at: [-3, 3] } }); call(W, "rowan", "set", { id: "spare", component: "disabled", value: true });
+  call(W, "rowan", "create", { id: "note", components: { transform: { pos: [3, 0, -3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: "a note" } });
+  const seqs = ["mat", "spare", "note"].map((id, i) => { const r = call(W, "rowan", "set", { id, component: "transform", value: { pos: [3 - i, 0, -2], q: [0, 0, 0, 1], scale: [1, 1, 1] } }); return r.ok ? log(W).length - 1 : -1; });
+  throwCrate(W);
+  const L = log(W); const last = L[L.length - 1]; const dg = L.findLastIndex((e: any) => e?.kind === "sim" && e.verb === "digest");
+  const purgeAll = (M: any[]) => copyOf([...M.map((e: any, i: number) => { if (!seqs.includes(i)) return e; const { value: _v, salt: _s, ...skel } = e.body; return { ...e, body: { ...skel, commit: "0".repeat(64) } }; }),
+    { world: last.world, kind: "purge", actor: "system", verb: "purge", body: { values: seqs.map((seq) => ({ seq })) }, ts: last.ts + 100 }]);
+  const P = purgeAll(L), Q = purgeAll(L.map((e: any, i: number) => (i === dg ? { ...e, body: { ...e.body, digest: "0".repeat(16) } } : e)));
+  const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000), vq = simFold(Q, last.ts + 1000);
+  ok(seqs.every((s) => s > 0) && dg > Math.max(...seqs) && base.checks.disagree.length === 0 && v.checks.disagree.length === 0 && v.checks.agree === base.checks.agree && vq.checks.disagree.some((d: any) => d.seq === dg),
+    "U7o a purge of a physics-none thing, a switched-off one and one with no collider leaves the epoch known: judged as before, and a wrong digest reported", { seqs, dg, base: base.checks.agree, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), q: vq.checks.disagree.slice(0, 2) }); }
 // review of #260: a turned table supports things over its own top, not over the box of its corners
 { const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
   const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });

@@ -2,6 +2,7 @@
 // tools/protocol/reset-check.ts — a reset button (reactions kind 'reset', the home component). R's ask, 2026-10-10.
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/reset-check.ts
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
+import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";
 import { openWorld } from "../../server/filehost.ts";
 import { fold } from "../../shared/protocol/fold.js";
@@ -47,7 +48,10 @@ const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", 
   const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const bad = call(W, "rowan", "set", { id: "a", component: "home", value: { pos: [1, 0] } });
   ok(r.ok && JSON.stringify(pos(W, "a")) === "[1,0,5]" && code(bad) === "shape", "RS7 'set home here' is a write of home; a malformed home is refused", { r: code(r), a: pos(W, "a"), bad: code(bad) }); }
 { const W = "noop"; mk(W); button(W, ["a"]); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
-  ok(code(r) === "nothing-to-reset", "RS8 pressed with everything already home: says so (no empty change)", { r: code(r), why: r.refused?.reason }); }
+  ok(code(r) === "nothing-to-reset", "RS8 pressed with everything already home: says so (no empty change)", { r: code(r), why: r.refused?.reason });
+  ok(r.refused?.reason === "everything is already home (its 1 target)" && r.refused?.fix === "there is nothing to send home: pressing again won't change that until one of them is moved", "RS8b …naming what it checked, and that pressing again won't change it", { why: r.refused?.reason, fix: r.refused?.fix }); }
+{ const W = "noop2"; mk(W); button(W, ["a", "b"]); const r = call(W, "vic", "use", { id: "btn", action: "reset" });
+  ok(code(r) === "nothing-to-reset" && r.refused?.reason === "everything is already home (all 2 targets)", "RS8c …and counts them when there are several", { r: code(r), why: r.refused?.reason }); }
 { const W = "scale"; mk(W); call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [0.25, 0.25, 0.25] } }); button(W, ["a", "b"]);
   // the shape a settle leaves (R's gym, 10-10): b rests on a, parented to it at a local scale of 1 (0.25 in the world)
   call(W, "rowan", "set", { id: "b", component: "parent", value: { to: "a", order: "a0" } }); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [0.5, 4, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
@@ -58,5 +62,13 @@ const button = (W, targets, extra = {}) => call(W, "rowan", "set", { id: "btn", 
 { const W = "allskip"; mk(W); button(W, ["b"]); call(W, "rowan", "set", { id: "b", component: "transform", value: { pos: [9, 0, 9] } }); call(W, "rowan", "set", { id: "b", component: "lock", value: true });
   const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const why = String(r.refused?.reason);
   ok(code(r) === "nothing-to-reset" && !/already home/.test(why) && /b \(it is locked\)/.test(why) && !!r.refused?.fix, "RS10 every target skipped: says nothing was reset and why, not that everything is home, with a fix", { r: code(r), why, fix: r.refused?.fix }); }
+// review of #260: a stored reset that names no targets (written before the gate checked it, or carried by a copy) says so
+{ const W = "notargets"; mk(W); button(W, ["a"]);
+  const file = `${root}worlds/${W}.jsonl`; const lines = fs.readFileSync(file, "utf8").split("\n");
+  const k = lines.findLastIndex((l) => l.includes('"kind":"change"') && l.includes('"reactions"')); const e = JSON.parse(lines[k]);
+  const op = [e.body, ...(e.body.ops ?? [])].find((o) => o.comp === "reactions" && o.value?.reset); op.value.reset.targets = [];
+  lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n"));
+  const r = call(W, "vic", "use", { id: "btn", action: "reset" }); const why = String(r.refused?.reason);
+  ok(code(r) === "nothing-to-reset" && why === "btn's 'reset' names no targets, so there is nothing to send home" && r.refused?.fix === "someone who may edit it can give it targets (set its reactions); pressing again won't change that", "RS11 a reset naming no targets says so, not that everything is home, and that pressing again won't change it", { r: code(r), why, fix: r.refused?.fix }); }
 console.log(`[reset-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

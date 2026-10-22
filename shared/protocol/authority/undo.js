@@ -126,11 +126,16 @@ function buildUndo(ctx, a, w) {
   // a host's seats after the cut are its socket children, and nobody writes its `sockets` key (review 10-12 S2-2): later
   // work by others on them (a socket made under it, or any write to one of its socket children, deleted ones included)
   // is a change to what a pre-cut `sockets` edit set, so undoing that edit skips, as it did before the cut
+  // A socket made under it counts however its two halves were written: a change that sets either one counts when the
+  // thing it leaves (every op of the change applied, a batch's later re-parent included) is a socket under the host
   const socketWorkBy = (host) => {
     for (const i of X.changes.slice(firstAfter(X.changes, res.seq))) { if (!others(i)) continue; const ops = opsQuiet(E[i]);
       for (const o of ops) {
-        if (o.verb === "set" && o.comp === "parent" && o.value?.to === host && ops.some((b) => b.id === o.id && b.comp === "socket")) return E[i].actor;
-        const was = o.verb === "create" ? null : entityBefore(w, o.id, i, X); if (was && isSocketC(was.c) && was.c.parent?.to === host) return E[i].actor; } }
+        const was = o.verb === "create" ? null : entityBefore(w, o.id, i, X);
+        if (was && isSocketC(was.c) && was.c.parent?.to === host) return E[i].actor;
+        if (o.verb !== "set" || (o.comp !== "parent" && o.comp !== "socket")) continue;
+        const now = entityBefore(w, o.id, i + 1, X);
+        if (now && isSocketC(now.c) && now.c.parent?.to === host) return E[i].actor; } }
     return null; };
   const groups = [], skipped = [];
   const keys = new Map();

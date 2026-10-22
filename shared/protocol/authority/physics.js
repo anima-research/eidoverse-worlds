@@ -11,7 +11,7 @@ import { r3, noNeg0 } from "../round.js";
 import { qFromYaw, qMul } from "../../rot.js";
 import { UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
-import { readback, delOp, isE, opsQuiet, scratch, setOp } from "./storage.js";
+import { readback, delOp, holdsCustody, isE, opsQuiet, scratch, setOp } from "./storage.js";
 import { aabb, descendants, localFrom, worldT } from "./math.js";
 import { groundOf, groundReady, hitsIx, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -42,6 +42,7 @@ const shearFree = (parentScale, localQ) => uniformScale(parentScale) || axisAlig
 function settleSim(w) {
   const skip = new Set(); w.unsettled = [];
   if (!w.state().entities["@world"]?.c["physics-engine"]) return; // no engine: nothing in flight (an epoch cut logs every rest first, P6)
+  if (!holdsCustody(w)) return;   // a server that can't sign for the world can't log a rest: its reads still work, and the rests wait
   let digested = false;
   for (let guard = 0; guard < 64; guard++) {
     // the lowest first (R 10-10 23:23, the gym log): pyr-9 settled onto pyr-6, and then pyr-6's own rest in the same view

@@ -372,8 +372,9 @@ export function cloneState(st) {
     for (const k of Object.keys(e.c)) c[k] = clone(e.c[k]); entities[id] = { born: e.born, c }; }
   return { ...st, entities, diagnostics: [...st.diagnostics] };
 }
-// Apply ops to a state copy, as a fold of one more change entry would (the authority's preview of a write).
-export const applyOps = (st, ops, seq = Infinity) => applyInPlace(cloneState(st), ops, seq);
+// Apply ops to a state copy, as a fold of one more change entry would (the authority's preview of a write). A replay of a
+// logged entry passes its seq, the log's purges and whether it is a batch, as applyInPlace takes them
+export const applyOps = (st, ops, seq = Infinity, purged = null, batch = false) => applyInPlace(cloneState(st), ops, seq, purged, batch);
 // A working copy for applying ops one at a time (the authority's admit, script elision): it shares every entity with `st`
 // until an op touches it, then copies that one entity (its component map; values are never mutated in place, a set
 // replaces one). The same states as applyOps op by op, without a deep copy of the whole world per op.
@@ -390,9 +391,10 @@ export function applyCow(s, ops, seq = Infinity) {
 // op by index): a reader replaying a log a purge has touched writes PURGED where the strict fold does
 export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = false) {
   const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
-  // a value stripped to its commit is a purge's work, and these paths (the authority's own appends, a live replica) never
-  // carry a purge map that names it: such a line is refused whole, before any of its ops is applied (fold's unnamedStubs
-  // reads it as unknown instead, where the purges are known)
+  // a value stripped to its commit is a purge's work, and a caller with no purge map naming it (the authority's own
+  // appends, a live replica) can't read it: the line throws Malformed before any of its ops is applied, and the whole
+  // log is read instead (the authority's state re-folds it, whose unnamedStubs reads the line as unknown; a replica's
+  // purge resyncs it)
   const shaped = ops.map((o, i) => { const op = shapeOne(o.verb, o, true, "system"), by = purged?.get(`${seq}:${batch ? i : "-"}`);
     if ((o?.stripped || op.stripped) && by === undefined) bad("commit-unpurged", `${op.id}.${op.comp}`);
     return [op, by]; });

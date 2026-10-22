@@ -190,7 +190,7 @@ function openWorld(name: string, o: any = {}) {
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => Number(process.env.PROTOCOL_NOW), writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: o.scripts === undefined ? SB?.SANDBOX ?? null : o.scripts, present: o.present, nameOf: o.nameOf, kindOf: o.kindOf,
-    custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
+    custody: custodyAt(o.custodyFile ?? path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 let T = 1800000000000, N = 0;
 function session(o: any = {}) {
@@ -228,6 +228,25 @@ function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model:
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
+// A sponsor's cpu limit, reached by the time the runs actually record, not by a count a host's speed decides: vic says
+// until the script's run is refused (at most 90 says, 54 s of the clock, inside the minute the limit counts), and the
+// refusal must quote exactly the milliseconds the sponsor's runs recorded. Returns each say's outcome, the why, the
+// milliseconds it quotes and the milliseconds recorded.
+function grindToCpu(s: any, id: string, sponsor: string, tag: string) {
+  const last = () => s.call("olive", "scripts", {}).scripts.find((x: any) => x.id === id).last.at(-1);
+  const out: string[] = [];
+  for (let i = 0; i < 90; i++) {
+    const said = s.call("vic", "say", { text: `${tag} ${i}` }, 600);
+    if (!said?.ok) { out.push(`say ${said?.refused?.code ?? "failed"}`); break; }
+    out.push(last()?.status); if (out.at(-1) !== "nothing") break;
+  }
+  const why = last()?.why ?? null, used = Number(/used (\d+) ms/.exec(why ?? "")?.[1] ?? NaN);
+  const recorded = (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === sponsor).reduce((t: number, x: any) => t + x.ms, 0);
+  return { out, why, used, recorded };
+}
+// …and the outcome it must have: every say before the last ran and wrote nothing, the last was refused at the limit
+const cpuCapped = (g: any, cpu: number) => g.out.length > 1 && g.out.slice(0, -1).every((x: string) => x === "nothing") && g.out.at(-1) === "refused"
+  && g.used >= cpu && g.used === g.recorded;
 const HEAVY = onUse(`for (let i = 0; i < 31; i++) world.set("self", "t/n", i); world.get("self"); world.set("self", "t/m", world.ids().length); world.children("box");`);
 
 // E5's stand-in for the sandbox: a host whose script callback re-enters the authority with a request of its own (the shape
@@ -321,10 +340,38 @@ const cases: Case[] = [
         return { set: set?.ok === true, why };
       } finally { D.setScriptConfig(was); } },
     good: (o) => o.set && /budget is 30/.test(o.why ?? "") && /asks 60/.test(o.why ?? "") && /caps it/.test(o.why ?? "") },
+  { id: "B6f", what: "a timed script on a world this server can't sign for: tick starts nothing, appends nothing and doesn't throw, as the heartbeat's settle doesn't", run(s) { cast(s);
+      if (!D.tick) return { absent: true };
+      s.call("olive", "create", { id: "heart", model: "bell", place: { at: [0, 0] } });
+      const BEAT = `world.on("tick", () => world.set("self", "t/beat", { n: (world.get("self", "t/beat")?.n ?? 0) + 1 }));\n`;
+      const inst = install(s, "olive", "heart", "beat", BEAT, { scope: { ids: "self", comps: ["t/beat"] }, every: 5, always: true });
+      // the same world, served by a server holding another key
+      const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
+      const n0 = other.entries.length; let threw: string | null = null; const out: any[] = [];
+      for (let i = 0; i < 3; i++) { s.advance(6000); try { out.push(D.tick(other)); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); break; } }
+      // the control: the server that holds the key runs the same timer
+      const own: any[] = []; for (let i = 0; i < 2; i++) { s.advance(6000); own.push(...(s.tick() ?? [])); }
+      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out: out.map((r) => r.length), ran: own.filter((x) => x.script === "script:beat").map((x) => x.status) }; },
+    good: (o) => o.installed && !o.threw && o.appended === 0 && o.out.length === 3 && o.out.every((n: number) => n === 0) && o.ran.length > 0 },
+  { id: "B6g", what: "an enter script on a world this server can't sign for: an arrival starts nothing, appends nothing and doesn't throw", run(s) { cast(s);
+      if (!D.presenceEvent) return { absent: true };
+      s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
+      const HI = `world.on("enter", () => world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1 }));\n`;
+      const inst = install(s, "olive", "door", "hi", HI, { scope: { ids: "self", comps: ["t/n"] }, on: ["enter"] });
+      const other: any = openWorld(s.name, { custodyFile: path.join(root, "keys", "other-custody.json") });
+      const n0 = other.entries.length; let threw: string | null = null; let out: any = null;
+      T += 100; process.env.PROTOCOL_NOW = String(T); try { out = D.presenceEvent(other, "enter", "vic"); } catch (e: any) { threw = `${e?.constructor?.name}: ${e?.refused?.code ?? e?.message}`.slice(0, 160); }
+      // the control: the server that holds the key runs it
+      T += 100; process.env.PROTOCOL_NOW = String(T); const own = D.presenceEvent(s.w(), "enter", "vic").filter((x: any) => x.script === "script:hi").map((x: any) => x.status);
+      return { installed: !!inst.r.ok, threw, appended: other.entries.length - n0, out: out?.length ?? null, own }; },
+    good: (o) => o.installed && !o.threw && o.appended === 0 && o.out === 0 && o.own.length === 1 },
   { id: "B6e", what: "…with no owner value, a ceiling lowered below the server's default is the plain budget, and the refusal names no owner's value", run(s) { cast(s);
       if (!D.tick) return { absent: true };
-      const set = { ok: true };   // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 30
-      const was = D.setScriptConfig({ budget: 30 });
+      // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 31. Odd, because each beat
+      // writes two entries: at 30 written the next beat passes the check before it runs (30 + 1) and is refused by the
+      // check of what it would write (30 + 2), so the refusal comes from the second check
+      const set = { ok: true };
+      const was = D.setScriptConfig({ budget: 31 });
       try {
         s.call("olive", "create", { id: "heart3", model: "bell", place: { at: [0, 0] } });
         const BEAT = (c: string) => `world.on("tick", () => world.set("self", "${c}", { n: (world.get("self", "${c}")?.n ?? 0) + 1 }));\n`;
@@ -333,7 +380,7 @@ const cases: Case[] = [
         let why = null; for (let i = 0; i < 120 && !why; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget" && /world's scripts/.test(r.why)) why = r.why; }
         return { set: set?.ok === true, why };
       } finally { D.setScriptConfig(was); } },
-    good: (o) => o.set && /budget is 30/.test(o.why ?? "") && !/asks/.test(o.why ?? "") },
+    good: (o) => o.set && /wrote 30 entries/.test(o.why ?? "") && /budget is 31/.test(o.why ?? "") && !/asks/.test(o.why ?? "") && /this server's limit/.test(o.why ?? "") && !/which the world's owner sets/.test(o.why ?? "") },
   { id: "B6b", what: "§3d M3: each sponsor gets a fair share of the world's hour: bob's chatty timer can't starve olive's script", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 40 } });
@@ -579,13 +626,29 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const ear: string[] = []; for (let i = 0; i < 8; i++) { s.call("vic", "say", { text: `hi ${i}` }, 600); ear.push(last("ear")?.status); }
       const earWhy = last("ear")?.why;
       // phase 2: cpu (runs out of the way), a minute later
-      s.advance(61000); D.setScriptConfig({ runs: 600 }); s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });   // ≈10–16 ms a run quiet (isolated or not), ≈30–45 loaded: either way the cap binds before the sixth
-      const mill: string[] = []; for (let i = 0; i < 6; i++) { s.call("vic", "say", { text: `ho ${i}` }, 600); mill.push(last("mill")?.status); }
+      s.advance(61000); D.setScriptConfig({ runs: 600 }); s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });
+      const mill = grindToCpu(s, "mill", "ann", "ho");
       D.setScriptConfig(was);
-      return { ear, earWhy, mill, why: last("mill")?.why, millMs: (s.w().presence.scriptRuns ?? []).filter((x: any) => x.sponsor === "ann").map((x: any) => x.ms) }; },
+      return { ear, earWhy, mill }; },
     good: (o) => JSON.stringify(o.ear) === '["nothing","nothing","nothing","nothing","nothing","refused","refused","refused"]' && /ran 5 times/.test(o.earWhy)
       && /this server's limit/.test(o.earWhy) && !/script-settings/.test(o.earWhy)   // review of #260: runs is the server's, so the refusal names no owner field
-      && o.mill[0] === "nothing" && o.mill.at(-1) === "refused" && /ann's scripts used \d+ ms of the authority's time/.test(o.why) },
+      && cpuCapped(o.mill, 25) && /ann's scripts used \d+ ms of the authority's time in the last minute; at most 25/.test(o.mill.why)
+      && /which the world's owner sets in @world\.script-settings\.cpu/.test(o.mill.why) },
+  { id: "B23b", what: "a cpu refusal says whose limit it is: this server's when the owner set none, and this server's ceiling over the owner's value when it lowered theirs", run(s) { cast(s);
+      s.call("ann", "create", { id: "mill2", model: "crate", place: { at: [2, 0] } });
+      install(s, "ann", "mill2", "grind", `world.on("say", () => { let x = 0; for (let i = 0; i < 1e5; i++) x += Math.sqrt(i); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["say"] });
+      const grind = (tag: string) => grindToCpu(s, "mill2", "ann", tag);
+      const was = D.setScriptConfig({ runs: 600, cpu: 25 });   // the operator's cpu: 25 is this server's, and its ceiling
+      try {
+        const server = grind("a");   // the owner has set no cpu
+        s.advance(61000);
+        const set = s.call("olive", "set", { id: "@world", component: "script-settings", value: { cpu: 25 } });   // at the ceiling: it stands
+        D.setScriptConfig({ cpu: 20 });   // then the operator lowers the ceiling under it
+        const capped = grind("b");
+        return { server, set: set?.ok === true, capped };
+      } finally { D.setScriptConfig(was); } },
+    good: (o) => cpuCapped(o.server, 25) && /at most 25, this server's limit/.test(o.server.why ?? "") && !/owner sets/.test(o.server.why ?? "")
+      && o.set && cpuCapped(o.capped, 20) && /at most 20, this server's ceiling/.test(o.capped.why ?? "") && /asks 25/.test(o.capped.why ?? "") && /caps it/.test(o.capped.why ?? "") },
   { id: "B24", what: "a guest sponsor's rights are a guest's: once the owner removes the role it was given, its script is dormant, even where strangers default to builder", opts: { kindOf: (id: string) => (id === "gus" ? "anon" : "human") },
     run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "builder" } });
@@ -819,12 +882,12 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const heard = s.call("ann", "scripts", { id: "bell1", script: "bell", test: { on: "use", by: "vic" } });
       return { rs, ann: heard.test?.status, says: heard.test?.says?.[0] }; },
     good: (o) => o.rs.slice(0, 10).every((x: string) => x === "would-run") && o.rs.slice(10).every((x: string) => x === "refused rate") && o.ann === "would-run" && o.says === "the bell tolls for vic (1)" },
-  { id: "U2c", what: "a sandbox that's here but whose runtime didn't load: each script's status says unavailable, as the sandbox line does (review of #260, protocol core I59)",
+  { id: "U2c", what: "a sandbox that's here but whose runtime didn't load: each script's status says unavailable, as the sandbox line does (review of #260, protocol core I59), and that only the server's operator can repair it, never quoting the sandbox's own error",
     opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, available: () => "its runtime didn't load (a test's stand-in)" } : null }, run(s) { cast(s);
       if (!SB?.SANDBOX) return { absent: true };
       bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
       return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
-    good: (o) => o.status === "unavailable" && /runtime didn't load/.test(o.why ?? "") && /^unavailable: /.test(o.sandbox ?? "") },
+    good: (o) => o.status === "unavailable" && /operator can repair/.test(o.why ?? "") && /asking again won't/.test(o.why ?? "") && !/stand-in/.test(o.why ?? "") && o.sandbox === "unavailable" },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
@@ -993,6 +1056,20 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       const v = s.call("olive", "scripts", { id: "qc" }); const view = (v?.scripts ?? []).find((x: any) => x.script === "script:p");
       return { act, view: view?.status, why: view?.why ?? null }; },
     good: (o) => o.act > 0 && o.view === "not-installed" && /answers for it/.test(o.why ?? "") },
+  { id: "Q2b", what: "the remedy a purged install's why gives works: its installer can't set it again, an owner's set of the same value names no sponsor, and an owner's adopt makes it active", run(s) { cast(s);
+      s.call("bob", "create", { id: "qd", model: "crate", place: { at: [0, 0] } });
+      const { src } = install(s, "bob", "qd", "p", onUse(`world.say("d");`), { scope: { ids: "self", comps: [] }, on: ["use"] });
+      const act = s.entries().findLastIndex((e: any) => e?.kind === "act" && e.verb === "set" && JSON.stringify(e.body ?? {}).includes('"script:p"'));
+      s.w().append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: act }] } });
+      const view = () => (s.call("olive", "scripts", { id: "qd" })?.scripts ?? []).find((x: any) => x.script === "script:p");
+      const why = view()?.why ?? null;
+      const value = { src, scope: { ids: "self", comps: [] }, on: ["use"] };
+      const bobSet = s.call("bob", "set", { id: "qd", component: "script:p", value });
+      const ownerSame = s.call("olive", "set", { id: "qd", component: "script:p", value });
+      const afterSame = view()?.status;
+      const adopt = s.call("olive", "adopt", { id: "qd", script: "p" });
+      return { act, why, bobSet: bobSet?.ok ? "ok" : bobSet?.refused?.code, ownerSame: ownerSame?.ok ? "ok" : ownerSame?.refused?.code, afterSame, adopt: adopt?.ok ? "ok" : adopt?.refused?.code, after: view()?.status }; },
+    good: (o) => o.act > 0 && /adopt/.test(o.why ?? "") && !/set it again/.test(o.why ?? "") && o.bobSet === "rights" && o.ownerSame === "ok" && o.afterSame === "not-installed" && o.adopt === "ok" && o.after === "active" },
   // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };

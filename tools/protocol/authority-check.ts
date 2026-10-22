@@ -166,7 +166,48 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     // review of #260: a reaction that toggles another field of openable (its lock) leaves the implicit open in place
     call("bob", "create", { id: "hatch2", model: "door", components: { openable: { open: false, locked: false }, reactions: { latch: { kind: "toggle", component: "openable", field: "locked" } } } });
     const u3 = call("vic", "use", { id: "hatch2", action: "open" }), o3 = W().state().entities.hatch2.c.openable.open;
-    ok(u3.ok && o3 === true, "P37c a toggle of openable.locked alone doesn't take away the implicit open", { u3: code(u3) ?? u3.ok, o3 }); }
+    ok(u3.ok && o3 === true, "P37c a toggle of openable.locked alone doesn't take away the implicit open", { u3: code(u3) ?? u3.ok, o3 });
+    // …and the implicit open is barred while openable.locked is on, as an open handler with unless: 'locked' is
+    const lk = call("vic", "use", { id: "hatch2", action: "latch" }), u4 = call("vic", "use", { id: "hatch2", action: "open" }), o4 = W().state().entities.hatch2.c.openable;
+    const TAIL = `"open" won't change it while it's locked`;
+    ok(lk.ok && o4.locked === true && code(u4) === "barred" && o4.open === true && u4.refused?.fix === `use {id: "hatch2", action: "latch"} unlocks it; then "open" shuts it. ${TAIL}`,
+      "P37d the implicit open is barred while the thing's openable.locked is on, as the registry's locked says, and its fix names what unlocks it (the door is open, so 'open' then shuts it)", { lk: code(lk) ?? lk.ok, u4: code(u4) ?? u4.ok, fix: u4.refused?.fix, o4 });
+    // …and where it sees nothing on the thing that unlocks it, the fix names the edit, and claims nothing more
+    call("bob", "create", { id: "hatch3", model: "door", components: { openable: { open: false, locked: true } } });
+    const u5 = call("vic", "use", { id: "hatch3", action: "open" });
+    ok(code(u5) === "barred" && u5.refused?.fix === `someone who may edit it can unlock it: set {id: "hatch3", component: "openable", value: {locked: false}, merge: true}; then "open" opens it. ${TAIL}`,
+      "P37e a locked openable with no reaction that unlocks it: its implicit open's fix names the edit that does", { u5: code(u5) ?? u5.ok, fix: u5.refused?.fix });
+    // review of #260: a set of locked (gated to owners, its action named with a quote) and a set of the whole openable both
+    // unlock it: the fix names both, quoted, with who may use each
+    call("bob", "create", { id: "hatch4", model: "door", components: { openable: { open: false, locked: true }, reactions: {
+      "it's": { kind: "set", component: "openable", field: "locked", value: false, who: "owner" }, reset: { kind: "set", component: "openable", value: { open: false, locked: false } } } } });
+    const u6 = call("vic", "use", { id: "hatch4", action: "open" });
+    ok(code(u6) === "barred" && u6.refused?.fix === `use {id: "hatch4", action: "it's"} unlocks it (only owners may); or use {id: "hatch4", action: "reset"} unlocks it; then "open" opens or shuts it. ${TAIL}`,
+      "P37f a fix names every reaction it sees unlock the thing, a field set and a whole-component set alike, quoted, with who may use each", { u6: code(u6) ?? u6.ok, fix: u6.refused?.fix });
+    // …a toggle of locked that is itself barred (unless: 'locked') isn't offered, and on an open door the open step shuts it
+    call("bob", "create", { id: "hatch5", model: "door", components: { openable: { open: true, locked: true }, reactions: { latch: { kind: "toggle", component: "openable", field: "locked", unless: "locked" } } } });
+    const u7 = call("vic", "use", { id: "hatch5", action: "open" }), u7b = call("vic", "use", { id: "hatch5", action: "latch" });
+    ok(code(u7) === "barred" && code(u7b) === "barred" && u7.refused?.fix === `someone who may edit it can unlock it: set {id: "hatch5", component: "openable", value: {locked: false}, merge: true}; then "open" shuts it. ${TAIL}`,
+      "P37g a barred toggle of locked isn't offered as the unlock, and on an open locked door the fix says 'open' then shuts it", { u7: code(u7) ?? u7.ok, u7b: code(u7b) ?? u7b.ok, fix: u7.refused?.fix });
+    // …and an authored open handler barred by the lock keeps its own fix, or the general one: unlockFix is the implicit open's
+    call("bob", "create", { id: "hatch6", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked", fix: "ring the bell" } } } });
+    call("bob", "create", { id: "hatch7", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, unbolt: { kind: "set", component: "openable", field: "locked", value: false } } } });
+    const u8 = call("vic", "use", { id: "hatch6", action: "open" }), u9 = call("vic", "use", { id: "hatch7", action: "open" });
+    ok(code(u8) === "barred" && u8.refused?.fix === "ring the bell" && code(u9) === "barred" && u9.refused?.fix === "someone allowed to may 'use' it with another action first",
+      "P37h an authored open handler barred by the lock keeps its own fix, or the general one", { u8: u8.refused?.fix ?? u8.ok, u9: u9.refused?.fix ?? u9.ok });
+    // review of #260: a set of locked to true and a whole set that keeps it on don't unlock it, and aren't offered; a whole
+    // set that leaves locked off is, and since it also sets whether the door is open, the open step isn't predicted
+    call("bob", "create", { id: "hatch8", model: "door", components: { openable: { open: false, locked: true }, reactions: {
+      bolt: { kind: "set", component: "openable", field: "locked", value: true }, reseal: { kind: "set", component: "openable", value: { open: false, locked: true } },
+      wipe: { kind: "set", component: "openable", value: { open: false } } } } });
+    const u10 = call("vic", "use", { id: "hatch8", action: "open" });
+    ok(code(u10) === "barred" && u10.refused?.fix === `use {id: "hatch8", action: "wipe"} unlocks it; then "open" opens or shuts it. ${TAIL}`,
+      "P37i a fix leaves out a set that locks it and a whole set that keeps it locked, names a whole set that drops the lock, and doesn't predict the open step it sets", { u10: code(u10) ?? u10.ok, fix: u10.refused?.fix });
+    // …and an action name holding a double quote or a backslash is quoted as JSON, so the example stays usable
+    call("bob", "create", { id: "hatch9", model: "door", components: { openable: { open: false, locked: true }, reactions: { 'say "in" \\ go': { kind: "toggle", component: "openable", field: "locked" } } } });
+    const u11 = call("vic", "use", { id: "hatch9", action: "open" });
+    ok(code(u11) === "barred" && u11.refused?.fix === 'use {id: "hatch9", action: "say \\"in\\" \\\\ go"} unlocks it; then "open" opens it. ' + TAIL,
+      "P37j an action name with a double quote and a backslash is quoted as JSON in the fix", { u11: code(u11) ?? u11.ok, fix: u11.refused?.fix }); }
   { // §5: a held thing keeps its logged parent, but holding suspends parent constraints until it settles
     const hc = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, "held"), actor, verb, args); };
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -1478,6 +1519,20 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   // record until it's restored was a policy no world asked for, so it came out with the recut
   ok(role === PURGED && before === PURGED && write.ok && read.ok && op.ok && w.state().diagnostics.some(([q, c]) => q === k && c === "commit-unpurged"),
     "RA1 a value stripped to its commit with no purge reads as unknown and the fold names the line (commit-unpurged); writes and reads go on, and so does the operator's repair", { role, before, write: write.refused, read: read.ok, op: op.ok ?? op.refused, k }); }
+// ---- RA2 (review of #260): a state view that already folded the log meets a new line holding a value stripped to its
+// commit: it reads the whole log again, as the fold reads such a line, rather than throwing out of the state getter ----
+{ const name = "altered-live";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: name }); call("olive", "create", { id: "sign", model: "crate", components: { label: "hello" } });
+  const w = openWorld(root, name); w.state();   // folded once: the next new plain lines are applied incrementally
+  const L = w.entries, last = L[L.length - 1], at = L.length;
+  const line = (e) => { const x = readLog(JSON.stringify(e) + "\n")[0]; Object.defineProperty(x, "seq", { value: L.length, enumerable: false, configurable: true }); L.push(x); };
+  line({ world: last.world, kind: "change", ts: last.ts + 1, actor: "olive", cause: at - 1, verb: "set", body: { id: "sign", comp: "label", commit: "0".repeat(64) } });
+  let st1 = null, err = null; try { st1 = w.state(); } catch (x) { err = `${x?.constructor?.name}: ${x?.message}`.slice(0, 120); }
+  line({ world: last.world, kind: "purge", ts: last.ts + 2, actor: "system", verb: "purge", body: { values: [{ seq: at }] } });
+  const st2 = err ? null : w.state();
+  ok(!err && st1?.entities.sign.c.label === PURGED && st1.diagnostics.some(([q, c]) => q === at && c === "commit-unpurged") && st2?.entities.sign.c.label === PURGED && !st2.diagnostics.some(([, c]) => c === "commit-unpurged"),
+    "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commit-unpurged until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
 // ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
@@ -1607,6 +1662,39 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const hook = call("bob", "create", { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } });
   const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
   ok(mk.ok && hook.ok && !!st.entities.bobhook && !!st.entities.shelf, "SRU3 undoing ann's shelf leaves bob's socket on it, and the shelf with it", { mk: mk.ok, hook, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
+// SRU3b: the same when bob's socket is made in two writes: a child under the shelf, then its socket component, or (SRU3c)
+// a socket made on another thing, then hung on the shelf, or (SRU3d) both in one batch
+for (const [name, steps] of [
+  ["sru3b", [["create", { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] } } }], ["set", { id: "bobhook", component: "socket", value: { name: "hook" } }]]],
+  ["sru3c", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["create", { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } }],
+    ["set", { id: "bobhook", component: "parent", value: { to: "shelf" } }]]],
+  // SRU3d: one batch makes the socket on another thing and then hangs it on the shelf
+  ["sru3d", [["create", { id: "post", model: "crate", place: { at: [5, 5] } }], ["batch", { ops: [
+    { verb: "create", args: { id: "bobhook", components: { parent: { to: "post" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
+    { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "shelf" } } }] }]]],
+] as const) {
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: name });
+  for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
+  const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
+  const made = steps.map(([verb, args]) => call("bob", verb, args));
+  const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
+  // the undo's own skip, for bob's work on the shelf: nothing else stopped it
+  const skip = u?.refused?.code === "conflict" && (u.refused.skipped ?? []).some((x) => x.id === "shelf" && x.by === "bob");
+  ok(mk.ok && made.every((r) => r.ok) && skip && !!st.entities.bobhook && !!st.entities.shelf, `${name.toUpperCase()} undoing ann's shelf leaves bob's socket on it, made in two writes or one batch, and the shelf with it: the undo skips it for bob's work`, { mk: mk.ok, made, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
+// SRU3e: the control: one batch makes a socket under the shelf and hangs it on another thing before it ends. The change
+// leaves no socket under the shelf, so it's no work on the shelf, and ann's undo removes the shelf, the socket staying put
+{ const name = "sru3e";
+  const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
+  call("olive", "create-world", { title: name });
+  for (const who of ["ann", "bob"]) call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role: "builder" } });
+  const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
+  const made = [call("bob", "create", { id: "post", model: "crate", place: { at: [5, 5] } }), call("bob", "batch", { ops: [
+    { verb: "create", args: { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } } },
+    { verb: "set", args: { id: "bobhook", component: "parent", value: { to: "post" } } }] })];
+  const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
+  ok(mk.ok && made.every((r) => r.ok) && u.ok && !st.entities.shelf && st.entities.bobhook?.c.parent?.to === "post",
+    "SRU3E a socket made under the shelf and hung elsewhere in the same batch is no work on the shelf: ann's undo removes the shelf, and the socket stays on its new host", { mk: mk.ok, made: made.map((r) => r.ok ?? r.refused), u: u.ok ?? u.refused, shelf: !!st.entities.shelf, parent: st.entities.bobhook?.c.parent }); }
 // F1: a founding the authority refuses leaves no world behind: the name can still be founded, and its founder owns it
 { const name = "refused-founding";
   const call = (actor, verb, args = {}) => { T += 100; process.env.PROTOCOL_NOW = String(T); return request(openWorld(root, name), actor, verb, args); };
