@@ -81,9 +81,9 @@ export function seatSocket(id) {
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
-/** Avatar attachments (an occupant: sitting, standing at a station) — bodies aren't entities, so
- *  their mounts live here for remotes/controller to consume. {to: <socket id>, pose?, at?, in?} */
-export const avatarMounts = new Map();
+// Avatar attachments: the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
+import { avatarMounts } from './mounts.js';
+export { avatarMounts };
 /** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
  *  `seat: {to: <socket id>}` while seated, so every receiver sets it from the frame and clears it when a frame comes
  *  without one. A frame from a client before sockets were entities says {to: <host>, slot}: it names the host's socket

@@ -2,7 +2,7 @@
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
 import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
-import { avatarMounts } from './world.js';
+import { avatarMounts } from './mounts.js';   // not world.js: that pulls core.js (the renderer) into lite
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
