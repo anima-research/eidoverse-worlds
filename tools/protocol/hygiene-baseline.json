@@ -1,0 +1,209 @@
+{
+ "mcpl/door-body-test.ts": {
+  "bare-wait": 3,
+  "own-until": 1
+ },
+ "mcpl/storey-walk-test.ts": {
+  "bare-wait": 10
+ },
+ "mcpl/stretched-support-test.ts": {
+  "bare-wait": 5
+ },
+ "tools/agent-mesh-collision-test.ts": {
+  "bare-wait": 15
+ },
+ "tools/animnames-retry-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/buildcheck-queue-test.ts": {
+  "bare-wait": 6
+ },
+ "tools/buildcheck-route-test.ts": {
+  "bare-wait": 3
+ },
+ "tools/capsule-recovery-test.mjs": {
+  "bare-wait": 11
+ },
+ "tools/colour-picker-bench.ts": {
+  "bare-wait": 4,
+  "own-until": 1
+ },
+ "tools/consent-replay-test.ts": {
+  "bare-wait": 2
+ },
+ "tools/debug-tabs-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/dismount-height-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/door-is-error-test.ts": {
+  "bare-wait": 6,
+  "own-until": 1
+ },
+ "tools/door-wording-test.ts": {
+  "bare-wait": 2,
+  "own-until": 1
+ },
+ "tools/grant-command-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/knockdown-test.ts": {
+  "bare-wait": 27
+ },
+ "tools/lying-support-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/navgrid-test.ts": {
+  "bare-wait": 2
+ },
+ "tools/panels-test.ts": {
+  "bare-wait": 3
+ },
+ "tools/places-test.ts": {
+  "bare-wait": 18
+ },
+ "tools/protocol/access-check.ts": {
+  "bare-wait": 14,
+  "own-until": 1
+ },
+ "tools/protocol/agentshove-check.ts": {
+  "bare-wait": 39
+ },
+ "tools/protocol/agenttools-check.ts": {
+  "bare-wait": 29
+ },
+ "tools/protocol/batch2-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/batch2-probe.ts": {
+  "bare-wait": 7,
+  "own-until": 1
+ },
+ "tools/protocol/blockers-mutants.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/build-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/build-probe.ts": {
+  "bare-wait": 6,
+  "own-until": 1
+ },
+ "tools/protocol/client-check.ts": {
+  "bare-wait": 57,
+  "own-until": 1
+ },
+ "tools/protocol/counter-check.ts": {
+  "bare-wait": 1
+ },
+ "tools/protocol/describe-particles-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/fork-reset-check.ts": {
+  "bare-wait": 8
+ },
+ "tools/protocol/grab-check.ts": {
+  "raw-symlink": 1
+ },
+ "tools/protocol/identity-check.ts": {
+  "bare-wait": 52
+ },
+ "tools/protocol/import-v1/snapshot-oracle.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/inplace-check.ts": {
+  "bare-wait": 7
+ },
+ "tools/protocol/inspectharness.ts": {
+  "bare-wait": 1
+ },
+ "tools/protocol/mover-check.ts": {
+  "bare-wait": 1
+ },
+ "tools/protocol/names-check.ts": {
+  "raw-symlink": 7
+ },
+ "tools/protocol/parity-check.ts": {
+  "bare-wait": 7,
+  "raw-symlink": 3
+ },
+ "tools/protocol/party-probe.ts": {
+  "bare-wait": 36,
+  "own-until": 1
+ },
+ "tools/protocol/physseeds-check.ts": {
+  "bare-wait": 7
+ },
+ "tools/protocol/presence-check.ts": {
+  "bare-wait": 29
+ },
+ "tools/protocol/procgroup-check.ts": {
+  "bare-wait": 6
+ },
+ "tools/protocol/r10-check.ts": {
+  "raw-symlink": 4
+ },
+ "tools/protocol/r11-check.ts": {
+  "raw-symlink": 3
+ },
+ "tools/protocol/r9-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/reachgate-check.ts": {
+  "bare-wait": 11
+ },
+ "tools/protocol/refusedjoin-check.ts": {
+  "bare-wait": 11
+ },
+ "tools/protocol/reset-race-check.ts": {
+  "bare-wait": 1,
+  "own-until": 1
+ },
+ "tools/protocol/roles-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/scale-check.ts": {
+  "raw-symlink": 3
+ },
+ "tools/protocol/sclock-check.ts": {
+  "bare-wait": 3
+ },
+ "tools/protocol/scripts-check.ts": {
+  "bare-wait": 22
+ },
+ "tools/protocol/server-check.ts": {
+  "bare-wait": 61
+ },
+ "tools/protocol/shiplist-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/shiplist-probe.ts": {
+  "bare-wait": 107,
+  "own-until": 1
+ },
+ "tools/protocol/shove-check.ts": {
+  "raw-symlink": 2
+ },
+ "tools/protocol/txn-check.ts": {
+  "bare-wait": 1,
+  "own-until": 1,
+  "raw-symlink": 1
+ },
+ "tools/protocol/xss-probe.ts": {
+  "bare-wait": 19,
+  "own-until": 1
+ },
+ "tools/reach-order-test.ts": {
+  "bare-wait": 1
+ },
+ "tools/support-swap-test.ts": {
+  "bare-wait": 4
+ },
+ "tools/surface-hold-test.ts": {
+  "bare-wait": 15
+ },
+ "tools/unknown-comp-test.ts": {
+  "bare-wait": 2
+ }
+}

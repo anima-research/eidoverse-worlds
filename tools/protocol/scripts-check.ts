@@ -799,7 +799,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "box", "long", onUse(`const n = 8e4; const t = "a".repeat(2 * n); t.indexOf("a".repeat(n) + "b");`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "long" } } });
       const pid = SB.isolationStats().next; if (!pid) return { pid: null };
-      Bun.spawn(["sh", "-c", `sleep 0.12; kill -9 ${pid}`]); // someone else kills it (an OOM killer, an operator)
+      Bun.spawn(["sh", "-c", 'sleep 0.12; kill -9 "$1"', "sh", String(pid)]); // someone else kills it (another process: s.call below blocks this thread); (an OOM killer, an operator)
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms) }; },
     good: (o) => o.r === "failed sandbox" && /died/.test(o.why) && o.ms < 400 },
@@ -834,7 +834,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "t/n", x);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "calm" } } });
       const pid = SB.isolationStats().next; if (!pid) return { pid: null };
-      Bun.spawn(["sh", "-c", `kill -STOP ${pid}`]); Bun.sleepSync(100);
+      process.kill(pid, "SIGSTOP"); Bun.sleepSync(100);
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails: s.w().presence.scripts?.["box|calm"]?.fails ?? 0, next: st(s, next) }; },
@@ -846,7 +846,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       install(s, "bob", "box", "calm", onUse(`let x = 0; for (let k = 0; k < 2e4; k++) x += k; world.set("self", "t/n", x);`), { scope: { ids: "self", comps: ["t/n"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "calm" } } });
       const pid = SB.isolationStats().next; if (!pid) return { pid: null };
-      Bun.spawn(["sh", "-c", `kill -STOP ${pid}`]); Bun.sleepSync(100);
+      process.kill(pid, "SIGSTOP"); Bun.sleepSync(100);
       const t0 = performance.now(); const r = s.call("vic", "use", { id: "box", action: "go" }); const ms = performance.now() - t0;
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       s.call("bob", "create", { id: "spin", model: "crate", place: { at: [2, 0] } });

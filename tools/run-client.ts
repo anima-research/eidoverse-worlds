@@ -18,6 +18,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative, basename } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+import { SUITES, browserLauncher } from "./protocol/suites.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const args = process.argv.slice(2);
@@ -50,22 +51,11 @@ const files = [
   ...readdirSync(join(ROOT, "tools/protocol")).filter(isTest).map((n) => join(ROOT, "tools/protocol", n)),
 ].sort();
 const rel = (p: string) => relative(ROOT, p);
-const BROWSER_MARK = /\bscratchBench\s*\(|\bbrowserBench\s*\(|chromium\.launch|from ["']playwright["']|import\(["']playwright["']\)|puppeteer|--remote-debugging-port/;
-function localImports(f: string, seen = new Set<string>()): Set<string> {
-  if (seen.has(f) || !existsSync(f)) return seen; seen.add(f);
-  for (const m of readFileSync(f, "utf8").matchAll(/(?:from|import\(|import)\s*["'`]([^"'`]+)["'`]/g)) {
-    if (!m[1].startsWith(".")) continue; let p = join(f, "..", m[1]);
-    if (!existsSync(p)) for (const e of [".ts", ".js", ".mjs"]) if (existsSync(p + e)) { p += e; break; }
-    if (existsSync(p) && /\/tools\/[^/]+\.(ts|mjs|js)$|\/tools\/protocol\//.test(p) && !p.endsWith("/tools/harness.ts")) localImports(p, seen);
-  }
-  return seen;
-}
-const launchesBrowser = (f: string) => [...localImports(f)].some((d) => BROWSER_MARK.test(readFileSync(d, "utf8")));
+const launchesBrowser = (f: string) => browserLauncher(f) !== null;
 
 // what the other runners reach
 const reached = new Set<string>();
-const runTs = readFileSync(join(ROOT, "tools/protocol/run.ts"), "utf8");
-for (const m of runTs.matchAll(/\[\s*"[^"]+",\s*"([^"]+)"/g)) reached.add(rel(join(ROOT, "tools/protocol", m[1].split(" ")[0])));
+for (const [, file] of SUITES) reached.add(rel(join(ROOT, "tools/protocol", file.split(" ")[0])));
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 for (const s of Object.values(pkg.scripts ?? {}) as string[]) for (const m of s.matchAll(/tools\/[\w./-]+/g)) reached.add(m[0]);
 const unreached = files.map(rel).filter((p) => !reached.has(p));
