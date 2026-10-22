@@ -1177,7 +1177,7 @@ export class WorldAgent {
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
-            if (this.walkGate?.mode === "tracked") this.syncWalkGate(this.walkGate);   // a walk carried across the rejoin
+            this.resumeWalkGate();   // a walk carried across the rejoin
             // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
             // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
             { const want = this.consentSwitch;
@@ -3979,8 +3979,17 @@ export class WorldAgent {
     });
   }
 
-  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin
-   *  (the authority's track of this body ended with the old connection, so a tracked gate has no permit left). */
+  /** A walk carried across a rejoin: the authority's track of this body ended with the old connection, so the walk asks
+   *  again where it stands. It does so on a gate of its own, since a request the old connection sent (a stretch of the
+   *  walk, or where it stood) answers the gate it was sent for, and its answer, often a timeout, mustn't end this walk. */
+  private resumeWalkGate() {
+    const old = this.walkGate;
+    if (!old || old.mode === "open") return;   // open: the authority keeps no track of this body, so there is nothing to ask
+    const g: WalkGate = { ...old, busy: false, permit: null, blocker: null };
+    this.walkGate = g;
+    this.syncWalkGate(g);
+  }
+  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin. */
   private syncWalkGate(gate: WalkGate) {
     gate.mode = "sync"; gate.permit = null;
     void this.trackHere().then((t) => {

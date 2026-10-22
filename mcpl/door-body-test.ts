@@ -1,6 +1,7 @@
 /**
  * The door's own body state on a bare WorldAgent (no world): a tracks loop and
- * treading water, and a reach the relay holds to more than one body.
+ * treading water, a reach the relay holds to more than one body, and a walk
+ * carried across a rejoin.
  *
  * Run: bun mcpl/door-body-test.ts
  */
@@ -12,6 +13,7 @@ const check = (label: string, ok: boolean, detail?: string) => {
   console.log(ok ? `  \x1b[32m✓\x1b[0m ${label}` : `  \x1b[31m✗ ${label}${detail ? ` — ${detail}` : ""}\x1b[0m`);
   if (!ok) failures++;
 };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 console.log("a tracks loop");
 {
@@ -45,6 +47,29 @@ console.log("a reach held to two bodies");
   const r = await ag.reach("rightHand", { p: pt });
   check("a reach refused by the second body it lands in is refused", r.ok === false && /Bob's consent refused it/.test(r.text), r.text);
   check("...and withdrawn", !ag.reaches.has("rightHand"));
+}
+
+console.log("a walk carried across a rejoin");
+{
+  // A stretch of the walk asked on the old connection answers after the rejoin, with a timeout. The resumed walk asked
+  // again where it stands and was answered, so that late answer is the old connection's, and the walk goes on.
+  const ag: any = new WorldAgent({ name: "me", world: "w" });
+  let answerOld: (v: unknown) => void = () => {};
+  ag.request = (verb: string) => verb === "move" ? new Promise((res) => { answerOld = res; }) : Promise.resolve({ ok: true });
+  ag.trackHere = async () => ({ ok: true });
+  ag.walkDone = () => {};
+  ag.target = { x: 0, y: 0, z: 5 };
+  ag.trackAt = [0, 0, 0];
+  ag.walkGate = { mode: "tracked", permit: [0, 0, 1], busy: false };
+  ag.extendPermit(ag.walkGate);   // the old connection's stretch, still out
+  // the rejoin's step for a walk it carries
+  if (typeof ag.resumeWalkGate === "function") ag.resumeWalkGate(); else ag.syncWalkGate(ag.walkGate);
+  await sleep(10);
+  answerOld({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } });
+  await sleep(10);
+  check("the old connection's late answer doesn't end the resumed walk", ag.target !== null && ag.lastWalkRefusal?.code !== "timeout",
+    JSON.stringify({ target: ag.target, refusal: ag.lastWalkRefusal }));
+  check("...which goes on, tracked again", ag.walkGate?.mode === "tracked");
 }
 
 console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
