@@ -112,6 +112,10 @@ async def main():
     p2, e6, c6, _ = await join("hesp2", agent_token="surf-lab-hesp2")
     vA, eA, cA, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")
     p3, e7, c7, _ = await join("hesp2", agent_token="surf-lab-hesp2")          # takeover of primary
+    # p3's own generation (its join snapshot), for T12: an embodied leg attesting must be refused by the ADMISSION guard
+    # (it isn't the voice leg), not by the generation guard a borrowed gen would trip (#260 house I327)
+    _p3_snaps = [m for m in e7 if m.get("type") == "snapshot"]
+    p3_gen = _p3_snaps[-1].get("gen") if _p3_snaps else None
     await asyncio.sleep(0.6)
     check("T7 primary takeover kicks old primary 4002", c6() is not None and c6()[0] == 4002, str(c6()))
     check("T7 voice leg SURVIVES primary takeover", cA() is None and vA.state.name == "OPEN")
@@ -188,9 +192,11 @@ async def main():
     check("T12 stale-generation attest refused (B2)", not any(m.get("type") == "performed" for m in ew)
           and any(m.get("type") == "error" for m in eB))
     ew.clear(); e7.clear()
-    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": vB_gen}))
+    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": p3_gen}))
     await asyncio.sleep(0.4)
     check("T12 embodied client cannot attest", not any(m.get("type") == "performed" for m in ew))
+    check("T12 …refused as not the bound voice leg (the admission guard, under its own gen)",
+          any(m.get("type") == "error" and "bound voice leg" in str(m.get("error")) for m in e7), str([m for m in e7 if m.get("type") == "error"]))
 
     # T14 (#57 client half): FIRST aux join broadcasts surface-transition
     # (retired null) — listeners key hold-then-fallback on it, and a leg
