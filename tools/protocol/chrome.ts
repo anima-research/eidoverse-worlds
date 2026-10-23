@@ -170,8 +170,15 @@ export async function cdpPage({ args = [] }: { args?: string[] } = {}) {
       return r.result.value;
     };
     const goto = async (url: string) => {
-      await cdp.send("Page.navigate", { url });
-      await until(`the page loaded ${url}`, async () => (await evaluate(`location.href.startsWith(${JSON.stringify(url)}) && document.readyState === "complete"`)) || null, { ms: 30_000 });
+      // A navigation can be lost to Chrome restarting its network service just after launch (windows-latest, 10-23: the page
+      // sat on about:blank for 30 s). Page.navigate says so in errorText; say it, and ask once more.
+      const loaded = async () => (await evaluate(`location.href.startsWith(${JSON.stringify(url)}) && document.readyState === "complete"`)) || null;
+      const nav: any = await cdp.send("Page.navigate", { url });
+      if (nav?.errorText) {
+        console.error(`[cdpPage] navigation to ${url} failed (${nav.errorText}); asking once more`);
+        await cdp.send("Page.navigate", { url });
+      }
+      await until(`the page loaded ${url}`, loaded, { ms: 30_000 });
     };
     return { cdp, evaluate, goto, errors, close };
   } catch (e) { await close(); throw e; }

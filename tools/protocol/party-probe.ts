@@ -78,7 +78,11 @@ try {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); });` });
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}&webgl=1` });   // WebGL 2: the headless WebGPU path fails its buffers and climbs in memory on this host
+  // WebGL 2 on Linux/macOS: the headless WebGPU path fails its buffers and climbs in memory there. NOT on Windows: with the
+  // runner's software flags (chrome.ts) a forced WebGL 2 context is null there and the page never boots (3/3, 10-23), while
+  // WebGPU boots and passes (52/0). Cost: the forced-WebGL boot path has no Windows coverage in this suite.
+  const backend = process.platform === "win32" ? "" : "&webgl=1";
+  await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}${backend}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
   check("boot: the client comes up", secs >= 4, `${secs} sections`);
   if (secs < 4) await die(1, "the page never booted");
