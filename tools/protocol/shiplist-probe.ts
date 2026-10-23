@@ -21,7 +21,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
-import { pageWaiter } from "./wait.ts";
+import { pageWaiter, tryUntil } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); every page answer brings the
 // minted ids back (NODE), and N(name) reads a scene name as its id for the node-side checks
 const NAMES = ["mta", "mtb", "prbox0", "prbox1", "prbox2", "acbox", "anchor", "atbox", "box1", "clbox", "cloud", "ctbox", "cuball", "gate", "getool", "hdsign", "hpball", "htcrate", "hysign", "nhball", "nlbox", "pobase", "potop", "rbbtn", "rbtgt", "slcrate", "slfloor", "sthigh", "stlow", "syb", "syorb", "wbcrate", "wgcrate", "sba", "sbb", "crate-2", "crate-3"];
@@ -979,15 +979,21 @@ try {
   const s1 = await st();
   if (process.env.SHOT_DIR) { const r = await cdp.send<any>("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(`${process.env.SHOT_DIR}/freecam-pose.png`, Buffer.from(r.data, "base64")); }
   // the pose, measured (the bench has no GPU to look with): both hands in front of the chest, below the shoulders, above the hips
-  const limbs = await page(`const { getMe } = await import('/lib/mybody.js'); const me = getMe(); const T = (await import('/lib/core.js')).THREE; me.root.updateMatrixWorld(true); me.update?.(0);
+  const measure = () => page(`const { getMe } = await import('/lib/mybody.js'); const me = getMe(); const T = (await import('/lib/core.js')).THREE; me.root.updateMatrixWorld(true); me.update?.(0);
     const h = me.vrm.humanoid, at = (b) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); return n.getWorldPosition(new T.Vector3()); };
     const yaw = me.root.rotation.y, f = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), hips = at('hips');
     const rel = (b) => { const p = at(b).sub(hips); return { fwd: +p.dot(f).toFixed(2), up: +p.y.toFixed(2), side: +p.dot(new T.Vector3(f.z, 0, -f.x)).toFixed(2) }; };
     const palm = (b, sgn) => { const n = h.getNormalizedBoneNode(b); n.updateWorldMatrix(true, false); const d = new T.Vector3(0, -1, 0).transformDirection(n.matrixWorld); return +d.dot(f).toFixed(2); };
     return { leftHand: rel('leftHand'), rightHand: rel('rightHand'), leftShoulder: rel('leftUpperArm'), head: rel('head'), palmOut: [palm('leftHand'), palm('rightHand')] };`);
+  const posed = (limbs: any) => !!(posed(limbs));
+  // the pose eases in over frames: wait for it (a slow runner draws few frames a second), then read it
+  const limbs = (await tryUntil("my body has eased into the working pose", async () => { const l = await measure(); return posed(l) ? l : null; }, { ms: 8000, step: 200 })) ?? await measure();
   check("FC1b the working pose (a mage casting): both hands well out in front, below the shoulders, on their own sides, palms facing out", limbs && limbs.leftHand.fwd > 0.35 && limbs.rightHand.fwd > 0.35 && limbs.palmOut[0] > 0.6 && limbs.palmOut[1] > 0.6 && limbs.leftHand.up > 0.05 && limbs.leftHand.up < limbs.leftShoulder.up && limbs.rightHand.up < limbs.leftShoulder.up && limbs.leftHand.side * limbs.rightHand.side < 0, limbs);
   check("FC1 the Free switch: the camera is its own, the switch shows it, and my body holds a pose", s0.sw.join() === "body" && s1.free && s1.sw.join() === "free" && s1.pose && !s0.pose, { s0, s1 });
-  await hold("KeyW", 700); const s2 = await st();
+  // hold W until the camera's centre has flown > 1 m (it moves per frame: a fixed hold measured the frame rate, not the flight)
+  await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true })), true)`);
+  await tryUntil("the camera's centre flies under W", async () => { const s = await st(); const a = s.focus, b = s1.focus; return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 1; }, { ms: 8000, step: 100 });
+  await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true })), true)`); const s2 = await st();
   const d = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   check("FC2 W flies the camera's centre; my body stays where it stood", d(s2.focus, s1.focus) > 1 && d(s2.body, s1.body) < 1e-6 && s2.pose, { moved: d(s2.focus, s1.focus), body: d(s2.body, s1.body) });
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(600);

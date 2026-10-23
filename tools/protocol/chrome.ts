@@ -70,8 +70,9 @@ export function platformArgs(platform: NodeJS.Platform = process.platform): stri
     // same suite failed with a fresh HOME and passed with this flag; playwright passes it too)
     // macOS: the keychain (a launch hung on it, 10-19), and vsync. On a display-less runner VM Chrome's vsync source barely
     // ticks: the page got 4 animation frames in 2 s (264 decoupled), so anything that moves on frames ran at ~2 fps (10-22,
-    // fork exp/mac-gl runs 39853908965 and 39854960274)
-    ...(platform === "darwin" ? ["--use-mock-keychain", "--disable-gpu-vsync", "--disable-frame-rate-limit"] : []),
+    // fork exp/mac-gl runs 39853908965 and 39854960274). Not --disable-frame-rate-limit too: unbounded frames starved party B2
+    // on the 3-core runner (run 39866082490); vsync alone ran the lane fastest (614 s, run 39873667367)
+    ...(platform === "darwin" ? ["--use-mock-keychain", "--disable-gpu-vsync"] : []),
     ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),
   ];
 }
