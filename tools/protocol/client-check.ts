@@ -30,7 +30,7 @@ process.env.TRUST_NAMES = "1"; // a private test server: the name editbot is the
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb", RED = "eidoverse/assets/models/crate_large_red.glb";
 let worldsDir = "";
 import { idAliases, inPage } from "./idalias.ts";
-import { pause, tryUntil, pageWaiter } from "./wait.ts";
+import { pause, tryUntil, pageWaiter, WAIT_SCALE } from "./wait.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
@@ -731,7 +731,8 @@ try {
   // HT7: a history read the authority refuses (or that times out) said "reading the log…" forever, and nothing asked again
   // (client-b2 HIS1, 10-22). The page answers this thing's first history read with a refusal itself; the panel must say so,
   // and the next change must read again.
-  { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: [3, 0, 3] }, label: 'ht7 stone' } });`);
+  // its setup failing fails HT7, not the whole run (a throw here used to abort every check after it)
+  try { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: [3, 0, 3] }, label: 'ht7 stone' } });`);
     const hid = made?.refs?.[0]?.id; if (!hid) throw new Error(`HT7 setup: the stone wasn't created: ${JSON.stringify(made)}`);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has(${JSON.stringify(hid)}))`);
     await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws); window.__ht7 = 0; window.__ht7block = true;
@@ -745,19 +746,20 @@ try {
     await page(`window.__ht7block = false; return true;`);
     check("HT7b …and once the authority answers again, the panel reads it by itself (no change needed)", await waitFor(`/created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000),
       await evalJson(`(document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200)`));
-  }
+  } catch (e) { check("HT7 (setup)", false, String((e as Error)?.message ?? e)); }
   // HT8: a re-read still queued for the thing you just left stole the panel from the one you selected (client-b2 HIS1,
   // 10-23, measured: the world's deferred re-read ran after the selection moved to a thing, took a newer generation, and
   // both replies were dropped as stale: "reading the log…" until the next change). The page holds back stone A's history
-  // reads (1.5 s) and B's longer (3 s), so A's re-read (A changed while its read was out) runs after B's read went out and before
+  // reads (1.5 s × the wait scale) and B's longer (3 s ×), so A's re-read (A changed while its read was out) runs after B's read went out and before
   // B's answer came back — the order HIS1 recorded; B's history must still arrive.
-  { const mk = async (label: string, at: number[]) => { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: ${JSON.stringify(at)} }, label: ${JSON.stringify(label)} } });`);
+  const holdA = Math.round(1500 * WAIT_SCALE), holdB = Math.round(3000 * WAIT_SCALE);   // in-page holds stretch with the waits
+  try { const mk = async (label: string, at: number[]) => { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: ${JSON.stringify(at)} }, label: ${JSON.stringify(label)} } });`);
       const id = made?.refs?.[0]?.id; if (!id) throw new Error(`HT8 setup: ${label} wasn't created: ${JSON.stringify(made)}`);
       await waitFor(`import('/lib/world.js').then((m) => m.entities.has(${JSON.stringify(id)}))`); return id; };
     const a = await mk("ht8 a", [4, 0, 4]), b = await mk("ht8 b", [5, 0, 5]);
     await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws); window.__ht8 = 0;
       ws.send = (d) => { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'history' && (m.args?.id === ${JSON.stringify(a)} || m.args?.id === ${JSON.stringify(b)})) { const isA = m.args.id === ${JSON.stringify(a)};
-          if (isA) window.__ht8++; setTimeout(() => send(d), isA ? 1500 : 3000); return; }
+          if (isA) window.__ht8++; setTimeout(() => send(d), isA ? ${holdA} : ${holdB}); return; }
         return send(d); }; return true;`);
     await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(a)}); return true;`);
     if (!(await waitFor(`window.__ht8 >= 1`, 3000))) throw new Error("HT8 setup: A's history was never read");
@@ -765,13 +767,18 @@ try {
     const setA: any = await page(`return (await import('/lib/net.js')).sendRequest('set', { id: ${JSON.stringify(a)}, component: 'label', value: 'ht8 a2' });`);
     if (!setA?.ok) throw new Error(`HT8 setup: A's change was refused: ${JSON.stringify(setA)}`);   // no change, no queued re-read: the test would prove nothing
     // the panel repainted with A's new name: historyFields saw the new key and queued A's re-read (A's first read is still out)
-    if (!(await waitFor(`/history of\\s*ht8 a2/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 1200))) throw new Error("HT8 setup: the panel never showed A's change");
+    if (!(await waitFor(`/history of\\s*ht8 a2/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, Math.round(1200 * WAIT_SCALE)))) throw new Error("HT8 setup: the panel never showed A's change");
     await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(b)}); return true;`);
-    const got = await waitFor(`/history of\\s*ht8 b/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '') && /created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000);
-    check("HT8 a re-read still queued for the thing you left doesn't take the panel (the selected thing's history arrives)", got,
+    // the order the test needs: B selected while A's re-read is still queued (only A's first read has gone out). If the host
+    // was too slow and A's re-read already went, this run proves nothing either way: say so, don't pass.
+    const atSelect = await evalJson(`window.__ht8`);
+    if (atSelect !== 1) throw new Error(`HT8 setup: A's re-read went out before B was selected (A reads at select: ${atSelect})`);
+    const got = await waitFor(`/history of\\s*ht8 b/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '') && /created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, Math.round(6000 * WAIT_SCALE));
+    const after = await evalJson(`window.__ht8`);   // with the fix the queued re-read never sends (1); without it, it does (2)
+    check("HT8 a re-read still queued for the thing you left doesn't take the panel (the selected thing's history arrives, A's stale re-read never sends)", got && after === 1,
       await evalJson(`({ heldReadsOfA: window.__ht8, text: (document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200) })`));
-    await page(`const n = await import('/lib/net.js'); delete n.net.ws.send; return true;`).catch(() => null);
-  }
+  } catch (e) { check("HT8 (setup)", false, String((e as Error)?.message ?? e)); }
+  await page(`const n = await import('/lib/net.js'); delete n.net.ws.send; return true;`).catch(() => null);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
