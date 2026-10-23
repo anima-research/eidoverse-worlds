@@ -716,9 +716,14 @@ try {
   check("(setup) all 25 label sets land (a rate refusal waits out the window and is sent again)", landed?.ok === 25, landed);
   // the panel re-reads its newest page when the thing changes: HT4/HT5 read it once it has caught up with the last set
   // (a real condition, not a fixed wait: an 800 ms sleep read a page taken mid-stream, motion still on it)
-  await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /pt 24/.test(x.textContent))`, 8000);
+  // the ROW for the last set ('→ "pt 24"'), not just the words: the panel's own title says "pt 24" as soon as the label
+  // lands, so /pt 24/ was true while the page on screen was still one taken mid-stream (HT5 failed 3 of 5, 10-23, its
+  // first row "pt 22 → pt 23")
+  const caught = await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /→ "pt 24"/.test(x.textContent))`, 8000);
+  if (!caught) throw new Error(`HT4 setup: the panel never showed the last set's row: ${JSON.stringify((await hrows() as string[]).slice(0, 3))}`);
   check("HT4 a long history shows a page and an Older… button", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-btn')].some((b) => /Older/.test(b.textContent))`, 5000), await hrows());
-  check("HT5 …the first page doesn't reach back to the motion yet", !(await hrows() as string[]).some((x) => /set.*motion/.test(x)));
+  { const rows = await hrows() as string[];
+    check("HT5 …the first page doesn't reach back to the motion yet", !rows.some((x) => /set.*motion/.test(x)), { n: rows.length, first: rows.slice(0, 3), motion: rows.filter((x) => /motion/.test(x)), last: rows.slice(-3) }); }
   // click Older… the moment it is there (a repaint rebuilds the panel's rows; the button is found and clicked in one step)
   await waitFor(`(() => { const b = [...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((x) => /Older/.test(x.textContent)); if (!b) return false; b.click(); return true; })()`, 5000);
   if (process.env.SHOT_DIR) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/history-tab.png`, Buffer.from(r.data, 'base64')); }
@@ -740,6 +745,30 @@ try {
     await page(`window.__ht7block = false; return true;`);
     check("HT7b …and once the authority answers again, the panel reads it by itself (no change needed)", await waitFor(`/created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000),
       await evalJson(`(document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200)`));
+  }
+  // HT8: a re-read still queued for the thing you just left stole the panel from the one you selected (client-b2 HIS1,
+  // 10-23, measured: the world's deferred re-read ran after the selection moved to a thing, took a newer generation, and
+  // both replies were dropped as stale: "reading the log…" until the next change). The page holds back stone A's history
+  // reads a little and B's more, so A's re-read (A changed while its read was out) runs after B's read went out and before
+  // B's answer came back — the order HIS1 recorded; B's history must still arrive.
+  { const mk = async (label: string, at: number[]) => { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: ${JSON.stringify(at)} }, label: ${JSON.stringify(label)} } });`);
+      const id = made?.refs?.[0]?.id; if (!id) throw new Error(`HT8 setup: ${label} wasn't created: ${JSON.stringify(made)}`);
+      await waitFor(`import('/lib/world.js').then((m) => m.entities.has(${JSON.stringify(id)}))`); return id; };
+    const a = await mk("ht8 a", [4, 0, 4]), b = await mk("ht8 b", [5, 0, 5]);
+    await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws); window.__ht8 = 0;
+      ws.send = (d) => { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'history' && (m.args?.id === ${JSON.stringify(a)} || m.args?.id === ${JSON.stringify(b)})) { const isA = m.args.id === ${JSON.stringify(a)};
+          if (isA) window.__ht8++; setTimeout(() => send(d), isA ? 500 : 1200); return; }
+        return send(d); }; return true;`);
+    await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(a)}); return true;`);
+    if (!(await waitFor(`window.__ht8 >= 1`, 3000))) throw new Error("HT8 setup: A's history was never read");
+    // A changes while its read is held: its re-read queues behind the one in flight; then B is selected
+    await page(`return (await import('/lib/net.js')).sendRequest('set', { id: ${JSON.stringify(a)}, component: 'label', value: 'ht8 a2' });`);
+    await sleep(60);   // A's change reaches the page and its re-read queues (A's first read is still out: held 500 ms)
+    await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(b)}); return true;`);
+    const got = await waitFor(`/history of\s*ht8 b/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '') && /created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000);
+    check("HT8 a re-read still queued for the thing you left doesn't take the panel (the selected thing's history arrives)", got,
+      await evalJson(`({ heldReadsOfA: window.__ht8, text: (document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200) })`));
+    await page(`const n = await import('/lib/net.js'); delete n.net.ws.send; return true;`).catch(() => null);
   }
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);

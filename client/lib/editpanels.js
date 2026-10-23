@@ -1226,6 +1226,9 @@ const hist = { key: null, entries: [], next: null, loading: false, id: null, mod
 // once the person has read Older… pages, a refresh never undoes them (historyrows.js mergeHistory), and a refresh answered
 // after a newer refresh was sent is dropped (client-check HT6, 10-17: a late refresh replaced an Older… read).
 function histLoad(id, more = false) {
+  // a re-read queued for a thing the panel has since left (pacedRead runs it later) must not run: it took a newer generation,
+  // so the selected thing's own answer was dropped as stale and nothing asked again — "reading the log…" (client-check HT8)
+  if (id !== hist.id) return Promise.resolve();
   const before = more ? hist.next : undefined;
   const gen = more ? hist.gen : ++hist.gen;
   hist.loading = true;
