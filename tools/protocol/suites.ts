@@ -207,3 +207,16 @@ export function browserLauncher(f: string): string | null {
   return null;
 }
 const SELF = path.resolve(fileURLToPath(import.meta.url));
+
+/** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
+ *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
+ *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
+export function failLines(lines: string[], per = 3): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*FAIL\b|✗/.test(lines[i])) continue;
+    out.push(lines[i]);
+    for (let k = 1; k <= per && i + k < lines.length && /^\s{2,}\S/.test(lines[i + k]) && !/^\s*(FAIL\b|ok\b)|✗|✓/.test(lines[i + k]); k++) out.push(lines[i + k].slice(0, 1200));
+  }
+  return out;
+}

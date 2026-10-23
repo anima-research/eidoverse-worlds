@@ -94,4 +94,11 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     /killGroup\(child\.pid, "SIGKILL", \{ exited: !stuck \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
 
+// PG13: the gate keeps what a failed check SAW, not only its name (scripts I2 failed twice in gate logs with no values, 10-22)
+{ const { failLines } = await import("./suites.ts");
+  const out = ["ok   A1 fine", "FAIL I2   a whole request", '       {"said":true,"ms":1400}', "ok   I3 next", "  \u2717 HIS1 history", "    History\u2715 reading the log", "[x] 1 passed, 2 failed"];
+  const kept = failLines(out);
+  check("PG13 the gate keeps the evidence line under each FAIL / \u2717 (and not the next ok row or the tally)",
+    kept.length === 4 && kept[1].includes('"ms":1400') && kept[3].includes("reading the log") && !kept.some((l) => /^ok|passed,/.test(l.trim())), kept); }
+
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

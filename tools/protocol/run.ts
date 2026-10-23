@@ -32,7 +32,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote } from "./common.ts";
-import { type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -311,11 +311,11 @@ for (const name of order) {
   if (r.timedOut) status = "fail";
   results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
   console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
-  for (const l of fails.slice(0, 20)) console.log(l);
+  const evidence = failLines(lines); for (const l of evidence.slice(0, 60)) console.log(l);   // each FAIL with what it saw (10-23)
   for (const l of rowSkips.slice(0, 20)) console.log(l);
   // a suite that failed without one FAIL line crashed: its last line is the runtime's banner, so show enough to read the error (CI 10-21: six Windows reds read 'Bun v1.3.14' and nothing else)
   const crashed = status === "fail" && !fails.length && !r.timedOut;
-  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : tail))) if (!fails.includes(l) && !rowSkips.includes(l)) console.log(l);
+  for (const l of lines.slice(-(crashed ? Math.max(tail, 30) : tail))) if (!evidence.includes(l) && !rowSkips.includes(l)) console.log(l);
   if (lane === "core" && status !== "pass") stopped = `not run: the core lane failed at ${name}`;
 }
 
