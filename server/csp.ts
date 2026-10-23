@@ -43,7 +43,9 @@ export function inlineScriptHashes(html: string): string[] {
   const out: string[] = [];
   for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
     if (/\bsrc\s*=/i.test(m[1])) continue;
-    out.push(`'sha256-${createHash("sha256").update(m[2], "utf8").digest("base64")}'`);
+    // the browser hashes the text the parser made, and the parser turns CRLF and lone CR into LF (HTML §13.2.3.5): hashing
+    // the raw bytes of a CRLF copy refuses every inline script on the page (tools/csp-test.ts)
+    out.push(`'sha256-${createHash("sha256").update(m[2].replace(/\r\n?/g, "\n"), "utf8").digest("base64")}'`);
   }
   return [...new Set(out)];
 }

@@ -261,8 +261,10 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   // hermetic means no host cache, not hiding this checkout's own files
   for (const rel of OPT_TRACKED) { const to = path.join(dir, "opt", rel); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(ENGINE, "assets/opt", rel), to); }
   // hermetic: nothing the suite reads by default lies outside this checkout and this dir (no ~, no ../eidoverse-video)
+  // TEMP/TMP too: os.tmpdir() reads those on Windows, not TMPDIR, so a suite's scratch (and a failure's [bench] logs) landed
+  // outside the dir the gate keeps and CI uploads (10-23)
   const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
-    HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
+    HOME: path.join(dir, "home"), TMPDIR: dir, TEMP: dir, TMP: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (PY) env.PYTHON = PY;
   if (CHROME) env.CHROME = CHROME;
