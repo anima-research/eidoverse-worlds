@@ -764,7 +764,8 @@ try {
     // A changes while its read is held: its re-read queues behind the one in flight; then B is selected
     const setA: any = await page(`return (await import('/lib/net.js')).sendRequest('set', { id: ${JSON.stringify(a)}, component: 'label', value: 'ht8 a2' });`);
     if (!setA?.ok) throw new Error(`HT8 setup: A's change was refused: ${JSON.stringify(setA)}`);   // no change, no queued re-read: the test would prove nothing
-    await sleep(150);   // A's change reaches the page and its re-read queues (A's first read is still out: held 1.5 s)
+    // the panel repainted with A's new name: historyFields saw the new key and queued A's re-read (A's first read is still out)
+    if (!(await waitFor(`/history of\\s*ht8 a2/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 1200))) throw new Error("HT8 setup: the panel never showed A's change");
     await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(b)}); return true;`);
     const got = await waitFor(`/history of\\s*ht8 b/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '') && /created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000);
     check("HT8 a re-read still queued for the thing you left doesn't take the panel (the selected thing's history arrives)", got,
