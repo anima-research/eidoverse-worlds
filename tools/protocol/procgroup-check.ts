@@ -78,4 +78,20 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     sync.length === 0 && /killSuiteAsync/.test(run) && /suiteMembersAsync/.test(run) && /wouldn't die/.test(run), { sync });
 }
 
+// PG9–PG12 (CI 10-22: the Windows runner "lost communication" mid-gate): the gate sweeps every suite's tree AFTER the suite
+// exited, and Windows reuses process ids, so a tree kill aimed at the dead root's id can land on whoever holds it now.
+{
+  const plan = (PG as any).winKillPlan as undefined | ((root: number, t: { pid: number; ppid: number; pgid: number; zombie: boolean }[], exited: boolean) => number[]);
+  const T = parseWinTable("4 0\r\n50 4\r\n100 50\r\n200 100\r\n300 200\r\n");          // 100 (the root) is alive, with 200 → 300 under it
+  const reused = parseWinTable("4 0\r\n50 4\r\n100 50\r\n777 100\r\n");                  // the root exited; 100 now belongs to someone else, with 777 under it
+  const gone = parseWinTable("4 0\r\n50 4\r\n200 100\r\n300 200\r\n");                   // the root exited and its id is free; 200 → 300 are its orphans
+  check("PG9 a live suite's tree is killed children first, the root last", !!plan && JSON.stringify(plan(100, T, false)) === JSON.stringify([300, 200, 100]), plan && plan(100, T, false));
+  check("PG10 after the suite exited, an id that's in the table again is someone else's: nothing is killed", !!plan && plan(100, reused, true).length === 0, plan && plan(100, reused, true));
+  check("PG11 after the suite exited, its orphans are killed and the dead root's id never is", !!plan && JSON.stringify(plan(100, gone, true)) === JSON.stringify([300, 200]), plan && plan(100, gone, true));
+  const pg = fs.readFileSync(new URL("./procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
+  const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
+  check("PG12 the sweep after a suite exits says so (exited), and killChild never blocks or kills an exited child",
+    /killGroup\(child\.pid, "SIGKILL", \{ exited: !stuck \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
+}
+
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

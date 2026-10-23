@@ -240,14 +240,14 @@ const SCRATCH_ROOT = (() => { try { return fs.realpathSync.native(GATE_TMP); } c
 console.log(`  scratch   ${SCRATCH_ROOT}${process.env.PROTOCOL_KEEP ? " (kept: PROTOCOL_KEEP)" : " (removed at exit)"}`);
 const scratchOut = valueOf("--scratch-out");
 if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path.sep).join("/")}\n`);
-let current: { pid: number } | null = null;
+let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
-const killGroup = (pid: number, sig: NodeJS.Signals) => killSuiteAsync(pid, sig);
+const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean }) => killSuiteAsync(pid, sig, process.platform, o);
 const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
-const cleanup = () => { if (current) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
+const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
   try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
@@ -272,7 +272,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
   const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
-  current = { pid: child.pid! };
+  current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
   const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM"); setTimeout(() => void killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
@@ -282,7 +282,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
   const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
-  if (child.pid) await killGroup(child.pid, "SIGKILL");
+  if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: !stuck });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });

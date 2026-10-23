@@ -87,21 +87,32 @@ export async function suiteMembersAsync(root: number, platform: NodeJS.Platform 
 }
 /** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills the tree it can find, children
  *  first, then the root's own tree with taskkill /T, each call bounded. */
-export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform): Promise<void> {
-  if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
-  const members = await suiteMembersAsync(root, "win32");
-  for (const pid of [...members].reverse().filter((p) => p !== root)) await outputOf("taskkill", ["/PID", String(pid), "/T", "/F"], 15_000);
-  await outputOf("taskkill", ["/PID", String(root), "/T", "/F"], 15_000);
+/** Which Windows processes to kill for a suite started as `root`, deepest first, each one by its own id (never `/T`).
+ *  Windows reuses process ids (CI 10-22: the runner "lost communication" mid-gate, with a tree kill aimed at an exited
+ *  suite's id on every suite): once the suite has `exited`, an id that is in the table again belongs to someone else, so
+ *  nothing is killed; if the id is free, only its orphans are, and the dead root's id never is. */
+export function winKillPlan(root: number, table: Row[], exited: boolean): number[] {
+  if (exited && table.some((r) => r.pid === root)) return [];
+  const kids = new Map<number, number[]>(); for (const r of table) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
+  const depth = new Map<number, number>(), todo: [number, number][] = [[root, 0]];
+  while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
+  const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
+  return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
-/** At exit, where nothing can be awaited: signal the group (POSIX), or start a tree kill and leave it running (Windows). */
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false }: { exited?: boolean } = {}): Promise<void> {
+  if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
+  for (const pid of winKillPlan(root, await processTableAsync("win32"), exited)) await outputOf("taskkill", ["/PID", String(pid), "/F"], 15_000);
+}
+/** At exit, where nothing can be awaited: signal the group (POSIX), or start a kill of the still-running root and leave it
+ *  running (Windows). The caller passes only a root it knows is still running; its children go with the next sweep. */
 export function killSuiteAtExit(root: number, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "win32") { try { process.kill(-root, "SIGKILL"); } catch { /* gone */ } return; }
   try { spawn("taskkill", ["/PID", String(root), "/T", "/F"], { detached: true, stdio: "ignore", windowsHide: true }).unref(); } catch { /* gone */ }
 }
 /** A child that isn't a group leader (spawned without `detached`): the child itself on POSIX, its whole tree on Windows,
- *  where a browser's or server's own children outlive a plain kill. */
-export function killChild(p: { pid?: number; kill(): void } | null): void {
-  if (!p) return;
-  if (process.platform === "win32" && typeof p.pid === "number") killSuite(p.pid, "SIGKILL", "win32");
+ *  where a browser's or server's own children outlive a plain kill. Never blocks, and never aims at an exited child's id. */
+export function killChild(p: { pid?: number; exitCode?: number | null; signalCode?: string | null; kill(): void } | null): void {
+  if (!p || p.exitCode != null || p.signalCode != null) return;
+  if (process.platform === "win32" && typeof p.pid === "number") void killSuiteAsync(p.pid, "SIGKILL", "win32");
   try { p.kill(); } catch { /* gone */ }
 }
