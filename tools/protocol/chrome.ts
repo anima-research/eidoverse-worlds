@@ -91,25 +91,80 @@ export function chromeArgs({ headed = false, port, profile, extra = [] }: { head
   ];
 }
 
-/** playwright's chromium.launch, everywhere it works. Under Bun on Windows it never does: playwright talks to the browser over
- *  extra pipe descriptors (--remote-debugging-pipe), which Bun's Windows spawn doesn't pass, so every launch hangs until its
- *  timeout (10-22, Burrow: the same script launched in 112 ms under Node and timed out under Bun, with Chromium 151 and the
- *  headless shell alike; CI's Windows browser-check had never passed). There we start the browser ourselves on a debugging
- *  port, the way client-check does, and connect over CDP. close() also ends the process and removes its profile. */
-export async function launchChromium(chromium: any, { args = [], executablePath }: { args?: string[]; executablePath?: string } = {}): Promise<any> {
-  const exe = executablePath ?? findChrome() ?? undefined;
-  if (!(process.platform === "win32" && typeof (globalThis as any).Bun !== "undefined")) return chromium.launch({ executablePath: exe, args: [...args, ...platformArgs()] });
+export type Cdp = { send<T = any>(m: string, p?: unknown): Promise<T> };
+/** One CDP call's budget. SwiftShader can pin a page's main thread past 60 s on a full world (Commons, 10-15), so a
+ *  probe that needs to wait sets CDP_CALL_MS; the default is the old 60 s. */
+const CDP_CALL_MS = Math.max(1000, Number(process.env.CDP_CALL_MS) || 60_000);
+export function cdpOn(ws: WebSocket): Cdp {
+  let id = 0;
+  return {
+    send<T = any>(method: string, params: unknown = {}): Promise<T> {
+      const myId = ++id;
+      return new Promise((resolveP, reject) => {
+        const finish = (err?: Error, result?: T) => {
+          clearTimeout(timer);
+          ws.removeEventListener("message", onMsg);
+          ws.removeEventListener("close", onClose);
+          if (err) reject(err); else resolveP(result!);
+        };
+        const onMsg = (ev: MessageEvent) => {
+          const m = JSON.parse(String(ev.data));
+          if (m.id === myId) finish(m.error ? new Error(`${method}: ${m.error.message}`) : undefined, m.result);
+        };
+        const onClose = () => finish(new Error(`${method}: browser connection closed`));
+        const timer = setTimeout(() => finish(new Error(`${method}: timed out`)), CDP_CALL_MS);
+        ws.addEventListener("message", onMsg);
+        ws.addEventListener("close", onClose);
+        try { ws.send(JSON.stringify({ id: myId, method, params })); }
+        catch (err) { finish(err as Error); }
+      });
+    },
+  };
+}
+
+/** One headless page, driven over raw CDP on the runtime's own WebSocket: the way every browser suite drives Chrome.
+ *  Not playwright: under Bun on Windows its launch (extra pipe descriptors Bun's spawn doesn't pass) and its connectOverCDP
+ *  (its websocket transport) both hang to their timeouts (10-22, Burrow: the same launch took 112 ms under Node). The page
+ *  starts blank with Runtime enabled, so an error in the first script is caught; `errors` collects uncaught exceptions
+ *  and console.error. close() ends the browser and removes its profile. */
+export async function cdpPage({ args = [] }: { args?: string[] } = {}) {
+  const exe = findChrome();
   if (!exe) throw new Error("no Chromium to launch: set CHROME, or install playwright's (bun node_modules/playwright/cli.js install chromium)");
   const port = await new Promise<number>((res, rej) => { const s = net.createServer(); s.on("error", rej); s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => res(p)); }); });
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "pw-cdp-"));
-  const child = spawn(exe, chromeArgs({ port, profile, extra: args }), { stdio: "ignore", windowsHide: true });
-  const gone = () => { killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* still locked: the scratch dir goes with the suite */ } };
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "cdp-page-"));
+  const child = spawn(exe, [...chromeArgs({ port, profile, extra: args }), "about:blank"], { stdio: "ignore", windowsHide: true });
+  let ws: WebSocket | null = null;
+  // ask Chrome to quit (it takes its helper processes with it; a kill takes only the main one), then make sure
+  const close = async () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      await new Promise<void>((res) => { ws!.addEventListener("close", () => res()); try { ws!.send(JSON.stringify({ id: 1e9, method: "Browser.close" })); } catch { res(); } setTimeout(res, 3000); });
+      await until("Chrome has exited", () => child.exitCode !== null || child.signalCode !== null, { ms: 5000 }).catch(() => {});
+    }
+    killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* still locked: the scratch dir goes with the suite */ }
+  };
   try {
-    const ws = await until("Chromium's debugging port answers", async () => {
-      try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); return r.ok ? (await r.json()).webSocketDebuggerUrl : null; } catch { return null; }
+    const target = await until("Chromium lists its blank page", async () => {
+      try { const l = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); return l.find((t: any) => t.type === "page") ?? null; } catch { return null; }
     }, { ms: 60_000 });
-    const browser = await chromium.connectOverCDP(ws), close = browser.close.bind(browser);
-    browser.close = async () => { try { await close(); } catch { /* the process goes next anyway */ } gone(); };
-    return browser;
-  } catch (e) { gone(); throw e; }
+    ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise<void>((res, rej) => { ws!.addEventListener("open", () => res()); ws!.addEventListener("error", () => rej(new Error("the page's debugging socket didn't open"))); });
+    const errors: string[] = [];
+    ws.addEventListener("message", (ev: MessageEvent) => {
+      const m = JSON.parse(String(ev.data));
+      if (m.method === "Runtime.exceptionThrown") errors.push(`pageerror ${m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text}`);
+      if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") errors.push(`console.error ${m.params.args.map((a: any) => a.value ?? a.description).join(" ")}`);
+    });
+    const cdp = cdpOn(ws);
+    await cdp.send("Runtime.enable"); await cdp.send("Page.enable");
+    const evaluate = async (expression: string): Promise<any> => {
+      const r: any = await cdp.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
+      return r.result.value;
+    };
+    const goto = async (url: string) => {
+      await cdp.send("Page.navigate", { url });
+      await until(`the page loaded ${url}`, async () => (await evaluate(`location.href.startsWith(${JSON.stringify(url)}) && document.readyState === "complete"`)) || null, { ms: 30_000 });
+    };
+    return { cdp, evaluate, goto, errors, close };
+  } catch (e) { await close(); throw e; }
 }

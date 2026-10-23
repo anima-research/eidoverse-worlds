@@ -9,9 +9,8 @@
 //   4. the authority, over in-memory storage at a pinned clock, writes a byte-identical log for the same requests.
 // usage: bun tools/protocol/browser-check.ts   (CHROME=<path> to pick a browser build)
 import fs from "node:fs";
-import { chromium } from "playwright";
 import { ENGINE } from "./common.ts";
-import { launchChromium } from "./chrome.ts";
+import { cdpPage } from "./chrome.ts";
 import { sha256 } from "../../shared/protocol/hash.js";
 
 // the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
@@ -63,12 +62,9 @@ const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const f = ENGINE + p.slice(1); if (!fs.existsSync(f)) return new Response("missing", { status: 404 });
   return new Response(fs.readFileSync(f), { headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" } });
 } });
-let browser: any = null, page: any, fails: string[] = [], errors: string[] = [];
+let page: Awaited<ReturnType<typeof cdpPage>> | null = null, fails: string[] = [], errors: string[] = [];
 try {
-  browser = await launchChromium(chromium, { args: ["--disable-gpu"] });
-  page = await browser.newPage();
-  page.on("pageerror", (e: any) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m: any) => { if (m.type() === "error") errors.push(`console.error ${m.text()}`); });
+  page = await cdpPage({ args: ["--disable-gpu"] });
   await page.goto(`http://127.0.0.1:${server.port}/`);
   const there: any = await Promise.race([
     page.evaluate(`(${work.toString()})(location.origin, ${JSON.stringify(texts)})`),
@@ -86,7 +82,7 @@ try {
   if (here.door.n < 8 || !here.door.results.includes("ok")) fails.push(`the authority scenario wrote too little (${here.door.n} lines)`);
   console.log(`door: ${here.door.results.join(", ")} (${here.door.n} lines)`);
 } catch (e: any) { fails.push(`probe: ${e.message}`); }
-finally { try { await browser?.close(); } catch {} server.stop(true); }
+finally { errors.push(...(page?.errors ?? [])); await page?.close(); server.stop(true); }
 for (const e of errors) { console.log(e); fails.push("page reported an error"); }
 for (const f of fails) console.log(`FAIL ${f}`);
 console.log(fails.length ? `browser: ${fails.length} failed` : `browser: ${MODS.length} modules import in the page; hash, fold and the authority agree with bun byte for byte`);

@@ -2,7 +2,8 @@
 import { existsSync, mkdtempSync, rmSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir, loadavg, cpus } from "node:os";
 import { join, resolve } from "node:path";
-import { chromeArgs, findChrome } from "./protocol/chrome.ts";
+import { chromeArgs, findChrome, cdpOn, type Cdp } from "./protocol/chrome.ts";
+export { cdpOn, type Cdp };
 
 export const ROOT = resolve(import.meta.dir, "..");
 export const CHROME = findChrome() ?? "";
@@ -74,37 +75,6 @@ export function mkCheck() {
   t.note = () => { const l1 = loadavg()[0], f1 = foreignHeadless(), cores = cpus().length, hot = Math.max(t.load0, l1) > cores || Math.max(t.foreign0, f1) > 0;
     return ` · load ${t.load0.toFixed(1)}→${l1.toFixed(1)} (${cores} cores) · ${Math.max(t.foreign0, f1)} foreign headless chrome${Math.max(t.foreign0, f1) === 1 ? "" : "s"}${hot ? " · UNDER LOAD: a red here may be timing" : ""}`; };
   return { check, tally: t };
-}
-
-export type Cdp = { send<T = any>(m: string, p?: unknown): Promise<T> };
-/** One CDP call's budget. SwiftShader can pin a page's main thread past 60 s on a full world (Commons, 10-15), so a
- *  probe that needs to wait sets CDP_CALL_MS; the default is the old 60 s. */
-const CDP_CALL_MS = Math.max(1000, Number(process.env.CDP_CALL_MS) || 60_000);
-export function cdpOn(ws: WebSocket): Cdp {
-  let id = 0;
-  return {
-    send<T = any>(method: string, params: unknown = {}): Promise<T> {
-      const myId = ++id;
-      return new Promise((resolveP, reject) => {
-        const finish = (err?: Error, result?: T) => {
-          clearTimeout(timer);
-          ws.removeEventListener("message", onMsg);
-          ws.removeEventListener("close", onClose);
-          if (err) reject(err); else resolveP(result!);
-        };
-        const onMsg = (ev: MessageEvent) => {
-          const m = JSON.parse(String(ev.data));
-          if (m.id === myId) finish(m.error ? new Error(`${method}: ${m.error.message}`) : undefined, m.result);
-        };
-        const onClose = () => finish(new Error(`${method}: browser connection closed`));
-        const timer = setTimeout(() => finish(new Error(`${method}: timed out`)), CDP_CALL_MS);
-        ws.addEventListener("message", onMsg);
-        ws.addEventListener("close", onClose);
-        try { ws.send(JSON.stringify({ id: myId, method, params })); }
-        catch (err) { finish(err as Error); }
-      });
-    },
-  };
 }
 
 type ScratchOptions = {
