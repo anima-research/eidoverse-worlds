@@ -195,6 +195,10 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
   await pause("Fen's timed grant runs out, with no sweep to write its end", Math.max(0, fenUntil + 51 - Date.now()));
+  // …by the SERVER's clock: WSL's wall clock steps back ~1.4 s now and then (identity RS3, 10-22), so a test-side pause can end
+  // while the server still reads the grant as live; it then answers Fen 'enter', serves her /geom, and that loads the world.
+  // /access is a door read (it loads nothing): wait until it says the grant is over
+  await tryUntil("the server's own clock has passed Fen's until", async () => (await accessAs(s2.port, "keep", "tok-fen")).body?.you === "none", { ms: 5000, step: 100 });
   { const logHas = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes(`"roles:${ids.Fen}"`) && !fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").includes("expire-roles");
     const map = await worldsAs(s2.port, "tok-fen"), acc = await accessAs(s2.port, "keep", "tok-fen"), g = await geomAs(s2.port, "keep", "tok-fen");
     const still = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
