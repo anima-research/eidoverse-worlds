@@ -2,6 +2,7 @@
 // wins, never closer than the gap, and a failed read doesn't wedge the key.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/latestread-test.ts
 import { latestRead } from "../client/lib/edit/latestread.js";
+import { backoff } from "../client/lib/edit/backoff.js";
 
 let pass = 0, fail = 0;
 const check = (n: string, ok: boolean, info?: unknown) => { if (ok) pass++; else fail++; console.log(`${ok ? "ok  " : "FAIL"} ${n}${ok ? "" : "  " + JSON.stringify(info)}`); };
@@ -51,6 +52,12 @@ const read = (key: string, tag: string) => () => new Promise<void>((ok, no) => {
   check("L7 past the gap, a read still in flight still holds the key: nothing new starts", reads.length === 1, reads.map((r) => r.tag));
   reads[0].answer(); await tick(2001);
   check("L7 …and when it answers the newest runs at once (the gap has passed)", reads.length === 2 && reads[1].tag === "3", reads.map((r) => r.tag)); }
+
+// the History panel's retry after a refusal (client/lib/edit/backoff.js): it waits longer each time, never past the cap, and a
+// success starts it over — a `rate` refusal answered by steady 2 s reads stayed refused
+{ const b = backoff(2000, 30000); const w = [b.next(), b.next(), b.next(), b.next(), b.next(), b.next(), b.next()];
+  check("B1 refusals back off: 2, 4, 8, 16 s, then held at 30 s", JSON.stringify(w) === "[2000,4000,8000,16000,30000,30000,30000]", w);
+  b.reset(); check("B2 …and a success (or another thing) starts over at 2 s", b.next() === 2000); }
 
 console.log(`[latestread-test] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

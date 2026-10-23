@@ -33,6 +33,7 @@ import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 const OCC_ROW = 'occupant:';
 import * as Sel from './edit/selection.js';
 import { latestRead } from './edit/latestread.js';
+import { backoff } from './edit/backoff.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
 import { handleOf } from '../../shared/thingref.js';
@@ -1221,7 +1222,8 @@ function buildVRDispatch(action, payload) {
 // Credits are filter modes here (R 10-07: no third tab, no hand credits): by time, by person, biggest contributors, by
 // what changed (client/lib/historyrows.js historyView). The view's mode is this viewer's, never logged.
 // (mergeHistory: client/lib/historyrows.js)
-const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0, paged: false, failed: null, retryMs: 2000 };
+const hist = { key: null, entries: [], next: null, loading: false, id: null, mode: 'time', who: null, gen: 0, paged: false, failed: null };
+const histRetry = backoff(2000, 30000);
 // A thing's history is re-read whenever the thing changes (its components are in the key). A refresh shows the newest page;
 // once the person has read Older… pages, a refresh never undoes them (historyrows.js mergeHistory), and a refresh answered
 // after a newer refresh was sent is dropped (client-check HT6, 10-17: a late refresh replaced an Older… read).
@@ -1237,7 +1239,7 @@ function histLoad(id, more = false) {
     // refused or timed out: say so, and ask again in a while (it said "reading the log…" forever: HT7). Not at once: a refusal
     // for `rate` would only be met by more reads.
     if (!r?.ok) { histFailed(id, r?.refused?.reason ?? 'no answer', more); return; }
-    hist.failed = null; hist.retryMs = 2000;
+    hist.failed = null; histRetry.reset();
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
     if (!id) { hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; }
     else ({ entries: hist.entries, next: hist.next, paged: hist.paged } = mergeHistory(hist, rows, r.next ?? null, more));
@@ -1252,14 +1254,14 @@ function histFailed(id, why, more = false) {
   if (more) { flashHint(`couldn't read older history: ${why}`, 3000); repaintAll(); return; }
   repaintAll();
   if (id == null) return;
-  const wait = hist.retryMs; hist.retryMs = Math.min(wait * 2, 30000);
+  const wait = histRetry.next();
   setTimeout(() => { if (hist.failed && hist.id === id) { hist.key = null; repaintAll(); } }, wait);
 }
 function historyFields() {
   const id = worldSel() ? null : sceneSelected() ?? null;
   // re-read when the selection changes or the thing does (its components), or the world log moves (nothing selected)
   const key = id ? `${id}|${JSON.stringify(Edits.compsOf(id))}` : `@|${entities.size}|${Math.floor(Date.now() / 3000)}`;
-  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; hist.paged = false; hist.failed = null; hist.retryMs = 2000; } hist.id = id; pacedRead(`history:${id ?? '@'}`, () => histLoad(id)); }
+  if (key !== hist.key) { hist.key = key; if (hist.id !== id) { hist.entries = []; hist.next = null; hist.who = null; hist.paged = false; hist.failed = null; histRetry.reset(); } hist.id = id; pacedRead(`history:${id ?? '@'}`, () => histLoad(id)); }
   const f = [{ t: 'info', label: id ? 'history of' : 'history', value: id ? (bagOf(id)?.label ?? id) : 'the whole world, newest first — select a thing for its own', hint: 'from the world log: who did what, when' }];
   const view = historyView(hist.entries, Edits.nameOf, { mode: hist.mode, who: hist.who });
   const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
