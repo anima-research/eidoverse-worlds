@@ -92,7 +92,9 @@ type ScratchOptions = {
 export async function scratchSequencer(name: string, opts: ScratchOptions = {}) {
   const PORT = freePort(opts.portFrom ?? 8950);
   const BASE = `http://127.0.0.1:${PORT}`;
-  const SCRATCH = mkdtempSync(join(tmpdir(), `ew-${name}-`));
+  // under the gate's per-suite dir when there is one: on Windows tmpdir() is TEMP, which run.ts leaves alone (setting it hung
+  // suites, 10-23), so a failure's [bench] logs would land where CI never uploads them
+  const SCRATCH = mkdtempSync(join(process.env.PROTOCOL_SCRATCH || tmpdir(), `ew-${name}-`));
   const NONCE = crypto.randomUUID();
   const procs: Bun.Subprocess[] = [];
   let cleaned = false, announced = false;

@@ -77,6 +77,11 @@ export function platformArgs(platform: NodeJS.Platform = process.platform): stri
     // fork exp/mac-gl runs 39853908965 and 39854960274). Not --disable-frame-rate-limit too: unbounded frames starved party B2
     // on the 3-core runner (run 39866082490); vsync alone ran the lane fastest (614 s, run 39873667367)
     ...(platform === "darwin" ? ["--use-mock-keychain", "--disable-gpu-vsync"] : []),
+    // Windows: a GPU-less host (GitHub's windows-latest) has no WebGPU adapter, and current Chrome no longer falls back to
+    // SwiftShader for WebGL on its own: getContext() returned null and the page threw in three's WebGLExtensions at boot,
+    // "the page never booted" in every browser suite (10-23, fork run 39998895713, browser.events.jsonl). This allows the
+    // software fallback; a host with a GPU keeps its GPU
+    ...(platform === "win32" ? ["--enable-unsafe-swiftshader"] : []),
     ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),
   ];
 }
