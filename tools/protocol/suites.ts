@@ -35,7 +35,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["lying-support", "../lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin (review of b398d7e3 #1)
   ["support-swap", "../support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
   ["knockdown", "../knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one under its switch (the relay answers), hangs from a nail
-  ["sockets", "../sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
+  ["sockets", "../sockets-test.ts", 1],
+  ["msgrate", "../msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood) // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
   ["shape-render", "../shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the load's repairs; ran only as an import before
   ["originof", "../originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
   ["renderer-cred", "../renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches a members-only world; a stranger's /snap and /heightmap of it are 404

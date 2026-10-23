@@ -57,6 +57,7 @@ import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } fro
 import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 import { isOwner } from "../shared/protocol/roles.js";
+import { newBucket, admitMessage } from "./msgrate.ts";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 // The resident-visible service chart (amendment 2): every voice-service
@@ -864,7 +865,7 @@ const server = Bun.serve({
     open(ws) {
       try {
         const c: Client = { id: `anon-${nextClientNum++}`, ws, world: null, avatar: "", lastPose: null, spectator: false,
-          msgWin: 0, msgCount: 0 };
+          msgs: newBucket(2 * MSG_RATE) };
         const data = (ws as unknown as { data?: { session?: HnSession | null; addr?: string } }).data;
         const sess = data?.session;
         if (sess && sess.exp > Date.now()) { c.auth = sess; c.sub = sess.sub; }
@@ -931,17 +932,14 @@ const server = Bun.serve({
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return; }
 
-      // message-rate cap: 15Hz poses + verbs + slack. Excess is dropped
-      // silently — closing would just trigger the client's auto-reconnect.
+      // message-rate cap (server/msgrate.ts): a token bucket at MSG_RATE a second with two seconds of burst, so a backlog the
+      // server's own busy thread caused isn't charged to the client. Over it, a REQUEST is answered (its client awaits a reply
+      // by id: silence left it hanging, client-check HT 10-17), up to MSG_RATE answers a second; anything else is dropped.
       const now = Date.now();
-      if (now - c.msgWin > 1000) { c.msgWin = now; c.msgCount = 0; }
-      if (++c.msgCount > MSG_RATE) {
-        // a REQUEST over the cap is answered, never dropped silently: its client awaits a reply by id, and silence left it
-        // waiting out its own timeout while the request never reached the authority (client-check HT, 10-17: a burst of
-        // label sets, each with its history re-read, lost a set and then hung 15 s). Bounded: past twice the cap even a
-        // request is dropped (a flood must not buy itself a stream of replies)
-        if (msg?.type === "request" && c.msgCount <= 2 * MSG_RATE) { try { ws.send(JSON.stringify({ type: "reply", id: msg.id ?? null, verb: String(msg.verb ?? "").slice(0, 32), ok: false,
-          reply: { ok: false, refused: { code: "rate", reason: `more than ${MSG_RATE} messages in a second from this connection: this request wasn't run`, fix: "slow down and send it again" } } })); } catch { /* gone */ } }
+      const verdict = admitMessage(c.msgs, now, MSG_RATE);
+      if (verdict !== "run") {
+        if (msg?.type === "request" && verdict === "refuse") { try { ws.send(JSON.stringify({ type: "reply", id: msg.id ?? null, verb: String(msg.verb ?? "").slice(0, 32), ok: false,
+          reply: { ok: false, refused: { code: "rate", reason: `more than ${MSG_RATE} messages a second from this connection: this request wasn't run`, fix: "slow down and send it again" } } })); } catch { /* gone */ } }
         return;
       }
 

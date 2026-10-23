@@ -76,7 +76,7 @@ export type Client = {
   replica?: boolean;    // the client said it folds the log stream itself (every current client does; one that doesn't is refused at join)
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
-  msgWin: number; msgCount: number;   // all messages, per second
+  msgs: import("./msgrate.ts").MsgBucket;   // all messages: a token bucket (server/msgrate.ts)
   /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
   /** the log head when this connection arrived in its world (server.ts join, beside the snapshot's cut). Speech is

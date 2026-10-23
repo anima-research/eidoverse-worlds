@@ -126,7 +126,8 @@ export const FOLD_EVERY = Number(process.env.FOLD_EVERY ?? 150);
  *  arranging furniture must not. Configurable because a build session and a
  *  show night want different answers. */
 export const VERB_RATE = Number(process.env.VERB_RATE ?? 12);
-/** All messages per client per second — 15Hz of pose plus verbs plus slack. */
+/** All messages per client per second — 15Hz of pose plus verbs plus slack; a token bucket with two seconds of burst
+ *  (server/msgrate.ts), so a backlog the server itself caused isn't charged to the client. */
 export const MSG_RATE = Number(process.env.MSG_RATE ?? 60);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle
