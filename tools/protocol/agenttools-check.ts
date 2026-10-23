@@ -353,7 +353,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const t0 = rid.redial?.tries;
   rid.ws.close(1000, "a drop");
   await tryUntil("Rid knows it was dropped", () => !rid.joined, { ms: 200, step: 10 });
-  await sleep(30);
+  // the try is counted when the close is handled, which a loaded runner takes longer than a fixed 30 ms to get to (CI 10-23:
+  // tries 0). Watch for it instead; the redial waits ≥ a connect, so a 5 ms poll sees 1 before the rejoin resets it
+  await tryUntil("the drop counted one try", () => rid.redial?.tries === 1, { ms: 1500, step: 5 });
   ok(t0 === 0 && rid.redial?.tries === 1, "AT8 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
   await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
   ok(rid.joined && rid.redial?.tries === 0, "AT8 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
