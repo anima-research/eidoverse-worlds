@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import { chromium } from "playwright";
 import { ENGINE } from "./common.ts";
-import { findChrome, platformArgs } from "./chrome.ts";
+import { launchChromium } from "./chrome.ts";
 import { sha256 } from "../../shared/protocol/hash.js";
 
 // the cottage's pinned digest (replay-check.ts says why it moved from the lab's 22a27ab0… in the names pass, and how it
@@ -65,7 +65,7 @@ const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
 } });
 let browser: any = null, page: any, fails: string[] = [], errors: string[] = [];
 try {
-  browser = await chromium.launch({ executablePath: findChrome() ?? undefined, args: ["--disable-gpu", ...platformArgs()] });
+  browser = await launchChromium(chromium, { args: ["--disable-gpu"] });
   page = await browser.newPage();
   page.on("pageerror", (e: any) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m: any) => { if (m.type() === "error") errors.push(`console.error ${m.text()}`); });

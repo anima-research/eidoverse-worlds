@@ -10,6 +10,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import net from "node:net";
+import { spawn } from "node:child_process";
+import { until } from "./wait.ts";
+import { killChild } from "./procgroup.ts";
 
 const SYSTEM: Record<string, string[]> = {
   win32: [
@@ -85,4 +89,27 @@ export function chromeArgs({ headed = false, port, profile, extra = [] }: { head
     "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking", "--disable-sync", "--mute-audio",
     ...extra, ...platformArgs(platform),
   ];
+}
+
+/** playwright's chromium.launch, everywhere it works. Under Bun on Windows it never does: playwright talks to the browser over
+ *  extra pipe descriptors (--remote-debugging-pipe), which Bun's Windows spawn doesn't pass, so every launch hangs until its
+ *  timeout (10-22, Burrow: the same script launched in 112 ms under Node and timed out under Bun, with Chromium 151 and the
+ *  headless shell alike; CI's Windows browser-check had never passed). There we start the browser ourselves on a debugging
+ *  port, the way client-check does, and connect over CDP. close() also ends the process and removes its profile. */
+export async function launchChromium(chromium: any, { args = [], executablePath }: { args?: string[]; executablePath?: string } = {}): Promise<any> {
+  const exe = executablePath ?? findChrome() ?? undefined;
+  if (!(process.platform === "win32" && typeof (globalThis as any).Bun !== "undefined")) return chromium.launch({ executablePath: exe, args: [...args, ...platformArgs()] });
+  if (!exe) throw new Error("no Chromium to launch: set CHROME, or install playwright's (bun node_modules/playwright/cli.js install chromium)");
+  const port = await new Promise<number>((res, rej) => { const s = net.createServer(); s.on("error", rej); s.listen(0, "127.0.0.1", () => { const p = (s.address() as net.AddressInfo).port; s.close(() => res(p)); }); });
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "pw-cdp-"));
+  const child = spawn(exe, chromeArgs({ port, profile, extra: args }), { stdio: "ignore", windowsHide: true });
+  const gone = () => { killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* still locked: the scratch dir goes with the suite */ } };
+  try {
+    const ws = await until("Chromium's debugging port answers", async () => {
+      try { const r = await fetch(`http://127.0.0.1:${port}/json/version`); return r.ok ? (await r.json()).webSocketDebuggerUrl : null; } catch { return null; }
+    }, { ms: 60_000 });
+    const browser = await chromium.connectOverCDP(ws), close = browser.close.bind(browser);
+    browser.close = async () => { try { await close(); } catch { /* the process goes next anyway */ } gone(); };
+    return browser;
+  } catch (e) { gone(); throw e; }
 }
