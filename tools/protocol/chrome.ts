@@ -80,8 +80,11 @@ export function platformArgs(platform: NodeJS.Platform = process.platform): stri
     // Windows: a GPU-less host (GitHub's windows-latest) has no WebGPU adapter, and current Chrome no longer falls back to
     // SwiftShader for WebGL on its own: getContext() returned null and the page threw in three's WebGLExtensions at boot,
     // "the page never booted" in every browser suite (10-23, fork run 39998895713, browser.events.jsonl). This allows the
-    // software fallback; a host with a GPU keeps its GPU
-    ...(platform === "win32" ? ["--enable-unsafe-swiftshader"] : []),
+    // software fallback; a host with a GPU keeps its GPU. --use-angle=d3d11 (Chrome's default backend on a Windows GPU) makes
+    // the fallback fast enough: client 205/0 in 60-68 s; without it, or with ANGLE's swiftshader backend, the suite ran past
+    // its 300 s. Both flags are needed: d3d11 alone never booted. --disable-gpu-vsync changed nothing here (62 vs 60 s).
+    // Fork probe runs 40016549160, 40017129818 and the 4-way matrix before them (10-23)
+    ...(platform === "win32" ? ["--enable-unsafe-swiftshader", "--use-angle=d3d11"] : []),
     ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),
   ];
 }
