@@ -1230,12 +1230,20 @@ function histLoad(id, more = false) {
   const gen = more ? hist.gen : ++hist.gen;
   hist.loading = true;
   return sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
-    if (!r?.ok || hist.id !== id || (!more && gen !== hist.gen)) return;
+    if (hist.id !== id || (!more && gen !== hist.gen)) return;   // a newer read owns the panel now
+    // refused or timed out: say so, and ask again in a while (it said "reading the log…" forever: HT7). Not at once: a refusal
+    // for `rate` would only be met by more reads.
+    if (!r?.ok) { histFailed(id, r?.refused?.reason ?? 'no answer'); return; }
+    hist.failed = null;
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
     if (!id) { hist.entries = more ? [...hist.entries, ...rows] : rows; hist.next = r.next ?? null; }
     else ({ entries: hist.entries, next: hist.next, paged: hist.paged } = mergeHistory(hist, rows, r.next ?? null, more));
     hist.loading = false; repaintAll();
-  }).catch(() => { hist.loading = false; });
+  }).catch((e) => histFailed(id, String(e?.message ?? e)));
+}
+function histFailed(id, why) {
+  hist.loading = false; hist.failed = why; repaintAll();
+  setTimeout(() => { if (hist.failed && hist.id === id) { hist.key = null; repaintAll(); } }, 2000);
 }
 function historyFields() {
   const id = worldSel() ? null : sceneSelected() ?? null;
@@ -1247,7 +1255,7 @@ function historyFields() {
   const people = historyView(hist.entries, Edits.nameOf, { mode: 'top' }).people ?? [];
   f.push({ t: 'enum', k: 'mode', label: 'show', value: hist.mode, options: HISTORY_MODES.map(([v, label]) => ({ v, label })), hint: 'the same log, seen four ways: who made this what it is (the Credits) is "biggest contributors"' });
   if (hist.mode === 'person') f.push({ t: 'enum', k: 'who', label: 'person', value: hist.who ?? '', options: [{ v: '', label: '(pick someone)' }, ...people.map((p) => ({ v: p.by, label: `${p.who} (${p.deeds})` }))] });
-  if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : 'nothing yet' });
+  if (!hist.entries.length) f.push({ t: 'info', label: '', value: hist.loading ? 'reading the log…' : hist.failed ? `couldn't read the log: ${hist.failed}` : 'nothing yet' });
   const row = (e) => {
     // what changed, not just where (R 10-10 23:55): the authority's diff per component ('text: width 5.08 → 3.91')
     const diff = e.diff && !e.changed?.includes('(created)') ? Object.entries(e.diff).map(([c, d]) => `${c}: ${d}`).join(' · ') : '';   // a creation says so; its every field isn't news

@@ -29,11 +29,11 @@ const tick = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Poll until `probe` is truthy; resolve with its value. A probe that throws counts as "not yet" (its error is kept for
  *  the message). Polls quickly at first, then backs off to `step` ms. */
 export async function until<T>(what: string, probe: () => T | Promise<T>, opts: { ms?: number; step?: number } = {}): Promise<NonNullable<T>> {
-  const ms = Math.round((opts.ms ?? 10_000) * WAIT_SCALE), step = opts.step ?? 100, end = Date.now() + ms;
+  const ms = Math.round((opts.ms ?? 10_000) * WAIT_SCALE), step = opts.step ?? 100, end = performance.now() + ms;   // monotonic: WSL's wall clock steps ~2 s every ~30 s (10-22)
   let last: unknown, gap = Math.min(10, step);
   for (;;) {
     try { const v = await probe(); if (v) return v as NonNullable<T>; last = v; } catch (e) { last = e; }
-    if (Date.now() >= end) throw new WaitTimeout(what, ms, last);
+    if (performance.now() >= end) throw new WaitTimeout(what, ms, last);
     await tick(gap); gap = Math.min(step, gap * 2);
   }
 }

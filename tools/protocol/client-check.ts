@@ -723,6 +723,24 @@ try {
   await waitFor(`(() => { const b = [...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((x) => /Older/.test(x.textContent)); if (!b) return false; b.click(); return true; })()`, 5000);
   if (process.env.SHOT_DIR) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/history-tab.png`, Buffer.from(r.data, 'base64')); }
   check("HT6 …Older… reads further back and finds it", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /set.*motion/.test(x.textContent))`, 5000), (await hrows() as string[]).length);
+  // HT7: a history read the authority refuses (or that times out) said "reading the log…" forever, and nothing asked again
+  // (client-b2 HIS1, 10-22). The page answers this thing's first history read with a refusal itself; the panel must say so,
+  // and the next change must read again.
+  { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: [3, 0, 3] }, label: 'ht7 stone' } });`);
+    const hid = made?.refs?.[0]?.id; if (!hid) throw new Error(`HT7 setup: the stone wasn't created: ${JSON.stringify(made)}`);
+    await waitFor(`import('/lib/world.js').then((m) => m.entities.has(${JSON.stringify(hid)}))`);
+    await page(`const n = await import('/lib/net.js'); const ws = n.net.ws, send = ws.send.bind(ws); window.__ht7 = 0; window.__ht7block = true;
+      ws.send = (d) => { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'history' && m.args?.id === ${JSON.stringify(hid)} && window.__ht7block) { window.__ht7++;
+        setTimeout(() => ws.onmessage({ data: JSON.stringify({ type: 'reply', id: m.id, reply: { ok: false, refused: { code: 'rate', reason: 'more than 60 messages in a second' } } }) }), 50); return; }
+        return send(d); }; return true;`);
+    await page(`(await import('/lib/scenegraph.js')).sceneSelect(${JSON.stringify(hid)}); return true;`);
+    if (!(await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === ${JSON.stringify(hid)})`, 3000))) throw new Error("HT7 setup: the stone isn't selected");
+    const said = await waitFor(`window.__ht7 >= 1 && /couldn.t read the log/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 4000);
+    check("HT7 a refused history read says so (not 'reading the log…' forever)", said, await evalJson(`({ refused: window.__ht7, text: (document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200) })`));
+    await page(`window.__ht7block = false; return true;`);
+    check("HT7b …and once the authority answers again, the panel reads it by itself (no change needed)", await waitFor(`/created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000),
+      await evalJson(`(document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200)`));
+  }
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
