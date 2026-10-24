@@ -112,8 +112,6 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?:
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
-const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
-const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
 export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   ...UPGRADE_MESSAGES,   // world-upgrade-review, world-upgrade: the operator opens a world saved in an older format (server/upgrade.ts)
   "request": ({ c, ws, expel, sweep }, msg) => {
@@ -235,15 +233,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.log.roleOf(actorOf(c)); if (!isOwner(role)) return err(`copying a world needs its owner — you are a ${role} here`);
-    // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
-    // most FORK_PER_HOUR per person, so no owner can stall every world on the authority by forking in a loop
-    const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
-    if (now - last < FORK_GAP_MS) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — try again in a minute`);
-    if (mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (at most ${FORK_PER_HOUR})`);
+    // a fork copies synchronously on the shared thread; no engine quota (server policy, R 10-24)
     const to = String(msg.to ?? "").slice(0, 64);
     const r = forkWorld(w.log, to, actorOf(c));
     if (!r.ok) return err(r.err);
-    forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },

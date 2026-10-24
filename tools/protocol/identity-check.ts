@@ -21,7 +21,7 @@
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
 //   RS  roles and moderation at the server (research roles S4): your-rights from the authority, voice-moderate as the authority's
 //       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
-//       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, fork is rate-limited;
+//       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, forks have no quota;
 //       RS8 whisper is removed (R 10-18: refused `removed`, delivered to nobody); RS9 ghost history/presence, the ban list,
 //       a guest's kick by address; RS10 speech is arrival-only: no say before you arrived reaches a non-admin by either
 //       history route or the join, a moderator included; an owner who joins later reads the master log
@@ -304,14 +304,14 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     ok(!js.snapshot && /isn't open to you/.test(js.errors.join(" ")) && !!jfz.snapshot && !jfull.snapshot && /full/.test(jfull.errors.join(" ")),
       "RS6 access: 'listed' refuses someone with no role here; past max a moderator still gets in, a stranger doesn't", [js.errors, !!jfz.snapshot, jfull.errors]);
     for (const x of [st, fz, full, rejoin]) x.close(); }
-  // RS7 (review 10-06): erasing is the most senior owner's; a fork can't run in a loop
+  // RS7 (review 10-06): erasing is the most senior owner's; two copies back to back both happen (no quota)
   { await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } }); await sleep(200);
     const k = wren.msgs.length; wren.raw({ type: "world-reset", name: "heath" }); await sleep(500);
     const junior = wren.msgs.slice(k).find((m) => m.type === "error" || m.type === "world-reset");
     const k2 = own.msgs.length; own.raw({ type: "world-fork", to: "heath-copy" }); await sleep(1500); own.raw({ type: "world-fork", to: "heath-copy2" }); await sleep(1500);
     const forks = own.msgs.slice(k2).filter((m) => m.type === "world-forked" || m.type === "error").map((m) => m.type === "error" ? m.error : `forked ${m.to}`);
-    ok(junior?.type === "error" && /most senior/.test(junior.error) && forks[0] === "forked heath-copy" && /copied .* ago/.test(forks[1] ?? ""),
-      "RS7 a junior owner can't erase the world (the most senior owner's act); a second copy within a minute is refused", [junior, forks]); }
+    ok(junior?.type === "error" && /most senior/.test(junior.error) && forks[0] === "forked heath-copy" && forks[1] === "forked heath-copy2",
+      "RS7 a junior owner can't erase the world (the most senior owner's act); a second copy straight after also happens", [junior, forks]); }
   // RS8: whisper was removed (R 10-18): the ws message is refused in the registry's words (`removed`) and reaches nobody,
   // held for nobody; the authority's request of that name is refused `removed` too, never as an unknown verb
   { const vy = await sock(S4.port); const jv = await vy.join("heath", "Vole", { agentToken: mint({ kind: "agent", name: "Vole", sub: "agent:vole@home.test" }) });
