@@ -7,7 +7,10 @@
 // lite page with ?renderer used to send both flags. A roaming one was sent into a world and
 // answered every snapshot there "this client has no renderer", and because the world then had a
 // renderer, no working one was ever sent (2026-10-24). net.js sendJoin now claims the role only when a
-// snapshot renderer is wired (main.js wires net_snap.js; lite.js wires none).
+// snapshot renderer is wired (main.js wires net_snap.js; lite.js wires none). A page that claims neither
+// flag still asks to be invisible (spectate). A door key admits it as a spectator; the renderers'
+// credential admits renderers only and refuses it (4003, pinned in tools/access-test.ts 11b). Either way,
+// the broker never routes a snapshot to it.
 //
 // Real net.js + base.js, fresh process per page load, as tools/name-snowball-test.ts does it; only the
 // DOM-touching UI modules are stubbed.
@@ -69,7 +72,7 @@ for (const wire of ["none", "other-hooks"] as const) {
   const all = r.sent;
   check(`${wire}: claims no renderer on any of 3 joins (reconnects included)`, all.length === 3 && all.every((j) => j.renderer === false), JSON.stringify(all));
   check(`${wire}: claims no roam, so it is never sent to another world`, all.every((j) => !("roam" in j)), JSON.stringify(all));
-  check(`${wire}: still joins invisible, under the name it was given`, all.every((j) => j.spectate === true && j.id === "renderer-helen"), JSON.stringify(all));
+  check(`${wire}: still asks to be invisible (spectate), under the name it was given`, all.every((j) => j.spectate === true && j.id === "renderer-helen"), JSON.stringify(all));
   check(`${wire}: says so once on the console, not once per join`,
     r.warnings.length === 1 && /no renderer/.test(r.warnings[0]), JSON.stringify(r.warnings));
 }
@@ -88,9 +91,15 @@ console.log("the entry points wire what this test assumes");
 {
   const lite = readFileSync(join(ROOT, "client/lite.js"), "utf8");
   const main = readFileSync(join(ROOT, "client/main.js"), "utf8");
-  const wireCall = (src: string) => src.slice(src.indexOf("wireNet({"), src.indexOf("});", src.indexOf("wireNet({")));
-  check("lite.js wires net.js with no snapshot renderer", lite.includes("wireNet({") && !/\bsnapshot\b/.test(wireCall(lite).replace(/\/\/.*$/gm, "")));
-  check("main.js wires net_snap.js's snapshot", /\bsnapshot,/.test(wireCall(main)));
+  const code = (src: string) => src.replace(/\/\/.*$/gm, "");   // comments mention these names too
+  const calls = (src: string) => [...code(src).matchAll(/wireNet\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
+  check("lite.js wires net.js with no snapshot renderer", calls(lite).length > 0 && calls(lite).every((c) => !/\bsnapshot\b/.test(c)), JSON.stringify(calls(lite).length));
+  // sendJoin reads the wiring when the join is sent, and a renderer starts at once: the snapshot must be wired
+  // before main.js first calls start() or connect(), not merely somewhere in the module
+  const m = code(main);
+  const wiredAt = m.search(/wireNet\(\{\s*snapshot\s*\}\)/);
+  const firstStart = Math.min(...[m.search(/\bstart\(\);/), m.search(/\bconnect\(\);/)].filter((i) => i >= 0));
+  check("main.js wires net_snap.js's snapshot before it first calls start() or connect()", wiredAt >= 0 && wiredAt < firstStart, `wired at ${wiredAt}, first start/connect at ${firstStart}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

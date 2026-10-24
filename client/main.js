@@ -224,6 +224,11 @@ initDebug({
   // drop again from where you stand, so a shape can be reproduced back to back
   reLimp: () => { if (isDowned()) getUp(); goLimp(); },
 });
+// The snapshot renderer is wired BEFORE start() opens the socket. sendJoin claims the
+// renderer role only when one is wired (net.js), and a renderer starts at once (start()
+// below, isViewer). Wiring it with the other hooks further down only worked because
+// connect() awaits fetchIdentity() before its first join; nothing enforced it.
+wireNet({ snapshot });   // net_snap.js — the one part of the protocol that needs a renderer
 // Verified identity resolves BEFORE anything reads CONFIG.name — otherwise the
 // door panel and the local nameplate greet a stale localStorage name while the
 // server (correctly) calls this person by their Discord name.
@@ -392,7 +397,7 @@ wireNet({
   myReachBag,
   toast,   // remotes.js — real bodies, real poses
   forgetBytes,    // the asset ledger, which only a client that loads assets has
-  snapshot,       // net_snap.js — the one part of the protocol that needs a renderer
+  // (snapshot is wired above, before start(): sendJoin reads it)
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),

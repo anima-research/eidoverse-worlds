@@ -148,7 +148,7 @@ check('a renderer whose last boot AND its retry died is still full (the watchdog
 check('a renderer outranks an explicit ?lite=1', desk('renderer&lite=1').lite === false);
 check('a renderer outranks a saved lite preference', desk('renderer', { stored: '1' }).lite === false);
 check('a renderer is full even where a phone would start lite', d('renderer').lite === false);
-check('a roaming renderer (?renderer&roam) is full', desk('renderer&roam&lite=0').why === 'renderer');
+check('a roaming renderer (?renderer&roam) with a tripped flag and a spent retry is full', desk('renderer&roam', { lastBootDied: true, retried: true }).lite === false && desk('renderer&roam', { lastBootDied: true, retried: true }).why === 'renderer');
 check('?spectate is not a renderer: a died boot still counts for it', desk('spectate', { lastBootDied: true, retried: true }).lite === true);
 /** The page itself at a given URL: returns the decision and what it left in storage. */
 const bootAt = (search, nav, seed = []) => {
