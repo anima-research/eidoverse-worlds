@@ -4,11 +4,17 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { bodyOf } from "../shared/components.js";
+import { CLASSES, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
+import { kindOf } from "../shared/protocol/kind.js";
+import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
+import { grabOf, describeGrab } from "../shared/grab.js";
+import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
 import { foldOffset } from "../shared/clockoffset.js";
-import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams, waterStance, SWIM_SPEED, SWIM_RUN } from "../shared/terrainshape.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
 import { floatStep, footprintSurface } from "../shared/buoyancy.js";
@@ -18,10 +24,11 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld, lineOfSight, withoutColliders } from "./physics.ts";
 import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "./navgrid.ts";
-import { placesOf, inRegion, names, destinationOf, toLocal, type Place, type Destination, type PlaceHolder } from "./places.ts";
+import { placesOf, inRegion, names, destinationOf, toLocal, frameVolume, type Place, type Destination, type PlaceHolder } from "./places.ts";
 import { collisionTriangles } from "../server/geometry.ts";
+import { colliderOf } from "../shared/components.js";
 // FLIGHT. The same deterministic integrator the browser bench and the capture
 // path run -- one function, every runtime, per the spec's Q2 ruling.
 import {
@@ -30,9 +37,12 @@ import {
   foldDown as flightFold, unfold as flightUnfold,
   bestGlide, glideRange,
 } from "../shared/flight.js";
+import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
-import { wingFoldPresence } from "../shared/wingpresence.js";
+import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
+import { onceAnimOf } from "../shared/onceanim.js";
+import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
@@ -54,8 +64,8 @@ const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || pha
 const downRefusal = (f: { phase: string; recoverAt?: number | null }) => f.phase === "LEAF"
   ? f.recoverAt != null
     ? "you're falling limp (leaf) with your recovery under way — you fly again once it's done, unless you reach the ground first"
-    : "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
-  : `you're down on the ground (${f.phase.toLowerCase()}) — take_off to fly again`;
+    : "you're falling limp (leaf) — once you're down on the ground, move {mode: \"fly\"} launches you again"
+  : `you're down on the ground (${f.phase.toLowerCase()}) — move {mode: "fly"} to fly again`;
 /** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
  *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
  *  8 s beside for what the leg's rate leaves out, such as a climb's lift easing in. */
@@ -74,46 +84,78 @@ import { shown } from "../shared/shown.js";
 const unknownLimb = (raw: unknown, done: string) =>
   `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
+import { lyingFrame } from "../shared/rot.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
-// The snapshot re-synthesizer, shared with the browser — this agent's
-// deliberate omissions ride as flags (see stateToEntries below).
-import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
-import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
-import { radialForce, FORCE_MIN } from "../shared/force.js";
+// the world: this process folds the authority's own stream and reads the VIEW of that fold, like the browser
+import { makeReplica } from "../shared/protocol/replica.js";
+import { PURGED } from "../shared/protocol/fold.js";
+import { diffView } from "../shared/protocol/viewdiff.js";
+import { emptyView, idOut } from "../shared/protocol/view.js";
+import { hear } from "../shared/chatwindow.js";
+import * as OP from "../shared/protocol/requests.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
-import { describeParticles, emitterTransition, transitionLine, isParticlesKey, emittersIn } from "../shared/particles.js";
-import { describePicture } from "../shared/picture.js";
+import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { saysOf } from "../shared/says.js";
+import { readOut, openAction } from "../shared/a11y.js";
+import { quoted } from "../shared/text.js";
+import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
-import { describeSound } from "../shared/sound.js";
 import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
-import { effectiveWorldTransform, type Effective } from "./effective.ts";
+import { effectiveWorldTransform, partHint, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
+import { redialer, REDIAL } from "../shared/redial.js";
+import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
+import { SHOVE } from "../shared/protocol/physconst.js";
+import { worldPose } from "../shared/protocol/simlayer.js";
+import { colliderFor } from "../client/lib/bodyscale.js";
 
+import { recordComponents } from "../shared/protocol/view.js";
+import { modelWord } from "../shared/eido.js";
+import { handleOf, resolveThing } from "../shared/thingref.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
-const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.01;
-const STATURE_FALLBACK = 1.7;   // metres: an ordinary adult, while a body's own height is being read
-/** Collision and planner line steps share one browser-frame-sized distance. */
+/** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
+const TICK_MS = 100;
+/** E1: a walk asks the authority for the next stretch (PERMIT_STEP m; its track takes TRACK.cap m at most at once) when the
+ *  body is within PERMIT_AHEAD m of the end of what it has accepted, so a run never waits on a local server. */
+const PERMIT_STEP = TRACK.cap / 2, PERMIT_AHEAD = 1;
+/** A loose thing in the way of a walk (the authority's "solid" naming a shoveable blocker): the walk goes up against it,
+ *  the body's contact shoves it, and the walk asks again once it has moved. At most SHOVE_TRIES per walk; a body that
+ *  reaches it without shoving it (or is refused) stops as any refused walk does after SHOVE_WAIT_MS. */
+const SHOVE_TRIES = 5, SHOVE_WAIT_MS = 2500, SHOVE_SETTLE_MS = 800;
+type Blocker = { id: string; ref: any; phase: "approach" | "pushed"; until: number };
+type WalkGate = { mode: "sync" | "tracked" | "open"; permit: number[] | null; busy: boolean; blocker?: Blocker | null; shoves?: number; slow?: number; waitUntil?: number; hold?: number; retrackAt?: number };
+const STATURE_FALLBACK = MOVER.body.height;   // an ordinary adult (the mover's body), while a body's own height is being read (main #242)
+/** Longest horizontal move between two collision checks. A run covers 0.4m in
+ *  one 100ms tick; checked only at its end, that leaps a 0.2m wall the walking
+ *  capsule (r 0.32) never touched. The planner steps lines at the same scale
+ *  (navgrid.ts NAV_SUBSTEP, which says why it is a browser frame's worth). */
 const COLLIDE_SUBSTEP = NAV_SUBSTEP;
-/** A walk making less than this fraction of intended progress is stalled. */
+/** A walk that has made less than this fraction of its intended progress for
+ *  STALL_TICKS consecutive ticks is held by something solid: it ends, saying
+ *  so, instead of pressing against the wall until the 90s timeout. */
 const STALL_PROGRESS = 0.2, STALL_TICKS = 15;
 const GRAVITY = 16;
-const RAGDOLL_ROOT_DROP = 0.7;
+/** How far below its supporting surface a settled ragdoll's root lies. */
+const RAGDOLL_ROOT_DROP = 0.7;   // client/lib/controller.js: vy -= 16 * dt
 /** Why fold_wings can't judge a body whose bones haven't been read. */
 const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded, or couldn't be read), so whether it has wings can't be checked";
+/** shared/flight.js's refusals (main #245) name the fix as an act — "unfold them first", "land first" — and the browser
+ *  has those acts by those names; here they are other tools' presets, so the reply names the call that does it. */
+const flightFixInOurTools = (reason: string) => String(reason)
+  .replace(/unfold them first/, 'open them first (anim {stop: "wings-folded"})')
+  .replace(/land first/, 'land first (act {verb: "land", args: {to}})');
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
  *  fire out" still arrives while you are looking at it. */
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
-/** One narration window per (entity, emitter component). */
-const emitterSlot = (id: string, key: string) => (key === "particles" ? id : `${id}\u0000${key}`);
 
 type Vec2 = { x: number; z: number };
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
@@ -133,6 +175,15 @@ const MESH_CACHE_BYTES = 256 * 1024 * 1024, MESH_FETCH_MS = 8000;
 /** How long a walk waits for placed geometry still loading before it is
  *  refused (see walkTo). Covers a fetch's own timeout plus some queueing. */
 const WALK_READY_MS = 15_000;
+/** The world entity (places that belong to no thing live on it), and how far and how many places look lists (owner
+ *  22:40/22:43: only what you can see, nearest first; move {to: "?"} lists every one). */
+const WORLD_ENTITY = "@world", PLACE_SIGHT_M = 30, PLACE_LOOK_MAX = 12, PLACE_LIST_MAX = 200;
+/** A thing with no entrance is walked up to: stopped this far short of its origin (its footprint unknown) / out from its
+ *  footprint's nearest point (metres; the body's own, not the thing's). */
+const THING_STOP = 0.8, THING_STANDOFF = 0.5;
+/** This body's walking capsule: an agent's body is its authored size (no agent sets a scale: occupantScale answers 1 for
+ *  it), so its walk resolves with colliderFor(1) (mcpl/physics.ts WALKING), and its shoves and stalls touch with the same. */
+const BODY_CAP = colliderFor(1);
 const GEOMETRY_LOADING = "things placed nearby are still loading their shape, so a walk now could pass through them — try again in a moment";
 const meshBytes = new Map<string, number>();
 /** Fetch-and-decode jobs at once (process-wide): replay fires one per spawn,
@@ -173,92 +224,20 @@ function trimMeshCache(key: string, m: CollisionMesh) {
   }
 }
 type Pose = PublicPose;
-type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
+type Kind = ReturnType<typeof kindOf>;
+type Entity = { id: string; model: string; kind: Kind; pos: number[]; yaw: number; actor: string; scale?: number;
+  /** a stretched thing's per-axis scale, and a tilted one's whole rotation (the fold keeps both beside scale and yaw) */
+  scale3?: number[]; q?: number[];
   /** the spawn's collider override ("exact" | "box"); the browser's decide() reads it, and so does ours */
   collide?: string;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
-type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; observedAt?: number | null; bodyGeneration?: number };
+type Person = { id: string; avatar: string; pose: Pose | null; declares?: string | null; observedAt?: number | null; bodyGeneration?: number };
 
-/** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
- *  state; say/use/force shape nothing). */
-const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount", "caption"]);   // caption folds into the screen's comp bag (shared/captions.js)
-
-/** Presence is a live, lossy plane: a just-joining browser can briefly send a
- * pose shell whose coordinates are null/non-finite before its controller has
- * a real transform. Treat that as "position unknown", never as a reason for
- * the entire text-tier sense to throw. */
-function posePosition(pose: Pose | null | undefined): [number, number, number] | null {
-  const p = pose?.p;
-  if (!Array.isArray(p) || p.length < 3) return null;
-  const [x, y, z] = p;
-  return typeof x === "number" && Number.isFinite(x)
-    && typeof y === "number" && Number.isFinite(y)
-    && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
-}
-/** A point in a body's root frame → world, matching THREE's rotation.y=yaw
- *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
- *  browser's localToWorld applies to the same descriptor. */
-function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
-  const c = Math.cos(yaw ?? 0), s = Math.sin(yaw ?? 0);
-  return [
-    p[0] + local[0] * c + local[2] * s,
-    (p[1] ?? 0) + local[1],
-    p[2] - local[0] * s + local[2] * c,
-  ];
-}
-type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
-
-/** The snapshot re-synthesizer lives in shared/fold.js now — one
- *  implementation, every species, with this agent's deliberate omissions
- *  encoded as EXPLICIT flags rather than a hand-mirrored copy that "must
- *  stay in step" (the drift that crashed look() for every agent in the
- *  world is the incident that comment carried): roles/grants and behaviors
- *  have no local reader here, and body mounts read as "who sits where",
- *  attributed to the sitter. Spawn `collide` is KEPT: this body collides
- *  against the same fitted colliders a browser does, and the override is
- *  half of how those are chosen. */
-function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
-  return sharedStateToEntries(state, {
-    skipChatFromSeq, roles: false, behaviors: false, collide: true,
-    bodyMountRel: "seat", bodyMountActor: "rider",
-  });
-}
-
-/** How much of a `/geom` top-surface band is actually SURFACE.
- *
- *  A Surface carries the real up-facing `area` and, separately, the x/z
- *  rectangle that BOUNDS the band. Those are very different claims, and this
- *  is the first consumer to have treated the rectangle as solid extent. A
- *  palm's fronds bound a wide rectangle around almost nothing; a rubble pile
- *  spreads 1.8m² of jagged faces across 404m² of bounding box. Registering
- *  the rectangle invents a floor in the canopy and rests bodies on air. */
-const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
-  const rect = (t.x[1] - t.x[0]) * (t.z[1] - t.z[0]);
-  return rect > 1e-6 ? t.area / rect : 0;
-};
-
-/** Minimum fill before a band may be believed as a floor.
- *
- *  From a survey of the shipped library (59 libs, 342 surfaces, 57 that this
- *  code would otherwise register), NOT from taste. The two populations
- *  separate cleanly and the gap is empty: everything sparse lands at or below
- *  0.361 (rubble piles 0.004–0.036 — the worst is 226× overclaim, 1.8m² of
- *  surface in a 404m² rectangle; palm canopy 0.101; excavators and rig
- *  superstructure 0.019–0.31), while every real deck lands at or above 0.532
- *  (perimeter walls 0.53–0.57, tank hull 0.73, wall pillar 0.76, watchtower
- *  decks 0.76 and 0.86, rig top deck 0.83, wall gate 1.00). No surveyed
- *  surface falls between. 0.45 sits in the middle of that empty band, so
- *  library drift in either direction has to travel before it changes an
- *  answer. This is the one line to move if the split needs revisiting.
- *
- *  The cost is deliberate: a real-but-open deck (a catwalk, a grating) is
- *  abstained on and a body falls to terrain instead. That is the honest
- *  pre-#17 answer. The alternative is inventing geometry, and a body resting
- *  in a palm canopy is exactly the bug this PR exists to end. */
-const DECK_FILL = 0.45;
-
+// ---- walking through buildings (#218, Sage; ported onto the one walker 10-15) ----
+/** What a walk's feet stand on: the terrain (followed live, tick by tick), or one identified floor of one structure at a
+ *  fixed height (the storey-standing work, #200, answers this; on this branch walkSupport answers terrain only). */
 type WalkSupport = { kind: "terrain"; height: number } |
   { kind: "floor"; height: number; entity: string; level: number };
 
@@ -273,12 +252,12 @@ type WalkStructure = {
   clear(a: Vec2, b: Vec2): boolean;
 };
 
-/** Why walkTo refused a call for its arguments: the walk_to tool's own words. */
-export const WALK_ARGS_REASON = "walk_to needs finite x/z and tolerance between 0 and 0.4 metres";
+/** Why walkTo refused a call for its arguments: the move tool's own words (mcpl/tools.ts says the same). */
+export const WALK_ARGS_REASON = "move needs a finite destination and a tolerance between 0 and 0.4 metres";
 
 /** Component revisions a walk has skipped as unplannable, so the operator's
  *  log names each once (walkStructures). */
-const UNPLANNABLE_LOGGED = new WeakSet<object>();
+const UNPLANNABLE_LOGGED = new Map<string, string>();   // "<agent>\0<id>" → the revision's JSON last logged
 
 /** Whether a structure's level has floor at a point in the structure's own
  *  frame: a tile under the point and, on a cell a diagonal cuts, a floor on
@@ -333,6 +312,64 @@ function stepSides(ok: (Vec2 | null)[]): Vec2[] {
   return sides;
 }
 
+/** Presence is a live, lossy plane: a just-joining browser can briefly send a
+ * pose shell whose coordinates are null/non-finite before its controller has
+ * a real transform. Treat that as "position unknown", never as a reason for
+ * the entire text-tier sense to throw. */
+function posePosition(pose: Pose | null | undefined): [number, number, number] | null {
+  const p = pose?.p;
+  if (!Array.isArray(p) || p.length < 3) return null;
+  const [x, y, z] = p;
+  return typeof x === "number" && Number.isFinite(x)
+    && typeof y === "number" && Number.isFinite(y)
+    && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
+}
+/** A point in a body's root frame → world, matching THREE's rotation.y=yaw
+ *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
+ *  browser's localToWorld applies to the same descriptor. */
+function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
+  const c = Math.cos(yaw ?? 0), s = Math.sin(yaw ?? 0);
+  return [
+    p[0] + local[0] * c + local[2] * s,
+    (p[1] ?? 0) + local[1],
+    p[2] - local[0] * s + local[2] * c,
+  ];
+}
+type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
+
+/** How much of a `/geom` top-surface band is actually SURFACE.
+ *
+ *  A Surface carries the real up-facing `area` and, separately, the x/z
+ *  rectangle that BOUNDS the band. Those are very different claims, and this
+ *  is the first consumer to have treated the rectangle as solid extent. A
+ *  palm's fronds bound a wide rectangle around almost nothing; a rubble pile
+ *  spreads 1.8m² of jagged faces across 404m² of bounding box. Registering
+ *  the rectangle invents a floor in the canopy and rests bodies on air. */
+const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
+  const rect = (t.x[1] - t.x[0]) * (t.z[1] - t.z[0]);
+  return rect > 1e-6 ? t.area / rect : 0;
+};
+
+/** Minimum fill before a band may be believed as a floor.
+ *
+ *  From a survey of the shipped library (59 libs, 342 surfaces, 57 that this
+ *  code would otherwise register), NOT from taste. The two populations
+ *  separate cleanly and the gap is empty: everything sparse lands at or below
+ *  0.361 (rubble piles 0.004–0.036 — the worst is 226× overclaim, 1.8m² of
+ *  surface in a 404m² rectangle; palm canopy 0.101; excavators and rig
+ *  superstructure 0.019–0.31), while every real deck lands at or above 0.532
+ *  (perimeter walls 0.53–0.57, tank hull 0.73, wall pillar 0.76, watchtower
+ *  decks 0.76 and 0.86, rig top deck 0.83, wall gate 1.00). No surveyed
+ *  surface falls between. 0.45 sits in the middle of that empty band, so
+ *  library drift in either direction has to travel before it changes an
+ *  answer. This is the one line to move if the split needs revisiting.
+ *
+ *  The cost is deliberate: a real-but-open deck (a catwalk, a grating) is
+ *  abstained on and a body falls to terrain instead. That is the honest
+ *  pre-#17 answer. The alternative is inventing geometry, and a body resting
+ *  in a palm canopy is exactly the bug this PR exists to end. */
+const DECK_FILL = 0.45;
+
 // A canned "knocked over" pose for headless agents, which cannot simulate.
 /** One bone of a held pose: a rotation, or {q, t, s} (shared/humanoid.js poseChannels). */
 type PoseValue = number[] | { q?: number[]; t?: number[]; s?: number[] | number };
@@ -362,15 +399,22 @@ export function voiceNote(pose: unknown): string {
 export class WorldAgent {
   url: string; name: string; displayName: string; world: string; avatar: string; agentToken = "";
   private dropMentionQualifiers: boolean;
+  /** The status this body declares at join (PROTOCOL §6a): "agent" unless told otherwise (AGENT_DECLARES; "" declares
+   *  nothing). The harness chooses it; the server relays it and never sets it from the credential. */
+  declares: string | null = "agent";
   ws: WebSocket | null = null;
   joined = false;
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
-  private target: (Vec2 & { run: boolean; tolerance?: number }) | null = null;
-  /** Remaining validated centerline waypoints. Only the destination uses
+  private target: (Vec2 & { run: boolean; tolerance?: number; y?: number }) | null = null;
+  /** Remaining validated centerline waypoints (walkTo). Only the destination uses
    * the caller's tolerance; intermediate waypoints are reached exactly. */
-  private legs: Vec2[] = [];
-  private walkTolerance = ARRIVE;
+  /** …each with the floor height the route stands on there, when the navgrid planned it (the authority is asked for
+   *  stretches at that height: up a stair, the stretch's end is on the stair, not the floor beneath it) */
+  private legs: (Vec2 & { y?: number })[] = [];
+  private walkTolerance: number = MOVER.arrive.tolerance;
+  /** The height the walk under way stands at, wherever it is: the live terrain for a terrain walk, the admitted floor
+   *  for a floor walk. Null when no walk is under way. */
   private walkHeightAt: ((x: number, z: number) => number) | null = null;
   /** Why the last walkTo() call was refused, or null when it was accepted:
    * its arguments, or no route. Planning is synchronous; a caller can capture
@@ -430,31 +474,128 @@ export class WorldAgent {
   draggedBy: string | null = null;   // whose takeover sim drives this body (bodydrag)
   dragAt = 0;                        // last drag sample, for the silence timeout
   pins = new Map<string, number[]>(); // persistent bodydrag nails: joint -> [x,y,z]
-  pushable = true;                   // rough-and-tumble consent — accepted by default, like being posed
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
-  /** THE fold (§24k R0, survey A6): one implementation of what an entry
-   *  means — shared/fold.js — replacing this file's hand-mirrored copy,
-   *  which had already drifted on four verbs (place strictness, light's
-   *  partial merge, remove's cargo cascade, spawn's collide). The maps
-   *  below are DERIVED VIEWS reconciled from this state after every
-   *  entity-shaping entry; side effects (percepts, supports, pings) run in
-   *  a separate pass that never touches state. */
-  private st = emptyState();
-  /** The sim fold beside it (§24k R0, survey A7): the agent was blind to
-   *  dialect-3 flights — look() reported a punted crate at its last placed
-   *  spot while every renderer showed it flying. Adopted from the join
-   *  snapshot's cut, folded per entry in the normative order, advanced on
-   *  the tick; live body positions are stamped into the entity view. */
-  private sim: ReturnType<typeof emptySim> = emptySim();
+  // ---- the authority's track of this body (E1, tools audit 10-07: "two bodies") ----
+  // The authority keeps its own body for every actor (authority.js EMBODIED_VERBS.move: 6 m/s, 4 m at most in one go, not
+  // through what it calls solid) and every hand verb measures from it. A person's client streams `move` steps to it
+  // (client/lib/thingphysics.js track); this body walks the same way: it asks the authority for each stretch BEFORE it
+  // walks it, so a wall the authority refuses stops this body exactly where the authority's stops.
+  /** the authority knows this body (its arrival was accepted); every snapshot forgets it (leaving drops the track) */
+  private trackArrived = false;
+  /** where the authority last accepted this body, [x, y, z] */
+  private trackAt: number[] | null = null;
+  /** the current walk's gate: 'sync' = waiting for the authority to know where we stand; 'tracked' = walk only as far as it
+   *  has accepted (permit); 'open' = this authority keeps no body track (an older server): walk as before */
+  private walkGate: WalkGate | null = null;
+  /** why the last walk stopped short, in the authority's words (the move tool reports it); a note it should mention */
+  lastWalkRefusal: { code: string; reason: string; fix?: string } | null = null;
+  lastWalkNote: string | null = null;
+  /** The VIEW of this body's own fold of the world (shared/protocol/view.js viewState over shared/protocol/replica.js), plus the
+   *  chat window. The maps below are DERIVED VIEWS reconciled from it after every change; side effects (percepts,
+   *  supports, pings) run in a separate pass that never touches it. */
+  private st: any = emptyView();
+  /** Things the world's physics has brought to rest, so a rest re-registers their support once (see tick). */
   private simRested = new Set<string>();
+  private simFlying = new Set<string>();
+  /** body shove (shared/shove.js): this body's walk pushes loose things it walks into, through the same punt a person's client sends */
+  private shover = createShover();
+  /** off for the session when this server doesn't know shove (an older deployment answers unknown-arg) */
+  private shoveOff = false;
+  /** who holds what, as the authority's presence plane broadcasts it (a held thing, and what rides it, isn't shoved) */
+  private holdsNow: Record<string, any> = {};
+  /** a shove gave a thing this body's momentum: for a moment it walks at most what it kept (shared/shove.js keptOf) */
+  private walkCap: { v: number; until: number } | null = null;
   entities = new Map<string, Entity>();
-  /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
+  /** who/what occupies what: mount verbs, keyed by the occupant (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
-  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number }>();
+  mounts = new Map<string, { to: string; offset?: number[]; yaw?: number; q?: number[] }>();
+  /** Bodies' seats are PRESENCE (bodies aren't entities, nothing is logged): a body's pose frame carries
+   *  `seat: {to: <socket id>}` while it sits (an older client's {to: host, slot} is read as that host's socket of that
+   *  name: resolveSeat). Others' come from their frames; mine rides my frames. */
+  bodySeats = new Map<string, { to: string }>();
+  myOccupancy: { to: string; pose?: string; at?: number } | null = null;
+  /** A host's sockets: its socket children (PLAN-sockets-entities), [{id, name, sock}] in child order — the one reader
+   *  look, attach and the seat lines share. */
+  socketsOf(host: string) {
+    // the same records the composition reads (entities, and mounts: a thing's fold parent)
+    const kids = (h: string) => [...this.mounts.entries()].filter(([k, m]) => m.to === h && this.entities.has(k)).map(([k]) => k).sort();
+    return socketsUnder(host, kids, (k) => { const e = this.entities.get(k); return e ? recordComponents(e) : null; });
+  }
+  /** A socket child as the occupy family reads it: {id, host, name, sock, station}, or null when `id` isn't a socket here. */
+  socketRec(id: string | null | undefined) {
+    const sock = id == null ? null : this.entities.get(id)?.socket;
+    const station = id == null ? null : this.entities.get(id)?.station;
+    return sock && typeof sock === "object" ? { id: String(id), host: this.mounts.get(String(id))?.to ?? null, name: String(sock.name ?? ""), sock, station: station && typeof station === "object" ? station : null } : null;
+  }
+  /** "host (name)" for a socket — how anyone reads where someone is occupying; the bare id for anything else. */
+  socketName(id: string) { const s = this.socketRec(id); return s ? `${s.host ? this.refName(String(s.host)) : s.host} (${s.name})` : this.entities.has(id) ? this.refName(id) : id; }   // by its name (R 10-17)
+  /** A thing's short handle here (R 10-17, shared/thingref.js): the shortest unique id prefix of 4+, derived fresh. */
+  handle(id: string): string { return handleOf(id, this.entities.keys()); }
+  /** What a reader calls a thing in a sentence or a "thing/place" ref: its label when that names it alone, else its handle. */
+  refName(id: string): string { const l = (this.entities.get(id) as any)?.label; if (typeof l === "string" && l.trim() && !/[/\[\]"]/.test(l)) { const r = this.thingRef(l); if ("id" in r && r.id === id) return l.trim(); } return this.handle(id); }
+  /** How a thing reads in a list of candidates: its label, what it is, where it is, its handle. */
+  thingLine(id: string): string {
+    const e: any = this.entities.get(id); if (!e) return `[${this.handle(id)}]`;
+    const what = e.model ? modelWord(e.model).split("_").slice(0, 5).join(" ") : e.kind === "socket" ? "a socket" : "(empty)";
+    const up = this.mounts.get(id)?.to; const f = this.eff(id, Date.now());
+    const where = up && this.entities.has(up) ? `on ${(this.entities.get(up) as any)?.label ?? `[${this.handle(up)}]`}` : f.ok ? `at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})` : "where unknown";
+    return `${typeof e.label === "string" && e.label ? `"${e.label}" ` : ""}${what} ${where} [${this.handle(id)}]`;
+  }
+  /** A thing by what an agent calls it (R 10-17 ID HARDENING (5)): its id, its label, or a unique id prefix (4+, git-style).
+   *  Several matching is refused with the candidates (label, what, where, handle), never resolved by picking one. A
+   *  placeholder ('$x'), @world, a blueprint hash or a person's identity is not a thing name: it passes as it is.
+   *  {id} | {refusal} | {none} (nothing here is called that: a caller may try a place or a person next). */
+  thingRef(raw: string): { id: string } | { refusal: string } | { none: true } {
+    const q = String(raw ?? "").trim();
+    if (!q || q.startsWith("$") || q.startsWith("@") || q.startsWith("sha256:") || /^u-[a-z2-7]{20}$/.test(q)) return q ? { id: q } : { none: true };
+    const r = resolveThing(q, [...this.entities.values()] as any[]);
+    if ("id" in r) return { id: r.id };
+    if ("ambiguous" in r) {
+      const c = r.ambiguous.slice(0, 8).map((t: any) => this.thingLine(t.id));
+      return { refusal: `"${q}" ${r.by === "label" ? "is the label of" : "starts the id of"} ${r.ambiguous.length} things — say which (its handle works): ${c.join("; ")}${r.ambiguous.length > 8 ? `; and ${r.ambiguous.length - 8} more` : ""}` };
+    }
+    return { none: true };
+  }
+  /** The body block of the station I occupy (shared/sockbody.js), or null standing. */
+  occupiedBody() { const m = this.myOccupancy; return m ? bodyOf(this.socketRec(m.to)?.station) : null; }
+  /** May I vacate this way? (its leaveBy: a 'script' station lets go only when the world does, or by the escape) */
+  mayVacate(kind: "move" | "jump" | "menu" | "script" | "escape") { const b: any = this.occupiedBody(); return !b || mayLeave(b, kind) || !this.socketRec(this.myOccupancy!.to); }
+  /** The authority's body inbox (PROTOCOL L6), pushed by the server as it fills: an ask waiting for ME (someone's act met
+   *  an `ask` cell of my table; 20 s, silence is no) is said with how to answer it through `act`; the replies to my own asks,
+   *  acts delivered to my body, revocations and being let go from what I occupy (`vacated`) are said in the authority's words. */
+  bodyInbox(messages: any) {
+    for (const m of Array.isArray(messages) ? messages : []) {
+      if (!m || typeof m !== "object") continue;
+      const ts = Date.now(); let text: string | null = null;
+      if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
+        text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${a.cls ?? KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
+      else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
+      // what the authority did: it let the act reach this body, and recorded it
+      else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
+      else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
+        if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);
+          // stand where the authority let me go (its track of my body starts again there, r9 M2)
+          const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
+          text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
+      else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+      else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
+        const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
+        this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
+        if (this.reachRefusals.length > 20) this.reachRefusals.shift();
+        const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
+        text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
+      if (text) { this.inbox.push({ ts, kind: "act", who: m.type === "body-ask" ? String(m.ask?.from ?? "world") : String(m.from ?? m.by ?? "world"), text }); this.onEvent?.({ ts, kind: "act", who: String(m.ask?.from ?? m.from ?? m.by ?? "world"), text, mention: m.type === "body-ask" }); }
+    }
+  }
+  /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
+  setOccupant(seat: { to: string; pose?: string; at?: number } | null) {
+    this.myOccupancy = seat;
+    if (seat) this.mounts.set(this.name, { ...seat }); else this.mounts.delete(this.name);
+  }
   people = new Map<string, Person>();
   inbox: InboxItem[] = [];
   private inboxCursor = 0;
@@ -463,19 +604,19 @@ export class WorldAgent {
    *  server restart re-appended history and the next look() dumped chat the
    *  agent had already seen. */
   private inboxSeen = -Infinity;
-  pings: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
+  pings: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
-  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
   /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
    *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
-   *  an agent, the primary IS this door. So an agent with a local synthesizer
+   *  an agent, the primary IS this server. So an agent with a local synthesizer
    *  could not publish at all: its sidecar has the audio and no credential, the
    *  door has the credential and no audio.
    *
    *  Same shape as #100's fix, one layer out: rather than forcing the agent onto
    *  a raw world-ws side connection (which is what my media-peer was, and it
-   *  landed on the MESH while everyone else was on the SFU), the door forwards
+   *  landed on the MESH while everyone else was on the SFU), the authority forwards
    *  the media-signalling frames it is the only one authorized to carry. The
    *  door NEVER synthesizes, encodes, or holds a peer connection — it relays
    *  four message types and stays a text-tier participant.
@@ -503,10 +644,9 @@ export class WorldAgent {
     this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
     return true;
   }
-  /** Open coalescing windows for world-change narration, one per (entity,
-   *  emitter component) — see emitterSlot.
+  /** Open coalescing windows for world-change narration, keyed by entity id.
    *  See noteEmitter. */
-  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; key: string; timer: ReturnType<typeof setTimeout> }>();
+  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
   private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
   /** approach re-arm: after a walk-up ping, the SAME person must actually go
    *  away (> REARM_RADIUS) before another boundary crossing can ever count —
@@ -534,8 +674,8 @@ export class WorldAgent {
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
   /** My live reach descriptors, one entry per limb (shared/reachwire.js).
-   *  They ride every presence packet; every receiver re-solves the relation
-   *  against its own scene. The `reached` rider is MY solver's attestation,
+   *  They travel on every presence packet; every receiver re-solves the relation
+   *  against its own scene. The `reached` flag is MY solver's attestation,
    *  kept honest by reachTick(). */
   reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
   private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
@@ -548,7 +688,7 @@ export class WorldAgent {
   private clipClockStarted = 0;
   private bodyClip() {
     const mount = this.mounts.get(this.name);
-    return mount ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""]?.pose ?? "sitchair" : this.clip;
+    return mount ? bodyOf(this.socketRec(mount.to)?.station)?.clip ?? "sitchair" : this.clip;
   }
   private noteClipClock() {
     const slot = this.bodyClip();
@@ -592,8 +732,8 @@ export class WorldAgent {
     const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
     return { rev, entries: await res.json() as { name: string; seat?: any }[] };
   });
-  /** Stateful denoiser for ambient narration (arrive/leave/acts). Says,
-   *  mentions, and whispers never pass through it — a knock is not chatter.
+  /** Stateful denoiser for ambient narration (arrive/leave/acts). Says and
+   *  mentions never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
   private gate = new NoiseGate((ev) => {
     if (ev.kind === "arrive") this.act30.arrivals++;
@@ -602,7 +742,7 @@ export class WorldAgent {
     this.onEvent?.(ev);
   });
   /** The activity sense is the agent's own to tune (persisted per-agent by
-   *  the door; see net-server's `activity` tool). Instance values start at
+   *  the authority; see net-server's `activity` tool). Instance values start at
    *  the world defaults. */
   activityRadiusM = ACTIVITY_RADIUS_M;
   private activityPulseMs = ACTIVITY_PULSE_MS;
@@ -646,14 +786,29 @@ export class WorldAgent {
    *  and it is directly comparable with what the world hands out. */
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
+  /** The world's protocol facts, from the snapshot ({dialect, v} from genesis, its head and world id). Building tools route through
+   *  request()/sendOps() and WAIT for the authority's reply, so a refusal reaches the agent (PARITY (d)1). null until joined. */
+  cut: { dialect: string; v: number; head: number; worldId: string } | null = null;
+  /** The world's own fold, from the join cut and the authority's `log` stream (shared/protocol/replica.js). */
+  private replica: any = null;
+  /** The last building verb's turn: each is spelled after the one before it is answered. */
+  private spelling: Promise<unknown> = Promise.resolve();
+  /** replica: this body folds the world's log stream itself (the server refuses a client that doesn't). */
+  private joinMsg() {
+    // clock: the server's time just before the snapshot (the `clock` case below), so serverNow() is set from the join on
+    return { type: "join", world: this.world, id: this.name, avatar: this.avatar, ...(this.declares ? { declares: this.declares } : {}), replica: true,
+      token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true };
+  }
+  private pendingRequests = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
+  /** Does `text` mention this body: its name, or the display name its credential gave it (#184)? */
   mentionsMe(text: string): boolean {
     return !!mentionRegexFor([this.name, this.displayName], { dropQualifiers: this.dropMentionQualifiers })?.test(text);
   }
 
-  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string } = {}) {
+  constructor(opts: { url?: string; name?: string; displayName?: string; dropMentionQualifiers?: boolean; world?: string; avatar?: string; agentToken?: string; declares?: string | null } = {}) {
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     // The token's display name ("Artie (kube)"): a second form the body
@@ -665,8 +820,12 @@ export class WorldAgent {
     // The agent's own bearer (the one that opened the MCPL door). Forwarded at
     // join so the sequencer can verify the name — agent names are reserved.
     this.agentToken = opts.agentToken ?? process.env.AGENT_TOKEN ?? "";
+    { const d = opts.declares !== undefined ? opts.declares : process.env.AGENT_DECLARES ?? "agent"; this.declares = d || null; }
   }
 
+  /** The key this body joined with, as the Bearer header the world's state reads take (/snap, /worlds, /geom?world:
+   *  behind the same door as a join). */
+  get readHeaders(): Record<string, string> { const k = this.agentToken || process.env.WORLD_TOKEN || ""; return k ? { authorization: `Bearer ${k}` } : {}; }
   get httpBase(): string {
     // Proper URL surgery, not string surgery: a WORLD_URL carrying a query
     // string (…/ws?token=…) used to defeat the old `/\/ws$/` replace and
@@ -798,7 +957,7 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] support seam on ${id} — ${why}`);
   }
 
-  /** A build act (spawn/place/light/remove) near this body counts as activity. */
+  /** A build act (create/place/light/remove) near this body counts as activity. */
   private noteBuild(actor: string | undefined, pos: number[] | undefined | null) {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
@@ -810,13 +969,13 @@ export class WorldAgent {
       if (this.closed) return reject(new Error("agent closed"));
       const ws = new WebSocket(this.url);
       this.ws = ws;
-      const timeout = setTimeout(() => reject(new Error("the world didn't answer the join within 8 seconds")), 8000);
+      this.joinRefused = null;
+      const timeout = setTimeout(() => reject(new Error(this.joinRefused ?? "the world didn't answer the join within 8 seconds")), 8000);
       // `agent: true` is not a capability — it changes nothing about what this
       // body may do. It exists so the world can SAY who it is talking to.
       // Knowing whether the thing across the table thinks in tokens or neurons
       // matters here in a way it doesn't in a chat app.
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
+      ws.onopen = () => ws.send(JSON.stringify(this.joinMsg()));
       ws.onclose = (ev) => {
         this.joined = false;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
@@ -828,19 +987,44 @@ export class WorldAgent {
         // process-global physics state — a ghost floor by the moderation
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
-        if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
-        // 4010 = this world is not open to this identity: refused at the door
-        // (members only, watch only), or its access ended or was changed.
-        // Same answer as a ban for reconnecting: the door will not open on
-        // its own, so the body stays down until its host decides otherwise.
-        if ((ev as { code?: number } | undefined)?.code === 4010) { this.close(); return; }
-        // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
-        // A refusal is an answer, not an outage — redialing it every 1.5s is
-        // the polite-DoS the sequencer's own comments warn about (RFC-005
-        // review D1: a granted ?world= dial with a name the sequencer rejects
-        // used to hammer forever).
-        if ((ev as { code?: number } | undefined)?.code === 4005) { this.close(); return; }
-        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
+        // …unless the removal said when they may come back (a kick's cooldown, research roles S4: "4006 = never
+        // reconnect" made every kicked agent a permanent one). Then the body still lets go of what it holds up now
+        // (its floors: the #83 reason close() is the path), and the host dials again once the cooldown has passed.
+        // Bans and anything longer than two hours stay what they were: the body stays down.
+        if ((ev as { code?: number } | undefined)?.code === 4006) {
+          const wait = (this.removedUntil ?? 0) - Date.now();
+          if (wait > 0 && wait <= 2 * 3600_000 && !this.closed) {
+            for (const id of [...this.supportIds.keys()]) this.dropSupport(id);
+            this.removedUntil = null;
+            setTimeout(() => { if (!this.closed) this.connect().catch(() => {}); }, wait + 1000);
+            return;
+          }
+          this.close(); return;
+        }
+        // 4005 = the sequencer REFUSED the join: a malformed or reserved name, a bad token, no such world, an old-format
+        // world, an access refusal, a client that doesn't fold the log. A refusal is an answer, not an outage — redialing
+        // it every 1.5s is the polite-DoS the sequencer's own comments warn about (RFC-005 review D1: a granted ?world=
+        // dial with a name the sequencer rejects used to hammer forever).
+        // …except reason "full" (the world is at its access max): temporary, someone leaving makes room. The join is
+        // refused in the server's words and the body dials again by itself, backing off as a person's page does
+        // (shared/redial.js; review r4 claims C2). The other refusals end the body, as before.
+        const code = (ev as { code?: number } | undefined)?.code, why = String((ev as { reason?: string } | undefined)?.reason ?? "");
+        const refused = this.joinRefused; this.joinRefused = null;
+        if (code === 4005 && why === "full" && !this.closed) {
+          clearTimeout(timeout);
+          // the words are this body's, kept open: the agent doors (mcpl/server.ts, net-server's serve and travel) end on this
+          // rejection and close it, so they say only what a body that is kept does (review r5 F4; docs/WIRE.md 4005)
+          reject(new Error(`${refused ?? "the world is full"} — trying again by itself while this body is kept open (closing it gives up the wait)`));
+          setTimeout(() => { if (!this.closed && !this.joined) this.connect().catch(() => {}); }, this.redial.next(REDIAL.full));
+          return;
+        }
+        if (refused !== null) { this.closed = true; clearTimeout(timeout); reject(new Error(refused)); }
+        // 4010 = this world is not open to this identity (server/access.ts): refused at the door, or its access ended or
+        // changed. Same answer as a ban for redialling: the door will not open on its own, so the body stays down.
+        if (code === 4005 || code === 4010) { this.close(); return; }
+        // any other drop (an outage, a restart): dialled again on the browser's schedule (shared/redial.js, reset by a join),
+        // not a fixed 1.5 s that every agent of a restarted server would keep in step (review r5 F4)
+        if (!this.closed) setTimeout(() => this.connect().catch(() => {}), this.redial.next());
       };
       ws.onmessage = async (ev) => {
         // House rule #3, applied to the DOOR: no event may ever exit the
@@ -852,17 +1036,19 @@ export class WorldAgent {
         const msg = JSON.parse(String(ev.data));
         switch (msg.type) {
           case "error":
+            if (typeof msg.until === "number") this.removedUntil = msg.until;   // when a kick lets us back (onclose 4006)
             // A pre-join refusal (reserved name, bad token) is final —
             // retrying the identical join every 1.5s can only produce the
             // same refusal. Surface the sequencer's reason instead of the
             // silent join-timeout loop this used to be.
             if (!this.joined) {
-              this.closed = true;
-              clearTimeout(timeout);
-              // The world's own words, as the cause inside whatever sentence
-              // carries this (travel's, for one).
+              // a cooldown isn't final: onclose 4006 dials again after it. Any other refusal's close says whether it is
+              // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words. The
+              // world's own words, as the cause inside whatever sentence carries this (travel's, for one) (#247)
               const said = String(msg.error ?? "").trim().replace(/\.+$/, "");
-              reject(new Error(said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason"));
+              const words = said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason";
+              if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(words)); }
+              else this.joinRefused = words;
             } else {
               // A mid-life refusal (insufficient rank, a bad moderation
               // target, being kicked…). Verbs are fire-and-forget, so this is
@@ -888,6 +1074,11 @@ export class WorldAgent {
             // next look() carries it.
             this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
             break;
+          case "moderated":
+            // someone was removed or banned here, or a ban lifted: what bystanders are told (names only; the reason went
+            // to the person)
+            this.inbox.push({ ts: Date.now(), kind: "act", who: "world", text: String(msg.text ?? "") });
+            break;
           // ── media signalling (see onMedia) ─────────────────────────────
           // Forwarded verbatim to whoever holds this identity's audio. The
           // door does not interpret SDP; it is the authenticated carrier, and
@@ -902,7 +1093,7 @@ export class WorldAgent {
           // after both sides reconnect nobody hears anybody and nothing errors.
           case "surface-transition":
           // 🔴 ADDED 2026-08-16 — the server broadcasts both of these to every
-          // client and the door dropped them on the floor, so an agent could
+          // client and the authority dropped them on the floor, so an agent could
           // not learn that its own voice had degraded or that a moderator had
           // silenced it. Both are facts ABOUT THIS IDENTITY's audio, which is
           // exactly what the media lane carries.
@@ -919,6 +1110,9 @@ export class WorldAgent {
           case "voice-moderated":
             this.onMedia?.(msg);
             break;
+          case "holds":
+            this.holdsNow = (msg as any).holds && typeof (msg as any).holds === "object" ? (msg as any).holds : {};
+            break;
           case "your-rights":
             // The sequencer recomputes this participant's effective rights
             // after every grant. Consume the answer rather than trying to
@@ -926,6 +1120,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
+            this.cut = msg.cut ?? null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -936,18 +1131,16 @@ export class WorldAgent {
             // server that never sends this leaves myRights null, which the
             // provider reads as no.
             if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "world");
-            this.entities.clear(); this.people.clear(); this.mounts.clear();
+            // a seat rides a body's pose (notePose), so the bodies' seats come back with their next poses
+            this.entities.clear(); this.people.clear(); this.mounts.clear(); this.bodySeats.clear();
+            // who holds what as of this cut: the holds broadcast comes only when they change, so a join reads them here
+            { const h = (msg as any).cut?.holds; this.holdsNow = h && typeof h === "object" ? h : {}; }
             this.bodyReader?.forget();
             this.selfBodyGeneration = ++this.bodyGenerationCounter;
             this.selfObservedAt = Date.now();
-            // fresh folds for a fresh world (§24k): the instant fold restarts
-            // empty; the sim fold ADOPTS the sequencer's cut — a joiner
-            // cannot recompute flights whose intents were folded out of the
-            // tail, and adoption is exact (advancement is schedule-
-            // independent, PROTOCOL_v2).
-            this.st = emptyState();
-            this.sim = (msg as any).sim?.epoch ? structuredClone((msg as any).sim) : emptySim();
-            this.simRested.clear();
+            // a fresh view for a fresh world: the cut below is adopted whole
+            this.st = emptyView();
+            this.simRested.clear(); this.simFlying.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
             if (msg.restore && !this.restoredPose && !this.target && this.pos.x === 0 && this.pos.z === 0) {
@@ -963,24 +1156,31 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
-              this.wingsFolded = msg.restore.wingsFolded === true;
+              this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
+              this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
             this.restoredPose = true;
-            for (const p of msg.present) this.rememberBody(p.id, p.avatar, p.pose, !!p.agent);
-            // A join is now the folded world plus a tail, not the whole log.
-            // An agent that only read `entries` would arrive in an empty room.
-            const oldestTail = msg.entries.length
-              ? Math.min(...msg.entries.map((e: any) => e.seq ?? Infinity)) : Infinity;
-            // the feet hold their height until the floors this join is about
-            // to learn about have been fitted — before that, the only ground
-            // a body could find is the terrain under the building it is in
+            // a (re)join: the authority's track of this body ended when it left, so the next walk arrives again
+            this.trackArrived = false; this.trackAt = null;
+            for (const p of msg.present) { this.rememberBody(p.id, p.avatar, p.pose, p.declares); if (typeof p.actorId === "string") this.actorIds.set(p.id, p.actorId); }
+            // adopt the authority's cut and read the view of this body's own fold of it; the snapshot's `state` is the
+            // chat window (chat isn't world state): its lines land in the inbox once, as history
+            if (!(msg as any).cut?.state) { this.closed = true; clearTimeout(timeout); reject(new Error("the server sent no world cut (an old server?)")); break; }
+            this.replica = makeReplica(); this.replica.adopt((msg as any).cut);
+            this.st.recentChat = structuredClone(msg.state?.recentChat ?? []);
+            this.st.chatTotal = msg.state?.chatTotal ?? 0;
+            for (const m of this.st.recentChat) this.hearSay({ seq: m.seq ?? -1, ts: m.ts, actor: m.actor, verb: "say", args: { text: m.text } }, false);
+            // the feet hold their height until the floors this join is about to learn about have been fitted (#235) —
+            // before that, the only ground a body could find is the terrain under the building it is in
             this.feetSettling = true;
-            for (const e of stateToEntries(msg.state, oldestTail)) await this.applyEntry(e, false);
-            for (const e of msg.entries) await this.applyEntry(e, false);
+            await this.applyView(false, null, null);
             void this.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
-            for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
-            this.joined = true;
+            this.joined = true; this.redial.reset();
+            this.resumeWalkGate();   // a walk carried across the rejoin
+            // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
+            // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
+            void this.replaySwitch();
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -1051,12 +1251,15 @@ export class WorldAgent {
               break;
             }
             if (msg.unpin != null) {
-              // pulling one of this body's nails — agents accept, as they
-              // accept being posed: being directed is the point. The live sim
-              // lets go of that joint and the body sags from what remains.
+              // pulling one of this body's nails: the server has already
+              // checked this body's consent table (one table and one preset
+              // for every body, PROTOCOL §6a), and this runtime applies what
+              // reached it (the browser re-reads its everyone row: one shared
+              // final word is open, research parity #13). The live sim lets go
+              // of that joint and the body sags from what remains.
               const j = String(msg.unpin.joint ?? "");
               if (this.pins.delete(j)) this.body?.setPin(j, null);
-              break;
+              if (msg.end == null) break;   // an unpin can ride an end: apply the end too (house 6340433633 Q3)
             }
             if (msg.end != null) {
               if (this.draggedBy === msg.by) {
@@ -1094,22 +1297,27 @@ export class WorldAgent {
               if (Number.isFinite(msg.yaw)) this.yaw = msg.yaw;
             }
             break;
-          case "log":
-            this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
-            // Remember our OWN says briefly, so a sidecar that airs one can be
-            // attested for it: the receipt is sha256 of the text the world
-            // logged, and only the world's copy is authoritative (ours could
-            // differ by a trailing space and the digest would not match).
-            // Small ring — a receipt is valid for 5 minutes server-side, so
-            // holding more than a handful of utterances is pointless.
-            if (msg.entry?.verb === "say" && msg.entry?.actor === this.name
-                && typeof msg.entry?.args?.text === "string") {
-              this.ownSays.set(msg.entry.seq, String(msg.entry.args.text));
-              if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
-              this.onMedia?.({ type: "speak", seq: msg.entry.seq, text: msg.entry.args.text });
+          case "log": {
+            if (!this.replica?.active) break;
+            const r = this.replica.ingest((msg as any).entries ?? [], (msg as any).from ?? -1, (msg as any).names);
+            // a gap, a purge or a new genesis: this cut can't continue; ask for a fresh snapshot on the same connection
+            if (r.resync) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(this.joinMsg())); break; }
+            for (const x of r.says) {
+              const e = { seq: x.seq * 1000, ts: x.ts, actor: x.actor, verb: "say", args: { text: x.text, ...(x.to ? { to: x.to } : {}), ...(x.spoken ? { spoken: true, utt: x.utt, ...(x.t0 !== undefined ? { t0: x.t0 } : {}) } : {}) } };
+              this.lastSeq = Math.max(this.lastSeq, e.seq);
+              this.noteOwnSay(e);
+              hear(this.st, { actor: e.actor, text: x.text, ts: e.ts, seq: e.seq });   // the chat window
+              this.hearSay(e, true);
             }
-            await this.applyEntry(msg.entry, true);
+            if (r.sky) this.skyStamp = r.sky;   // who set the sky, and where in the log (I286): the value itself doesn't say
+            if (r.changed) await this.applyView(true, r.actor ?? null, r.ts ?? null);
             break;
+          }
+          case "reply": {
+            const p = this.pendingRequests.get(String(msg.id));
+            if (p) { this.pendingRequests.delete(String(msg.id)); p(msg); }
+            break;
+          }
           case "history": {
             const p = this.pendingHistory.get(msg.reqId);
             if (p) { this.pendingHistory.delete(msg.reqId); p(msg); }
@@ -1120,21 +1328,15 @@ export class WorldAgent {
             if (p) { this.pendingDebug.delete(msg.reqId); p(msg); }
             break;
           }
-          case "whisper": {
-            // A private message addressed to this body. Whispers never touch
-            // the world log, so this is the ONLY delivery — treat it as an
-            // explicit mention regardless of whether the name appears in it,
-            // because being addressed directly is what a mention means.
-            if (msg.echo || msg.from === this.name) break;
-            this.inbox.push({ ts: msg.ts ?? Date.now(), kind: "say", who: msg.from, text: `(whisper) ${msg.text}` });
-            this.ping({ ts: msg.ts ?? Date.now(), kind: "whisper", who: msg.from, text: msg.text });
-            this.onEvent?.({ ts: msg.ts ?? Date.now(), kind: "whisper", who: msg.from, text: msg.text, mention: true });
+          case "body-inbox": {
+            this.bodyInbox(msg.messages);
             break;
           }
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
+            this.rememberBody(msg.id, msg.avatar, null, msg.declares);
+            if (typeof msg.actorId === "string") this.actorIds.set(msg.id, msg.actorId);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
@@ -1176,9 +1378,9 @@ export class WorldAgent {
     });
   }
 
-  private rememberBody(id: string, avatar: string, pose: Pose | null, agent: boolean) {
+  private rememberBody(id: string, avatar: string, pose: Pose | null, declares: unknown) {
     this.bodyReader?.forget(id);
-    this.people.set(id, { id, avatar, pose, agent, observedAt: pose ? Date.now() : null,
+    this.people.set(id, { id, avatar, pose, declares: typeof declares === "string" && declares ? declares : null, observedAt: pose ? Date.now() : null,
       bodyGeneration: ++this.bodyGenerationCounter });
   }
 
@@ -1202,9 +1404,10 @@ export class WorldAgent {
         connected: this.joined && !this.closed, receivedAt: this.joined ? Date.now() : this.selfObservedAt,
         source: bones ? this.heldPoseAuthored ? "authored" : "physics" : "unknown",
         pose: this.selfObservedAt != null || this.joined ? structuredClone({
-          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
+          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,
           ...wingFoldPresence(this.wingsFolded), ...(bones ? { pose: bones } : {}),
           ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
         }) : null });
     }
     const p = this.people.get(who);
@@ -1219,12 +1422,11 @@ export class WorldAgent {
     const mount = this.mounts.get(observation.who);
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
-    // Standing is getting off the seat (setPosture), the one way out a reader has, once joined.
+    // Getting off the seat (detach, setOccupant) is the one way out a reader has, once joined.
     if (!effective.ok) return { ...observation, error: observation.self
-      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; posture {kind: "stand"} gets you off it${this.joined ? "" : " once this body has rejoined the world"}`
+      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; detach gets you off it${this.joined ? "" : " once this body has rejoined the world"}`
       : `nothing of ${observation.who}'s body was read, since their seat can't be placed: ${effective.why}` };
-    const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
-    const clip = socket?.pose ?? "sitchair";
+    const clip = bodyOf(this.socketRec(mount.to)?.station)?.clip ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
       pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
         ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
@@ -1236,11 +1438,11 @@ export class WorldAgent {
     return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
-  /** Is this participant an agent? The server flags agent sessions in both
-   *  the join snapshot (`present[].agent`) and `arrive` broadcasts; this is
-   *  the reader the denoiser and chat-tagging lean on. */
-  isAgent(who: string): boolean {
-    return !!this.people.get(who)?.agent;
+  /** What this participant DECLARED at its door (PROTOCOL §6a rule 3), exactly as relayed in the join snapshot
+   *  (`present[].declares`) and `arrive`, or null (undeclared). Passed on as data; nothing here reads a kind from it
+   *  (review r11 L2: comparing it to "agent" filtered a participant declaring "ai" as not-one). */
+  declaresOf(who: string): string | null {
+    return this.people.get(who)?.declares ?? null;
   }
 
   /** Track someone's latest pose + fire the approach ping when they cross
@@ -1251,7 +1453,7 @@ export class WorldAgent {
    *  a long per-person refractory on top, and — since 2026-08-26 — DWELL.
    *
    *  The first three all suppress REPEATS. None of them could tell a knock
-   *  from someone crossing your bubble on the way to the door, so the event
+   *  from someone crossing your bubble on the way to the authority, so the event
    *  did not mean what declaration.ts promised it meant: "walked up to your
    *  body AND STOPPED within arm's reach". Now the crossing only opens a
    *  pending approach; delivery waits for stillness (see stepApproach).
@@ -1271,6 +1473,10 @@ export class WorldAgent {
     const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
     p.pose = pose; p.observedAt = now;
+    { const seat = (pose as any)?.seat;   // a seat rides the frame while it holds (presence)
+      const to = seat?.to ? resolveSeat(this.st, { to: String(seat.to), ...(typeof seat.slot === "string" ? { slot: seat.slot } : {}) })?.to : null;
+      if (to) { const st = { to }; this.bodySeats.set(id, st); this.mounts.set(id, st); }
+      else if (this.bodySeats.delete(id)) this.mounts.delete(id); }
     p.bodyGeneration ??= ++this.bodyGenerationCounter;
     this.people.set(id, p);
     // hands aimed at this body — before the spatial gate below, because a
@@ -1414,6 +1620,7 @@ export class WorldAgent {
    *  as having walked away — one exit, one line. */
   private noteLeave(id: string) {
     this.people.delete(id);
+    if (this.bodySeats.delete(id)) this.mounts.delete(id);   // a departed body rides nothing
     this.bodyReader?.forget(id);
     this.lastNear.delete(id);
     this.nearArmed.delete(id);
@@ -1427,7 +1634,7 @@ export class WorldAgent {
   }
 
   /** Embodied acts as events. The presence stream is 15Hz noise; what an
-   *  agent should hear about is TRANSITIONS — an emote fired, a pose struck
+   *  agent should hear about is TRANSITIONS — a gesture fired, a pose struck
    *  or released, someone sitting down or getting up. Edge-triggered, so a
    *  held pose (or a ragdoll, which streams through the same field) speaks
    *  once when it starts and once when it ends, never per-frame.
@@ -1437,16 +1644,17 @@ export class WorldAgent {
    *  speak once per window instead of per repetition; and a non-locomotion
    *  stint shorter than SHORT_STINT_MS earns no "gets up" — the start
    *  already told the story, a jump is one thing, not two. */
-  private noteActs(id: string, prev: Pose | null, pose: Pose & { emote?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
+  private noteActs(id: string, prev: Pose | null, pose: Pose & { anim?: string; pose?: Record<string, unknown> | null }, dist = Infinity) {
     const acts: { key: string; text: string }[] = [];
-    if (pose.emote) acts.push({ key: `emote:${pose.emote}`, text: `emotes: ${pose.emote}` });
+    const once = onceAnimOf(pose);   // pose.anim (its pre-release key still read for one release)
+    if (once) acts.push({ key: `anim:${once}`, text: `plays ${once} (once)` });
     const prevHeld = Boolean((prev as { pose?: unknown } | null)?.pose);
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
     if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
-    const hadFold = typeof prev?.wingsFolded === "boolean";
-    const hasFold = typeof pose.wingsFolded === "boolean";
-    const prevFold = prev?.wingsFolded === true, nowFold = pose.wingsFolded === true;
+    const was = foldedIn(prev), now = foldedIn(pose);   // the named pose wings-folded (an older sample's wingsFolded reads the same)
+    const hadFold = was !== null, hasFold = now !== null;
+    const prevFold = was === true, nowFold = now === true;
     // A first sighting is a state, not an act. Announce only an edge observed
     // between two explicit semantic samples; legacy absence proves neither
     // folding nor opening.
@@ -1475,228 +1683,202 @@ export class WorldAgent {
   /** Reconcile the derived maps from the folded state — the ONLY writer of
    *  this.entities/this.mounts outside the sim stamp. Fresh objects each
    *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
+  /** The FOLDED record for a placed thing — every field the fold keeps
+   *  (a light's colour/intensity/range/important/day, a model's collide), which
+   *  the perception view above deliberately thins. The inspector tools read
+   *  this; `parent` is attached from the mount view so the shape matches
+   *  what shared/editschema.js expects. */
+  /** Every placed thing's id in the fold (the hierarchy tools walk them). */
+  foldedIds(): string[] { return Object.keys(this.st.entities); }
+  /** The world's half of the fold — state.sky / terrain / grass — which
+   *  shared/worldentity.js reads as the world entity `@world`. */
+  worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {
+    const s = this.st as any;
+    return { sky: s.sky ?? null, terrain: s.terrain ?? null, grass: s.grass ?? null };
+  }
+  /** The world's blueprint store (shared/fold.js state.blueprints): every
+   *  published record by its content hash, with who and when. */
+  blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
+    return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
+  }
+  /** This world's blueprints from the fold: @world blueprints:<hash> → {name, parts?} (the authority's publish). */
+  /** a placed copy (or one of its parts) says which blueprint it is: the authority stamps copy-of {from, key} on every
+   *  part; the copy is the part whose parent isn't of the same copy */
+  copyLine(id: string): string | null {
+    const E = this.st.entities as Record<string, any>; const f = E[id]?.["copy-of"]?.from; if (typeof f !== "string") return null;
+    const name = this.worldBlueprints()[f.replace(/^sha256:/, "")]?.name ?? f.slice(7, 19);
+    let root = id; for (let i = 0; i < 64; i++) { const p = E[root]?.parent?.to; if (!p || E[p]?.["copy-of"]?.from !== f) break; root = p; }
+    return root === id ? `a copy of "${name}"` : `part "${E[id]["copy-of"].key}" of ${root} (a copy of "${name}")`;
+  }
+  worldBlueprints(): Record<string, { name?: string }> {
+    const w = this.replica?.st?.entities?.["@world"]?.c ?? {};
+    const out: Record<string, { name?: string }> = {};
+    for (const [k, v] of Object.entries(w)) if (k.startsWith("blueprints:")) out[k.slice("blueprints:".length)] = (v ?? {}) as { name?: string };
+    return out;
+  }
+  foldRecord(id: string): Record<string, unknown> | null {
+    const e = (this.st.entities as Record<string, any>)[id];
+    if (!e) return null;
+    const m = this.mounts.get(id);
+    return m ? { ...e, parent: m } : { ...e };
+  }
+  /** A thing's components as this body's replica folds them now (a copy), or null: what a write planned from them pins
+   *  with expect, as a person's edit does (client/lib/editwrites.js compsOf). id and the component
+   *  names are the authority's own, as requests.js encodes them. A purged component is the fold's PURGED itself, not a
+   *  copy: the authority's expect counts a purged value equal to nothing, so a pin has to tell one apart and leave it out. */
+  componentsOf(id: string): Record<string, unknown> | null {
+    const c = this.replica?.st?.entities?.[id]?.c;
+    return c ? Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v === PURGED ? PURGED : structuredClone(v)])) : null;
+  }
+  /** A host's socket children as the replica folds them now: each one's id, as the authority has it, and its components
+   *  (componentsOf). A write of the host's sockets map changes the children it names and retires the rest
+   *  (shared/protocol/authority/sockets.js liftOps), so it pins these. */
+  socketChildrenOf(id: string): Record<string, Record<string, unknown>> {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const [k, e] of Object.entries((this.replica?.st?.entities ?? {}) as Record<string, any>))
+      if (e?.c?.parent?.to === id && e.c.socket && typeof e.c.socket === "object" && !Array.isArray(e.c.socket) && e.c.socket !== PURGED)
+        out[k] = this.componentsOf(k)!;   // a socket child as liftOps counts one (isSocketC)
+    return out;
+  }
+
   private reconcileFromFold() {
     const seen = new Set<string>();
     for (const [id, e] of Object.entries(this.st.entities)) {
       seen.add(id);
       this.entities.set(id, {
         id,
-        lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
+        model: String((e as any).model ?? ""), kind: kindOf(e),
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
-        ...((e as any).collide != null ? { collide: String((e as any).collide) } : {}),
+        ...(Array.isArray((e as any).scale3) ? { scale3: (e as any).scale3 } : {}),   // a stretched thing stays stretched
+        ...(Array.isArray((e as any).q) ? { q: (e as any).q } : {}),
+        ...(colliderOf(e) != null ? { collide: String(colliderOf(e)) } : {}),   // the collider override decide() reads (#235): comp.collider, else the spawn's collide
         actor: (e as any).actor,
         ...((e as any).placer ? { placer: (e as any).placer } : {}),
-        ...((e as any).comp ? { comp: (e as any).comp } : {}),
+        ...recordComponents(e as any),   // its components, flat (view.js): what a thing can DO
       });
     }
     for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
+    // a structure's cached plan goes with the structure (a re-attached one is planned afresh)
+    for (const id of [...this.plans.keys()]) if (!(this.entities.get(id) as any)?.structure) this.plans.delete(id);
     // both mount species land in one view, as the old fold kept them:
     // entity cargo rides ent.parent, bodies ride st.mounts
     this.mounts.clear();
     for (const [id, e] of Object.entries(this.st.entities)) {
       const p = (e as any).parent;
-      if (p) this.mounts.set(id, { to: p.to, slot: p.slot,
+      if (p) this.mounts.set(id, { to: p.to,
         ...(p.offset != null ? { offset: p.offset } : {}),
-        ...(p.yaw != null ? { yaw: p.yaw } : {}) });
+        ...(p.yaw != null ? { yaw: p.yaw } : {}),
+        ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
     }
-    for (const [id, m] of Object.entries(this.st.mounts ?? {})) {
-      this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
-        ...((m as any).offset != null ? { offset: (m as any).offset } : {}),
-        ...((m as any).yaw != null ? { yaw: (m as any).yaw } : {}) });
+    for (const [id, m] of this.bodySeats) this.mounts.set(id, { ...m });   // bodies: presence, never the fold
+    if (this.myOccupancy) this.mounts.set(this.name, { ...this.myOccupancy });
+  }
+
+  /** Remember our OWN says briefly, so a sidecar that airs one can be attested for it (the receipt is sha256 of the
+   *  text the world logged; only the world's copy is authoritative). Small ring: a receipt is valid for 5 minutes. */
+  private noteOwnSay(entry: any) {
+    if (entry?.verb === "say" && entry?.actor === this.name && typeof entry?.args?.text === "string") {
+      this.ownSays.set(entry.seq, String(entry.args.text));
+      if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+      this.onMedia?.({ type: "speak", seq: entry.seq, text: entry.args.text });
     }
   }
 
-  private async applyEntry(entry: any, live: boolean) {
-    const { verb, args, actor, ts } = entry;
-    // pre-fold captures the side effects need (state the fold will consume)
-    const preRemovePos = verb === "remove" ? this.entities.get(args?.id)?.pos : undefined;
-    const preComp = verb === "comp" && typeof args?.type === "string"
-      ? (this.entities.get(args?.id)?.comp?.[args.type] ?? null) : null;
-    const hadEntity = args?.id != null ? this.entities.has(args.id) : false;
+  /** A world: take the next view of this body's own fold, and act on what changed (said in the protocol's terms,
+   *  shared/protocol/viewdiff.js): percepts when `live`, supports always. The first view is diffed from nothing. */
+  private async applyView(live: boolean, actor: string | null, ts: number | null) {
+    const prev = this.st as any;
+    const next = this.replica.view(prev);   // carries the chat window this body already holds
+    const d = diffView(live ? prev : emptyView(), next);
+    const was = new Map<string, any>();
+    for (const c of d.things) if (!was.has(c.id)) was.set(c.id, this.entities.get(c.id));
+    this.st = next;
+    this.reconcileFromFold();
+    for (const c of d.things) {
+      try { this.onThingChange(c, was.get(c.id), live, actor ?? "world", ts ?? this.serverNow()); }
+      catch (e) { console.error(`[agent] ${c.what} ${c.id}:`, e); }
+    }
+    // the world's own keys: the ground this body walks on, the sky, the grass
+    const W = this.st as any;
+    try {
+      // the world's water is its own component (shape audit 10-16): it rides on the terrain args the ground is built from
+      if ((d.world.includes("terrain") || d.world.includes("water")) && W.terrain) await this.buildTerrain(W.water ? { ...W.terrain, water: W.water } : W.terrain);
+      if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
+      if (d.world.includes("sky")) this.skyState = W.sky as typeof this.skyState;
+      if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }
+    } catch (e) { console.error("[agent] world change:", e); }
+  }
+  private grassInfo(args: any) {
+    return { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
+  }
+  private onThingChange({ id, what, comp }: { id: string; what: string; comp?: string }, was: any, live: boolean, actor: string, ts: number) {
+    const now = this.entities.get(id);
+    switch (what) {
+      case "born":
+        // a thing made already burning (a child that carries its own emitter: one lit on its own, or the translator's
+        // particles:<name>) is lit in that instant, and narrates as lighting it, as a particles set would; otherwise a build
+        if (live && now?.particles != null) { const fx = this.eff(id, this.serverNow()); if (fx.ok) this.noteEmitter(actor, id, null, now.particles, fx.pos, ts); else { this.noteEffGap(id, fx.why); this.noteBuild(actor, now?.pos); } }
+        else if (live) this.noteBuild(actor, now?.pos);
+        this.trackSupport(this.syncSupport(id));   // a placed thing is a thing bodies can rest on (#17)
+        if (this.mounts.has(id)) this.dropSupport(id);   // …unless it rides a parent (it collides as the parent)
+        break;
+      case "pose":
+        if (live) this.noteBuild(actor, now?.pos);
+        this.trackSupport(this.syncSupport(id));   // support follows the thing it belongs to
+        break;
+      case "gone":
+        // …and removing a burning thing puts its emitter out
+        if (live && was?.particles != null) this.noteEmitter(actor, id, was.particles, null, was?.pos, ts);
+        else if (live) this.noteBuild(actor, was?.pos);
+        this.dropSupport(id);
+        break;
+      case "parent":
+        if (this.mounts.has(id)) this.dropSupport(id); else this.trackSupport(this.syncSupport(id));
+        break;
+      case "comp":
+        // an emitter beginning, changing or ending is something you SEE happen (#25); gated on where it actually is
+        if (comp === "particles" && live) {
+          const fx = this.eff(id, this.serverNow());
+          if (fx.ok) this.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
+          else this.noteEffGap(id, fx.why);
+        }
+        // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.trackSupport(this.syncSupport(id));
+        break;
+    }
+  }
 
-    // §24k R0: THE fold, then the sim fold, in the normative order — one
-    // implementation of what an entry means, for every species of client.
-    foldEntry(this.st, entry);
-    simEntry(this.sim, entry, this.st);
-    if (ENTITY_VERBS.has(verb)) this.reconcileFromFold();
-
-    // ---- side effects only below: percepts, supports, pings — no state ----
-    if (verb === "spawn") {
-      if (live) this.noteBuild(actor, args.pos);
-      this.trackSupport(this.syncSupport(args.id));   // a placed thing is a thing bodies can rest on (#17)
-    } else if (verb === "light") {
-      if (live) this.noteBuild(actor, args.pos);
-    } else if (verb === "place") {
-      // the malformed-pos NOTE survives the fold move (#88's forensics);
-      // the fold itself now carries the guard (shared/fold.js, upstreamed)
-      if (hadEntity && !isFiniteVec3(args.pos)
-        && (args.pos != null || args.x != null || args.y != null || args.z != null)) this.noteMalformed(verb, args);
-      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : this.entities.get(args.id)?.pos);
-      this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
-    } else if (verb === "remove") {
-      if (live) this.noteBuild(actor, preRemovePos);
-      this.dropSupport(args.id);
-    } else if (verb === "comp") {
-      // affordances are components — the fold tracked them; percepts here
-      const e = this.entities.get(args.id);
-      if (e && typeof args.type === "string") {
-        const before = preComp;
-        // An emitter beginning, changing or ending is something you SEE happen
-        // in the world — the one component type with a live sensory event.
-        // Replay reconstructs the state above and stops there: a fire that was
-        // lit last week is in look(), not in your ears (#25).
-        if (isParticlesKey(args.type) && live) {
-          // proximity-gate on where the emitter's owner ACTUALLY is — a
-          // carried lantern is judged at the carrier, not at its pre-mount
-          // spot (#82). When the chain cannot compose, ABSTAIN: gating on
-          // the stale pos would deliver a live sensory event to people near
-          // an abandoned address and miss those beside the actual carrier
-          // (#92, B2). The gap is logged, bounded, not performed.
-          const fx = this.eff(String(args.id), this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts, args.type);
-          else this.noteEffGap(String(args.id), fx.why);
-        }
-        // a motion arriving or leaving changes whether this thing may hold a
-        // body up (see hasActiveMotion)
-        if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
-      }
-    } else if (verb === "motion") {
-      if (this.entities.has(args.id)) {
-        this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
-      }
-    } else if (verb === "mount") {
-      // (offset/yaw stay RAW in the fold's record: effective.ts refuses
-      // non-finite values with a named link rather than substituting.)
-      // Cargo rides its parent, so its own support goes stale the instant the
-      // parent moves — world.js drops the collider here for exactly that
-      // reason and lets the pair collide as the parent. Entities only: a
-      // mount whose id is not a thing is a BODY taking a seat, which owns no
-      // support and is a separate seam.
-      if (this.entities.has(args.id)) this.dropSupport(args.id);
-    } else if (verb === "dismount") {
-      if (this.entities.has(args.id)) {
-        // the fold stamped where the ride let go; stand the support back up
-        this.trackSupport(this.syncSupport(args.id));
-      }
-    } else if (verb === "punt") {
-      // dialect 3: the sim owns the flight (folded above) — a flying thing
-      // stops being a support the moment it launches; rest re-syncs it
-      if (this.sim.bodies?.[args?.id]) this.dropSupport(args.id);
-    } else if (verb === "force") {
-      // an instantaneous radial CAUSE (blast, gust) — live only, because a
-      // replay must never re-detonate. The falloff arithmetic is
-      // shared/force.js (§24l R1) — ONE truth with the browser bodies; the
-      // consent and the ground-zero direction (a headless body topples the
-      // way it faces) stay here.
-      if (live) {
-        const f = radialForce(args?.at, this.pos.x, this.pos.z, args?.radius, args?.power);
-        if (f && f.mag >= FORCE_MIN) {
-          const nx = f.nx ?? Math.sin(this.yaw);
-          const nz = f.nz ?? Math.cos(this.yaw);
-          this.knockDown(actor, [nx * f.mag, 0, nz * f.mag],
-            actor === this.name
-              ? "(your own blast knocks you off your feet)"
-              : `(${actor}'s blast knocks you off your feet)`);
-        }
-      }
-    } else if (verb === "say") {
-      // history lands in the inbox ONCE, so a freshly-joined agent has
-      // context — and a reconnect's replayed tail is deduped by seq instead
-      // of piling the same chat in again.
-      const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
-      // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
-      if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
-      if (seq != null && seq >= 0) this.inboxSeen = seq;
-      this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
-      // mention ping — @name or bare whole-word name, live messages only.
-      // The agent's OWN say is deliberately never fanned out: the world log
-      // echoes it back here, and delivering that echo as an incoming message
-      // made every resident hear themselves (Fable: "моё собственное эхо").
-      // It stays in the inbox — the scrollback record is honest — but it is
-      // not an event.
-      if (live && actor !== this.name) {
-        // speech near this body feeds the activity pulse (a speaker whose
-        // position is unknown — just arrived — counts as near)
-        const pp = this.people.get(actor)?.pose;
-        if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
-          this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        // A null regex means this body has no usable name (a malformed tokens
-        // entry). Not being mentionable is degraded, not fatal — the body still
-        // hears the room; it just cannot be addressed by name.
-        const mention = this.mentionsMe(String(args.text));
-        if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
-        this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
-      }
-    } else if (verb === "grant") {
-      // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
-      // `myRights` was written once from snapshot.yourRights and never again:
-      // a `-fly` mid-session was invisible until reconnect, and the
-      // action-time provider -- the whole point of resolving per action --
-      // read a grant that had been withdrawn. mica found it in production:
-      // seq 15183 granted mythos fly:false, no later fly:true, and seq 15206
-      // was a completed sortie.
-      //
-      // The pure capability test passed the whole time because it called
-      // resolveFlight directly with a changed rights object. It never crossed
-      // THIS path, which is where the rights object stopped changing.
-      //
-      // ABSENT IS NOT FALSE, the same rule the browser learned the hard way
-      // (client/lib/world.js, and the auto-owner grant that erased its own
-      // fly): an entry carries only the fields it changed, so merge those and
-      // leave the rest standing.
-      //
-      // BY NAME ONLY, matching what the server would compute.
-      //
-      // Not the wildcard: rightsOf prefers a name-keyed record over `*`, so
-      // with `mythos: {fly:true}` on file a `/grant * -fly` leaves mythos
-      // flying -- verified against rights.ts directly. Honouring the wildcard
-      // here would refuse where the authority permits, and a client-side gate
-      // stricter than the server still misreports the server. Whoever has no
-      // record of their own is covered by the wildcard through the snapshot's
-      // yourRights at join.
-      //
-      // Not by durable sub either: the server binds grants to a sub when it
-      // knows one (server/verbs.ts vGrant) but never tells an agent its own,
-      // so there is nothing here to compare against. The residual gap is a
-      // grant written against a sub while the body wears a different name;
-      // closing it wants `you.sub` in the snapshot, which is out of scope for
-      // this repair and stated rather than papered over.
-      const mine = args?.id != null && args.id === this.name;
-      if (mine) {
-        const next = { ...(this.myRights ?? {}) };
-        if (args.role != null) next.role = String(args.role);
-        if (args.gen != null) next.gen = Boolean(args.gen);
-        if (args.fly != null) next.fly = Boolean(args.fly);
-        this.myRights = next;
-        // A revocation must be legible, not merely effective. If this body is
-        // in the air when flight is withdrawn, the next action refuses and the
-        // pilot should know why rather than discovering it as a failure.
-        if (args.fly === false && this.flight) {
-          this.inbox.push({ ts, kind: "act", who: actor,
-            text: "withdrew your flight, so your next flight action will be refused until the world's owner grants it again" });
-        }
-      }
-    } else if (verb === "ban" || verb === "unban" || verb === "kick") {
-      // Moderation acts, narrated like any embodied transition — and, when
-      // this body is the ACTOR, the confirmation its fire-and-forget verb
-      // never gets: the authoritative echo doubles as the tool's answer.
-      const what = verb === "ban" ? "banned" : verb === "unban" ? "lifted the ban on" : "removed";
-      const line = `${what} ${args?.id}${verb !== "unban" && args?.reason ? ` — ${args.reason}` : ""}`;
-      if (live) {
-        this.inbox.push({ ts, kind: "act", who: actor, text: line });
-        if (actor === this.name) this.lastMod = { ts: Date.now(), text: `you ${line}` };
-        else this.onEvent?.({ ts, kind: "act", who: actor, text: line });
-      }
-    } else if (verb === "terrain") {
-      await this.buildTerrain(args);
-      this.worldInfo.terrain = { seed: args.seed, size: args.size, amplitude: args.amplitude, flatRadius: args.flatRadius };
-    } else if (verb === "sky" || verb === "weather") {
-      // the fold above already ran foldSkyEntry with the same rebase and
-      // provenance rules — the view just adopts its answer (§24k: one fold)
-      this.skyState = this.st.sky as typeof this.skyState;
-    } else if (verb === "grass") {
-      this.worldInfo.grass = { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
+  /** A chat line heard ({seq, ts, actor, args: {text}}): the inbox once, and a live line from someone else
+   *  is an event (and a mention ping when it names this body). The window itself is the caller's (the fold, or hear). */
+  private hearSay(entry: any, live: boolean) {
+    const { args, actor, ts } = entry;
+    // history lands in the inbox ONCE, so a freshly-joined agent has
+    // context — and a reconnect's replayed tail is deduped by seq instead
+    // of piling the same chat in again.
+    const seq = typeof (entry as { seq?: unknown }).seq === "number" ? (entry as { seq: number }).seq : null;
+    // only real log seqs (>= 0) dedupe — synthetic pre-history seqs descend
+    if (seq != null && seq >= 0 && seq <= this.inboxSeen) return;
+    if (seq != null && seq >= 0) this.inboxSeen = seq;
+    this.inbox.push({ ts, kind: "say", who: actor, text: args.text, seq });
+    // mention ping — @name or bare whole-word name, live messages only.
+    // The agent's OWN say is deliberately never fanned out: the world log
+    // echoes it back here, and delivering that echo as an incoming message
+    // made every resident hear themselves (Fable: "моё собственное эхо").
+    // It stays in the inbox — the scrollback record is honest — but it is
+    // not an event.
+    if (live && actor !== this.name) {
+      // speech near this body feeds the activity pulse (a speaker whose
+      // position is unknown — just arrived — counts as near)
+      const pp = this.people.get(actor)?.pose;
+      if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
+        this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
+      // A null regex means this body has no usable name (a malformed tokens
+      // entry). Not being mentionable is degraded, not fatal — the body still
+      // hears the room; it just cannot be addressed by name.
+      const mention = this.mentionsMe(String(args.text));   // the name, or the credential's display name (#184)
+      if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
+      this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
     }
   }
 
@@ -1704,8 +1886,7 @@ export class WorldAgent {
    * A live `particles` attach / replace / remove near this body — ONE ambient
    * world-change percept, never per particle and never per frame (#25).
    *
-   * Coalesced by (entity, component) — `particles` and `particles:smoke` on
-   * one hearth are two emitters and narrate apart: the first change in a quiet period
+   * Coalesced by (entity, component): the first change in a quiet period
    * speaks at once (someone lighting a fire beside you is news the moment it
    * happens), and everything inside the following window is folded into at
    * most one further line describing the NET result. So dragging a parameter
@@ -1718,44 +1899,43 @@ export class WorldAgent {
    * `nowMs`/`setTimer` are injectable for tests.
    */
   private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
-                      pos: number[] | undefined, ts: number, key = "particles") {
+                      pos: number[] | undefined, ts: number) {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
-    const slot = this.emitterNarration.get(emitterSlot(id, key));
+    const slot = this.emitterNarration.get(id);
     if (slot) {                       // inside the quiet window — fold, don't speak
       slot.latest = after;
       slot.actor = actor;
       return;
     }
-    const line = transitionLine(actor, id, emitterTransition(before, after), key);
+    const line = transitionLine(actor, id, emitterTransition(before, after));
     if (line) {
       this.act30.builds++;            // it feeds the activity digest like any build
       this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
     }
-    this.openEmitterWindow(id, actor, after, key);
+    this.openEmitterWindow(id, actor, after);
   }
 
-  private openEmitterWindow(id: string, actor: string, announced: unknown, key = "particles") {
-    const slotKey = emitterSlot(id, key);
+  private openEmitterWindow(id: string, actor: string, announced: unknown) {
     const close = () => {
-      const slot = this.emitterNarration.get(slotKey);
+      const slot = this.emitterNarration.get(id);
       if (!slot) return;
-      this.emitterNarration.delete(slotKey);
+      this.emitterNarration.delete(id);
       const t = emitterTransition(slot.announced, slot.latest);
       if (!t) return;                 // the burst netted out to what we already said
-      const line = transitionLine(slot.actor, id, t, key);
+      const line = transitionLine(slot.actor, id, t);
       if (line) {
         this.act30.builds++;
         this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
       }
       // A continuous burst speaks once per window rather than being silenced
       // forever by its own persistence — same rule the act refractory uses.
-      this.openEmitterWindow(id, slot.actor, slot.latest, key);
+      this.openEmitterWindow(id, slot.actor, slot.latest);
     };
     const timer = setTimeout(close, EMITTER_COALESCE_MS);
     // never hold the process open for a decoration
     (timer as unknown as { unref?: () => void }).unref?.();
-    this.emitterNarration.set(slotKey, { announced, latest: announced, actor, key, timer });
+    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
   }
 
   /** The push half of sky perception (the pull half is look()). Runs at 1Hz
@@ -1763,6 +1943,7 @@ export class WorldAgent {
    *  after a join initializes SILENTLY — arrival narration is look()'s job;
    *  this only speaks when something CHANGES while the body is present.
    *  `nowMs` is injectable for tests. */
+  private skyStamp: { seq: number; by: string } | null = null;
   checkSky(nowMs = Date.now()) {
     if (!this.skyState) return;
     const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
@@ -1781,8 +1962,8 @@ export class WorldAgent {
       this.lastSkyKey = key;
       if (eff.weather) {
         const why = eff.source === "forecast"
-          ? ` (forecast — policy sky seq ${eff.seq ?? "?"} by ${eff.by ?? "?"})`
-          : eff.source === "manual" ? ` (${eff.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
+          ? ` (forecast — policy sky seq ${eff.seq ?? this.skyStamp?.seq ?? "?"} by ${eff.by ?? this.skyStamp?.by ?? "?"})`
+          : eff.source === "manual" ? ` (${eff.by ?? this.skyStamp?.by ?? "someone"} overrode the forecast — holds until the next scheduled change)` : "";
         this.onEvent?.({ ts: nowMs, kind: "weather", who: "world", text: `world weather: ${eff.weather}${why}` });
       }
     }
@@ -1799,7 +1980,7 @@ export class WorldAgent {
    *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
    *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
    *  caller in this repo. So on a push host the array accumulated every mention,
-   *  approach and whisper for the life of the process and nothing ever read it.
+   *  approach and reach for the life of the process and nothing ever read it.
    *
    *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
    *  polling is its documented path (AGENTS.md says digests are "held and handed
@@ -1808,7 +1989,7 @@ export class WorldAgent {
    *  unbounded buffer whose only consumer is optional is a leak with a plan. */
   private static readonly PING_RING = 64;
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
+  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
     if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
@@ -1899,16 +2080,26 @@ export class WorldAgent {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
 
-  /** Received component data is replaced by the comp fold, never edited in
-   * place. Key the pure local plan by that revision's object identity; entity
-   * transforms and each walk's support basis remain outside this cache. */
-  private static readonly plans = new WeakMap<object, ReturnType<typeof planStructure>>();
-  private planOf(data: unknown): ReturnType<typeof planStructure> {
-    // Opaque primitive components normalize as empty but cannot be WeakMap keys.
+  /** Each structure's plan, per entity id, for the revision it holds now: the same object is a hit without a read;
+   *  else the same content (JSON) is (the view clones every component every view, view.js viewOf, so a received
+   *  revision's object doesn't outlive the next log entry); else it is planned afresh. Entity transforms and each
+   *  walk's support basis stay outside this cache. */
+  private plans = new Map<string, { data: object; json: string; plan: ReturnType<typeof planStructure> }>();
+  private planFor(id: string, data: unknown): ReturnType<typeof planStructure> {
+    // Opaque primitive components normalize as empty and are planned afresh each time.
     if (typeof data !== "object" || data === null) return planStructure(data);
-    let plan = WorldAgent.plans.get(data);
-    if (!plan) { plan = planStructure(data); WorldAgent.plans.set(data, plan); }
+    const had = this.plans.get(id);
+    if (had?.data === data) return had.plan;
+    const json = JSON.stringify(data);
+    if (had && had.json === json) { had.data = data; return had.plan; }
+    const plan = planStructure(data);
+    this.plans.set(id, { data, json, plan });
     return plan;
+  }
+  /** The plan of whichever known thing holds `data` as its structure (planFor), or an uncached plan. */
+  private planOf(data: unknown): ReturnType<typeof planStructure> {
+    for (const e of this.entities.values()) if ((e as any).structure === data) return this.planFor(e.id, data);
+    return planStructure(data);
   }
 
   /** The upper storey of a griddled building that the feet stand on at
@@ -1917,7 +2108,7 @@ export class WorldAgent {
    *  walls are routed by walkStructures), so this is how the feet, a walk's
    *  support and its routes know such a floor is there (ew#140). A storey
    *  counts when it rests above its building's base, its floor is more than
-   *  the walk grid's step (NAV_STEP, 0.55 m) above the terrain under the
+   *  the walk grid's step (NAV_STEP, the one walker's, 0.8 m) above the terrain under the
    *  point, `yHint`, the feet's height, is no more than a route step
    *  (ROUTE_STEP_METRES, 0.5 m) below it and less than its storey's height
    *  (the grid's wallH, the router's floor-to-floor) above it, and it has a
@@ -1948,10 +2139,10 @@ export class WorldAgent {
     const terrain = this.heightAt(x, z), nowMs = this.serverNow();
     let best: { entity: string; level: number; height: number } | null = null;
     for (const e of this.entities.values()) {
-      const data = (e.comp ?? {}).structure;
+      const data = recordComponents(e).structure;
       if (!data) continue;
       try {
-        const plan = this.planOf(data);
+        const plan = this.planFor(e.id, data);
         if (!plan.levels.some((lv: any) => lv.base > 0)) continue;
         const fx = this.eff(e.id, nowMs);
         if (!fx.ok) continue;
@@ -1980,10 +2171,10 @@ export class WorldAgent {
     const terrain = this.heightAt(x, z), nowMs = this.serverNow();
     const floors: Floor[] = [{ entity: null, level: -1, height: terrain }];
     for (const e of this.entities.values()) {
-      const data = (e.comp ?? {}).structure;
+      const data = recordComponents(e).structure;
       if (!data) continue;
       try {
-        const plan = this.planOf(data);
+        const plan = this.planFor(e.id, data);
         const fx = this.eff(e.id, nowMs);
         if (!fx.ok) continue;
         const sc = fx.scale > 0 ? fx.scale : 1;
@@ -2000,7 +2191,7 @@ export class WorldAgent {
   }
 
   /** Of the floors a floor walk tells apart at (x, z) (floorsAt), the one a
-   *  destination's height means, by walk_to's rule for a height, the
+   *  destination's height means, by move's rule for a height, the
    *  navgrid's (mcpl/navgrid.ts, route): the one nearest y, no more than
    *  `above` (NAV_STEP unless given) above it and, with `below`, no more than
    *  that below it; null when none is. Ties go to the walk's own floor, then
@@ -2063,7 +2254,12 @@ export class WorldAgent {
   // not architecture.
 
   private geomCache = new Map<string, Promise<any | null>>();
-  private supportIds = new Map<string, string[]>();   // entity id -> registered box ids
+  private supportIds = new Map<string, string[]>();
+  /** A pre-join refusal's words, until its close says whether it is final (onclose). */
+  private joinRefused: string | null = null;
+  /** How long until the next dial after a drop or a full world (shared/redial.js: the browser's rule); reset by a join. */
+  private redial = redialer();
+  private removedUntil: number | null = null;   // a moderation removal's end (a kick's cooldown): reconnect then   // entity id -> registered box ids
   /** This agent's claim token on shared support boxes. Per INSTANCE, not per
    *  name: two agents can carry the same name across a reconnect, and a
    *  holder set that collapsed them would let the departing one release the
@@ -2102,7 +2298,7 @@ export class WorldAgent {
   /** Is anything on this entity animating right now?
    *
    *  A motion component is PARAMETERS, not frames: the browser evaluates a
-   *  pendulum/spin/orbit/bob/path every frame and its collider rides along.
+   *  pendulum/spin/orbit/oscillate/path every frame and its collider rides along.
    *  A support box registered from the AUTHORED transform does not — it would
    *  sit where the swing used to be, and a body would come to rest on a floor
    *  that is no longer there. A ghost floor is worse than no floor: no floor
@@ -2117,14 +2313,19 @@ export class WorldAgent {
    *  evaluates the same deterministic motion the browsers do, the safe answer
    *  is to abstain. */
   private hasActiveMotion(e: Entity | undefined): boolean {
-    if (!e?.comp) return false;
-    for (const [k, v] of Object.entries(e.comp)) {
+    if (!e) return false;
+    for (const [k, v] of Object.entries(recordComponents(e))) {
       if (k !== "motion" && !k.startsWith("motion:")) continue;
       if (v && (v as any).type != null) return true;
     }
     return false;
   }
 
+  /** A model's box in its own frame ([[min], [max]]), as the server measures it: the pivot's centre/base snaps. */
+  async modelBox(lib: string): Promise<number[][] | null> {
+    const g = await this.geomFor(lib); const b = g?.bbox;
+    return b && Array.isArray(b.min) && Array.isArray(b.max) ? [b.min, b.max] : null;
+  }
   /** The model's collision triangles, decoded from the bytes /library serves
    *  (shared by every agent in the process — see meshCache). */
   private meshFor(lib: string): Promise<CollisionMesh | null> {
@@ -2167,30 +2368,31 @@ export class WorldAgent {
 
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
-    if (!before || !before.lib || before.lib === "(light)") return;  // lights carry no collider
+    if (!before?.model) return;  // only a model carries a collider
     // A moving thing supports nothing here — and stops supporting the moment
     // it starts moving, so this is the drop path as well as the skip path.
     // Mounted cargo is the same story told by a different verb: it rides a
     // parent whose transform this code does not track.
     if (this.hasActiveMotion(before) || this.mounts.has(id)) { this.dropSupport(id); return; }
-    const [g, mesh] = await Promise.all([this.geomFor(before.lib), this.meshFor(before.lib)]);
+    const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
     // Re-read, and re-CHECK: an id can be removed and respawned as something
     // else while its geometry is in flight, and "the entity still exists" is
     // not the same question as "it is still the thing I fetched for". Without
     // the lib comparison a crate's decks could land under a lamp post that
     // merely inherited its id.
     const e = this.entities.get(id);
-    if ((!g && !mesh) || !e || e.lib !== before.lib) return;
+    if ((!g && !mesh) || !e || e.model !== before.model) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.mounts.has(id)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
+    // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
+    const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
     // A transform that cannot be a place in the world registers NOTHING —
     // and abstains BEFORE the drop, leaving whatever support already stands.
     // This is the layer that turned one malformed packet into everyone's
     // outage: undefined rode e.pos into fitSupportBox and killed the shared
-    // door (#88). applyEntry now keeps such state out; this holds if it
-    // arrives anyway.
+    // door (#88). This holds if such a transform arrives anyway.
     if (!isFiniteVec3(e.pos) || !Number.isFinite(s) || !Number.isFinite(e.yaw ?? 0)) {
       // If position is readable, the entity has moved and any box at its old
       // address is now a ghost floor. Retaining existing support is correct
@@ -2200,7 +2402,21 @@ export class WorldAgent {
       return;
     }
     this.dropSupport(id);
-    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
+    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s, ...(Array.isArray(e.scale3) ? { scale3: s3 } : {}) };
+    // lying down (a tumbling engine's rest, or a hand's tilt): its box turned into the frame of its own yaw, and no
+    // decks or grid (those are measured upright); read by its yaw alone it was a phantom deck where it no longer stands
+    // A stretch acts on the model's own axes, before its rotation, so a stretched box is stretched first and then turned,
+    // and is registered at scale 1 (the turn would carry a stretch applied afterwards onto the wrong axes).
+    const stretched = Array.isArray(e.scale3) && !(Math.abs(s3[0]) === Math.abs(s3[1]) && Math.abs(s3[1]) === Math.abs(s3[2]));
+    const st = (v: number[]) => stretched ? v.map((x, i) => x * Math.abs(s3[i])) : v;
+    const lying = Array.isArray(e.q) && e.q.length === 4 && g?.bbox?.min ? lyingFrame(e.q, st(g.bbox.min), st(g.bbox.max)) : null;
+    if (lying) {
+      const bid = `${this.world}/${id}`;
+      void registerSupport(this.supportHolder, bid, lying.min, lying.max,
+        stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
+      this.supportIds.set(id, [bid]);
+      return;
+    }
     // The real collider when the triangles are to hand: fitted from the same
     // mesh, with the same override, by the same decide() a browser runs — so
     // a room-scale interior holds this body up AND holds it back, walls and
@@ -2214,10 +2430,10 @@ export class WorldAgent {
       // during it has something to drop — and if one happened, the fit that
       // lands afterwards is taken straight back out.
       this.supportIds.set(id, [bid]);
-      const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, lib: e.lib });
+      const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
       const now = this.entities.get(id);
       const superseded = !this.supportIds.get(id)?.includes(bid);
-      if (superseded || this.closed || !now || now.lib !== e.lib || this.mounts.has(id) || this.hasActiveMotion(now)) {
+      if (superseded || this.closed || !now || now.model !== e.model || this.mounts.has(id) || this.hasActiveMotion(now)) {
         if (ok && (superseded || this.closed)) void removeSupport(this.supportHolder, bid);
         else if (ok) this.dropSupport(id);
         return;
@@ -2226,12 +2442,14 @@ export class WorldAgent {
       this.supportIds.delete(id);
     }
     if (!g) return;
-    const [w, h, d] = [g.bbox.size[0] * s, g.bbox.size[1] * s, g.bbox.size[2] * s];
+    // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
+    const a3 = s3.map(Math.abs);
+    const [w, h, d] = [g.bbox.size[0] * a3[0], g.bbox.size[1] * a3[1], g.bbox.size[2] * a3[2]];
     const ids: string[] = [];
     const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
     const decks = roomScale
       ? (g.topSurfaces ?? [])
-          .filter((t: any) => t.area * s * s >= 1 && fillOf(t) >= DECK_FILL)
+          .filter((t: any) => t.area * a3[0] * a3[2] >= 1 && fillOf(t) >= DECK_FILL)
           .slice(0, 6)
       : [];
     if (roomScale && decks.length) {
@@ -2250,19 +2468,19 @@ export class WorldAgent {
       // the same shared classifier the browser's decide() runs; a summary
       // without `lie` (older server) cannot accuse anyone, so honest small
       // boxes keep today's behavior either way.
-      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s : 0 });
+      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * a3[1] : 0 });
       if (cls.uneven) {
         // the certification is a MODEL-frame bound; this spawn's scale must
         // not stretch it past the agreed world bound (#94 review B1) — a
         // grid certified to 3cm serves a ×1.25 spawn (3.75cm) but not a ×2
-        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s > CERT_MAX_WORLD;
+        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (fit) ids.push(bid);
         // refused grid (absent/malformed/oversized/over-stretched): a
         // DECLARED abstention — the body finds terrain, which is at worst
         // the browser's under-the-rubble disagreement, never a floating
         // false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s})` : ""} — abstaining, no box`);
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
       } else {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
@@ -2278,15 +2496,110 @@ export class WorldAgent {
 
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
+  // ---------------- anim (R 10-17 15:31/15:32): one way to play a pose or a clip, by name or live ----------------
+  /** The anims this body plays or holds now, when they last (mode loop or hold), oldest first; a once anim ends by itself,
+   *  silently. Each is a LAYER (R 10-17 16:26): a clip (held as the presence clip), the named pose wings-folded, a held
+   *  frame of live keys (joints, or tracks in mode hold: the held pose), or live tracks looping (relayed to every client).
+   *  A new one replaces only the one in its own layer: a pose struck over a sit leaves the sit playing. */
+  anims: { name: string; mode: "loop" | "hold"; kind: "clip" | "pose" | "live" | "track"; clip?: string; bodyMode?: string }[] = [];
+  /** The newest of them (or null). */
+  get anim() { return this.anims.at(-1) ?? null; }
+  /** The body-mode (R 10-17 15:34/15:45: was posture, the clip label): stand | sit | lie | swim | fly | fall, every one
+   *  declarable for looks (anim {bodyMode}; an anim may ask for one: the built-in sit and lie do, and its end by a move,
+   *  another anim or a fall returns to stand; anim {stop} leaves it as it is, R 16:26); the mover's real transitions
+   *  (flight, water) set it and end a declaration. Published as presence bodyMode (bodyModeNow). A self-declared
+   *  description: it grants nothing (take-off still wants the fly permission). */
+  modeTracker = bodyModeTracker();
+  get bodyMode() { return this.modeTracker.declared ?? "stand"; }
+  set bodyMode(m: string | null) { this.modeTracker.declare(m === "stand" ? null : m); }
+  /** A flight that has come down on its own stays LANDED until something ends it, so only its other phases fly. */
+  private airborne() { return !!this.flight && this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED"; }
+  /** The mode this body publishes now: a declaration, else the mover's (fly, swim, stand); on a station, sit. */
+  bodyModeNow() { const m = this.modeTracker.step({ flying: this.airborne() && this.clip !== "ragdoll", swimming: this.clip === "swim" || this.clip === "tread" }); return m === "stand" && this.myOccupancy ? "sit" : m; }
+  /** The clip a sit at rest plays: the last sitting anim's (sitchair keeps the chair's height), else sit. */
+  private sitRest = "sit";
+  /** A body-mode's own resting anim (R 10-17 16:26): stand → idle, sit → the sit loop, lie → lie, swim → tread, fly →
+   *  soar; null where something else owns the clip (a station's occupant, a real flight, a fall). Never the bind pose. */
+  restClip(mode: string): string | null {
+    if (mode === "stand") return this.myOccupancy ? null : "idle";
+    if (mode === "sit") return this.myOccupancy ? null : this.sitRest;
+    if (mode === "lie") return "lie";
+    if (mode === "swim") return "tread";
+    if (mode === "fly") return this.flight ? null : "soar";
+    return null;
+  }
+  /** A clip held in mode hold: the time it freezes at (presence clipTime with clipRate 0). */
+  animHold: number | null = null;
+  /** The ends this body heard (newest last; presence only, never logged): what an agent reads as `stopped {name, why}`. */
+  animStops: { name: string; why: string; ts: number }[] = [];
+  /** Anims that lasted ended (every one, or those `which` picks): tell the agent once each, `stopped {name, why}`, and
+   *  forget them. Ended by anim {stop}, the body-mode stays; otherwise an anim that set it returns it to stand. */
+  animEnded(why: string, which: (a: WorldAgent["anims"][number]) => boolean = () => true) {
+    const gone = this.anims.filter(which); if (!gone.length) return;
+    this.anims = this.anims.filter((a) => !gone.includes(a));
+    for (const a of gone) {
+      if (a.kind === "clip") this.animHold = null;
+      if (a.bodyMode && why !== "stopped") this.bodyMode = "stand";
+      const ts = Date.now(); this.animStops.push({ name: a.name, why, ts }); if (this.animStops.length > 20) this.animStops.shift();
+      const text = `stopped {name: ${JSON.stringify(a.name)}, why: ${JSON.stringify(why)}}`;
+      this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
+    }
+  }
+  /** Start an anim that lasts: the one in its own layer before it ends with why "replaced" (R 15:34; a once overlays). */
+  animBegan(a: WorldAgent["anims"][number], holdAt: number | null = null) {
+    this.animEnded("replaced", (b) => b.kind === a.kind);
+    this.anims.push(a); if (a.bodyMode && isBodyMode(a.bodyMode)) { this.bodyMode = a.bodyMode; if (a.bodyMode === "sit" && a.clip) this.sitRest = a.clip; }
+    if (a.kind === "clip") this.animHold = a.mode === "hold" ? holdAt : null;
+  }
+  /** anim {stop} (R 10-17 16:26/16:27). which null: every anim this body plays or holds, each layer, and any held pose;
+   *  then the CURRENT body-mode's own resting anim plays (restClip; never the bind pose) and the body-mode is unchanged
+   *  (to stand up, declare stand or walk). A name: only that layer, the rest going on; "live" names every ad-libbed one
+   *  (joints, tracks). Returns what was stopped (empty: nothing by that name was playing, which is a note, not an error). */
+  async stopAnims(which: string | null): Promise<string[]> {
+    const hit = this.anims.filter((a) => which == null || a.name === which);
+    this.animEnded("stopped", (a) => hit.includes(a));
+    const kinds = new Set(hit.map((a) => a.kind));
+    if (which == null || kinds.has("live")) { if (this.heldPose && (which == null || this.heldPoseAuthored)) this.setPose(null); }
+    if ((which == null || kinds.has("track")) && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: "anim", stop: true }));
+    // folding the wings open waits for the bones: a walk (it bumps bodyEpoch) or an anim begun meanwhile keeps its clip
+    const epoch = this.bodyEpoch, before = new Set(this.anims);
+    if ((which == null || kinds.has("pose")) && this.wingsFolded) await this.foldWings(false);
+    // …a tracks loop plays in its own layer and takes no clip, so one begun meanwhile doesn't (house 6340433633)
+    const newer = this.bodyEpoch !== epoch || this.anims.some((a) => !before.has(a) && a.kind !== "track");
+    if ((which == null || kinds.has("clip")) && !newer) {
+      if (this.clip === "ragdoll") this.setPose(null);   // a slump ends in the rest too (setPose stands it, and stops its sim)
+      const rest = this.restClip(this.bodyModeNow()); if (rest) { this.stop(); this.clip = rest; }
+    }
+    return hit.map((a) => a.name);
+  }
+  /** Every tick: an anim that lasts ends when what holds it is gone (a walk took the clip, a ragdoll, a clear, the wings
+   *  opened), with why: moved, knocked over, cleared, replaced. */
+  private watchAnim() {
+    for (const a of [...this.anims]) {
+      const end = (why: string) => this.animEnded(why, (b) => b === a);
+      if (a.kind === "clip" && this.clip !== a.clip) end(this.clip === "ragdoll" ? "knocked over" : ["walk", "run", "swim", "tread"].includes(this.clip) || this.target ? "moved" : "replaced");
+      else if (a.kind === "pose" && !this.wingsFolded) end("stopped");
+      else if (a.kind === "live" && !this.heldPose) end(this.clip === "ragdoll" ? "knocked over" : this.target ? "moved" : "cleared");
+      else if ((a.kind === "live" || a.kind === "track") && this.clip === "ragdoll") end("knocked over");
+      // a tracks loop ends on a walk, as anim's contract says of every anim: a move ends it. Treading water is a
+      // swimmer at rest, not a move, so a loop started while treading plays on
+      else if (a.kind === "track" && (this.target || ["walk", "run", "swim"].includes(this.clip))) this.endTrackLoop("moved");
+    }
+  }
+  /** End the tracks loop alone (its layer, not a held pose or a clip), and tell the renderers so: a walk ends it, and a
+   *  new loop on this body takes its place rather than playing beside it (tools.ts's anim). */
+  endTrackLoop(why: string) {
+    const had = this.anims.some((a) => a.kind === "track");
+    this.animEnded(why, (a) => a.kind === "track");
+    if (had && this.joined && this.ws?.readyState === 1) this.ws.send(JSON.stringify({ type: "anim", stop: true }));
+  }
   private tickInWorld() {
+    this.watchAnim();
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
-    // §24k R0 (survey A7): advance the sim fold and stamp live body
-    // positions into the entity view — text-tier perception now sees a
-    // punted crate WHERE IT IS (and, at rest, where it CAME TO REST —
-    // recomputed, bit-identical with every renderer). Support rebuilds
-    // when a body rests; the punt side effect dropped it at launch.
-    // a heightmap world's sim waits for its grid (as the browser's does): noise ground would diverge
+    // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view — the same engine state
+    // every renderer draws (shared/protocol/replica.js simAt, advanced to the authority's clock) — so look() sees a punted crate
+    // where it is, and, at rest, where it came to rest. Support rebuilds when a thing comes to rest.
     // a heightmap terrain waiting on its grid: ask again (requestGrid backs off by itself), and build the
     // waiting bag — only if it is still the newest — the moment the grid is here
     const pend = this.pendingTerrain;
@@ -2295,18 +2608,23 @@ export class WorldAgent {
         if (g && this.pendingTerrain === pend && pend.rev === this.terrainRev) { this.pendingTerrain = null; void this.buildTerrain(pend.args); }
       });
     }
-    const simShape = this.sim.terrain?.shape;
-    if (!shapeReady(simShape)) void requestGrid(simShape.heightmap.grid);
-    else if (this.sim.epoch && !this.sim.epoch.foreign) {
-      advanceSim(this.sim, tickOf(this.sim, this.serverNow()));
-      for (const id in this.sim.bodies) {
-        const b = this.sim.bodies[id];
+    // a heightmap world's engine waits for its grid (as the browser's does, thingphysics.js): noise ground would diverge
+    const simShape = this.replica?.sim?.sim?.terrain?.shape;
+    const simReady = shapeReady(simShape);
+    if (!simReady) void requestGrid(simShape.heightmap.grid);
+    const sim = simReady ? this.replica?.simAt?.(this.serverNow()) : null;
+    if (sim?.bodies) {
+      for (const sid in sim.bodies) {
+        const b = sim.bodies[sid]; const id = idOut(sid);
         const e = this.entities.get(id);
-        if (e) e.pos = [b.p[0], b.p[1], b.p[2]];
+        // a body's origin means something only with its rotation (a tumbling engine lays things down): take both
+        if (e && Array.isArray(b.p)) e.pos = [b.p[0], b.p[1], b.p[2]];
+        if (e && Array.isArray(b.q) && b.q.length === 4) e.q = [b.q[0], b.q[1], b.q[2], b.q[3]];
         if (b.resting && !this.simRested.has(id)) {
           this.simRested.add(id);
-          this.trackSupport(this.syncSupport(id));
-        } else if (!b.resting) this.simRested.delete(id);
+          if (e) this.trackSupport(this.syncSupport(id));
+        } else if (!b.resting && !this.simFlying.has(id)) { this.simFlying.add(id); this.simRested.delete(id); this.dropSupport(id); }   // a flying thing holds nobody up
+        if (b.resting) this.simFlying.delete(id);
       }
     }
     // ambient sky perception rides the body tick at 1Hz — cheap (cursor keeps
@@ -2328,85 +2646,108 @@ export class WorldAgent {
     const admittedHeight = this.target ? this.walkHeightAt : null;
     let moveX = 0, moveZ = 0, snap = false, distBefore = 0;
     if (!this.draggedBy && this.target) {
-      const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist <= (this.target.tolerance ?? ARRIVE)) {
+      const T = this.target, g = this.walkGate;
+      // walk only as far as the authority has accepted (E1): the permit is a point on this leg it said yes to;
+      // 'sync': the authority doesn't know where we stand yet
+      let room = Infinity;
+      if (g?.mode === "sync") room = 0;
+      else if (g?.mode === "tracked") {
+        room = g.permit ? Math.hypot(g.permit[0] - this.pos.x, g.permit[2] - this.pos.z) : 0;
+        if (!g.busy && !(g.hold! > 0) && room < PERMIT_AHEAD && !this.permitAtTarget(g) && !this.blockerHolds(g)) this.extendPermit(g);
+      }
+      // a loose thing just shoved (shoveNow): for a moment the walk keeps the speed the shove left it, as a cap on the stride
+      const capped = this.walkCap && Date.now() < this.walkCap.until ? this.walkCap.v : Infinity;
+      if (capped < Infinity) room = Math.min(room, Math.max(0, capped) * dt);
+      // ONE stride of the shared mover (shared/mover.js): the same stride the client takes and the authority checks.
+      // The floor is the walk's admitted support (walkHeightAt: the live terrain, or the floor that admitted the route;
+      // placed floors otherwise reach this body through the sim's support boxes, not its walk); what blocks is the
+      // authority's permit, asked above, and the route the walk was planned on (walkTo).
+      const walkFloor = this.walkHeightAt ?? ((x: number, z: number) => this.heightAt(x, z));
+      // #235: with the colliders loaded the floor is what the feet will find (colliders.resolveColliders: placed floors and
+      // stairs within the mover's step, else the walk's floor) — the same answer the collider pass below gives the stride
+      const colliding0 = collidersReady() && !this.myOccupancy && !this.feetSettling;
+      const floorAt = colliding0 ? (x: number, z: number, y?: number) => this.feetAt(x, z, y ?? this.pos.y, walkFloor) : walkFloor;
+      // WATER (upstream #242) is the mover's too: handed the world's level (env.waterAt) and this body's measured stature,
+      // the stride wades (dragged) or swims (a stroke's pace, afloat at the chest) — no water arithmetic here.
+      const water = this.water;
+      // feet on the live ground BEFORE the stride: terrain that loads late or changes under the walker lifts the body here, so
+      // the mover judges a ledge AHEAD against where the feet now stand — not against a y the ground has since left (the
+      // lifecycle test's mid-walk terrain swap; before 10-15 one refused stride, then the feet clamp, then on)
+      // (colliding, the feet below do this themselves, falling to a lower floor rather than jumping to it)
+      if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (!water || g0 >= water.level)) this.pos.y = g0; }
+      const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
+        ...(water ? { height: this.stature() } : {}) },
+        water ? { floorAt, waterAt: () => water.level } : { floorAt });
+      if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
         // rounds a doorway instead of driving at the wall behind it.
         const next = this.legs.shift();
         if (next) {
-          this.target = { x: next.x, z: next.z, run: this.target.run,
-            tolerance: this.legs.length ? this.legTolerance : this.walkTolerance };
+          this.target = { x: next.x, z: next.z, run: T.run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance, ...(next.y != null ? { y: next.y } : {}) };
         } else {
-          this.target = null; this.walkHeightAt = null; this.speed = 0; this.clip = "idle";
+          this.target = null; this.walkHeightAt = null; this.walkGate = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
         }
+      } else if (r.blocked) {
+        // the stride was refused (a ledge, a wall, a mode): the walk ends here and says why, instead of pushing at it for
+        // 90 s and reporting "interrupted or timed out" (review 10-15 #4; the ledge hang was older than the water)
+        this.walkStopReason = r.blocked.by === "ledge" ? `a ledge ${Number.isFinite(r.blocked.top) ? `${(r.blocked.top - this.pos.y).toFixed(2)} m` : ""} too high to step onto at (${this.pos.x.toFixed(2)}, ${this.pos.z.toFixed(2)})` : `blocked by ${r.blocked.by}`;
+        this.target = null; this.legs.length = 0; this.walkHeightAt = null; this.walkGate = null; this.speed = 0;
+        this.clip = r.stance?.swimming ? "tread" : "idle";
+        this.walkDone?.(false); this.walkDone = null;
       } else {
-        // WATER (shared/terrainshape.js waterStance), the browser's rule: wading drags — knee-deep ~0.86,
-        // waist-deep ~0.6, chest-deep 0.5 — and past the chest the body floats and swims at a stroke's
-        // pace. Nothing walls the walk off any more; water is slow, not shut.
-        let sp = this.target.run ? RUN : WALK;
-        let swimming = false;
-        if (this.water) {
-          const ground = admittedHeight ?? this.standingGround();
-          const st = waterStance(this.water.level, ground(this.pos.x, this.pos.z), this.stature());
-          swimming = st.swimming;
-          sp = swimming ? (this.target.run ? SWIM_RUN : SWIM_SPEED) : sp * st.speedFactor!;
-        }
-        this.speed = sp; this.clip = swimming ? "swim" : this.target.run ? "run" : "walk";
-        this.yaw = Math.atan2(dx, dz);
-        const step = Math.min(dist, sp * dt);
-        moveX = (dx / dist) * step; moveZ = (dz / dist) * step;
-        snap = step === dist; distBefore = dist;
+        this.speed = r.moved > 0 ? r.moved / dt : 0; this.clip = r.stance?.swimming ? "swim" : T.run ? "run" : "walk";
+        if (r.yaw !== null) this.yaw = r.yaw;
+        // the stride's horizontal move; the feet below carry it out (against the fitted colliders when they are loaded, #235)
+        moveX = r.pos[0] - this.pos.x; moveZ = r.pos[2] - this.pos.z;
+        snap = r.pos[0] === T.x && r.pos[2] === T.z; distBefore = Math.hypot(T.x - this.pos.x, T.z - this.pos.z);
       }
     }
-    // A tumbling, lying, dragged, nailed or FLYING body owns its own y — the
-    // ground is for FEET, and none of those states is standing on them.
+    this.tickShove();
+    // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
+    // terrain clamp is for FEET, and none of those states is standing on them
     const feetFree = !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight;
-    const ground = admittedHeight ?? this.standingGround();
+    const terrainG = admittedHeight ?? this.standingGround();   // the storey the feet stand on, else the terrain (storeyUnder)
     const target = this.target;
-    const bodyYBeforeFeet = this.pos.y; // entering water starts from the body, not a support snap
-    const supportHeld = feetFree && ((collidersReady() && this.mounts.has(this.name)) || this.feetSettling);
-    if (supportHeld) {
-      // Seated: the seat holds the body, and the feet keep the floor they
-      // last stood on. A just-joined body likewise waits for its floors.
+    // #235: with the collision modules loaded, the feet are the browser controller's (client/lib/controller.js): the
+    // mover's stride above, then colliders.resolveColliders (standOn) pushes the capsule out of anything solid and answers
+    // the ground under it — a stair tread within the mover's step, a floor below the feet, else terrain — and the body
+    // snaps onto it or falls toward it. Seated, or just joined, the feet keep the floor they last stood on.
+    const colliding = feetFree && collidersReady();
+    let groundY: number | null = null;
+    const yBefore = this.pos.y;   // a float that starts this tick starts from the body as it stood, not mid-fall
+    if (feetFree && ((colliding && this.myOccupancy) || this.feetSettling)) {
       if (snap && target) { this.pos.x = target.x; this.pos.z = target.z; }
       else { this.pos.x += moveX; this.pos.z += moveZ; }
-    } else if (feetFree && collidersReady()) {
-      this.stepFeet(moveX, moveZ, dt, ground);
-      // Land on the validated point exactly when nothing deflected the step.
-      if (snap && target && Math.hypot(this.pos.x - target.x, this.pos.z - target.z) < 1e-6) {
-        this.pos.x = target.x; this.pos.z = target.z;
-      }
+    } else if (colliding) {
+      groundY = this.stepFeet(moveX, moveZ, dt, terrainG);
+      // land on the validated point exactly when nothing deflected the step, rather than let a residual cut the next corner
+      if (snap && target && Math.hypot(this.pos.x - target.x, this.pos.z - target.z) < 1e-6) { this.pos.x = target.x; this.pos.z = target.z; }
       if (target && distBefore > 0) this.noteWalkProgress(distBefore, Math.hypot(moveX, moveZ));
     } else {
       if (snap && target) { this.pos.x = target.x; this.pos.z = target.z; }
       else { this.pos.x += moveX; this.pos.z += moveZ; }
+      if (feetFree) groundY = terrainG(this.pos.x, this.pos.z);
     }
-    if (feetFree && !supportHeld) {
-      // stepFeet owns the effective support height (placed decks/stairs as well
-      // as terrain). Before exact colliders are ready, use this world's terrain.
-      const exactSupport = collidersReady();
-      const groundY = exactSupport ? this.pos.y : ground(this.pos.x, this.pos.z);
+    if (groundY != null) {
       if (this.water) {
-        // Feet on the bed, or floating with the chest at the surface; a body
-        // standing still out of its depth treads water.
+        // feet on the bed, or floating with the chest at the surface; a body standing still out of its
+        // depth treads water
         const st = waterStance(this.water.level, groundY, this.stature());
         if (st.swimming) {
-          if (!this.float.on) this.float = { on: true, y: bodyYBeforeFeet, vy: 0 };
+          // float on the moving surface, the browser's law and clock (controller.js does the same)
+          if (!this.float.on) { this.float = { on: true, y: colliding ? yBefore : this.pos.y, vy: 0 }; }
+          if (colliding) this.vy = 0;   // afloat, the feet's own fall is not running
           const t = waveClock(this.serverNow()), level = this.water.level, A = this.waterKinds;
           const surf = footprintSurface((x, z) => level + surfaceOffset(A?.sample(x, z) ?? null, x, z, t), this.pos.x, this.pos.z);
           floatStep(this.float, surf, this.stature(), dt, groundY);
           this.pos.y = this.float.y;
-        } else { this.endFloat(); this.pos.y = st.y; }
+        } else { this.endFloat(); if (!colliding) this.pos.y = st.y; }   // colliding: stepFeet already stood (or dropped) the feet
         if (st.swimming && !this.target && (this.clip === "idle" || this.clip === "walk" || this.clip === "run" || this.clip === "swim")) this.clip = "tread";
         else if (!st.swimming && (this.clip === "tread" || this.clip === "swim")) this.clip = this.target ? "walk" : "idle";
-      } else {
-        this.endFloat();
-        if (!exactSupport) this.pos.y = groundY; // stepFeet already placed exact-support feet
-      }
-    } else this.endFloat();
+      } else { this.endFloat(); if (!colliding) this.pos.y = groundY; }
+    } else if (!feetFree) this.endFloat();   // a ragdoll, a drag, a nail or a flight has the body: a later float starts afresh
     // FLIGHT: one fixed-step integration of shared/flight.js per tick, and the
     // body's position is whatever it says. The integrator is the same function
     // the browser bench and the capture path run -- authority here is the
@@ -2427,7 +2768,7 @@ export class WorldAgent {
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
-        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
+        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, bodyMode: this.bodyModeNow(), clipTime: this.animHold ?? this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: this.animHold != null ? 0 : 1,
         ...wingFoldPresence(this.wingsFolded),
         // a physics bag only ever leaves this process labelled as what it is —
         // "ragdoll" — so every clip-keyed sanitizer downstream can see it.
@@ -2435,11 +2776,12 @@ export class WorldAgent {
         // immortal (#61): rememberPose kept it, restore re-armed it, forever.
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
-        ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
+        ...(this.pendingAnim ? { anim: this.pendingAnim } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),
       },
     }));
-    this.pendingEmote = null; // one-shot: rides exactly one packet
+    this.pendingAnim = null; // one-shot: rides exactly one packet
   }
 
   /** Being pushed. Consent first; then the REAL tumble — this body runs the
@@ -2449,11 +2791,11 @@ export class WorldAgent {
    *  VRM the sim cannot serve. Either way the event lands: being knocked over
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
-    if (!this.pushable || this.draggedBy) return;
+    if (this.draggedBy) return;   // consent is the authority's: a shove my table refuses never reaches me (it sends the table on join)
     // knocked over standing, the root is at the feet's height until something
     // lifts or lowers it; a body already down keeps the reading its root has
     if (!this.isSlumped()) this.cannedY = this.pos.y;
-    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; }
+    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.walkGate = null; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -2479,7 +2821,8 @@ export class WorldAgent {
   private async ensureBody(): Promise<HeadlessBody | null> {
     if (this.body !== undefined) return this.body;
     this.body = await HeadlessBody.create(this.httpBase, this.avatar);
-    if (this.body) { this.body.scope = this.world; this.body.waterSource = () => this.waterFieldNow(); }
+    if (this.body) this.body.waterSource = () => this.waterFieldNow();   // its own world's water, always
+    if (this.body) this.body.scope = this.world;
     return this.body;
   }
 
@@ -2848,7 +3191,7 @@ export class WorldAgent {
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return refused(`still standing — wings folded; unfold_wings opens them`);
+    if (this.wingsFolded) return refused(`still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`);   // main #245's words, our tool
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -2867,7 +3210,7 @@ export class WorldAgent {
     this.flight = flightTakeOff(this.flightCfg, this.flight,
       { groundY: this.groundAt(this.pos.x, this.pos.z, feetY) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
-    if (ev) { return refused(`still standing — ${ev.reason}`); }
+    if (ev) { return refused(`still standing — ${flightFixInOurTools(ev.reason)}`); }
     // A fresh flight in the air takes over from any landing or climb still waiting on the one before.
     this.flightCourse++; this.climbCourse++;
     return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`);
@@ -2937,11 +3280,10 @@ export class WorldAgent {
                          : flightUnfold(this.flightCfg, this.flight);
       const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
       // Wings already folded, or already open, are what the call asked for.
-      // The reason says why the wings didn't change (shared/flight.js); many
-      // reasons name the wings' state too, and flight_status always gives it,
-      // so the sentence around the reason doesn't add the state.
+      // The reason says why the wings didn't change (shared/flight.js); many reasons name the wings' state too, and
+      // flight_status always gives it, so the sentence around the reason doesn't add the state (#247)
       if (ref) {
-        const text = `wings stay as they are — ${ref.reason}`;
+        const text = `wings stay as they are — ${flightFixInOurTools(ref.reason)}`;
         if (before !== (fold ? "FOLDED" : "OPEN")) return refused(text);
         // The wings are as asked, so the posture says so too, and the answer says when that changed it. A fold
         // before a down keeps wingsFolded set while recovery opens the flight's wings, and take_off reads wingsFolded.
@@ -2954,7 +3296,7 @@ export class WorldAgent {
         : bones == null ? `nothing is folded — ${BONES_NOT_KNOWN}` : `wings are already open`);
     }
     this.wingsFolded = fold;
-    if (fold) return done("wings folded — the vigil posture; take_off refuses until you unfold");
+    if (fold) return done("wings folded — the vigil posture; a fly-mode move refuses until you open them (anim {stop: \"wings-folded\"})");
     if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
     if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
     const cap = this.flightAllowed();
@@ -2970,7 +3312,7 @@ export class WorldAgent {
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return refused("you are on the ground — take_off first");
+      return refused("you are on the ground — move {mode: \"fly\"} first");
     }
     // A down is involuntary: no flight verb flies a body out of one (downRefusal says what does).
     if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
@@ -3039,7 +3381,7 @@ export class WorldAgent {
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return refused("you are on the ground — take_off first");
+      return refused("you are on the ground — move {mode: \"fly\"} first");
     }
     if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight, cfg = this.flightCfg;
@@ -3098,7 +3440,7 @@ export class WorldAgent {
     }
     if (got === "touched down") {
       if (this.flight) this.flight.climbTo = null;
-      return done(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, the height you asked for — take_off to fly again`);
+      return done(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, the height you asked for — move {mode: "fly"} to fly again`);
     }
     if (got === "landed") {
       if (this.flight) this.flight.climbTo = null;
@@ -3199,7 +3541,7 @@ export class WorldAgent {
    *  NOT verbs the pilot may call. Reachable only from a rehearsal control or,
    *  later, the Connectome adapter. */
   flightBodyDown(eventId: string): ActResult {
-    if (!this.flight) return refused("not airborne — take_off first");
+    if (!this.flight) return refused("not airborne — move {mode: \"fly\"} first");
     this.flight = flightDown(this.flight, { eventId });
     // A wait on the flight hears of the down now. The ragdoll's sim, started below, owns the body from its first
     // step, and the flight tick, which settles waits, doesn't run while it does, so a climb, glide or flare
@@ -3246,7 +3588,7 @@ export class WorldAgent {
   /** Air model for the limp fall. Config, like everything else in flight. */
   leafCfg: any = { ...LEAF_FORCE };
   flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
-    if (!this.flight) return refused("not airborne — take_off first");
+    if (!this.flight) return refused("not airborne — move {mode: \"fly\"} first");
     // Only a body that is down has anything to recover from; bodyRecovered
     // leaves every other phase as it is. A body sitting up, or one whose
     // recovery in the air has begun (still LEAF, with recoverAt set), already is.
@@ -3288,7 +3630,7 @@ export class WorldAgent {
     if (support.kind !== "floor") return (x, z) => this.heightAt(x, z);
     const drop = support.height - 2 * NAV_STEP;
     // The walk's floor, placed as walkSupport found it a moment ago.
-    const e = this.entities.get(support.entity)!, plan = this.planOf(e.comp!.structure), lv: any = plan.levels[support.level];
+    const e = this.entities.get(support.entity)!, plan = this.planFor(e.id, recordComponents(e).structure), lv: any = plan.levels[support.level];
     const fx = this.eff(e.id, this.serverNow());
     if (!fx.ok) return () => drop;   // as storeyUnder passes over a building it can't place
     const sc = fx.scale > 0 ? fx.scale : 1, place = { pos: fx.pos, yaw: fx.yaw, scale: sc };
@@ -3299,7 +3641,7 @@ export class WorldAgent {
   }
 
   /** What the feet stand on for a walk from here: the upper storey of a
-   * griddled building the feet stand on (storeyUnder), which walkTo's floor
+   * griddled building the feet stand on (storeyUnder, #200), which walkTo's floor
    * branch then serves, else the terrain. The router never manufactures
    * floor support itself. `yHint` is the feet's height (feetY), which for a
    * body a sim has laid down is RAGDOLL_ROOT_DROP above its root. */
@@ -3317,12 +3659,14 @@ export class WorldAgent {
   private walkStructures(support: WalkSupport): WalkStructure[] {
     const nowMs = this.serverNow(), out: WalkStructure[] = [];
     for (const e of this.entities.values()) {
-      const data = (e.comp ?? {}).structure;
+      const data = recordComponents(e).structure;
       if (!data) continue;
       const skip = (why: string) => {
-        if (typeof data !== "object" || UNPLANNABLE_LOGGED.has(data)) return;
-        UNPLANNABLE_LOGGED.add(data);
-        console.warn(`[${this.name}] walk_to skips structure [${e.id}], which can't be checked: ${why}`);
+        if (typeof data !== "object") return;
+        const key = this.name + "\0" + e.id, json = JSON.stringify(data);
+        if (UNPLANNABLE_LOGGED.get(key) === json) return;
+        UNPLANNABLE_LOGGED.set(key, json);
+        console.warn(`[${this.name}] move skips structure [${e.id}], which can't be checked: ${why}`);
       };
       // Where it is now, carried or moving included, as every other spatial
       // claim reads it (#82): not its rest pose.
@@ -3336,7 +3680,7 @@ export class WorldAgent {
       const local = (p: Vec2): [number, number] => { const [lx, , lz] = localizePoint(place, p.x, 0, p.z); return [lx, lz]; };
       let route: ReturnType<typeof prepareRouteLocal>;
       try {
-        const plan = this.planOf(data);
+        const plan = this.planFor(e.id, data);
         route = prepareRouteLocal(plan, support.kind === "terrain" ? {
           kind: "terrain", step: ROUTE_STEP_METRES / sc, scale: sc,
           // The live terrain, as the walk's ticks read it.
@@ -3366,7 +3710,7 @@ export class WorldAgent {
       // The straight leg was checked first, so a search that throws leaves a
       // structure in the way with no route around it.
       try { result = s.route.route(ax, az, bx, bz); }
-      catch (err) { refusals.push(`[${s.id}]: its route couldn't be searched (${(err as Error)?.message ?? err})`); continue; }
+      catch (err) { refusals.push(`[${this.refName(s.id)}]: its route couldn't be searched (${(err as Error)?.message ?? err})`); continue; }
       if (result.kind === "blocked") { refusals.push("[" + s.id + "]: " + result.reason); continue; }
       if (result.kind === "clear") continue;
       const points = result.points.map(([lx, lz]: number[]) => s.world(lx, lz));
@@ -3386,8 +3730,8 @@ export class WorldAgent {
         || !candidate.points.slice(1).every((p, i) => s.clear(candidate.points[i], p)));
       if (!blocker) return { points: candidate.points };
       obstructed.push(blocker.route.confined && candidate.owner !== blocker
-        ? `[${candidate.owner.id}]'s route leaves the floor of [${blocker.id}] the body stands on`
-        : `[${candidate.owner.id}]'s route is obstructed by [${blocker.id}]`);
+        ? `[${this.refName(candidate.owner.id)}]'s route leaves the floor of [${this.refName(blocker.id)}] the body stands on`
+        : `[${this.refName(candidate.owner.id)}]'s route is obstructed by [${this.refName(blocker.id)}]`);
     }
     return { refusal: [structures.some((s) => s.route.confined)
       ? "no local route preserves the supporting upper-floor path (multi-building floor composition is unavailable)"
@@ -3431,18 +3775,15 @@ export class WorldAgent {
     return { refusal: "the body stands in a wall, with no clear point within half a metre to step out to" };
   }
 
-  /** `y`, when given, picks the floor at the destination: the place to stand
-   *  nearest that height, no more than a step above it. Without it, the body's own storey if the
-   *  destination has a floor within a step of it, else the lowest there.
-   *  `near.reach`: how far from (x, z) a place to stand may be (a room is
-   *  reached anywhere in it; a point within a hand's width or so).
-   *  `near.above` / `near.below`: how far above / below y its floor may be (a
-   *  step above and anything below, unless the floor's height is known
-   *  exactly, as a named room's is). `near.inside`: only spots in a region.
+  /** `y`, when given, picks the floor at the destination (#236): the place to stand nearest that height, no more than a
+   *  step above it. Without it, the body's own storey if the destination has a floor within a step of it, else the lowest
+   *  there. `near.reach`: how far from (x, z) a place to stand may be (a room is reached anywhere in it; a point within a
+   *  hand's width or so). `near.above` / `near.below`: how far above / below y its floor may be (a step above and anything
+   *  below, unless the floor's height is known exactly, as a named room's is). `near.inside`: only spots in a region.
    *  `receipt`: this request's own refusal (the plan may wait for geometry). */
-  walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE, y?: number,
+  walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance: number = MOVER.arrive.tolerance, y?: number,
     near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } } = {}, receipt?: { refusal: string | null }): Promise<boolean> {
-    if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4 || (y != null && !Number.isFinite(y))) {
+    if (![x, z].every(Number.isFinite) || toleranceOf(tolerance) === null || (y != null && !Number.isFinite(y))) {
       // Not a walk request at all: the walk under way, if any, goes on.
       this.walkRefusal = WALK_ARGS_REASON;
       if (receipt) receipt.refusal = WALK_ARGS_REASON;
@@ -3451,7 +3792,7 @@ export class WorldAgent {
     // A new request supersedes the walk under way, whether or not it can be walked.
     if (this.walkDone || this.target) this.abandonWalk();
     this.walkRefusal = null;
-    this.walkStopReason = null;
+    this.lastWalkRefusal = null; this.lastWalkNote = null; this.walkStopReason = null;
     const ticket = ++this.walkTicket;
     const now = () => {
       const p = this.walkNow(x, z, run, timeoutMs, tolerance, y, near);
@@ -3483,9 +3824,9 @@ export class WorldAgent {
   private walkTicket = 0;
 
   private walkNow(x: number, z: number, run: boolean, timeoutMs: number, tolerance: number, y: number | undefined,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } }): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } }, replanned = false): Promise<boolean> {
     // Plan before touching the body, from the ground under it: a refused walk
-    // leaves it seated, pinned, dragged, posed or tumbling as it was. The
+    // leaves it seated, pinned, dragged, posed or tumbling as it was, and sends nothing. The
     // walk's floor, its grid's start and where it stands up are all found
     // from the feet, as when it stands up (setPosture, feetGround).
     const slumped = this.isSlumped();
@@ -3496,7 +3837,7 @@ export class WorldAgent {
     // A walk from a floor stays on it: the router plans it on that floor
     // alone, and a griddled building's storeys have no stairs between
     // them or to the ground. So a destination whose height means another
-    // of the floors there (floorMeant: walk_to's own rule for a height,
+    // of the floors there (floorMeant: move's own rule for a height,
     // with the destination's bounds), another storey, another building's
     // or the ground, is refused here, once the router has planned the
     // walk and before the navgrid routes it or its legs are walked (the
@@ -3518,14 +3859,14 @@ export class WorldAgent {
           : meant.entity === support.entity ? `on another storey of this building, ${whose}` : `on a storey of another building, ${whose}`;
         // a person's height is their root, not a height anyone gave or sees
         const what = near.bodyAt ? "the destination" : `the destination (height ${y.toFixed(2)}m)`;
-        this.walkRefusal = `${what} is ${where}, not on the floor you stand on (${support.height.toFixed(2)}m). A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give coordinates without y, which stay on it`;
+        this.walkRefusal = `${what} is ${where}, not on the floor you stand on (${support.height.toFixed(2)}m). A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give to as [x, z], without y, which stays on it`;
         return Promise.resolve(false);
       }
     }
     // Through placed models: a walk the structure planner leaves as one
     // straight leg is routed against the colliders the feet will meet —
     // round the furniture, through the door, up the stair (mcpl/navgrid.ts).
-    let legs = plan.legs, snapped = false, routed = false;
+    let legs = plan.legs, snapped = false, routed = false, passIds = new Set<string>();
     // A floor walk's probe stands on that storey, which the colliders don't
     // hold, so placed models on it are routed round as they are on the
     // ground (walkProbeGround), and nowhere lower than that floor
@@ -3535,11 +3876,16 @@ export class WorldAgent {
     const raw = plan.legs.length === 1 ? navProbe(surface) : null;
     const probe = raw && support.kind === "floor" ? onOrAboveFloor(raw, support.height) : raw;
     if (probe) {
-      // plan from the floor under the feet: a tumbling body's root is not
-      // where its feet will be
+      // plan from the floor under the feet: a tumbling or seated body's root
+      // is not where its feet will be
       const feet = { x: this.pos.x, y: feetY, z: this.pos.z };
-      // a grid is good until the colliders or the terrain change
-      const navKey = `${collidersGeneration()}|${this.navTerrainRev}`;
+      // a loose thing this body would shove is walked into, not round (R's queue: "walking into a loose thing pushes
+      // it"): its collider is out of the planner's world while it plans — the feet and the authority still meet it
+      const { ids, colliders: passable } = this.passableColliders(run); passIds = ids;
+      // a grid is good until the colliders, the COMMITTED terrain (navTerrainRev, main 5106691c: a pending heightmap
+      // keeps the old ground and its grid), or what it may walk into change. A floor walk's grid is its own: the
+      // cached one answers for the terrain.
+      const navKey = `${collidersGeneration()}|${this.navTerrainRev}|${passable.join(",")}`;
       let grid;
       if (support.kind === "floor") grid = makeNavGrid(probe);
       else {
@@ -3549,14 +3895,18 @@ export class WorldAgent {
       const nav = inWorld(this.world, () => {
         const fy = standOn(feet, surface) ?? feetY;
         const from = { x: this.pos.x, y: fy, z: this.pos.z };
-        const first = grid.route(from, { x, z, y, ...near });
-        // A person's bound reaches the surface a body lies on (destination()),
-        // which no route may reach, such as a top bunk: then the place to
-        // stand nearest them within a step, as for someone standing there,
-        // the floor beside it.
-        if (!("refusal" in first) || !near.bodyAt) return first;
-        const withinStep = grid.route(from, { x, z, y, ...near, above: undefined });
-        return "refusal" in withinStep ? first : withinStep;
+        return withoutColliders(passable, () => {
+          const first = grid.route(from, { x, z, y, ...near });
+          // A person's bound reaches the surface a body lies on (destination()),
+          // which no route may reach, such as a top bunk: then the place to
+          // stand nearest them no higher than their root, the floor beside it.
+          // (No higher than the root, not within a step of it: the walker's
+          // step, NAV_STEP, is more than RAGDOLL_ROOT_DROP, so a step above the
+          // root of someone lying down still reaches the bunk they lie on.)
+          if (!("refusal" in first) || !near.bodyAt) return first;
+          const beside = grid.route(from, { x, z, y, ...near, above: 0 });
+          return "refusal" in beside ? first : beside;
+        });
       });
       if ("refusal" in nav) { this.walkRefusal = nav.refusal; return Promise.resolve(false); }
       // griddled structures keep their walls out of the headless colliders,
@@ -3567,7 +3917,7 @@ export class WorldAgent {
       const pts = [{ x: this.pos.x, z: this.pos.z }, ...nav.points.map((p) => ({ x: p.x, z: p.z }))];
       const crosses = structures.length > 0 && pts.slice(1).some((p, k) => structures.some((st) => !st.clear(pts[k], p)));
       if (!crosses) {
-        legs = nav.points.map((p) => ({ x: p.x, z: p.z }));
+        legs = nav.points.map((p) => ({ x: p.x, z: p.z, y: p.y }));
         snapped = nav.snapped; routed = true;
       }
     }
@@ -3595,30 +3945,61 @@ export class WorldAgent {
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
-    // and stand on the ground you got up onto: with colliders loaded, the
-    // floor under the feet found from where they are (a body seated upstairs
-    // stands up upstairs); the planner's support answer otherwise
+    if (this.joined && this.myOccupancy && this.mayVacate("menu")) this.setOccupant(null);
+    // and stand on the ground you got up onto: with colliders loaded, the floor under the feet found from where they
+    // are (a body seated upstairs stands up upstairs, #235); the planner's support answer otherwise
     const supportAt = support.kind === "terrain" ? (wx: number, wz: number) => this.heightAt(wx, wz) : () => support.height;
     const standFrom = { x: this.pos.x, y: feetY, z: this.pos.z };
     this.pos.y = inWorld(this.world, () => (collidersReady() ? standOn(standFrom, supportAt) : null)) ?? support.height;
     this.vy = 0; this.grounded = true; this.stallTicks = 0; this.walkStall = null;
-    // A structure route's corners are reached exactly (its doorways are
-    // planned to the centimetre); a routed walk's may sit where something
-    // nudges the body a little, so they — and its end — count within that.
+    // A structure route's corners are reached exactly (its doorways are planned to the centimetre); a routed walk's
+    // (#236) may sit where something nudges the body a little, so they — and its end — count within that.
     this.legTolerance = routed ? NAV_NUDGE : 0;
     this.walkTolerance = routed ? Math.max(tolerance, NAV_NUDGE) : tolerance;
     // A terrain walk reads the live terrain each tick, as the planner read it;
     // a floor walk keeps the floor that admitted the route through its last tick.
     this.walkHeightAt = support.kind === "terrain" ? (wx, wz) => this.heightAt(wx, wz) : () => support.height;
-    // end on the point asked for, exactly — unless it was no place to stand
-    // and the planner chose the nearest one that is
-    this.legs = snapped ? legs.slice() : legs.slice(0, -1).concat({ x, z });
+    // ROUTE THROUGH WALLS RATHER THAN INTO THEM (planWalk, and through placed models the navgrid): the legs that clear
+    // every known structure, ending on the point asked for, exactly — unless it was no place to stand and the planner
+    // chose the nearest one that is. Only the last takes the caller's tolerance.
+    const end = legs[legs.length - 1] as Vec2 & { y?: number };
+    this.legs = snapped ? legs.slice() : legs.slice(0, -1).concat({ x, z, ...(routed && end?.y != null ? { y: end.y } : {}) });
     const first = this.legs.shift()!;
-    this.target = { x: first.x, z: first.z, run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance };
+    this.target = { x: first.x, z: first.z, run, tolerance: this.legs.length ? this.legTolerance : this.walkTolerance, ...(first.y != null ? { y: first.y } : {}) };
+    // E1: the authority walks this body too, and a stretch it refuses (a wall, too fast) isn't walked (see trackHere).
+    // With no authority to ask (not joined, no open socket) the gate is open at once: the verdict trackHere would reach a
+    // tick later (request() answers not-joined, which it reads as {open}), without the tick.
+    const asks = this.joined && this.ws?.readyState === 1;
+    const gate: WalkGate = { mode: asks ? "sync" : "open", permit: null, busy: false };
+    this.walkGate = gate;
+    this.walkPlan = { x, z, run, timeoutMs, tolerance, y, near, passable: passIds, replanned };
+    if (asks) this.syncWalkGate(gate);
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) this.abandonWalk(); }, timeoutMs);
+    });
+  }
+
+  /** A walk carried across a rejoin: the authority's track of this body ended with the old connection, so the walk asks
+   *  again where it stands. It does so on a gate of its own, since a request the old connection sent (a stretch of the
+   *  walk, or where it stood) answers the gate it was sent for, and its answer, often a timeout, mustn't end this walk. */
+  private resumeWalkGate() {
+    const old = this.walkGate;
+    if (!old || old.mode === "open") return;   // open: the authority keeps no track of this body, so there is nothing to ask
+    // nothing in flight carries over: a stretch or a shove the old connection sent settles on the old gate, so the new one
+    // starts with no permit asked for and no shove holding it
+    const g: WalkGate = { ...old, busy: false, permit: null, blocker: null, hold: 0 };
+    this.walkGate = g;
+    this.syncWalkGate(g);
+  }
+  /** Ask the authority where this body stands, and open the walk's gate on its answer: a walk's start, and a rejoin. */
+  private syncWalkGate(gate: WalkGate) {
+    gate.mode = "sync"; gate.permit = null;
+    void this.trackHere().then((t) => {
+      if (this.walkGate !== gate) return;
+      if ("open" in t) { gate.mode = "open"; return; }
+      if (!t.ok) { this.refuseWalk(t.refused); return; }
+      gate.mode = "tracked"; gate.permit = this.trackAt;
     });
   }
 
@@ -3628,8 +4009,8 @@ export class WorldAgent {
    *  then its `places` component on top — which anyone with builder rank can
    *  change at any time. */
   placesOn(e: Entity): Place[] {
-    if (!e.lib || e.lib === "(light)") return [];
-    return placesOf(modelMeta.get(`${this.httpBase}|${e.lib}`), e.comp?.places);
+    // a model's file may declare places; any thing's transform is a frame to hang named ones on (an Empty's included)
+    return placesOf(e.model ? modelMeta.get(`${this.httpBase}|${e.model}`) : undefined, recordComponents(e).places);
   }
 
   /** Where a thing's places are right now: its effective transform (mount
@@ -3637,19 +4018,82 @@ export class WorldAgent {
    *  where a carried or moving thing is. Null when that cannot be resolved. */
   private placeHolder(e: Entity, nowMs = Date.now()): PlaceHolder | null {
     const f = this.eff(e.id, nowMs);
-    return f.ok ? { id: e.id, pos: f.pos, yaw: f.yaw, scale: f.scale } : null;
+    // its per-axis scale, so a place on a stretched thing is stretched with it, as the thing is drawn. places.ts frames
+    // only positive axes, so a mirrored thing keeps its one-number scale, as before
+    const s3 = f.ok ? f.scale3 : undefined;
+    const scale = Array.isArray(s3) && s3.every((v) => v > 0) ? s3 : f.ok ? f.scale : undefined;
+    return f.ok ? { id: e.id, name: this.refName(e.id), pos: f.pos, yaw: f.yaw, q: f.quat, scale } : null;
+  }
+
+  /** Places that belong to no thing ("the meadow"): @world's places component, in world coordinates. */
+  worldPlaces(): Place[] {
+    return placesOf(null, this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places);
+  }
+  private static readonly WORLD_HOLDER: PlaceHolder = { id: WORLD_ENTITY, pos: [0, 0, 0], yaw: 0, scale: 1 };
+
+  /** Everything that holds named places, with where it is now: @world, then each placed model that has any. */
+  private placeHolders(nowMs = Date.now()): { id: string; h: PlaceHolder | null; ps: Place[]; e: Entity | null }[] {
+    const out: { id: string; h: PlaceHolder | null; ps: Place[]; e: Entity | null }[] = [];
+    const wp = this.worldPlaces();
+    if (wp.length) out.push({ id: WORLD_ENTITY, h: WorldAgent.WORLD_HOLDER, ps: wp, e: null });
+    for (const e of this.entities.values()) {
+      const ps = this.placesOn(e);
+      if (ps.length) out.push({ id: e.id, h: this.placeHolder(e, nowMs), ps, e });
+    }
+    return out;
+  }
+
+  /** Every named place here, nearest first: where a walk to it aims (its floor), how far, which floor. */
+  placesNear(): { ref: string; place: Place; dest: Destination; d: number }[] {
+    const out: { ref: string; place: Place; dest: Destination; d: number }[] = [];
+    for (const { id, h, ps } of this.placeHolders()) {
+      if (!h) continue;
+      for (const p of ps) { const dest = destinationOf(h, p); out.push({ ref: `${id === WORLD_ENTITY ? id : this.refName(id)}/${p.name}`, place: p, dest, d: Math.hypot(dest.x - this.pos.x, dest.z - this.pos.z) }); }
+    }
+    return out.sort((a, b) => a.d - b.d);
+  }
+  private static placeLine(x: { ref: string; place: Place; dest: Destination; d: number }) {
+    return `${x.ref}${x.place.label && x.place.label !== x.place.name.replace(/_/g, " ") ? ` "${x.place.label}"` : ""} (${x.d.toFixed(1)} m, floor ${x.dest.y.toFixed(2)} m)`;
+  }
+  /** move {to: "?"}: every named place, seen or not (owner 22:40) — nearest first, at most PLACE_LIST_MAX (a built-up
+   *  world's list was megabytes; review r3 F7). move {to: "?<text>"} lists only those whose "thing/place" or label
+   *  holds that text (any case). */
+  placeList(filter = ""): string {
+    const f = filter.trim().toLowerCase();
+    const all = this.placesNear().filter((x) => !f || x.ref.toLowerCase().includes(f) || (x.place.label ?? "").toLowerCase().includes(f));
+    if (!all.length) return f ? `no named places here whose name or label holds "${filter.trim()}" — move {to: "?"} lists them all`
+      : "no named places here — a model can declare them, and name_place names a spot";
+    const shown = all.slice(0, PLACE_LIST_MAX), more = all.length - shown.length;
+    return `named places here${f ? ` holding "${filter.trim()}"` : ""}, nearest first (move {to: "<thing>/<place>"} or a place's name):\n${shown.map((x) => `  ${WorldAgent.placeLine(x)}`).join("\n")}`
+      + (more ? `\n…and ${more} more, farther away — narrow it with move {to: "?<text>"} (e.g. "?${shown[shown.length - 1].ref.split("/")[0]}"): only places whose name or label holds that text` : "");
+  }
+  /** look's listing (owner 22:43): the places this body can SEE — a ray from its eye to the place (a point, or a room's
+   *  middle a metre over its floor) unblocked by the placed models' fitted colliders (the same ones the feet use, #235)
+   *  and the terrain — within PLACE_SIGHT_M, nearest first, at most PLACE_LOOK_MAX. Before the collision modules have
+   *  loaded, distance alone decides (and the line says so). */
+  placesInSight(): { lines: string[]; more: number; byDistance: boolean } {
+    const eye = [this.pos.x, this.pos.y + this.stature() * 0.93, this.pos.z];
+    const seen: string[] = []; let byDistance = false, total = 0;
+    for (const x of this.placesNear()) {
+      total++;
+      if (x.d > PLACE_SIGHT_M || seen.length >= PLACE_LOOK_MAX) continue;
+      const tip = [x.dest.x, x.dest.y + (x.place.kind === "region" ? 1 : 0.3), x.dest.z];
+      const los = inWorld(this.world, () => lineOfSight(eye, tip, (wx, wz) => this.heightAt(wx, wz)));
+      if (los === null) byDistance = true;
+      if (los === false) continue;
+      seen.push(WorldAgent.placeLine(x));
+    }
+    return { lines: seen, more: total - seen.length, byDistance };
   }
 
   /** The named regions a body standing at `w` is in, smallest first (a room
    *  before the building it is in). */
-  placesAt(w: number[]): { entity: Entity; place: Place }[] {
-    const out: { entity: Entity; place: Place; vol: number }[] = [], now = Date.now();
-    for (const e of this.entities.values()) {
-      const ps = this.placesOn(e);
-      if (!ps.length) continue;
-      const h = this.placeHolder(e, now);
+  placesAt(w: number[]): { entity: { id: string }; place: Place }[] {
+    const out: { entity: { id: string }; place: Place; vol: number }[] = [], now = Date.now();
+    for (const { id, h, ps } of this.placeHolders(now)) {
+      const e = { id };
       if (!h) continue;
-      const s3 = (h.scale ?? 1) ** 3;
+      const s3 = frameVolume(h);   // the thing's volume factor, as its places are framed
       for (const p of ps) {
         if (!inRegion(h, p, w)) continue;
         out.push({ entity: e, place: p, vol: s3 * (p.max![0] - p.min![0]) * (p.max![1] - p.min![1]) * (p.max![2] - p.min![2]) });
@@ -3658,15 +4102,59 @@ export class WorldAgent {
     return out.sort((a, b) => a.vol - b.vol);
   }
 
-  /** Where `to` is, as a walk can aim at it: "thing/place", a place's name or
-   *  label alone (the nearest, if several things have one), a thing alone
-   *  (its entrance, else its door), or a person (stopping short of them). */
+  /** Where `to` is, as a walk can aim at it: "thing/place", a thing alone
+   *  (its entrance, else its door, else up to it and beside it), a place's name or label alone (the
+   *  nearest, if several things have one), a thing by its label, or a person
+   *  (stopping short of them) — in that order: a person's name never hides a
+   *  thing's, by id or by label. */
   destination(to: string): Destination | { refusal: string } {
     const q = to.trim();
-    if (!q) return { refusal: "walk_to's to names nothing" };
+    if (!q) return { refusal: "move's to names nothing" };
     const me = this.pos, now = Date.now();
     const ci = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-    // a person
+    const slash = q.indexOf("/");
+    const ents = [...this.entities.values()].filter((e) => isFiniteVec3(e.pos));
+    if (slash > 0 && q.slice(0, slash) === WORLD_ENTITY) {   // a place that belongs to no thing
+      const name = q.slice(slash + 1), ps = this.worldPlaces(), p = ps.find((x) => names(x, name));
+      return p ? destinationOf(WorldAgent.WORLD_HOLDER, p) : { refusal: `@world has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : ""}` };
+    }
+    const at = (e: Entity, p: Place): Destination | { refusal: string } => {
+      const h = this.placeHolder(e, now);
+      const why = h ? "" : (this.eff(e.id, now) as { why: string }).why;
+      return h ? destinationOf(h, p) : { refusal: `where [${this.refName(e.id)}] is right now cannot be worked out (${why})${partHint(why)}` };
+    };
+    if (slash > 0) {
+      const tr = this.thingRef(q.slice(0, slash));   // its id, its label or a unique id prefix (R 10-17); a shared label is refused with the candidates
+      if ("refusal" in tr) return tr;
+      const e = ents.find((x) => "id" in tr && x.id === tr.id) ?? ents.find((x) => ci(x.id, q.slice(0, slash)));
+      if (!e) return { refusal: `no thing called "${q.slice(0, slash)}" here` };
+      const name = q.slice(slash + 1), ps = this.placesOn(e), p = ps.find((x) => names(x, name));
+      if (!p) return { refusal: `[${this.refName(e.id)}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
+      return at(e, p);
+    }
+    // a thing: its entrance, else its door, else walked up to and stood beside (review r5 F3: here, not in a second
+    // resolver of move's — a person named like it never captures the walk, and of several, the nearest is taken)
+    const thing = (x: Entity): Destination | { refusal: string } => {
+      const ps = this.placesOn(x);
+      const p = ps.find((y) => y.name === "entrance") ?? ps.find((y) => y.kind === "door");
+      return p ? at(x, p) : this.besideThing(x, now);
+    };
+    const e = ents.find((x) => ci(x.id, q));
+    if (e) return thing(e);
+    const hits: Destination[] = [];
+    for (const p of this.worldPlaces()) if (names(p, q)) hits.push(destinationOf(WorldAgent.WORLD_HOLDER, p));
+    for (const x of ents) for (const p of this.placesOn(x)) {
+      if (!names(p, q)) continue;
+      const d = at(x, p);
+      if (!("refusal" in d)) hits.push(d);
+    }
+    if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    // a thing by its label (a display name someone gave it) or a unique id prefix — before any person too (review r4 claims
+    // C1: a visitor named like a thing's label captured the walk). R 10-17: a label two things share is refused with the
+    // candidates (label, what, where, handle), never resolved to the nearest
+    { const tr = this.thingRef(q); if ("refusal" in tr) return tr;
+      if ("id" in tr) { const x = ents.find((y) => y.id === tr.id); if (x) return thing(x); } }
+    // a person, last (review r3 F4): a visitor who joins as "tower" must not capture every walk to the tower
     for (const p of this.people.values()) {
       if (!ci(p.id, q)) continue;
       const xyz = posePosition(p.pose);
@@ -3686,35 +4174,51 @@ export class WorldAgent {
       return { x: x + (me.x - x) * back, y: root, z: z + (me.z - z) * back, reach: 0.6, label: p.id,
         above: RAGDOLL_ROOT_DROP + 0.05, bodyAt: { x, z } };
     }
-    const slash = q.indexOf("/");
-    const ents = [...this.entities.values()].filter((e) => isFiniteVec3(e.pos));
-    const at = (e: Entity, p: Place): Destination | { refusal: string } => {
-      const h = this.placeHolder(e, now);
-      return h ? destinationOf(h, p) : { refusal: `where [${e.id}] is right now cannot be worked out (${(this.eff(e.id, now) as { why: string }).why})` };
-    };
-    if (slash > 0) {
-      const e = ents.find((x) => ci(x.id, q.slice(0, slash)));
-      if (!e) return { refusal: `no thing called "${q.slice(0, slash)}" here` };
-      const name = q.slice(slash + 1), ps = this.placesOn(e), p = ps.find((x) => names(x, name));
-      if (!p) return { refusal: `[${e.id}] has no place called "${name}"${ps.length ? ` — its places: ${ps.map((x) => x.name).join(", ")}` : " (it has no named places)"}` };
-      return at(e, p);
+    const known = this.placesNear().map((x) => x.ref);
+    return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.slice(0, 16).join(", ")}${known.length > 16 ? ` and ${known.length - 16} more (move {to: "?"} lists them all)` : ""}` : ""}` };
+  }
+
+  /** A thing with no entrance or door, as a walk aims at it: up to it and beside it, on this body's side — THING_STANDOFF
+   *  out from the nearest point of its footprint (its origin where the footprint isn't known, THING_STOP short of it). */
+  private besideThing(x: Entity, now = Date.now(), depth = 0): Destination | { refusal: string } {
+    const me = this.pos, box = footprint(this.replica?.st, x.id), w = this.worldPointOf(x.id, now);
+    // where it stands: its effective point, else the middle of its footprint; never its saved pos, a child's offset
+    const at = "pos" in w ? w.pos : box ? [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2] : null;
+    if (!at) return { refusal: `can't tell where [${this.refName(x.id)}] stands now — ${"why" in w ? `${w.why}${partHint(w.why)}` : "no frame"}` };
+    let px = at[0], pz = at[2], off = THING_STOP;
+    if (box) {
+      const nx = Math.min(box.max[0], Math.max(box.min[0], me.x)), nz = Math.min(box.max[2], Math.max(box.min[2], me.z));
+      if (Math.hypot(me.x - nx, me.z - nz) > 1e-6) { px = nx; pz = nz; off = THING_STANDOFF; }
     }
-    const e = ents.find((x) => ci(x.id, q));
-    if (e) {
-      const ps = this.placesOn(e);
-      const p = ps.find((x) => x.name === "entrance") ?? ps.find((x) => x.kind === "door");
-      if (p) return at(e, p);
-      return { refusal: `[${e.id}] has no entrance or door named — walk_to its places by name${ps.length ? ` (${ps.map((x) => x.name).join(", ")})` : ""}, or to its coordinates` };
+    const d = Math.hypot(me.x - px, me.z - pz), back = d > 0.01 ? Math.min(off, d) / d : 0;
+    const dest: Destination = { x: px + (me.x - px) * back, y: box ? box.min[1] : at[1], z: pz + (me.z - pz) * back, reach: 0.6, label: `[${this.refName(x.id)}]` };
+    // a thing standing on another (a cup on a table): the spot beside it may be on that other's top, where a walk can't
+    // climb — then the spot beside what holds it up, on ITS floor, is walked to instead (review r6 L1)
+    const under = box && depth < 4 ? this.supportOf(x.id, box) : null;
+    if (under) { const ob = this.besideThing(under, now, depth + 1); if (!("refusal" in ob)) dest.orBeside = { ...ob, label: dest.label }; }
+    return dest;
+  }
+
+  /** The placed thing a thing rests on: the highest top (its footprint's) under the thing's footprint, within a couple of
+   *  centimetres of its base — never the thing itself nor anything riding on it. Null when it stands on the ground. */
+  private supportOf(id: string, box: { min: number[]; max: number[] }): Entity | null {
+    const st = this.replica?.st;
+    const rides = (k: string) => { for (let c: string | undefined = k, n = 0; c && n < 33; n++) { if (c === id) return true; const p: unknown = st?.entities?.[c]?.c?.parent?.to; c = typeof p === "string" ? p : undefined; } return false; };
+    let best: Entity | null = null, top = -Infinity;
+    for (const e of this.entities.values()) {
+      if (rides(e.id)) continue;
+      const b = footprint(st, e.id);
+      if (!b || b.max[0] <= box.min[0] || b.min[0] >= box.max[0] || b.max[2] <= box.min[2] || b.min[2] >= box.max[2]) continue;
+      if (Math.abs(b.max[1] - box.min[1]) <= 0.03 && b.max[1] > top) { best = e; top = b.max[1]; }
     }
-    const hits: Destination[] = [];
-    for (const x of ents) for (const p of this.placesOn(x)) {
-      if (!names(p, q)) continue;
-      const d = at(x, p);
-      if (!("refusal" in d)) hits.push(d);
-    }
-    if (hits.length) return hits.sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
-    const known = ents.flatMap((x) => this.placesOn(x).map((p) => `${x.id}/${p.name}`)).slice(0, 16);
-    return { refusal: `nothing here is called "${q}"${known.length ? ` — named places: ${known.join(", ")}` : ""}` };
+    return best;
+  }
+
+  /** Where a thing stands in the world now: its effective transform (a child's parent chain, any motion), or why that
+   *  can't be worked out. Never its saved `pos` in its place: for a child, that is its offset from its parent. */
+  worldPointOf(id: string, now = Date.now()): { pos: [number, number, number] } | { why: string } {
+    const f = this.eff(id, now);
+    return f.ok ? { pos: f.pos } : { why: f.why };
   }
 
   /** name_place edits, one at a time: each starts from the state the last
@@ -3745,44 +4249,77 @@ export class WorldAgent {
       w = [x, y, z];
     } else w = [this.pos.x, this.pos.y, this.pos.z];
     const now = Date.now();
-    let e: Entity | undefined;
+    // where the name hangs: a placed thing (in its frame, so it moves with it), or @world (world coordinates: a place
+    // that belongs to no thing — on: "@world", or a spot in a room @world declares)
+    let target: { id: string; h: PlaceHolder | null; had: unknown } | null = null;
+    const ofEntity = (e: Entity) => ({ id: e.id, h: this.placeHolder(e, now), had: recordComponents(e).places });
+    const ofWorld = () => ({ id: WORLD_ENTITY, h: WorldAgent.WORLD_HOLDER, had: this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places });
     if (opts.on) {
-      e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
-      if (e && (!e.lib || e.lib === "(light)")) return refused(`[${e.id}] is a light — places hang on placed things (a model), not lights`);
+      if (opts.on === WORLD_ENTITY) target = ofWorld();
+      else {
+        const e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
+        if (e) target = ofEntity(e);
+      }
     } else {
-      e = this.placesAt(w)[0]?.entity;
-      if (!e) {
+      const inId = this.placesAt(w)[0]?.entity.id;
+      const inE = inId && inId !== WORLD_ENTITY ? this.entities.get(inId) : undefined;
+      if (inE) target = ofEntity(inE);
+      else if (inId === WORLD_ENTITY) target = ofWorld();
+      else {
         let best = Infinity;
         for (const x of this.entities.values()) {
-          if (!x.lib || x.lib === "(light)") continue;
+          if (!x.model) continue;
           const h = this.placeHolder(x, now);
           if (!h) continue;
           const d = Math.hypot(h.pos[0] - w[0], h.pos[2] - w[2]);
-          if (d < best && d <= 15) { best = d; e = x; }
+          if (d < best && d <= 15) { best = d; target = ofEntity(x); }
         }
       }
     }
-    if (!e) return refused(opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id>");
-    const h = this.placeHolder(e, now);
-    if (!h) return refused(`where [${e.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`);
-    const cur = (e.comp?.places && typeof e.comp.places === "object") ? { ...e.comp.places } : {};
-    if (opts.remove) {
-      // always a hiding entry: whether the model declares the name is not
-      // known until its file has loaded, and a deleted entry would let it back
-      cur[name] = null;
-    } else {
-      const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
-      cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
+    if (!target) return refused(opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id> (or on: \"@world\")");
+    const h = target.h;
+    if (!h) return refused(`where [${this.refName(target.id)}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`);
+    const t0 = Date.now(), id = target.id;
+    const placesNow = () => id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places
+      : (this.entities.get(id) ? recordComponents(this.entities.get(id) as Entity).places : undefined);
+    let had = target.had, cur: Record<string, unknown> = {}, r: any, replace = false;
+    for (let attempt = 0; ; attempt++) {
+      cur = (had && typeof had === "object" && !Array.isArray(had)) ? { ...(had as Record<string, unknown>) } : {};
+      // re-pointing a name the bag already holds replaces its entry: a merge would keep a room's min and max beside the
+      // new point, a shape the authority refuses
+      replace = !!opts.remove || Object.prototype.hasOwnProperty.call(cur, name);
+      if (opts.remove) {
+        // always a hiding entry: whether the model declares the name is not
+        // known until its file has loaded, and a deleted entry would let it back
+        cur[name] = null;
+      } else {
+        const l = toLocal(h, w).map((v) => Math.round(v * 1000) / 1000);
+        cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
+      }
+      // an ordinary set of the places component, through the authority: rights, the gate and undo apply as to any edit.
+      // Adding a name merges just that name (RFC 7396); retiring one replaces the bag with the name held as null, since a
+      // merge's null would delete the entry and let a name the model declares back in, and re-pointing one replaces the
+      // bag too (above). Its size is the authority's to judge (its gate keeps values under 64 KiB). That replace is
+      // built from this replica, so it is PINNED to the bag it read (expect, §3a): if someone else wrote a name in between,
+      // the authority refuses it as `changed`, and it is rebuilt from the bag as it now is (review r3 F5)
+      const op = replace ? OP.set(id, "places", cur) : OP.set(id, "places", { [name]: cur[name] }, { merge: true });
+      const pin = replace ? { expect: [{ id: op.args.id, component: op.args.component, ...(had !== undefined ? { value: had } : {}) }] } : {};
+      r = await this.sendOps([op], pin);
+      if (!(replace && r && !r.ok && r.refused?.code === "changed" && attempt < 4)) break;
+      // the other write's log reaches this replica before (or just after) the refusal: wait for the bag to move
+      for (const until = Date.now() + 1000; Date.now() < until && JSON.stringify(placesNow()) === JSON.stringify(had);) await new Promise((res) => setTimeout(res, 50));
+      had = placesNow();
     }
-    const data = JSON.stringify(cur);
-    if (data.length > 8000) return refused(`[${e.id}]'s places would exceed the 8KB component limit — retire some first`);
-    const t0 = Date.now(), id = e.id;
-    this.verb("comp", { id, type: "places", data: cur });
-    // the world's answer: our component echoed back, or a refusal
+    // no answer is not a refusal: the write may have landed
+    if (r && !r.ok && (r.refused?.code === "timeout" || r.refused?.code === "no-answer"))
+      return refused(`"${name}" was sent, but the world didn't answer, so whether it landed is unknown — look, or [${this.refName(id)}]'s places component, will show it`);
+    if (r && !r.ok) return refused(`not named — the world refused: ${r.refused?.reason ?? r.refused?.code ?? JSON.stringify(r.refused ?? r)}`);
+    // the authority's answer is in; wait for this body's own fold of it, so a move {to} straight after finds the name
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
-      if (this.lastRefusal && this.lastRefusal.ts >= t0) return refused(`not named — the world refused: ${this.lastRefusal.text}`);
-      if (JSON.stringify(this.entities.get(id)?.comp?.places ?? null) === data) {
-        return done(opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — walk_to {to: "${id}/${name}"} reaches it`);
+      const got = id === WORLD_ENTITY ? this.replica?.st?.entities?.[WORLD_ENTITY]?.c?.places : recordComponents(this.entities.get(id) as Entity).places;
+      if (JSON.stringify(got?.[name] ?? null) === JSON.stringify(cur[name] ?? null)) {
+        { const nm = id === WORLD_ENTITY ? id : this.refName(id);
+          return done(opts.remove ? `retired "${name}" on [${nm}]` : `named this spot "${name}" on [${nm}] — move {to: "${nm}/${name}"} reaches it`); }
       }
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -3807,15 +4344,17 @@ export class WorldAgent {
   private feetSettling = false;
   private stallTicks = 0;
   /** Why the last walk stopped short, when something solid stopped it; read by
-   *  the walk_to tool once the walk's promise answers false. */
+   *  the move tool once the walk's promise answers false. */
   walkStall: string | null = null;
 
-  private stepFeet(mx: number, mz: number, dt: number, terrain: (x: number, z: number) => number) {
+  /** → the ground the feet found at the end (the water stance is judged on it). */
+  private stepFeet(mx: number, mz: number, dt: number, terrain: (x: number, z: number) => number): number {
     const n = Math.max(1, Math.ceil(Math.hypot(mx, mz) / COLLIDE_SUBSTEP));
     const sdt = dt / n;
+    let ground = terrain(this.pos.x, this.pos.z);
     for (let i = 0; i < n; i++) {
       this.pos.x += mx / n; this.pos.z += mz / n;
-      const ground = standOn(this.pos, terrain) ?? terrain(this.pos.x, this.pos.z);
+      ground = standOn(this.pos, terrain) ?? terrain(this.pos.x, this.pos.z);
       if (!this.grounded || this.pos.y > ground + 0.02) {
         this.grounded = false;
         this.vy -= GRAVITY * sdt;
@@ -3823,6 +4362,20 @@ export class WorldAgent {
         if (this.pos.y <= ground) { this.pos.y = ground; this.vy = 0; this.grounded = true; }
       } else { this.pos.y = ground; this.vy = 0; this.grounded = true; }
     }
+    return ground;
+  }
+
+  /** The floor the feet find at (x, z) from height y (colliders.resolveColliders through standOn; `floor` where the
+   *  colliders aren't loaded). Never moves the body. */
+  private feetAt(x: number, z: number, y: number, floor: (x: number, z: number) => number): number {
+    if (!collidersReady()) return floor(x, z);
+    const p = { x, y, z };
+    return inWorld(this.world, () => standOn(p, floor)) ?? floor(x, z);
+  }
+  /** The height a stretch asked of the authority stands at: the floor the feet will find there (an upstairs walk asks for
+   *  upstairs, #235), the terrain where the colliders aren't loaded. */
+  private permitFloor(x: number, z: number): number {
+    return this.feetAt(x, z, this.pos.y, (wx, wz) => this.heightAt(wx, wz));
   }
 
   /** Whether the body lies as a sim lays one: the ragdoll clip, or a held
@@ -3885,22 +4438,240 @@ export class WorldAgent {
     const short = Math.hypot(final.x - this.pos.x, final.z - this.pos.z);
     this.walkStall = `blocked at (${this.pos.x.toFixed(2)}, ${this.pos.z.toFixed(2)}), ${short.toFixed(2)}m short of ` +
       `(${final.x.toFixed(2)}, ${final.z.toFixed(2)}): something solid is in the way that the route did not ` +
-      `expect (it moved or arrived after the walk was planned) — walk_to again and the route will take it into account`;
+      `expect (it moved or arrived after the walk was planned) — move there again and the route will take it into account`;
     this.stallTicks = 0;
+    // pressed against a thing the route planned to walk into (its shove doesn't move it): round it, once. Only a thing
+    // the stride presses INTO is blamed (its contact's normal head-on to the walk, as a shove's is: review r5 F5) — a
+    // walk stalled by something else while it grazes a crate doesn't mark the crate solid
+    const plan = this.walkPlan, st = this.replica?.st, cap = BODY_CAP, feet = [this.pos.x, this.pos.y, this.pos.z];
+    const dx = t.x - this.pos.x, dz = t.z - this.pos.z, dd = Math.hypot(dx, dz);
+    if (plan && !plan.replanned && st && dd > 1e-6) for (const id of plan.passable) {
+      const obb = obbOf(st, id), c = obb && contactOf(feet, cap.r, cap.tall, { obb, box: aabbOfObb(obb) }, SHOVE_FEEL.slack);
+      if (c && (dx * c.n[0] + dz * c.n[1]) / dd >= SHOVE_FEEL.headOn && this.replanRound(id)) { this.walkStall = null; return; }
+    }
     this.abandonWalk();
   }
 
-  /** The walk under way ends unarrived: its promise answers false, its legs
-   * and basis go, and a walking body stands. */
+  /** The walk under way ends unarrived: its promise answers false, its legs,
+   * gate and basis go, and a walking body stands. */
   private abandonWalk() {
     ++this.walkTicket;
     const done = this.walkDone;
-    this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.speed = 0;
+    this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.walkGate = null; this.speed = 0;
     if (this.clip === "walk" || this.clip === "run" || this.clip === "swim") this.clip = "idle";   // a swimmer then treads
     done?.(false);
   }
 
   stop() { this.abandonWalk(); this.clip = "idle"; }
+
+  // ---- E1: walking the authority's body ----
+  /** Bring the authority's track of this body to where it stands: arrive (an unlogged teleport, as a person's first move
+   *  is); a short step if it lags; re-arrive (`teleport: true`, an act on the record) when the track is stale (a flight, a
+   *  drag, a seat moved this body without walking it), as a person's client does. A visitor in a world with a spawn arrives
+   *  at the spawn, as a person does. {open} = this authority keeps no body track: walk as before. */
+  private async trackHere(): Promise<{ ok: true } | { ok: false; refused: any } | { open: true }> {
+    const to = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)];
+    const take = (r: any, at: number[]) => { this.trackArrived = true; this.trackAt = Array.isArray(r?.at) ? r.at : at; return { ok: true as const }; };
+    if (this.trackArrived && this.trackAt && Math.hypot(this.trackAt[0] - to[0], this.trackAt[1] - to[1], this.trackAt[2] - to[2]) < 0.05) return { ok: true };
+    let r = await this.request("move", { to });
+    if (r?.ok) return take(r, to);
+    let code = r?.refused?.code;
+    if (code === "not-joined" || code === "unknown-verb") return { open: true };
+    if (code === "not-here") {   // the authority forgot this body (it left): arrive again
+      this.trackArrived = false; r = await this.request("move", { to });
+      if (r?.ok) return take(r, to); code = r?.refused?.code; }
+    if (code === "spawn") {
+      const sp = (this.replica?.st?.entities?.["@world"]?.c as any)?.spawn;
+      const at = Array.isArray(sp?.pos) && sp.pos.length === 3 && sp.pos.every(Number.isFinite) ? sp.pos.map(Number) : null;
+      if (at) { r = await this.request("move", { to: at });
+        if (r?.ok) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2];
+          this.lastWalkNote = `this world's arrivals are at its spawn (${at.map((n: number) => n.toFixed(1)).join(", ")}): you arrived there and walked on from it`;
+          return take(r, at); } }
+    }
+    if (code === "too-fast" || code === "solid") {
+      r = await this.request("move", { to, teleport: true });
+      if (r?.ok) { this.lastWalkNote = "where the world last had you was too far to walk from in one step, or behind something solid, so it placed you here directly, and its record shows the jump"; return take(r, to); }
+    }
+    return { ok: false, refused: r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" } };
+  }
+  private permitAtTarget(g: { permit: number[] | null }): boolean {
+    return !!(g.permit && this.target && Math.hypot(g.permit[0] - this.target.x, g.permit[2] - this.target.z) < 1e-6);
+  }
+  /** Ask the authority for the next stretch of this leg, from where it last accepted this body. */
+  private extendPermit(g: WalkGate) {
+    const from = this.trackAt, T = this.target; if (!from || !T) return;
+    const dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz);
+    if (d < 1e-3) { g.permit = [T.x, from[1], T.z]; return; }   // the authority already has it at this leg's end
+    const last = d <= PERMIT_STEP;
+    const nx = last ? T.x : from[0] + dx * PERMIT_STEP / d, nz = last ? T.z : from[2] + dz * PERMIT_STEP / d;
+    // the stretch's height: on a routed leg, the route's own (a stair is a ramp of treads: the leg's rise, shared out along
+    // it — under a riser off the tread there, and the authority's box starts a step above the feet); else the feet's floor
+    const ty = T.y != null ? (last ? T.y : from[1] + (T.y - from[1]) * PERMIT_STEP / d) : this.permitFloor(nx, nz);
+    const to = [r3(nx), r3(ty), r3(nz)];
+    g.busy = true;
+    void this.request("move", { to }).then((r: any) => {
+      if (this.walkGate !== g) return;
+      g.busy = false;
+      if (!r?.ok && r?.refused?.code === "solid" && this.walkUpTo(g, from, T, r.refused)) return;
+      // too fast is "not yet": the track refills at its speed, and it is spent by a shove's re-track (shoveNow), by walking
+      // just before, or on a slow host by steps the authority saw bunched up (AS16; CI macOS 10-22). Asked again shortly,
+      // five times at most (2 s refills 12 m, three full tracks), never ended as a refused walk on the first
+      if (!r?.ok && r?.refused?.code === "too-fast" && (g.slow = (g.slow ?? 0) + 1) <= 5) { g.waitUntil = Date.now() + 400; return; }
+      if (!r?.ok) { this.refuseWalk(r?.refused ?? { code: "no-answer", reason: "the authority didn't answer" }); return; }
+      g.slow = 0;
+      this.trackAt = Array.isArray(r.at) ? r.at : to;
+      g.permit = last && this.target === T ? [T.x, to[1], T.z] : this.trackAt;   // the leg's exact end (the track rounds to mm)
+    });
+  }
+  /** May this body's walk shove it? The shover's own gate (shared/shove.js shoveable: dynamic, a box, nothing locked over
+   *  it, in no hand, physics.who within this body's rank) on a world whose canon simulates here — the same reading
+   *  tickShove's step makes. Anything else stays solid. */
+  private mayShove(id: string): boolean {
+    const st = this.replica?.st, canon = this.replica?.sim;
+    if (this.shoveOff || !st || !canon?.sim || canon.foreign) return false;
+    const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
+    return shoveable(st, id, { rank, holds: this.holdsNow });
+  }
+  /** May the walk planner walk into it? Only what this body may shove AND what its shove at this walk's speed would move out
+   *  of the way (shared/shove.js budges: a 2000 kg crate is shoved once and stands — a wall), and nothing a walk this body
+   *  took found solid (`misjudged`) while it stays where it was then. */
+  private mayWalkInto(id: string, run: boolean): boolean {
+    if (!this.mayShove(id)) return false;
+    const was = this.misjudged.get(id), box = was && footprint(this.replica?.st, id);
+    if (was && box && was.sig === this.shoveState(id) && Math.hypot((box.min[0] + box.max[0]) / 2 - was.at[0], (box.min[2] + box.max[2]) / 2 - was.at[1]) < SHOVE_FEEL.moved) return false;
+    if (was) this.misjudged.delete(id);   // it has moved (or gone), or its lock, physics or mass changed since: judged afresh
+    return budges(massOf(this.replica?.st, id) ?? NaN, run ? MOVER.walk.run : MOVER.walk.speed);
+  }
+  /** What a thing's shove depends on besides where it stands: its lock and every lock over it, its physics (kind, who,
+   *  mass, density, surface) and its size in the world (its derived mass goes with it: review r6 L3) — the judgement of a
+   *  misjudged thing holds only while these do (review r5 F5: a crate locked once and unlocked was solid to this body's
+   *  walks for good). */
+  private shoveState(id: string): string {
+    const st = this.replica?.st, locks: unknown[] = [];
+    let k: string | undefined = id;
+    for (let i = 0; k && i < 64; i++) { const c: any = st?.entities?.[k]?.c; locks.push(c?.lock ?? null); k = typeof c?.parent?.to === "string" ? c.parent.to : undefined; }
+    const ph: any = st?.entities?.[id]?.c?.physics ?? null;
+    return JSON.stringify([locks, ph && { kind: ph.kind, who: ph.who, mass: ph.mass, density: ph.density, surface: ph.surface ?? ph.material }, st ? worldPose(st, id)?.scale ?? null : null]);
+  }
+  /** Things a walk planned through and then found solid: id -> its footprint's centre [x, z] and its shoveState then. */
+  private misjudged = new Map<string, { at: [number, number]; sig: string }>();
+  /** The walk under way's plan (to re-plan it once round a thing it misjudged). */
+  private walkPlan: { x: number; z: number; run: boolean; timeoutMs: number; tolerance: number; y: number | undefined;
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">; passable: Set<string>; replanned: boolean } | null = null;
+  /** The things this walk may walk into, and their registered colliders (sorted): the walk planner routes through them. */
+  private passableColliders(run: boolean): { ids: Set<string>; colliders: string[] } {
+    const ids = new Set<string>(), out: string[] = [];
+    for (const id of this.misjudged.keys()) if (!this.replica?.st?.entities?.[id]) this.misjudged.delete(id);   // gone: forgotten
+    for (const [id, bids] of this.supportIds) if (this.mayWalkInto(id, run)) { ids.add(id); out.push(...bids); }
+    return { ids, colliders: out.sort() };
+  }
+  /** Body shove: while this body walks, the loose things it walks into are punted along its walk (shared/shove.js decides
+   *  which and how hard; the authority admits each as any shove). The push is the walk's intent toward its target, so a
+   *  body standing against a crate at the end of what the authority granted still pushes it. Not while the gate is asking
+   *  the authority for a stretch (the track would move under the punt's reach check). */
+  private tickShove() {
+    const st = this.replica?.st, canon = this.replica?.sim, g = this.walkGate;
+    if (this.shoveOff || !st || !canon?.sim || canon.foreign || !this.target || this.draggedBy || this.clip === "ragdoll" || this.flight || this.myOccupancy) return;
+    if (!g || g.mode === "sync" || g.busy) return;
+    const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z, d = Math.hypot(dx, dz); if (d < 1e-6) return;
+    const sp = this.target.run ? MOVER.walk.run : MOVER.walk.speed, cap = BODY_CAP;
+    const mounted = new Set<string>(), bodies: number[][] = [];
+    for (const p of this.people.values()) { const seat = (p.pose as any)?.seat?.to; if (typeof seat === "string") mounted.add(seat);
+      const at = (p.pose as any)?.p; if (Array.isArray(at) && at.length === 3 && at.every(Number.isFinite)) bodies.push(at); }
+    const rank = Number.isFinite(this.myRights?.rank) ? this.myRights.rank : null;
+    const go = this.shover.step({ st, feet: [this.pos.x, this.pos.y, this.pos.z], vel: [dx / d * sp, dz / d * sp], r: cap.r, tall: cap.tall, now: Date.now(),
+      rank, holds: this.holdsNow, mounted, bodies, skip: (id: string) => !!canon.sim.bodies?.[id] });
+    for (const p of go) { this.walkCap = { v: p.kept, until: Date.now() + p.keepMs }; void this.shoveNow(g, p.id, p.v); }
+  }
+  private async shoveNow(g: WalkGate, id: string, v: number[]) {
+    const here = [r3(this.pos.x), r3(this.pos.y), r3(this.pos.z)], box = footprint(this.replica?.st, id), at = this.trackAt;
+    const far = !at || !box || Math.hypot(Math.min(box.max[0], Math.max(box.min[0], at[0])) - at[0], Math.min(box.max[2], Math.max(box.min[2], at[2])) - at[2]) > SHOVE.reach - 0.15;
+    // the gate holds still from the re-track to the punt's answer (counted: two shoves in one tick each hold it): a stretch
+    // asked for between them would carry the authority's body back out of the punt's reach
+    const hold = g.mode === "tracked"; if (hold) g.hold = (g.hold ?? 0) + 1;
+    let r: any;
+    try {
+      if (hold && far) { g.retrackAt = Date.now(); const m = await this.request("move", { to: here });
+        if (this.walkGate === g && m?.ok) { this.trackAt = Array.isArray(m.at) ? m.at : here; g.permit = this.trackAt; } }
+      if (this.walkGate !== g) return;   // the walk ended during the re-track: no punt for a walk that's gone
+      r = await this.request("punt", { id, v, contact: true });
+    } finally { if (hold) g.hold = Math.max(0, (g.hold ?? 1) - 1); }
+    if (!r?.ok) { this.shover.refused(id, Date.now(), r?.refused?.code); if (r?.refused?.code === "unknown-arg") this.shoveOff = true; }
+    if (this.walkGate !== g || g.blocker?.id !== id) return;
+    if (r?.ok) { g.blocker.phase = "pushed"; g.blocker.until = Date.now() + SHOVE_SETTLE_MS; }
+    else this.refuseWalk(g.blocker.ref);
+  }
+  /** The authority called the next stretch solid because of `ref.blocker`: when that is a loose thing this body may shove,
+   *  walk up against it (a shorter stretch) instead of stopping, and hold the walk until the shove has moved it. */
+  private walkUpTo(g: WalkGate, from: number[], T: { x: number; z: number }, ref: any): boolean {
+    const id = ref?.blocker, st = this.replica?.st;
+    if (typeof id !== "string" || !st || !this.replica?.sim?.sim || (g.shoves ?? 0) >= SHOVE_TRIES || !this.mayShove(id)) return false;   // its rank and who holds what, as mayShove reads them
+    const obb = obbOf(st, id); if (!obb) return false; const thing = { obb, box: aabbOfObb(obb) };
+    const cap = BODY_CAP, dx = T.x - from[0], dz = T.z - from[2], d = Math.hypot(dx, dz); if (d < 1e-6) return false;
+    let s = 0; const STEP = 0.05;
+    const touches = (k: number) => !!contactOf([from[0] + dx / d * k, from[1], from[2] + dz / d * k], cap.r, cap.tall, thing, SHOVE_FEEL.slack / 2);
+    while (s < d && !touches(s)) s = Math.min(d, s + STEP);
+    if (!touches(s)) return false;   // the leg never reaches it: something else about it is solid
+    g.shoves = (g.shoves ?? 0) + 1;
+    g.blocker = { id, ref, phase: "approach", until: Date.now() + SHOVE_WAIT_MS + (s / MOVER.walk.speed) * 1000 };
+    if (s < 1e-6) { g.permit = from; return true; }   // already against it
+    const nx = from[0] + dx / d * s, nz = from[2] + dz / d * s, to = [r3(nx), r3(this.permitFloor(nx, nz)), r3(nz)];
+    g.busy = true;
+    void this.request("move", { to }).then((r: any) => {
+      if (this.walkGate !== g) return;
+      g.busy = false;
+      if (!r?.ok) { this.refuseWalk(r?.refused ?? ref); return; }
+      this.trackAt = Array.isArray(r.at) ? r.at : to; g.permit = this.trackAt;
+    });
+    return true;
+  }
+  /** Does something hold this walk? A "not yet" from the track's speed allowance, for a moment. A blocker: while approaching it or while what was shoved is still moving: yes. Pushed and
+   *  settled: no (the walk asks again; still solid, it walks up again, up to SHOVE_TRIES). Approached and never shoved: the
+   *  walk stops with the authority's refusal. */
+  private blockerHolds(g: WalkGate): boolean {
+    const now = Date.now(); if (now < (g.waitUntil ?? 0)) return true;
+    const b = g.blocker; if (!b) return false;
+    if (b.phase === "approach") { if (now > b.until) queueMicrotask(() => { if (this.walkGate === g && g.blocker === b) this.refuseWalk(b.ref); }); return true; }
+    const body = this.replica?.sim?.sim?.bodies?.[b.id];   // at rest is settled, logged or not (an unsettled rest stays a body)
+    if (now < b.until || (body && !body.resting)) return true;
+    g.blocker = null; return false;
+  }
+  /** The walk under way planned to walk into `id` (it was passable), and it stopped the walk: remember it as solid while it
+   *  stays where it is, and plan the walk once more, round it, from where the body stands. `ref`: the authority's refusal,
+   *  if that is what stopped it (still the walk's answer if the new plan is refused). False: not this walk's to re-plan. */
+  private replanRound(id: string, ref: any = null): boolean {
+    const plan = this.walkPlan, box = footprint(this.replica?.st, id);
+    if (!plan || plan.replanned || !plan.passable.has(id) || !this.walkDone || !box) return false;
+    this.misjudged.set(id, { at: [(box.min[0] + box.max[0]) / 2, (box.min[2] + box.max[2]) / 2], sig: this.shoveState(id) });
+    if (Array.isArray(ref?.at)) this.trackAt = ref.at;
+    const done = this.walkDone; this.walkDone = null;
+    this.abandonWalk(); this.clip = "idle";
+    // every end of the re-planned walk but "refused before a step" goes through abandonWalk and bumps the ticket: a stop,
+    // a timeout, a stall, a refusal, a newer walk (whose state walkTo has just cleared) — none of them is this answer's
+    const ticket = this.walkTicket;
+    const note = `${this.refName(id)} wouldn't move for your shove: you walked round it`;
+    this.lastWalkNote = note;
+    void this.walkNow(plan.x, plan.z, plan.run, plan.timeoutMs, plan.tolerance, plan.y, plan.near, true).then((arrived) => {
+      // planned round it and refused before a step: what stopped the first plan is still this walk's answer
+      if (!arrived && this.walkTicket === ticket && !this.lastWalkRefusal && !this.walkStall && !this.walkStopReason) {
+        if (ref) this.lastWalkRefusal = { code: String(ref.code), reason: String(ref.reason ?? ""), ...(ref.fix ? { fix: String(ref.fix) } : {}) };
+        else this.walkStopReason = `${this.refName(id)} is in the way and wouldn't move for your shove, and no route round it: ${this.walkRefusal ?? "none found"}`;
+        if (this.lastWalkNote === note) this.lastWalkNote = null;
+      }
+      done(arrived);
+    });
+    return true;
+  }
+  /** The authority refused this body the next stretch: it stops where the authority has it, and the walk says why. */
+  private refuseWalk(ref: any) {
+    // a thing this walk planned to walk into, called solid (it wouldn't budge: backed against a wall, locked or taken
+    // meanwhile, heavier than its mass says): the walk is planned once more with it as an obstacle, from where it stopped
+    const id = ref?.code === "solid" && typeof ref?.blocker === "string" ? ref.blocker : null;
+    if (id && this.replanRound(id, ref)) return;
+    this.lastWalkRefusal = { code: String(ref?.code ?? "refused"), reason: String(ref?.reason ?? ""), ...(ref?.fix ? { fix: String(ref.fix) } : {}) };
+    if (Array.isArray(ref?.at)) this.trackAt = ref.at;
+    this.abandonWalk(); this.clip = "idle";
+  }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
@@ -3913,21 +4684,141 @@ export class WorldAgent {
       : "this body is reconnecting to the world, so nothing was sent; it rejoins on its own once the world answers, so try again shortly");
   }
 
-  verb(verb: string, args: Record<string, unknown>) {
-    if (!this.joined) throw this.notJoined();
-    this.ws!.send(JSON.stringify({ type: "verb", verb, args }));
-    // Speech ends composing, by whichever route it's sent: say(), or a raw
-    // `say` through the world_verb tool.
-    if (verb === "say") {
-      this._typingUntil = 0;
-      this.onSaid?.();
+  /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
+   *  fix}}. */
+  request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
+    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
+    // speech ends composing, by whichever route it's sent (say(), or act {verb: "say"}): the throttle clears, and whoever
+    // keeps this body's typing dots up (the door's TypingRelay, #234) lets them end with the bubble
+    if (verb === "say") { this._typingUntil = 0; this.onSaid?.(); }
+    // holes r3 F2: the authority judges this body's water with the stature its mover is handed (in water: stature())
+    if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
+    const id = `v${++this.histId}`;
+    return new Promise((resolve) => {
+      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s" } }); }, 8000);
+      this.pendingRequests.set(id, (m) => { clearTimeout(t);
+        if (verb === "consent" && m.reply?.ok) this.noteConsent(args);
+        resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });
+      this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
+    });
+  }
+  /** This body's switch as it last set it (recut A2), resent on every arrival so a reconnect keeps it. */
+  private consentSwitch: string | null = null;
+  /** On every arrival, as a person's client does (consentsync.js): read what the authority holds for my body's switch and
+   *  send mine only if it differs. Unset = never chosen: the world's default stands. */
+  async replaySwitch(): Promise<void> {
+    if (!this.consentSwitch) return;
+    const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
+    // read mine when the answer is back: a switch set while the read was out is newer than the one this began with
+    const want = this.consentSwitch;
+    if (want && held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null);
+  }
+  private noteConsent(args: Record<string, unknown>) { if (typeof args.switch === "string") this.consentSwitch = args.switch; }
+  /** present people's identities, by display name (their arrival carries it) */
+  actorIds = new Map<string, string>();
+  /** Reaches the relay refused to show (server/reachgate.ts; the authority says so once per target and class per
+   *  REACH_NOTE_MS), newest last: what reach() reads to tell the truth about a hand nobody saw. */
+  reachRefusals: { to: string; cls: string; why: string; fix?: string; limb?: string; ts: number }[] = [];
+  private nameOfActor(actor: string): string | null { for (const [n, a] of this.actorIds) if (a === actor) return n; return null; }
+  /** Stop streaming the limb a refusal names (the relay strips it anyway). Only that one: another limb on the same body may
+   *  be one they consented to (r2 holes F9). A refusal from a server that doesn't name the limb drops the limbs held to that
+   *  body in the refused class. */
+  private dropReachesAt(actor: string, limb?: string, cls?: string): string[] {
+    const name = this.nameOfActor(actor), out: string[] = [];
+    for (const [l, e] of [...this.reaches]) {
+      // a limb's refusal is that reach's only while the relay still holds the reach to the refuser's body (reachHolders: the
+      // body it names, and every body its point lands in), or the reach is a world point, which the relay judges by where it
+      // lands now: a newer reach on the same hand held to nobody who refused stays
+      const held = name ? this.reachHolders(e.t).find((h) => h.name === name) : undefined, atBody = e.t?.who != null || e.t?.space != null;
+      const hit = limb !== undefined ? l === limb && (!!held || !atBody) : !!held && (!cls || held.cls === cls);
+      if (hit) { this.reaches.delete(l); out.push(WorldAgent.LIMB_WORD[l] ?? l); } }
+    return out;
+  }
+  /** The other bodies a world point lands in, each with its class there: server/reachgate.ts's bodiesAt, read from the
+   *  presence this body holds (each body's capsule, scaled to its size). */
+  private bodiesAtPoint(pt: number[]): { name: string; cls: string }[] {
+    const out: { name: string; cls: string }[] = [];
+    for (const [name, person] of this.people) {
+      const at = (person.pose as any)?.p;
+      if (name === this.name || !Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) continue;
+      const sc = clampBodyScale((person.pose as any)?.scale);
+      const cls = pointClass([0, 0, 0], [(pt[0] - at[0]) / sc, (pt[1] - at[1]) / sc, (pt[2] - at[2]) / sc]);
+      if (cls) out.push({ name, cls });
     }
+    return out;
+  }
+  /** Every other body a reach target is held to, as the relay holds it (server/reachgate.ts touched), each with its class:
+   *  a named point, that one body; a point in the world or this body's frame, every body it lands in; a point in another
+   *  body's frame, that body and every other body it lands in. The relay strips the reach if any of them refuses it. */
+  private reachHolders(t: any): { name: string; cls: string }[] {
+    if (t?.who !== undefined) {
+      const cls = t.who !== this.name ? WorldAgent.reachClass(t, t.who) : null;
+      return cls ? [{ name: t.who, cls }] : [];
+    }
+    if (!Array.isArray(t?.p) || t.p.length !== 3 || !t.p.every(Number.isFinite)) return [];
+    const p = t.p as number[];
+    if (t.space === undefined) return this.bodiesAtPoint(p);
+    if (t.space === "self" || t.space === this.name) {   // this body's root frame, as the pose it sends draws it
+      const world = WorldAgent.poseToWorld({ p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw }, p);
+      return world ? this.bodiesAtPoint(world) : [];
+    }
+    // their own frame: theirs, and wherever it lands in the world, as their pose draws it
+    const own = WorldAgent.reachClass(t, t.space);
+    const world = WorldAgent.poseToWorld(this.people.get(t.space)?.pose, p);
+    return [...(own ? [{ name: t.space as string, cls: own }] : []), ...(world ? this.bodiesAtPoint(world).filter((h) => h.name !== t.space) : [])];
+  }
+  /** A point in a body's own root frame, in the world, as server/reachgate.ts's frameToWorld places it: at the body's size,
+   *  turned by the pose's q when it carries one (a swimmer's whole-body turn), else by its yaw about +y. Null without a
+   *  position. */
+  private static poseToWorld(pose: any, local: number[]): number[] | null {
+    const at = pose?.p;
+    if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return null;
+    const sc = clampBodyScale(pose.scale), l = local.map((v) => v * sc), q = pose.q;
+    if (Array.isArray(q) && q.length === 4 && q.every(Number.isFinite)) {
+      const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
+      const cx = y * l[2] - z * l[1], cy = z * l[0] - x * l[2], cz = x * l[1] - y * l[0];   // v' = v + 2w (u × v) + 2 u × (u × v)
+      const dx = y * cz - z * cy, dy = z * cx - x * cz, dz = x * cy - y * cx;
+      return [at[0] + l[0] + 2 * (w * cx + dx), at[1] + l[1] + 2 * (w * cy + dy), at[2] + l[2] + 2 * (w * cz + dz)];
+    }
+    const yaw = Number(pose.yaw) || 0, c = Math.cos(yaw), sn = Math.sin(yaw);
+    return [at[0] + l[0] * c + l[2] * sn, at[1] + l[1], at[2] - l[0] * sn + l[2] * c];
+  }
+  /** The class the relay (server/reachgate.ts) gives a target on `name`'s body: a named point by consent.js's one table, a
+   *  point in their own frame by their capsule; null for a point beside them (the relay relays it) or another kind of target. */
+  static reachClass(t: any, name: string): string | null {
+    if (t?.who === name) return namedPointClass(t.point)?.cls ?? null;
+    if (t?.space === name && Array.isArray(t.p)) return pointClass([0, 0, 0], t.p);
+    return null;
+  }
+  /** After streaming a reach at other bodies: did the relay refuse it? A fresh refusal from any body it is held to (waits
+   *  a few frames for one), or one said within REACH_NOTE_MS (the relay won't say it again that soon, so silence then is
+   *  not a yes). Each body by its class there: a refusal of another class is another reach's. */
+  private async reachRefusalFor(limb: string, holders: { name: string; actor: string; cls: string }[], since: number) {
+    const holderOf = (x: { to: string; cls: string }) => holders.find((h) => h.actor === x.to && h.cls === x.cls);
+    for (let i = 0; i < 16 && this.joined && !this.closed; i++) {
+      const r = this.reachRefusals.find((x) => x.ts >= since && (x.limb ?? limb) === limb && holderOf(x));
+      if (r) return { r, by: holderOf(r)!.name, fresh: true };
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    const r = [...this.reachRefusals].reverse().find((x) => holderOf(x) && x.ts > Date.now() - REACH_NOTE_MS);   // (target, class) exactly (F9)
+    return r ? { r, by: holderOf(r)!.name, fresh: false } : null;
+  }
+  /** A gesture's ops (shared/protocol/requests.js) as ONE request — one act, the authority's answer — sent after the previous one
+   *  was answered (its log arrived first). Ops planned before that wait don't see what landed meanwhile, so a caller that
+   *  planned from the replica pins what it read with `expect` (componentsOf), and a change since is refused, not overwritten
+   *  `extra` rides the request (dry, expect, throughLock). The same requests a person's edit sends: one vocabulary, both audiences. */
+  async sendOps(ops: any[], extra: Record<string, unknown> = {}): Promise<any> {
+    const req: any = OP.batch(ops);
+    if (!req) return { ok: true, noop: true };
+    const turn = this.spelling.then(() => this.request(req.verb, { ...req.args, ...extra }));
+    this.spelling = turn.catch(() => null);
+    return turn;
   }
 
   // ---- moderation ----
-  // Per-world kick/ban/unban are ordinary verbs (owner-rank, same gate as
-  // grant) sent via verb(). These two are the extra plumbing: non-verb
-  // moderation messages, and a way to hear the world's answer.
+  // Per-world kick/ban/unban are requests (door()). These are the extra
+  // plumbing: the server's own moderation messages, and a way to hear the
+  // world's answer.
 
   /** The world's most recent mid-life refusal / moderation reply. */
   lastRefusal: { ts: number; text: string } | null = null;
@@ -3935,16 +4826,16 @@ export class WorldAgent {
   /** The last few `mod` replies, oldest first (see the "mod" case). */
   recentMods: { ts: number; text: string }[] = [];
 
-  /** Moderation messages that are not world verbs: 'world-bans' (list this
+  /** Moderation messages that aren't requests: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
    *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
-  sendMod(type: "world-bans" | "world-access" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
+  sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));
   }
 
   /** Ask the world to mint this identity's media credential (#104 phase-1).
-   *  Only the embodied primary may — which is this door. The answer arrives as
+   *  Only the embodied primary may — which is this server. The answer arrives as
    *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
   requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
@@ -3952,7 +4843,7 @@ export class WorldAgent {
   }
 
   /** Carry ONE media-signalling frame from the sidecar to the world. Whitelisted
-   *  by type for #100's reason — the door must not become a general tunnel into
+   *  by type for #100's reason — the authority must not become a general tunnel into
    *  the sequencer, and server-side validation stays the single authority.
    *  Payload shape is deliberately NOT inspected here: SDP and ICE are the
    *  server's to validate, and a door that parsed them would be a second,
@@ -3962,13 +4853,13 @@ export class WorldAgent {
     const t = String(frame?.type ?? "");
     // `voice-consent` is the LISTENER half: the world requires it from the
     // primary (server.ts refuses a spectator and keys on c.id/c.gen), so an
-    // agent that wants to HEAR must send it through this door too. It carries
-    // no audio and no identity claim beyond the one the door already holds —
+    // agent that wants to HEAR must send it through this server too. It carries
+    // no audio and no identity claim beyond the one the authority already holds —
     // it is a boolean about our own ears.
     //
     // 🔴 `voice-moderate` is DELIBERATELY NOT HERE (2026-08-16). It silences a
     // speaker for EVERYONE and needs owner rank — a moderation act, not media.
-    // The door already exposes moderation as first-class tools (kick/ban), which
+    // The authority already exposes moderation as first-class tools (kick/ban), which
     // go through the verb path with its rights check and its `mod` confirmation.
     // Letting it ride the media lane would give a SIDECAR — a process holding a
     // peer connection, not an identity — the ability to mute people, which is
@@ -4000,18 +4891,19 @@ export class WorldAgent {
   // still let an internal caller send utt:-1 or t0:NaN — two layers that
   // disagree on well-formed are one layer). Malformed trio → plain say: an
   // internal caller's bug must not silently ride protocol keys.
-  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
-    const args: Record<string, unknown> = { text };
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number; to?: string }): Promise<any> {
+    // (speech ends composing: request() clears the typing throttle and calls onSaid for every say)
+    const args: Record<string, unknown> = { text, ...(typeof extra?.to === "string" && extra.to ? { to: extra.to } : {}) };
     if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
       args.spoken = true;
       args.utt = extra.utt;
       if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
     }
-    this.verb("say", args);
+    // a request like every other write. The spoken trio rides it (the authority validates it again and clamps t0)
+    return this.request("say", { text: args.text, ...(args.to ? { to: args.to } : {}), ...(args.spoken ? { spoken: true, utt: args.utt, ...(args.t0 !== undefined ? { t0: args.t0 } : {}) } : {}) }).then((r: any) => { if (r && !r.ok) console.warn(`[agent] say refused: ${r.refused?.reason ?? r.refused?.code}`); return r; });
   }
 
-  /** Called after each `say` verb this body sends (say() or a raw world_verb
-   *  `say`), so whoever keeps its typing dots up (the door's TypingRelay) can
+  /** Called after each `say` this body sends (say(), or act {verb: "say"}: request()), so whoever keeps its typing dots up (the door's TypingRelay) can
    *  let them end with the bubble. */
   onSaid: (() => void) | null = null;
 
@@ -4167,18 +5059,33 @@ export class WorldAgent {
       if (!this.joined) await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
     }
     const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
+    const since = Date.now();
     this.reaches.set(limb, entry);
     if (this.joined) await this.refreshReachReading();
     const res = this.solveReachEntry(limb, entry);
     if (res.state === "ok" && res.reached) entry.reached = true;
     const limbW = WorldAgent.LIMB_WORD[limb];
     const what = describeTarget(t, this.name);
+    // a hand on another body is shown only with their consent: the relay strips it otherwise and says why (reachgate.ts)
+    // a point in the world or in this body's own frame is judged by the body it lands in, as the relay judges it
+    // every body the relay holds it to (none: beside them, nothing for the relay to refuse)
+    const holders = this.reachHolders(t).flatMap((h) => { const actor = this.actorIds.get(h.name); return actor ? [{ ...h, actor }] : []; });
+    if (holders.length && this.joined) {
+      const refused = await this.reachRefusalFor(limb, holders, since);
+      if (refused) {
+        if (this.reaches.get(limb) === entry) this.reaches.delete(limb);
+        const { r } = refused, ago = Math.round((Date.now() - r.ts) / 1000);
+        return { ok: false, text: `${limbW} toward ${what}: not shown to anyone — ${refused.by}'s consent refused it (class ${r.cls}): ${r.why}${r.fix ? ` — ${r.fix}` : ""}. `
+          + (refused.fresh ? "The reach is withdrawn; nobody saw your hand there."
+            : `That was said ${ago}s ago, and the world says it once per ${REACH_NOTE_MS / 1000}s, so the reach is withdrawn without streaming it again; if they have changed their table since, reach again in ${Math.max(1, Math.ceil((REACH_NOTE_MS - (Date.now() - r.ts)) / 1000))}s.`) };
+      }
+    }
     if (res.state !== "ok") {
       const why = res.state === "err" ? res.err : "skeletons still loading; the verdict follows on the next check";
       return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
     }
     if (res.reached) {
-      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until clear_reach or knockdown; this is an endpoint measurement, not a stability measurement.` };
+      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until reach {release: true} or knockdown; this is an endpoint measurement, not a stability measurement.` };
     }
     const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
     const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
@@ -4265,11 +5172,11 @@ export class WorldAgent {
     }
   }
 
-  /** Fire a named emote — a one-shot rider on the next presence packet, the
-   *  same channel the browser's emote bar uses. Receivers resolve the name
-   *  to a library clip; nothing is logged. */
-  emote(name: string) { this.pendingEmote = name; }
-  private pendingEmote: string | null = null;
+  /** Play a named anim once — pose.anim, a field on the next presence packet,
+   *  the same channel the browser's action bar uses. Receivers resolve the
+   *  name to a library clip; nothing is logged. */
+  playOnce(name: string) { this.pendingAnim = name; }
+  private pendingAnim: string | null = null;
 
   /** Settle into a posture clip (sit/sitchair/lie/idle). Rides the presence
    *  stream like locomotion does; walking replaces it, restore re-applies it. */
@@ -4286,7 +5193,7 @@ export class WorldAgent {
       this.pos.y = this.feetGround(true);
     }
     // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
+    if (clip === "idle" && this.joined && this.myOccupancy && this.mayVacate("menu")) this.setOccupant(null);
     this.clip = clip;
   }
 
@@ -4304,8 +5211,7 @@ export class WorldAgent {
     this.endFloat();
     if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
+      this.ws.send(JSON.stringify(this.joinMsg()));
     }
   }
 
@@ -4357,7 +5263,7 @@ export class WorldAgent {
   /** The world's flight recorder: why things bounced — denied verbs, rejected
    *  shapes, rate limits, and reaction outcomes (fired / skipped / failed).
    *  The log answers "what happened"; this answers "why didn't it". */
-  worldDebug(opts: { limit?: number; kinds?: string[]; behavior?: string; behaviors?: boolean } = {}):
+  worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
       Promise<{ events: any[]; status?: string }> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ events: [] });
     const reqId = `d${++this.histId}`;
@@ -4393,12 +5299,6 @@ export class WorldAgent {
     const { entries } = await this.history({ after: seq, limit, verbs: ["say"] });
     return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
   }
-  /** Private, point-to-point, never appended to the world log. */
-  whisper(to: string, text: string) {
-    // Sent or refused, as verb() is: a whisper that never left must not read as said.
-    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
-    this.ws.send(JSON.stringify({ type: "whisper", to, text }));
-  }
 
   // ---- perception (text tier) ----
 
@@ -4418,9 +5318,9 @@ export class WorldAgent {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
       seatVerdict: (eid) => this.seatVerdictFor(eid),
-      // a rider's chosen size, from its own presence (absent = 1). An agent's own
+      // an occupant's chosen size, from its own presence (absent = 1). An agent's own
       // body is its authored size: no agent sets `scale`, so its wire carries none.
-      riderScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
+      occupantScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
     }, nowMs);
   }
 
@@ -4436,9 +5336,9 @@ export class WorldAgent {
   /** The declared-approximation suffix for a seated person's line (#101):
    *  the same reason string the browser consoles and the nameplate ≈ carry —
    *  one contract, three declarations. Empty when the seat is profiled. */
-  private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
-    const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
-    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: sock?.pose ?? "sitchair" });
+  private seatSuffix(id: string, occ: { to: string }): string {
+    const station = this.socketRec(occ.to)?.station;
+    const g = seatGateCore({ sock: station, verdict: this.seatVerdictFor(id), pose: bodyOf(station)?.clip ?? "sitchair" });
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
@@ -4484,18 +5384,18 @@ export class WorldAgent {
     // header says so and every dependent distance/bearing below is
     // suppressed — never measured from the stale controller pos while the
     // same line claims "seated on" (#92, B2).
-    const selfRide = this.mounts.get(this.name);
-    const selfEff = selfRide ? this.eff(this.name, nowMs) : null;
-    const meKnown = !selfRide || selfEff?.ok === true;
+    const selfOcc = this.mounts.get(this.name);
+    const selfEff = selfOcc ? this.eff(this.name, nowMs) : null;
+    const meKnown = !selfOcc || selfEff?.ok === true;
     const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
     // #101: an uncorrected seat composition is never silent — the same
     // "(seat approximate: reason)" every renderer consumer declares.
     const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
-    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
+    const seated = selfOcc ? `, seated on ${this.socketName(selfOcc.to)}${selfEff?.ok && selfEff.moving ? ` (carried by its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${(this.float.on ? this.heightAt(me.x, me.z) : me.y).toFixed(2)}m${this.waterHere(me.x, me.z, me.y)}, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
-      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — dismount {id: "${this.name}"} restores a stamped position.`);
+      L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — sit with no \`on\` (or walking) gets you up, back to a stamped position.`);
     }
     { const ws = this.waterSummary(); if (ws) L.push(ws); }
     if (this.pendingTerrain) L.push(`The world's ground is a heightmap that has not loaded yet: heights here are the last ground you had${this.terrain ? "" : " (flat)"}, until it does.`);
@@ -4509,19 +5409,21 @@ export class WorldAgent {
       // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
       const feet = selfEff?.ok ? me.y : this.feetY(this.isSlumped());
       for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
+        const data = recordComponents(e).structure;
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
-          const here = describeHere(this.planOf(data), lx, lz, ly);
-          if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
+          const here = describeHere(this.planFor(e.id, data), lx, lz, ly);
+          if (here) { L.push(`${here} (inside [${this.handle(e.id)}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }
     }
     // ...and in named places: a room a model or a builder declared
     if (meKnown) {
       const here = this.placesAt([me.x, me.y, me.z]);
-      if (here.length) L.push(`You are in ${here.map(({ entity, place }) => `${place.label ?? place.name} (${entity.id}/${place.name})`).join(", within ")}.`);
+      if (here.length) L.push(`You are in ${here.map(({ entity, place }) => `${place.label ?? place.name} (${this.refName(entity.id)}/${place.name})`).join(", within ")}.`);
+      const sight = this.placesInSight();
+      if (sight.lines.length || sight.more) L.push(`Places ${sight.byDistance ? `within ${PLACE_SIGHT_M} m (line of sight not checked yet: the collision modules are still loading)` : "you can see"}, nearest first: ${sight.lines.length ? sight.lines.join("; ") : "none"}${sight.more ? ` — and ${sight.more} more: move {to: "?"} lists every place` : ""}.`);
     }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
@@ -4555,20 +5457,22 @@ export class WorldAgent {
       const doing = { idle: "standing", walk: "walking", run: "running", sit: "sitting", sitchair: "sitting on a chair", lie: "lying down" }[p.pose.clip] ?? p.pose.clip;
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
-      const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
-      const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      // Their heading is on the wire (pose.yaw, world yaw like our own) — say it,
-      // or an agent can't tell which side of someone it will see. A rider's body
-      // follows the seat's socket, so their root yaw isn't where they face. A body
-      // knocked over (ragdoll) or lying down keeps its standing yaw — the clip
-      // changes, not the heading — so for those too say nothing rather than lie.
-      const lying = p.pose.clip === "ragdoll" || p.pose.clip === "lie";
-      const facing = !ride && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
+      const winged = foldedIn(p.pose) === true ? ", wings folded" : "";
+      const mode = readBodyMode(p.pose);
+      const moded = ((m) => (m && m !== "stand" ? `, ${m === "sit" ? "sitting" : m === "lie" ? "lying down" : m === "swim" ? "swimming" : m === "fly" ? "flying" : "falling"}` : ""))(mode);
+      const occ = this.mounts.get(p.id);
+      const occupying = occ ? ` — on ${this.socketName(occ.to)}${this.seatSuffix(p.id, occ)}` : "";
+      // Their heading is on the wire (pose.yaw, world yaw like our own): say it, or an agent can't tell which side of
+      // someone it will see (upstream #225). An occupant's body follows the socket, so their root yaw isn't where they
+      // face; a body knocked over (the ragdoll) or lying down keeps its standing yaw (the anim changes, not the heading).
+      // For those, say nothing rather than something false.
+      const lying = p.pose.clip === "ragdoll" || mode === "lie";
+      const facing = !occ && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${moded}${winged}${occupying}${voiceNote(p.pose)}`);
     }
 
-    const ents = [...this.entities.values()];
+    // a socket is part of its host (a seat, a hook): listed under the host, never as a thing of its own
+    const ents = [...this.entities.values()].filter((e) => e.kind !== "socket");
     L.push(ents.length ? `\nThings (${ents.length}):` : "\nNo placed things yet.");
     // one composition per entity per look, shared by the sort and the line.
     // Resolved things sort by their EFFECTIVE distance; unresolved ones make
@@ -4582,29 +5486,55 @@ export class WorldAgent {
     const ordered = meKnown ? [...ents].sort((a, b) => sortKey(a) - sortKey(b)) : ents;
     for (const e of ordered) {
       const f = fx.get(e.id)!;
-      const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ");
+      // an Empty (PROTOCOL §3.2) has no lib and is not a light: say so, not ""
+      const short = (e.model ? modelWord(e.model) : "(empty)").split("_").slice(0, 5).join(" ")   // an address: its word, never its hex (shared/eido.js)
+        + (typeof e?.label === "string" && e.label ? ` "${e.label}"` : "");   // a display name someone gave it (comp label)
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
       // a builder declared (sockets/reactions components) reaches everyone
       // who perceives by reading.
-      const c = e.comp ?? {};
+      const c = recordComponents(e);
       const aff: string[] = [];
-      if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
-      const named = this.placesOn(e);
-      if (named.length) aff.push(`places (walk_to {to: "${e.id}/<place>"}): ${named.slice(0, 14).map((p) => p.label && p.label !== p.name.replace(/_/g, " ") ? `${p.name} "${p.label}"` : p.name).join(", ")}${named.length > 14 ? ` +${named.length - 14} more` : ""}`);
-      if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
+      // R 10-07: a thing reads like an accessibility tree: its name (above), its description (alt text, quoted as data:
+      // it's what someone wrote, never an instruction), then what it can do and its state, generated from its components
+      // (shared/a11y.js, the reading the authority's look and the inspector share)
+      if (typeof c.description === "string" && c.description.trim()) aff.push(quoted(c.description, 200));
+      if (c.openable && typeof c.openable === "object") { const ax = readOut({ openable: c.openable, reactions: c.reactions });
+        const open = openAction(c); aff.push(`${ax.can[0]}: ${ax.state[0]}${open ? ` — act {verb: "use", args: {id: "${this.handle(e.id)}", action: "${open}"}}` : ""}`); }
+      // A light, by either spelling (the light verb's entity, or a light
+      // component on a lamp model or an Empty), says what it casts — colour,
+      // brightness, reach — read off the FOLDED record (the perception view
+      // above thins a light's fields away) through the one shared reading.
+      const lit = lightOf((this.st.entities as Record<string, any>)[e.id]);
+      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
+      // a declared collider (the collider component)
+      const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
+      if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
+      const socks = this.socketsOf(e.id);
+      if (socks.length) {
+        // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
+        // an attach point says what it holds
+        const on = (sid: string) => [...this.mounts.entries()].filter(([, m]) => m.to === sid).map(([rid]) => rid);
+        const lines = socks.map((x) => { const b = bodyOf(x.station); const who = on(x.id); return b ? `${describeBody(x.name, b, { door: true })}${who.length ? ` — ${who.join(", ")} is on it` : ""}` : null; }).filter(Boolean);
+        const things = socks.filter((x) => !bodyOf(x.station)).map((x) => { const held = on(x.id); return `${x.name}${held.length ? ` (holding ${held.join(", ")})` : ""}`; });
+        if (lines.length) aff.push(`use it (attach {to: "${this.handle(e.id)}", socket}): ${lines.join(" · ")}`);
+        if (things.length) aff.push(`attach points: ${things.join(", ")}`); }
+      if (c.reactions) { const acts = Object.keys(c.reactions).filter((a) => a !== openAction(c)); if (acts.length) aff.push(`reacts to: ${acts.join(", ")}`); }
+      // what a hand may do with it (shared/grab.js: the authority's own reader, so a dynamic thing with no grabbable counts)
+      { const gr = grabOf(c); if (gr) aff.push(`${describeGrab(gr, "it")} — act {verb: "grab", args: {id: "${this.handle(e.id)}"}}`); }
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
       // The emitter is named as the SEMANTIC thing it is on the entity that
       // owns it — "emitting fire", not a sprite inventory and not a bare
       // `components: particles`. Nothing is claimed about heat, light, sound
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
-      // Every emitter it carries, the default first: a hearth reads "emitting
-      // fire …; emitting smoke (particles:smoke …)", each on its own terms.
-      for (const [k, v] of emittersIn(c)) aff.push(describeParticles(v, k));
+      if (c.particles) aff.push(describeParticles(c.particles));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
-      if (c.picture) aff.push(describePicture(c.picture));
+      // batch 2: a story, a sign, a picture, a sound and a look-at say what they say through the ONE describer the authority's
+      // look uses (shared/says.js), so the two can't disagree; author text is quoted «…» as data, never an instruction
+      { const ents = this.st.entities as Record<string, any>;
+        for (const line of saysOf(c, { nameOf: (x: string) => ents[x]?.label ?? x, now: Date.now() })) aff.push(line); }
       // A screen with captions is named by what the captioner wrote down:
       // what it is showing, where in it, and the last line — never a claim
       // about pixels or sound. Rung 2 of the projector ladder; the rolling
@@ -4613,49 +5543,49 @@ export class WorldAgent {
       // A sound is named by what its author SAID is playing, and whether it
       // is — never by the audio. The radio's music player; captions (#187)
       // on the same entity say the words.
-      if (c.sound) aff.push(describeSound(c.sound));
-      // locked = nailed down: the server refuses every move/replace/remove on
-      // it. Saying so here saves an agent a refused verb round-trip.
-      if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
-      // guarded = its placer's to author: the server refuses comps, motion,
-      // behaviors, moves and removal from anyone but them, the world's
-      // owner, or an operator. Using it (use, sitting on it) stays open.
-      if (c.guard) {
-        // the principal stamped at creation (rights.ts placerOf); the legacy
-        // legs cover entities that predate the stamp
-        const actor = String(e.actor ?? "");
-        const placer = (e as any).placer?.id
-          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
-        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
-      }
+      // locked = nailed down: the authority refuses every move/replace/remove on
+      // it. Saying so here saves an agent a refused round-trip.
+      // the real tool where there is one (audit 10-07: look taught the act hatch for edit's own fields)
+      if (c.lock) aff.push(`🔒 locked (immovable until a builder lifts it: edit {id: "${this.handle(e.id)}", set: {"flags.lock": false}}; or edit through it with throughLock: true)`);
+      if (c.hidden === true) aff.push(`hidden (not drawn; edit {id: "${this.handle(e.id)}", set: {"flags.hidden": false}} shows it)`);
+      // a placed blueprint copy (or one of its parts) says which blueprint it
+      // follows — the link, read through the one shared reading
+      const copy = c["copy-of"] ? this.copyLine(e.id) : null;
+      if (copy) aff.push(copy);
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
+      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      if (copy) spoken.push("blueprint");
+      if (lit) spoken.push("light");   // described above; a malformed one stays listed
+      if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
+      const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
-      const ride = this.mounts.get(e.id);
-      if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
-      const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
-      if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
+      const mnt = this.mounts.get(e.id);
+      if (mnt) aff.push(`mounted on ${this.socketName(mnt.to)}${f.ok && f.moving ? ` (carried by its ${f.moving})` : ""}`);
+      // who and what occupy it: on it directly, or in one of its sockets (said with the socket's name)
+      const sockIds = new Set(socks.map((x) => x.id));
+      const occupants = [...this.mounts.entries()].filter(([oid, m]) => !sockIds.has(oid) && (m.to === e.id || sockIds.has(m.to))).map(([oid, m]) => `${oid}${sockIds.has(m.to) ? ` (${this.socketRec(m.to)?.name})` : ""}`);
+      if (occupants.length) aff.push(`carrying: ${occupants.join(", ")}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
         // For an unmounted, unmoving thing this is exactly the folded pos.
         // Distance/bearing only exist relative to a KNOWN self (#92, B2).
         const dx = f.pos[0] - me.x, dz = f.pos[2] - me.z;
-        L.push(`  - [${e.id}] ${short}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})${f.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+        L.push(`  - [${this.handle(e.id)}] ${short}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})${f.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       } else {
         // No number is better than a wrong number: when the chain cannot be
         // composed (a part socket, an unknown motion type, a malformed link),
         // perception says whose frame the thing rides and why the coordinate
         // is withheld — never the stale pre-mount pos next to "mounted on".
-        const where = ride ? `position rides ${ride.to}` : `position unavailable`;
-        L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+        const where = mnt ? `position rides ${this.socketName(mnt.to)}` : `position unavailable`;
+        L.push(`  - [${this.handle(e.id)}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
       }
     }
-    if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
-      L.push(`  (interact via world_verb: use {id, action} · sit/ride via mount {id: "${this.name}", to, slot} — both open to everyone; dismount {id: "${this.name}"} to get off)`);
+    if (ents.some((e) => e?.reactions) || [...this.entities.values()].some((e) => e.kind === "socket")) {
+      L.push(`  (use a thing: act {verb: "use", args: {id, action?}} · sit or ride: attach {to: id, socket?} — both open to everyone; detach, or walking, gets you off)`);
     }
 
     const unread = this.inbox.slice(this.inboxCursor);

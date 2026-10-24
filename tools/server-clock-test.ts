@@ -1,7 +1,9 @@
 /**
- * Server clock test: the server sends its time just before every snapshot
- * to a join that asks (`clock: true`), and the browser takes it as its server clock, so a shared sound's playhead
- * is seeked, and its start stamped, in server time from the first snapshot on.
+ * Server clock test: the server sends its time (the world's authority clock)
+ * just before every snapshot to a join that asks (`clock: true`), and the
+ * browser takes it as its server clock until its first round trip lands
+ * (client/lib/serverclock.js), so a shared sound's playhead is seeked in
+ * server time from the first snapshot on.
  *
  * The server half joins a real server three ways that ask (embodied,
  * spectating, and travelling to a second world on the same socket) and
@@ -28,18 +30,21 @@
  * (client/index.html's boot script) buffered it and connect() drains it
  * later, a frame too, and that a late sample brings the browser's estimate,
  * and the lite client's, down by the leak for the time between the two
- * samples' handling, the `at` each is given. Where a check finer than a
- * millisecond reads a clock, it reads it with performance.now() held still or
- * brackets each read with reads just before and after, so a stalled process
- * can't fail it. It checks that remote bodies are drawn on the stream's time,
- * which a run of late frames moves as the old 0.08 blend did, and that a pose
- * with no t is stamped on it.
+ * samples' handling, the `at` each is given (the browser's raw estimate,
+ * before serverclock.js slews what the screen shows toward it), the lite
+ * client's being the same clock. Where a check
+ * finer than a millisecond reads a clock, it reads it with performance.now()
+ * held still or brackets each read with reads just before and after, so a
+ * stalled process can't fail it. It checks that remote bodies are drawn on the
+ * one time base, serverNow() less INTERP_MS (spec/PHYSICS.md §5.1: the clock
+ * flights are drawn on too), and that a pose with no t is stamped on it.
  *
  * Run: bun run tools/server-clock-test.ts
  */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 
 // A free port unless PORT names one: on a fixed default, another server
 // already listening there would answer this test's joins.
@@ -74,7 +79,7 @@ function connect(): Promise<Sock> {
 async function joinWorld(s: Sock, msg: Record<string, unknown>) {
   const from = s.msgs.length;
   const sentAt = Date.now();
-  s.ws.send(JSON.stringify({ type: "join", ...msg }));
+  s.ws.send(JSON.stringify({ type: "join", replica: true, ...msg }));   // a world talks only to clients that fold its log
   for (let i = 0; i < 80; i++) {
     const got = s.msgs.slice(from);
     if (got.some((m) => m.type === "snapshot" || m.type === "error")) return { got, sentAt, snapAt: Date.now() };
@@ -89,11 +94,13 @@ function checkJoin(label: string, r: { got: any[]; sentAt: number; snapAt: numbe
   check(`${label}: the message just before it is the server's clock`, before?.type === "clock", `before the snapshot: ${brief(before)}`);
   check(`${label}: its t is the server's Date.now() at the join`,
     typeof before?.t === "number" && before.t >= r.sentAt && before.t <= r.snapAt,
-    `t=${before?.t} sent=${r.sentAt} snapshot=${r.snapAt}`);
+    `t=${before?.t} sent=${r.sentAt} snapshot=${r.snapAt}`);   // a new world's authority clock is the wall clock: no entry is stamped ahead of it
 }
 
+const WORLD = `clock-${Math.random().toString(36).slice(2, 8)}`;
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-serverclock-"));
 const optDir = mkdtempSync(join(tmpdir(), "ew-serverclock-opt-"));
+foundWorlds(worldsDir, [WORLD, `${WORLD}-b`]);   // a join never founds a world
 const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" },
   stdout: "ignore", stderr: "inherit",
@@ -101,7 +108,6 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "se
 let up = false;
 for (let i = 0; i < 80 && !up; i++) { try { await fetch(`${HTTP}/`); up = true; } catch { await Bun.sleep(150); } }
 
-const WORLD = `clock-${Math.random().toString(36).slice(2, 8)}`;
 console.log(`\nserver clock — world "${WORLD}"\n`);
 try {
   check("the server came up", up && proc.exitCode === null, `exit code ${proc.exitCode}`);
@@ -286,6 +292,10 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     mock.module(`${import.meta.dir}/../client/lib/${m}.js`, () => stubs);
   }
   const remotesMod: any = await import("../client/lib/remotes.js");
+  // The estimate itself, before serverclock.js slews what the screen shows toward it (clockDebug().best): the
+  // arithmetic checks below read this, as machine time plus the best offset.
+  const { clockDebug } = await import("../client/lib/serverclock.js");
+  const rawNow = () => performance.timeOrigin + performance.now() + clockDebug().best;
   const netMod: any = await import("../client/lib/net.js");
   // As main.js wires it, before connect(); the avatar is the boot script's
   // default, so the early socket's join below matches the one net.js would send.
@@ -386,6 +396,41 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     const fallback = remotesMod.serverNow() - machine();
     check("a buffer with no arrival times is still adopted and drained, its clock sampled at the drain",
       outcome === "drained" && netMod.net.ws === older.ws && Math.abs(fallback - OLDER) < MARGIN, `${outcome}, serverNow - machine = ${fallback} ms, want ${OLDER}`);
+    // house review of #260, client/lib I62: requests in flight belong to the socket they went on. A replaced socket's close
+    // (rejoin waits at most 2 s for it, then dials) used to fail the NEW socket's requests too, and mark it unjoined.
+    // Mutation (must go red): make failPending ignore its socket argument (fail every request).
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const A = mk(); (globalThis as any).__ewEarlySocket = A; await netMod.connect();
+      netMod.net.joined = true;
+      const onA = netMod.sendRequest("whois", { name: "x" });
+      const B = mk(); (globalThis as any).__ewEarlySocket = B; await netMod.connect();
+      netMod.net.joined = true;
+      check("(setup) the second socket is the live one", netMod.net.ws === B.ws);
+      let settledB: any = null; const onB = netMod.sendRequest("whois", { name: "y" }).then((r: any) => (settledB = r));
+      const idB = JSON.parse(B.ws.sent.at(-1)).id;
+      A.ws.onclose({ target: A.ws, code: 1006 });   // the replaced socket's close lands late
+      const rA: any = await onA; await Promise.resolve();
+      check("the replaced socket's close answers ITS requests (offline)", rA?.ok === false && rA.refused?.code === "offline", JSON.stringify(rA));
+      check("…and leaves the live socket's requests waiting, and the live socket joined", settledB === null && netMod.net.joined === true, JSON.stringify({ settledB, joined: netMod.net.joined }));
+      await netMod._dispatch({ type: "reply", id: idB, reply: { ok: true, people: [] } });
+      const rB: any = await onB;
+      check("…which its own reply then answers", rB?.ok === true, JSON.stringify(rB));
+    }
+    // review of I62: rejoin() skips the reconnect for the socket it REPLACED only. The new socket dropping before the old
+    // socket's close lands must still redial (a shared flag let it be used up by the new socket's close, then the old
+    // close was ignored as replaced, and nothing ever redialled). Mutation (must go red): make the skip a plain boolean again.
+    {
+      const mk = (): any => ({ ws: new FakeSocket(), sent: { world: CONFIG.world, id: CONFIG.name, avatar: "claude", token: CONFIG.token }, buffered: [], failed: false });
+      const C = mk(); (globalThis as any).__ewEarlySocket = C; await netMod.connect(); netMod.net.joined = true;
+      const D = mk(); (globalThis as any).__ewEarlySocket = D; netMod.rejoin(); await Promise.resolve(); await Promise.resolve();
+      check("(setup) rejoin dialled a new live socket", netMod.net.ws === D.ws);
+      netMod.net.status = "connected";
+      D.ws.onclose({ target: D.ws, code: 1006 });   // the NEW socket drops first
+      check("the new socket dropping before the old close lands redials (retrying)", netMod.net.status === "retrying", String(netMod.net.status));
+      C.ws.onclose({ target: C.ws, code: 1000 });   // the replaced socket's close, late
+      check("…and the replaced socket's late close changes nothing", netMod.net.status === "retrying", String(netMod.net.status));
+    }
   }
   // heldStill runs fn with performance.now() held at one instant, so every
   // clock read inside it reads that instant, however long the process stalls.
@@ -409,50 +454,30 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   // comes down by tens of ms more or less. The late one's `at` is 20 s ahead
   // of the page's own clock, so the folds after it here take no leak.
   const LATE_LEAK = Math.min(LEAK_MAX_MS, LEAK_MS_PER_S * 20);
-  const kept = estimateAt(remotesMod.serverNow);
+  const kept = estimateAt(rawNow);
   const keptAt = performance.now(), lateAt = keptAt + 20_000;
   remotesMod.noteServerTime(performance.timeOrigin + keptAt + kept, keptAt);
-  const beforeLate = estimateAt(remotesMod.serverNow);
+  const beforeLate = estimateAt(rawNow);
   remotesMod.noteServerTime(performance.timeOrigin + lateAt + kept - 200_000, lateAt);
-  const browserDown = beforeLate - estimateAt(remotesMod.serverNow);
+  const browserDown = beforeLate - estimateAt(rawNow);
   check("a sample taken 200 s late, handled 20 s after the previous one, brings the browser's estimate down by the leak for those 20 s",
     Math.abs(browserDown - LATE_LEAK) < 0.01, `down ${browserDown} ms, the leak ${LATE_LEAK} ms`);
   // a t that isn't finite (1e999 parses as Infinity) isn't a sample, through the reader too
-  const beforeOdd = [estimateAt(remotesMod.serverNow), estimateAt(remotesMod.streamNow)];
+  const beforeOdd = [estimateAt(remotesMod.serverNow), estimateAt(rawNow)];
   remotesMod.noteServerTime(Infinity); remotesMod.noteServerTime(-Infinity); remotesMod.noteServerTime(NaN);
-  const afterOdd = [estimateAt(remotesMod.serverNow), estimateAt(remotesMod.streamNow)];
+  const afterOdd = [estimateAt(remotesMod.serverNow), estimateAt(rawNow)];
   check("a t that isn't finite leaves the browser's estimates as they were", afterOdd.every((v, i) => Number.isFinite(v) && Math.abs(v - beforeOdd[i]) < 0.01),
     `before ${beforeOdd.join(", ")}, after ${afterOdd.join(", ")}`);
 
-  // Remote bodies are interpolated on the stream's time (remotes.js
-  // streamNow): every sample blended in at 0.08, as the one estimate was
-  // before, so INTERP_MS stays a buffer behind the frames as they arrive. A
-  // run of frames handled 2 s late moves it as that blend did, while
-  // serverNow() keeps the quickest sample. Each sample is given its exact
-  // handling time, so the arithmetic is the check's own.
-  check("remotes.js keeps a time of its own for interpolation (streamNow)", typeof remotesMod.streamNow === "function", typeof remotesMod.streamNow);
-  if (typeof remotesMod.streamNow === "function") {
-    // The run is handled at one held instant, after a sample as quick as the
-    // estimate, handled at that instant too: no time passes between its folds,
-    // so no leak runs, and serverNow() has to stay where it was, where a blend
-    // at 0.08 would have come down 1.6 s.
-    const run = heldStill((p) => {
-      const machineNow = performance.timeOrigin + p;
-      remotesMod.noteServerTime(machineNow + estimateAt(remotesMod.serverNow), p);
-      const offBefore = estimateAt(remotesMod.serverNow);
-      let wantStream = estimateAt(remotesMod.streamNow);
-      for (let i = 0; i < 20; i++) {
-        const late = offBefore - 2_000;
-        remotesMod.noteServerTime(machineNow + late, p);
-        wantStream = wantStream * 0.92 + late * 0.08;
-      }
-      return { offBefore, wantStream, streamOff: estimateAt(remotesMod.streamNow), offAfter: estimateAt(remotesMod.serverNow) };
-    });
-    check("a run of frames handled 2 s late moves interpolation's time as the 0.08 blend does",
-      Math.abs(run.streamOff - run.wantStream) < 0.01, `streamNow - machine = ${run.streamOff} ms, want ${run.wantStream}`);
-    check("…while serverNow() keeps the quickest sample", Math.abs(run.offAfter - run.offBefore) < 0.01, `serverNow - machine = ${run.offAfter} ms, was ${run.offBefore}`);
+  // Remote bodies are drawn on the one time base (spec/PHYSICS.md §5.1): the
+  // estimated server clock, serverNow(), the clock flights and every other
+  // authority stamp are drawn on, less INTERP_MS (110 ms). (main's #201 drew
+  // them on a separate stream clock, the old 0.08 blend; here a sample carries
+  // its sender's capture time on the authority's clock, and serverNow() is
+  // measured by round trips, so bodies and flights share one clock.)
+  {
     // A pose with no `t` (the snapshot's, once a body loads: net.js) is
-    // stamped on the stream's time, among the stamped frames around it.
+    // stamped at serverNow().
     const camera: any = stubs.camera;
     camera.getWorldPosition ??= (v: any) => v.copy(camera.position);
     const stamped = await remotesMod.ensureRemote("stamped", null);
@@ -460,45 +485,57 @@ console.log("\n— the browser takes the clock as its server clock —\n");
     // sets a root's rotation with rotation.set or a quaternion (since #248)
     check("setup: the stamped body has an avatar", stamped.avatar != null);
     if (stamped.avatar) stamped.avatar.root = new stubs.THREE.Object3D();
-    const stampFrom = remotesMod.streamNow();
-    remotesMod.pushPose("stamped", { p: [0, 0, 0], yaw: 0 });
-    const stampTo = remotesMod.streamNow(), stamp = stamped.buf.at(-1)?.t;
-    check("a pose with no t is stamped at the stream's time", stamp >= stampFrom && stamp <= stampTo,
-      `stamp ${stamp}, stream's time ${stampFrom} to ${stampTo}`);
-    // updateRemotes draws a remote body at streamNow() less INTERP_MS (110 ms):
-    // between two poses stamped 2 s either side of that point, it's drawn
-    // halfway. With performance.now() held still from placing the poses to
-    // drawing, that point doesn't move, so the body is drawn at x = 5 exactly:
-    // with no buffer it would stand at 5.275, and drawn at serverNow(),
-    // seconds ahead of the stream after the late run, at the newer pose, 10.
+    const { stampFrom, stampTo } = heldStill(() => {
+      const stampFrom = remotesMod.serverNow();
+      remotesMod.pushPose("stamped", { p: [0, 0, 0], yaw: 0 });
+      return { stampFrom, stampTo: remotesMod.serverNow() };
+    });
+    const stamp = stamped.buf.at(-1)?.t;
+    check("a pose with no t is stamped at serverNow()", stamp >= stampFrom && stamp <= stampTo,
+      `stamp ${stamp}, serverNow ${stampFrom} to ${stampTo}`);
+    // updateRemotes draws a remote body at serverNow() less its interpolation delay: 110 ms while its samples arrive on
+    // time. Two samples, each stamped as it arrives (no lateness), half a second apart on a held clock: the body is drawn
+    // 110 ms behind the newer one, at x = 10 * 390/500 = 7.8 (10 with no buffer).
+    const heldAt = <T>(p: number, fn: () => T): T => { const real = performance.now; performance.now = () => p; try { return fn(); } finally { performance.now = real; } };
     const drawn = await remotesMod.ensureRemote("drawn", null);
     drawn.avatar = { root: new stubs.THREE.Object3D(), pitch: 0,
-      update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playEmote() {} };
-    const x = heldStill(() => {
-      const renderPoint = remotesMod.streamNow() - 110;
-      remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, renderPoint - 2_000);
-      remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, renderPoint + 2_000);
-      remotesMod.updateRemotes(0.016);
-      return drawn.avatar.root.position.x;
-    });
-    check("a remote body is drawn 110 ms behind the stream's time", Math.abs(x - 5) < 1e-6, `x = ${x}, want 5 (5.275 with no buffer, 10 at its newer pose)`);
+      update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
+    const p0 = performance.now();
+    heldAt(p0, () => remotesMod.pushPose("drawn", { p: [0, 0, 0], yaw: 0 }, remotesMod.serverNow()));
+    const x = heldAt(p0 + 500, () => { remotesMod.pushPose("drawn", { p: [10, 0, 0], yaw: 0 }, remotesMod.serverNow()); remotesMod.updateRemotes(0.016); return drawn.avatar.root.position.x; });
+    // (serverNow() may still be slewing from the checks above: the expected point is read off the two stamps it gave)
+    const [ta, tb] = drawn.buf.slice(-2).map((s: any) => s.t), want = 10 * (1 - 110 / (tb - ta));
+    check("a remote body whose samples arrive on time is drawn 110 ms behind serverNow()", Math.abs(x - want) < 1e-6 && Math.abs(want - 7.8) < 0.3, `x = ${x}, want ${want} (10 with no buffer)`);
+    // house review of #260, client/lib I46: a fixed 110 ms starved the buffer on a slow link (samples arriving 300 ms
+    // after their capture were all newer than the render point: the body froze at its newest pose, then jumped). The
+    // delay follows the observed lateness: up fast, down slowly, never under 110 ms nor over the cap.
+    // Mutation (must go red): make interpDelay return INTERP_MS always.
+    const ID: any = await import("../client/lib/interpdelay.js");
+    let est: number | null = null;
+    check("no samples yet: the floor", ID.interpDelay(est) === ID.INTERP_MS);
+    for (let i = 0; i < 20; i++) est = ID.noteLateness(est, 20);
+    check("samples 20 ms late: still the 110 ms floor", ID.interpDelay(est) === ID.INTERP_MS, `delay ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 12; i++) est = ID.noteLateness(est, 300);
+    check("samples 300 ms late: within a second at 15 Hz the delay covers them, with room", ID.interpDelay(est) >= 300 + 40 && ID.interpDelay(est) <= ID.INTERP_MAX_MS, `delay ${ID.interpDelay(est)}`);
+    const high = ID.interpDelay(est); est = ID.noteLateness(est, 20);
+    check("one quick sample after a slow spell lowers it only a little (a jitter buffer drains slowly)", ID.interpDelay(est) < high && ID.interpDelay(est) > high - 20, `${high} -> ${ID.interpDelay(est)}`);
+    for (let i = 0; i < 50; i++) est = ID.noteLateness(est, 5000);
+    check("…and never past the cap", ID.interpDelay(est) === ID.INTERP_MAX_MS);
+    check("a non-finite lateness changes nothing", ID.noteLateness(42, NaN) === 42 && ID.noteLateness(null, Infinity) === null);
+    // end to end: a body whose samples arrive 300 ms late is drawn between them, not frozen at the newest
+    const slow = await remotesMod.ensureRemote("slow", null);
+    slow.avatar = { root: new stubs.THREE.Object3D(), pitch: 0, update() {}, setLimp() {}, setClip() {}, setPose() {}, clearPose() {}, playOnce() {} };
+    let xs = NaN;
+    for (let i = 0; i <= 30; i++) xs = heldAt(p0 + 1000 + i * 66, () => { remotesMod.pushPose("slow", { p: [i, 0, 0], yaw: 0 }, remotesMod.serverNow() - 300); remotesMod.updateRemotes(0.016); return slow.avatar.root.position.x; });
+    check("samples 300 ms late: the body is drawn between two of them, not stuck at the newest", xs < 30 - 0.5 && xs > 20, `x = ${xs} (30 is the newest sample)`);
   }
 
-  // The lite client keeps its estimate by the same rule (participants_lite.js).
+  // The lite client keeps no clock of its own: net.js hands participants_lite's noteServerTime the one-way samples and reads
+  // serverclock.js's serverNow for round trips, so two estimates there would part (audit 10-22 #10).
   const lite: any = await import("../client/lib/participants_lite.js");
-  lite.noteServerTime(machine() - 120_000 + 5_000, performance.now() - 120_000);
-  const liteAhead = lite.serverNow() - machine();
-  check("the lite client's estimate takes a sample at the time its message's handler ran", Math.abs(liteAhead - 5_000) < MARGIN, `serverNow - machine = ${liteAhead} ms`);
-  lite.noteServerTime(machine() + AHEAD);   // handled as its event runs: no arrival time
-  const liteLive = lite.serverNow() - machine();
-  check("…and a sample with no arrival time is taken now", Math.abs(liteLive - AHEAD) < MARGIN, `serverNow - machine = ${liteLive} ms, want ${AHEAD}`);
-  const liteKeptAt = performance.now(), liteLateAt = liteKeptAt + 20_000;
-  lite.noteServerTime(performance.timeOrigin + liteKeptAt + liteLive, liteKeptAt);
-  const liteBefore = estimateAt(lite.serverNow);
-  lite.noteServerTime(performance.timeOrigin + liteLateAt + liteLive - 200_000, liteLateAt);
-  const liteDown = liteBefore - estimateAt(lite.serverNow);
-  check("…and a sample taken 200 s late, handled 20 s after the previous one, brings it down by the leak for those 20 s",
-    Math.abs(liteDown - LATE_LEAK) < 0.01, `down ${liteDown} ms, the leak ${LATE_LEAK} ms`);
+  const sc: any = await import("../client/lib/serverclock.js");
+  check("the lite client's server clock is serverclock.js's (noteServerTime, serverNow), not a copy that can drift",
+    lite.noteServerTime === sc.noteServerTime && lite.serverNow === sc.serverNow);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

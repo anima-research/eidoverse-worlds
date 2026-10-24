@@ -1,17 +1,21 @@
 // sound-clock-test — the shared playhead runs on the SERVER clock, not the
-// machine's.
+// machine's, and the editor leaves `t0` to the authority, which stamps it on
+// its own clock.
 //
 //   bun tools/sound-clock-test.ts
 //
 // #192's clock note says every client seeks to the same playhead from `t0`.
 // It did — against Date.now(), while motion (Hesperus finding #4, #192's own
-// tickMotion) runs on the estimated server offset from remotes.js. Two listeners
+// tickMotion) runs on the estimated server clock (client/lib/serverclock.js). Two listeners
 // whose clocks disagree by Δ heard the same radio Δ apart, and an author whose
 // clock was off shifted everyone by their own skew (I.M., instruments findings,
 // 2026-09-23). This loads the real sounds.js under stubs, skews Date.now()
-// from the server clock by a known amount, and checks that both the seek and
-// the editor's `t0` stamp read the server clock. Mutating either back to
-// Date.now() turns its case red.
+// from the server clock by a known amount, and checks that the seek reads the
+// server clock (mutating it back to Date.now() turns that case red), and that
+// the editor's play sends no `t0` of its own: the authority stamps it when the
+// sound starts playing (shared/sound.js THE CLOCK), so no machine's clock is
+// ever the playhead's origin. (tools/protocol/soundclock-check.ts holds the
+// playhead arithmetic itself.)
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -24,7 +28,7 @@ const check = (name: string, ok: unknown, detail = '') => {
 plugin({ name: 'sound-clock-stubs', setup(b) {
   for (const m of ['core', 'base', 'world', 'net'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./guard-label-stub.mjs') }));
-  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'remotes'])
+  for (const m of ['inspect', 'ui', 'audioctx', 'audiounlock', 'voiceconsent', 'serverclock'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./sound-clock-stub.mjs') }));
 } });
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -61,24 +65,24 @@ check('a playing sound built its graph', !!h);
 check('seeks to (serverNow − t0) mod duration = 12 s, not the skewed 17 s',
   h && Math.abs(h.el.currentTime - 12) < 1e-9, h ? `currentTime=${h.el.currentTime}` : 'no handle');
 
-console.log('\n— the editor stamps t0 from the server clock —\n');
+console.log('\n— the editor leaves t0 to the authority —\n');
 const editor = seams.editors[0];
 check('sounds.js registered its editor', typeof editor === 'function');
 stub.entities.set('radio1', { userData: {} });
 stub.entityMeta.set('radio1', { actor: 'ra', kind: 'model', ts: 1, placer: { id: 'ra', sub: 'human:discord:9001' } });
 stub.net.myId = 'ra'; stub.net.mySub = 'human:discord:9001'; stub.net.myRights = { role: 'owner' };
 const committed: any[] = [];
-const block = editor({ id: 'radio1', obj: { userData: {} }, meta: stub.entityMeta.get('radio1'), bag: {}, commit: (verb: string, args: any) => committed.push({ verb, args }), esc: (t: string) => t });
+const block = editor({ id: 'radio1', obj: { userData: {} }, meta: stub.entityMeta.get('radio1'), bag: {}, commit: (component: string, value: any) => committed.push({ component, value }), esc: (t: string) => t });
 check('the editor offered the form', !!block?.html && typeof block.wire === 'function');
 document.body.innerHTML = block.html;
 block.wire(document.body);
 const src = document.querySelector('[data-se="src"]') as HTMLInputElement;
 src.value = 'store/audio/0123456789abcdef.mp3';
 (document.querySelector('[data-se="play"]') as HTMLElement).click();
-const play = committed.find((c) => c.verb === 'comp');
-check('play committed a sound comp', !!play, JSON.stringify(committed));
-check('its t0 is the server clock, not the machine\'s',
-  play && play.args?.data?.t0 === seams.clock.server, play ? `t0=${play.args?.data?.t0} server=${seams.clock.server} machine=${Date.now()}` : '');
+const play = committed.find((c) => c.component === 'sound');
+check('play committed a playing sound', !!play && play.value?.playing === true, JSON.stringify(committed));
+check('…with no t0 of its own: neither the machine\'s clock nor its estimate of the server\'s is the playhead\'s origin',
+  play && !('t0' in (play.value ?? {})), play ? `t0=${play.value?.t0} server=${seams.clock.server} machine=${Date.now()}` : '');
 
 Date.now = realNow;
 console.log(`\n${pass} passed, ${fail} failed`);

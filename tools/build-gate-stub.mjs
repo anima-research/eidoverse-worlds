@@ -10,9 +10,9 @@ class Obj3 {
   updateMatrixWorld() {} getWorldPosition() { return new V3(); } lookAt() {} removeFromParent() {}
 }
 // EVERY class the two modules construct — gathered in one grep across build.js
-// and seatedit.js rather than discovered one failed run at a time. build.js
+// and socketedit.js rather than discovered one failed run at a time. build.js
 // runs a lot at import (Raycaster, Plane, Box3Helper, setPointerClaim,
-// claimEscape, three addEventListeners) and seatedit adds its own Vector3 and
+// claimEscape, three addEventListeners) and socketedit adds its own Vector3 and
 // two Matrix4s, so every one of these has to be constructible or nothing loads.
 export const THREE = {
   Vector3: V3,
@@ -36,6 +36,7 @@ export const camera = { position: new V3(), quaternion: {} };
 export const canvas = { addEventListener() {}, removeEventListener() {}, style: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
 
 const handlers = new Map();
+export const CONFIG = {};   // base.js's CONFIG: chat/catalog/audiopanel read it (sockets merge 10-14)
 export const bus = {
   on(t, f) { (handlers.get(t) ?? handlers.set(t, []).get(t)).push(f); },
   emit(t, p) { for (const f of handlers.get(t) ?? []) f(p); },
@@ -44,16 +45,20 @@ export const report = () => {};
 
 export const loadGLB = async () => new THREE.Object3D();
 export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 export const makeLightGizmo = () => new THREE.Object3D();
 
-// world.js also exports findPart, which seatedit.js imports — build.js pulls in
-// seatedit at line 31, so the thirteenth module has to be remapped too or the
-// REAL seatedit loads and demands a symbol this stub never had. (My first run
+// world.js also exports findPart, which socketedit.js imports — build.js pulls in
+// socketedit at line 31, so the thirteenth module has to be remapped too or the
+// REAL socketedit loads and demands a symbol this stub never had. (My first run
 // died on exactly that: I stopped reading build.js's imports at line 30.)
 export const findPart = () => null;
 export const entities = new Map();
 export const entityMeta = new Map();
-export const comps = new Map();
+export const comps = new Map();   // the suite's driver: what bagOf answers
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const editHolds = new Map();
 export const reindexCollider = () => {};
 export const heightAt = () => 0;
@@ -61,7 +66,6 @@ export const heightAt = () => 0;
 // THE ONE THAT MATTERS: the gate reads net.myRights. Left undeclared, exactly
 // as the real net.js leaves it before a snapshot.
 export const net = {};
-export const sendVerb = () => {};
 export const sendDrag = () => {};
 
 export const myState = { pos: [0, 0, 0], yaw: 0 };
@@ -74,16 +78,34 @@ export const flashHint = (t) => { hints.push(String(t)); };
 export const collapseAll = () => {};
 export const panelFrame = () => ({ show() {}, hide() {}, visible: false });
 export const sceneSelect = () => {};
+export const sceneSelected = () => null;   // build.js: Del/X/F act on the inspector's selection
+export const sceneDeselect = () => {};   // build.js: Esc / Edit ▸ deselect clear it
 export const claimEscape = () => {};
 
-// seatedit.js — build.js imports ten symbols from it at line 31
-export const refreshSeatGizmos = () => {};
-export const resetSeats = () => {};
-export const armSeatPlacement = () => {};
-export const seatArmed = () => null;
-export const seatSelected = () => null;
-export const cancelSeatArm = () => {};
-export const deselectSeat = () => {};
-export const seatMouseDown = () => false;
-export const seatKeyDown = () => false;
-export const updateSeatDrag = () => {};
+// socketedit.js — build.js imports ten symbols from it at line 31
+export const refreshSocketGizmos = () => {};
+export const resetSockets = () => {};
+export const armSocketPlacement = () => {};
+export const socketArmed = () => null;
+export const socketSelected = () => null;
+export const cancelSocketArm = () => {};
+export const deselectSocket = () => {};
+export const socketMouseDown = () => false;
+export const socketKeyDown = () => false;
+export const updateSocketDrag = () => {};
+
+// ---- xrask.js (editwrites): a headset is never presenting
+export const xrActive = () => false;
+export const chooseXR = async () => null;
+// ---- realize/structure.js (structure_ui): the cutaway switch, inert
+export const setCutaway = () => {};
+// ---- net.js / ui.js (editwrites): no replica, no request answered, hints as text
+export const replica = { st: null };
+export const replicaActive = () => false;
+export const sendRequest = async () => ({ ok: false, refused: { code: 'not-joined', reason: 'not in a world' } });
+export const toast = (t) => { hints.push(String(t)); };
+// ui.js's one status bar (claimStatus/releaseStatus, DESIGN-status-bar.md): build.js claims the selection line, editwrites
+// claims 'warn' for a refusal. A text claim is a hint the suite reads, as flashHint's are; a node claim (the selection) is not.
+export const claimStatus = (id, { content = null } = {}) => { if (content != null) hints.push(String(content)); };
+export const releaseStatus = () => {};
+export { html } from '../client/lib/markup.js';

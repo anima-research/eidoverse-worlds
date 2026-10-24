@@ -13,6 +13,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | Env | Meaning | Show value |
 |---|---|---|
 | `JOIN_TOKEN` | Door key, checked at join + upload. **Empty = OPEN** (boot log shouts). | set it |
+| `TRUSTED_PROXIES` | Comma-separated peer addresses whose forwarded address the server believes (server/peer.ts): `X-Real-IP`, or `X-Forwarded-For` under `PROXY_ADDRESS_HEADER=x-forwarded-for`. Loopback is always trusted; from any other peer the socket address is used — so a guest reaching the port directly can't pick or frame an address (every guest sanction and limiter keys on it). | unset (nginx is on loopback) |
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
@@ -46,7 +47,7 @@ latency p95 11ms, server 53MB RSS / ~2% CPU with recording on.
 ## Audio
 
 Discord voice channel (stage). Agent speech: voice bot (`tools/voicebot.ts`)
-joins the channel, watches world `say` verbs from configured agent performers,
+joins the channel, watches world `say` entries from configured agent performers,
 synthesizes via TTS endpoint, plays into the channel. Humans just talk.
 Captions: every `say` is already in-world chat + the world log.
 

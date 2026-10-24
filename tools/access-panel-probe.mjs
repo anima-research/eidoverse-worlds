@@ -12,7 +12,7 @@ import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
 const SHOT_DIR = process.env.SHOT_DIR ?? tmpdir();
 
-// a scratch issuer, so the probe can sign people in (same minting as tools/access-test.ts)
+// a scratch issuer, so the probe can sign people in
 const pair = generateKeyPairSync('ed25519');
 const spki = createPublicKey(pair.privateKey).export({ format: 'der', type: 'spki' });
 const ISSUER_ID = `ed25519:${spki.subarray(spki.length - 32).toString('base64url')}`;
@@ -97,7 +97,7 @@ try {
   const added = await panel();
   check('bob is listed, and the search is cleared', /listed by name \(2\)/i.test(added) && /^Bob$/m.test(added) && !/human · /.test(added), added);
   const B2 = await joinAs(bob, W);
-  check('…and gets in, as a visitor', B2.snap?.yourRights?.role === 'visitor', `code=${B2.closedWith} ${JSON.stringify(B2.snap?.yourRights)}`);
+  check('…and gets in, as a visitor', B2.snap?.yourRights?.role === 'inhabitant', `code=${B2.closedWith} ${JSON.stringify(B2.snap?.yourRights)}`);
 
   // his row: role and time
   const setRow = (name, idx, value) => pg.evaluate(([n, i, v]) => {

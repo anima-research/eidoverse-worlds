@@ -1,10 +1,16 @@
 // Show voice bot: gives the world's agent performers audible voices.
 //
-//   world WS (spectator "voice") ── say verbs by configured speakers ──▶
+//   world WS (spectator "voice") ── `say` entries (log) by configured speakers ──▶
 //   ElevenLabs streaming TTS ──▶ Discord voice channel (@discordjs/voice)
 //
 // Humans in the channel just talk; this bot only voices the models.
 // Captions need nothing extra — every say is already in-world chat + log.
+//
+// The world speaks the protocol: the join says `replica: true` (a client that
+// doesn't is refused), and chat arrives as `say` entries in the `log`
+// stream. Their actors are opaque ids; the stream's `names` (and the
+// snapshot's cut.names) say who they are, and SPEAKERS / voices.json name
+// speakers by that display name.
 //
 // Env:
 //   WORLD_URL      ws(s)://host/ws          (default ws://127.0.0.1:8940/ws)
@@ -125,20 +131,34 @@ async function connectDiscord() {
 
 // ---------------------------------------------------------------- world
 
+const names: Record<string, string> = {}; // identity → display name, as the world sends them
+let head = -1;                             // the log's head at join: lines at or before it are history
+
 function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
-  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN }));
+  ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: "voice", avatar: "", spectate: true, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => { log("world socket closed — reconnecting"); setTimeout(connectWorld, 1500); };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(String(ev.data));
-    if (msg.type === "snapshot") log(`watching world "${WORLD_NAME}" as spectator (${msg.entries?.length ?? 0} log entries skipped — live lines only)`);
-    if (msg.type !== "log" || msg.entry?.verb !== "say") return;
-    const { actor, args } = msg.entry;
-    if (!SPEAKERS.includes("*") && !SPEAKERS.includes(actor)) return;
-    const text = String(args?.text ?? "").trim();
-    if (!text) return;
-    queue.push({ actor, text, at: Date.now() });
-    pump().catch((e) => log(`pump error: ${e.message}`));
+    if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
+    if (msg.type === "snapshot") {
+      Object.assign(names, msg.cut?.names ?? {});
+      head = Number.isInteger(msg.cut?.head) ? msg.cut.head : -1;
+      log(`watching world "${WORLD_NAME}" as spectator (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
+      return;
+    }
+    if (msg.type !== "log") return;
+    Object.assign(names, msg.names ?? {});
+    (msg.entries ?? []).forEach((e: any, i: number) => {
+      if (e?.kind !== "say" || msg.from + i <= head) return;
+      head = msg.from + i;
+      const actor = names[e.actor] ?? String(e.actor);
+      if (!SPEAKERS.includes("*") && !SPEAKERS.includes(actor)) return;
+      const text = String(e.body?.text ?? "").trim();
+      if (!text) return;
+      queue.push({ actor, text, at: Date.now() });
+      pump().catch((err) => log(`pump error: ${err.message}`));
+    });
   };
 }
 

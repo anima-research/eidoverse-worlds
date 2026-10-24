@@ -2,7 +2,9 @@
 // (source rewrite at load, tools/contact-mutation-preload.ts) and the named product check must go red.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/body-state-scale-mutation-test.ts
 import { join } from "node:path";
-const SCALE = "body-state-scale-test.ts", EFF = "../mcpl/effective-test.ts";
+// EFF is tools/effective-test.ts, where the seated-occupant rows live and the agent is loaded (house 6340433633: it named
+// mcpl/effective-test.ts, which has neither, so both its mutations were missed, the agent's one never even applied)
+const SCALE = "body-state-scale-test.ts", EFF = "effective-test.ts";
 const cases = [
   { name: "FK drops body scale (the pivot never sizes)", file: "mcpl/physics.ts",
     from: "this.av.pivot.scale.setScalar(u);", to: "this.av.pivot.scale.setScalar(1);",
@@ -25,16 +27,16 @@ const cases = [
     to: "if (frame) target = rootPoint(e.t.p.map((v: number) => v * clampBodyScale(frame.scale)), frame);",
     test: SCALE, witness: "a point in the owner's root frame is the same metres at any size" },
   { name: "unjoined agent path ignores the target's size", file: "mcpl/agent.ts",
-    from: "?.pose ?? null, pose?.scale);", to: "?.pose ?? null);",
+    from: "?.pose ?? null, pose?.scale, pose?.clip !== \"ragdoll\");", to: "?.pose ?? null, undefined, pose?.clip !== \"ragdoll\");",
     test: SCALE, witness: "unjoined path: a 2× body's contact target scales" },
-  { name: "seat correction ignores rider size", file: "mcpl/effective.ts",
+  { name: "seat correction ignores occupant size", file: "mcpl/effective.ts",
     from: "const c = applySeatCorrection(pos, g.contactY, Number.isFinite(rs) && rs > 0 ? rs : 1);",
     to: "const c = applySeatCorrection(pos, g.contactY, 1);",
-    test: EFF, witness: "a 2× rider's root sits at y" },
-  { name: "agent's mount view drops the rider's size", file: "mcpl/agent.ts",
-    from: "riderScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),",
-    to: "riderScale: (eid) => 1,",
-    test: EFF, witness: "the agent seats a 2× rider" },
+    test: EFF, witness: "a 2× occupant's root sits at y" },
+  { name: "agent's mount view drops the occupant's size", file: "mcpl/agent.ts",
+    from: "occupantScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),",
+    to: "occupantScale: (eid) => 1,",
+    test: EFF, witness: "the agent seats a 2× occupant" },
 ];
 async function run(test: string, m?: object) {
   const p = Bun.spawn([process.execPath, ...(m ? ["--preload", join(import.meta.dir, "contact-mutation-preload.ts")] : []), join(import.meta.dir, test)],

@@ -1,0 +1,120 @@
+{
+ "status": "trial-kernel",
+ "translator": "eidoverse/translate-v1@20",
+ "companions": {
+  "changelog": "2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin",
+  "trim": {
+   "held": {},
+   "heldPaths": [
+    "transform",
+    "parent",
+    "model",
+    "roles.absentMeans",
+    "roles.keyed",
+    "roles.on",
+    "access.enums",
+    "access.ranges",
+    "access.absentMeans",
+    "access.on"
+   ],
+   "dropped": {}
+  },
+  "translator": null,
+  "vectors": null
+ },
+ "kernel": {
+  "envelope": {
+   "status": "trial-kernel",
+   "fields": [
+    "actor",
+    "body",
+    "by",
+    "cause",
+    "for",
+    "grant",
+    "head",
+    "kind",
+    "sig",
+    "ts",
+    "verb",
+    "world"
+   ],
+   "kinds": [
+    "act",
+    "change",
+    "genesis",
+    "purge",
+    "say",
+    "sequencer",
+    "sim"
+   ]
+  },
+  "fold": {
+   "status": "trial-kernel",
+   "ops": {
+    "create": [
+     "id"
+    ],
+    "delete": [
+     "id",
+     "comp"
+    ],
+    "set": [
+     "id",
+     "comp",
+     "value",
+     "salt",
+     "commit"
+    ]
+   },
+   "batch": [
+    "ops",
+    "followUps"
+   ]
+  },
+  "identity": {
+   "status": "trial-kernel",
+   "identity": "[a-z0-9-]{1,64}",
+   "entity": "^(?:[a-z0-9-]{1,64}|@world)$",
+   "component": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\\/)?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::[a-z0-9-]{1,64})?$"
+  },
+  "version": {
+   "status": "trial-kernel",
+   "dialect": "eidoverse-log",
+   "v": 4,
+   "minors": [
+    0
+   ],
+   "genesis": [
+    "dialect",
+    "minor",
+    "nonce",
+    "owners",
+    "parent",
+    "quorum",
+    "rewind_window",
+    "sequencer",
+    "v"
+   ]
+  },
+  "roles": {
+   "status": "trial-kernel",
+   "fields": {
+    "role": "string",
+    "can": "object",
+    "note": "string",
+    "until": "int"
+   }
+  },
+  "access": {
+   "status": "trial-kernel",
+   "fields": {
+    "join": "string",
+    "watch": "string",
+    "max": "int",
+    "soft": "int",
+    "minAccountDays": "int"
+   }
+  }
+ }
+}

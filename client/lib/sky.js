@@ -32,7 +32,7 @@ import { busy as loadingBusy } from './framebudget.js';
 import { bootDone } from './boot.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
 import { warm, P_AMBIENT } from './warmqueue.js';
-import { WEATHERS, effectiveSky, hoursAt } from '../../shared/forecast.js';
+import { WEATHERS, CLOUDS, effectiveSky, hoursAt } from '../../shared/forecast.js';
 // Who owns which per-frame hook. The sky claims by diffing a GLOBAL array
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
@@ -375,8 +375,7 @@ Object.defineProperty(globalThis, 'makeSkySystem', {
 // The canonical weather list lives in forecast.js (pure, shared with the
 // sequencer fold and the mcpl agent) — re-exported here so existing importers
 // keep their path.
-export { WEATHERS } from '../../shared/forecast.js';
-export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
+export { WEATHERS, CLOUDS } from '../../shared/forecast.js';
 // Only `earth` is offered.
 //
 // ringworld and shieldworld each drag ~20MB of celestial geometry and add a
@@ -1395,7 +1394,7 @@ async function renderSkyMesh(a) {
   const day = Math.max(0, Math.sin(((hours - 6) / 12) * Math.PI)); // 0 night → 1 noon
   const elev = -8 + 68 * day;
   const phi = THREE.MathUtils.degToRad(90 - elev);
-  const theta = THREE.MathUtils.degToRad(a.azimuth ?? 180);
+  const theta = a.azimuth ?? Math.PI;   // radians (shape audit 10-16: azimuth was degrees, default 180)
   const sunPos = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   skyMesh.sunPosition.value.copy(sunPos);
   // Haze thickens as the sun drops — that's what actually paints a sunset dome;

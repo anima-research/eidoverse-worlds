@@ -1,6 +1,6 @@
-import { setTraversalObjects } from './lib/traversal.js';
-import { updateVehicle, piloting } from './lib/vehicles.js';
-import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
+// the water level seen from under it (#254): fog, the background, Snell's window (watervolumes.js); authored water volumes,
+// air boxes and environments (#248) wait for their components to be registered (PROTOCOL §4)
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -10,13 +10,14 @@ import { updateWater, updateWaterView, setWaterObjects, setWaterClock, environme
 // handle in mybody.js, my body's physics in localbody.js, consent in
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
+import { say } from './lib/net.js';
 import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
-import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
-import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
-import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
+import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar.js';
+import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater } from './lib/sky.js';
+import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
 import { presence } from './lib/presence.js';
 import { initWorldQuad } from './lib/worldquad.js';
 import { foldParity } from './lib/parity.js';
@@ -24,40 +25,54 @@ import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus,
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
-import { initSimWorld, simState } from './lib/simworld.js';
 import { initStructureUI } from './lib/structure_ui.js';
-import { initCauses } from './lib/realize/causes.js';
+import { initCauses } from './lib/realize/livechat.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
 import './lib/pictures.js';
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
+import { tickLookAt } from './lib/lookats.js';   // batch 2: look-at, after motion (a bob moves it, then it turns)
+import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text component)
+import { tickOpenables } from './lib/openable.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode, photoMode,
-  setRightsHook, setMeHook, setFolded,
+  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, flying as flyingNow, capSpeed,
 } from './lib/controller.js';
+import { initUsePrompt } from './lib/useprompt.js';
+import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
+import { initOccupants } from './lib/occupants.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
 import * as participants from './lib/remotes.js';
+import { capture, setSnapReadiness } from './lib/net_capture.js';
 import { setWaveClock } from './lib/water.js';
-import { snapshot, setSnapReadiness } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
-  net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
+  replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendTyping,
   setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
 import { poseCommands } from './lib/posecommands.js';
-import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
-import { initPalette } from './lib/palette.js';
-import { setRightsSink } from './lib/state.js';
-import { initConjure } from './lib/conjure.js';
+import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
+// may I build here: the build switch (the authority's), else the role (an older server); unknown = no (strict)
+const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : isOwner(net.myRights));
+import { initPalette } from './lib/catalog.js';
+import { initConjure } from './lib/generate.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
+import { initEditPanels } from './lib/editpanels.js';
+import { initEditLayout } from './lib/editlayout.js';
+import { initGizmo } from './lib/gizmo.js';
+import { initGripEdit } from './lib/gripedit.js';
+import { initMaterialOverrides } from './lib/matoverride.js';
+import { initWorldEdge } from './lib/edge.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
+import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/people.js';
+import { initRolesPanels, openModeration } from './lib/rolespanels.js';
 import { tickXRMirror } from './lib/xrmirror.js';
 import { ensureXRBodyHook, bindXRBodySelf, xrAvatarYaw, xrLookPitch, xrWire, xrSimActive } from './lib/xrbody.js';
 import { tickXRVignette } from './lib/xrvignette.js';
@@ -78,10 +93,10 @@ fetch('/version').then((r) => r.json())
   .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
-import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
-import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
+import { initThingPhysics, physicsApi, simShown } from './lib/thingphysics.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
@@ -94,7 +109,7 @@ import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
 import { statusChip } from './lib/statuschips.js';
 import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
-import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
+import { registerSystem, startFrame, frameDebug } from './lib/frameloop.js';
 import { perf } from './lib/perf.js';
 import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
@@ -106,27 +121,31 @@ import {
   rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
-  stepRagdoll, updateMountedMe, updateSeatHint,
+  stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
-import { initEmoteBar } from './lib/emotebar.js';
+import { initActionBar } from './lib/actionbar.js';
 import { initXRKeyboard } from './lib/xrkeyboard.js';
+import { initXRAsk } from './lib/xrask.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { register as registerAction } from './lib/actions.js';
-import { initLantern } from './lib/lantern.js';
+import { initLantern } from './lib/commandbar.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
+import { foldedIn } from '../shared/wingpresence.js';
+import { readBodyMode } from '../shared/bodymode.js';
+import { isOwner } from '../shared/protocol/roles.js';
 
-// (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
+// (Crash breadcrumbs live in lib/breadcrumbs.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
 
 if (CONFIG.params.has('mintthumbs')) {
-  // ?mintthumbs — seed the roster's portraits, then stop (lib/mint.js owns
+  // ?mintthumbs — seed the roster's portraits, then stop (lib/portraits.js owns
   // the why and the how). The else below is the entire normal boot.
-  await (await import('./lib/mint.js')).mintThumbnails();
+  await (await import('./lib/portraits.js')).mintThumbnails();
 } else {
 
 const isViewer = CONFIG.spectate || CONFIG.renderer;
@@ -149,7 +168,7 @@ setSnapReadiness(async (follow) => {
 });
 // The realizers project folded state into the scene. Wired before connect()
 // so the hydrated event of the very first snapshot finds them listening;
-// causes.js takes the fold-inert live verbs off the 'live-entry' bus.
+// livechat.js takes the fold-inert live verbs off the 'live-entry' bus.
 initModelsRealizer();
 initEnvironmentRealizer();
 initSocialRealizer();
@@ -161,29 +180,32 @@ initStructureUI();
 initCauses();
 // the deterministic sim's applier (PROTOCOL_v2 dialect 3): advances the
 // shadow sim fold to now and moves sim-owned bodies — inert pre-epoch
-initSimWorld();
 
 // ---------------------------------------------------------------- boot
 
 initBoot({ world: CONFIG.world, name: CONFIG.name });
 buildHelp();
 const chatApi = initChat({
-  send: (text) => sendVerb('say', { text }),
-  whisper: sendWhisper,
+  send: (text) => say(text),
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
+  // the person menu and badges (research roles S6; client/lib/people.js)
+  person: { menuAt: personMenuAt, sheetFor: personSheet, stripFor: personStrip, badgeHtml: personBadge, muted: (n) => personOf(n).muted, presenting: () => isPresenting() },
 });
+initPeople({ mentionPerson, presenting: () => isPresenting(), toast, openModLog: (who) => openModeration({ tab: 'log', who }) });
+initRolesPanels();
 // the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
-initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
-initEmoteBar();
+initLantern({ submit: chatApi.submit });
+initActionBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
+initXRAsk();        // the lock question and refusals, on a quad in VR (the centre card is DOM-only)
 initWorldQuad();
 initVRPanel();
 settingsFrame();               // exists (hidden) so the ∃ menu can open it
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'emotes', label: '👋' },
+  { id: 'actions', label: '👋' },
   { id: 'debug', label: '🐞' },
   // The wrench. It was declared here through the lab (edb63df, 27eae14) and
   // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
@@ -206,11 +228,14 @@ initDock([
     id: 'edit', label: '🔧', icon: 'wrench', last: true,
     action: toggleEditMode,
     active: () => isEditing(),
-    gate: () => ['builder', 'owner'].includes(net.myRights?.role),
+    // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
+    title: (on) => (on ? 'leave builder mode (B)' : null),
+    gate: () => editSurface() && mayBuildStrict(),   // no edit mode on a phone (build.js editSurface)
+    deadWhy: () => (editSurface() ? null : ' — builder mode is for a desktop or tablet'),
   },
 ]);
 // the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
-setMenuSources({ buildRights: () => ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
+setMenuSources({ buildRights: () => editSurface() && mayBuildStrict(), loginUrl: () => loginUrl() });
 paintPresence(presence());            // the dot needs the button: after initDock
 bus.on('presence:me', paintPresence);
 initDebug({
@@ -282,7 +307,7 @@ if (CONFIG.params.has('sendlayout')) {
 if (globalThis.__ewLiteWhy === 'retry') statusChip({
   id: 'lite-retry', level: 'attn', label: 'last load stalled',
   title: "This world didn't finish loading last time",
-  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, emotes and who's here, with no 3D.",
+  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, the action bar and who's here, with no 3D.",
   actions: [{ label: 'switch to the lite client', run: () => chooseClient(true) }, { label: 'stay in 3D', clear: true }],
 });
 
@@ -341,8 +366,16 @@ function start() {
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
+  // hierarchy + inspector as fields: desktop frames now, VR quads through the same declaration
+  const editPanels = initEditPanels();
+  bus.on('edit-mode', (on) => editPanels.show(!!on));
+  initGizmo();        // TransformControls on the selection while a transform tool is up
+  initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
+  initMaterialOverrides();   // the draft hesperus/material reader (docs/COMPONENT-LADDER.md)
+  initWorldEdge();           // @world.bounds drawn as a fence (R 10-11)
+  initEditLayout();   // the workspace: docks the frames while the mode is on (registered AFTER show, so it docks visible frames)
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
-  // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
+  // (lib/commandbar.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
 
   if (!isViewer) {
     // A body is never optional (owner, in-headset 09-04: no avatar at all, on
@@ -392,7 +425,7 @@ wireNet({
   myReachBag,
   toast,   // remotes.js — real bodies, real poses
   forgetBytes,    // the asset ledger, which only a client that loads assets has
-  snapshot,       // net_snap.js — the one part of the protocol that needs a renderer
+  capture,        // net_capture.js — the one part of the protocol that needs a renderer
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),
@@ -407,21 +440,21 @@ wireNet({
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
-    if (r.clip === 'sit' || r.clip === 'sitchair' || r.clip === 'lie') {
-      setPosture(r.clip === 'lie' ? 'lie' : 'sit');
-    }
+    { const m = readBodyMode(r); if (m === 'sit' || m === 'lie') setPosture(m); }   // the body-mode survives a rejoin (an older sample: read off its clip)
     // an enacted pose is authored content — wake holding it, like the spot
     // you stood on. It rides the next presence packet, so everyone sees it.
     // EXCEPT a remembered ragdoll frame (pre-sanitizer entries): that is
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
     if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
     if (r.pose) myState.pose = r.pose;
-    setFolded(r.wingsFolded === true);
+    setFolded(foldedIn(r) === true);   // the named pose wings-folded (or, remembered before 10-17, wingsFolded)
   },
   onSnapshotDone: () => {},
 });
 
 bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
+
+initOccupants();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
 
 // ---------------------------------------------------------------- my body
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the
@@ -429,19 +462,18 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 // FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
-// Wired here for the same reason initPhysObj and wireNet are: net.js must not
+// Wired here for the same reason initThingPhysics and wireNet are: net.js must not
 // import the controller, so main.js is where the two meet. Live, not captured
-// -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
-// body that is already in the air the next time it acts.
+// -- a role change (your-rights) takes effect on the next resolve, and losing
+// fly grounds a body that is already in the air the next time it acts.
 setRightsHook(() => net.myRights);
 setMeHook(() => getMe());        // the fold pose is written onto the avatar
-// LIVE RIGHTS: state.js folds every entry and recomputes what I may do with
-// the SAME function the sequencer answers with, but net.js already imports
-// state.js, so state reaches net through this sink rather than an import.
-// Read with no argument, written with one.
-setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
-initPhysObj({ myPos: () => myState.pos });
+// physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
+setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
+initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
+initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({
@@ -449,7 +481,7 @@ initReachNet({
   myId: () => CONFIG.name,
   avatarOf: (id) => (id === CONFIG.name ? getMe() : remotes.get(id)?.avatar ?? null),
 });
-initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
+initMods();   // 🧩 runtime client scripts: your local trusted mods (a world offers none: its code is its server-side scripts)
 initLocalBody({ logChat });
 initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
 
@@ -459,42 +491,46 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 // lantern prompt lists it (lib/actions.js), so a key and its row cannot drift.
 // `id` names an existing action to merge into (the dock's debug/edit/chat rows
 // gain their key) or a new one; `guard` gates the KEY only (edit mode rebinds H
-// and R) — from the prompt the act is always the act.
+// and R) — from the prompt the act is always the act. `plain` keys answer only with no Ctrl/Alt/Meta held (a
+// browser's own chord must stay the browser's).
 const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
     guard: () => !isEditing(), run: () => toggleHelp() },
-  { code: 'Tab', key: 'Tab', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users',
-    prevent: true, run: () => togglePeopleHere() },
   { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
-  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => (piloting() && !photoMode ? flashHint('photo mode needs the controls — leave the helm first (E)', 4000) : togglePhotoMode()) },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => togglePhotoMode() },
   { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
     prevent: true, run: () => document.body.classList.toggle('photo') },
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
   { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
+  { code: 'KeyU', key: 'U', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster', 'us'], group: 'panels', icon: 'users',
+    plain: true, guard: () => !isEditing(), run: () => togglePeopleHere() },   // plain: Ctrl+U is the browser's view-source
   { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
     guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
 ];
 // merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
-for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
+for (const { code, guard, prevent, plain, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
 registerAction({ id: 'panel:chat', key: 'Enter' });
+// People Here is U (above), not Tab — Tab is the panel set's (windows.js, R 10-11 23:01), and a key with two meanings
+// ran both (Tab hid the set, then this re-showed chat beside it)
+
 
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
-  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.guard || m.guard()));
+  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.plain || !(e.ctrlKey || e.altKey || e.metaKey)) && (!m.guard || m.guard()));
   if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
   // any movement stands you back up
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
-  // emotes on the number row — the world is a performance space and there was
+  // gestures on the number row — the world is a performance space and there was
   // no way to wave at anyone
   // the range follows the def-hydrated bar order (§24l) — a ninth listed
-  // emote in _emotes.json gets a key with no code change
+  // gesture in _actionbar.json gets a key with no code change
   const n = /^Digit([1-9])$/.exec(e.code);
   const me = getMe();
   if (n && me) {
-    const name = EMOTE_ORDER[Number(n[1]) - 1];
+    const name = ANIM_ORDER[Number(n[1]) - 1];
     if (!name) return;
-    me.playEmote(name);
-    myState.emote = name;
+    me.playOnce(name);
+    myState.anim = name;
     flashHint(name);
   }
 });
@@ -505,7 +541,7 @@ function people() {
   const list = [{ id: CONFIG.name, me: true, dist: null, presence: presence() }];
   for (const r of remotes.values()) {
     list.push({
-      id: r.id, me: false, agent: !!r.agent, presence: r.presence ?? 'present',
+      id: r.id, me: false, declares: r.declares ?? null, presence: r.presence ?? 'present',
       dist: r.avatar ? r.avatar.root.position.distanceTo(myState.pos) : null,
     });
   }
@@ -562,7 +598,7 @@ const readyPoll = setInterval(() => {
 }, 400);
 
 // ---------------------------------------------------------------- frame loop
-// The loop itself lives in lib/frame.js (§14.2 6b); this is the LIST — the
+// The loop itself lives in lib/frameloop.js (§14.2 6b); this is the LIST — the
 // registration order IS the execution order, and it encodes the constraints
 // §14.1 documents: motion before remotes, sky → materials → rig,
 // voice-mouths before the avatar update, bodydrag before remotes, gaze
@@ -572,20 +608,22 @@ const readyPoll = setInterval(() => {
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
+registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
+registerSystem('texts', () => tickTexts());                     // signs that turn to face you
+registerSystem('openable', () => tickOpenables());           // doors, gates and lids tween to their state
 registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 setWaterObjects(() => entities);
 setWaterClock(serverNow);
-setTraversalObjects(() => entities);
+setSkyHider(hideSkyForWater);
 registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
-  else if (updateVehicle(dt, getMe())) { if (photoMode) togglePhotoMode(); /* the helm owns the keys and camera: never both */ }
-  else if (isDowned()) { myState.q=undefined;myState.locomotion=undefined;const me=getMe();if(me)me.locomotion=null;stepRagdoll(dt); }     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
+  else if (isDowned()) { myState.q = undefined; myState.locomotion = undefined; const me = getMe(); if (me) me.locomotion = null; stepRagdoll(dt); }     // the controller yields while limp
+  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) updateMountedMe(dt);  // seated (or being carried off a seat): derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 });
@@ -606,13 +644,12 @@ registerSystem('me-update', (dt, t, now) => {
 });
 registerSystem('bodydrag', (dt, t, now) => updateBodyDrag(dt, now)); // before remotes:
                                  // the takeover pose lands in this frame's avatar.update
-registerSystem('physobj', (dt, t, now) => tickPhysObj(dt, now)); // entity leases I hold
 registerSystem('mods', (dt, t, now) => tickMods(dt, now));       // 🧩 runtime scripts
 registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
 // the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
 initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
-  openConvo, colorFor });
+  mentionPerson, colorFor, personMenu: (n, x, y) => (isPhone() ? personSheet(n) : personMenuAt(n, x, y)), personStrip });
 registerSystem('plates', (dt, t, now) => updatePlates(now));
 registerSystem('build', () => updateBuild());
 registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: promote
@@ -630,7 +667,7 @@ registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
 bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
-bus.on('xr:stand', () => xrDismountMe());
+bus.on('xr:stand', () => xrDismountMe('menu'));
 bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
 bus.on('xr:select', (id) => sceneSelect(id));
 globalThis.__waterDebug = waterDebug;
@@ -863,8 +900,10 @@ globalThis.whyIsItSilent = () => {
 setWaveClock(() => participants.serverNow());
 
 const EW = globalThis.EW = {
-  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
-  skyArgs, sendVerb, setPosable, get posable() { return posable(); },
+  me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus, sendRequest,
+  avatarMounts, serverNow, bagOf, bags,   // who sits where (presence), the sequencer's clock the seats' signals read, a thing's fold record / every thing's
+  seatSocket, socketsOn,   // a seat ({to: <socket id>}) as {id, host, name, sock}; a thing's sockets (its socket children)
+  skyArgs, setPosable, get posable() { return posable(); },
   // POSING from the console — the same verbs an agent's tools have:
   // EW.pose, EW.clearPose and EW.animate (client/lib/posecommands.js says how).
   ...poseCommands({ state: myState, sendPuppet, play: (a) => { getMe()?.playAnimation(a); sendAnim(a); } }),
@@ -876,7 +915,7 @@ const EW = globalThis.EW = {
   terrain: (patch = {}) => {
     const cur = terrainEditBase() ?? { seed: 7, size: 160, segments: 200, amplitude: 2.6, flatRadius: 16 };
     const next = noteTerrainSent({ ...cur, ...patch });   // a second quick edit composes with this one
-    sendVerb('terrain', next);
+    sendRequest('set', { id: '@world', component: 'terrain', value: next });   // the ground is @world's terrain component
     return next;
   },
   get terrainArgs() { return currentTerrainArgs(); },
@@ -1024,8 +1063,8 @@ const EW = globalThis.EW = {
   },
   clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
-  lease: leaseApi,   // the entity-lease surface runtime plugins script against
-  mods: modsApi,     // load/run/offer runtime client scripts (🧩)
+  physics: physicsApi, // grab/put/throw/drop/punt as door requests (thingphysics.js): what runtime mods script against
+  mods: modsApi,     // list/put/run/stop your local runtime client scripts (🧩); put and run need your click
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
   foldParity,        // shadow-mode drift probe (TEL0S_NOTES §11.6)
   reconcileModels,   // force a full realizer pass (idempotent — §11.4)
@@ -1043,7 +1082,7 @@ const EW = globalThis.EW = {
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
-  simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
+  simShown,                    // the sim as drawn: a copy of this client's sim layer at the server's clock
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   water: waterDebug,

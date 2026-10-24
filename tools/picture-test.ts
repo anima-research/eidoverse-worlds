@@ -11,7 +11,7 @@
 //      appears on the owning entity, tracks a replace, and is gone on removal;
 //      other component types still read as they did.
 // Every check fails on main by construction: `picture` did not exist.
-import { normalizePicture, describePicture, allowedPictureSrc, PICTURE_LOOK_MAX } from "../shared/picture.js";
+import { normalizePicture, describePicture, allowedPictureSrc, PICTURE_ALT_MAX } from "../shared/picture.js";
 process.env.EW_EMITTER_COALESCE_SEC = "0.25";
 const { WorldAgent } = await import("../mcpl/agent.ts");
 
@@ -43,48 +43,58 @@ for (const src of [
 ]) check(`encoded/odd source refused: ${JSON.stringify(src)}`, allowedPictureSrc(src) === false);
 check("the canonical library path of an allowed source is itself", new URL(`/library/${GOOD}`, "http://library.invalid").pathname === `/library/${GOOD}`);
 
-const n0 = normalizePicture({ src: GOOD, part: "screenplane", look: "a print of the hearth at dusk", lit: "self" });
-check("a well-formed bag normalizes", n0.ok && n0.picture.src === GOOD && n0.picture.part === "screenplane" && n0.picture.lit === "self" && n0.picture.flip === false, JSON.stringify(n0));
+// shape audit 10-16 (render-media-env §5): part and flip are cut (a material override, the reserved material's): a picture is a quad of its own
+const n0 = normalizePicture({ src: GOOD, alt: "a print of the hearth at dusk", lit: "self" });
+check("a well-formed bag normalizes", n0.ok && n0.picture.src === GOOD && !("part" in n0.picture) && n0.picture.lit === "self" && !("flip" in n0.picture), JSON.stringify(n0));
 check("…with no notes", n0.ok && n0.notes.length === 0, JSON.stringify(n0.ok && n0.notes));
 const nUrl = normalizePicture({ src: "https://example.com/x.png", part: "screenplane" });
-check("a URL source is refused, legibly, naming the rule", !nUrl.ok && /not an allowed picture source/.test(nUrl.why) && /no URLs/.test(nUrl.why), JSON.stringify(nUrl));
+// batch 2 (R 10-07): an https link is a source now; who may fetch it is shared/mediasrc.js (the tier); http and local hosts are refused
+check("an https link is taken, with its tier (an untrusted host: only opted-in viewers fetch it)", nUrl.ok && nUrl.tier.tier === "link", JSON.stringify(nUrl));
+check("an http link or a local host is refused, legibly", !normalizePicture({ src: "http://example.com/x.png" }).ok && /https/.test(normalizePicture({ src: "http://example.com/x.png" }).why) && !normalizePicture({ src: "https://192.168.0.2/x.png" }).ok);
 const nPart = normalizePicture({ src: GOOD });
-check("a missing part is refused and points at measure", !nPart.ok && /measure/.test(nPart.why), JSON.stringify(nPart));
-check("an over-long part is refused", !normalizePicture({ src: GOOD, part: "x".repeat(65) }).ok);
-const nLook = normalizePicture({ src: GOOD, part: "p", look: "  many   spaces\n\nand " + "z".repeat(400) });
-check("look is whitespace-collapsed and clipped with a note", nLook.ok && nLook.picture.look.length === PICTURE_LOOK_MAX && nLook.picture.look.startsWith("many spaces and ") && nLook.notes.some((x) => /clipped/.test(x)), JSON.stringify(nLook.ok && nLook.notes));
+check("no part is a picture of its own (batch 2: quad mode), 1 m wide", nPart.ok && nPart.picture.part === undefined && nPart.picture.width === 1, JSON.stringify(nPart));
+check("an older bag's part is not read (noted, drawn as a quad of its own)", normalizePicture({ src: GOOD, part: "x" }).ok && !("part" in normalizePicture({ src: GOOD, part: "x" }).picture) && normalizePicture({ src: GOOD, part: "x" }).notes.some((x) => /ignored by the evaluator: part/.test(x)));
+const nLook = normalizePicture({ src: GOOD, part: "p", alt: "  many   spaces\n\nand " + "z".repeat(400) });
+check("look is whitespace-collapsed and clipped with a note", nLook.ok && nLook.picture.alt.length === PICTURE_ALT_MAX && nLook.picture.alt.startsWith("many spaces and ") && nLook.notes.some((x) => /clipped/.test(x)), JSON.stringify(nLook.ok && nLook.notes));
 const nNoLook = normalizePicture({ src: GOOD, part: "p" });
-check("no look line is allowed but noted (text-tier sees only the file)", nNoLook.ok && !nNoLook.picture.look && nNoLook.notes.some((x) => /no look line/.test(x)));
-const nUnknown = normalizePicture({ src: GOOD, part: "p", look: "x", scale: 2, _private: 1, lit: "neon" });
+check("no look line is allowed but noted (text-tier sees only the file)", nNoLook.ok && !nNoLook.picture.alt && nNoLook.notes.some((x) => /no alt text/.test(x)));
+const nUnknown = normalizePicture({ src: GOOD, alt: "x", scale: 2, _private: 1, lit: "neon" });
 check("unknown keys and an unknown lit are noted, not fatal; _keys ignored silently", nUnknown.ok && nUnknown.notes.some((x) => /ignored by the evaluator: scale/.test(x) && !/_private/.test(x)) && nUnknown.notes.some((x) => /lit "neon" is unknown/.test(x)) && nUnknown.picture.lit === "scene", JSON.stringify(nUnknown.notes));
 check("malformed bags are refused", !normalizePicture(null).ok && !normalizePicture([]).ok && !normalizePicture("x").ok);
 
-check("describe: with a look line, says what the author said, on the part", describePicture({ src: GOOD, part: "screenplane", look: "a print of the hearth at dusk" }) === "a picture on its screenplane: a print of the hearth at dusk");
-check("describe: self-lit is named", /\(self-lit\)$/.test(describePicture({ src: GOOD, part: "p", look: "x", lit: "self" })));
-check("describe: without a look line, the file name", describePicture({ src: GOOD, part: "p" }) === "a picture on its p (hearth_at_dusk.png)");
-check("describe: an invalid declaration says it is not shown", /not shown: invalid declaration/.test(describePicture({ src: "https://x/y.png", part: "p", look: "x" })));
+// house I236 (#260): alt was named look; a picture stored under the old name still says what it shows
+const nOld = normalizePicture({ src: GOOD, look: "the hearth, written before alt" });
+check("a stored look reads as alt, with no 'ignored' note", nOld.ok && nOld.picture.alt === "the hearth, written before alt" && !nOld.notes.some((x) => /ignored/.test(x)), JSON.stringify(nOld));
+check("…and describe carries it", describePicture({ src: GOOD, look: "the hearth, written before alt" }) === "a picture: «the hearth, written before alt»", describePicture({ src: GOOD, look: "the hearth, written before alt" }));
+check("…alt wins when both are there", normalizePicture({ src: GOOD, alt: "new", look: "old" }).picture?.alt === "new");
+check("describe: with a look line, says what the author said", describePicture({ src: GOOD, alt: "a print of the hearth at dusk" }) === "a picture: «a print of the hearth at dusk»", describePicture({ src: GOOD, alt: "a print of the hearth at dusk" }));
+check("describe: self-lit is named", /\(self-lit\)$/.test(describePicture({ src: GOOD, part: "p", alt: "x", lit: "self" })));
+check("describe: without a look line, the file name", describePicture({ src: GOOD }) === "a picture (hearth_at_dusk.png)", describePicture({ src: GOOD }));
+check("describe: an invalid declaration says it is not shown", /not shown: invalid declaration/.test(describePicture({ src: "http://x/y.png", part: "p", alt: "x" })));
 check("describe: malformed", describePicture(null) === "a picture (malformed declaration)");
-check("describe never mentions pixels/colours (it carries the author's claim only)", !/pixel|colour|color/.test(describePicture({ src: GOOD, part: "p", look: "x" })));
+check("describe never mentions pixels/colours (it carries the author's claim only)", !/pixel|colour|color/.test(describePicture({ src: GOOD, part: "p", alt: "x" })));
 
 console.log("— 2. perception —");
-const T0 = 1_754_000_000_000;
+// the agent's protocol path: a scratch authority, its cut adopted, and the next view taken after every write (tools/agent-scratch.ts)
+const { agentOnDoor } = await import("./agent-scratch.ts");
 const ag = new WorldAgent({ name: "reader" });
-const A = ag as any;
-A.applyEntry({ verb: "spawn", args: { id: "console", lib: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] }, ts: T0, seq: 1, actor: "antra" }, false);
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: GOOD, part: "screenplane", look: "a print of the hearth at dusk" } }, ts: T0 + 1, seq: 2, actor: "antra" }, true);
+const { seed, act } = agentOnDoor(ag, "picture");
+await seed({ console: { model: "scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb", pos: [1, 0, 1] } });
+const r1 = await act("set", { id: "console", component: "picture", value: { src: GOOD, alt: "a print of the hearth at dusk" } }, { who: "antra" });
 let out = ag.look();
-check("look() names the picture on the owning entity, by the author's line", /\[console\][^\n]*a picture on its screenplane: a print of the hearth at dusk/.test(out), out.split("\n").find((l) => l.includes("console")) ?? out);
+check("the door takes a well-formed picture", r1.ok, JSON.stringify(r1.refused));
+check("look() names the picture on the owning entity, by the author's line", /\[console\][^\n]*a picture: «a print of the hearth at dusk»/.test(out), out.split("\n").find((l) => l.includes("console")) ?? out);
 check("…and does not fall through to `components: picture`", !/components: picture/.test(out));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: GOOD, part: "screenplane", look: "the same print, re-hung" } }, ts: T0 + 2, seq: 3, actor: "antra" }, true);
+await act("set", { id: "console", component: "picture", value: { src: GOOD, alt: "the same print, re-hung" } }, { who: "antra" });
 out = ag.look();
 check("a replace reads as the new line, not both", /re-hung/.test(out) && !/hearth at dusk/.test(out));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: { src: "https://example.com/x.png", part: "screenplane", look: "smuggled" } }, ts: T0 + 3, seq: 4, actor: "antra" }, true);
+const bad = await act("set", { id: "console", component: "picture", value: { src: "http://example.com/x.png", alt: "smuggled" } }, { who: "antra" });
 out = ag.look();
-check("an invalid source folds (blind fold) but reads as not shown", /smuggled/.test(out) && /not shown: invalid declaration/.test(out), out.split("\n").find((l) => l.includes("console")) ?? out);
-A.applyEntry({ verb: "comp", args: { id: "console", type: "picture", data: null }, ts: T0 + 4, seq: 5, actor: "antra" }, true);
+check("an invalid source is refused at the door now (batch 2: the door judges picture sources) and nothing changes", !bad.ok && bad.refused?.code === "shape" && !/smuggled/.test(out), JSON.stringify([bad.refused, out.split("\n").find((l) => l.includes("console"))]));
+await act("delete", { id: "console", component: "picture" }, { who: "antra" });
 check("a removed picture is gone from look()", !/a picture/.test(ag.look()));
-A.applyEntry({ verb: "comp", args: { id: "console", type: "recipe", data: { x: 1 } }, ts: T0 + 5, seq: 6, actor: "antra" }, true);
-check("other component types still read as they did", /components: recipe/.test(ag.look()));
+await act("set", { id: "console", component: "recipe", value: { x: 1 } }, { who: "antra" });
+check("other component types still read as they did", /components: recipe/.test(ag.look()), ag.look().split("\n").find((l) => l.includes("console")));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

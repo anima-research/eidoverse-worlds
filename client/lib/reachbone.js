@@ -21,7 +21,7 @@ const _v2 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v3 = new THREE.Vector3();
-const _v4 = new THREE.Vector3();
+const _nbW = new THREE.Vector3();
 
 /** The spine column: the guards that are elliptical rather than round. */
 const TORSO_COLUMN = new Set(['hips', 'spine', 'chest', 'neck', 'head']);
@@ -244,7 +244,7 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
   for (const g of chain.guards ?? []) {
     guards.push({
       a: root.worldToLocal(g.na.getWorldPosition(_v3)).toArray(),
-      b: root.worldToLocal(g.nb.getWorldPosition(_v4)).toArray(),
+      b: root.worldToLocal(g.nb.getWorldPosition(_nbW)).toArray(),
       r: g.r,
       ...(g.warpK ? { warp: {
         r: qRot(qParent, chain.right), u: qRot(qParent, chain.up), f: qRot(qParent, chain.fwd),
@@ -265,7 +265,11 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
     // solve depend on its own output and self-touch oscillated. The previous
     // elbow is tested separately as an incumbent, never rotated as the sweep
     // basis (solveTwoBoneClear).
-    pole: qRot(qParent, chain.dRestU),
+    // a caller's hint (a socket's reach.hint: where the elbow or knee should point) replaces the rest direction as the
+    // bend plane's pole: the direction from the shoulder to the hint point, in the root frame
+    pole: (() => { const hw = opts.hintWorld; if (!hw) return qRot(qParent, chain.dRestU);
+      const h = root.worldToLocal(_v3.set(hw[0], hw[1], hw[2])).toArray(); const d = [h[0] - shoulder[0], h[1] - shoulder[1], h[2] - shoulder[2]];
+      const n = Math.hypot(...d); return n > 1e-6 ? d.map((x) => x / n) : qRot(qParent, chain.dRestU); })(),
     fwd: qRot(qParent, chain.fwd),
     coneAxis: qRot(qParent, chain.coneAxis),
     inward: qRot(qParent, chain.inward),

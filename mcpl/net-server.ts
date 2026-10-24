@@ -33,7 +33,7 @@ import {
   type ChannelsPublishResult,
 } from "@animalabs/mcpl-core";
 import {
-  CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
+  CHAT, EIDO, CAP, tags, speechTags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { shown } from "../shared/shown.js";
@@ -749,7 +749,7 @@ class Session {
     // world events → channel traffic (this is the push path — no host code).
     //
     // TAGS (§16). Four semantically different things used to be tagged
-    // `["mention"]` — speech, a whisper, a walk-up, and replayed history — which
+    // `["mention"]` — speech, a whisper (removed since, R 10-18), a walk-up, and replayed history — which
     // is a wake flag wearing a description's clothes. Each now says what it IS in
     // the reserved `chat:*` core (§16.2) plus this world's own namespace, and the
     // door decision below is still made from world state (`channelOpen`,
@@ -771,32 +771,25 @@ class Session {
     if (mediaPort > 0) this.startMediaBridge(mediaPort);
 
     this.agent.onEvent = (ev) => {
-      // §16.2 sender facet. The world reports `agent: true` for bodies driven by
-      // a model, so `chat:from-agent` rests on something. There is no
-      // corresponding evidence for humanity — a browser client simply omits the
-      // flag — so `chat:from-human` is NOT emitted from an absence. Claiming it
-      // would put an unmarked bot in the band a resident reserves for people.
-      const from = this.agent.isAgent(ev.who) ? CHAT.fromAgent : null;
+      // §16.2 sender facet: a participant's status is only ever its own
+      // declaration (PROTOCOL §6a rule 3), relayed by the world as sent; it
+      // rides along as metadata.declares, its word verbatim. A sender whose
+      // word is "agent" also carries chat:from-agent, the facet hosts' wake
+      // rules read (declaration.ts senderFacet, through speechTags); no other
+      // word is read as a kind (review r11 L2). chat:from-human never comes
+      // from an absence.
+      const declares = this.agent.declaresOf(ev.who);
+      const md = declares ? { metadata: { declares } } : {};
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true }
-          : { tags: tags(CHAT.ambient, from) });
-      } else if (ev.kind === "whisper") {
-        // A closed door does not stop a whisper — being addressed privately IS
-        // the knock. Rendered with its privacy stated, because an agent that
-        // can't tell a whisper from a shout will answer one as if it were the
-        // other, in front of everyone.
-        // A whisper is a DM, not a mention: nobody said your name, they came to
-        // you. `chat:dm` ⇒ addressed + private under §16.3's closure, emitted
-        // directly here as §16.3 recommends.
-        this.deliver(`(whispers to you) ${ev.text}`, authorOf(ev.who),
-          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from), mentioned: true });
+          ? { tags: speechTags("say", declares, true), mentioned: true, ...md }
+          : { tags: speechTags("say", declares), ...md });
       } else if (ev.kind === "act") {
-        // embodied transitions — an emote, a pose struck or released, someone
+        // embodied transitions — a gesture, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act, from) });
+          { tags: speechTags("act", declares), ...md });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,
@@ -833,19 +826,19 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
+          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles), metadata: { worldChange: true, ...(declares ? { declares } : {}) } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence, from) });
+          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence), ...md });
       }
     };
     this.agent.onPing = (p) => {
       // The ping→channel mapping (approach addressed+mentioned, depart
       // ambient, reach/touch worded by the agent) lives in ping-wire.ts,
       // where a test can hold it to what declaration.ts promises.
-      const d = pingDelivery(p as WirePing, this.agent.isAgent(p.who));
+      const d = pingDelivery(p as WirePing, this.agent.declaresOf(p.who));
       if (d) this.deliver(d.text, { id: "world", name: this.agent.world },
-        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}) });
+        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}), ...(d.declares ? { metadata: { declares: d.declares } } : {}) });
     };
 
     // §5.3 ORDERING (the discord-mcpl canary's rule: NOTHING runs between
@@ -878,7 +871,10 @@ class Session {
 
     // Missed-mention replay: anything that addressed you while you slept
     // greets you as tagged channel traffic — a wake-worthy summary, not
-    // just scrollback. (Full history stays available via look.)
+    // just scrollback. Speech is arrival-only (R 10-18): the world reads back
+    // says from before this body arrived only to an admin (its owner, an
+    // operator), so for everyone else these reads come back empty and nothing
+    // is replayed; the code stays for an admin's door.
     // Every message replayed below is REPLAY, and says so: `eidoverse:catchup`
     // rides alongside each message's ORIGINAL addressing (§16, issue #1). Tagged
     // as bare mentions, a reconnect looked identical to ten people addressing
@@ -1304,7 +1300,7 @@ class Session {
     // descriptor will arrive to fill the gaps.
     return text(
       `${gate.founding ? "Founded and entered" : "Arrived in"} "${target}" (attachment ${this.epoch}). ` +
-      `Your identity, avatar and attention settings came with you; your held pose and posture did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
+      `Your identity, avatar and attention settings came with you; your anims and body-mode did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
     );
   }
 }

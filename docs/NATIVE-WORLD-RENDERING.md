@@ -87,7 +87,8 @@ hands/feet aimed at world/self/participant coordinates and anatomical bone seeds
 on loaded remote rigs. Native seeds are NOT calibrated skin contacts; the client
 never asserts `reached:true`. First-person local hands, palm alignment, native
 joint/torso constraints and named targets on the local body remain incomplete.
-Wave/cheer/point use the existing one-shot `pose.emote` field. Native gestures
+Wave/cheer/point use the presence plane's one-shot gesture field (this protocol's `pose.anim`; the native client
+still sends the first protocol's key, which servers read for one release — shared/onceanim.js). Native gestures
 are procedural approximations, not downloaded browser animation clips.
 Puppet and bodydrag requests are not accepted automatically; native ragdolls,
 mount/seating, force reactions and full streamed body-pose parity remain future work.

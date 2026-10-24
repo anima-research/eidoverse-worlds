@@ -24,7 +24,7 @@
 //       REACHER's root frame and moves with them; a participant id lives in
 //       that body's root frame and tracks them.
 //
-// A limb entry wraps a target with its riders:
+// A limb entry wraps a target with its flags:
 //   { t: <target>, palm?: false, reached?: true }
 // `palm: false` opts out of turning the palm to meet the surface (name-form
 // targets orient the palm by default — see EW.reach's history for why).
@@ -107,7 +107,7 @@ export function reachTargetsWho(entry, id) {
   return t.who === id || t.space === id;
 }
 
-/** Same reach, ignoring the `reached` rider — the identity that edge
+/** Same reach, ignoring the `reached` flag — the identity that edge
  *  detection cares about. Both sides assumed normalized. */
 export function sameReach(a, b) {
   if (!a || !b) return false;

@@ -26,6 +26,7 @@ export const noiseTexture = () => null;
 export const loadTrack = async () => null;
 export const loadDone = () => {};
 export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 // loadwork.js
 export const beginWork = () => ({ done() {} });
 // colliders.js
@@ -45,8 +46,8 @@ export const applySky = () => {};
 export const attachLocalLights = () => {};
 // forecast.js
 export const foldSkyEntry = () => null;
-// seats.js / seatcore.js
-export const seatCorrectionFor = () => null;
+// occupants.js / seatcore.js
+export const occupyCorrectionFor = () => null;
 export const applySeatCorrection = () => {};
 // lights.js
 export const makeLight = () => null;
@@ -57,6 +58,6 @@ export const chatLog = [];
 export const logChat = (actor, text, tag, extra) => { chatLog.push({ actor, text, tag, extra }); };
 // boot.js
 export const whenBooted = async () => {};
-// realize/models.js — causes.js only needs the PORTED verb set for its
+// realize/models.js — livechat.js only needs the PORTED verb set for its
 // "realized elsewhere" bookkeeping; the realizer itself stays out of the test
 export const PORTED = new Set(['spawn', 'place', 'remove', 'comp', 'motion', 'mount', 'dismount', 'light']);

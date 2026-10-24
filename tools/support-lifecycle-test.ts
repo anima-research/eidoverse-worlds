@@ -24,9 +24,13 @@
 // has no colliders at all, so every release resolves to terrain.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds, freePort } from "./harness.ts";
+import { qFromYaw } from "../shared/rot.js";
+import { idAliases } from "./protocol/idalias.ts";
+const IDS = idAliases();
 
 // Bun 1.3.x caches transpiled module graphs globally by content. A failed
 // plugin-resolved path can therefore survive into a later checkout and bypass
@@ -53,7 +57,7 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 const { WorldAgent } = await import("../mcpl/agent.ts");
 
 const EXTERNAL = process.env.URL;
-const PORT = Number(process.env.PORT ?? 8994);
+const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9480);   // a free port, never a fixed default
 const URL_ = EXTERNAL ?? `ws://127.0.0.1:${PORT}/ws`;
 const TOKEN = process.env.TOKEN ?? "";
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-support-"));
@@ -82,8 +86,9 @@ async function startServer() {
   // run (found live: this line's server outlived its kill on :8994, and a
   // later run silently drove the stale zombie instead of its own server)
   server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
-    env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "",
-           VERB_RATE: "5000", MSG_RATE: "5000" },
+    // TRUST_NAMES: a typed name is its own local account, so the stagehand who founds a world joins it as its owner
+    env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1",
+           MSG_RATE: "5000" },
     stdio: "ignore",
   });
   for (let i = 0; i < 80; i++) {
@@ -99,23 +104,49 @@ const HTTP = URL_.replace(/^ws/, "http").replace(/\/ws$/, "");
  *  this rather than assuming a model is centred on its origin — the crate is,
  *  the watchtower emphatically is not (its deck sits 5m off in x and 32m off
  *  in z), and a hardcoded drop point silently tests empty air. */
-async function geom(lib: string) {
-  const r = await fetch(`${HTTP}/geom?lib=${encodeURIComponent(lib)}`);
-  if (!r.ok) throw new Error(`/geom ${lib}: ${r.status}`);
+async function geom(model: string) {
+  const r = await fetch(`${HTTP}/geom?lib=${encodeURIComponent(model)}`);
+  if (!r.ok) throw new Error(`/geom ${model}: ${r.status}`);
   return r.json() as Promise<any>;
 }
 const bandCentre = (t: any) => [(t.x[0] + t.x[1]) / 2, (t.z[0] + t.z[1]) / 2];
 const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 
-/** A bare socket: authors the scene and plays the dragger's hand. */
+/** The scene's old authoring words, as authority requests (the world speaks the protocol: every write is a door request). A
+ *  a "moving platform" is any motion component; there is no `path` motion, so a path becomes a bob, which moves it all
+ *  the same. Requests go out in order on one socket and the door answers them in order. */
+const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
+  const tf = (x: any) => ({ ...(x.pos ? { pos: x.pos } : {}), ...(typeof x.yaw === "number" ? { q: qFromYaw(x.yaw) } : {}) });
+  switch (v) {
+    case "spawn": return [{ verb: "create", args: { id: a.id, model: a.lib, components: { transform: tf(a) } } }];
+    case "place": return [{ verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
+    case "remove": return [{ verb: "delete", args: { id: a.id } }];
+    case "motion": return a.type ? [{ verb: "set", args: { id: a.id, component: "motion", value: { type: "oscillate", axis: [0, 0, 1], amp: 3, period: 4 } } }]
+      : [{ verb: "delete", args: { id: a.id, component: "motion" } }];
+    case "mount": return [{ verb: "set", args: { id: a.id, component: "parent", value: { to: a.to } } }];
+    case "dismount": return [{ verb: "delete", args: { id: a.id, component: "parent" } }, { verb: "set", args: { id: a.id, component: "transform", value: tf(a), merge: true } }];
+    default: throw new Error(`no authority request for '${v}'`);
+  }
+};
+/** A bare socket: authors the scene (the world's founder and owner) and plays the dragger's hand. */
 function hand(world: string, name: string) {
+  if (!EXTERNAL && !existsSync(join(worldsDir, world))) foundWorlds(worldsDir, [world], name);   // joining never founds a world
   return new Promise<any>((res) => {
     const ws = new WebSocket(`${URL_}?name=${name}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN }));
+    let n = 0;
+    // R 10-17: the scene's names ride as placeholders and minted ids (tools/protocol/idalias.ts). Each request waits for the
+    // one before it to be answered (its reply carries the ids a later request names); a verb's promise may be ignored, the
+    // order holds
+    const waiting = new Map<string, (r: any) => void>(); let chain: Promise<any> = Promise.resolve();
+    const ask = (r: { verb: string; args: any }) => new Promise<any>((done) => { const id = `${name}-${++n}`; waiting.set(id, done);
+      ws.send(JSON.stringify({ type: "request", id, verb: r.verb, args: IDS.out(r.verb, r.args) })); setTimeout(() => { if (waiting.delete(id)) done(null); }, 8000); });
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
+      if (m.type === "reply") { IDS.back(m.reply); const d = waiting.get(m.id); if (d) { waiting.delete(m.id); d(m.reply); } }
+      if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
       if (m.type === "snapshot") res({
-        verb: (v: string, a: any) => ws.send(JSON.stringify({ type: "verb", verb: v, args: a })),
+        verb: (v: string, a: any) => (chain = chain.then(async () => { for (const r of requestsOf(v, a)) await ask(r); })),
         send: (o: any) => ws.send(JSON.stringify(o)),
         close: () => ws.close(),
       });
@@ -279,26 +310,9 @@ try {
     h.close(); ag.close?.();
   }
 
-  // ---- 6. an id reused for a different lib keeps its own geometry ---------
-  // syncSupport awaits /geom; if the id is removed and respawned as something
-  // else in that window, the old summary must not be applied to the new
-  // thing. Asserted on the registry rather than by height, because the race
-  // is what is under test and heights cannot see which lib a box came from.
-  {
-    const W = `sup-ident-${Date.now().toString(36)}`;
-    const h = await hand(W, "stagehand");
-    const ag = new WorldAgent({ url: URL_, name: "id-bot", world: W });
-    await ag.connect();
-    await sleep(800);
-    h.verb("spawn", { id: "swap", lib: LIB, pos: [3, 0, 0], yaw: 0 });
-    h.verb("remove", { id: "swap" });
-    h.verb("spawn", { id: "swap", lib: "eidoverse/assets/models/corn_cob_low.glb", pos: [3, 0, 0], yaw: 0 });
-    await sleep(2500);
-    const ent = (ag as any).entities.get("swap");
-    check("an id reused mid-fetch ends up with its OWN lib registered",
-      ent?.lib === "eidoverse/assets/models/corn_cob_low.glb", `lib=${ent?.lib}`);
-    h.close(); ag.close?.();
-  }
+  // ---- 6. (v1: an id removed and respawned as a different lib mid-/geom-fetch kept its OWN geometry. A door
+  // never reuses an id — "'swap' existed before in this world; an id is never reused" — so the race has no subject;
+  // syncSupport's lib re-check stays as defence, pinned headless by tools/support-swap-test.ts.)
 
   // ---- 7. a departing agent takes its world's floors with it -------------
   // The collider map is PROCESS state (physics.ts's declared seam), so one
@@ -512,8 +526,8 @@ try {
     const y = await dropOver(h, ag, "palm-bot", dropAt, canopy.y, "release");
     const { supportShape } = await import("../mcpl/physics.ts");
     check("the palm's support is fitted from its triangles — an exact collider, no summary decks",
-      JSON.stringify((ag as any).supportIds.get("palm")) === JSON.stringify([`${W}/palm`]) && supportShape(`${W}/palm`) === "exact",
-      `${JSON.stringify((ag as any).supportIds.get("palm"))} fitted as ${supportShape(`${W}/palm`)}`);
+      JSON.stringify((ag as any).supportIds.get(IDS.of("palm"))) === JSON.stringify([`${W}/${IDS.of("palm")}`]) && supportShape(`${W}/${IDS.of("palm")}`) === "exact",
+      `${JSON.stringify((ag as any).supportIds.get(IDS.of("palm")))} fitted as ${supportShape(`${W}/${IDS.of("palm")}`)}`);
     check("a body released over a palm rests in its real fronds or below them, never on a floor above the model",
       y + hipsOffset <= g.bbox.max[1] + 0.15,
       `root=${y.toFixed(2)} (surface ${(y + hipsOffset).toFixed(2)}) palm top ${g.bbox.max[1]}`);

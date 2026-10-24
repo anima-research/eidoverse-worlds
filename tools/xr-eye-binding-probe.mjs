@@ -14,11 +14,12 @@
 //   dual warm at load    → green (xrwarm.js path: a content warm on the desktop, then enter)
 //
 // Run: node tools/xr-eye-binding-probe.mjs   (~30 s; run it under a memory guard)
+import { fileURLToPath } from "node:url";
 import { chromium } from 'playwright';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const ROOT = new URL('../client/', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../client/', import.meta.url));
 const PAGE = `<!doctype html><html><body><script type="importmap">{"imports":{"three":"./node_modules/three/build/three.webgpu.js","three/webgpu":"./node_modules/three/build/three.webgpu.js","three/tsl":"./node_modules/three/build/three.tsl.js"}}</script>
 <script type="module">
 import * as THREE from 'three';

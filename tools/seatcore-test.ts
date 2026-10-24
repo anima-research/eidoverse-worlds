@@ -5,7 +5,7 @@
  * that placeholder-shaped patch evidence is INVALID evidence), the serve-time
  * status verdict, the B1 socket-anchor rule (nothing infers intent), the B3
  * runtime gate (the action that actually ran, the exact clip bytes), the B5
- * rider-scale definition (uniform-or-abstain), the B2 world-up correction
+ * occupant-scale definition (uniform-or-abstain), the B2 world-up correction
  * with the pitch/roll DISCRIMINATOR (hand-computed lateral term that fails a
  * parent-normal implementation by name), the seat-claim purity regression
  * (the _v alias lesson — nonzero-Y socket), and the generation guard (a slow
@@ -17,7 +17,7 @@
 
 import {
   validateProfile, profileStatus, socketAnchor, seatGate, seatGateCore,
-  applySeatCorrection, riderScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
+  applySeatCorrection, occupantScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
   SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y,
 } from "../client/lib/seatcore.js";
 import { qAxisAngle } from "../client/lib/motioneval.js";
@@ -100,17 +100,18 @@ console.log("status verdict");
 // ---- B1: the socket's word -------------------------------------------------
 console.log("socket anchor (B1)");
 {
-  check("absent → legacy-root", socketAnchor({ pos: [0, 0.5, 0] }) === "legacy-root");
-  check("explicit legacy-root → legacy-root", socketAnchor({ seatAnchor: "legacy-root" }) === "legacy-root");
-  check("surface → surface", socketAnchor({ seatAnchor: "surface" }) === "surface");
-  check("typo/nonsense never becomes surface", socketAnchor({ seatAnchor: "Surface" }) === "legacy-root" && socketAnchor({ seatAnchor: 1 as any }) === "legacy-root");
+  check("absent → legacy-root", socketAnchor({ name: "seat", body: {} }) === "legacy-root");
+  check("another anchor (hips) → legacy-root", socketAnchor({ name: "seat", body: { anchor: "hips" } }) === "legacy-root");
+  check("body.anchor surface → surface (D14: the anchor enum, one field)", socketAnchor({ name: "seat", body: { anchor: "surface" } }) === "surface");
+  check("typo/nonsense never becomes surface", socketAnchor({ body: { anchor: "Surface" } }) === "legacy-root" && socketAnchor({ body: { anchor: 1 as any } }) === "legacy-root");
+  check("the old sibling spelling (seatAnchor) is not read: one field, never two", socketAnchor({ seatAnchor: "surface", body: {} } as any) === "legacy-root");
   check("no socket at all → legacy-root", socketAnchor(undefined) === "legacy-root");
 }
 
 // ---- B3: the runtime gate --------------------------------------------------
 console.log("runtime gate (B3)");
 {
-  const surface = { seatAnchor: "surface", pos: [0, 0.5, 0] };
+  const surface = { name: "seat", body: { anchor: "surface" } };
   const accepted = { status: "accepted", pose: "sitchair", contactY: 0.2055 };
   const base = { sock: surface, verdict: accepted, currentSlot: "sitchair", loadedClipSha256: C_SHA, currentClipSha256: C_SHA };
   check("full gate open → apply with contactY",
@@ -139,13 +140,13 @@ console.log("runtime gate (B3)");
   check("core gate still refuses a legacy socket", !seatGateCore({ sock: {}, verdict: accepted }).apply);
 }
 
-// ---- B5: rider scale -------------------------------------------------------
-console.log("rider scale (B5)");
+// ---- B5: occupant scale -------------------------------------------------------
+console.log("occupant scale (B5)");
 {
-  check("no scale vector → 1 (today's every body)", (() => { const r = riderScalar(null); return r.ok && r.s === 1; })());
-  check("uniform scale passes through", (() => { const r = riderScalar([1.25, 1.25, 1.25]); return r.ok && near(r.s, 1.25); })());
-  check("nonuniform scale abstains, never averages", !riderScalar([1, 1.2, 1]).ok);
-  check("non-finite scale abstains", !riderScalar([1, NaN, 1]).ok);
+  check("no scale vector → 1 (today's every body)", (() => { const r = occupantScalar(null); return r.ok && r.s === 1; })());
+  check("uniform scale passes through", (() => { const r = occupantScalar([1.25, 1.25, 1.25]); return r.ok && near(r.s, 1.25); })());
+  check("nonuniform scale abstains, never averages", !occupantScalar([1, 1.2, 1]).ok);
+  check("non-finite scale abstains", !occupantScalar([1, NaN, 1]).ok);
 }
 
 // ---- B2: world-up correction + the pitch/roll discriminator ----------------
@@ -259,7 +260,7 @@ console.log("verdict cache (shared browser/agent implementation)");
   check("vector 2: the held verdict demotes to pending the moment the event lands",
     cache.get("claude")?.status === "pending");
   check("vector 2: the gate refuses pending with its own reason",
-    (() => { const gte = seatGateCore({ sock: { seatAnchor: "surface" }, verdict: cache.get("claude") }); return !gte.apply && gte.reason === "profile update pending"; })());
+    (() => { const gte = seatGateCore({ sock: { body: { anchor: "surface" } }, verdict: cache.get("claude") }); return !gte.apply && gte.reason === "profile update pending"; })());
   check("vector 4: the other name's verdict is untouched by claude's update",
     cache.get("aletheia")?.status === "accepted");
 

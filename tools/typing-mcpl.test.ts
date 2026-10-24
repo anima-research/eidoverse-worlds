@@ -8,6 +8,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds, saysIn } from "./harness.ts";
 import { createServer } from "node:net";
 
 // Ports the kernel hands out, so two runs on one machine don't meet on fixed
@@ -22,6 +23,16 @@ const freePort = () => new Promise<number>((resolve, reject) => {
 });
 const WPORT = await freePort(), MPORT = await freePort();
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-typing-"));
+foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
+// 🔴 post-hardening (anima merge): the token registry REJECTS any key that
+// appears in the tracked example — and "dev-token" is in the example, so it
+// can never authorize on any machine. Upstream's copy of this suite still
+// uses it and is structurally red (flagged for them). A scratch registry
+// with a test-only token is the honest fixture.
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({
+  "typing-test-token": { id: "claude", name: "Claude", world: "commons" },
+}));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Positive waits poll with a deadline, so a slow machine delays a pass instead
 // of failing one.
@@ -40,18 +51,9 @@ const check = (name: string, ok: boolean, extra = "") => {
 // whose pid dies immediately, orphaning both of these on their ports where
 // they poison the next run.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
   stdout: "ignore", stderr: "ignore",
 });
-// 🔴 post-hardening (anima merge): the token registry REJECTS any key that
-// appears in the tracked example — and "dev-token" is in the example, so it
-// can never authorize on any machine. Upstream's copy of this suite still
-// uses it and is structurally red (flagged for them). A scratch registry
-// with a test-only token is the honest fixture.
-const tokensPath = join(worldsDir, "tokens.json");
-await Bun.write(tokensPath, JSON.stringify({
-  "typing-test-token": { id: "claude", name: "Claude", world: "commons" },
-}));
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
          MCPL_TOKENS: tokensPath },
@@ -62,13 +64,13 @@ try {
   await sleep(2500);
 
   // A raw world-WS watcher, present in the world, listening for typing relays.
-  const seen: any[] = [];
+  const seen: any[] = [], all: any[] = [];   // all: never cleared, so the stream's names (sent once per actor) stay read
   const watcher = new WebSocket(`ws://127.0.0.1:${WPORT}/ws`);
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
-    watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m);
+    watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m); all.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm" }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", avatar: "a.vrm", replica: true }));
   });
 
   // A raw MCP host connecting to the MCPL door as the "claude" agent (dev-token).
@@ -93,7 +95,8 @@ try {
   }
 
   const typingSeen = () => seen.filter((m) => m.type === "typing" && m.id === "claude").length;
-  const saidSeen = (text: string) => seen.some((m) => m.type === "log" && m.entry?.verb === "say" && m.entry?.actor === "claude" && m.entry?.args?.text === text);
+  // chat is the log stream's say entries (opaque actors, named by the stream: harness.ts saysIn)
+  const saidSeen = (text: string) => saysIn(all).some((x) => x.actor === "claude" && x.text === text);
   const typingFor = (channelId: string, op?: "start" | "stop") =>
     rpc({ jsonrpc: "2.0", method: "channels/typing", params: { channelId, ...(op ? { op } : {}) } });
   let nextId = 100;
@@ -138,7 +141,7 @@ try {
   typingFor("world:commons", "start");
   check("the dots are up again before the raw say", await waitUntil(() => typingSeen() >= 1, 3000));
   rpc({ jsonrpc: "2.0", id: nextId++, method: "tools/call",
-    params: { name: "world_verb", arguments: { verb: "say", args: { text: "a raw say from the typing test" } } } });
+    params: { name: "act", arguments: { verb: "say", args: { text: "a raw say from the typing test" } } } });   // (ported: the general request tool; there is no raw world_verb)
   check("the raw say reaches the world", await waitUntil(() => saidSeen("a raw say from the typing test"), 5000));
   await sleep(500);
   seen.length = 0;
@@ -203,7 +206,8 @@ try {
   typingFor("world:commons", "start");
   check("the dots are up as a long walk begins", await waitUntil(() => typingSeen() >= 1, 3000));
   const walkId = nextId++;
-  rpc({ jsonrpc: "2.0", id: walkId, method: "tools/call", params: { name: "walk_to", arguments: { x: 30, z: 0 } } });
+  // (ported: the world's bounds are ±20 m here, so the long walk is the diagonal, ~25 m at a walk)
+  rpc({ jsonrpc: "2.0", id: walkId, method: "tools/call", params: { name: "walk_to", arguments: { x: 18, z: 18 } } });
   // The host refreshes its start every 7 s while the turn runs; every 4 s here.
   const refresher = setInterval(() => typingFor("world:commons", "start"), 4000);
   await sleep(13_000);

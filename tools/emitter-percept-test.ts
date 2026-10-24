@@ -16,6 +16,7 @@
 process.env.EW_EMITTER_COALESCE_SEC = "0.25";
 const WINDOW = 250;
 const { WorldAgent } = await import("../mcpl/agent.ts");
+const { agentOnDoor } = await import("./agent-scratch.ts");
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -26,27 +27,36 @@ function check(name: string, ok: boolean, detail = "") {
 const T0 = 1_754_000_000_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function rig(name = "emitters", at: [number, number] = [0, 0]) {
+// The world is a scratch authority (tools/agent-scratch.ts), every write a door request at door time T0 (the coalescing
+// window is the agent's, not the door's); the agent takes the next view of its own fold after each, live or not.
+async function rig(name = "emitters", at: [number, number] = [0, 0]) {
   const ag = new WorldAgent({ name });
   ag.pos.x = at[0]; ag.pos.z = at[1];
   const events: any[] = [];
   ag.onEvent = (ev) => { if (ev.kind === "world-change") events.push(ev); };
   const A = ag as any;
-  const spawn = (id: string, pos = [0, 0, 0]) =>
-    A.applyEntry({ verb: "spawn", args: { id, lib: "deco/hearth.glb", pos }, ts: T0, seq: 1, actor: "antra" }, false);
-  const comp = (id: string, data: unknown, live = true, actor = "antra", ts = T0) =>
-    A.applyEntry({ verb: "comp", args: { id, type: "particles", data }, ts, seq: 2, actor }, live);
-  return { ag, A, events, spawn, comp };
+  const door = agentOnDoor(A, "emitters", { start: T0 - 1000 });
+  await door.sync(false);
+  const must = (r: any, what: string) => { if (!r.ok) throw new Error(`${what} refused: ${JSON.stringify(r.refused)}`); return r; };
+  const spawn = async (id: string, pos = [0, 0, 0]) =>
+    must(await door.act("create", { id, model: "deco/hearth.glb", components: { transform: { pos } } }, { who: "antra", at: T0, live: false }), `create ${id}`);
+  const comp = async (id: string, data: unknown, live = true, actor = "antra", ts = T0) =>
+    must(await (data === null ? door.act("delete", { id, component: "particles" }, { who: actor, at: ts, live })
+      : door.act("set", { id, component: "particles", value: data }, { who: actor, at: ts, live })), `particles on ${id}`);
+  const other = async (id: string, component: string, value: unknown, live = true) =>
+    must(await door.act("set", { id, component, value }, { who: "antra", at: T0, live }), `${component} on ${id}`);
+  return { ag, A, events, spawn, comp, other, door };
 }
 
-const FIRE = { preset: "fire", origin: [0, 0.25, 0], texture: "eidoverse/assets/particle_textures/flame_05.png" };
-const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
+// the protocol's spelling (effects are documents, PROTOCOL §4): {effect, at, params}; preset/origin/texture are the first protocol's
+const FIRE = { effect: "fire", at: [0, 0.25, 0], params: { texture: "eidoverse/assets/particle_textures/flame_05.png" } };
+const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
 
 // ---------------------------------------------------------------- A: pull perception (look)
 {
-  const { ag, spawn, comp } = rig();
-  spawn("hearth", [2, 0, 0]);
-  comp("hearth", FIRE, false);
+  const { ag, spawn, comp, other, door } = await rig();
+  await spawn("hearth", [2, 0, 0]);
+  await comp("hearth", FIRE, false);
   const out = ag.look();
   check("look() names the emitter on the owning entity", /\[hearth\][^\n]*emitting fire/.test(out), out.split("\n").find((l) => l.includes("hearth")));
   check("...with the local origin it was authored at", out.includes("local origin [0, 0.25, 0]"));
@@ -55,48 +65,48 @@ const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
   check("...and claims no heat, light, sound or contact",
     !/(warm|heat\b|crackl|glow|smell)/i.test(out));
 
-  comp("hearth", { preset: "plasma" }, false);
-  const unknown = ag.look();
-  check("an unrenderable preset is still legible as an emitter",
-    /\[hearth\][^\n]*emitting "plasma"/.test(unknown) && unknown.includes("preset unknown"));
+  // an effect nobody has is refused at the door (effects are documents: an Essential's name or a stored address),
+  // so nothing unrenderable ever reaches a reader
+  const plasma = await door.act("set", { id: "hearth", component: "particles", value: { effect: "plasma" } }, { who: "antra", at: T0, live: false });
+  check("an effect that is no Essential and no address is refused at the door, naming the Essentials",
+    !plasma.ok && plasma.refused?.code === "shape" && /isn't an Essentials effect/.test(plasma.refused.reason) && /\[hearth\][^\n]*emitting fire/.test(ag.look()), JSON.stringify(plasma.refused));
 
-  comp("hearth", null, false);
+  await comp("hearth", null, false);
   check("a removed emitter is gone from look()", !ag.look().includes("emitting"));
 
   // an ordinary component is untouched by any of this
-  const A = ag as any;
-  A.applyEntry({ verb: "comp", args: { id: "hearth", type: "recipe", data: { by: "fc" } }, ts: T0, seq: 3, actor: "antra" }, false);
-  check("other component types still read as they did", ag.look().includes("components: recipe"));
+  await other("hearth", "example.org/recipe", { by: "fc" }, false);
+  check("other component types still read as they did", ag.look().includes("components: example.org/recipe"));
 }
 
 // ---------------------------------------------------------------- B: live change perception
 {
-  const { events, spawn, comp } = rig();
-  spawn("hearth", [2, 0, 0]);
+  const { events, spawn, comp } = await rig();
+  await spawn("hearth", [2, 0, 0]);
 
-  comp("hearth", FIRE);
+  await comp("hearth", FIRE);
   check("lighting a fire nearby is heard once", events.length === 1, `got ${events.length}`);
   check("...carrying actor, entity and preset",
     events[0].who === "antra" && events[0].text.includes("[hearth]") && events[0].text.includes("fire"));
   check("...as a world-change, not a mention", events[0].kind === "world-change" && !events[0].mention);
 
   await sleep(WINDOW * 2);
-  comp("hearth", SMOKE);
+  await comp("hearth", SMOKE);
   check("replacing it with smoke is heard once more", events.length === 2, `got ${events.length}`);
   check("...and says what it became", events[1].text.includes("smoke"));
 
   await sleep(WINDOW * 2);
-  comp("hearth", null);
+  await comp("hearth", null);
   check("putting it out is heard", events.length === 3 && events[2].text.includes("puts out"));
 }
 
 // ---------------------------------------------------------------- C: coalescing a tuning burst
 {
-  const { events, spawn, comp } = rig();
-  spawn("hearth", [1, 0, 0]);
-  comp("hearth", FIRE);
+  const { events, spawn, comp } = await rig();
+  await spawn("hearth", [1, 0, 0]);
+  await comp("hearth", FIRE);
   check("the first change speaks at once", events.length === 1);
-  for (let i = 0; i < 20; i++) comp("hearth", { ...FIRE, size: 0.4 + i * 0.01 });
+  for (let i = 0; i < 20; i++) await comp("hearth", { ...FIRE, params: { ...FIRE.params, size: 0.4 + i * 0.01 } });
   check("twenty tuning entries add NOTHING inside the window", events.length === 1, `got ${events.length}`);
   await sleep(WINDOW * 2);
   check("the window closes with one summary of the net result", events.length === 2, `got ${events.length}`);
@@ -106,101 +116,108 @@ const SMOKE = { preset: "smoke", origin: [0, 0.25, 0] };
 }
 {
   // A burst that nets out to nothing must not narrate at all.
-  const { events, spawn, comp } = rig();
-  spawn("hearth", [1, 0, 0]);
-  comp("hearth", FIRE);
-  comp("hearth", SMOKE);
-  comp("hearth", FIRE);              // back to where the first line already said
+  const { events, spawn, comp } = await rig();
+  await spawn("hearth", [1, 0, 0]);
+  await comp("hearth", FIRE);
+  await comp("hearth", SMOKE);
+  await comp("hearth", FIRE);              // back to where the first line already said
   await sleep(WINDOW * 3);
   check("a burst that returns to the announced state stays silent", events.length === 1, `got ${events.length}`);
 }
 {
   // …but a burst that ENDS in the window still gets told, at the window's edge.
-  const { events, spawn, comp } = rig();
-  spawn("hearth", [1, 0, 0]);
-  comp("hearth", FIRE);
-  comp("hearth", null);
+  const { events, spawn, comp } = await rig();
+  await spawn("hearth", [1, 0, 0]);
+  await comp("hearth", FIRE);
+  await comp("hearth", null);
   await sleep(WINDOW * 3);
   check("an emitter put out inside the window is still reported", events.length === 2 && events[1].text.includes("puts out"));
 }
 
 // ---------------------------------------------------------------- D: replay, distance, self
 {
-  const { events, spawn, comp } = rig();
-  spawn("hearth", [2, 0, 0]);
-  comp("hearth", FIRE, false);       // replay / late join
-  comp("hearth", SMOKE, false);
+  const { events, spawn, comp } = await rig();
+  await spawn("hearth", [2, 0, 0]);
+  await comp("hearth", FIRE, false);       // replay / late join
+  await comp("hearth", SMOKE, false);
   check("replay reconstructs state without re-performing the event", events.length === 0);
 }
 {
-  const { ag, events, spawn, comp } = rig("emitters", [0, 0]);
-  spawn("bonfire", [400, 0, 0]);
-  comp("bonfire", FIRE);
+  const { ag, events, spawn, comp } = await rig("emitters", [0, 0]);
+  await spawn("bonfire", [400, 0, 0]);
+  await comp("bonfire", FIRE);
   check("a fire lit across the world is not a percept", events.length === 0);
   check("...but it is still in look()", ag.look().includes("emitting fire"));
 }
 {
-  const { events, spawn, comp } = rig("antra");
-  spawn("hearth", [1, 0, 0]);
-  comp("hearth", FIRE, true, "antra");
+  const { events, spawn, comp } = await rig("antra");
+  await spawn("hearth", [1, 0, 0]);
+  await comp("hearth", FIRE, true, "antra");
   check("your own authoring is not delivered back to you as an event", events.length === 0);
 }
 {
   // Two residents beside the same hearth each hear it once — and derive the
   // same emitter, because the seed is the entity's, not the session's.
-  const one = rig("one", [1, 0]);
-  const two = rig("two", [-1, 0]);
-  for (const r of [one, two]) { r.spawn("hearth", [0, 0, 0]); r.comp("hearth", FIRE); }
+  const one = await rig("one", [1, 0]);
+  const two = await rig("two", [-1, 0]);
+  for (const r of [one, two]) { await r.spawn("hearth", [0, 0, 0]); await r.comp("hearth", FIRE); }
   check("two residents each receive exactly one event",
     one.events.length === 1 && two.events.length === 1);
   check("...and the same text about the same fire", one.events[0].text === two.events[0].text);
 }
 {
   // Nothing about a NON-particles component changed.
-  const { events, spawn, A } = rig();
-  spawn("swing", [1, 0, 0]);
-  A.applyEntry({ verb: "comp", args: { id: "swing", type: "sockets", data: { seat: { pos: [0, 0.5, 0] } } }, ts: T0, seq: 4, actor: "antra" }, true);
+  const { events, spawn, other } = await rig();
+  await spawn("swing", [1, 0, 0]);
+  await other("swing", "sockets", { seat: { pos: [0, 0.5, 0] } }, true);
   check("other component types narrate nothing (scope fence)", events.length === 0);
 }
 
-// ---------------------------------------------------------------- C: several emitters per entity
+// ---------------------------------------------------------------- C: several emitters, a scaled one
+// Upstream #256 gave a v1 thing several emitters (`particles:<name>`). Here a thing carries one `particles`: emitters
+// that burn together are one effect document's emitters, and one lit and put out on its own is a child thing with its
+// own `particles` (the translator writes particles:<name> that way). Each reads and narrates on its own terms.
 {
-  // `particles:<name>` — a hearth's fire, smoke and sparks are three emitters,
-  // each read and narrated on its own terms.
-  const { ag, A, events, spawn } = rig();
-  const compK = (id: string, type: string, data: unknown, live = true, ts = T0) =>
-    A.applyEntry({ verb: "comp", args: { id, type, data }, ts, seq: 5, actor: "antra" }, live);
-  spawn("hearth", [2, 0, 0]);
-  compK("hearth", "particles", FIRE, false);
-  compK("hearth", "particles:smoke", { ...SMOKE, origin: [0, 0.8, 0], color: "#555566" }, false);
-  compK("hearth", "particles:candle", { preset: "fire", origin: [0.4, 0.9, 0], scale: 0.025 }, false);
+  const { ag, events, spawn, comp, door } = await rig();
+  await spawn("hearth", [2, 0, 0]);
+  await comp("hearth", FIRE, false);
+  const child = async (id: string, value: unknown, live = true) => {
+    const r = await door.act("create", { id, components: { transform: { pos: [0, 0, 0] }, parent: { to: "hearth" }, label: id.split("-")[1], particles: value } }, { who: "antra", at: T0, live });
+    if (!r.ok) throw new Error(`create ${id} refused: ${JSON.stringify(r.refused)}`);
+  };
+  await child("hearth-candle", { effect: "fire", at: [0.4, 0.9, 0], scale: 0.025 }, false);
   const out = ag.look();
-  const line = out.split("\n").find((l) => l.includes("[hearth]")) ?? "";
-  check("look() names every emitter the entity carries, default first",
-    /emitting fire \(particles;[^)]*\)[^\n]*emitting smoke \(particles:smoke;/.test(line), line);
-  check("...a scaled one says how small", line.includes("(particles:candle;") && line.includes("scale 0.025"));
-  check("...a tinted one names its colour", line.includes("tinted #555566"));
-  check("...and none leaks into `components:`", !/components:[^\n]*particles/.test(line));
+  // a thing's handle may be short ([hearth-]); the child is found by the label it was given
+  const line = (name: string) => out.split("\n").find((l) => name === "hearth" ? l.includes("[hearth] ") : l.includes(`"${name}"`)) ?? "";
+  check("look() reads the hearth's own emitter and its child's, each on its own thing",
+    /emitting fire \(particles;/.test(line("hearth")) && /emitting fire \(particles;[^)]*scale 0\.025/.test(line("candle")) && line("candle").includes("mounted on hearth"), `${line("hearth")} | ${line("candle")}`);
+  check("...a scaled one says how small, and one at its own size claims no scale",
+    line("candle").includes("scale 0.025") && !line("hearth").includes("scale"));
 
-  compK("hearth", "particles:sparks", { preset: "sparks" });
-  check("lighting a named emitter is heard once, under its own name",
-    events.length === 1 && events[0].text.includes("lights sparks") && events[0].text.endsWith("(particles:sparks)"),
-    events.map((e) => e.text).join(" | "));
-  compK("hearth", "particles", { ...FIRE, size: 0.6 });
-  check("...while a change to ANOTHER emitter on the same entity is its own news, not folded into the first",
-    events.length === 2 && events[1].text.includes("retunes the fire") && events[1].text.endsWith("(particles)"));
-  compK("hearth", "particles:sparks", { preset: "sparks", count: 30 });
-  check("a burst on one emitter folds inside its own window", events.length === 2);
+  await child("hearth-sparks", { effect: "sparks" });
+  check("lighting a child's emitter is heard once, under its own thing",
+    events.length === 1 && events[0].text.includes("lights sparks on [hearth-sparks]"), events.map((e) => e.text).join(" | "));
+  await comp("hearth", { ...FIRE, params: { ...FIRE.params, size: 0.6 } });
+  check("...while a change to the hearth's own emitter is its own news, not folded into the child's",
+    events.length === 2 && events[1].text.includes("retunes the fire on [hearth]"), events.map((e) => e.text).join(" | "));
+  await comp("hearth-sparks", { effect: "sparks", params: { count: 30 } });
+  check("a burst on one emitter folds inside its own window", events.length === 2, events.map((e) => e.text).join(" | "));
   await sleep(WINDOW + 80);
   check("...and closes with one net line for that emitter",
-    events.length === 3 && events[2].text.includes("retunes the sparks") && events[2].text.endsWith("(particles:sparks)"),
-    events.map((e) => e.text).join(" | "));
+    events.length === 3 && events[2].text.includes("retunes the sparks on [hearth-sparks]"), events.map((e) => e.text).join(" | "));
 
-  compK("hearth", "particles:two words", { preset: "fire" });
-  check("a malformed emitter key is an ordinary component: no event, read as a component",
-    events.length === 3 && ag.look().includes("components: particles:two words"));
+  await sleep(WINDOW + 80);   // past the window the net line reopened, so the ending speaks at once
+  const gone = await door.act("delete", { id: "hearth-sparks" }, { who: "antra", at: T0, live: true });
+  check("removing the child puts its emitter out, heard once under its own thing, the hearth still burning",
+    gone.ok && events.length === 4 && events[3].text.includes("puts out the sparks on [hearth-sparks]") && /\[hearth\] [^\n]*emitting fire/.test(ag.look()),
+    JSON.stringify(gone.refused ?? events.map((e) => e.text)));
+
+  // the first protocol's keyed spelling is not this protocol's: refused, saying how to write it
+  const keyed = await door.act("set", { id: "hearth", component: "particles:smoke", value: { effect: "smoke" } }, { who: "antra", at: T0, live: false });
+  check("particles:<name> is refused (particles isn't keyed), naming the spelling it takes",
+    !keyed.ok && keyed.refused?.code === "shape" && /isn't keyed; write 'particles'/.test(keyed.refused.reason), JSON.stringify(keyed.refused));
   await sleep(WINDOW + 80);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+process.exit(fail ? 1 : 0);   // (the agents keep timers alive: leave explicitly)

@@ -59,7 +59,9 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
 // and sent verified humans back to the door mid-event. They survive restarts
 // now. The file holds bearer-equivalent session ids — 0600 and gitignored,
 // same posture as mcpl/tokens.json.
-export const SESSIONS_FILE = resolve(process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
+// SESSIONS_PATH (or main's HN_SESSIONS_FILE): a self-contained test keeps its sessions in its scratch dir (like
+// AGENT_TOKENS_PATH), never the checkout's
+export const SESSIONS_FILE = resolve(process.env.SESSIONS_PATH ?? process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
@@ -89,26 +91,31 @@ try {
 // fixture (a scratch tokens.json) without mutating the checkout — same posture
 // as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
 export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
-let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string> } | null = null;
+let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
   try {
     const mtime = existsSync(AGENT_TOKENS_PATH) ? Math.round(Bun.file(AGENT_TOKENS_PATH).lastModified) : 0;
     if (!agentTokCache || agentTokCache.mtime !== mtime) {
       const byToken = new Map<string, string>();
       const names = new Set<string>();
+      // an enrolled agent may also arrive through the home node with an aid1 credential: `subs` lists the aid1 subjects
+      // that ARE this agent (security review 10-06 C2: a reserved name is satisfied by a proven subject, never by a
+      // display name that happens to slug the same)
+      const bySub = new Map<string, string>();
       if (mtime) {
-        const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string }>;
+        const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
         for (const [tok, v] of Object.entries(raw)) {
           if (!v?.id) continue;
           byToken.set(tok, v.id);
           names.add(v.id.toLowerCase());
+          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, v.id);
         }
       }
-      agentTokCache = { mtime, byToken, names };
+      agentTokCache = { mtime, byToken, names, bySub };
     }
   } catch (e) {
     console.error("[perm] mcpl/tokens.json unreadable:", (e as Error).message);
-    agentTokCache ??= { mtime: 0, byToken: new Map(), names: new Set() };
+    agentTokCache ??= { mtime: 0, byToken: new Map(), names: new Set(), bySub: new Map() };
   }
   return agentTokCache;
 }

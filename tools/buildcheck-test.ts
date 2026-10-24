@@ -3,11 +3,12 @@
 // there. Each fixture is the two-storey test building with one thing broken
 // (tools/two-storey-fixture.ts), so every warning is checked against a cause
 // it should name — and the good building against no warnings at all.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const STUB = new URL("./core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("./core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const C = await import("../client/lib/colliders.js");
@@ -47,15 +48,16 @@ try {
     Object.keys(good.suggested.places).length === good.suggested.rooms.length + good.suggested.doors.length + good.suggested.stairs.length);
 
   console.log("\nbroken buildings:");
-  const narrow = await run("narrow", without(isFront, [-3, FLOOR, 2.8, -0.25, 6.3, 3], [0.25, FLOOR, 2.8, 3, 6.3, 3], [-0.25, 2.4, 2.8, 0.25, 6.3, 3]));
-  check("a 0.5m doorway: the inside is reachable only through a passage narrower than a body, and it says where",
+  // protocol merge: the walking body is the mover's (radius 0.2: it needs more than 0.4 m), so the narrow door is 0.3 m (was 0.5)
+  const narrow = await run("narrow", without(isFront, [-3, FLOOR, 2.8, -0.15, 6.3, 3], [0.15, FLOOR, 2.8, 3, 6.3, 3], [-0.15, 2.4, 2.8, 0.15, 6.3, 3]));
+  check("a 0.3m doorway: the inside is reachable only through a passage narrower than a body, and it says where",
     kinds(narrow).includes("narrow") && narrow.warnings.some((w: any) => w.kind === "narrow" && Math.abs(w.at[0]) < 0.5 && w.at[2] > 2.2 && w.at[2] < 3.6), say(narrow));
 
-  // overhanging the top TWO treads: certainly cut off. (One tread is a
-  // borderline case — whether a body is held at the edge depends on how far
-  // it moves between collision checks — so it is not asserted here.)
+  // overhanging the top FOUR treads: certainly cut off. (protocol merge: it was two — but the mover's step is 0.8 m, and a
+  // body on the tread below a two- or three-tread overhang steps straight up onto it; four leaves the slab's top 0.94 m
+  // above the last tread a body can stand on and its edge in the hip band of one on the tread above.)
   const STAIR_TOP = STAIR_FOOT - 15 * GOING;
-  const overhang = await run("overhang", without((b) => b[1] === 3.1 && b[0] === 1.6, [1.6, 3.1, -2.8, 2.8, UPPER, STAIR_TOP + 2 * GOING]));
+  const overhang = await run("overhang", without((b) => b[1] === 3.1 && b[0] === 1.6, [1.6, 3.1, -2.8, 2.8, UPPER, STAIR_TOP + 4 * GOING]));
   // the exact reason (a blocked climb, or a rise) is a hint; what matters is
   // that the cut-off floor is flagged, at its height, with the stair named
   check("an upper floor overhanging the top treads: the upper floor is flagged unreachable, pointing at the stair top",
@@ -64,14 +66,14 @@ try {
   const sealed = await run("sealed", without(isFront, [-3, FLOOR, 2.8, 3, 6.3, 3]));
   check("no door at all: sealed, no opening leads in", kinds(sealed).includes("sealed"), say(sealed));
 
-  const RAISED = 0.8;
+  const RAISED = 1.0;   // protocol merge: higher than the mover's 0.8 m step (it was 0.8, over main's 0.55)
   const rise = await run("rise", [[-3, 0, -3, 3, RAISED, 3], ...boxes.filter((b: number[]) => b[1] !== 0).map((b: number[]) => b[1] === FLOOR ? [b[0], RAISED, b[2], b[3], b[4], b[5]] : b)]);
   check(`a floor ${RAISED}m up with no step: the inside is flagged unreachable`,
     rise.warnings.some((w: any) => ["rise", "sealed", "climb"].includes(w.kind)) && rise.levels.every((l: any) => l.reachable < 1), say(rise));
 
   const hut = await run("hut", [[-1.4, 0, -1.4, 1.4, 0.1, 1.4], [-1.4, 0.1, -1.4, -1.25, 2.5, 1.4], [1.25, 0.1, -1.4, 1.4, 2.5, 1.4], [-1.25, 0.1, -1.4, 1.25, 2.5, -1.25], [-1.4, 2.5, -1.4, 1.4, 2.6, 1.4]], {}, false);
-  check("a 2.8m hut: under the walk-in size — a solid box unless spawned collide: \"exact\"",
-    kinds(hut).includes("solid") && /collide: "exact"/.test(say(hut)) && hut.walkIn.roomScale === false, say(hut));
+  check("a 2.8m hut: under the walk-in size — a solid box unless it's given collider {shape: \"mesh\"}",
+    kinds(hut).includes("solid") && /collider \{shape: "mesh"\}/.test(say(hut)) && hut.walkIn.roomScale === false, say(hut));
 
   check("...and its raised floor, a solid plinth 0.8m up, is a floor — not furniture", rise.levels.some((l: any) => Math.abs(l.y - RAISED) < 0.1), JSON.stringify(rise.levels));
 

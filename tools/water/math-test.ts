@@ -1,5 +1,9 @@
 import {strict as a} from 'node:assert';
 import {waterParams,waveHeight,mediumAt,waterPath,swimStep} from '../../shared/water.js';
+// the float depth is the mover's (shared/mover.js floatDepth: MOVER.swim.at of the body's height), one number for wading,
+// swimming and diving: 0.75 × 1.7 m = 1.275 m for a 100% body (upstream's 3D swim used its own 1.1 m)
+import {floatDepth,MOVER} from '../../shared/mover.js';
+const FLOAT=floatDepth(MOVER.body.height);
 const water={...waterParams({center:[0,-10,0],size:[100,20,100]}),top:0,bottom:-20};
 const box={center:[0,-5,0],size:[4,4,4]};
 a.equal(mediumAt([0,2,0],[water],[]),null);
@@ -17,13 +21,13 @@ a.equal(mediumAt([0,-5,3],[water],[rotated]),null);
 a.equal(waterPath([-10,-5,0],[10,-5,0],water,[rotated]),18);
 let s={pos:[0,-4,0],velocity:[0,0,0]};
 for(let i=0;i<300;i++)s=swimStep(s.pos,s.velocity,{direction:[0,1,0],rise:true},water,1/60,i/60);
-a.equal(s.mode,'surface');a.ok(Math.abs(s.pos[1]+1.1)<1e-8);
+a.equal(s.mode,'surface');a.ok(Math.abs(s.pos[1]+FLOAT)<1e-8);
 for(let i=0;i<60;i++)s=swimStep(s.pos,s.velocity,{direction:[0,-1,0],dive:true},water,1/60,i/60);
 a.ok(s.pos[1]<-2);a.equal(s.mode,'swim');
 // a half-size body floats half as deep, so its eyes clear the surface (review #248)
 let half={pos:[0,-4,0],velocity:[0,0,0]};
 for(let i=0;i<300;i++)half=swimStep(half.pos,half.velocity,{direction:[0,1,0],rise:true,stature:.5},water,1/60,i/60);
-a.equal(half.mode,'surface');a.ok(Math.abs(half.pos[1]+.55)<1e-8);
+a.equal(half.mode,'surface');a.ok(Math.abs(half.pos[1]+FLOAT/2)<1e-8);
 const w={...water,waves:[{amplitude:.4,wavelength:10,direction:[1,0],phase:Math.PI/2}]};
 a.ok(Math.abs(waveHeight(w,0,0,0)-.4)<1e-10);
 const bad=waterParams({size:[NaN,0,Infinity],waves:[null],absorption:[NaN,0,1]});

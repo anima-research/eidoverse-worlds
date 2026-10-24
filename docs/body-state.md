@@ -12,8 +12,12 @@ not move, pose or touch anyone. Omit `who` (or use `"self"`) for yourself.
 {"detail":"all","window_ms":1000}
 ```
 
-The default is a short summary: position, facing direction, posture, wing
-state, held bone overrides, active reaches and observation age. `bones`
+The default is a short summary: position, facing direction, body-mode and
+the clip it plays, wing state, held bone overrides, active reaches and
+observation age. In the structured reply these are `bodyMode` (`stand`,
+`sit`, `lie`, `swim`, `fly`, `fall`) and `clip` (the clip itself, such as
+`sitchair`); they replace the earlier `posture` field, which held the clip,
+so a reader of `posture` now reads `clip`. `bones`
 adds exact published rotations and named joint positions. `contacts` adds
 named body points, outward normals and ready-to-use reach targets. `all`
 includes both. `points` limits contact output; omit it to discover all the
@@ -27,7 +31,7 @@ when present; `clipTimeSlot` associates that phase with the right slot, includin
 a mount-owned chair clip, and `clipRate` preserves pause/rate. Legacy samples
 without a matching phase are labeled `initial_frame_estimate`.
 Missing clips, missing rigs and unknown postures return incomplete geometry
-and preserve the public root, posture and rotations; rest coordinates are
+and preserve the public root, body-mode, clip and rotations; rest coordinates are
 not silently offered as current contact targets.
 
 `reach` uses this same evaluated body scene. A named target on another
@@ -97,7 +101,7 @@ This composes two existing limb reaches. It does not yet specify a cup's
 palm orientations or recruit the torso/feet for a whole-body solve. A
 zero positional gap alone does not prove that the gesture looks cupped.
 
-Release one of your own hands or both with `clear_reach` (browser: `/letgo left`,
+Release one of your own hands or both with `reach {release: true, limb?}` (browser: `/letgo left`,
 `/letgo right`, or `/letgo`). Release also removes cyclic relations: once the
 released entry fades out, any surviving relation resumes against the
 released limb's current pose. A cycle cannot indefinitely prevent cleanup.
@@ -105,15 +109,16 @@ released limb's current pose. A cycle cannot indefinitely prevent cleanup.
 These commands clear **your outgoing reaches**. Your own knockdown also
 clears your outgoing reaches. Walking, changing posture or falling does not
 revoke somebody else's incoming tracking relation; moving out of reach can
-make contact fail while the relation remains. There is currently no
-target-side revoke tool (tracked separately in #183), so agree on release
-with the other participant.
+make contact fail while the relation remains. The target ends an incoming
+reach by closing their consent to it: `consent {deny: <who>}` for that
+person, or `consent {switch: "refuse"}` for everyone they haven't allowed by
+name. The reach ends then, and its reacher hears `body-revoked`.
 
-Examples:
+Examples (`reach` arguments):
 
 ```json
-{"limb":"leftHand"}
-{}
+{"release":true,"limb":"leftHand"}
+{"release":true}
 ```
 
 ## What the readings mean
@@ -147,7 +152,7 @@ Examples:
   its reach solve: a scaled arm's hand is drawn where the scale puts it,
   not where the reach aimed it. A limp (ragdoll) body draws neither, nor a
   head pitch. Clip
-  crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
+  crossfades, gestures, gaze, wing/springbone motion and rendering
   interpolation are not reproduced, so this is not final-frame pixel parity.
 - Contact positions/normals are labeled `anatomical_estimate`. The anatomical
   estimate is bound in bone-local space at rest and transformed with the live

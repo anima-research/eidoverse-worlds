@@ -33,7 +33,7 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
 // ---------------------------------------------------------------- the channel frame: approach addresses, depart does not
 
 {
-  const d = pingDelivery(P("approach"), false)!;
+  const d = pingDelivery(P("approach"), null)!;
   check("approach is chat:addressed", d.tags.includes(CHAT.addressed), JSON.stringify(d.tags));
   check("approach carries its event tag", d.tags.includes(EIDO.approach));
   check("approach is mentioned:true (the shim two hosts still route on)", d.mentioned === true);
@@ -42,38 +42,37 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
 }
 
 {
-  const d = pingDelivery(P("depart", "walked away"), false)!;
+  const d = pingDelivery(P("depart", "walked away"), null)!;
   check("depart is chat:ambient", d.tags.includes(CHAT.ambient), JSON.stringify(d.tags));
   check("depart carries its event tag", d.tags.includes(EIDO.depart));
   check("depart is NOT addressed — being left is not being addressed", !d.tags.includes(CHAT.addressed), JSON.stringify(d.tags));
   check("depart never sets mentioned", d.mentioned === undefined);
   check("depart renders the agent's own who-moved text", d.text === "* digi walked away", d.text);
-  const n = pingDelivery(P("depart", "is no longer nearby"), false)!;
+  const n = pingDelivery(P("depart", "is no longer nearby"), null)!;
   check("...including the actor-neutral sentence, verbatim", n.text === "* digi is no longer nearby", n.text);
 }
 
 {
-  const r = pingDelivery(P("reach", "reaches toward your shoulder_l (right hand)"), false)!;
-  const t = pingDelivery(P("touch", "touches your head_top (left hand)"), true)!;
+  const r = pingDelivery(P("reach", "reaches toward your shoulder_l (right hand)"), null)!;
+  const t = pingDelivery(P("touch", "touches your head_top (left hand)"), "ai")!;
   check("reach is addressed + mentioned, worded by the agent",
     r.tags.includes(CHAT.addressed) && r.tags.includes(EIDO.reach) && r.mentioned === true
       && r.text === "* digi reaches toward your shoulder_l (right hand)", JSON.stringify(r));
   check("touch is addressed + mentioned, worded by the agent",
     t.tags.includes(CHAT.addressed) && t.tags.includes(EIDO.touch) && t.mentioned === true, JSON.stringify(t));
-  check("a ping from an agent-driven body says so", t.tags.includes(CHAT.fromAgent), JSON.stringify(t.tags));
-  check("...and a browser body does not (no evidence, no claim)", !r.tags.includes(CHAT.fromAgent), JSON.stringify(r.tags));
+  // PROTOCOL §6a rule 3 (review r11 L2): the sender's own declared word rides along as sent, and no tag is read from it
+  check("a ping from someone who declared a status carries their word as sent", t.declares === "ai" && !t.tags.some((x: string) => /from-/.test(x)), JSON.stringify(t));
+  check("...and an undeclared one carries none (no evidence, no claim)", r.declares === undefined && !r.tags.some((x: string) => /from-/.test(x)), JSON.stringify(r));
 }
 
 {
-  check("mention pings ride the say event, never this path", pingDelivery(P("mention", "hi"), false) === null);
-  check("whisper pings ride their own delivery, never this path", pingDelivery(P("whisper", "psst"), false) === null);
+  check("mention pings ride the say event, never this path", pingDelivery(P("mention", "hi"), null) === null);
 }
 
 // ---------------------------------------------------------------- the pending_pings lines
 
 {
   check("pending: mention", pingLine(P("mention", "come look at this")) === "@ digi: come look at this");
-  check("pending: whisper", pingLine(P("whisper", "psst")) === "@ digi whispers: psst");
   check("pending: approach", pingLine(P("approach")) === "≈ digi walked up to you");
   check("pending: depart, agent-worded", pingLine(P("depart", "walked away")) === "≈ digi walked away");
   check("pending: depart, actor-neutral", pingLine(P("depart", "is no longer nearby")) === "≈ digi is no longer nearby");

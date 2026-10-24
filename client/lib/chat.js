@@ -17,8 +17,8 @@ import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
 // conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
-import { initAttention, attentionWhisper, mountAttentionControls } from './attention.js';
-import { makeFrame } from './frames.js';
+import { initAttention, mountAttentionControls } from './attention.js';
+import { makeFrame } from './windows.js';
 import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
@@ -35,13 +35,15 @@ let inputEl = null;
 let onSend = null;
 const recent = [];   // the log's tail, for the VR quad
 export const recentChat = () => recent.slice();
-let onWhisper = () => {};
 let onTyping = () => {};
 let getPeople = () => [];
+// the person menu and badges (client/lib/people.js), injected by main.js: a static import here would close the
+// chat → people → net → chat cycle. Absent (a page without it), rows are plain and the menu is Message alone.
+let personUi = null;
 
-let filter = 'all';                 // 'all' | 'mentions' | 'system' | 'w:<name>'
-let lastWhisperFrom = null;         // who /r replies to
-const convos = new Map();           // name -> { unread }
+// 'all' | 'mentions' | 'system'. Every tab is a view of the one public room: there is no private channel in world chat
+// (whisper and its DM tabs were removed, R 10-18; direct messages are planned at the identity level, not here).
+let filter = 'all';
 let unread = 0, unreadMentions = 0;
 let lastAuthor = null, lastAt = 0, lastLineEl = null;
 const sentHistory = [];             // up-arrow recall
@@ -283,6 +285,8 @@ export async function resyncChatAfter(seq) {
  *  bot's telemetry looks like everything that has ever happened here. */
 export function noteHistoryContext({ total = null, shown = 0, spanMs = null } = {}) {
   if (!logEl) return;
+  // one note, ever: every rejoin (each server restart) prepended another, until the pane was a column of them (R 10-10)
+  logEl.querySelectorAll('.hist-note').forEach((n) => n.remove());
   // `total` is unknown for worlds folded before it was recorded. Saying
   // "showing 40 of 0" would be worse than saying nothing; saying "there is
   // more" is true either way.
@@ -385,7 +389,7 @@ export function logChat(who, text, kind = '', meta = {}) {
       const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
       body.append(' ', renderBody(text, namesForHighlight()));
       lastAt = Date.now();
-      const newlyPinged = !lastLineEl.dataset.convo &&
+      const newlyPinged =
         lastLineEl.dataset.kind !== 'mention' && mentionsMe(text);
       if (newlyPinged) { lastLineEl.classList.add('ping'); lastLineEl.dataset.kind = 'mention'; }
       account(lastLineEl, { who, text, merged: true, newlyPinged, wasAtBottom });
@@ -464,13 +468,14 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   const pinged = !sys && !mine && mentionsMe(text);
 
   // Who you are talking to matters here more than it does in a chat app, so
-  // the marker comes from live presence (the server's join flag) rather than
-  // from anything written into the log.
-  const isAgent = kind === 'agent'
-    || (!sys && !mine && !!getPeople().find((p) => p.id === who)?.agent);
+  // the label comes from live presence (the word a speaker declared at the
+  // door, PROTOCOL §6a: any word, shown as said; none, no label) rather than
+  // from anything written into the log. "People" is everyone: nothing here
+  // sorts speakers into kinds.
+  const declared = sys || mine ? null : (getPeople().find((p) => p.id === who)?.declares ?? null);
 
   const line = document.createElement('div');
-  line.className = `line ${sys ? 'sys' : ''} ${mine ? 'me' : ''} ${isAgent ? 'agent' : ''} ${pinged ? 'ping' : ''}`;
+  line.className = `line ${sys ? 'sys' : ''} ${mine ? 'me' : ''} ${declared ? 'declared' : ''} ${pinged ? 'ping' : ''}`;
   line.dataset.kind = sys ? 'system' : pinged ? 'mention' : 'chat';
 
   const now = ts;
@@ -495,11 +500,10 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   const w = document.createElement('span');
   w.className = 'who';
   w.textContent = who;
+  if (typeof declared === 'string' && declared) w.dataset.declares = declared;   // drawn after the name (index.html)
   // Everyone gets their colour, INCLUDING you: the point is that a name looks
-  // the same to every reader, so people can refer to each other by it. Whisper
-  // lines keep their purple — there the colour states the channel (private),
-  // which matters more than which of the two of you is speaking.
-  if (!sys && kind !== 'whisper') w.style.color = colorFor(who);
+  // the same to every reader, so people can refer to each other by it.
+  if (!sys) w.style.color = colorFor(who);
   // click a name to start a mention of them
   if (!sys && !mine) {
     w.onclick = () => { open(); insertAtCursor(`@${who} `); };
@@ -529,7 +533,7 @@ function repaintNames() {
   if (!logEl) return;
   for (const w of logEl.querySelectorAll('.line .who')) {
     const line = w.closest('.line');
-    if (line.classList.contains('sys') || line.classList.contains('whisper')) continue;
+    if (line.classList.contains('sys')) continue;
     w.style.color = colorFor(w.textContent);
   }
   for (const m of logEl.querySelectorAll('.body .mention:not(.me)')) {
@@ -545,10 +549,9 @@ function namesForHighlight() {
 
 function applyFilter(line) {
   const k = line.dataset.kind;
-  const show = filter.startsWith('w:') ? line.dataset.convo === filter.slice(2)
-    : filter === 'all' ? true
-      : filter === 'mentions' ? k === 'mention' || !!line.dataset.convo
-        : k === 'system';
+  const show = filter === 'all' ? true
+    : filter === 'mentions' ? k === 'mention'
+      : k === 'system';
   line.classList.toggle('filtered', !show);
 }
 function repaintFilter() {
@@ -617,7 +620,7 @@ function updateAC() {
       .filter((p) => p.id.toLowerCase().includes(q) && p.id !== CONFIG.name)
       .slice(0, 8);
     return showAC(
-      hits.map((p) => ({ value: `@${p.id}`, label: p.id, hint: p.agent ? 'agent' : 'here' })),
+      hits.map((p) => ({ value: `@${p.id}`, label: p.id, hint: p.declares || 'here' })),
       caret - at[1].length - 1, 'at',
     );
   }
@@ -766,24 +769,16 @@ function sttReport() {
   return 'stt ▸ ' + parts.join(' · ');
 }
 
-// The five commands chat OWNS — they need this module's local state (the
-// whisper tab machinery, the log element, the roster read). Everything else
+// The commands chat OWNS — they need this module's local state (the log
+// element, the roster read). Everything else
 // resolves through the registry's one alias table and rides the bus (§24l
 // R1: the switch here was a second, drifted copy of that table — each side
 // carried aliases the other lacked, and /kick was once listed twice).
 const CHAT_LOCAL = {
-  w(rest, arg) {
-    const to = rest[0];
-    const body = rest.slice(1).join(' ');
-    if (!to) { logChat('*', 'usage: /w <name> <message>'); return; }
-    if (!body) { openConvo(to); return; }          // no message = just open the tab
-    onWhisper(to, body);
-  },
-  r(rest, arg) {
-    if (!lastWhisperFrom) { logChat('*', 'nobody has whispered you yet'); return; }
-    if (!arg) { openConvo(lastWhisperFrom); return; }
-    onWhisper(lastWhisperFrom, arg);
-  },
+  // whisper was removed (R 10-18): speech in a world is public and arrival-only; DMs are planned at the identity level
+  w() { logChat('*', 'whisper was removed: everything said in a world is public (everyone here hears it). To address someone, @mention them.'); },
+  // ghost was removed (R 10-20): nobody is hidden in a world; moderation quiets or removes
+  ghost() { logChat('*', 'ghost was removed: nobody in a world is hidden from it. To quiet someone, /mute them; to remove them, /kick or /ban.'); },
   name(rest, arg) {
     if (!arg) { logChat('*', `you are ${CONFIG.name} — /name <new name> to change it`); return; }
     bus.emit('command', { cmd: 'rename', arg });   // the handler owns the (un)support answer
@@ -809,19 +804,14 @@ const CHAT_LOCAL = {
 };
 
 /** One line, as if typed into the compose box and Entered: history, then a
- *  /command or speech — a whisper while a conversation tab is showing. The
- *  lantern prompt sends through here, so there is ONE send path. */
+ *  /command or speech to the room. The lantern prompt sends through here, so
+ *  there is ONE send path. */
 function submitLine(v) {
   sentHistory.push(v);
   while (sentHistory.length > 50) sentHistory.shift();
   try { localStorage.setItem(HISTORY, JSON.stringify(sentHistory.slice(-20))); } catch { /* full */ }
   if (v.startsWith('/')) { runCommand(v); return; }
-  // In a conversation tab, plain typing is a whisper — you should not have
-  // to prefix every line of a private conversation with a command, and you
-  // REALLY should not be able to say something aloud while looking at a
-  // window that reads like a private one.
-  if (filter.startsWith('w:')) onWhisper(filter.slice(2), v.slice(0, 4000));
-  else onSend(v.slice(0, 4000));
+  onSend(v.slice(0, 4000));
 }
 
 function runCommand(raw) {
@@ -831,6 +821,7 @@ function runCommand(raw) {
   const row = resolveCommand(typed);
   const canon = row?.name ?? typed;
   if (CHAT_LOCAL[canon]) { CHAT_LOCAL[canon](rest, arg); return true; }
+  if (row?.retired) { logChat('*', row.retired); return true; }
   if (row) {
     // aliasAsAction (/pull lever1): typing the alias IS the action
     const a = row.aliasAsAction && typed !== row.name ? `${arg} ${typed}`.trim() : arg;
@@ -853,8 +844,6 @@ export const chat = {
   get isOpen() { return document.activeElement === inputEl; },
   toggle() { frame.toggle(); },
   submit: (text) => { const v = String(text ?? '').trim(); if (v) submitLine(v); },
-  /** who a plain line would reach right now: null = the room, else a whisper target */
-  whisperTarget: () => (filter.startsWith('w:') ? filter.slice(2) : null),
   frame: () => frame,
   // unread accounting is observable so tests can pin it (Sol review, PR#7)
   unreadCounts: () => ({ unread, mentions: unreadMentions }),
@@ -902,17 +891,55 @@ function initSidePane() {
     });
   }
 
-    // DOUBLE-CLICK A NAME -> ITS DM TAB. R, 2026-09-11: "can you double-click on
-    // a name in the People Here pane and have a DM tab show up correctly".
-    // DELEGATED, because paintSide rebuilds this list's innerHTML on every
-    // roster event — per-row handlers would be discarded seconds later. Skips
-    // your own row: there is no whispering yourself.
+    // DOUBLE-CLICK A NAME -> A MENTION of them in the compose box (it opened a DM
+    // tab, R 2026-09-11; DMs left world chat with whisper, R 10-18). DELEGATED,
+    // because paintSide rebuilds this list's innerHTML on every roster event —
+    // per-row handlers would be discarded seconds later. Skips your own row.
     const list = sideEl('list');
+    const nameOf = (row) => row?.dataset?.name ?? null;
     list?.addEventListener('dblclick', (e) => {
       const row = e.target?.closest?.('.who-row');
       if (!row || row.classList.contains('self')) return;
-      const name = row.querySelector('.n')?.textContent?.trim();
-      if (name) openConvo(name);
+      const name = nameOf(row);
+      if (name) mentionPerson(name);
+    });
+    // THE PERSON MENU (research roles S6): one light list, one menu per person, built by people.js from
+    // roles.js personActions — desktop right-click (and the keyboard's menu key), a phone's long-press (500 ms) opens a
+    // bottom sheet, and in a headset a trigger on a row expands an inline strip under it (no popups in VR).
+    // a touch long-press is ALSO the browser's own gesture: around 500 ms Chrome cancels the pointer and fires contextmenu.
+    // That contextmenu (from touch, or during our own pending press) is the phone's long-press: the sheet, never the
+    // desktop menu; whichever comes first opens it (opening twice is harmless).
+    list?.addEventListener('contextmenu', (e) => {
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self')) return;
+      e.preventDefault();
+      const touch = e.pointerType === 'touch' || e.pointerType === 'pen' || !!press || touchAt > performance.now() - 1500;
+      if (press) { clearTimeout(press.t); press = null; }
+      if (touch) personUi.sheetFor(nameOf(row)); else personUi.menuAt(nameOf(row), e.clientX, e.clientY);
+    });
+    list?.addEventListener('keydown', (e) => {
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self')) return;
+      if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) { e.preventDefault(); e.stopPropagation(); const r = row.getBoundingClientRect(); personUi.menuAt(nameOf(row), r.left + 12, r.bottom); }
+    });
+    let press = null, touchAt = -1e9;
+    list?.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') touchAt = performance.now();
+      const row = e.target?.closest?.('.who-row'); if (!row || !personUi || row.classList.contains('self') || e.pointerType === 'mouse') return;
+      const name = nameOf(row), x = e.clientX, y = e.clientY;
+      press = { x, y, name, t0: e.timeStamp, t: setTimeout(() => { press = null; personUi.sheetFor(name); }, LONG_PRESS_MS) };
+    });
+    // a release or a real move abandons the press; a pointercancel doesn't (Chrome sends one at its own long-press,
+    // which is this very gesture, and its contextmenu follows, above; a scroll has already moved the finger past 10 px)
+    const unpress = (e) => { if (!press || e.type === 'pointercancel') return; if (e.type === 'pointermove' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
+      // held long enough by the events' own clock: a long-press even when a busy page ran the timer late (the phone probe)
+      const held = e.type === 'pointerup' && e.timeStamp - press.t0 >= LONG_PRESS_MS, name = press.name;
+      clearTimeout(press.t); press = null; if (held) personUi.sheetFor(name); };
+    for (const ev of ['pointerup', 'pointercancel', 'pointermove']) list?.addEventListener(ev, unpress);
+    list?.addEventListener('click', (e) => {
+      if (!personUi?.presenting?.()) return;
+      if (e.target?.closest?.('.pm-strip')) return;   // a press inside the open strip is the strip's
+      const row = e.target?.closest?.('.who-row'); if (!row || row.classList.contains('self')) return;
+      const name = nameOf(row);
+      stripName = stripName === name ? null : name; paintSide(true);
     });
   const grip = sideEl('grip');
   grip?.addEventListener('pointerdown', (e) => {
@@ -976,25 +1003,36 @@ function applySide() {
   if (head) { head.dataset.chev = chev; head.title = 'hide people here'; }
   paintSide();
 }
-function paintSide() {
+const LONG_PRESS_MS = 500;
+let stripName = null;   // the person whose inline action strip is open (VR), or null
+function paintSide(force = false) {
   const side = sideEl('side');
   if (!side || !sideSt.open) return;
+  // an open strip holds a form someone is filling in: the 2 s repaint mustn't wipe it (a roster change still does)
+  if (stripName && !force && sideEl('list')?.querySelector('.pm-strip')?.childElementCount) return;
   const people = getPeople();
   const others = people.filter((p) => !p.me).length;
   sideEl('head').textContent =
     others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
-  sideEl('list').innerHTML = people.length
-      // A BUTTON, not a div. _contentClaims (frames.js:80) exempts only
+  const html = people.length
+      // A BUTTON, not a div. _contentClaims (windows.js:80) exempts only
       // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface — so a
       // <div> row was swallowed by root's pointerdown and the dblclick never
       // fired. R, 2026-09-11: "the Chat panel treats names in the roster as a
       // grab-and-move-the-pane surface". The ∃ menu's .mrow is a <button> for
       // exactly this reason; this now matches that vocabulary.
-      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}">
+      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}" data-name="${esc(p.id)}"${p.me || !personUi ? '' : ' aria-haspopup="menu"'}>
           <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
-          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
-          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>`).join('')
+          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>${personUi ? personUi.badgeHtml(p.id, esc) : ''}${personUi?.muted?.(p.id) ? '<span class="who-muted" title="muted by a moderator" aria-label="muted">⊘</span>' : ''}
+          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>${stripName === p.id && personUi ? '<div class="pm-strip" data-for="' + esc(p.id) + '"></div>' : ''}`).join('')
     : '<div class="who-empty">nobody yet</div>';
+  // only when it changed: the 2 s repaint used to rebuild the list every time, which reset hover and keyboard focus on
+  // the rows and detached the row under a pointer mid-press (a right-click or long-press could land on a dead node)
+  const listEl = sideEl('list');
+  if (listEl._html === html && !force) return;
+  listEl.innerHTML = html; listEl._html = html;
+  const strip = stripName && listEl.querySelector('.pm-strip');
+  if (strip) personUi.stripFor(stripName, strip);
 }
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1109,15 +1147,15 @@ function sizeInput() {
 }
 function setInput(v) { if (!inputEl) return; inputEl.value = v; sizeInput(); }
 
-export function initChat({ send, whisper, typing, people }) {
+export function initChat({ send, typing, people, person }) {
+  personUi = person ?? null;
   initAttention({ bus, me: () => CONFIG.name, scope: () => CONFIG.world, mentions: mentionsMe });
   onSend = send;
-  onWhisper = whisper ?? (() => {});
   onTyping = typing ?? (() => {});
   getPeople = people ?? (() => []);
 
   frame = makeFrame('chat', {
-    title: 'chat',
+    title: 'Chat',
     x: 10, y: -10, w: 390, h: 200, minW: 240, minH: 100,
       className: 'chat-frame',
       // THE ARROWS NEVER RE-EVALUATED ON A RESIZE. paintArrows compares
@@ -1125,9 +1163,9 @@ export function initChat({ send, whisper, typing, people }) {
       // with nothing repainting the strip — so a panel dragged narrow kept the
       // arrows hidden and its overflowing tabs unreachable (R, 2026-09-11: "the
       // side-scroll buttons in the chat panel are missing, so you can't go to a
-      // tab that's off-screen because the panel is too narrow"). frames.js has
-      // called onResize(w, h) all along (frames.js:437); chat simply never
-      // passed one. Debounced like emotebar's (emotebar.js:53).
+      // tab that's off-screen because the panel is too narrow"). windows.js has
+      // called onResize(w, h) all along (windows.js:437); chat simply never
+      // passed one. Debounced like actionbar.js's (actionbar.js:53).
       onResize: () => { placeGear(); clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
@@ -1164,7 +1202,7 @@ export function initChat({ send, whisper, typing, people }) {
   // Hand the captures to whoever holds this frame. ui.js's Tab handler needs
   // these exact nodes and must not re-derive them: `:scope >` bounds DEPTH but
   // not ORDER, so a mod PREPENDING a .chat-cols into this body wins a class
-  // lookup — and that door is real (mods.js:88 hands out makeFrame, frames.js
+  // lookup — and that door is real (mods.js:88 hands out makeFrame, windows.js
   // returns the LIVE chat frame for a bare id, and a local mod is an in-page
   // ES module with the whole document). The frame object is the seam: both
   // sides already hold it via getFrame('chat'), so neither file imports the
@@ -1210,7 +1248,7 @@ export function initChat({ send, whisper, typing, people }) {
     const now = performance.now();
     if (inputEl.value.trim() && now - lastTypingSent > 2500) {
       lastTypingSent = now;
-      onTyping(filter.startsWith('w:') ? filter.slice(2) : null);
+      onTyping(null);
     }
   });
   inputEl.addEventListener('blur', () => setTimeout(closeAC, 120));
@@ -1273,84 +1311,20 @@ export function initChat({ send, whisper, typing, people }) {
   return chat;
 }
 
-// ---------------------------------------------------------------- whispers
-// A whisper shows in BOTH the conversation tab and 'all'. WoW puts whispers
-// inline in the main window by default for a good reason: a private message
-// you never see because you were on another tab is worse than no tabs at all.
-// The tab is for following a thread, not for hiding it.
-
-export function logWhisper(msg) {
-  const { from, to, text, echo } = msg;
-  attentionWhisper(msg);
-  const other = echo ? to : from;
-  if (!echo) lastWhisperFrom = from;
-  ensureConvo(other);
-
-  const line = document.createElement('div');
-  line.className = `line whisper ${echo ? 'me' : 'ping'}`;
-  line.dataset.kind = 'chat';
-  line.dataset.convo = other;
-
-  const d = new Date();
-  const t = document.createElement('span');
-  t.className = 't';
-  t.textContent = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  const w = document.createElement('span');
-  w.className = 'who';
-  w.textContent = echo ? `to ${to}` : `${from}`;
-  const b = document.createElement('span');
-  b.className = 'body';
-  b.append(renderBody(text, namesForHighlight()));
-  line.append(t, w, b);
-
-  lastAuthor = null;                 // a whisper breaks a grouping run
-  applyFilter(line);
-  const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
-  logEl.appendChild(line);
-  trimLog();
-
-  if (!echo) {
-    const c = convos.get(other);
-    if (filter !== `w:${other}`) { c.unread++; paintTabs(); }
-    bus.emit('pinged', { who: from, text });
-  }
-  if (atBottom) scrollToEnd(); else { unread++; paintUnread(); }
-}
-
-function ensureConvo(name) {
-  if (!convos.has(name)) { convos.set(name, { unread: 0 }); paintTabs(); }
-  return convos.get(name);
-}
-export function openConvo(name) {
-  ensureConvo(name);
+// ---------------------------------------------------------------- mention a person
+/** Open chat with `@name ` at the cursor: the person menu's Mention, a double-click in People Here, the name card's
+ *  button. A public line that names them (their attention ping), never a private one: world chat has no private channel. */
+export function mentionPerson(name) {
+  if (!name) return;
   chat.open();
-  setFilter(`w:${name}`);
+  insertAtCursor(`@${name} `);
   inputEl.focus();
 }
 
-// A DRAFT BELONGS TO ITS DESTINATION (antra-tess, #185 rereview B3, 2026-09-12).
-// Closing or leaving a conversation tab changed `filter` and the placeholder but
-// left inputEl.value untouched, so a half-typed private line stayed in the box
-// while the destination silently became PUBLIC — reproduced end to end: the
-// canary went out as {"verb":"say","args":{"text":"CANARY_PRIVATE_DRAFT_0912"}}.
-// The send path at Enter already picks whisper-vs-say from `filter`; the draft
-// simply had no owner. Park each destination's draft on the way out and restore
-// the incoming one, so closing a tab is non-destructive and switching tabs never
-// re-points words at someone they were not written for.
-const drafts = new Map();
-
 function setFilter(f) {
-  if (inputEl) {
-    if (inputEl.value) drafts.set(filter, inputEl.value); else drafts.delete(filter);
-    setInput(drafts.get(f) ?? '');
-  }
   filter = f;
-  if (f.startsWith('w:')) { const c = convos.get(f.slice(2)); if (c) c.unread = 0; }
   paintTabs();
   repaintFilter();
-  inputEl.placeholder = f.startsWith('w:')
-    ? `whisper to ${f.slice(2)}…`
-    : 'say something…  @ to mention · / for commands';
 }
 
 let _arrowT = null;   // debounce for the resize-driven tab repaint
@@ -1360,9 +1334,8 @@ function paintTabs() {
   const bar = tabsEl;
   if (!bar) return;
   bar.innerHTML = '';
-  // The strip carries `all · mentions · system` PLUS one tab per open DM, so
-  // tabs now size to their labels and the row SCROLLS instead of every tab
-  // getting thinner as conversations open (they shared the width via flex:1).
+  // The strip carries `all · mentions · system`; tabs size to their labels and
+  // the row SCROLLS on a narrow panel instead of every tab getting thinner.
   // R, 2026-09-11: "squash the words together at the top to make room for more
   // tabs but still leave some buffer so they don't get too close, left/right
   // arrow keys at either side of the menu if you need to side-scroll and see
@@ -1399,60 +1372,18 @@ function paintTabs() {
       try { new ResizeObserver(() => paintArrows()).observe(scroll); } catch { /* older engine */ }
     }
   bar.append(left, scroll, right);
-  const mk = (key, label, unread = 0, closable = false) => {
-  const b = document.createElement('button');
-  b.className = filter === key ? 'on' : '';
-    // A tab is a label plus (for DMs) a close glyph; the underline that marks
-    // the active one is CSS, on .chat-tabs button.on.
+  const mk = (key, label) => {
+    const b = document.createElement('button');
+    b.className = filter === key ? 'on' : '';
     const lbl = document.createElement('span');
-    lbl.textContent = label + (unread ? ` ${unread}` : '');
+    lbl.textContent = label;
     b.append(lbl);
-  if (unread) b.classList.add('has-unread');
-  b.onclick = () => setFilter(key);
-  if (closable) {
-      // A VISIBLE CLOSE. Right-click already worked and announced itself
-      // only in a title attribute — R, 2026-09-11: "there should be a way of
-      // getting rid of extra tabs you don't want." Both routes now; the x
-      // stops propagation so closing never also selects the tab.
-      const x = document.createElement('span');
-      x.className = 'tabx'; x.textContent = '\u00d7';
-      x.title = `close ${key.slice(2)}`;
-      x.onclick = (e) => {
-        e.stopPropagation(); e.preventDefault();
-        // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
-        // lived in setFilter, which the line below only reaches when the tab being
-        // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
-        // skipped it entirely. chat-log-test caught that fifteen minutes after I
-        // called B3 verified — the hand-probe closed the tab it was looking at, so it
-        // structurally could not reach this branch. (antra-tess #185 B3)
-        drafts.delete(key);
-        if (filter === key && inputEl) setInput('');
-        convos.delete(key.slice(2));
-        if (filter === key) setFilter('all'); else paintTabs();
-      };
-      b.classList.add('has-x');   // the tab must MAKE ROOM for the glyph (see .has-x)
-      b.append(x);
-    b.oncontextmenu = (e) => {
-      e.preventDefault();
-      // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
-      // lived in setFilter, which the line below only reaches when the tab being
-      // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
-      // skipped it entirely. chat-log-test caught that fifteen minutes after I
-      // called B3 verified — the hand-probe closed the tab it was looking at, so it
-      // structurally could not reach this branch. (antra-tess #185 B3)
-      drafts.delete(key);
-      if (filter === key && inputEl) setInput('');
-      convos.delete(key.slice(2));
-      if (filter === key) setFilter('all'); else { paintTabs(); }
-    };
-    b.title = 'right-click to close this conversation';
-  }
+    b.onclick = () => setFilter(key);
     scroll.appendChild(b);
   };
   mk('all', 'all');
   mk('mentions', 'mentions');
   mk('system', 'system');
-  for (const [name, c] of convos) mk(`w:${name}`, `@${name}`, c.unread, true);
   const who = document.createElement('button');
   who.type = 'button'; who.className = 'chat-who';
   who.onclick = (e) => { e.stopPropagation(); toggleSide(); };
@@ -1461,7 +1392,7 @@ function paintTabs() {
   paintWho();
   paintArrows();
   // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
-  // actually reading: R's screenshot shows `system| @H` — the open whisper
+  // actually reading: R's screenshot shows `system| @H` — the open tab
   // clipped to two characters while `all` and `mentions` held the full left.
   // R, 2026-09-11: "should probably always preferentially display the tab that
   // it's on ... probably 'mentions' and 'all' fully off-screen."
@@ -1517,7 +1448,7 @@ bus.on('pinged', () => {
 // Honest about the gap in its title.
 const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
 export const chatXRPanel = {
-  id: 'chat', title: 'chat',
+  id: 'chat', title: 'Chat',
   fields: () => [
     ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
                       : [{ t: 'info', label: '·', value: 'nothing said yet' }]),

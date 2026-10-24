@@ -8,9 +8,9 @@
 // one world's log, every one of which replays for every future joiner. The
 // log is history; trying things out is not.
 
+import { sendOps } from './editwrites.js';
 import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
-import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow } from './rows.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
@@ -26,10 +26,8 @@ import { modelQuality, dialModelQuality } from './realize/models.js';
 const SLIDERS = [
   ['hours', 'time', 0, 24, 0.1, 12],
   ['rate', 'rate', 0, 48, 0.5, 0],
-  ['azimuth', 'azim', 0, 360, 5, 180],
-  ['sun', 'sun', 0, 2.5, 0.05, 1],
-  ['ambient', 'ambnt', 0, 2.5, 0.05, 1],
-  ['fill', 'fill', 0, 2.5, 0.05, 1],
+  ['azimuth', 'azim', 0, 360, 5, 180],   // shown in degrees, stored in radians (shape audit 10-16)
+  ['ambient', 'ambnt', 0, 2.5, 0.05, 1],   // sun and fill were cut: knobs on the renderer's own rig, never stored
   ['exposure', 'expos', 0.3, 1.8, 0.05, 1],
   ['fog', 'fog', 0, 3, 0.05, 1],
 ];
@@ -111,8 +109,9 @@ export function paintSky(body) {
     const a = { ...skyArgs(), ...local };
     for (const [key, , , , , dflt] of SLIDERS) {
       const v = Number(inputs[key].value);
-      if (key === 'hours' || key === 'azimuth' || v !== dflt) a[key] = v;
+      if (key === 'hours' || key === 'azimuth' || v !== dflt) a[key] = key === 'azimuth' ? v * Math.PI / 180 : v;
     }
+    delete a.world; delete a.sun; delete a.fill;   // cut from the sky (shape audit 10-16): the door refuses them
     return a;
   };
 
@@ -316,7 +315,7 @@ export function paintSky(body) {
   const { row: ckRow, select: ck } = selectRow('clock',
     [['', 'authored (slider)']], '', null);
   const fillClocks = () => defsRegistry().then((reg) => {
-    const want = skyArgs().clock === 'real' ? (skyArgs().tz ?? '') : ck.value;
+    const sa = skyArgs(); const want = typeof sa.tz === 'string' ? sa.tz : sa.clock === 'real' ? (sa.tz ?? '') : ck.value;   // a tz present is the wall clock (shape audit 10-16)
     ck.textContent = '';
     ck.appendChild(new Option('authored (slider)', ''));
     for (const c of Object.values(reg.skyClocks ?? {})) {
@@ -337,7 +336,7 @@ export function paintSky(body) {
   const syncClockUi = () => {
     // the clock the commit will SEND, not what the select shows: while you have unsaved edits a remote clock change
     // doesn't reach the select (review 3, L4)
-    const real = gather().clock === 'real';
+    const g = gather(); const real = g.clock === 'real' || (typeof g.tz === 'string' && g.clock === undefined && g.tz !== '');
     for (const k of ['hours', 'rate']) {
       const input = inputs[k], row = input?.parentNode; if (!input || !row) continue;
       input.disabled = real;
@@ -370,7 +369,7 @@ export function paintSky(body) {
   commit.textContent = '✓ log to world';
   commit.title = 'share this sky with everyone, permanently';
   commit.onclick = () => {
-    sendVerb('sky', gather());
+    sendOps([{ verb: 'sky', args: gather() }], { what: 'the sky', expect: false });
     commit.classList.remove('dirty');
     commit.textContent = '✓ logged';
     setTimeout(() => { commit.textContent = '✓ log to world'; }, 1200);
@@ -386,7 +385,7 @@ export function paintSky(body) {
     for (const [key, , , , , dflt] of SLIDERS) {
       // under a real clock hours/rate live in dormantRated (#65): load them (the rows are hidden) as what the world
       // would return to
-      inputs[key].value = a[key] ?? a.dormantRated?.[key] ?? dflt;
+      inputs[key].value = key === 'azimuth' ? (typeof a.azimuth === 'number' ? +(a.azimuth * 180 / Math.PI).toFixed(1) : dflt) : (a[key] ?? a.dormantRated?.[key] ?? dflt);
       inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;
     }
     if (a.weather) wx.value = a.weather;
@@ -394,8 +393,9 @@ export function paintSky(body) {
     if (a.world) wl.value = a.world;
     // the option list is def-fed; fillClocks appends a raw-tz option when the
     // world's committed clock is one the def no longer lists
-    ck.value = a.clock === 'real' ? (a.tz ?? '') : '';
-    if (a.clock === 'real' && ck.value !== (a.tz ?? '')) fillClocks();
+    const realTz = typeof a.tz === 'string' ? a.tz : a.clock === 'real' ? 'America/Los_Angeles' : '';   // a tz present is the wall clock
+    ck.value = realTz;
+    if (realTz && ck.value !== realTz) fillClocks();
     syncClockUi();
     syncBasicOnly();
     syncGrassRow();

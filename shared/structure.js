@@ -579,6 +579,66 @@ export function derivePortals(level, rooms) {
 
 // ---- the plan ---------------------------------------------------------------
 
+/** One level's COLLISION boxes, grid-local: the floor tiles, the solid wall
+ *  runs, what's left of an apertured segment, the corner fills and a diagonal's
+ *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority.js
+ *  reads collisionBoxes) — one derivation, so the browser's colliders and the
+ *  door's walls can't disagree about where a wall is. */
+function levelBoxes(level, g) {
+  const boxes = [];
+  const floorY = level.y + g.slabT;
+  for (const [k, mat] of level.tiles) {
+    const [x, z] = k.split(',').map(Number);
+    boxes.push(tileBox(x, z, mat, g, level.y));
+  }
+  // solid stretches collide as one box per run; apertured segments keep their
+  // own decomposition, because a hole is what makes them a different shape
+  const half = g.wallT / 2;
+  for (const run of wallRuns(level, g)) {
+    const [a0, a1] = runSpan(run, level, g);
+    boxes.push(edgeSpan(run.axis, run.cross * g.tile, a0, a1, -half, half,
+      floorY, floorY + g.wallH, run.mat, 'wall'));
+  }
+  for (const [k, edge] of level.walls) {
+    const ap = level.apertures.get(k);
+    if (!ap) continue;
+    boxes.push(...wallBoxes(edge, ap, g, floorY));
+  }
+  boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
+  // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
+  // axis-aligned boxes along the line. The collider entry carries ONE yaw
+  // shared by every box of a building, so a genuinely rotated box would mean
+  // changing that contract; stepping keeps the existing machinery and the
+  // steps (~18cm apart, boxes wider than that) are well under a 32cm body
+  // radius, so nothing can slip between them. Visually the wall is a true
+  // mitred diagonal — this approximation is only what the body feels.
+  for (const [k, e] of level.walls) {
+    if (e.axis < 2) continue;
+    const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
+    const open = ['door', 'arch'].includes(level.apertures.get(k));
+    const N = 8, r = g.wallT * 0.8;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
+      boxes.push({
+        x0: cx - r, x1: cx + r,
+        y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
+        y1: floorY + g.wallH,
+        z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
+      });
+    }
+  }
+  return boxes;
+}
+
+/** Every collision box of a structure (all levels), grid-local, without the
+ *  visual derivation (rooms, parts, sweeps): what a headless reader that only
+ *  needs to know where the walls are (the door) asks for. */
+export function collisionBoxes(data) {
+  const g = normalize(data);
+  return g.levels.flatMap((level) => levelBoxes(level, g));
+}
+
 /** The whole derivation for one structure component: what to draw, what to
  *  collide, what the rooms are, what joins them.
  *
@@ -596,47 +656,7 @@ export function planStructure(data) {
     // The walk surface: the top of this level's foundation. Walls rise from it,
     // apertures are measured from it, and a body stands on it.
     const floorY = level.y + g.slabT;
-    for (const [k, mat] of level.tiles) {
-      const [x, z] = k.split(',').map(Number);
-      boxes.push(tileBox(x, z, mat, g, level.y));
-    }
-    // solid stretches collide as one box per run; apertured segments keep their
-    // own decomposition, because a hole is what makes them a different shape
-    const half = g.wallT / 2;
-    for (const run of wallRuns(level, g)) {
-      const [a0, a1] = runSpan(run, level, g);
-      boxes.push(edgeSpan(run.axis, run.cross * g.tile, a0, a1, -half, half,
-        floorY, floorY + g.wallH, run.mat, 'wall'));
-    }
-    for (const [k, edge] of level.walls) {
-      const ap = level.apertures.get(k);
-      if (!ap) continue;
-      boxes.push(...wallBoxes(edge, ap, g, floorY));
-    }
-    boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
-    // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
-    // axis-aligned boxes along the line. The collider entry carries ONE yaw
-    // shared by every box of a building, so a genuinely rotated box would mean
-    // changing that contract; stepping keeps the existing machinery and the
-    // steps (~18cm apart, boxes wider than that) are well under a 32cm body
-    // radius, so nothing can slip between them. Visually the wall is a true
-    // mitred diagonal — this approximation is only what the body feels.
-    for (const [k, e] of level.walls) {
-      if (e.axis < 2) continue;
-      const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
-      const open = ['door', 'arch'].includes(level.apertures.get(k));
-      const N = 8, r = g.wallT * 0.8;
-      for (let i = 0; i <= N; i++) {
-        const t = i / N;
-        const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
-        boxes.push({
-          x0: cx - r, x1: cx + r,
-          y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
-          y1: floorY + g.wallH,
-          z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
-        });
-      }
-    }
+    boxes.push(...levelBoxes(level, g));
     const rooms = deriveRooms(level, g);
     levels.push({
       y: floorY, base: level.y, rooms, portals: derivePortals(level, rooms),

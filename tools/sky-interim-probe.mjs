@@ -6,7 +6,7 @@
 //   bun tools/sky-interim-probe.mjs
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ owner: 'interim', env: { TRUST_NAMES: '1' } });   // the page owns staging, so its @world writes are admitted
 const { browser, page } = await launchBrowser(); const pg = await page();
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 const lines = []; const T0 = Date.now();
@@ -18,7 +18,7 @@ try {
   await pg.evaluate(() => localStorage.setItem('ew-cloud-quality', 'off'));
   await pg.goto(`${world.origin}/?world=staging&name=interim&key=${world.key}&lite=0`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 120000 });
-  await pg.evaluate(async () => { const { sendVerb } = await import('./lib/net.js'); sendVerb('sky', { hours: 17, rate: 22.5, clouds: 'cumulus' }); });
+  await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 17, rate: 22.5, clouds: 'cumulus' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   await pg.waitForTimeout(1500);
   await pg.reload({ waitUntil: 'domcontentloaded' });
   const t1 = Date.now();
@@ -54,11 +54,11 @@ try {
   check('a baked tier never runs the full-quad env re-bake (the synchronous giant-program caller)', !lines.some((l) => /env re-bake/.test(l)), lines.filter((l) => /env re-bake/.test(l)).slice(0, 2).join(' | '));
   check('the real sky replaces it: gradient gone, nothing left held', up && !after.interim && !after.held, JSON.stringify(after));
   // M3: the off tier under cloudy weather never pins a cloud branch
-  await pg.evaluate(async () => { const { sendVerb } = await import('./lib/net.js'); sendVerb('sky', { hours: 12, rate: 0, clouds: 'cumulus', weather: 'overcast' }); });
+  await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 12, rate: 0, clouds: 'cumulus', weather: 'overcast' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   await pg.waitForTimeout(4000);
   const pinned = await pg.evaluate(async () => (await import('./lib/sky_baked.js')).bakedCloudsPinned());
   check('off tier under overcast: the bake has no cloud branch', pinned === false, String(pinned));
-  await pg.evaluate(async () => { const { sendVerb } = await import('./lib/net.js'); sendVerb('sky', { hours: 12, rate: 0, clouds: 'cumulus', weather: 'clear' }); });
+  await pg.evaluate(async () => { const { sendRequest } = await import('./lib/net.js'); const r = await sendRequest('set', { id: '@world', component: 'sky', value: { hours: 12, rate: 0, clouds: 'cumulus', weather: 'clear' }, merge: true }); if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`); });
   await pg.waitForTimeout(3000);
   // M2: a quality flip never leaves the scene skyless during teardown + rebuild (gradient or baked dome at every sample).
   // Sampled per drawn frame through the teardown/module window (3 s), then the page leaves before low's cloud bake (a software

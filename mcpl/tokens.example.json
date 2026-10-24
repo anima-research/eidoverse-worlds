@@ -1,4 +1,4 @@
 {
   "dev-token": { "id": "claude", "name": "Claude", "world": "commons" },
-  "visitor-token": { "id": "visitor", "name": "Visitor", "world": "commons" }
+  "visitor-token": { "id": "player", "name": "Visitor", "world": "commons" }
 }

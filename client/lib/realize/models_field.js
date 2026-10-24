@@ -9,18 +9,21 @@
 // flora_field.js / emitter_field.js.
 
 import { P } from '../scheduler.js';
+import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
+import { kindOf, isMeshBag } from '../../../shared/protocol/kind.js';
+export { kindOf, isMeshBag };
 
 /** What the realizer needs to know about a realized id to detect identity
- *  drift. kind: 'model' | 'light'; lib only meaningful for models.
- *  @typedef {{ kind: 'model'|'light', lib?: string }} RealizedView */
+ *  drift. kind: kindOf's word; lib only meaningful for models.
+ *  @typedef {{ kind: 'model'|'mesh'|'light'|'empty', lib?: string }} RealizedView */
 
 /** Diff folded entities against the realized view.
  *
  *  Identity rules:
  *  - an id in state but not realized → create
  *  - realized but gone from state → retire
- *  - realized as one kind, folded as the other (a `light` verb landing on a
- *    model id, or a spawn replacing a light — the id namespace is flat) →
+ *  - realized as one kind, folded as another (a light component landing on an
+ *    Empty's id, or a model replacing a light — the id namespace is flat) →
  *    rebuild (retire + create)
  *  - a model whose `lib` changed → rebuild. The fold OVERWRITES a same-id
  *    spawn (that is what the reference fold does; the realizer projects
@@ -33,20 +36,41 @@ import { P } from '../scheduler.js';
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
+/** (kindOf — what the realizer builds for a folded entity — is shared/protocol/kind.js's, one answer for every reader;
+ *  a thing with both a model and a mesh exists only by carry and is its model, review S3.)
+ *  The registered `mesh` component (shared/protocol/componentspec.js), read as a client reads it: a malformed value is
+ *  absent (the thing is an Empty), never a throw. A field outside its range is clamped to it; a capsule is at least its
+ *  diameter tall (the authority's meshSize says the same). */
+export const MESH_SHAPES = COMPONENTS.mesh.enums.shape;
+const { min: SMIN, max: SMAX } = COMPONENTS.mesh.ranges.size;
+export function readMesh(m) {
+  if (!isMeshBag(m)) return null;
+  const n = (x) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(SMAX, Math.max(SMIN, x)) : 1);
+  const size = Array.isArray(m.size) && m.size.length === 3 ? m.size.map(n) : [1, 1, 1];
+  if (m.shape === 'capsule') size[1] = Math.max(size[0], size[1]);
+  return { shape: m.shape, size };
+}
+/** One string per distinct geometry: a changed shape or size is a rebuild (planReconcile), as a changed lib is. */
+export const meshKeyOf = (ent) => { const m = readMesh(ent?.mesh); return m ? `${m.shape}|${m.size.join(',')}` : null; };
+
+/** Switched off (componentspec `disabled`), itself or anything it hangs under: not loaded, not drawn, no collider (R 10-11:
+ *  "present in the world as links, but not downloaded… until someone re-enables it"). Same rule as the engine's offChain. */
+export function offIn(stEntities, id) { for (let k = id, n = 0; k && n < 33; k = stEntities[k]?.parent?.to, n++) if (stEntities[k]?.disabled === true) return true; return false; }
+
 export function planReconcile(stEntities, realized) {
   const create = [];
   const retire = [];
   for (const [id, view] of realized) {
     const ent = stEntities[id];
-    if (!ent) { retire.push(id); continue; }
-    const foldedKind = ent.kind === 'light' ? 'light' : 'model';
-    if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib)) {
+    if (!ent || offIn(stEntities, id)) { retire.push(id); continue; }
+    const foldedKind = kindOf(ent);
+    if (view.kind !== foldedKind || (foldedKind === 'model' && view.model !== ent.model) || (foldedKind === 'mesh' && view.mesh !== meshKeyOf(ent))) {
       retire.push(id);
       create.push({ id, ent });
     }
   }
   for (const [id, ent] of Object.entries(stEntities)) {
-    if (!realized.has(id)) create.push({ id, ent });
+    if (!realized.has(id) && !offIn(stEntities, id)) create.push({ id, ent });
   }
   return { create, retire };
 }
@@ -70,14 +94,11 @@ export function bandForDistance(d) {
  *  that cannot execute yet simply stays visible in the fold until both ends
  *  are live. */
 export function mountsTouching(stEntities, touchedId, childrenOf = null) {
-  // `childrenOf` (parent id -> Set of child ids, the hosted half's
-  // fold-parent index, §16.2.C) answers the carrier direction in
-  // O(children) instead of O(world); membership is identical to the scan
-  // below by construction (the index is maintained on every parent write).
+  // `childrenOf(id)` (the fold's own index, world.js) answers the carrier direction in O(children) instead of
+  // O(world); membership is the scan's below by construction (the index is kept at every ingest).
   if (childrenOf) {
     const out = stEntities[touchedId]?.parent ? [touchedId] : [];
-    const kids = childrenOf.get(touchedId);
-    if (kids) for (const cid of kids) out.push(cid);
+    for (const cid of childrenOf(touchedId)) out.push(cid);
     return out;
   }
   const out = [];
@@ -105,5 +126,7 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
  *  @param {any} ent   the folded entity record
  *  @param {boolean} mounted  whether the scene object rides a carrier */
 export function collisionOwnedElsewhere(ent, mounted = false) {
-  return !!mounted || !!ent?.comp?.structure || ent?.comp?.collision?.enabled === false;
+  // a collision switched off has no box either: physics {kind: 'none'} (the authority's sim skips it too, simlayer.js), or
+  // a stored collision {enabled: false} from before physics replaced it (house I243)
+  return !!mounted || !!ent?.structure || ent?.physics?.kind === 'none' || ent?.collision?.enabled === false;
 }

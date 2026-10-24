@@ -37,7 +37,7 @@ import { state, onWorldChange } from '../state.js';
 import { prepareObject } from '../materials.js';
 import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
-import { planStructure, makeShader } from '../../shared/structure.js';
+import { planStructure, makeShader } from '../../../shared/structure.js';
 import { defsRegistry } from '../defs.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from
@@ -184,14 +184,23 @@ export function setCutaway(on) {
 export const isCutaway = () => cutaway;
 
 /** The structure component, or null for entities that aren't buildings. */
-const structOf = (ent) => (ent?.comp && typeof ent.comp === 'object' ? ent.comp.structure ?? null : null);
+const structOf = (ent) => (ent && typeof ent === 'object' ? ent.structure ?? null : null);
 
 const transformOf = (ent) => ({
   position: Array.isArray(ent?.pos) && ent.pos.length === 3 && ent.pos.every(Number.isFinite)
     ? ent.pos : [0, 0, 0],
   yaw: Number.isFinite(ent?.yaw) ? ent.yaw : 0,
   scale: Number.isFinite(ent?.scale) && ent.scale > 0 ? ent.scale : 1,
+  // the drawn group takes the whole rotation and per-axis scale (view.js gives q and scale3); the collider boxes stay
+  // yaw and one scale (fitStructureBoxes' frame)
+  q: Array.isArray(ent?.q) && ent.q.length === 4 && ent.q.every(Number.isFinite) ? ent.q : null,
+  scale3: Array.isArray(ent?.scale3) && ent.scale3.length === 3 && ent.scale3.every((x) => Number.isFinite(x) && x > 0) ? ent.scale3 : null,
 });
+function poseGroup(group, tf) {
+  group.position.set(...tf.position);
+  if (tf.q) group.quaternion.set(...tf.q); else group.rotation.set(0, tf.yaw, 0);
+  if (tf.scale3) group.scale.set(...tf.scale3); else group.scale.setScalar(tf.scale);
+}
 
 /** Build the scene object for one plan. Geometry only — no scene insertion, no
  *  collider registration, so a throw anywhere in here leaks nothing. */
@@ -333,9 +342,7 @@ function realize(id, ent) {
     // Geometry is still right; only the pose can have moved. Colliders must be
     // re-declared even so — their boxes are entity-local but their bucket
     // registration is world-space.
-    prev.group.position.set(...tf.position);
-    prev.group.rotation.y = tf.yaw;
-    prev.group.scale.setScalar(tf.scale);
+    poseGroup(prev.group, tf);
     fitStructureBoxes(id, prev.plan.boxes, tf);
     bus.emit('entity', { id, kind: 'collider' });
     return;
@@ -343,9 +350,7 @@ function realize(id, ent) {
 
   const plan = planStructure(data);
   const { group, geoms } = buildGroup(plan);
-  group.position.set(...tf.position);
-  group.rotation.y = tf.yaw;
-  group.scale.setScalar(tf.scale);
+  poseGroup(group, tf);
 
   if (prev) { scene.remove(prev.group); for (const g of prev.geoms) g.dispose(); }
   scene.add(group);
@@ -373,34 +378,20 @@ export function reconcileStructures() {
   for (const id of [...tracked.keys()]) if (!seen.has(id)) retire(id);
 }
 
-function onEntry(entry) {
-  const { verb, args = {} } = entry;
-  const id = args.id;
-  if (!id) return;
+function onChange({ id, what, comp }) {
   try {
-    switch (verb) {
-      case 'comp':
-        // Only our own type matters — but a `structure` comp arriving on an
-        // entity we don't track yet is exactly how a building is born.
-        if (args.type === 'structure') realize(id, state.st.entities[id]);
-        break;
-      case 'spawn':
-        // A same-id spawn REPLACES the entity wholesale (the fold's documented
-        // behaviour), which drops the comp bag with it. Re-deriving from state
-        // rather than assuming keeps us honest either way.
-        realize(id, state.st.entities[id]);
-        break;
-      case 'place':
-        if (tracked.has(id)) realize(id, state.st.entities[id]);
-        break;
-      case 'remove':
-        retire(id);
-        break;
+    switch (what) {
+      // a `structure` comp arriving on a thing we don't track yet is exactly how a building is born
+      case 'comp': if (comp === 'structure') realize(id, state.st.entities[id]); break;
+      // re-derive from state rather than assume (a re-born thing may have dropped its structure)
+      case 'born': realize(id, state.st.entities[id]); break;
+      case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]); break;
+      case 'gone': retire(id); break;
     }
-  } catch (e) { report(`realize structure ${verb}`, e); }
+  } catch (e) { report(`realize structure ${what}`, e); }
 }
 
-const PORTED = new Set(['spawn', 'place', 'remove', 'comp']);
+
 
 /** Wire the realizer to state. Called once from main.js, beside the others. */
 export function initStructureRealizer() {
@@ -422,7 +413,7 @@ export function initStructureRealizer() {
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') reconcileStructures();
     else if (ev.type === 'reset') { for (const id of [...tracked.keys()]) retire(id); }
-    else if (ev.type === 'entry' && PORTED.has(ev.entry.verb)) onEntry(ev.entry);
+    else if (ev.type === 'change') onChange(ev);
   });
   return true;
 }

@@ -15,7 +15,7 @@
 //     busy work record cannot hold the others back).
 //   - GPU work counts in UNITS, not ms (GPU timers answer frames late): at most one gpu unit per frame.
 //
-// The frame is the render loop's: frame.js calls tick() first thing, and a yield (nextFrame) is window rAF — which
+// The frame is the render loop's: frameloop.js calls tick() first thing, and a yield (nextFrame) is window rAF — which
 // xr_frame_clock.js routes to the session's clock during a real XR session — raced with a WATCHDOG_MS timeout, so no
 // waiter can outlive a stopped clock. Books roll once per frame, deduped on the frame timestamp.
 //

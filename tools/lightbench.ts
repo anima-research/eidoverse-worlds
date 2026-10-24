@@ -7,21 +7,21 @@
 //                                              #   grass world: compile + fps
 //   bun tools/lightbench.ts --headed --console # watch it happen
 //
-// paritybench proves fold parity; this proves the parts of step 5 parity
-// cannot see: EW.materials() wetness rising under a rain verb, the cloud
+// It proves what a fold-parity check cannot see: EW.materials() wetness rising under a rain verb, the cloud
 // field waking, slot assignment honoring keep > authored, the day cycle
 // leaving only the day:false porch light burning at noon, the weather
 // system's lightning adopted through the scene-proxy seam instead of
 // entering the light topology, and the caster budget tracking realized
 // models. Page console errors fail the pass.
 //
-// Scaffolding (scratch sequencer, CDP, driver socket, Windows shim rule) is
-// paritybench's — see its header for the four expensive lessons.
+// Scaffolding: a scratch sequencer, CDP, a driver socket, and the Windows shim rule (spawn process.execPath).
 
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromeArgs, findChrome } from "./protocol/chrome.ts";
+import { killChild } from "./protocol/procgroup.ts";
 
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
@@ -31,29 +31,7 @@ const MEASURE = has("measure");
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
-// A WebGPU-capable Chromium, wherever this machine keeps one — CHROME env
-// wins, else the first candidate that exists (paritybench's list, copied:
-// the tools stay self-contained).
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  win32: [
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  ],
-  darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  ],
-  linux: [
-    "/usr/bin/google-chrome", "/usr/bin/microsoft-edge",
-    "/usr/bin/chromium-browser", "/usr/bin/chromium",
-  ],
-};
-const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p))
-  ?? BROWSER_CANDIDATES[process.platform]?.[0] ?? "chrome";
+const CHROME = findChrome() ?? "";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -62,7 +40,7 @@ const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
 if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
   console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
 }
-if (!existsSync(CHROME)) { console.error(`✗ no browser at ${CHROME}`); process.exit(2); }
+if (!CHROME || !existsSync(CHROME)) { console.error(CHROME ? `✗ no browser at ${CHROME}` : "✗ no Chromium found (set CHROME=/path/to/chrome)"); process.exit(2); }
 
 function freePort(from: number, tries = 40): number {
   for (let p = from; p < from + tries; p++) {
@@ -82,13 +60,7 @@ const SCRATCH = mkdtempSync(join(tmpdir(), "ew-lightbench-"));
 let seq: Bun.Subprocess | null = null;
 let edge: Bun.Subprocess | null = null;
 let cleaned = false;
-function reap(p: Bun.Subprocess | null) {
-  if (!p) return;
-  try { p.kill(); } catch { /* gone */ }
-  if (process.platform === "win32" && typeof p.pid === "number") {
-    try { Bun.spawnSync(["taskkill", "/PID", String(p.pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }); } catch { /* fine */ }
-  }
-}
+const reap = killChild;
 async function cleanup() {
   if (cleaned) return;
   cleaned = true;
@@ -177,12 +149,7 @@ function cdpOn(ws: WebSocket): Cdp {
 
 edge = Bun.spawn([
   CHROME,
-  ...(HEADED ? [] : ["--headless=new"]),
-  `--remote-debugging-port=${DEBUG_PORT}`,
-  `--user-data-dir=${join(SCRATCH, "edge-profile")}`,
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-  "--disable-background-networking", "--disable-sync", "--mute-audio",
-  "--window-size=1280,800", "--enable-unsafe-webgpu",
+  ...chromeArgs({ headed: HEADED, port: DEBUG_PORT, profile: join(SCRATCH, "edge-profile"), extra: ["--window-size=1280,800", "--enable-unsafe-webgpu"] }),
   "about:blank",
 ], { stdout: "ignore", stderr: "ignore" });
 

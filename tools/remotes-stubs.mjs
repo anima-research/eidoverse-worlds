@@ -26,25 +26,39 @@ export const fetchBytes = async () => new ArrayBuffer(0);
 export const forgetBytes = () => {};
 
 // world
-export const applyEntry = async () => {};
-export const stateToEntries = () => [];
 export const avatarMounts = new Map();
-// #101: seats.js (real, unmocked) pulls the clip digest from the assets
+// #101: occupants.js (real, unmocked) pulls the clip digest from the assets
 // module — null here means every stub seat reads declared-approximate,
 // which is exactly the truthful state for a world with no clip bytes
 export const vrmaShaLoaded = () => null;
 export const pendingMounts = new Map();
 export const mountTransform = () => null;
+// world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and occupybody.js reads the
+// thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
+export const seatCalls = [];   // remotes-lifecycle-test: a dropped body's seat is cleared (house review I15)
+export const setBodySeat = (id, seat) => { seatCalls.push([id, seat]); };
+export const comps = new Map();
+export const entityMeta = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
+export const entities = new Map();
+export const findPart = () => null;
+/* world.js grew these in the sockets merge (10-14); occupybody.js imports seatSocket, so the shared stub must offer it (headless: no sockets) */
+export const seatSocket = () => null;
+export const socketsOn = () => [];
+export const parentIdOf = () => null;
 
 // chat / ui / boot / fp_view
 export const logChat = () => {};
-export const logWhisper = () => {};
 export const noteTyping = () => {};
 export const noteHistoryContext = () => {};
 export const resyncCalls = [];   // chat-resync-wire-test reads what net.js asked for
 export const resyncChatAfter = async (seq) => { resyncCalls.push(seq); };
 export const composeFirstPerson = () => {};
 export const markPhase = () => {};
+export const refuseBoot = () => {};
+export const waitBoot = () => {};
 export const toast = () => {};
 export const flashHint = () => {};
 
@@ -67,10 +81,10 @@ const fakeAvatar = () => ({
   transientResets: 0,
   resetTransients() { this.transientResets++; },   // the generation-end seam (#97)
   setTyping() {}, playAnimation() {}, setClip() {}, setPose() {}, clearPose() {},
-  setLimp() {}, playEmote() {}, setGazeTarget() {}, update() {},
+  setLimp() {}, playOnce() {}, setGazeTarget() {}, update() {},
 });
 
-export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playEmote() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
+export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playOnce() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
 export const makeAvatar = (id, path) => {
   avatarCalls.push({ id, path });
   if (!holdLoads) return Promise.resolve(fakeAvatar());
@@ -79,4 +93,5 @@ export const makeAvatar = (id, path) => {
 
 // xrbody.js (VR PR): remotes.js drives a remote's VR pose through these; no-ops here — the lifecycle under test is bodies, not arms
 export const applyRemoteXR = () => {};
+export const xrHandWorld = () => null;   // occupybody.js asks where a tracked hand is (a socket's vr policy): never tracked here
 export const resetFingers = () => {};

@@ -80,7 +80,7 @@ rolling our own, and it does not apply to this design.
 ## The design
 
 **One PeerConnection per participant**, server-side, created by werift. Signaling rides
-the EXISTING `rtc` verb with `toSurface: "voice"`.
+the EXISTING `rtc` message with `toSurface: "voice"`.
 
 ```
 browser A ──mic track──▶ [werift PC-A] ──┐
@@ -137,7 +137,7 @@ into "the sequencer made this PC for this (id, gen)". That also kills the unreso
 
 ## Acceptance for the sprint (what "done" means in the next hour)
 
-- [ ] werift PC accepts a real browser offer via the existing `rtc` verb
+- [ ] werift PC accepts a real browser offer via the existing `rtc` message
 - [ ] server receives RTP from a browser mic (packet counter > 0)
 - [ ] forwards to a second browser; **audio is audible**
 - [ ] consent gate: 0 packets before consent, flowing after

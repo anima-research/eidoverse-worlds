@@ -1,7 +1,7 @@
 // sounds — the browser realizer for the `sound` component: an audio file
 // playing FROM an entity, positional, through the page's ONE AudioContext.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, radius?, t0?, look?}}
+//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}}
 //
 // Graph per sound: <audio> → MediaElementSource → gain (volume) → panner
 // (position, distance falloff) → destination. The panner follows the entity
@@ -19,15 +19,11 @@
 //   3. The clock is the SERVER's: with `t0` every client seeks to the same
 //      playhead ((serverNow - t0) mod duration when looping), so a late joiner hears
 //      the same bar as everyone else. Without it, the top of the track.
-//      serverNow() (remotes.js) is this machine's clock plus an offset
-//      estimated from the `t` the server stamps on its messages: the clock
-//      message it sends just before the snapshot to a join that asks, as
-//      this client's joins do (net.js 'clock'), and each frame. How closely
-//      that estimate follows the server's clock, behind a late message,
-//      after a step of the server's clock, or through a quiet spell with no
-//      frames, is shared/clockoffset.js's to say. A server older than the
-//      clock message sends none, and there the machine's clock serves until
-//      a frame brings a sample.
+//      `t0` is the authority's stamp on its own clock, and serverNow() is this
+//      client's estimate of that clock (client/lib/serverclock.js): round trips
+//      once they land, and before the first, the `t` of the clock message the
+//      server sends just before the snapshot to a join that asks (net.js) and
+//      of each frame.
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop,
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced
@@ -39,58 +35,95 @@
 //      controls the first placed sound the day it exists. The authored
 //      volume stays its own node: what the author said is preserved, what
 //      you hear is authored × yours (Mica, #192 review, blocker 1).
+//
+// Batch 2 (R 10-07):
+//   6. Silent at radius. The distance gain is shared/sound.js gainAt (BasisVR's natural curve: inverse inside, a
+//      (1-t)² taper over the last 5% to exactly 0), applied on the sound's own gain node in the tick. The panner only
+//      places it (HRTF direction, rolloff 0): Web Audio's `inverse` model clamps at maxDistance instead, and a 12 m
+//      radio was heard at −21 dB everywhere past 12 m.
+//   7. At most VOICES (8) world sounds are heard at once, the loudest by what each would be heard at; the rest are
+//      paused (their playhead is found again on the shared clock when they come back). A wall of stacked loops is 8.
+//   8. A limiter (DynamicsCompressor, −6 dB, 20:1, 3 ms) sits between the world bus and the speakers: a clipped upload
+//      can't go past full scale.
+//   9. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
+//      link ONLY if this viewer turned on "allow untrusted links" (mediaprefs.js). Otherwise no element is made and
+//      nothing is fetched. A link is fetched with no Referer: an <audio> element takes no referrerPolicy of its
+//      own, so the page's (index.html's <meta name="referrer">) is what keeps it. A sound through Web Audio, like a
+//      picture, is a CORS request (crossOrigin), and a CORS request names the page's origin (its server, never the
+//      world's name) in its Origin header, and every link is tried that way first, so its host sees that Origin even
+//      when the sound then plays plain (a plain element alone sends neither). A link whose host sends no CORS headers can't go
+//      through Web Audio (it'd be silence); it plays from a plain element instead, its volume set by the same
+//      distance curve (no HRTF panning, no limiter: said once in the console).
+//  10. Mute for me (mediaprefs.js): a muted thing's sound is gain 0, never logged.
 import { THREE, camera } from './core.js';
 import { bus, CONFIG } from './base.js';
-import { entities } from './world.js';
+import { entities, bags, bagOf } from './world.js';
 import { audioContext } from './audioctx.js';
+import { serverNow } from './serverclock.js';
 import { playWhenAllowed } from './audiounlock.js';
 import { volumeFor } from './voiceconsent.js';
-import { registerEditor } from './inspect.js';
+import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — by placer, never latest actor (#190)
-import { serverNow } from './remotes.js';   // the estimated SERVER clock: the playhead is shared, so it runs on the clock everyone shares (see the clock note below)
-import { normalizeSound, SOUND_LOOK_MAX, SOUND_STORE } from '../../shared/sound.js';
+import { normalizeSound, gainAt, TAPER_START, SOUND_ALT_MAX, SOUND_STORE } from '../../shared/sound.js';
+import { mediaTier, clientMayFetch, mediaUrl } from '../../shared/mediasrc.js';
+import { allowUntrusted, isMineMuted, toggleMineMuted, RIGHTS_WARNING } from './mediaprefs.js';
 
-// id → { sound, el, srcNode, gain, panner }
+export const VOICES = 8;
+// id → { sound, el, srcNode?, gain?, panner?, plain?, capped, want, done? }
 const playing = new Map();
 export const _playing = playing;   // probes
+// id → why this browser didn't fetch it (an untrusted link without the opt-in, a page link): probes and the editor
+const blocked = new Map();
+export const _blocked = blocked;
 
-// The world bus: one gain for everything placed, set from the listener's own
-// preference. Created with the first graph (the AudioContext is lazy too).
-let worldBus = null;
+// The world bus: one gain for everything placed, set from the listener's own preference, then the limiter.
+let worldBus = null, limiter = null;
 function worldGain() {
   if (!worldBus) {
     const ctx = audioContext();
     worldBus = ctx.createGain();
     worldBus.gain.value = volumeFor('world');
-    worldBus.connect(ctx.destination);
+    limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.25;
+    worldBus.connect(limiter); limiter.connect(ctx.destination);
   }
   return worldBus;
 }
 bus.on('audio:volume', ({ cat, value }) => { if (cat === 'world' && worldBus) worldBus.gain.value = value; });
-/** For probes: the listener-side gain, and what a sound is actually heard at. */
+/** For probes: the listener-side gain, the limiter, and what a sound is actually heard at. */
 export const _worldBus = () => worldBus;
-export const effectiveGain = (id) => { const h = playing.get(id); return h ? h.gain.gain.value * (worldBus?.gain.value ?? volumeFor('world')) : null; };
+export const _limiter = () => limiter;
+export const effectiveGain = (id) => { const h = playing.get(id); if (!h) return null; return (h.plain ? h.el.volume : h.gain.gain.value * (worldBus?.gain.value ?? volumeFor('world'))); };
 const _pos = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _up = new THREE.Vector3();
+const _me = new THREE.Vector3();
 
-function buildGraph(id, sound) {
-  const ctx = audioContext();
-  const el = new Audio(`/library/${sound.src}`);
-  el.crossOrigin = 'anonymous';
+function buildGraph(id, sound, { plain = false } = {}) {
+  const el = new Audio();
   el.preload = 'auto';
+  if (!plain) el.crossOrigin = 'anonymous';
   el.loop = sound.loop;
-  const srcNode = ctx.createMediaElementSource(el);
-  const gain = ctx.createGain();
-  const panner = ctx.createPanner();
-  panner.panningModel = 'HRTF';
-  panner.distanceModel = 'inverse';
-  panner.refDistance = 1.5;
-  panner.rolloffFactor = 1.5;
-  panner.maxDistance = sound.radius;
-  srcNode.connect(gain); gain.connect(panner); panner.connect(worldGain());
-  const h = { id, sound, el, srcNode, gain, panner, seeked: false };
+  el.playbackRate = sound.pitch ?? 1;
+  el.preservesPitch = false;                       // pitch is pitch (a tape slowed down), as Unity's AudioSource
+  el.src = mediaUrl(sound.src);
+  const h = { id, sound, el, plain, capped: false, want: 0 };
+  if (!plain) {
+    const ctx = audioContext();
+    h.srcNode = ctx.createMediaElementSource(el);
+    h.gain = ctx.createGain(); h.gain.gain.value = 0;   // the tick sets it from the distance
+    h.panner = ctx.createPanner();
+    h.panner.panningModel = 'HRTF';
+    h.panner.distanceModel = 'linear'; h.panner.rolloffFactor = 0;   // direction only: the gain is gainAt's
+    h.srcNode.connect(h.gain);
+    if (sound.spatial !== false) { h.gain.connect(h.panner); h.panner.connect(worldGain()); } else h.gain.connect(worldGain());
+    // a link whose host sends no CORS headers can't feed Web Audio: play it from a plain element instead
+    if (/^https:/i.test(sound.src)) el.addEventListener('error', () => {
+      if (playing.get(id) !== h) return;
+      console.warn(`[sounds] ${id}: ${mediaTier(sound.src, 'audio').host} sends no CORS headers, so it can't be positional; playing it plainly (distance volume, no panning)`);
+      teardown(id); const p = buildGraph(id, h.sound, { plain: true }); if (p.sound.playing) { seekTo(p); playWhenAllowed(p.el, `sound ${id}`); }
+    }, { once: true });
+  } else el.volume = 0;
   playing.set(id, h);
   return h;
 }
@@ -101,21 +134,23 @@ function teardown(id) {
   playing.delete(id);
   try { h.el.pause(); } catch { /* never started */ }
   h.el.removeAttribute('src'); try { h.el.load(); } catch { /* releases the decoder */ }
-  try { h.srcNode.disconnect(); h.gain.disconnect(); h.panner.disconnect(); } catch { /* partial graph */ }
+  try { h.srcNode?.disconnect(); h.gain?.disconnect(); h.panner?.disconnect(); } catch { /* partial graph */ }
 }
 
-/** Seek to the shared playhead once the duration is known. */
+/** Where the shared playhead is now (seconds), or null: a one-shot that has finished. */
+export function playheadOf(sound, dur, now = serverNow()) {
+  if (!sound.t0 || !Number.isFinite(dur) || dur <= 0) return 0;
+  const elapsed = ((now - sound.t0) / 1000) * (sound.pitch ?? 1);   // t0 is the authority's clock: so is now
+  if (sound.loop) return ((elapsed % dur) + dur) % dur;
+  return elapsed >= dur ? null : Math.max(0, elapsed);
+}
+/** Seek to the shared playhead once the duration is known; a finished one-shot doesn't play. */
 function seekTo(h) {
-  const { el, sound } = h;
+  const { el } = h;
   const apply = () => {
-    const dur = el.duration;
-    if (!sound.t0 || !Number.isFinite(dur) || dur <= 0) return;
-    // t0 is server time (the editor stamps it from serverNow(); a behavior
-    // script's Date.now() IS the server's). Elapsed against the machine's
-    // own clock made two listeners with skewed clocks hear the same radio
-    // their skew apart — and an author with a skewed clock shifted everyone.
-    const elapsed = (serverNow() - sound.t0) / 1000;
-    const at = sound.loop ? ((elapsed % dur) + dur) % dur : Math.min(dur, Math.max(0, elapsed));
+    const at = playheadOf(h.sound, el.duration);
+    if (at === null) { h.done = true; try { el.pause(); } catch { /* fine */ } return; }
+    h.done = false;
     try { el.currentTime = at; } catch { /* not seekable yet — the loadedmetadata retry below covers it */ }
   };
   if (Number.isFinite(el.duration) && el.duration > 0) apply();
@@ -123,52 +158,75 @@ function seekTo(h) {
 }
 
 function applyFrom(id, data) {
-  if (data == null) { teardown(id); return; }
+  if (data == null) { blocked.delete(id); teardown(id); return; }
   const norm = normalizeSound(data);
-  if (!norm.ok) { console.warn(`[sounds] ${id}: ${norm.why}`); teardown(id); return; }
-  if (norm.notes?.length) console.warn(`[sounds] ${id}: ${norm.notes.join(' · ')}`);
+  if (!norm.ok) { console.warn(`[sounds] ${id}: ${norm.why}`); blocked.delete(id); teardown(id); return; }
   const sound = norm.sound;
+  // §9: this viewer's browser fetches it only when they may (an untrusted link needs their own opt-in)
+  if (!clientMayFetch(sound.src, 'audio', allowUntrusted()) || norm.tier.page) {
+    teardown(id);
+    blocked.set(id, norm.tier.page ? 'page' : 'untrusted');
+    if (norm.tier.page) console.warn(`[sounds] ${id}: ${norm.tier.host} is a page link, not a media file; this browser can't play pages yet`);
+    return;
+  }
+  blocked.delete(id);
   let h = playing.get(id);
   if (h && h.sound.src !== sound.src) { teardown(id); h = null; }
+  if (h && !h.plain && (h.sound.spatial !== false) !== (sound.spatial !== false)) { teardown(id); h = null; }   // re-wire the panner
   if (!h) h = buildGraph(id, sound);
   const prev = h.sound; h.sound = sound;
   h.el.loop = sound.loop;
-  h.gain.gain.value = sound.volume;
-  h.panner.maxDistance = sound.radius;
+  h.el.playbackRate = sound.pitch ?? 1;
   if (sound.playing) {
     if (prev.t0 !== sound.t0 || prev === sound || h.el.paused) seekTo(h);
-    playWhenAllowed(h.el, `sound ${id}`);
+    if (!h.capped && !h.done) playWhenAllowed(h.el, `sound ${id}`);
   } else {
     h.el.pause();
   }
 }
 
-/** Per-frame: panners follow their entities, the listener follows the camera. */
+/** Per-frame: the distance gain (silent at radius), the 8 loudest heard, panners follow their entities, the listener
+ *  follows the camera. */
 export function tickSounds() {
   if (!playing.size) return;
   const ctx = audioContext();
   const L = ctx.listener;
-  camera.getWorldPosition(_pos); camera.getWorldDirection(_fwd); _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  camera.getWorldPosition(_me); camera.getWorldDirection(_fwd); _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
   if (L.positionX) {
-    L.positionX.value = _pos.x; L.positionY.value = _pos.y; L.positionZ.value = _pos.z;
+    L.positionX.value = _me.x; L.positionY.value = _me.y; L.positionZ.value = _me.z;
     L.forwardX.value = _fwd.x; L.forwardY.value = _fwd.y; L.forwardZ.value = _fwd.z;
     L.upX.value = _up.x; L.upY.value = _up.y; L.upZ.value = _up.z;
-  } else { L.setPosition(_pos.x, _pos.y, _pos.z); L.setOrientation(_fwd.x, _fwd.y, _fwd.z, _up.x, _up.y, _up.z); }
+  } else { L.setPosition(_me.x, _me.y, _me.z); L.setOrientation(_fwd.x, _fwd.y, _fwd.z, _up.x, _up.y, _up.z); }
+  const want = [];
   for (const h of playing.values()) {
     const root = entities.get(h.id);
-    if (!root) { h.gain.gain.value = 0; continue; }   // authored, but nowhere to play from right now
-    if (h.gain.gain.value === 0 && h.sound.volume > 0) h.gain.gain.value = h.sound.volume;
+    if (!root || isMineMuted(h.id) || !h.sound.playing || h.done) { h.want = 0; continue; }   // authored, but nowhere to play from / muted by you
     root.getWorldPosition(_pos);
-    const p = h.panner;
-    if (p.positionX) { p.positionX.value = _pos.x; p.positionY.value = _pos.y; p.positionZ.value = _pos.z; }
-    else p.setPosition(_pos.x, _pos.y, _pos.z);
+    const d = _pos.distanceTo(_me), R = h.sound.radius;
+    const dist = h.sound.spatial === false ? (d >= R ? 0 : d <= TAPER_START * R ? 1 : (1 - (d - TAPER_START * R) / ((1 - TAPER_START) * R)) ** 2) : gainAt(d, h.sound.near, R);
+    h.want = h.sound.volume * dist;
+    if (h.panner) { const p = h.panner; if (p.positionX) { p.positionX.value = _pos.x; p.positionY.value = _pos.y; p.positionZ.value = _pos.z; } else p.setPosition(_pos.x, _pos.y, _pos.z); }
+    if (h.want > 0) want.push(h);
+  }
+  // §7: the loudest VOICES are heard; the rest wait, paused, and rejoin the shared playhead when they're back
+  want.sort((a, b) => b.want - a.want);
+  const heard = new Set(want.slice(0, VOICES));
+  for (const h of playing.values()) {
+    const on = heard.has(h);
+    if (h.plain) h.el.volume = on ? Math.min(1, h.want * (worldBus?.gain.value ?? volumeFor('world'))) : 0;
+    else h.gain.gain.value = on ? h.want : 0;
+    // silent by distance: it keeps playing at 0 (no gap when you walk back in); held back by the cap: paused
+    if (on && h.capped) { h.capped = false; if (h.sound.playing && !h.done) { seekTo(h); playWhenAllowed(h.el, `sound ${h.id}`); } }
+    else if (!on && h.want > 0 && !h.capped) { h.capped = true; try { h.el.pause(); } catch { /* fine */ } }
   }
 }
 
 bus.on('comp', ({ id, type, data }) => { if (type === 'sound') applyFrom(id, data); });
-bus.on('entity', ({ id, kind }) => { if (kind === 'remove') teardown(id); });   // demote/promote: the tick re-finds the root
+bus.on('entity', ({ id, kind }) => { if (kind === 'remove') { blocked.delete(id); teardown(id); } });   // demote/promote: the tick re-finds the root
 bus.on('world-reset', () => clearSounds());
-export function clearSounds() { for (const id of [...playing.keys()]) teardown(id); }
+// the viewer changed what their browser may fetch: every sound is read again under the new rule
+bus.on('media:trust', () => { for (const [id, c] of bags()) if (c?.sound) applyFrom(id, c.sound); });
+export function clearSounds() { blocked.clear(); for (const id of [...playing.keys()]) teardown(id); }
 
 // ---- the editor block: how a HUMAN puts a sound on a thing ------------------
 const SOUND_ACCEPT = 'audio/mpeg,audio/ogg,audio/wav,audio/webm,audio/mp4,.mp3,.ogg,.opus,.wav,.webm,.m4a';
@@ -185,30 +243,21 @@ export async function uploadSound(file) {
 }
 
 registerEditor(({ id, obj, meta, bag, commit }) => {
-  if (!obj || obj.userData?.isLight) return null;
+  if (!obj || meta?.kind === 'light') return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
-  // guarded by someone I am not: the server would refuse the comp, so the
-  // block says so instead of offering a form. Authorship is the PLACER's —
-  // by subject when the door vouched for one, never `meta.actor`, which an
-  // owner's partial update moves while the placer stays (#190 round 2; the
-  // sound block had reintroduced the actor shortcut — Mica, #192 blocker 2).
-  const heldBy = guardedByOther(id) ? placerName(id) : null;
-  if (heldBy) {
-    return { html: `<div style="margin:4px 0;color:var(--dim)">🔊 sound — guarded by ${esc(heldBy)}; only they or the world's owner can change it${cur ? ` (${cur.playing === false ? 'paused' : 'playing'}: ${esc(cur.look ?? cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
-  }
-  const vol = cur?.volume ?? 0.8, rad = cur?.radius ?? 12;
+  const vol = Number(cur?.volume ?? 0.8), rad = Number(cur?.radius ?? 12);   // numbers into markup: never a string from the world
   return {
     html: `<div data-se-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">
       <div><b>🔊 sound</b> <span style="color:var(--dim);font-size:11px">${cur ? (cur.playing === false ? 'paused' : 'playing') : 'none'}</span></div>
       <label style="display:flex;gap:6px;align-items:center">file
-        <input data-se="src" type="text" placeholder="eidoverse/assets/… or store/audio/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
+        <input data-se="src" type="text" placeholder="store/audio/… or an https link" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
         <input data-se="file" type="file" accept="${SOUND_ACCEPT}" style="display:none">
         <button data-se="pick" title="upload an MP3, Ogg, WAV, WebM or M4A into the store and use it">upload…</button></label>
-      <label style="display:flex;flex-direction:column;gap:2px">what is playing <span style="color:var(--dim);font-size:11px">(what text-tier residents read; ≤${SOUND_LOOK_MAX})</span>
-        <textarea data-se="look" maxlength="${SOUND_LOOK_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.look ?? '')}</textarea></label>
+      <label style="display:flex;flex-direction:column;gap:2px" title="Alternative text: describes this for people who can't hear it, and for agents">alt text <span style="color:var(--dim);font-size:11px">(what is playing, in words; ≤${SOUND_ALT_MAX})</span>
+        <textarea data-se="look" maxlength="${SOUND_ALT_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.alt ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">volume <input data-se="volume" type="range" min="0" max="1" step="0.05" value="${vol}"></label>
-        <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="200" step="1" value="${rad}" style="width:4em"> m</label>
+        <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="100" step="1" value="${rad}" style="width:4em"> m (silent beyond)</label>
         <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input data-se="loop" type="checkbox"${cur?.loop === false ? '' : ' checked'}> loop</label>
       </div>
       <div style="display:flex;gap:6px">
@@ -223,8 +272,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       const msg = (t, warn = false) => { const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; } };
       const bagFrom = (playingNow) => {
         const data = { src: q('src').value.trim(), volume: Number(q('volume').value), radius: Number(q('radius').value), loop: !!q('loop').checked, playing: playingNow };
-        const look = q('look').value.trim(); if (look) data.look = look;
-        if (playingNow) data.t0 = serverNow();   // (re)start: everyone seeks to the same place — stamped in SERVER time, the clock every listener seeks against
+        const alt = q('look').value.trim(); if (alt) data.alt = alt;   // (re)start: the authority stamps t0 on its clock
         return data;
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());
@@ -238,17 +286,41 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       q('play')?.addEventListener('click', (ev) => {
         const norm = normalizeSound(bagFrom(true));
         if (!norm.ok) { msg(norm.why, true); return; }
-        commit('comp', { id, type: 'sound', data: norm.sound });
+        commit('sound', norm.sound);
         msg(norm.notes.length ? norm.notes.join(' · ') : 'playing');
         if (norm.notes.length) flashHint(`🔊 ${norm.notes[0]}`);
         ev.target.blur();
       });
       q('pause')?.addEventListener('click', (ev) => {
-        const norm = normalizeSound({ ...bagFrom(false), t0: undefined });
+        const norm = normalizeSound({ ...bagFrom(false), ...(bagOf(id)?.sound?.t0 ? { t0: bagOf(id).sound.t0 } : {}) });
         if (!norm.ok) { msg(norm.why, true); return; }
-        commit('comp', { id, type: 'sound', data: norm.sound }); msg('paused'); ev.target.blur();
+        commit('sound', norm.sound); msg('paused'); ev.target.blur();
       });
-      q('silence')?.addEventListener('click', (ev) => { commit('comp', { id, type: 'sound', data: null }); msg('silenced'); ev.target.blur(); });
+      q('silence')?.addEventListener('click', (ev) => { commit('sound', null); msg('silenced'); ev.target.blur(); });
     },
   };
 });
+
+// ---- the edit-mode inspector's gestures (fields: the schema's `sound` group).
+// A new sound plays (R 10-07: no start-paused); the authority stamps its t0. Before the file picker: whose it is to upload.
+function pickFile(accept) {
+  return new Promise((resolve) => {
+    const inp = Object.assign(document.createElement('input'), { type: 'file', accept });
+    inp.onchange = () => resolve(inp.files?.[0] ?? null);
+    inp.click();
+  });
+}
+async function uploadThenSet(id) {
+  flashHint(`🔊 ${RIGHTS_WARNING}`, 4000);
+  const file = await pickFile(SOUND_ACCEPT); if (!file) return;
+  flashHint(`uploading ${file.name}…`);
+  try {
+    const path = await uploadSound(file);
+    const r = commitEdit(id, 'sound.src', path);
+    if (r.errors?.length) flashHint(`🔊 ${r.errors.join(' · ')}`, 6000);
+    else flashHint(`🔊 ${path.split('/').pop()} — playing`, 3000);
+  } catch (err) { toast(`sound upload failed — ${err.message}`, 'warn', 8000); }
+}
+registerHandler('sound', (id, _obj, k, _v, opts) => { if (k !== 'upload' || opts?.live) return false; uploadThenSet(id); return true; });
+registerHandler('sound', (id, _obj, k, _v, opts) => { if (k !== 'mute' || opts?.live) return false; const m = toggleMineMuted(id); flashHint(m ? '🔇 muted for you (nobody else)' : '🔊 you hear it again', 2500); return true; });
+registerHandler('comp', (id, _obj, k, _v, opts) => { if (k !== 'add:sound' || opts?.live) return false; uploadThenSet(id); return true; });

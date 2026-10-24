@@ -256,20 +256,20 @@ const CLIP_FALLBACK = {
   swim: 'idle', tread: 'idle',
 };
 
-// Emote slots are loaded lazily — a body needs locomotion to exist, but it
+// Gesture slots are loaded lazily — a body needs locomotion to exist, but it
 // doesn't need to know how to dance until someone dances.
 //
-// The emote vocabulary now lives in emotedefs.js (the bar needs it without the
+// The action bar's vocabulary now lives in animnames.js (the bar needs it without the
 // engine). Re-exported here because these names were part of avatar.js's surface
 // before the split and several callers still read them from it — same objects, one
 // module instance, so the hydration trick is unaffected.
 // IMPORT then re-export, not `export ... from`. A bare re-export forwards the names to
-// importers without creating local bindings, so avatar.js's own `EMOTES[name]` (playEmote,
+// importers without creating local bindings, so avatar.js's own `ANIM_CLIPS[name]` (playOnce,
 // below) became a ReferenceError the moment the table moved out - and it only fires when
-// someone actually plays an emote, which no boot-level test does. Reported from a phone as
-// a red "EMOTES is not defined" toast.
-import { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
-export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes };
+// someone actually plays a gesture, which no boot-level test does. Reported from a phone as
+// a red "ANIM_CLIPS is not defined" toast.
+import { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames } from './animnames.js';
+export { ANIM_CLIPS, ANIM_ORDER, ANIM_ICONS, hydrateAnimNames };
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
@@ -509,6 +509,12 @@ const _hq = new THREE.Quaternion();        // raw-pose scratch (_applyRawPose) �
 const _hv = new THREE.Vector3();
 const _hs = new THREE.Vector3();
 const _ONE = new THREE.Vector3(1, 1, 1);
+const _sa1 = new THREE.Vector3(), _sa2 = new THREE.Vector3();          // seat anchor scratch (_measureAnchor)
+const _sl1 = new THREE.Quaternion(), _sl2 = new THREE.Quaternion(), _sl3 = new THREE.Quaternion();   // seat look scratch
+// a clip named the way the animation library names its files: what a socket's pose, enter and leave may name
+const CLIP_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,47}$/;
+// the clips hydrateClips owns (slot names that are not file names): a socket naming one waits for hydration
+const HYDRATED = new Set([...CORE_CLIPS, ...LATER_CLIPS, 'sitchair']);
 const DEG = Math.PI / 180;
 
 // THE LAMP'S BREATH, as dials rather than as three numbers buried in a
@@ -623,7 +629,7 @@ export class Avatar {
 
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
-    this.extraClips = new Map(); // lazily-loaded emote actions
+    this.extraClips = new Map(); // lazily-loaded gesture actions
     for (const [slot, clip] of Object.entries(clips)) {
       const a = this.mixer.clipAction(clip);
       a.enabled = true; a.setEffectiveWeight(0); a.play();
@@ -631,7 +637,11 @@ export class Avatar {
     }
     this.current = null;
     this.currentSlot = null;
-    this.emote = null;             // { action, until }
+    this.onceAnim = null;             // { action, until }
+    // the ankles' height above the root at rest (no clip has posed it yet): a socket anchoring the FEET puts the soles
+    // on the socket, not the ankle joints
+    try { const h = vrm.humanoid; const f = h?.getRawBoneNode?.('leftFoot') ?? h?.getNormalizedBoneNode?.('leftFoot');
+      if (f) { this.root.updateMatrixWorld(true); this._footRestY = Math.max(0, this.root.worldToLocal(f.getWorldPosition(new THREE.Vector3())).y); } } catch { this._footRestY = 0; }
     this.setClip('idle');
 
     this.bubble = null;
@@ -1123,12 +1133,17 @@ export class Avatar {
   // ---- locomotion / clips
   setClip(slot, speed = 0, { fade, ease = false } = {}) {
     this.postureSlot = slot;   // what was ASKED (the wire's clip), before any fallback: the plate reads posture from it
-    // Moving cancels an emote. Standing frozen mid-cheer while walking away
+    // Moving cancels a gesture. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
-    if (this.emote && speed > 0.05) this.cancelEmote();
-    if (this.emote) return;        // otherwise it owns the body until it finishes
+    if (this.onceAnim && speed > 0.05) this.cancelOnce();
+    if (this.onceAnim) return;        // otherwise it owns the body until it finishes
+    if (this._sb) return;          // a socket's pose (setSeatBlend) owns the base clips while it holds
+    // any clip the library has, by name (a socket's enter/leave riding someone's presence `clip`): loaded on first
+    // ask, the nearest loaded posture stands in meanwhile
+    if (!this.actions[slot] && !CLIP_FALLBACK[slot] && !HYDRATED.has(slot)) this.ensureClip(slot);
     let use = slot;
     while (!this.actions[use] && CLIP_FALLBACK[use]) use = CLIP_FALLBACK[use];
+    if (!this.actions[use]) use = this.actions.idle ? 'idle' : use;   // a named clip still loading: stand meanwhile
     this._setAction(this.actions[use], use, fade, ease);
     const a = this.actions[use];
     if (!a) return;
@@ -1232,9 +1247,9 @@ export class Avatar {
     return this._hydrating;
   }
 
-  /** Play a one-shot emote over locomotion. Returns when it's queued, not done. */
-  async playEmote(name) {
-    const file = EMOTES[name];
+  /** Play a gesture over locomotion. Returns when it's queued, not done. */
+  async playOnce(name) {
+    const file = ANIM_CLIPS[name];
     if (!file) return;
     try {
       let action = this.extraClips.get(file);
@@ -1251,16 +1266,16 @@ export class Avatar {
       // emoting faded the walk out and faded in an action the mixer was not
       // looking at — leaving the skeleton at its REST pose. That is the T-pose.
       action.reset().play();
-      this.emote = null;           // let _setAction run
-      this._setAction(action, `emote:${name}`);
-      this.emote = { action, until: performance.now() + dur * 1000 };
-    } catch (e) { report(`emote ${name}`, e); }
+      this.onceAnim = null;           // let _setAction run
+      this._setAction(action, `once:${name}`);
+      this.onceAnim = { action, until: performance.now() + dur * 1000 };
+    } catch (e) { report(`gesture ${name}`, e); }
   }
-  cancelEmote() {
-    if (!this.emote) return;
-    const action = this.emote.action;
-    this.emote = null;
-    // The emote MUST be faded out here. It is a LoopOnce action with
+  cancelOnce() {
+    if (!this.onceAnim) return;
+    const action = this.onceAnim.action;
+    this.onceAnim = null;
+    // The gesture MUST be faded out here. It is a LoopOnce action with
     // clampWhenFinished, so when it ends it holds its final frame at full
     // weight — forever. Simply forgetting about it (this.current = null) left
     // that frozen pose blended into everything that came after, which is why
@@ -1398,6 +1413,9 @@ export class Avatar {
    *  the held pose is the AUTHOR's half of a replace — it lives in presence
    *  (myState.pose, an agent's heldPose), which this body only renders. */
   playAnimation(data) {
+    // {stop: true} (R 10-17 16:26): every layer fades out and hands its bones back to what is beneath (the held pose,
+    // the clip): the body rests in what it was doing, never the bind pose
+    if (data?.stop === true) { for (const l of this._anims ?? []) l.wantWeight = 0; return; }
     if (!data?.tracks) return;
     const tracks = new Map();
     for (const [n, keys] of Object.entries(data.tracks)) {
@@ -1490,6 +1508,8 @@ export class Avatar {
       lastWrist: prev?.lastWrist ?? null,
       relation: opts.relation ?? null,
       palm: opts.palm !== false,
+      owner: opts.owner ?? null,            // 'seat': a socket's reach (occupybody.js) — a person's own reach outranks it
+      hint: opts.hint ?? null,              // () => [x,y,z] world: where the elbow/knee points (a socket's reach.hint)
       // Retargeting still has to restore the previous writes when the new
       // relation cannot solve (including a cycle over a paused base clip).
       _nu: prev?._nu, _nl: prev?._nl, _nh: prev?._nh,
@@ -1550,7 +1570,9 @@ export class Avatar {
       // outward normal
       const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
         ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
-      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel, lastTwist: r.lastTwist, lastWrist: r.lastWrist, lastGap: r.lastGap, dt });
+      const hint = typeof r.hint === 'function' ? r.hint() : r.hint;
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel, lastTwist: r.lastTwist, lastWrist: r.lastWrist, lastGap: r.lastGap, dt,
+        ...(Array.isArray(hint) && hint.length === 3 && hint.every(Number.isFinite) ? { hintWorld: hint } : {}) });
       if (!out.ok) { r.bound = [out.why]; continue; }
       r.bound = out.res.bound; r.gap = out.res.gap; r.lastPick = out.pick ?? null; r.lastSwivel = out.swivelUsed ?? null; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
       // what the solver BELIEVES it placed, in world space, so a probe can
@@ -1591,6 +1613,172 @@ export class Avatar {
   }
 
   clearPose() { if (this._override) this._override.wantWeight = 0; }
+
+  // ---- the body at a socket (shared/sockbody.js) ------------------------------
+  //
+  // A socket says what a body does there as data: a clip, a BLEND of clips by a signal (speed, steer, phase, a
+  // script's param), or a clip whose TIME is locked to the thing's motion (a swing's pump follows the swing). That is
+  // a mixer job the locomotion slots can't do — they crossfade one action at a time — so a socket's pose is its own
+  // layer over the mixer: several actions at once, weights set every frame, time optionally driven rather than
+  // advanced. While it holds, setClip yields (the seat owns the base clip) and gestures still play over it.
+
+  /** The action for a clip name, loading it from the animation library on first ask (null until it lands). Slot
+   *  names (idle, walk, sit, sitchair, lie…) come from hydrateClips; every other name is a library file. */
+  ensureClip(name) {
+    if (this.actions[name]) return this.actions[name];
+    if (HYDRATED.has(name) || !CLIP_NAME_RE.test(String(name))) return null;
+    this._clipLoads ??= new Map();
+    if (!this._clipLoads.has(name)) {
+      this._clipLoads.set(name, clipFor(this.vrm, name).then((clip) => {
+        if (this._disposed) return;
+        const a = this.mixer.clipAction(clip);
+        a.enabled = true; a.setEffectiveWeight(0); a.play();
+        this.actions[name] = a;
+      }).catch((e) => { console.warn(`[clips] '${name}' unavailable — the nearest posture stands in`, e?.message ?? e); }));
+    }
+    return null;
+  }
+
+  /** Hold a socket's pose: `clips` = [[name, weight]] (weights sum to 1), `phase` = null (clips play at their own
+   *  rate) or 0..1 (every clip's time is that fraction of its length: locked to the thing's motion, or to an enter's
+   *  progress). Called every frame while seated; null lets go, and the body's own clip comes back. A clip still loading
+   *  is stood in for by its nearest loaded posture, so the weights never fall short of a whole body. */
+  setSeatBlend(clips, phase = null) {
+    if (!clips) {
+      if (!this._sb) return;
+      for (const [a] of this._sb.w) a.fadeOut(0.25);
+      this._sb = null; this.current = null;
+      this.setClip('idle');   // the body's own clip comes back (the caller sets the real one on its next frame)
+      return;
+    }
+    if (!this._sb) {
+      // the clip playing now fades out under three's own fade; the blend's actions ease in under ours
+      if (this.current && this.current !== this.onceAnim?.action) this.current.fadeOut(0.25);
+      this.current = null; this.currentSlot = null; this._xfade = null;
+      this._sb = { w: new Map(), want: [], phase: null };
+    }
+    this._sb.want = clips; this._sb.phase = Number.isFinite(phase) ? phase : null;
+  }
+  /** The slot actually carrying the body: currentSlot, or while a socket's pose holds (setSeatBlend clears currentSlot)
+   *  the blend's heaviest clip, named as the slot it really is (a fallback reads as itself). The seat-profile gate reads
+   *  this (occupants.js; house review I2). */
+  playingSlot() {
+    if (!this._sb) return this.currentSlot;
+    let best = null, bw = 0;
+    for (const [a, w] of this._sb.w) if (w > bw) { best = a; bw = w; }
+    if (!best) return null;
+    for (const [n, act] of Object.entries(this.actions)) if (act === best) return n;
+    return null;
+  }
+  /** What the seat blend is doing (probes and the agent's eye): [[clip, weight, time]] as the mixer has it. */
+  seatBlendState() {
+    if (!this._sb) return null;
+    return { phase: this._sb.phase, clips: [...this._sb.w].map(([a, w]) => [a._seatName, +w.toFixed(4), +a.time.toFixed(4)]).filter((x) => x[1] > 1e-3) };
+  }
+  _applySeatBlend(dt) {
+    const sb = this._sb;
+    const target = new Map();
+    for (const [name, w] of sb.want) {
+      let use = name, a = this.ensureClip(name) ?? this.actions[name];
+      while (!a && CLIP_FALLBACK[use]) { use = CLIP_FALLBACK[use]; a = this.actions[use]; }
+      a ??= this.actions.idle;
+      if (!a) continue;
+      a._seatName ??= name;
+      target.set(a, (target.get(a) ?? 0) + w);
+    }
+    for (const a of target.keys()) if (!sb.w.has(a)) { a.stopFading(); sb.w.set(a, a === this.current ? a.getEffectiveWeight() : 0); a.enabled = true; if (sb.phase == null) a.reset(); a.play(); }
+    // a gesture plays over the seat; the seat yields exactly the weight it takes
+    const over = this.onceAnim ? 1 - Math.min(1, this.onceAnim.action.getEffectiveWeight()) : 1;
+    const k = Math.min(1, 10 * dt);
+    for (const [a, cur] of sb.w) {
+      const want = target.get(a) ?? 0;
+      const w = cur + (want - cur) * k;
+      if (want === 0 && w < 1e-3) { a.setEffectiveWeight(0); sb.w.delete(a); continue; }
+      sb.w.set(a, w);
+      a.setEffectiveWeight(w * over);
+      if (sb.phase != null) { a.timeScale = 0; a.paused = false; a.time = sb.phase * a.getClip().duration; }
+      else a.timeScale = 1;
+    }
+  }
+
+  /** Sparse bone overrides a socket holds over its pose ({spine: [x,y,z,w]}: normalized humanoid bones, parent-local).
+   *  A bone the person's own held pose or a reach names stays theirs. Null lets go. */
+  setSeatHold(bones) {
+    if (!bones || !Object.keys(bones).length) { if (this._seatHold) this._seatHold.want = 0; return; }
+    const nodes = this._resolveBones(Object.keys(bones)).map(([n, node]) => [node, new THREE.Quaternion(...bones[n]).normalize()]);
+    this._seatHold = { nodes, w: this._seatHold?.w ?? 0, want: 1 };
+  }
+  _applySeatHold(dt) {
+    const h = this._seatHold;
+    h.w += (h.want - h.w) * Math.min(1, 8 * dt);
+    if (h.want === 0 && h.w < 0.01) { for (const [node] of h.nodes) { const r = this._composed.get(node); if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; } } this._seatHold = null; return; }
+    const mine = new Set((this._override?.weight > 0.02 ? this._override.nodes : []).map(([, n]) => n));
+    const reach = this._reachOwned();
+    for (const [node, q] of h.nodes) if (!mine.has(node) && !reach?.has(node)) this._writeBone(node, [q.x, q.y, q.z, q.w], h.w);
+  }
+
+  /** What holding a thing does to this body (grabbable, client/lib/thingphysics.js): sparse normalized-bone rotations, the
+   *  fingers of each holding hand (a grip's preset) and, for a body without tracked hands, the arms' hold pose. Every
+   *  client sets the same from the door's hold record and the thing's component: presence, never streamed. It applies
+   *  after a seat's hold (a held thing wins its hand) and yields to the person's own held pose and reach. Null lets go. */
+  setHoldPose(bones) {
+    const key = bones ? JSON.stringify(bones) : null;
+    if (!key || key === '{}') { if (this._holdPose) this._holdPose.want = 0; return; }
+    if (this._holdPose?.key === key) { this._holdPose.want = 1; return; }
+    const nodes = this._resolveBones(Object.keys(bones)).map(([n, node]) => [node, new THREE.Quaternion(...bones[n]).normalize()]);
+    this._holdPose = { key, nodes, w: this._holdPose?.w ?? 0, want: 1 };
+  }
+  _applyHoldPose(dt) {
+    const h = this._holdPose;
+    h.w += (h.want - h.w) * Math.min(1, 10 * dt);
+    if (h.want === 0 && h.w < 0.01) { for (const [node] of h.nodes) { const r = this._composed.get(node); if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; } } this._holdPose = null; return; }
+    const mine = new Set((this._override?.weight > 0.02 ? this._override.nodes : []).map(([, n]) => n));
+    const reach = this._reachOwned();
+    for (const [node, q] of h.nodes) if (!mine.has(node) && !reach?.has(node)) this._writeBone(node, [q.x, q.y, q.z, q.w], h.w);
+  }
+
+  /** Turn the head toward a look direction, in the BODY's frame (yaw about its up, pitch about its right, radians,
+   *  + = left / up), clamped to the socket's limits and shared between neck (40%) and head (60%) — the turn a seated
+   *  person makes to look round. Null lets the head go back to the clip. */
+  setSeatLook(look) {
+    if (!look) { if (this._seatLook) this._seatLook.want = 0; return; }
+    this._seatLook = { yaw: look.yaw, pitch: look.pitch, w: this._seatLook?.w ?? 0, want: 1 };
+  }
+  _applySeatLook(dt) {
+    const L = this._seatLook, h = this.vrm.humanoid;
+    L.w += (L.want - L.w) * Math.min(1, 8 * dt);
+    if (L.want === 0 && L.w < 0.01) { this._seatLook = null; return; }
+    const parts = [['neck', 0.4], ['head', 0.6]].map(([n, f]) => [h?.getNormalizedBoneNode?.(n), f]).filter(([n]) => n);
+    if (!parts.length) return;
+    if (parts.length === 1) parts[0][1] = 1;
+    this.root.getWorldQuaternion(_sl3).invert();   // world → body frame
+    for (const [node, f] of parts) {
+      const r = this._composeBegin(node);
+      // the turn in the body frame, carried into the bone's parent frame: local = P⁻¹·T·P·local, P = body⁻¹·parentWorld
+      _sl1.setFromAxisAngle(_Y2, L.yaw * f * L.w).multiply(_sl2.setFromAxisAngle(_X, -L.pitch * f * L.w));
+      node.parent.getWorldQuaternion(_sl2).premultiply(_sl3);
+      node.quaternion.premultiply(_sl2).premultiply(_sl1).premultiply(_sl2.invert());
+      this._composeEnd(node, r);
+    }
+  }
+
+  /** Which body point a socket seats (hips | feet | head): its place in the ROOT's frame, measured from the posed
+   *  skeleton every frame it is asked for (Resonite AvatarAnchor's PositionNode, measured rather than declared, so
+   *  any body in any clip lands its hips on the socket). Null = not measured yet (the body is loading). */
+  setAnchorWant(kind) { this._anchorWant = kind && kind !== 'root' ? kind : null; if (!this._anchorWant) this._anchorOff = null; }
+  anchorOffset() { return this._anchorOff ?? null; }
+  _measureAnchor() {
+    const h = this.vrm.humanoid; const k = this._anchorWant;
+    const bone = (n) => h?.getRawBoneNode?.(n) ?? h?.getNormalizedBoneNode?.(n) ?? null;
+    let p = null;
+    if (k === 'hips' || k === 'head') { const n = bone(k); if (n) p = n.getWorldPosition(_sa1); }
+    else if (k === 'feet') { const l = bone('leftFoot'), r = bone('rightFoot'); if (l && r) p = l.getWorldPosition(_sa1).add(r.getWorldPosition(_sa2)).multiplyScalar(0.5); }
+    if (!p) { this._anchorOff = null; return; }
+    this.root.worldToLocal(p);
+    // feet: the soles, not the ankles — the ankle's height above the root at rest, at this body's size
+    if (k === 'feet') p.y -= (this._footRestY ?? 0) * this.vrm.scene.scale.y;
+    this._anchorOff = p.toArray();
+  }
 
   /** Move a held pose's hips translation onto the ROOT, leaving every joint
    *  where it is in the world. For the moment a sim takes the body: its first
@@ -1693,7 +1881,7 @@ export class Avatar {
       this._parked = null;
       return;
     }
-    if (this.emote) this.cancelEmote();
+    if (this.onceAnim) this.cancelOnce();
     for (const l of this._anims ?? []) this._handBack(l);   // a falling body stops waving
     this._anims = null;
     const driven = new Set(DRIVEN_BONES);
@@ -1960,7 +2148,7 @@ export class Avatar {
     this._puppet = v; this._applyBodyScale();
     return true;
   }
-  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (seats.js riderScalar) reads this. */
+  /** The body's model→root multiplier: chosen size × VR fit. The seat seam (occupants.js occupantScalar) reads this. */
   bodyScale() { return (this.userScale ?? 1) * (this._puppet ?? 1); }
   _applyBodyScale() {
     const sc = this.vrm?.scene;
@@ -2064,7 +2252,7 @@ export class Avatar {
 
   /** Upright in ordinary motion (plateanchor.js STAND_SLOTS), with nothing else owning the body: a gesture, a held
    *  pose and a ragdoll fall can crouch, bow or tumble it, so they keep the live anchor. */
-  _plateStanding() { return STAND_SLOTS.has(this.postureSlot) && !this.emote && !this._override && !this._limp; }
+  _plateStanding() { return STAND_SLOTS.has(this.postureSlot) && !this.onceAnim && !this._override && !this._limp; }
 
   /** Slide the hung plate off the head for THIS viewer's camera (plateanchor.js plateViewLift): along the camera's up,
    *  in world, so each client lifts every plate for its own eye and nothing rides the wire. Runs after _placePlate,
@@ -2217,9 +2405,10 @@ export class Avatar {
       if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
     }
     const BC = globalThis.__ewBC ?? (() => {});
-    // emote expiry
-    if (this.emote && now > this.emote.until) this.cancelEmote();
+    // gesture expiry
+    if (this.onceAnim && now > this.onceAnim.until) this.cancelOnce();
 
+    if (this._sb) this._applySeatBlend(dt);   // a socket's pose: its weights (and locked times) before the mixer samples
     BC('av:mixer');
     this.mixer.update(dt);
     // Generic humanoid swim overlay; semantic presence, no new clip requirement.
@@ -2229,7 +2418,7 @@ export class Avatar {
       if(r?.live && node.quaternion.equals(r.out))node.quaternion.copy(r.base);
     }
     this._swimNodes=[];
-    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !SWIM_CLIPS.includes(this.postureSlot) && !this._limp && !this._override && !this.emote){
+    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !SWIM_CLIPS.includes(this.postureSlot) && !this._limp && !this._override && !this.onceAnim){
       for(const [name,rotation] of Object.entries(swimPose(now/1000,this.locomotion.mode==='surface'))){
         const node=this.vrm.humanoid?.getNormalizedBoneNode(name);if(!node)continue;
         const r=this._composeBegin(node);
@@ -2271,10 +2460,13 @@ export class Avatar {
       }
       this._composeEnd(this.head, r);
     }
+    if (this._seatLook && !this._limp) this._applySeatLook(dt);   // a seated head turns toward the look, within the socket's limits
     BC('av:swim');
     if (this._swimW || this.postureSlot === 'swim' || this.postureSlot === 'tread') this._swimLayer(dt, now);
     BC('av:override');
     if (this._override || this._anims?.length) this._applyOverride(dt, now);
+    if (this._seatHold && !this._limp) this._applySeatHold(dt);
+    if (this._holdPose && !this._limp) this._applyHoldPose(dt);   // after the seat's hold: a held thing wins its hand
 
     // ---- reach: solved fresh every frame, so it TRACKS. After the held pose
     // (which yields any bone a reach owns) and before vrm.update, same as
@@ -2430,6 +2622,7 @@ export class Avatar {
     this.onBeforeVrmUpdate?.(dt);
     this.vrm.update(dt);
     if (sbm) this.vrm.springBoneManager = sbm;
+    if (this._anchorWant) this._measureAnchor();   // the posed anchor (hips/feet/head) where the seat put the root
 
     // ---- wings: flap while alive, let go the instant the body does.
     //
@@ -2656,7 +2849,7 @@ function makeBlobShadow() {
 
 // ---------------------------------------------------------------- factory
 
-/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, emotes, the XR arm
+/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, gestures, the XR arm
  *  solver and the wire all work on it. Never throws; never touches the network. */
 export function makeCapsuleAvatar(id) {
   const av = new Avatar(id, makeCapsuleVrm(), {});

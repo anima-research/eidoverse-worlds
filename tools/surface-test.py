@@ -16,9 +16,30 @@ def check(name, ok, detail=""):
     print(("  ✓ " if ok else "  ✗ ") + name + (f"  [{detail}]" if detail and not ok else ""))
     passed, failed = passed + (1 if ok else 0), failed + (0 if ok else 1)
 
+# The world speaks the protocol: a join says replica (an embodied client that doesn't is refused), a say is a door
+# request answered by reply, and chat reaches clients as `say` entries of the log stream (actors are opaque
+# ids; the stream's `names` and the snapshot's cut.names say who). A say's chat number — what an attest names — is
+# its log position × 1000 (server/worldlog.ts sayLine).
+NAMES = {}
+def learn(m):
+    if m.get("type") == "snapshot": NAMES.update((m.get("cut") or {}).get("names") or {})
+    if m.get("type") == "log": NAMES.update(m.get("names") or {})
+def says_in(events):
+    out = []
+    for m in events:
+        if m.get("type") != "log": continue
+        for i, e in enumerate(m.get("entries") or []):
+            if isinstance(e, dict) and e.get("kind") == "say":
+                out.append({"seq": (m["from"] + i) * 1000, "actor": NAMES.get(e.get("actor"), e.get("actor")), "text": (e.get("body") or {}).get("text")})
+    return out
+REQ = [0]
+def say_req(text):
+    REQ[0] += 1
+    return json.dumps({"type": "request", "id": f"surf-{REQ[0]}", "verb": "say", "args": {"text": text}})
+
 async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
-    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True}
+    msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True, "replica": True}
     if surface: msg["surface"] = surface
     if agent_token: msg["agentToken"] = agent_token
     await ws.send(json.dumps(msg))
@@ -26,7 +47,8 @@ async def join(name, surface=None, world="surftest", agent_token=None):
     async def pump():
         nonlocal closed
         try:
-            async for raw in ws: events.append(json.loads(raw))
+            async for raw in ws:
+                m = json.loads(raw); learn(m); events.append(m)
         except websockets.ConnectionClosed as e:
             closed = (e.rcvd.code if e.rcvd else 0, e.rcvd.reason if e.rcvd else "")
     task = asyncio.create_task(pump())
@@ -90,6 +112,10 @@ async def main():
     p2, e6, c6, _ = await join("hesp2", agent_token="surf-lab-hesp2")
     vA, eA, cA, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")
     p3, e7, c7, _ = await join("hesp2", agent_token="surf-lab-hesp2")          # takeover of primary
+    # p3's own generation (its join snapshot), for T12: an embodied leg attesting must be refused by the ADMISSION guard
+    # (it isn't the voice leg), not by the generation guard a borrowed gen would trip (#260 house I327)
+    _p3_snaps = [m for m in e7 if m.get("type") == "snapshot"]
+    p3_gen = _p3_snaps[-1].get("gen") if _p3_snaps else None
     await asyncio.sleep(0.6)
     check("T7 primary takeover kicks old primary 4002", c6() is not None and c6()[0] == 4002, str(c6()))
     check("T7 voice leg SURVIVES primary takeover", cA() is None and vA.state.name == "OPEN")
@@ -130,21 +156,20 @@ async def main():
 
     # T11 (B3/matrix 6): an aux cannot author — even say
     eB.clear()
-    await vB.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "aux voice"}}))
+    await vB.send(say_req("aux voice"))
     await asyncio.sleep(0.5)
-    said = [m for m in ew if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"]
-    err = [m for m in eB if m.get("type") == "error"]
+    said = says_in(ew)
+    err = [m for m in eB if m.get("type") == "error" or (m.get("type") == "reply" and not m.get("ok"))]
     check("T11 aux say refused (authors nothing)", len(said) == 0 and len(err) >= 1, f"said={len(said)} err={len(err)}")
 
     # T12 (B1): attest round-trip — valid receipt broadcasts `performed`;
     # bad digest refused; embodied client cannot attest.
     import hashlib
-    await p3.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "receipt me"}}))
+    await p3.send(say_req("receipt me"))
     await asyncio.sleep(0.5)
-    says = [m for m in ew if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"
-            and m["entry"].get("actor") == "hesp2"]
-    check("T12 setup: say folded", bool(says))
-    seq = says[-1]["entry"]["seq"] if says else -1
+    says = [x for x in says_in(ew) if x["actor"] == "hesp2"]
+    check("T12 setup: say logged", bool(says))
+    seq = says[-1]["seq"] if says else -1
     digest = hashlib.sha256("receipt me".encode()).hexdigest()
     # vB_gen (captured at vB's join above) is the surface generation the leg
     # echoes in its attest (B2); the server requires it to equal c.gen.
@@ -167,9 +192,11 @@ async def main():
     check("T12 stale-generation attest refused (B2)", not any(m.get("type") == "performed" for m in ew)
           and any(m.get("type") == "error" for m in eB))
     ew.clear(); e7.clear()
-    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": vB_gen}))
+    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": p3_gen}))
     await asyncio.sleep(0.4)
     check("T12 embodied client cannot attest", not any(m.get("type") == "performed" for m in ew))
+    check("T12 …refused as not the bound voice leg (the admission guard, under its own gen)",
+          any(m.get("type") == "error" and "bound voice leg" in str(m.get("error")) for m in e7), str([m for m in e7 if m.get("type") == "error"]))
 
     # T14 (#57 client half): FIRST aux join broadcasts surface-transition
     # (retired null) — listeners key hold-then-fallback on it, and a leg
@@ -228,7 +255,7 @@ async def main():
     # voice retirement, or every say from a rejoining actor with no leg
     # waits the full window against the ghost.
     p4, e8, c8, _ = await join("hesp3", agent_token="surf-lab-hesp3")
-    v4, e9, c9, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
+    v3, e9, c9, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
     await asyncio.sleep(0.4)
     ew2.clear()
     await p4.close()                       # primary dies; aux gets reaped 4007
@@ -304,20 +331,18 @@ async def main():
     check("T21 empty-sanitizing surface refused 4005", c13() is not None and c13()[0] == 4005, str(c13()))
     check("T21 the embodied primary survives its malformed accessory", c12() is None, str(c12()))
 
-    # T22 (review finding 3): attest survives a fold. The owned wrapper sets
-    # FOLD_EVERY=5, so a handful of comps folds entries[] out from under the
-    # say — the receipt must still resolve (recentSays ring) and broadcast
-    # `performed`.
+    # T22 (review finding 3): attest survives later entries. (v1 folded entries[]
+    # out from under the say every FOLD_EVERY appends; the server keeps the last 256 says
+    # in recentSays) — the receipt must still resolve and broadcast `performed`.
     v6, e14, c14, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
     await asyncio.sleep(0.4)
-    await p6.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "folded but performed"}}))
+    await p6.send(say_req("folded but performed"))
     await asyncio.sleep(0.4)
     say_seq = None
-    for m in reversed(ew2):
-        if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"            and m["entry"].get("args", {}).get("text") == "folded but performed":
-            say_seq = m["entry"]["seq"]; break
-    for i in range(8):   # trip at least one fold past the say
-        await p6.send(json.dumps({"type": "verb", "verb": "comp", "args": {"id": f"t22-{i}", "type": "note", "data": {"i": i}}}))
+    for x in reversed(says_in(ew2)):
+        if x["text"] == "folded but performed": say_seq = x["seq"]; break
+    for i in range(8):   # later entries past the say: the receipt must still resolve from the recentSays ring
+        await p6.send(say_req(f"t22 filler {i}"))
     await asyncio.sleep(0.6)
     import hashlib
     dig = hashlib.sha256("folded but performed".encode()).hexdigest()
@@ -327,7 +352,7 @@ async def main():
         if m.get("type") == "snapshot": gen6 = m.get("gen")
     await v6.send(json.dumps({"type": "attest", "seq": say_seq, "gen": gen6, "digest": dig}))
     await asyncio.sleep(0.5)
-    check("T22 attest resolves a folded-out say (recentSays ring) and broadcasts performed",
+    check("T22 attest resolves a say with later entries past it (recentSays ring) and broadcasts performed",
           any(m.get("type") == "performed" and m.get("seq") == say_seq for m in ew2),
           f"seq={say_seq} gen={gen6} tail={str(ew2[-3:])}")
 
@@ -343,7 +368,7 @@ async def main():
         try: await w.close()
         except Exception: pass
 
-    for w in (w1, w2, v4):
+    for w in (w1, w2, v3):
         try: await w.close()
         except Exception: pass
 

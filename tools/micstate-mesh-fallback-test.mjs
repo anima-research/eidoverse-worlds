@@ -12,6 +12,7 @@
 // own behavior (gate, release, mute) is micstate-exec-test and
 // micstate-release-test's job.
 
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register();
@@ -23,20 +24,20 @@ const check = (name, ok, extra = "") => {
 };
 
 const hints = [];
-mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/core.js", import.meta.url)), () => ({
   bus: { emit: () => {}, on: () => {} },
   report: () => {},
   CONFIG: { params: new URLSearchParams() },
 }));
-mock.module(new URL("../client/lib/ui.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/ui.js", import.meta.url)), () => ({
   flashHint: (m) => hints.push(m),
 }));
-mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
-mock.module(new URL("../client/lib/voiceconsent.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/net.js", import.meta.url)), () => ({ sendTyping: () => {} }));
+mock.module(fileURLToPath(new URL("../client/lib/voiceconsent.js", import.meta.url)), () => ({
   gateThreshold: () => 0.02,
   pttMode: () => false,   // voice activation: the level decides (mic-ptt-test covers the other regime)
 }));
-mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
+mock.module(fileURLToPath(new URL("../client/lib/audioctx.js", import.meta.url)), () => ({
   audioContext: () => { throw new Error("no audio in a test"); },
 }));
 

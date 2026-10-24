@@ -15,7 +15,7 @@
 import { mkdtempSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scratchBench, readSequencerLog, mkCheck, bold, dim, sleep, ROOT } from "./harness.ts";
+import { scratchBench, readSequencerLog, mkCheck, bold, dim, sleep, ROOT, foundWorlds } from "./harness.ts";
 
 const HEADED = process.argv.includes("--headed");
 const ECHO = process.argv.includes("--console");
@@ -34,7 +34,7 @@ for (const domain of readdirSync(join(ROOT, "defs"))) {
 
 console.log(`\n${bold("defs-smoke")} — defs in ${DEFS}`);
 const { PORT, BASE, SCRATCH, cws, cdp, evalJson, cleanup, die } =
-  await scratchBench("defsmoke", { headed: HEADED, portFrom: 8955, serverEnv: { DEFS_DIR: DEFS } });
+  await scratchBench("defsmoke", { headed: HEADED, portFrom: 8955, serverEnv: { DEFS_DIR: DEFS, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" } });   // TRUST_NAMES: the driver who founds a world owns it
 const { check, tally } = mkCheck();
 
 // ---- the scratch def registry ----------------------------------------------
@@ -83,9 +83,9 @@ check("broken def is NOT served", !names.includes("broken"));
     && Array.isArray(reg.uiHelp?.keys) && reg.uiHelp.keys.length >= 15
     && Array.isArray(reg.uiHelp?.sections) && reg.uiHelp.sections.length >= 4,
   `${reg.uiHelp?.keys?.length ?? 0} keys, ${reg.uiHelp?.sections?.length ?? 0} sections`);
-  check("the emote vocabulary rides the registry (order = key order)",
-    reg.emotes?.wave?.clip === "raise" && reg.emotes?.talk?.listed === false
-    && Object.keys(reg.emotes ?? {})[0] === "wave", Object.keys(reg.emotes ?? {}).join(", "));
+  check("the action bar's vocabulary rides the registry (order = key order)",
+    reg.actionbar?.wave?.clip === "raise" && reg.actionbar?.talk?.listed === false
+    && Object.keys(reg.actionbar ?? {})[0] === "wave", Object.keys(reg.actionbar ?? {}).join(", "));
 }
 
 // ---- animation overlay ------------------------------------------------------
@@ -169,14 +169,17 @@ function joinDriver(world: string, id: string): Promise<Driver> {
   return new Promise((resolveP, reject) => {
     const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     const self: Driver = {
-      verb: async (v, a) => { dws.send(JSON.stringify({ type: "verb", verb: v, args: a })); await sleep(420); },
+      // the world's ground is @world's: terrain and grass are door sets of its components (the driver founded the world)
+      verb: async (v, a) => { dws.send(JSON.stringify({ type: "request", id: `${id}-${++n}`, verb: "set", args: { id: "@world", component: v, value: a } })); await sleep(420); },
       close: () => { try { dws.close(); } catch { /* fine */ } },
     };
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "" }));
+    let n = 0;
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world, id, token: "", replica: true }));
     dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolveP(self);
       if (m.type === "error") console.log(dim(`  ${id} refused: ${m.error}`));
+      if (m.type === "reply" && !m.ok) console.log(dim(`  ${id}'s ${m.verb} refused: ${JSON.stringify(m.reply?.refused)}`));
     };
     dws.onerror = (e) => reject(new Error(`socket ${id}: ${String(e)}`));
     setTimeout(() => reject(new Error(`${id} never got a snapshot`)), 15_000);
@@ -185,6 +188,7 @@ function joinDriver(world: string, id: string): Promise<Driver> {
 const stamp = Math.random().toString(36).slice(2, 7);
 const WORLDS = { std: `defsmoke-std-${stamp}`, novel: `defsmoke-novel-${stamp}`,
   preset: `defsmoke-preset-${stamp}`, bogus: `defsmoke-bogus-${stamp}` };
+foundWorlds(join(SCRATCH, "worlds"), Object.values(WORLDS), "defsdriver");   // joining never founds a world
 for (const [kind, name] of Object.entries(WORLDS)) {
   const d = await joinDriver(name, "defsdriver");
   await d.verb("terrain", { size: 64 });

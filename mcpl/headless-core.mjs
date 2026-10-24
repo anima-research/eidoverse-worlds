@@ -9,7 +9,7 @@ export const ground = null;
 export const grid = null;
 export const axisLines = null;          // terrain.js toggles it with the grid (VR alpha, part 2)
 export const backendName = 'none';      // avatar.js reads the renderer backend; there is none here
-export const XR_BOOT = false;           // frame.js: this is never an XR boot
+export const XR_BOOT = false;           // frameloop.js: this is never an XR boot
 export const camera = new THREE.PerspectiveCamera();
 // Client light setup reads shadow configuration even when nothing draws.
 export const renderer = { domElement: null, shadowMap: { enabled: false, type: 0 }, _getShadowNodes: () => ({}) };

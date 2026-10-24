@@ -1,0 +1,4 @@
+{"seq":0,"ts":1785635177077,"actor":"world","verb":"grant","args":{"id":"founder","role":"owner","gen":true}}
+{"seq":1,"ts":1785635177100,"actor":"founder","verb":"say","args":{"text":"welcome"}}
+{"seq":2,"ts":1785636392737,"actor":"founder","verb":"grant","args":{"id":"helper","role":"builder"}}
+{"seq":3,"ts":1785654213243,"actor":"founder","verb":"grant","args":{"id":"*","gen":true}}

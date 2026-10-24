@@ -32,6 +32,7 @@
 // verbs ≤12/4s per client, mount is self-rank for args.id === self,
 // /snap?world&follow&view needs a c.renderer client in-world.
 
+import { fileURLToPath } from "node:url";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -40,7 +41,7 @@ const PORT = Number(process.env.PORT ?? 8987);
 const BASE = `http://127.0.0.1:${PORT}`;
 const WORLD = process.env.WORLD ?? "fp75";
 const RECEIPTS = process.env.RECEIPTS ?? `/tmp/fp75-receipts-${PORT}`;
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 mkdirSync(RECEIPTS, { recursive: true });
 
@@ -63,7 +64,7 @@ const rigOut = join(ROOT, "assets/opt/eidoverse/assets/vrms/bighead75.vrm");
 const rigSrc = join(EIDOVERSE_DIR, "eidoverse/assets/vrms/claude.vrm");
 // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
 // shim whose pid is not the real process — killing the shim orphans the
-// child (paritybench found two abandoned sequencers holding ports this way)
+// child (two abandoned sequencers were once found holding ports this way)
 const mk = Bun.spawnSync([process.execPath, join(ROOT, "tools/make-bighead-vrm.ts"), rigSrc, rigOut, "5"]);
 if (mk.exitCode !== 0) { console.error(mk.stderr.toString()); process.exit(1); }
 
@@ -212,7 +213,7 @@ else check("selfie differs from first (avatar is the subject)", meanDiff(highSel
 
 // moving socket: bob the tower; the eye must ride it. Two frames half a
 // period apart must differ far more than two frames of a still scene.
-await puppet.verb("comp", { id: "tower", type: "motion", data: { type: "bob", amp: 0.7, period: 2.4 } });
+await puppet.verb("comp", { id: "tower", type: "motion", data: { type: "oscillate", amp: 0.7, period: 2.4 } });
 await sleep(600);
 const bobA = await snap("puppet", "first", "bighead-bob-a");
 await sleep(1200);

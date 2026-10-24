@@ -3,6 +3,8 @@
 For whoever merges `overhaul/rimward` into anima/main (or cherry-picks from
 it). Everything here carries a commit on this branch; the sections are
 ordered by what upstream most needs to know. Compiled 2026-08-30 (§24r).
+Historical: that merge has happened, and the world protocol it describes
+has since been replaced by the current protocol (spec/PROTOCOL.md); file names are as of then.
 
 ## 1. Bugs found in upstream's own tree (fixed here, unfixed there)
 
@@ -162,7 +164,7 @@ every landing. The sim applier now shows the visual center standing on
 ITS ground (`simworld.js`, the terrain difference between the two
 footprints — presentation only; `tools/sim-ground-smoke.ts` holds the
 proof). Two residues only the asset fix removes: a body RELEASED to the
-fold (an epoch-release `place`) is realized at the authored origin
+fold (a body coming to rest) is realized at the authored origin
 height again, and the static terrain re-seat (world.js) still seats by
 the origin — both sink the cluster by the same slope difference.
 Re-exporting is a MIGRATION, not a drop-in: every logged `pos` for this
@@ -185,7 +187,7 @@ compensates.
 
 ## 5. Structural changes a merge will meet on this branch
 
-The refactor survey program (docs/REFACTOR-SURVEY.md, all items closed):
+The refactor survey program (all items closed; the survey is in git history):
 
 - server: ws handler table (`server/messages.ts`), join split
   (admitJoin/installJoin/buildSnapshot), `server/limits.ts`, `fsutil.ts`

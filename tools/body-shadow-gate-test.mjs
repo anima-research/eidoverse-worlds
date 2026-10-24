@@ -86,6 +86,76 @@ mats.prepareObject(grass, { kind: 'grass' });
 check('grass neither casts nor receives',
   meshes(grass).every((m) => m.receiveShadow === false && m.castShadow === false));
 
+console.log("'MY BODY CASTS A REAL SHADOW' — the Video pref, own body only (materials.applyOwnBodyShadow, from mybody.setMe)");
+{ const fakeAv = (lamps = 0) => { const g = makeBody(); mats.prepareObject(g, { kind: 'body' }); return { vrm: { scene: g }, _lamps: new Array(lamps).fill({}) }; };
+  const body = (av) => meshes(av.vrm.scene);
+  localStorage.removeItem('ew-my-shadow');
+  check('the pref defaults off', mats.myShadowPref() === false);
+  const off = fakeAv();
+  await mats.applyOwnBodyShadow(off);
+  check('pref off: an unlamped body is EXACTLY as before (nothing casts, nothing receives)', body(off).every((m) => !m.castShadow && !m.receiveShadow));
+  mats.setMyShadowPref(true);
+  check('setMyShadowPref persists', localStorage.getItem('ew-my-shadow') === '1' && mats.myShadowPref() === true);
+  const warmed = [];
+  const on = fakeAv();
+  const flippedBeforeWarm = [];
+  const r = await mats.applyOwnBodyShadow(on, { warm: async (label, get) => { warmed.push(label, get().map((m) => m.name)); flippedBeforeWarm.push(body(on).some((m) => m.castShadow)); } });
+  check('pref on: the own body casts and receives', r === true && body(on).filter((m) => !NO_CAST.includes(m.name)).every((m) => m.castShadow) && body(on).every((m) => m.receiveShadow));
+  check('…GOLD and the wings still do not cast', !byName(on.vrm.scene, 'GOLD').castShadow && !byName(on.vrm.scene, 'wings').castShadow);
+  check('…the depth pipelines were warmed BEFORE the flip, for the casting meshes only', warmed[0] === 'depth me' && flippedBeforeWarm[0] === false
+    && JSON.stringify(warmed[1]) === JSON.stringify(NAMES.filter((n) => !NO_CAST.includes(n))), JSON.stringify(warmed));
+  const remote = fakeAv();                        // a remote body: prepareObject only — setMe never runs for it
+  check('…a remote body with the same pref value in this browser does NOT cast', body(remote).every((m) => !m.castShadow && !m.receiveShadow));
+  mats.setMyShadowPref(false);
+  await mats.applyOwnBodyShadow(on);
+  check('pref back off: the own body goes back to its blob', body(on).every((m) => !m.castShadow && !m.receiveShadow));
+  const lamped2 = fakeAv(1);
+  await mats.applyOwnBodyShadow(lamped2);
+  check('pref off but lamped: the lamp gate still wins', byName(lamped2.vrm.scene, 'body_main').castShadow === true);
+  const swapped = fakeAv();
+  mats.setMyShadowPref(true);
+  const r2 = await mats.applyOwnBodyShadow(swapped, { warm: async () => {}, still: () => false });
+  check('a body taken off while its warm ran is left alone', r2 === false && body(swapped).every((m) => !m.castShadow));
+  mats.setMyShadowPref(false); }
+
+console.log("ROUND 2 — the LIT warm (receiveShadow IS in the cache key) and the toggle race");
+{ const fakeAv = (lamps = 0) => { const g = makeBody(); mats.prepareObject(g, { kind: 'body' }); return { vrm: { scene: g }, _lamps: new Array(lamps).fill({}) }; };
+  const body = (av) => meshes(av.vrm.scene);
+  const order = [];
+  const av = fakeAv();
+  const r = await mats.applyOwnBodyShadow(av, { pref: true,
+    lit: async (label, get) => { order.push(label); const ms = get(); order.push(`receive:${body(av).map((m) => +m.receiveShadow).join('')}`, `lit:${ms.map((m) => m.name).join(',')}`); },
+    warm: async (label, get) => { order.push(label); get(); } });
+  check('the lit warm runs first, with receiveShadow still false on every mesh, for the casting meshes only; the depth warm follows; the flip is last',
+    r === true && order.join(' ') === `lit me receive:000000 lit:${NAMES.filter((n) => !NO_CAST.includes(n)).join(',')} depth me` && body(av).every((m) => m.receiveShadow), order.join(' '));
+
+  // S2-1: ON → (warm pending) → OFF → the warm lands: the body must END with the pref off
+  const race = fakeAv();
+  let release; const gate = new Promise((res) => { release = res; });
+  const on = mats.applyOwnBodyShadow(race, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { get(); await gate; } });
+  mats.setMyShadowPref(true);
+  await Promise.resolve();
+  mats.setMyShadowPref(false);
+  const off = await mats.applyOwnBodyShadow(race, { pref: () => mats.myShadowPref() });
+  release(); const first = await on;
+  check('pref ON then OFF while the warm was pending: the body does NOT cast afterwards', off === false && first === false && body(race).every((m) => !m.castShadow && !m.receiveShadow),
+    `first=${first} off=${off} casting=${body(race).filter((m) => m.castShadow).map((m) => m.name).join(',')}`);
+
+  // the pref re-read AFTER the warm: ON at call time, OFF when the warm lands — no newer call in between
+  const late = fakeAv();
+  mats.setMyShadowPref(true);
+  const r3 = await mats.applyOwnBodyShadow(late, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { get(); mats.setMyShadowPref(false); } });
+  check('the decision is re-read after the warm (pref off by then → off)', r3 === false && body(late).every((m) => !m.castShadow), `r3=${r3}`);
+
+  // ON → OFF → ON runs the warm once, not once per toggle
+  const twice = fakeAv(); let warms = 0;
+  mats.setMyShadowPref(true);
+  await mats.applyOwnBodyShadow(twice, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { if (get().length) warms++; } });
+  mats.setMyShadowPref(false); await mats.applyOwnBodyShadow(twice, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { if (get().length) warms++; } });
+  mats.setMyShadowPref(true); await mats.applyOwnBodyShadow(twice, { pref: () => mats.myShadowPref(), lit: async (_l, get) => { if (get().length) warms++; } });
+  check('ON → OFF → ON warms once and ends casting', warms === 1 && body(twice).some((m) => m.castShadow), `warms=${warms}`);
+  mats.setMyShadowPref(false); }
+
 console.log('A NULL ROOT — no throw (module init passes a null ground)');
 check('setBodyShadows(null) returns 0', mats.setBodyShadows(null) === 0);
 

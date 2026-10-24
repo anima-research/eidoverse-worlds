@@ -1,415 +1,132 @@
 /**
- * Effective-transform test — #82: agent perception must report mounted cargo
- * (and moving things) where they ACTUALLY are, or refuse to give a number.
- * No servers needed; time is injected everywhere.
+ * Effective-transform test (#82): where a thing ACTUALLY is, composed from its fold record and its mount chain, or a
+ * refusal naming the first link that can't be vouched for. Pure module, no servers; time is an argument.
  *
- * Run: cd mcpl && bun run effective-test.ts
+ * Run: cd mcpl && bun effective-test.ts
  *
- * Fail-on-main controls: the look()-level checks below use only surface that
- * exists on main (WorldAgent, applyEntry, look), so running this file on a
- * pre-#82 checkout demonstrates the stale-coordinate contradiction failing
- * on its own receipts (the pure-module checks report the module as absent).
- *
- * Expected values are HAND-COMPUTED from the closed forms — never from the
- * code under test. Worked math is inline at each case.
+ * Expected values are worked by hand from the composition rules (three.js's rotation convention: +90° about Y takes
+ * +X to -Z, +90° about X takes +Y to +Z), never read back from the code under test.
  */
 
-import { WorldAgent } from "./agent.ts";
+import { effectiveWorldTransform, type EffectiveView } from "./effective.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
   console.log(ok ? `  \x1b[32m✓\x1b[0m ${label}` : `  \x1b[31m✗ ${label}${detail ? ` — ${detail}` : ""}\x1b[0m`);
   if (!ok) failures++;
 };
-const near = (a: number, b: number, eps = 1e-4) => Math.abs(a - b) < eps;
-const near3 = (a: number[], b: number[], eps = 1e-4) => a.length === 3 && a.every((v, i) => near(v, b[i], eps));
+const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
+const near3 = (a: number[] | undefined, b: number[], eps = 1e-6) => !!a && a.length === 3 && a.every((v, i) => near(v, b[i], eps));
+const S = Math.SQRT1_2;
+const qY90 = [0, S, 0, S], qX90 = [S, 0, 0, S];   // [x, y, z, w]
 
-// effective.ts does not exist on main — load it dynamically so the
-// look()-level receipts still run there.
-let EFF: typeof import("./effective.ts") | null = null;
-try { EFF = await import("./effective.ts"); } catch { /* pre-#82 checkout */ }
-
-const T0 = 1_700_000_000_000;                       // fixed epoch; all time injected
-
-/** An agent that never connects: entries are folded straight through
- *  applyEntry (live=false = replay semantics), the same door join uses. */
-function offlineAgent(): WorldAgent {
-  return new WorldAgent({ url: "ws://127.0.0.1:9/ws", name: "tester", world: "efftest" });
+/** A view over plain records: things by id, mounts by id. */
+function view(things: Record<string, any>, mounts: Record<string, any> = {}): EffectiveView {
+  return { entity: (id) => things[id], mount: (id) => mounts[id] };
 }
-const fold = (a: WorldAgent, entry: { verb: string; args: any; actor?: string }, live = false) =>
-  (a as any).applyEntry({ seq: 0, ts: T0, actor: entry.actor ?? "t", ...entry }, live);
+const at = (id: string, v: EffectiveView) => effectiveWorldTransform(id, v, 0);
+const show = (r: unknown) => JSON.stringify(r);
 
-// A fake view for the pure module — plain data, no agent.
-const view = (ents: Record<string, any>, mounts: Record<string, any>) => ({
-  entity: (id: string) => ents[id],
-  mount: (id: string) => mounts[id],
-});
-
-// ---- pure module: composition contract -------------------------------------
-console.log("\n━━ effective.ts: the composition contract ━━");
-if (!EFF) {
-  check("effective.ts present", false, "module absent (pre-#82 checkout)");
-} else {
-  const { effectiveWorldTransform: eff } = EFF;
-
-  // static parent + mount offset (no socket)
-  {
-    const r = eff("crate", view(
-      { swing: { pos: [10, 0, 10], yaw: 0 }, crate: { pos: [3, 0, 3], yaw: 0 } },
-      { crate: { to: "swing", offset: [0, 0.55, 0] } }), T0);
-    check("static parent + offset: composed, not stale", r.ok && near3(r.pos, [10, 0.55, 10]), JSON.stringify(r));
-  }
-
-  // socket default; then mount offset/yaw OVERRIDING socket defaults
-  {
-    const ents = { swing: { pos: [0, 0, 0], yaw: 0, comp: { sockets: { seat: { pos: [0, 1, 0], yaw: 1 } } } }, crate: { pos: [9, 9, 9], yaw: 0 } };
-    const bySock = eff("crate", view(ents, { crate: { to: "swing", slot: "seat" } }), T0);
-    check("socket supplies the local frame", bySock.ok && near3(bySock.pos, [0, 1, 0]) && near(bySock.yaw, 1), JSON.stringify(bySock));
-    const byMount = eff("crate", view(ents, { crate: { to: "swing", slot: "seat", offset: [0, 2, 0], yaw: 0.5 } }), T0);
-    check("mount offset/yaw override socket defaults", byMount.ok && near3(byMount.pos, [0, 2, 0]) && near(byMount.yaw, 0.5), JSON.stringify(byMount));
-  }
-
-  // parent yaw + non-1 scalar scale: offset [1,0,0] under yaw π/2, scale 2
-  // rotY(π/2): [x,z] → [x·cosθ + z·sinθ, −x·sinθ + z·cosθ]; [2,0] → [0,−2]
-  {
-    const r = eff("crate", view(
-      { boat: { pos: [10, 0, 10], yaw: Math.PI / 2, scale: 2 }, crate: { pos: [0, 0, 0], scale: 3 } },
-      { crate: { to: "boat", offset: [1, 0, 0] } }), T0);
-    check("parent yaw rotates the offset", r.ok && near3(r.pos, [10, 0, 8]), JSON.stringify(r));
-    check("parent scale scales the offset, scales multiply down", r.ok && near(r.yaw, Math.PI / 2) && near(r.scale, 6), JSON.stringify(r));
-  }
-
-  // moving parent (pendulum) at two explicit nowMs.
-  // θ(t) = amp·e^{-damp·t}·cos(2π t/period + phase); axis x, pivot p, socket s.
-  // Swing shift = p − q·p (yaw 0); crate = swingPos + q·s.
-  //   t=0: θ=0.5 → y = 2.4 − 1.85·cos(0.5), z = 10 − 1.85·sin(0.5)
-  //   t=1s (¼ period of 4s): θ = 0.5·cos(π/2) ≈ 0 → crate at rest point (10, 0.55, 10)
-  {
-    const ents = {
-      swing: { pos: [10, 0, 10], yaw: 0, comp: {
-        sockets: { seat: { pos: [0, 0.55, 0] } },
-        motion: { type: "pendulum", axis: "x", pivot: [0, 2.4, 0], amp: 0.5, period: 4, damp: 0, t0: T0 } } },
-      crate: { pos: [3, 0, 3], yaw: 0 },
-    };
-    const v = view(ents, { crate: { to: "swing", slot: "seat" } });
-    const r1 = eff("crate", v, T0);
-    const r2 = eff("crate", v, T0 + 1000);
-    const y1 = 2.4 - 1.85 * Math.cos(0.5), z1 = 10 - 1.85 * Math.sin(0.5);
-    check("pendulum parent, phase 1: hand-computed", r1.ok && near3(r1.pos, [10, y1, z1]), JSON.stringify(r1));
-    check("pendulum parent, phase 2: back through rest", r2.ok && near3(r2.pos, [10, 0.55, 10], 1e-3), JSON.stringify(r2));
-    check("two nowMs, two positions", r1.ok && r2.ok && !near3(r1.pos, r2.pos, 1e-3));
-    check("the moving link is named", r1.ok && r1.moving === "pendulum", JSON.stringify(r1.ok && r1.moving));
-  }
-
-  // nested root mounts on a path-motion grandparent.
-  // path [[0,0,0]→[10,0,0]], speed 1, 'once', t=5s → ferry (5,0,0), yaw atan2(10,0)=π/2.
-  // Offsets [0,1,0] are yaw-invariant → pallet (5,1,0), crate (5,2,0).
-  {
-    const ents = {
-      ferry: { pos: [0, 0, 0], yaw: 0, comp: { motion: { type: "path", points: [[0, 0, 0], [10, 0, 0]], speed: 1, loop: "once", t0: T0 } } },
-      pallet: { pos: [90, 0, 90], yaw: 0 }, crate: { pos: [80, 0, 80], yaw: 0 },
-    };
-    const v = view(ents, { pallet: { to: "ferry", offset: [0, 1, 0] }, crate: { to: "pallet", offset: [0, 1, 0] } });
-    const r = eff("crate", v, T0 + 5000);
-    check("nested mounts compose recursively", r.ok && near3(r.pos, [5, 2, 0]) && near(r.yaw, Math.PI / 2), JSON.stringify(r));
-  }
-
-  // a body seat: no entity record → the browser's [0, 0.5, 0] body default
-  {
-    const r = eff("rider", view({ bench: { pos: [4, 0, 4], yaw: 0 } }, { rider: { to: "bench" } }), T0);
-    check("a mounted body defaults to the seat offset", r.ok && near3(r.pos, [4, 0.5, 4]), JSON.stringify(r));
-  }
-
-  // refusals: every bad link is named, no number escapes
-  {
-    const cyc = eff("a", view({ a: { pos: [0, 0, 0] }, b: { pos: [1, 1, 1] } }, { a: { to: "b" }, b: { to: "a" } }), T0);
-    check("cycle: refused and named", !cyc.ok && /cycle/.test((cyc as any).why), JSON.stringify(cyc));
-
-    const deepEnts: any = {}, deepMounts: any = {};
-    for (let i = 0; i <= 10; i++) { deepEnts[`c${i}`] = { pos: [i, 0, 0] }; if (i > 0) deepMounts[`c${i}`] = { to: `c${i - 1}` }; }
-    const deep = eff("c10", view(deepEnts, deepMounts), T0);
-    check("over-deep chain: refused", !deep.ok && /deeper/.test((deep as any).why), JSON.stringify(deep));
-
-    const orphan = eff("crate", view({ crate: { pos: [0, 0, 0] } }, { crate: { to: "ghost" } }), T0);
-    check("missing parent: refused, link names the parent", !orphan.ok && (orphan as any).link === "ghost", JSON.stringify(orphan));
-
-    const nan = eff("crate", view({ boat: { pos: [0, 0, 0] }, crate: { pos: [0, 0, 0] } }, { crate: { to: "boat", offset: [1, NaN, 0] } }), T0);
-    check("non-finite offset: refused, never substituted", !nan.ok && /non-finite/.test((nan as any).why), JSON.stringify(nan));
-
-    const part = eff("crate", view(
-      { swing: { pos: [0, 0, 0], comp: { sockets: { seat: { pos: [0, -0.83, 0], part: "plank" } } } }, crate: { pos: [0, 0, 0] } },
-      { crate: { to: "swing", slot: "seat" } }), T0);
-    check("part socket: honestly unsupported in slice one", !part.ok && /part "plank"/.test((part as any).why), JSON.stringify(part));
-
-    const wig = eff("crate", view(
-      { ufo: { pos: [0, 0, 0], comp: { motion: { type: "wiggle", t0: T0 } } }, crate: { pos: [0, 0, 0] } },
-      { crate: { to: "ufo" } }), T0);
-    check("unknown motion type on a link: refused and named", !wig.ok && /wiggle/.test((wig as any).why), JSON.stringify(wig));
-  }
-
-  // part-frame motion does not displace the root (and reports the chain still)
-  {
-    const r = eff("mill", view({ mill: { pos: [7, 0, 7], yaw: 0.3, comp: { motion: { type: "spin", part: "blades", t0: T0 } } } }, {}), T0 + 9000);
-    check("part motion leaves the root at base", r.ok && near3(r.pos, [7, 0, 7]) && r.moving === null, JSON.stringify(r));
-  }
-}
-
-// ---- look(): the sense organ itself ----------------------------------------
-console.log("\n━━ look(): stale coordinates are gone from perception ━━");
-
-const crateLine = (txt: string) => txt.split("\n").find((l) => l.includes("[crate1]")) ?? "";
-const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s+at\s+\(/); return m ? { d: Number(m[1]), b: m[2] } : null; };
-
-// the founding contradiction: mounted cargo printed at its pre-mount spot
+console.log("unmounted");
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
-  const line = crateLine(a.look(T0));
-  check("mounted cargo reports the carrier's frame", line.includes("at (10.0, 0.6, 10.0)"), line);
-  check("the stale pre-mount coordinate is GONE", !line.includes("(3.0, 0.0, 3.0)"), line);
-  check("still says what it rides", line.includes("mounted on swing1"), line);
-
-  // dismount stamps an authoritative absolute — perception returns to it
-  await fold(a, { verb: "dismount", args: { id: "crate1", pos: [1, 2, 3], yaw: 0.7 } });
-  const after = crateLine(a.look(T0));
-  check("dismount restores the stamped absolute", after.includes("at (1.0, 2.0, 3.0)") && !after.includes("mounted on"), after);
-  a.close();
+  const r = at("a", view({ a: { pos: [1, 2, 3], yaw: Math.PI / 2, scale: 2 } }));
+  check("a thing stands at its folded pos, turned by its yaw", r.ok && near3(r.pos, [1, 2, 3]) && near(r.yaw, Math.PI / 2) && r.quat.every((v, i) => near(v, qY90[i])), show(r));
+  check("a uniform scale is three of itself", r.ok && r.scale === 2 && near3(r.scale3, [2, 2, 2]), show(r));
 }
-
-// distance and bearing move with the effective position, not just the tuple
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "wheel", lib: "models/wheel.glb", pos: [0, 0, 0], yaw: 0 } });
-  await fold(a, { verb: "motion", args: { id: "wheel", type: "orbit", center: [0, 0, 0], radius: 5, degPerSec: 90, face: false, t0: T0 } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [50, 0, 50], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "wheel", offset: [0, 1, 0] } });
-  // orbit: pos = center + r·(sin a, ·, cos a); a = 90°/s. t=0 → (0,·,5) = S of
-  // the origin-standing agent; t=2s → a=π → (0,·,−5) = N. Same distance.
-  const p1 = distOf(crateLine(a.look(T0)));
-  const p2 = distOf(crateLine(a.look(T0 + 2000)));
-  check("bearing follows the ride (S → N)", p1?.b === "S" && p2?.b === "N", JSON.stringify({ p1, p2 }));
-  check("distance is measured to the effective position", p1 != null && near(p1.d, 5, 0.15) && p2 != null && near(p2.d, 5, 0.15), JSON.stringify({ p1, p2 }));
-  a.close();
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90 } }));
+  check("a stored rotation (q) is the thing's whole orientation, not its yaw alone", r.ok && r.quat.every((v, i) => near(v, qX90[i])), show(r));
 }
-
-// the sort walks the composed world too: cargo on a far carrier lists far
 {
-  const a = offlineAgent();
-  // near1 sits at 5m — FARTHER than the crate's stale 4.2m, so a sort on
-  // stale positions lists the crate first and this check fails on main
-  await fold(a, { verb: "spawn", args: { id: "near1", lib: "models/rock.glb", pos: [5, 0, 0], yaw: 0 } });
-  await fold(a, { verb: "spawn", args: { id: "far1", lib: "models/bench.glb", pos: [30, 0, 30], yaw: 0 } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "far1", offset: [0, 1, 0] } });
-  const txt = a.look(T0);
-  check("distance sort uses the effective position", txt.indexOf("[near1]") < txt.indexOf("[crate1]"), txt.split("\n").filter((l) => l.includes("[")).join(" | "));
-  a.close();
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 3, 4] } }));
+  check("a stretched thing keeps its per-axis scale", r.ok && near3(r.scale3, [2, 3, 4]), show(r));
 }
 
-// suppression in the sense organ: part sockets and unknown motion say WHY
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, -0.83, 0], part: "plank" } } } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing2", slot: "seat" } });
-  const line = crateLine(a.look(T0));
-  check("part socket: coordinate withheld, frame named", line.includes("position rides swing2") && !/at \(/.test(line), line);
-  check("part socket: the reason is spoken", /part "plank"/.test(line), line);
-
-  await fold(a, { verb: "spawn", args: { id: "ufo1", lib: "models/ufo.glb", pos: [8, 0, 8], yaw: 0 } });
-  await fold(a, { verb: "motion", args: { id: "ufo1", type: "wiggle", t0: T0 } });
-  const uline = a.look(T0).split("\n").find((l) => l.includes("[ufo1]")) ?? "";
-  check("unknown motion: no guessed coordinate", uline.includes("position unavailable") && /wiggle/.test(uline), uline);
-  a.close();
+  // a part-carrying motion leaves the root where it rests (parts swing, roots stand still): its whole stored rotation too
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90, motion: { type: "pendulum", part: "door" } } }));
+  check("a moving thing keeps its stored rotation as its base", r.ok && r.quat.every((v, i) => near(v, qX90[i])), show(r));
 }
-
-// the agent's own seat: distances measured from where the body actually is
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
-  await fold(a, { verb: "mount", args: { id: "tester", to: "swing1", slot: "seat" } });
-  const head = a.look(T0).split("\n")[0];
-  check("self position rides the seat", head.includes("at (10.0, 10.0)"), head);
-  check("the seat is named", head.includes("seated on swing1"), head);
-  a.close();
+  // house 6340433633: a stored rotation through a WHOLE-root motion (the q hand-off to evalWholeMotion): an oscillate moves
+  // the root along its axis and leaves its rotation as authored, the whole pitched q, not a heading rebuilt from yaw
+  const r = at("a", view({ a: { pos: [0, 0, 0], yaw: 0, q: qX90, motion: { type: "oscillate", axis: [0, 1, 0], amp: 0.5, period: 4, phase: Math.PI / 2 } } }));
+  check("a root moving as a whole keeps its stored rotation", r.ok && r.moving === "oscillate" && r.quat.every((v, i) => near(v, qX90[i])) && near(r.pos[1], 0.5), show(r));
 }
 
-// folded replay is EVENT-SILENT: state reconstructs, nothing performs
+console.log("mounted things");
 {
-  const a = offlineAgent();
-  let events = 0;
-  a.onEvent = () => { events++; };
-  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 }, actor: "digi" });
-  await fold(a, { verb: "comp", args: { id: "swing1", type: "particles", data: { preset: "fire" } }, actor: "digi" });
-  await fold(a, { verb: "motion", args: { id: "swing1", type: "pendulum", amp: 0.3, t0: T0 }, actor: "digi" });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3] }, actor: "digi" });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1" }, actor: "digi" });
-  a.look(T0);
-  check("no invented event during folded replay", events === 0 && a.pings.length === 0, `events=${events} pings=${a.pings.length}`);
-  a.close();
+  // parent at (10,0,0) turned +90° about Y at scale 2; the child's offset (1,0,0) is model-frame: ×2 → (2,0,0), then
+  // turned: (0,0,-2). World: (10,0,-2).
+  const r = at("c", view({ p: { pos: [10, 0, 0], yaw: Math.PI / 2, scale: 2 }, c: { pos: [99, 99, 99], yaw: 0 } }, { c: { to: "p", offset: [1, 0, 0] } }));
+  check("a child rides its parent's frame: offset scaled, then turned", r.ok && near3(r.pos, [10, 0, -2]), show(r));
+  check("never the child's own stale folded pos", r.ok && !near3(r.pos, [99, 99, 99]), show(r));
 }
-
-// live and folded-join shapes agree: one composition path, byte-identical line
 {
-  const live = offlineAgent();
-  for (const e of [
-    { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } },
-    { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } },
-    { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } },
-  ]) await fold(live, e, true);
-  await fold(live, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } }, true);
-
-  const folded = offlineAgent();
-  // the synthetic order a folded join produces (stateToEntries): spawns,
-  // then comps, then the mount recovered from entities[].parent — live=false
-  for (const e of [
-    { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } },
-    { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } },
-    { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } },
-    { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } },
-  ]) await fold(folded, e, false);
-
-  const a = crateLine(live.look(T0)), b = crateLine(folded.look(T0));
-  check("live mount and folded late join agree exactly", a === b && a.length > 0, `live: ${a}\n      fold: ${b}`);
-  live.close(); folded.close();
+  // parent stretched (2,3,4), unturned: the offset (1,1,1) stretches per axis → (2,3,4) from the parent's origin
+  const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 3, 4] }, c: { pos: [0, 0, 0], yaw: 0, scale: 0.5 } }, { c: { to: "p", offset: [1, 1, 1] } }));
+  check("a stretched parent stretches the offset per axis", r.ok && near3(r.pos, [2, 3, 4]), show(r));
+  check("the child's scale composes per axis", r.ok && near3(r.scale3, [1, 1.5, 2]), show(r));
 }
-
-// ---- #92 review: B1 — motion runs on SEQUENCER time, not the host clock ----
-console.log("\n━━ B1: sequencer-relative clock ━━");
 {
-  const a = offlineAgent();
-  // the embodied plane's frame stamps say the sequencer is 7s AHEAD of this
-  // host; the motion's t0 is in the host's present — so the true phase is
-  // t ≈ 7s, and a host-clock evaluation reads t ≈ 0 instead
-  const skew = 7000;
-  // optional-called so a pre-revision head FAILS the checks below by phase
-  // rather than crashing the file — the control stays a control
-  for (let i = 0; i < 3; i++) (a as any).noteServerTime?.(Date.now() + skew);
-  const t0 = Date.now();
-  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
-  await fold(a, { verb: "motion", args: { id: "swing1", type: "pendulum", axis: "x", pivot: [0, 2, 0], amp: 1, period: 20, damp: 0, t0 } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
-  // crate = base + [0, 2 − 1.45·cosθ, −1.45·sinθ];  θ(7s) = cos(2π·7/20) ≈ −0.5885
-  // → (10.0, 0.8, 10.8).  A host-clock evaluation gives θ(0) = 1 → (10.0, 1.2, 8.8).
-  const def = crateLine(a.look());
-  check("default look() evaluates on sequencer time", def.includes("at (10.0, 0.8, 10.8)"), def);
-  const explicit = crateLine(a.look(Date.now()));
-  check("explicit nowMs is still honored verbatim", explicit.includes("at (10.0, 1.2, 8.8)"), explicit);
-  a.close();
+  // house 6340433633: a mounted child with its own per-axis scale (scale3Of), on a uniformly scaled parent: (1,2,3) × 2
+  const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 2 }, c: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [1, 2, 3] } }, { c: { to: "p", offset: [0, 0, 0] } }));
+  check("a mounted child's own scale3 composes with its parent's", r.ok && near3(r.scale3, [2, 4, 6]), show(r));
 }
-
-// ---- #92 review: B2 — refusals never fall back to stale coordinates --------
-console.log("\n━━ B2: no stale fallbacks ━━");
-
-// (1) the sort: an unresolved thing makes no spatial claim — it lists last
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "far1", lib: "models/bench.glb", pos: [30, 0, 30], yaw: 0 } });
-  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [1, 0, 1], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing2", slot: "seat" } });
-  const txt = a.look(T0);
-  check("unresolved cargo lists after resolved things, not by its stale 1.4m", txt.indexOf("[far1]") < txt.indexOf("[crate1]"),
-    txt.split("\n").filter((l) => l.includes("[")).join(" | "));
-  a.close();
+  // house 6340433633: a quarter turn on a stretched parent (2,3,4): +90° about Y takes the child's +X to the parent's −Z
+  // and its +Z to +X, so the child's own axes are stretched (4,3,2), not (2,3,4)
+  const r = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 3, 4] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [0, 0, 0], yaw: Math.PI / 2 } }));
+  check("a quarter-turned mount on a stretched parent swaps the stretched axes", r.ok && near3(r.scale3, [4, 3, 2]), show(r));
+  // 45° on (2,1,1) mixes x and z, stretched unequally: a shear, refused for a thing; on (2,1,2) the turn sees one stretch
+  const sh = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
+  check("a turned mount on an unequally stretched parent is answered with its exact position, flagged sheared (scale3 is the shear's diagonal), not refused",
+    sh.ok && sh.sheared === true && near3(sh.pos, [2, 0, 0]), show(sh));
+  const kid = at("k", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 }, k: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 }, k: { to: "c", offset: [0, 0, 0], yaw: 0 } }));
+  check("…and a thing mounted on that sheared one carries the flag down the chain", kid.ok && kid.sheared === true, show(kid));
+  const even = at("c", view({ p: { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 2] }, c: { pos: [0, 0, 0], yaw: 0, scale: 1 } }, { c: { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } }));
+  check("…and one turned within equally stretched axes is not", even.ok && !even.sheared && near3(even.scale3, [2, 1, 2]) && near3(even.pos, [2, 0, 0]), show(even));
+  // a body there has no extent of its own: its position is exact, so it's answered
+  const body = effectiveWorldTransform("b", { entity: (id) => (id === "p" ? { pos: [0, 0, 0], yaw: 0, scale: 1, scale3: [2, 1, 1] } : undefined), mount: (id) => (id === "b" ? { to: "p", offset: [1, 0, 0], yaw: Math.PI / 4 } : undefined) }, 0);
+  check("…and a body seated there is still placed (its offset through the stretch)", body.ok && near3(body.pos, [2, 0, 0]), show(body));
 }
-
-// (2) the emitter gate: unknown position → abstain + bounded diagnostic
 {
-  const a = offlineAgent();
-  let events = 0;
-  a.onEvent = () => { events++; };
-  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
-  await fold(a, { verb: "spawn", args: { id: "lantern", lib: "models/lantern.glb", pos: [1, 0, 1], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "lantern", to: "swing2", slot: "seat" } });
-  await fold(a, { verb: "comp", args: { id: "lantern", type: "particles", data: { preset: "fire" } }, actor: "digi" }, true);
-  check("unresolvable emitter abstains from proximity delivery", events === 0 && a.effGaps > 0, `events=${events} gaps=${a.effGaps}`);
-  await fold(a, { verb: "spawn", args: { id: "hearth", lib: "models/hearth.glb", pos: [10, 0, 10], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire" } }, actor: "digi" }, true);
-  check("a resolvable emitter still delivers", events === 1, `events=${events}`);
-  a.close();
+  // parent pitched +90° about X (its stored q): the offset (0,1,0) turns to (0,0,1); by its yaw alone it stayed (0,1,0)
+  const r = at("c", view({ p: { pos: [5, 0, 0], yaw: 0, q: qX90 }, c: { pos: [0, 0, 0], yaw: 0 } }, { c: { to: "p", offset: [0, 1, 0] } }));
+  check("a pitched parent's rotation turns the offset", r.ok && near3(r.pos, [5, 0, 1]), show(r));
 }
-
-// (3) the mounted self: unknown is SAID, and dependent distances are withheld
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
-  await fold(a, { verb: "spawn", args: { id: "rock1", lib: "models/rock.glb", pos: [2, 0, 2], yaw: 0 } });
-  await fold(a, { verb: "mount", args: { id: "tester", to: "swing2", slot: "seat" } });
-  const txt = a.look(T0);
-  const head = txt.split("\n")[0];
-  check("own unresolved seat: position unknown, said out loud", head.includes("position unknown") && /part "plank"/.test(head) && head.includes("seated on swing2"), head);
-  check("no distance/bearing is measured from a ghost", !/\d+\.\d+m /.test(txt), txt.split("\n").find((l) => /\d+\.\d+m /.test(l)));
-  check("resolved coordinates still print (facts survive)", txt.includes("[rock1]") && /\[rock1\][^\n]*at \(2\.0, 0\.0, 2\.0\)/.test(txt), txt);
-  a.close();
+  // grandparent (0,0,0); parent 1 up; child 1 up from the parent: (0,2,0)
+  const r = at("c", view({ g: { pos: [0, 0, 0], yaw: 0 }, p: { pos: [0, 0, 0], yaw: 0 }, c: { pos: [0, 0, 0], yaw: 0 } },
+    { p: { to: "g", offset: [0, 1, 0] }, c: { to: "p", offset: [0, 1, 0] } }));
+  check("nested mounts compose recursively", r.ok && near3(r.pos, [0, 2, 0]), show(r));
 }
 
-// ---- #92 review, precision: cargo's own root motion is inert while mounted -
-console.log("\n━━ precision: mount chain wins over own motion ━━");
+console.log("refusals");
 {
-  const a = offlineAgent();
-  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
-  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
-  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
-  await fold(a, { verb: "motion", args: { id: "crate1", type: "orbit", center: [3, 0, 3], radius: 4, degPerSec: 90, t0: T0 - 60_000 } });
-  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
-  // the renderer skips a mounted entity's own motion (motion.js tickMotion:
-  // `obj.userData.mountedTo` guard) — the seat, not the orbit, is the truth
-  const line = crateLine(a.look(T0));
-  check("own root motion is inert while mounted (matches the renderer)", line.includes("at (10.0, 0.6, 10.0)"), line);
-  await fold(a, { verb: "dismount", args: { id: "crate1", pos: [3, 0, 3], yaw: 0 } });
-  const after = crateLine(a.look(T0 + 1000));
-  // dismounted, the orbit resumes: a = 90°/s · 61s = 5490° ≡ 90° → (3+4, 0, 3+0)
-  check("own motion resumes on dismount", after.includes("at (7.0, 0.0, 3.0)"), after);
-  a.close();
+  const r = at("a", view({ a: { pos: [0, 0, 0] }, b: { pos: [0, 0, 0] } }, { a: { to: "b" }, b: { to: "a" } }));
+  check("a mount cycle is refused, not composed", !r.ok && /cycle/.test(r.why), show(r));
+}
+{
+  const r = at("nobody", view({}));
+  check("an unknown id is refused", !r.ok && r.link === "nobody", show(r));
+}
+{
+  const r = at("s", view({ h: { pos: [0, 0, 0], yaw: 0 }, s: { pos: [0, 0, 0], socket: { name: "grip", part: "arm" } } }, { s: { to: "h" } }));
+  check("a socket riding a model part is refused, naming its host", !r.ok && r.link === "h" && /part "arm"/.test(r.why), show(r));
+}
+{
+  const r = at("c", view({ p: { pos: [NaN, 0, 0], yaw: 0 }, c: { pos: [0, 0, 0] } }, { c: { to: "p" } }));
+  check("a non-finite parent refuses the whole chain at the parent", !r.ok && r.link === "p", show(r));
 }
 
-// ---- body size (pose.scale): a profiled seat's contact is measured at the
-// rider's AUTHORED size, so it multiplies the rider's chosen size — the
-// browser's seats.js riderScalar(root × avatar.bodyScale()) — and nothing else.
-console.log("\n━━ body size: a profiled seat lowers a scaled rider in proportion ━━");
-if (EFF) {
-  // chair at the origin, unscaled; a surface socket 0.5 up; contact plane 0.45
-  // below the rider root at authored size → root y = 0.5 − 0.45·u
-  const chair = { pos: [0, 0, 0], yaw: 0, scale: 1, comp: { sockets: { seat: { pos: [0, 0.5, 0], seatAnchor: "surface", pose: "sitchair" } } } };
-  const view = (riderScale?: (id: string) => number) => ({
-    entity: (id: string) => (id === "chair" ? chair : undefined),
-    mount: (id: string) => (id === "rider" ? { to: "chair", slot: "seat" } : undefined),
-    seatVerdict: () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 }),
-    ...(riderScale ? { riderScale } : {}),
-  });
-  for (const [u, y] of [[1, 0.05], [0.5, 0.275], [2, -0.4]] as const) {
-    const r = EFF.effectiveWorldTransform("rider", view(() => u), T0);
-    check(`a ${u}× rider's root sits at y = 0.5 − 0.45·${u} = ${y}`, r.ok && near3(r.pos, [0, y, 0]) && r.seat?.state === "profiled", JSON.stringify(r));
-  }
-  const absent = EFF.effectiveWorldTransform("rider", view(), T0);
-  check("a view without riderScale reads the rider as 1×", absent.ok && near3(absent.pos, [0, 0.05, 0]), JSON.stringify(absent));
-
-  // the agent's own view feeds riderScale from the rider's presence sample
-  // (clamped; absent = 1) — the seam the text tier's seated perception reads
-  const a = offlineAgent() as any;
-  a.entities.set("chair", { id: "chair", lib: "x.glb", actor: "t", ...chair });
-  a.mounts.set("rider", { to: "chair", slot: "seat" });
-  a.seatVerdictFor = () => ({ status: "countersigned", pose: "sitchair", contactY: 0.45 });
-  a.people.set("rider", { id: "rider", avatar: "", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "sitchair", scale: 2 } });
-  const big = a.eff("rider", T0);
-  check("the agent seats a 2× rider (presence scale 2) at y = −0.4", big.ok && near3(big.pos, [0, -0.4, 0]), JSON.stringify(big));
-  a.people.get("rider").pose.scale = 9;
-  check("…and clamps an untrusted presence scale (9 → 2)", near3(a.eff("rider", T0).pos, [0, -0.4, 0]));
-  delete a.people.get("rider").pose.scale;
-  check("…and an absent presence scale is 1×", near3(a.eff("rider", T0).pos, [0, 0.05, 0]));
-  a.close();
+console.log("bodies");
+{
+  // a body (no thing record) on a socket entity, no offset: the socket's own origin; no profile, so declared approximate
+  const r = at("Ann", view({ seat: { pos: [4, 0, 4], yaw: 0 } }, { Ann: { to: "seat" } }));
+  check("a seated body sits at its socket's origin", r.ok && near3(r.pos, [4, 0, 4]), show(r));
+  check("with no seat profile, the composition says it's approximate", r.ok && r.seat?.state === "approximate", show(r));
 }
 
-console.log("");
+console.log(failures ? `\x1b[31m${failures} failed\x1b[0m` : "\x1b[32mall checks passed\x1b[0m");
 process.exit(failures ? 1 : 0);

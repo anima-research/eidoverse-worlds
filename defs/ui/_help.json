@@ -36,8 +36,8 @@
       "<kbd>X</kbd> / <kbd>Z</kbd> — near a seat, sits ON it"
     ],
     [
-      "Emotes",
-      "number keys play the emote bar's gestures, in its order (🎭 shows them)"
+      "Gestures",
+      "number keys play the action bar's gestures, in its order (🎭 shows them)"
     ],
     [
       "Chat",
@@ -61,7 +61,7 @@
     ],
     [
       "Select",
-      "in edit mode: click a thing, drag to move, <kbd>Q</kbd>/<kbd>E</kbd> turn, <kbd>Del</kbd> remove"
+      "in edit mode: click a thing; the tools are <kbd>Q</kbd> select, <kbd>G</kbd> move, <kbd>E</kbd> rotate, <kbd>R</kbd> scale (drag the gizmo); <kbd>Del</kbd> remove"
     ],
     [
       "Seat anchors",
@@ -77,7 +77,7 @@
     ],
     [
       "Panels",
-      "<kbd>Esc</kbd> closes every panel, again restores them · People Here is Chat's side pane · <kbd>Tab</kbd> opens People Here · grab empty panel space to move, corners to resize"
+      "<kbd>Tab</kbd> hides every panel, again restores them · <kbd>F11</kbd> full screen, <kbd>Esc</kbd> leaves it · <kbd>U</kbd> People Here (Chat's side pane) · grab empty panel space to move, corners to resize"
     ],
     [
       "Photo mode",
@@ -99,7 +99,7 @@
     },
     {
       "h": "Worlds & roles",
-      "html": "A brand-new world belongs to whoever steps in first. Owners shape the sky and terrain and can <b>/grant</b> roles; everyone else can still build unless the owner closes it (<b>/grant * visitor</b>). Bringing <i>new</i> models into a world's vocabulary needs the <b>gen</b> capability (<b>/grant name +gen</b>). <b>/role</b> tells you what you are here. Owners can also <b>/fork</b> a world into a copy, or <b>/reset</b> it back to zero (its history is archived, never destroyed). Owners moderate their world: <b>/kick name</b> removes someone (they may return), <b>/ban name reason</b> keeps them out until <b>/unban</b>; <b>/bans</b> lists who is barred here."
+      "html": "A world's owners are named when it is founded (stepping in first doesn't make you one). Owners shape the sky and terrain and give people roles: <b>/grant name builder</b> (or owner, or visitor) for one person, <b>/grant * builder</b> or <b>/grant * visitor</b> for everyone who signed in. A guest without an account is a visitor unless the world's owner opens building to guests too. Visitors can look around, talk, sit and use things; builders also build. <b>/role</b> tells you what you are here, <b>/role name</b> what someone else is. Owners can <b>/fork</b> a world into a copy of how it stands now, or <b>/reset</b> it back to zero (its history is archived, never destroyed). Owners moderate their world: <b>/kick name</b> removes someone (they may return), <b>/ban name reason</b> keeps them out until <b>/unban</b> — it reaches someone who has already left, too; <b>/bans</b> lists who is barred here. Everyone present sees who was removed, but not why."
     },
     {
       "h": "Building",
@@ -107,7 +107,7 @@
     },
     {
       "h": "Using things",
-      "html": "Some things react: <b>/push swing1</b> (or <b>/use</b> <i>thing action</i>) works for everyone, even visitors — using the world is not building it. Builders can give things motion (a swing, a windmill, a ferry on a route) and reactions; what a push does was decided by whoever built the thing. People react too: <b>/touch name</b> rests a hand on their shoulder (<b>/touch name head</b> for a headpat, <b>/letgo</b> to lower it) — the hand really reaches, follows them, and they see it land. <b>/push name</b> shoves and <b>/punt name</b> boots harder; their client always decides what actually happens to their body. Objects fly with <b>/punt thing</b> (<b>/kick</b> is moderation only). Owners can put a world's physics under the deterministic sim with <b>/epoch</b> — flights become log-replayable, land on the terrain and bounce off the world's things — and leave it again with <b>/epoch off</b> (everything comes to rest where it stands)."
+      "html": "Some things react: <b>/use</b> <i>thing</i> does what it offers (<b>/use</b> <i>thing action</i> when it offers several; <b>/push swing1</b> works too) — for everyone, even visitors: using the world is not building it. Near a seat, <kbd>X</kbd> or <b>/sit</b> sits on it. Builders give things motion (a swing, a windmill, a ferry on a route) and reactions; what a push does was decided by whoever built the thing. People react too: <b>/touch name</b> rests a hand on their shoulder (<b>/touch name head</b> for a headpat, <b>/letgo</b> to lower it) — the hand really reaches, follows them, and they see it land. <b>/push name</b> shoves and <b>/punt name</b> boots harder; their client always decides what actually happens to their body. A thing built to be carried (grabbable) can be picked up, carried and thrown; who may is that thing's own setting. Kicking a thing (<b>/punt</b> <i>thing</i>) needs one built to move. <b>/kick</b> is moderation only."
     },
     {
       "h": "If it runs slowly",

@@ -3,7 +3,7 @@
 // Two sections in the world panel:
 //
 //   🌳 scene    every entity as a row; mounted things indent under their
-//               parent, seated bodies show as riders. Click a row → the
+//               parent, seated bodies show as occupants. Click a row → the
 //               INSPECTOR, which is layered the same way the fold is:
 //               · a generic transform editor (pos / yaw / scale → `place`);
 //               · SEMANTIC editors registered by evaluator modules via
@@ -16,64 +16,63 @@
 //                 (the comp verb's contract).
 //               · actions: find, attach (pick a new parent by clicking it),
 //                 detach, remove. Attach PRESERVES the current world
-//                 transform — the thing glues where it stands, never jumps.
+//                 transform — the thing glues where it stands, never jumps
+//                 (the shared parenting edit: shared/hierarchy.js).
 //
-//   📜 scripts  the behavior runtime made visible: every bound script with
-//               its status (running / paused-with-reason), what it's attached
-//               to, its timers — and, selected, its live console (the ring
-//               world.log() writes to), polled while you watch. This is the
+//   📜 scripts  the world's scripts made visible (the authority's status view):
+//               every script:<name> with its status (active / asleep /
+//               dormant / paused, and why), what it's on, its timers — and,
+//               selected, its last activations (what console.log() wrote),
+//               polled while you watch. This is the
 //               debug UI for the scripting tier; agents get the same data via
 //               world_debug, this is the human window onto it.
 //
-// Everything here READS client state and EMITS verbs — no private channel,
-// no authority. The server enforces rights; buttons just try.
+// Everything here READS client state and SENDS requests — no private
+// channel, no authority. The authority enforces rights; buttons just try.
 
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
-import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { editorsFor } from './inspect.js';
+import * as Sel from './edit/selection.js';
+import { entities, metaOf, bagOf, avatarMounts } from './world.js';
+import { compEntries } from '../../shared/protocol/view.js';
+import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
-import { sendVerb, requestDebug } from './net.js';
-import { guardedByOther, placerOf, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name
-import { makeSection, flashHint } from './ui.js';
-import { html } from './markup.js';   // hint markup is opt-in: html`` escapes what it interpolates
+import { requestDebug, replica } from './net.js';
+import { sendOps, del, revertPose } from './editwrites.js';
+import * as OP from '../../shared/protocol/requests.js';
+import { state } from './state.js';
+import { offIn } from './realize/models_field.js';
+import { makeSection, flashHint, html } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
+import { modelWord } from '../../shared/eido.js';
+import { called } from './plainwords.js';
 
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const _wp = new THREE.Vector3();
-const _wq = new THREE.Quaternion();
-const _fw = new THREE.Vector3();
-const worldYawOf = (obj) => {
-  obj.getWorldQuaternion(_wq);
-  _fw.set(0, 0, 1).applyQuaternion(_wq);
-  return Math.atan2(_fw.x, _fw.z);
-};
 
 // ============================================================ 🌳 scene
 
 let sceneApi = null;
 let sceneBody = null;
-let selected = null;       // entity id shown in the inspector
 let arming = null;         // child id waiting for a parent click
 
 function badgesFor(id) {
   const out = [];
-  const bag = comps.get(id) ?? {};
-  for (const [type, data] of Object.entries(bag)) {
+  for (const [type, data] of compEntries(bagOf(id))) {
     if (type === 'motion' || type.startsWith('motion:')) {
       out.push(`${type}(${data?.type ?? '…'})`);
-    } else if (type === 'sockets' || type === 'reactions') {
+    } else if (type === 'reactions') {
       out.push(`${type}(${Object.keys(data ?? {}).join(',')})`);
     } else out.push(type);
   }
   return out;
 }
 
-function treeData() {
+export function treeData() {
   const kids = new Map();
   const roots = [];
   for (const [id, obj] of entities) {
@@ -83,18 +82,19 @@ function treeData() {
       kids.get(p).push(id);
     } else roots.push(id);
   }
-  const riders = new Map();
-  for (const [rid, m] of avatarMounts) {
-    if (!riders.has(m.to)) riders.set(m.to, []);
-    riders.get(m.to).push(m.slot ? `${rid} (${m.slot})` : rid);
+  const occupants = new Map();
+  for (const [oid, m] of avatarMounts) {
+    if (!occupants.has(m.to)) occupants.set(m.to, []);
+    occupants.get(m.to).push(oid);   // m.to is the socket: the occupant's row hangs under the socket's
   }
-  return { roots, kids, riders };
+  return { roots, kids, occupants };
 }
 
 let editingComp = null;    // comp type whose JSON is open, or true for a new one
 
 function paintScene(force = false) {
   if (!sceneBody) return;
+  const selected = sceneSelected();
   // don't yank an editor out from under the user: an open JSON textarea, or
   // any focused editor control (a light slider mid-drag, a half-typed pos
   // field), holds repaints — the echo of a committed verb queues one, and it
@@ -105,18 +105,18 @@ function paintScene(force = false) {
     const ae = document.activeElement;
     if (sceneBody.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae?.tagName ?? '')) return;
   }
-  const { roots, kids, riders } = treeData();
+  const { roots, kids, occupants } = treeData();
   const rows = [];
   const row = (id, depth) => {
-    const meta = entityMeta.get(id);
-    const short = (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
+    const meta = metaOf(id);
+    const short = (meta?.model != null ? modelWord(meta.model) : (meta?.kind ?? '?').split('/').pop())   // an address: its word, never its hex
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
     rows.push(`<div class="who-row sg-row${id === selected ? ' sel' : ''}" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px">
       <span class="n">${depth ? '└ ' : ''}<b>${esc(id)}</b> <span style="color:var(--dim)">${esc(short)}</span></span>
       <span class="d">${esc([...badges, ...scripts].join(' · '))}</span></div>`);
-    for (const r of riders.get(id) ?? []) {
+    for (const r of occupants.get(id) ?? []) {
       rows.push(`<div class="who-row" style="padding-left:${(depth + 1) * 14}px"><span class="n">└ 🧍 ${esc(r)}</span></div>`);
     }
     for (const k of kids.get(id) ?? []) row(k, depth + 1);
@@ -127,10 +127,10 @@ function paintScene(force = false) {
   let eds = [];
   if (selected && entities.has(selected)) {
     const obj = entities.get(selected);
-    const meta = entityMeta.get(selected);
-    const bag = comps.get(selected);
+    const meta = metaOf(selected);
+    const bag = bagOf(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
-    const isLight = !!obj?.userData?.isLight;
+    const isLight = meta?.kind === 'light' && bag?.light?.kind !== 'spot';   // a spot shines along its -Z: its yaw is its aim
 
     // generic transform editor — every entity has a pose; yaw/scale make no
     // sense on a bulb. Values are the entity's LOCAL frame (labelled when
@@ -138,16 +138,11 @@ function paintScene(force = false) {
     let transform = '';
     if (obj) {
       const n2 = (v) => Number(v.toFixed(2));
-      // a locked thing's pose is read-only — the server would refuse the
-      // `place` anyway; a disabled field says so before the round-trip
+      // a locked thing: the authority asks before it moves ("This is locked. Move anyway?")
       const locked = !!bag?.lock;
-      // guarded by someone else: every edit would be refused, so the fields
-      // say so too (the placer and the world's owner keep them live)
-      const held = guardedByOther(selected);
-      const why = held ? `guarded by ${placerName(selected)} — only they or the world's owner can move it` : 'locked — remove the lock comp to move';
-      const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em"${locked || held ? ` disabled title="${esc(why)}"` : ''}>`;
+      const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em">`;
       transform = `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0">
-        <span style="color:var(--dim)">${held ? '🛡 ' : ''}${locked ? '🔒 ' : ''}${obj.userData.mountedTo ? 'local ' : ''}pos</span>
+        <span style="color:var(--dim)">${locked ? '🔒 ' : ''}${obj.userData.mountedTo ? 'local ' : ''}pos</span>
         ${cell('x', n2(obj.position.x), 0.1)}${cell('y', n2(obj.position.y), 0.1)}${cell('z', n2(obj.position.z), 0.1)}
         ${isLight ? '' : `<span style="color:var(--dim)">yaw°</span>${cell('yaw', Math.round(obj.rotation.y * 180 / Math.PI), 5)}
         <span style="color:var(--dim)">scale</span>${cell('scale', n2(obj.scale?.x ?? 1), 0.05)}`}
@@ -155,14 +150,15 @@ function paintScene(force = false) {
     }
 
     // semantic editors — whatever evaluator modules registered for this thing
-    eds = editorsFor({ id: selected, obj, meta, bag, commit: sendVerb, esc });
+    const target = selected;
+    eds = editorsFor({ id: selected, obj, meta, bag, esc,
+      commit: (component, value) => sendOps([value == null ? OP.unset(target, component) : OP.set(target, component, value)], { what: `${component} on ${target}` }) });
 
     // generic component editor — meaning-free by design, the UI twin of the
     // blind fold: any comp type, known or invented this morning, shows as a
     // row and edits as raw JSON. A saved edit replaces that type's data
     // WHOLESALE (that is the comp verb's contract); ✕ removes (data: null).
-    const bagObj = bag ?? {};
-    const compRows = Object.entries(bagObj).map(([type, data]) => {
+    const compRows = compEntries(bag).map(([type, data]) => {
       if (editingComp === type) {
         return `<div style="margin:2px 0"><b>${esc(type)}</b>
           <textarea data-ce="json" spellcheck="false" style="width:100%;height:90px;font-size:11px;font-family:inherit">${esc(JSON.stringify(data, null, 1))}</textarea>
@@ -181,8 +177,8 @@ function paintScene(force = false) {
       : `<div><button data-ce-add title="attach a component — any type folds, evaluators give known ones behavior">+ component</button></div>`;
 
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.lib ?? '')}</span></div>
-      <div style="color:var(--dim)">placed by ${esc(placerOf(selected)?.id ?? meta?.actor ?? '?')}${meta?.actor && meta.actor !== (placerOf(selected)?.id ?? meta.actor) ? ` · last change by ${esc(meta.actor)}` : ''}${bag?.guard ? ' · 🛡 guarded' : ''} · ${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
+      <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.model ?? '')}</span></div>
+      <div style="color:var(--dim)">${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
       ${transform}
       ${eds.map((e) => e.html).join('')}
       ${compRows.join('')}${newComp}
@@ -199,10 +195,9 @@ function paintScene(force = false) {
     el.onclick = () => {
       const id = el.dataset.id;
       if (arming && arming !== id) { doAttach(arming, id); arming = null; return; }
-      selected = id === selected ? null : id;
       arming = null;
       editingComp = null;
-      paintScene(true);
+      if (id === selected) Sel.clear(); else Sel.set([id]);   // 'selection' repaints
     };
   }
   sceneBody.querySelector('[data-act="find"]')?.addEventListener('click', () => {
@@ -219,17 +214,21 @@ function paintScene(force = false) {
   // semantic editors wire their own controls
   for (const e of eds) { try { e.wire(sceneBody); } catch { /* an editor must not break the panel */ } }
 
-  // transform: commit on change — one `place` per gesture, carrying the full
-  // pose the fields show (pos triple always; yaw/scale when present). No
-  // local preview: place is cheap and the echo lands in a frame or two.
-  const tf = (f) => sceneBody.querySelector(`[data-tf="${f}"]`);
+  // transform: commit on change — one `place` per gesture, carrying only the field that changed (house review I18: the
+  // shown yaw is whole degrees and the shown scale one number, so resubmitting them on a pos edit flattened a tilt and a
+  // per-axis scale). transformOf keeps the rest as the fold has it. No local preview: the echo lands in a frame or two.
   for (const el of sceneBody.querySelectorAll('[data-tf]')) {
     el.addEventListener('change', () => {
-      const args = { id: selected, pos: [Number(tf('x').value), Number(tf('y').value), Number(tf('z').value)] };
-      if (tf('yaw')) args.yaw = Number(tf('yaw').value) * Math.PI / 180;
-      if (tf('scale')) args.scale = Number(tf('scale').value);
-      if (args.pos.some(Number.isNaN) || Number.isNaN(args.yaw ?? 0) || Number.isNaN(args.scale ?? 1)) return;
-      sendVerb('place', args);
+      const f = el.dataset.tf, v = Number(el.value), id = selected;
+      if (Number.isNaN(v)) return;
+      const cur = state.st.entities?.[id] ?? {};
+      const axis = ['x', 'y', 'z'].indexOf(f);
+      let patch;
+      if (axis >= 0) { const pos = Array.isArray(cur.pos) && cur.pos.length === 3 ? [...cur.pos] : [0, 0, 0]; pos[axis] = v; patch = { pos }; }
+      else if (f === 'yaw') patch = { yaw: v * Math.PI / 180 };
+      else if (f === 'scale') patch = { scale: v };
+      else return;
+      sendOps([OP.setTransform(cur, id, patch)], { what: `move ${id}`, revert: () => revertPose(id) });
     });
   }
 
@@ -238,7 +237,7 @@ function paintScene(force = false) {
     b.onclick = () => { editingComp = b.dataset.ceEdit; paintScene(true); };
   }
   for (const b of sceneBody.querySelectorAll('[data-ce-del]')) {
-    b.onclick = () => { sendVerb('comp', { id: selected, type: b.dataset.ceDel, data: null }); };
+    b.onclick = () => { sendOps([OP.unset(selected, b.dataset.ceDel)], { what: `remove ${b.dataset.ceDel} from ${selected}` }); };
   }
   sceneBody.querySelector('[data-ce-add]')?.addEventListener('click', () => {
     editingComp = true; paintScene(true);
@@ -251,7 +250,7 @@ function paintScene(force = false) {
     let data;
     try { data = JSON.parse(sceneBody.querySelector('[data-ce="json"]').value); }
     catch (err) { flashHint(`not valid JSON: ${err.message}`, 5000); return; }
-    sendVerb('comp', { id: selected, type, data });
+    sendOps([data == null ? OP.unset(selected, type) : OP.set(selected, type, data)], { what: `${type} on ${selected}` });
     editingComp = null;
     paintScene(true);
   });
@@ -261,8 +260,8 @@ function paintScene(force = false) {
 
   sceneBody.querySelector('[data-act="detach"]')?.addEventListener('click', () => doDetach(selected));
   sceneBody.querySelector('[data-act="remove"]')?.addEventListener('click', () => {
-    sendVerb('remove', { id: selected });
-    selected = null;
+    del([selected]);
+    Sel.clear();
   });
 }
 
@@ -271,11 +270,28 @@ function paintScene(force = false) {
  *  for build.js — clicking a thing in edit mode and clicking its row are the
  *  same act, so the inspector (transform, semantic editors, comp bag) arrives
  *  with the selection instead of hiding behind a second gesture. */
+export const sceneSelected = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids[0] ?? null : null; };
+// while the edit-mode frames are up they ARE the inspector: a selection must
+// not also yank the World panel open onto the section they retire
+let editUI = false;
+bus.on('edit-mode', (on) => { editUI = !!on; });
+/** Clear the inspector's selection (Esc, Edit ▸ deselect) — sceneSelect refuses a null id. */
+export function sceneDeselect() {
+  if (sceneSelected() == null) return;
+  arming = null; editingComp = null;
+  Sel.clear();
+}
 export function sceneSelect(id) {
-  if (!sceneApi || !entities.has(id)) return;
-  selected = id;
+  if (id == null || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: it isn't realized, it's still there
   arming = null;
   editingComp = null;
+  if (!Sel.set([id])) followSelection(Sel.selection());   // already selected: still bring the row into view
+}
+/** The panel follows the selection, whoever set it (a viewport pick, the Hierarchy, a command). */
+function followSelection({ ids, kind }) {
+  const id = kind === 'things' ? ids[0] ?? null : null;
+  if (!sceneApi) return;
+  if (id == null || editUI) { if (sceneApi.isOpen) paintScene(true); return; }
   const reveal = () => {
     paintScene(true);
     sceneBody?.querySelector(`.sg-row[data-id="${CSS.escape(id)}"]`)
@@ -295,36 +311,27 @@ export function sceneSelect(id) {
  *  Exported for /mount — command and panel are the same act. */
 export function sceneAttach(childId, parentId, slot) {
   if (slot) {   // a declared socket wins over glue-in-place
-    sendVerb('mount', { id: childId, to: parentId, slot });
+    sendOps([OP.parent(state.st, childId, parentId, { socket: slot })], { what: `seat ${childId} on ${parentId}` });
     return;
   }
   doAttach(childId, parentId);
 }
+// One path for every attach and detach — this section, /mount, /dismount, the
+// edit-mode Hierarchy and the inspector's Parent field: the shared parenting
+// edit (shared/hierarchy.js parentVerbs via inspect.js commitEdit). It keeps
+// the FULL world pose (q and scale, not just a yaw), refuses a loop / lock /
+// guard by name, and lands on the undo stack as one step.
 function doAttach(childId, parentId) {
-  const child = entities.get(childId);
-  const parent = entities.get(parentId);
-  if (!child || !parent) return logChat('*', 'both things must be fully loaded');
   if (childId === parentId) return;
-  // no cycles: walking up from the parent must not meet the child
-  for (let p = parent; p; p = entities.get(p.userData?.mountedTo)) {
-    if (p === child) return logChat('*', 'that would mount a thing onto its own cargo');
-  }
-  const lp = parent.worldToLocal(child.getWorldPosition(_wp.clone()));
-  const relYaw = worldYawOf(child) - worldYawOf(parent);
-  sendVerb('mount', {
-    id: childId, to: parentId,
-    offset: [+lp.x.toFixed(3), +lp.y.toFixed(3), +lp.z.toFixed(3)],
-    yaw: +relYaw.toFixed(3),
-  });
-  logChat('*', `${childId} now rides ${parentId} — it moves when ${parentId} moves`);
+  const r = commitEdit(childId, 'parent.to', parentId);
+  if (r.errors?.length) return logChat('*', r.errors.join(' · '));
+  logChat('*', `${called(childId)} now rides ${called(parentId)} — it moves when ${called(parentId)} moves`);
 }
 
 export function sceneDetach(id) { doDetach(id); }
 function doDetach(id) {
-  const obj = entities.get(id);
-  if (!obj) return;
-  const p = obj.getWorldPosition(_wp);
-  sendVerb('dismount', { id, pos: [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)], yaw: +worldYawOf(obj).toFixed(3) });
+  const r = commitEdit(id, 'parent.to', null);
+  if (r.errors?.length) logChat('*', r.errors.join(' · '));
 }
 
 // ============================================================ 📜 scripts
@@ -336,39 +343,40 @@ let watching = null;       // behavior id whose console is open
 let pollTimer = null;
 
 async function refreshRoster() {
-  const r = await requestDebug({ behaviors: true });
-  behaviorRows = (r.events ?? []).filter((e) => e.kind === 'behavior');
+  const r = await requestDebug({ scripts: true });
+  behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
 }
 
 async function paintScripts() {
   if (!scriptsBody) return;
   const rows = behaviorRows.map((b) => {
-    const ok = b.status === 'running';
-    return `<div class="who-row sg-bhv" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
+    const ok = b.status === 'active' || b.status === 'asleep';
+    return `<div class="who-row sg-script" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
       <span class="n">${ok ? '▶' : '⏸'} <b>${esc(b.id)}</b>${b.attach ? ` <span style="color:var(--dim)">on ${esc(b.attach)}</span>` : ''}</span>
-      <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : 'paused'}</span></div>`;
+      <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : esc(b.status ?? 'paused')}</span></div>`;
   });
 
   let consoleHtml = '';
   if (watching) {
-    const d = await requestDebug({ behavior: watching, limit: 40 });
+    const d = await requestDebug({ script: watching, limit: 40 });
     const lines = (d.events ?? []).map((e) =>
       `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
     consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(watching)}</b> — <span style="color:${d.status === 'running' ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
-      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — world.log() writes here)'}</pre>
+      <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
+      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — console.log() writes here)'}</pre>
       <div style="display:flex;gap:6px">
-        <button data-act="unbind">unbind</button>
+        <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts bound here — see AGENTS.md §runtime scripts</div>'}</div>${consoleHtml}
+  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS-replica.md)</div>'}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
-  for (const el of scriptsBody.querySelectorAll('.sg-bhv')) {
+  for (const el of scriptsBody.querySelectorAll('.sg-script')) {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
-    sendVerb('behavior', { id: watching, remove: true });
+    const w = String(watching); const i = w.indexOf('/');
+    sendOps(w.startsWith('imported-behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);
   });
@@ -383,13 +391,16 @@ export function initSceneGraph() {
     paintScene();
   }, { id: 'scene' });
 
+  // research roles §7: this tab is retired. Scripts live in Moderation › Scripts (and on the
+  // Inspector's script card); an imported world's old bindings, which never run, live in World Settings › Old world. One place each.
+  bus.on('hydrated', () => { if (replica.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
   scriptsApi = makeSection('📜 scripts', async (body) => {
     scriptsBody = body;
     await refreshRoster();
     await paintScripts();
     clearInterval(pollTimer);
     // live console: poll while the section is open — a script author sits
-    // here watching their world.log() arrive, which is the whole point
+    // here watching their console.log() arrive, which is the whole point
     pollTimer = setInterval(async () => {
       if (!scriptsApi?.isOpen) { clearInterval(pollTimer); pollTimer = null; return; }
       await refreshRoster();
@@ -407,4 +418,5 @@ export function initSceneGraph() {
   bus.on('entity', repaint);
   bus.on('comp', repaint);
   bus.on('mount', repaint);
+  bus.on('selection', followSelection);
 }

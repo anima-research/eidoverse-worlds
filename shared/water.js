@@ -1,4 +1,5 @@
 // Renderer-independent water queries. Metres, Y-up; parameters come from comp data.
+import { MOVER, stepSwim } from './mover.js';
 export const MAX_WATER = 4, MAX_AIR = 16, MAX_WAVES = 8;
 const finite = (x, d) => Number.isFinite(x) ? x : d;
 export function vector(v, fallback = [0, 0, 0]) {
@@ -67,22 +68,11 @@ export function waterPath(a, b, water, airs = []) {
     .map(([lo,hi]) => [Math.max(lo,wet[0]), Math.min(hi,wet[1])]).filter(([lo,hi]) => hi>lo);
   return Math.max(0,wet[1]-wet[0]-unionLength(dry)) * Math.hypot(...b.map((v,i) => v-a[i]));
 }
-// Substepped by the controller for collision. Idle swimmers float up gently;
-// descending releases the surface latch, and releasing ascent never jumps out.
+// The 3D swim is the mover's (shared/mover.js stepSwim: one float depth for wading, swimming and diving). This is its
+// adapter for a water VOLUME or the level (`water`: {speed, top, waves}): the surface is the volume's top plus its wave.
+// `input.stature` (1 = a 100% body) is the body's size; the float rides floatDepth of its height.
 export function swimStep(pos, velocity, input, water, dt, time) {
-  dt = Math.max(0, Math.min(.1, finite(dt, 0)));
-  const speed = water.speed * (input.fast ? 1.65 : 1);
-  const dir = vector(input.direction), length = Math.max(1, Math.hypot(...dir));
-  const target = dir.map(v => v / length * speed);
-  if (!input.dive && !input.rise) target[1] += .16;
-  const blend = 1-Math.exp(-5*dt);
-  const vel = velocity.map((v,i) => v+(target[i]-v)*blend);
-  const next = pos.map((v,i) => v+vel[i]*dt);
-  // the root floats a body-length fraction under the surface: 1.1 m for a 100% body, scaled with its size
-  // (input.stature, default 1) so a small body's eyes still clear the water
   const stature = Number.isFinite(input.stature) && input.stature > 0 ? input.stature : 1;
-  const surface = waveHeight(water,next[0],next[2],time)-1.1*stature;
-  let mode = 'swim';
-  if (!input.dive && next[1] >= surface-.12) { next[1] = surface; vel[1] = 0; mode = 'surface'; }
-  return { pos:next, velocity:vel, mode };
+  return stepSwim(vector(pos), vector(velocity), { ...input, direction: vector(input.direction), height: MOVER.body.height * stature },
+    { speed: water.speed, surfaceAt: (x, z) => waveHeight(water, x, z, time) }, dt);
 }

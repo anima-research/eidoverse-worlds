@@ -11,9 +11,11 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 
 const PORT = 8420 + (process.pid % 150);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-surfmatrix-"));
+foundWorlds(worldsDir, ["ownprobe", "surftest", "elsewhere"]);   // joining never founds a world
 const TOK = `surf-${Math.random().toString(36).slice(2, 10)}`;   // per-run fixture
 
 // Own the AGENT-token fixture too (Antra B1): surface-test.py needs the agent
@@ -31,7 +33,7 @@ writeFileSync(agentTokensPath, JSON.stringify({
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath,
-    FOLD_EVERY: "5" /* T22: a handful of comps must fold entries[] out from under a held say */ },
+    SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 const drain = async (label: string, stream: unknown) => {
@@ -52,7 +54,7 @@ try {
     owned = await new Promise<boolean>((res) => {
       const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
       const t = setTimeout(() => { ws.close(); res(false); }, 1500);
-      ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: "join", token: TOK, world: "ownprobe", id: "harness-probe", spectate: true, replica: true }));
       ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data));
         clearTimeout(t);
         if (m.type === "snapshot") { ws.close(); res(true); }

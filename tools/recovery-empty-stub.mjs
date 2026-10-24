@@ -10,16 +10,23 @@
 export const avatarMounts = new Map();
 export const entities = new Map();
 export const comps = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = () => null;
 export const behaviors = new Map();
 export const editHolds = new Map();
 export function mountTransform() { return null; }
+export function setBodySeat() {}
 export function entityMeta() { return null; }
 export function findPart() { return null; }
 export function socketWorldPos() { return null; }
-// seats.js
-export function declareSeatState() {}
-export function clearSeatState() {}
-export function seatCorrectionFor() { return null; }
+export function seatSocket() { return null; }   // world.js: the seat socket child of a thing, or null (sockets merge 10-14)
+export function socketsOn() { return []; }
+export function parentIdOf() { return null; }
+// occupants.js
+export function declareOccupyState() {}
+export function clearOccupyState() {}
+export function occupyCorrectionFor() { return null; }
 // reachnet.js
 export function applyRemoteReach() {}
 export function noteReachEvents() {}
@@ -34,9 +41,10 @@ export function retargetPoseAnimation() { return null; }
 export function applyWingFoldPresence() {}
 export function applyOwnedWingFold() {}
 export function wingFoldPresence() { return null; }
-// xrbody.js — #197 has remotes.js apply remote XR poses. It reaches frames.js (and a DOM) through
+// xrbody.js — #197 has remotes.js apply remote XR poses. It reaches windows.js (and a DOM) through
 // its own cone, and the capsule recovery path never applies a pose, so it is replaced wholesale.
 export function applyRemoteXR() {}
+export function xrHandWorld() { return null; }   // occupybody.js: a socket's vr policy asks where a tracked hand is
 export function resetFingers() {}
 export const xrBodyDebug = () => null;
 // shared/presencewire.js — same: #197 wires presence through it; recovery never sends one.
@@ -45,3 +53,10 @@ export function applyVoiceWire() {}   // mic / hear ride the same packet (platec
 export function presenceWire() { return null; }
 export function applyBodyWire() { return false; }   // this body's size / plate lift — recovery applies nothing
 export function bodyWire() { return {}; }
+// remotes.js stamps each sample with sampleTime (the one time base, PHYSICS §5.1). It is pure, so it is the real body,
+// not an inert one: a sample's own capture time when it is sane against its frame's, else the frame's.
+export const SAMPLE_STALE_MS = 1000;
+export function sampleTime(pose, frameT) {
+  const t = pose?.t;
+  return typeof t === 'number' && Number.isFinite(t) && typeof frameT === 'number' && t <= frameT && t >= frameT - SAMPLE_STALE_MS ? t : frameT;
+}

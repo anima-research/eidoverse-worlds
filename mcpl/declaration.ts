@@ -42,11 +42,19 @@ export const CHAT = {
   thread: "chat:thread",
 } as const;
 
+/** §16.2's sender facet, from the sender's own word. A sender who declares "agent" (PROTOCOL §6a: the word a door body
+ *  declares unless told otherwise) is tagged chat:from-agent, the facet hosts' wake rules read so that an agent doesn't
+ *  wake on another agent's speech; any other word, or none, gets no facet, and every declaration still rides along as
+ *  metadata.declares, verbatim. Nothing is inferred: "ai" is not read as "agent" (review r11 L2). Dropping the tag would
+ *  have changed who wakes whom for every host following the SPEC. */
+export function senderFacet(declares: string | null | undefined): string | null {
+  return declares === "agent" ? CHAT.fromAgent : null;
+}
+
 /** This producer's own namespace (§16.1: it SHOULD match the producer's declared
  *  name). The long tail of what a *world* is lives here — a world has events
  *  chat has no word for. */
 export const EIDO = {
-  whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
   depart: "eidoverse:depart",
   reach: "eidoverse:reach",
@@ -87,6 +95,15 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
   }
   if (out.has(CHAT.addressed)) out.delete(CHAT.ambient);
   return [...out];
+}
+
+/** The tags a world's say and act are delivered with (net-server.ts's onEvent): a say is ambient, or addressed when it
+ *  mentions this body; an act is ambient and eidoverse:act; each with the sender's facet (senderFacet). Here so the lists
+ *  themselves are tested, not only the facet (house 6340433633). */
+export function speechTags(kind: "say" | "act", declares: string | null | undefined, mention = false): string[] {
+  const from = senderFacet(declares);
+  if (kind === "act") return tags(CHAT.ambient, EIDO.act, from);
+  return mention ? tags(CHAT.mention, CHAT.addressed, from) : tags(CHAT.ambient, from);
 }
 
 // ---- capability paths (§6.2) -----------------------------------------------
@@ -162,19 +179,11 @@ const TAG_ONTOLOGY = {
   // Descriptions of the reserved core are inherited from §16.2 — listing them
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
-    CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
+    // (no chat:dm / chat:private: world chat has no private channel since whisper was removed, R 10-18)
+    CHAT.addressed, CHAT.mention, CHAT.ambient,
     CHAT.fromAgent,
   ],
   tags: {
-    [EIDO.whisper]: {
-      desc: "Spoken privately to you alone in-world: no bubble, and never written to the world log, so it is never replayed to anyone later.",
-      facet: "locus",
-      // Advisory only (§16.3): a producer-declared edge into a reserved tag MUST
-      // NOT be applied unless this ontology has been explicitly accepted. The
-      // door emits chat:dm/chat:private/chat:addressed directly, so nothing
-      // depends on this edge being honoured.
-      implies: [CHAT.dm],
-    },
     [EIDO.approach]: {
       desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
       facet: "addressing",
@@ -199,7 +208,7 @@ const TAG_ONTOLOGY = {
       implies: [CHAT.addressed],
     },
     [EIDO.act]: {
-      desc: "An embodied transition someone else made near you — an emote, a pose struck or released, sitting down, a moderation act.",
+      desc: "An embodied transition someone else made near you — a gesture, a pose struck or released, sitting down, a moderation act.",
       facet: "lifecycle",
     },
     [EIDO.presence]: {
@@ -261,7 +270,7 @@ export interface FeatureSetDecl {
 export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   "eidoverse.world": {
     description:
-      "Embodied presence in a world. The world's chat is an MCPL channel: speech, whispers, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
+      "Embodied presence in a world. The world's chat is an MCPL channel: speech, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
     // channels.lifecycle is here because the world an agent is IN can change —
     // see eidoverse.travel, which shares the leaf. Presence and travel are
     // separable feature sets so a host can take the world without the door.
@@ -270,12 +279,12 @@ export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   },
   "eidoverse.embodiment": {
     description:
-      "The body's hands and senses as tools: look, snapshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
+      "The body's hands and senses as tools: look, screenshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
     uses: [CAP.tools],
   },
   "eidoverse.travel": {
     description:
-      "Walking between the worlds this door fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
+      "Walking between the worlds this server fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
     uses: [CAP.channelsLifecycle, CAP.tools],
   },
   "eidoverse.typing": {

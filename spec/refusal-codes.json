@@ -1,0 +1,495 @@
+{
+ "codes": {
+  "identity": {
+   "meaning": "the actor isn't an identity the authority can stamp",
+   "when": "an actor outside the §3.1 grammar, or one of the authority's own (system, sim, world)"
+  },
+  "no-world": {
+   "meaning": "there is no such world",
+   "when": "any verb but create-world/help on a world that hasn't been founded"
+  },
+  "custody": {
+   "meaning": "this server can't sign for the world",
+   "when": "a write to a world whose genesis names another sequencer key"
+  },
+  "unreadable": {
+   "meaning": "the log folds to a status the authority won't write to",
+   "when": "a write while the fold says no-world/unknown-version"
+  },
+  "repair-needed": {
+   "meaning": "the world's stored values are in an old spelling no reader serves; the maintenance command must run first",
+   "when": "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"
+  },
+  "ambiguous": {
+   "meaning": "the request's result is unknown: some or all of it may be written; never ok, never a plain failure",
+   "when": "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)"
+  },
+  "server-error": {
+   "meaning": "the server failed handling the request and nothing it asked for was written",
+   "when": "a throw before any line of the request reached the log, including a write refused because the log was already wedged (rolled back)"
+  },
+  "unknown-verb": {
+   "meaning": "no such request",
+   "when": "a verb the authority doesn't have (help lists them)"
+  },
+  "removed": {
+   "meaning": "the protocol had that request and removed it",
+   "when": "a request named in verbspec.js REMOVED_VERBS (whisper, removed 2026-10-18: speech is public and arrival-only)"
+  },
+  "banned": {
+   "meaning": "the actor is banned from this world",
+   "when": "any request but help/leave from a banned identity"
+  },
+  "kicked": {
+   "meaning": "the actor was removed and may come back later",
+   "when": "any request but help/leave inside a kick's cooldown"
+  },
+  "muted": {
+   "meaning": "the actor is muted here",
+   "when": "a say (or voice) while a mute is in force"
+  },
+  "rate": {
+   "meaning": "too much, too fast",
+   "when": "an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent"
+  },
+  "cool-down": {
+   "meaning": "wait before asking this again",
+   "when": "a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)"
+  },
+  "pending": {
+   "meaning": "one ask at a time",
+   "when": "a body ask while another to the same person is still waiting"
+  },
+  "rights": {
+   "meaning": "the actor's role doesn't allow this",
+   "when": "a missing permission (build, editOthers, scripts…), someone else's key, a world setting below owner, a rollback below owner"
+  },
+  "rank": {
+   "meaning": "the other side ranks at or above you",
+   "when": "a lock above your rank, undoing someone ranked above you, a sanction on an equal or higher rank, an authority act"
+  },
+  "consent": {
+   "meaning": "that person isn't taking this right now",
+   "when": "a body act (touch, pose, shove, displace…) their table refuses: the same words whatever the cause (an edit that moves a seat vacates its occupants, never refused for them: §5)"
+  },
+  "body": {
+   "meaning": "that's part of someone's body",
+   "when": "reserved (PROTOCOL §7a): a write under a body root by anyone but its owner and their grantees, said with no ids, creator or did-you-mean",
+   "reserved": true
+  },
+  "last-owner": {
+   "meaning": "the world would be left with no owner",
+   "when": "a write that removes or demotes the last owner"
+  },
+  "held": {
+   "meaning": "people still hold that role",
+   "when": "deleting a custom role that someone holds"
+  },
+  "needs": {
+   "meaning": "a permission needs another one that's off",
+   "when": "a role's `can` with a dependency switched off"
+  },
+  "scope": {
+   "meaning": "outside what the script declared",
+   "when": "a script write, say, create or body effect its scope doesn't cover"
+  },
+  "barred": {
+   "meaning": "this action is closed until another happens first",
+   "when": "a reaction handler whose `unless` holds"
+  },
+  "locked": {
+   "meaning": "a lock covers it",
+   "when": "a write to a locked thing (or under one) without throughLock"
+  },
+  "occupied": {
+   "meaning": "someone is on it",
+   "when": "a hand verb (grab, put, punt, throw, drop) on a thing someone sits or stands on, or a seat that's taken"
+  },
+  "revert-war": {
+   "meaning": "that's a dispute: an owner settles it",
+   "when": "reverting someone's work on a thing already reverted across people twice in the hour, below owner"
+  },
+  "shape": {
+   "meaning": "the request or value isn't the right shape",
+   "when": "a wrong type, a missing part, a bad name, a bad placeholder, anything the shape rules refuse"
+  },
+  "unknown-arg": {
+   "meaning": "the verb has no such argument",
+   "when": "an argument VERBSPEC doesn't list for the verb"
+  },
+  "missing-arg": {
+   "meaning": "the verb needs that argument",
+   "when": "a required VERBSPEC argument left out"
+  },
+  "doesnt-apply": {
+   "meaning": "that argument doesn't go with the mode you chose",
+   "when": "a place argument whose modes exclude the chosen one"
+  },
+  "schema": {
+   "meaning": "a component value the registry doesn't take",
+   "when": "an unknown field, an unregistered bare name, a value outside the component's schema"
+  },
+  "bounds": {
+   "meaning": "a number past what this server allows",
+   "when": "a value above a server limit (counts, sizes, rates)"
+  },
+  "too-big": {
+   "meaning": "too large to write",
+   "when": "a value over 64 KiB, a log line over 1 MiB or 64 deep, a script source or batch over its cap"
+  },
+  "reserved": {
+   "meaning": "a name held for a shape that isn't settled",
+   "when": "writing a reserved component, field or handler kind, or sending a reserved request (arrive)"
+  },
+  "stamped": {
+   "meaning": "the authority writes that field, never a request",
+   "when": "a stamped field (a sky's ts, a physics build…) in a write"
+  },
+  "derived": {
+   "meaning": "that's computed from something else",
+   "when": "writing a derived field (a motion's pivot) instead of its source"
+  },
+  "legacy": {
+   "meaning": "an old spelling",
+   "when": "a pre-cut shape (a socket as a parent field) in a new write"
+  },
+  "imported": {
+   "meaning": "an imported world's record isn't written by hand",
+   "when": "writing an imported-only component"
+  },
+  "server-written": {
+   "meaning": "the server writes that (copy-of, rebase)",
+   "when": "a request or handler setting a server-written component"
+  },
+  "caption-only": {
+   "meaning": "captions are written by the caption request",
+   "when": "a set of `captions` by hand"
+  },
+  "caption": {
+   "meaning": "that caption line was refused by the caption rules",
+   "when": "a resend, an out-of-order n, a superseded leg"
+  },
+  "one-place": {
+   "meaning": "a thing is in one place",
+   "when": "two ways of saying where it is (a socket and a parent, two seats…)"
+  },
+  "world": {
+   "meaning": "@world can't be that",
+   "when": "deleting or locking @world"
+  },
+  "world-only": {
+   "meaning": "a world setting goes on @world",
+   "when": "a world component written on a thing"
+  },
+  "thing-only": {
+   "meaning": "that component belongs to a thing",
+   "when": "a thing's component written on @world"
+  },
+  "schema-fixed": {
+   "meaning": "a schema never changes meaning",
+   "when": "changing or deleting a set schemas:<name>"
+  },
+  "grid-fixed": {
+   "meaning": "the terrain grid is fixed while it has tiles",
+   "when": "changing terrain-grid with tiles under it"
+  },
+  "syntax": {
+   "meaning": "the script doesn't parse",
+   "when": "installing a script whose source has a syntax error"
+  },
+  "source": {
+   "meaning": "a script's source isn't usable text",
+   "when": "a non-string or missing source at upload or install"
+  },
+  "source-bom": {
+   "meaning": "the source starts with a byte-order mark",
+   "when": "upload or install of a source with a BOM"
+  },
+  "trojan-source": {
+   "meaning": "hidden characters in the source",
+   "when": "a bidi control or zero-width character in a script source"
+  },
+  "long-line": {
+   "meaning": "code past column 1000",
+   "when": "a script source with a line reviewers can't see"
+  },
+  "confirm": {
+   "meaning": "that's big: say confirm: true",
+   "when": "a rollback of more than 20 acts without confirm"
+  },
+  "no-detail": {
+   "meaning": "no detailed help for that verb yet",
+   "when": "help {verb} for a verb without a VERBSPEC row"
+  },
+  "not-found": {
+   "meaning": "no such thing (or component, socket, ask…)",
+   "when": "an id, component, socket, ask or blueprint part that isn't there"
+  },
+  "gone": {
+   "meaning": "what you held was deleted",
+   "when": "a hand verb on a held thing that no longer exists"
+  },
+  "not-here": {
+   "meaning": "that body isn't in the world",
+   "when": "a body act on someone absent, or your own before you arrive"
+  },
+  "not-a-thing": {
+   "meaning": "a socket isn't a thing",
+   "when": "a hand or place verb on a socket"
+  },
+  "not-a-copy": {
+   "meaning": "that isn't a blueprint copy",
+   "when": "update on a thing with no copy-of"
+  },
+  "not-published": {
+   "meaning": "no such blueprint here",
+   "when": "update to a hash this world hasn't published"
+  },
+  "exists": {
+   "meaning": "already there",
+   "when": "create-world on a world that exists, or a create of an id that does"
+  },
+  "reused": {
+   "meaning": "an id is never reused",
+   "when": "a create of an id this world has had before"
+  },
+  "nothing": {
+   "meaning": "that changes nothing",
+   "when": "a write whose ops all elide, an undo with nothing of yours to take back"
+  },
+  "nothing-to-reset": {
+   "meaning": "nothing was reset: every target was already home or was skipped, each skip saying why",
+   "when": "a reset whose targets are all at home or all skipped, or that names none"
+  },
+  "changed": {
+   "meaning": "it changed since you started",
+   "when": "expect: a component isn't the value the gesture started from"
+  },
+  "stale": {
+   "meaning": "someone changed it since the version you read",
+   "when": "a set with a base older than the component's last write"
+  },
+  "other-branch": {
+   "meaning": "that version is from another history",
+   "when": "a version {seq, head} whose head this log doesn't have"
+  },
+  "conflict": {
+   "meaning": "it can't be both",
+   "when": "undo landing on others' later work; a dynamic thing told to face something; contradictory settings"
+  },
+  "conflicts": {
+   "meaning": "parts changed both here and upstream",
+   "when": "a blueprint update without resolve for parts edited on both sides"
+  },
+  "founding": {
+   "meaning": "founding a world can't be undone",
+   "when": "undo of create-world"
+  },
+  "physical": {
+   "meaning": "physics decided that, not an edit",
+   "when": "undo of a throw, drop or leave"
+  },
+  "disabled": {
+   "meaning": "it's switched off",
+   "when": "handling, using or standing on a thing that is (or hangs under) disabled"
+  },
+  "in-flight": {
+   "meaning": "the engine has it until it rests",
+   "when": "any write to a launched thing before its rest"
+  },
+  "not-at-rest": {
+   "meaning": "the engine doesn't have it at rest",
+   "when": "a rest the engine doesn't agree with"
+  },
+  "implausible": {
+   "meaning": "physics wouldn't leave it there",
+   "when": "a put or place whose result floats or interpenetrates"
+  },
+  "full": {
+   "meaning": "this world is at its entity limit",
+   "when": "a write that adds entities past capacity"
+  },
+  "too-many": {
+   "meaning": "too many of those",
+   "when": "more scripts than script-settings.max"
+  },
+  "too-costly": {
+   "meaning": "more of the authority's time than one request may have",
+   "when": "a request past the work budget"
+  },
+  "busy": {
+   "meaning": "not now",
+   "when": "an engine cut with things in flight (without force), or the scripts' share of the second is spent"
+  },
+  "budget": {
+   "meaning": "the script budget is spent",
+   "when": "an activation past the world's, the sponsor's or the script's hourly/per-minute budget"
+  },
+  "depth": {
+   "meaning": "a script cascade went too deep",
+   "when": "an activation whose cause chain passes this server's cascade depth (its operator sets it, not the world's owner)"
+  },
+  "ground-loading": {
+   "meaning": "the ground is still loading",
+   "when": "a write needing the heightmap before its grid is on this server"
+  },
+  "loop": {
+   "meaning": "that would make a parent loop",
+   "when": "a parent chain that comes back to itself"
+  },
+  "deep": {
+   "meaning": "the parent chain is 32 deep already",
+   "when": "a parent past the depth cap"
+  },
+  "in-the-way": {
+   "meaning": "someone is where it would go",
+   "when": "a shove or push that would slide a thing into a body"
+  },
+  "solid": {
+   "meaning": "a body doesn't fit there",
+   "when": "an arrival or step into something solid"
+  },
+  "spawn": {
+   "meaning": "arrivals are limited to the spawn",
+   "when": "an arrival or teleport outside @world.spawn's radius"
+  },
+  "out-of-bounds": {
+   "meaning": "outside this world",
+   "when": "a move or position past @world.bounds"
+  },
+  "too-fast": {
+   "meaning": "faster than a body (or a throw) may go",
+   "when": "a step past the speed track, a throw or shove over its cap"
+  },
+  "out-of-reach": {
+   "meaning": "too far away",
+   "when": "a hand or body act beyond its reach"
+  },
+  "holding": {
+   "meaning": "a teleport can't carry things",
+   "when": "a teleport while holding something"
+  },
+  "hold-limit": {
+   "meaning": "you are holding as many things as you may",
+   "when": "a grab past MAX_HELD"
+  },
+  "not-holding": {
+   "meaning": "you aren't holding that",
+   "when": "put, throw or drop of a thing not in your hand"
+  },
+  "not-grabbable": {
+   "meaning": "it can't be carried",
+   "when": "a grab of a thing with no grabbable and no dynamic physics"
+  },
+  "not-dynamic": {
+   "meaning": "it can't be punted",
+   "when": "a punt of a thing without dynamic physics"
+  },
+  "no-grip": {
+   "meaning": "it has no such grip",
+   "when": "a grab naming a grip the thing doesn't have"
+  },
+  "wrong-hand": {
+   "meaning": "that grip is for the other hand",
+   "when": "a grab whose grip names the other hand"
+  },
+  "wrong-way": {
+   "meaning": "a contact push sends it away from the body",
+   "when": "a shove velocity more than 60° off straight away"
+  },
+  "beneath": {
+   "meaning": "a body moves over it, not into it",
+   "when": "a contact push of a thing beneath the body"
+  },
+  "sideways": {
+   "meaning": "that push is mostly sideways",
+   "when": "a push across a pendulum's swing plane"
+  },
+  "not-pushable": {
+   "meaning": "a push doesn't change that motion",
+   "when": "an impulse to a thing whose motion isn't a pendulum"
+  },
+  "no-pivot": {
+   "meaning": "it swings but hangs from nothing",
+   "when": "a push to a pendulum with no hang point above"
+  },
+  "no-physics": {
+   "meaning": "this world has no physics running",
+   "when": "throw, punt or launch in a world without physics-engine"
+  },
+  "unknown-engine": {
+   "meaning": "this server doesn't carry that engine",
+   "when": "setting physics-engine to an engine not in ENGINES"
+  },
+  "foreign-engine": {
+   "meaning": "the world runs an engine version this server doesn't carry",
+   "when": "what only that engine computes: a launch, or a grab or delete that would set a resting thing falling"
+  },
+  "no-shape": {
+   "meaning": "nothing to collide with",
+   "when": "a launch of a thing with no model or mesh"
+  },
+  "no-surface": {
+   "meaning": "it has no surface to put things on",
+   "when": "place {on} a thing with no measured surfaces"
+  },
+  "no-room": {
+   "meaning": "it doesn't fit there",
+   "when": "place {on} a surface with no free room for it"
+  },
+  "unsupported": {
+   "meaning": "nothing to stand on there",
+   "when": "place {beside} where there's no support on that side"
+  },
+  "inside": {
+   "meaning": "that would put it inside something solid",
+   "when": "a hang or place into a thing's solid parts"
+  },
+  "no-grid": {
+   "meaning": "no terrain grid",
+   "when": "a sculpt on ground without terrain-grid"
+  },
+  "no-model": {
+   "meaning": "nothing to measure",
+   "when": "measure of a thing with no model or mesh"
+  },
+  "no-target": {
+   "meaning": "the handler's target isn't there",
+   "when": "a set handler naming a field of a component the thing doesn't have"
+  },
+  "no-action": {
+   "meaning": "it offers nothing to use",
+   "when": "use of a thing with no reactions and no station"
+  },
+  "no-handler": {
+   "meaning": "nobody set up that action",
+   "when": "use with an action the thing doesn't have"
+  },
+  "no-runtime": {
+   "meaning": "that behaviour needs re-installing",
+   "when": "use of a behaviour binding imported from the old engine"
+  },
+  "no-sound": {
+   "meaning": "it has no sound to play",
+   "when": "a play handler on a thing with no sound"
+  },
+  "action-taken": {
+   "meaning": "that action name is taken",
+   "when": "a socket's station action that a reaction on the host already uses"
+  },
+  "name-taken": {
+   "meaning": "that socket name is taken",
+   "when": "two sockets of one host with one name"
+  },
+  "outside-link": {
+   "meaning": "a link points outside what you publish",
+   "when": "publish of a set whose refs name things outside it"
+  }
+ },
+ "renamed": {
+  "hands-full": "hold-limit",
+  "underfoot": "beneath",
+  "no-body": "not-pushable",
+  "no-such": "not-found"
+ }
+}

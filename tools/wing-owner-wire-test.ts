@@ -32,18 +32,20 @@ mock.module(base+'core.js', () => ({
 // the bench's bus must be the one base.js hands out, or a pressed G reaches
 // nobody. The real module's other exports ride along untouched.
 mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
-mock.module(base+'terrain.js', () => ({ heightAt:()=>0, setEnvironmentFloor() {} }));
-mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
-mock.module(base+'assets.js', () => ({ forgetBytes() {} }));
-// controller.js reaches water.js (swimming), which subscribes at load and reads the fold.
-mock.module(base+'state.js', () => ({ hydrate() {}, foldLive() {}, reset() {}, state: { st: { entities: {} } }, onWorldChange: () => () => {} }));
+mock.module(base+'terrain.js', () => ({ heightAt:()=>0, setWaterField() {}, setEnvironmentFloor() {}, rainSurfaceAt:()=>0 }));   // water.js (upstream #242) hands the water to terrain.js; watervolumes.js its floor
+mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null,
+  frameOf:()=>null, lastContacts:()=>[], colliders:new Map() }));   // hiddenbump.js / controller.js / debug.js import these now (10-14)
+mock.module(base+'assets.js', () => ({ forgetBytes() {}, primeFiles: async () => {} }));
+mock.module(base+'world.js', () => ({ avatarMounts:new Map() }));   // net.js reads the mounts; the realizer behind world.js is not under test
+mock.module(base+'state.js', () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));
 mock.module(base+'scheduler.js', () => ({ pending:new Map(), P:{} }));
 mock.module(base+'remotes.js', () => ({ remotes:new Map(), ensureRemote:async()=>null, dropRemote:()=>null, pushPose() {}, noteServerTime() {}, noteSpeaking() {} }));
 mock.module(base+'reachnet.js', () => ({ myReachBag:()=>undefined }));
-mock.module(base+'chat.js', () => ({ chat:{}, logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {} }));
+mock.module(base+'chat.js', () => ({ chat:{}, logChat() {}, noteTyping() {}, noteHistoryContext() {}, async resyncChatAfter() {} }));
 mock.module(base+'fp_view.js', () => ({ resolveFirstPersonAnchor:()=>null, FP_FORWARD:0, FP_EYE_LIFT:0, FP_GAZE_AHEAD:0, FP_GAZE_DROP:0, composeFirstPerson() {} }));
-mock.module(base+'boot.js', () => ({ markPhase() {} }));
-mock.module(base+'ui.js', () => ({ isOverlayOpen:()=>false, flashHint:(s:string)=>hints.push(s), toast() {} }));
+mock.module(base+'boot.js', () => ({ markPhase() {}, refuseBoot() {}, waitBoot() {} }));
+const { html } = await import(base+'markup.js');
+mock.module(base+'ui.js', () => ({ isOverlayOpen:()=>false, flashHint:(s:any)=>hints.push(String(s)), toast() {}, html }));
 
 const controller:any = await import('../client/lib/controller.js');
 const netmod:any = await import('../client/lib/net.js');
@@ -51,7 +53,7 @@ let failures=0, pass=0;
 const check=(label:string,ok:boolean,detail='')=>{ console.log(ok?`  ok    ${label}`:`  FAIL  ${label}${detail?' — '+detail:''}`); ok?pass++:failures++; };
 const owner:any={wingsFolded:false};
 controller.setMeHook(()=>owner);
-controller.setRightsHook(()=>({ role:'visitor', can:[] }));
+controller.setRightsHook(()=>({ role:'inhabitant', can:[] }));
 controller.armFlight(['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upper_1','L_Wing_Lower','R_Wing_Lower'],'owner');
 const sent:string[]=[];
 netmod.net.joined=true;
@@ -64,18 +66,18 @@ pressG();
 netmod.sendPose(100);
 let packet=JSON.parse(sent.at(-1));
 check('G folds both the owner rig and controller wire state', owner.wingsFolded===true && controller.myState.wingsFolded===true);
-check('real sendPose publishes the fold', packet?.pose?.wingsFolded===true, JSON.stringify(packet));
+check('real sendPose publishes the fold (the named pose wings-folded)', packet?.pose?.poses?.includes('wings-folded') && !('wingsFolded' in packet.pose), JSON.stringify(packet));
 pressG();
 netmod.sendPose(200);
 packet=JSON.parse(sent.at(-1));
-check('G publishes an explicit unfold', owner.wingsFolded===false && packet?.pose?.wingsFolded===false);
+check('G publishes an explicit unfold (an empty poses list)', owner.wingsFolded===false && Array.isArray(packet?.pose?.poses) && packet.pose.poses.length===0);
 check('no-grant unfold says propulsion remains unavailable', /propulsion is still not granted/.test(hints.at(-1)??''), hints.at(-1));
 pressG();
 controller.armFlight([], 'owner'); // swap to a body with no authored wing chains
 pressG();
 netmod.sendPose(300);
 packet=JSON.parse(sent.at(-1));
-check('a wingless swap can release a carried posture', controller.myState.wingsFolded===false && packet?.pose?.wingsFolded===false);
+check('a wingless swap can release a carried posture', controller.myState.wingsFolded===false && Array.isArray(packet?.pose?.poses) && !packet.pose.poses.includes('wings-folded'));
 check('the wingless release is truthful', /posture released/.test(hints.at(-1)??''), hints.at(-1));
 console.log(`\n${pass} passed, ${failures} failed`);
 process.exit(failures?1:0);

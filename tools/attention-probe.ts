@@ -13,7 +13,7 @@ import { CHROME, scratchSequencer, mkCheck, sleep } from './harness.ts';
 const { check, tally } = mkCheck();
 const data = mkdtempSync(join(tmpdir(), 'attention-data-'));
 const h = await scratchSequencer('attention', { serverEnv: {
-  SKIP_OPT_SWEEP: '1', JOIN_TOKEN: 'test-door', EIDO_WHISPERS_ENABLED: '1',
+  SKIP_OPT_SWEEP: '1', JOIN_TOKEN: 'test-door',
   OPT_DIR: join(data, 'opt'), STORE_DIR: join(data, 'store'), EIDOVERSE_DIR: join(data, 'library'),
 } });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
@@ -51,18 +51,17 @@ try {
   sender = await joinSpeaker();
   const send = (msg: any) => sender!.send(JSON.stringify(msg));
   const say = (text: string, extra = {}) => send({ type: 'verb', verb: 'say', args: { text, ...extra } });
-  // Both kinds of backlog exist BEFORE the receiver arrives.
+  // Said BEFORE the receiver arrives: speech is arrival-only (R 10-18), so it must never reach the page (and whisper,
+  // the other backlog this probe once held, was removed).
   say('@listener from before arrival');
-  send({ type: 'whisper', to: 'listener', text: 'held before arrival' });
-  await until(() => packets.some(m => m.type === 'whisper' && m.echo));
+  await sleep(300);
   await page.goto(h.BASE + '/?world=attention&name=listener&key=test-door&lite=1');
   await page.waitForFunction(() => document.getElementById('splash')?.classList.contains('gone'), { timeout: 25000 });
   const tones = () => page.evaluate(() => (globalThis as any).__tones);
   const seen = (text: string) => page.waitForFunction(t => document.getElementById('chatlog')?.textContent?.includes(t), text);
-  await seen('held before arrival');
-  check('initial backlog renders with zero tones', await tones() === 0);
-  check('held whisper carries explicit replay metadata', await page.evaluate(() =>
-    (globalThis as any).__received.some((m: any) => m.type === 'whisper' && m.text === 'held before arrival' && m.replay === true)));
+  await sleep(1500);
+  check('nothing said before arrival is shown (arrival-only), and nothing chimes', await tones() === 0
+    && !(await page.evaluate(() => document.getElementById('chatlog')?.textContent?.includes('from before arrival'))));
   const beforeControls = packets.filter(m => m.type === 'log').length;
   await page.locator('.chat-gear').click();
   // Every control must remain hittable within a minimal chat frame. Lite's chat
@@ -137,22 +136,19 @@ try {
   say('@listener spoken continuation', { spoken: true, utt: 9001 });
   await seen('spoken continuation');
   check('later flush of same utterance stays silent', await tones() === 3);
-  send({ type: 'whisper', to: 'listener', text: 'direct private' });
-  await seen('direct private');
-  check('live addressed whisper chimes', await tones() === 4);
 
   // Keep an unlocked context across reconnect. A reload alone could pass
   // accidentally because autoplay was locked, even if history tried to chime.
   await sleep(3100);
   await page.evaluate(async () => { (await import('/lib/net.js')).net.ws.close(); });
   await until(() => packets.some(m => m.type === 'leave' && m.id === 'listener'));
-  send({ type: 'whisper', to: 'listener', text: 'held during reconnect' });
   say('@listener missed during reconnect');
-  await seen('held during reconnect');
-  await seen('missed during reconnect');
-  check('unlocked reconnect backlog stays silent', await tones() === 4);
-  check('reconnect held whisper is marked as replay', await page.evaluate(() =>
-    (globalThis as any).__received.some((m: any) => m.type === 'whisper' && m.text === 'held during reconnect' && m.replay === true)));
+  // back in the room: what was said while the page was away is not replayed (arrival-only), and nothing chimes
+  const snaps0 = await page.evaluate(() => (globalThis as any).__received.filter((m: any) => m.type === 'snapshot').length);
+  await page.waitForFunction(n => (globalThis as any).__received.filter((m: any) => m.type === 'snapshot').length > n, snaps0, { timeout: 25000 }).catch(() => {});
+  await sleep(1500);
+  check('a reconnect replays nothing said while away, and stays silent', await tones() === 3
+    && !(await page.evaluate(() => document.getElementById('chatlog')?.textContent?.includes('missed during reconnect'))));
   // The page sends its own session id with every join, the same one after a
   // reconnect, and the server relays it to the others as its presence session.
   const joinSessions = await page.evaluate(() => (globalThis as any).__sent
@@ -165,10 +161,10 @@ try {
     m.type === 'arrive' && m.id === 'listener' && m.session === joinSessions[0]));
   say('@listener same speaker after listener reconnect', { spoken: true, utt: 9001 });
   await seen('same speaker after listener reconnect');
-  check('listener reconnect preserves unchanged speaker utterance dedup', await tones() === 4);
+  check('listener reconnect preserves unchanged speaker utterance dedup', await tones() === 3);
   say('@listener fresh after reconnect', { spoken: true, utt: 9002 });
   await seen('fresh after reconnect');
-  check('fresh speech after reconnect still chimes', await tones() === 5);
+  check('fresh speech after reconnect still chimes', await tones() === 4);
   // A fresh sender page starts its counter again; the listener keeps running.
   await sleep(3100);
   const oldSession = await page.evaluate(() => (globalThis as any).__received
@@ -180,11 +176,11 @@ try {
   check('sender rejoin projects a distinct opaque session', typeof oldSession === 'string' && oldSession.length > 0);
   say('@listener sender restarted counter', { spoken: true, utt: 9001 });
   await seen('sender restarted counter');
-  check('rejoined sender reused utt chimes as a fresh utterance', await tones() === 6);
+  check('rejoined sender reused utt chimes as a fresh utterance', await tones() === 5);
   await sleep(3100);
   say('@listener new-session continuation', { spoken: true, utt: 9001 });
   await seen('new-session continuation');
-  check('same-session repeated flush still stays silent', await tones() === 6);
+  check('same-session repeated flush still stays silent', await tones() === 5);
   // If the listener missed the sender's arrival, the snapshot still carries
   // the new lifetime rather than inheriting this actor's old utterance cache.
   const packetCut = packets.length;
@@ -196,7 +192,7 @@ try {
   await page.waitForFunction(n => (globalThis as any).__received.filter((m: any) => m.type === 'snapshot').length > n, snapshotCount);
   say('@listener sender restarted while you were away', { spoken: true, utt: 9001 });
   await seen('sender restarted while you were away');
-  check('snapshot observes sender rejoin missed during listener absence', await tones() === 7);
+  check('snapshot observes sender rejoin missed during listener absence', await tones() === 6);
   // A speaker page that reconnects (a leave, then an arrive with the same page
   // id) keeps its utterance memory in the listener: through the page's real
   // bus, not the gate alone. A new page id restarts the counter.
@@ -218,24 +214,24 @@ try {
   await rejoin('probe-page-one');
   say('@listener page one first', { spoken: true, utt: 9300 });
   await seen('page one first');
-  check('a speaker page chimes its utterance', await tones() === 8);
+  check('a speaker page chimes its utterance', await tones() === 7);
   await sleep(3100);
   await rejoin('probe-page-one');
   say('@listener page one continued', { spoken: true, utt: 9300 });
   await seen('page one continued');
-  check('a reconnect of the same page (a leave, then the same id) keeps its utterance silent', await tones() === 8);
+  check('a reconnect of the same page (a leave, then the same id) keeps its utterance silent', await tones() === 7);
   await sleep(3100);
   await rejoin('probe-page-two');
   say('@listener page two restarted', { spoken: true, utt: 9300 });
   await seen('page two restarted');
-  check('a new page restarts the counter', await tones() === 9);
+  check('a new page restarts the counter', await tones() === 8);
   const unrelated = await page.evaluate(async () => JSON.stringify((await import('/lib/voiceconsent.js')).audioPrefs()));
   if (!await page.locator('[data-attention="enabled"]').isVisible()) await page.locator('.chat-gear').click();
   await page.locator('[data-attention="enabled"]').uncheck();
   await sleep(3100);
   say('@listener now muted');
   await seen('now muted');
-  check('attention mute suppresses only its own tones', await tones() === 9);
+  check('attention mute suppresses only its own tones', await tones() === 8);
   check('world/voice/TTS settings stay unchanged', unrelated === await page.evaluate(async () =>
     JSON.stringify((await import('/lib/voiceconsent.js')).audioPrefs())));
   check('muted mention remains visibly highlighted', await page.locator('#chatlog .line.ping').filter({ hasText: 'now muted' }).count() === 1);

@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const scratch=mkdtempSync(join(tmpdir(),"ew-native-login-"));
 mkdirSync(join(scratch,"opt"),{recursive:true});
+// (ported 10-17: the worlds are founded first — joining never founds one — and a join folds the log, replica: true)
+import { foundWorlds } from "./harness.ts";
+foundWorlds(join(scratch,"worlds"),["water","commons","native-elsewhere","native-multi-world"]);   // a join founds nothing here: the worlds it joins exist
 const port=18997, origin=`http://127.0.0.1:${port}`;
 // Refuse to touch any pre-existing listener, even if it looks like Eidoverse.
 try { const probe=Bun.listen({hostname:"127.0.0.1",port,socket:{data(){}}}); probe.stop(true); }
@@ -31,7 +34,7 @@ const cookie=(r:Response)=>/^ew_sess=[a-f0-9]{64}/.exec(r.headers.get("set-cooki
 async function connect(world:string,session:string){
  const messages:any[]=[];let closed=0;
  const ws=new WebSocket(origin.replace("http:","ws:")+"/ws",{headers:{cookie:session}} as any);sockets.push(ws);
- ws.onopen=()=>ws.send(JSON.stringify({type:"join",world,id:"untrusted-client-name"}));
+ ws.onopen=()=>ws.send(JSON.stringify({type:"join",world,id:"untrusted-client-name",replica:true}));
  ws.onmessage=e=>messages.push(JSON.parse(String(e.data)));ws.onclose=e=>{closed=e.code;};
  await wait(()=>closed!==0||messages.some(m=>m.type==="snapshot"),"join result");return {ws,messages,closed};
 }
@@ -48,7 +51,7 @@ try{
  const landing=await(await fetch(origin+"/auth")).text();assert.ok(landing.includes("ew-native-pair-code")&&landing.includes("/native#code="));
  const p=await(await post("/native/start",{})).json();
  assert.equal((await post("/native/poll",{device_code:p.device_code})).status,202);
- assert.ok(!existsSync(join(scratch,"worlds","water")),"pairing must not join/create a world");
+ // (water is founded above: pairing joining nothing is pinned by the native-login unit test)
  const approved=await post("/native/approve",{user_code:p.user_code},{cookie:browser,origin});
  assert.equal(approved.status,200);assert.equal(approved.headers.get("set-cookie"),null);
  await Bun.sleep(2100);

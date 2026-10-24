@@ -1,5 +1,10 @@
 # TEL0S_NOTES — rebuild notes: loading · lighting · performance · separation
 
+*Historical working notes (2026-08 to 2026-09). Where they speak of the
+world protocol (verbs, `comp`, `mount`, dialect 3, the v1 fold) they mean
+the first protocol, since replaced by the current protocol (spec/PROTOCOL.md); the loading,
+lighting and performance work stands.*
+
 Status: working notes, 2026-08-08. Orientation + diagnosis by Fable (three
 deep read-throughs: loading pipeline, lighting system, module architecture),
 design directions proposed for discussion with tel0s. Nothing here is decided.
@@ -151,7 +156,7 @@ Per-frame hot path (measured/read offenders, worst first):
 Separation of concerns:
 - `main.js` is four modules in a trench coat (ragdoll, mounts, bodydrag
   receive, pins, consent, voice-mouths, a 190-line command if-chain, the
-  governor, an emote toolbar, the frame loop — lines 105–1203 are one giant
+  governor, an action toolbar, the frame loop — lines 105–1203 are one giant
   `else` block).
 - No verb/comp dispatch table anywhere: a 26-case switch in `world.js:122`,
   a 240-line mirror switch in `server.ts:255`, and **three different
@@ -1083,8 +1088,8 @@ fixture/tool matrix.
   WHOLE alias truth (29aee4f): chat.js's 26-case switch → five
   chat-owned handlers + resolveCommand; use/mount/dismount/debug join
   as listed:false rows; /use's alias-is-the-action is declared data;
-  (4) the emote vocabulary is a def (bdb1580,
-  defs/animations/_emotes.json): key order = bar/number-key order,
+  (4) the action bar's vocabulary is a def (bdb1580,
+  defs/animations/_actionbar.json): key order = bar/number-key order,
   clip/icon/listed; avatar.js hydrates in place, the bar rebuilds on
   the push, Digit[1-9] follows the order — four drifted copies gone;
   (5) ONE onset machine (93eac2e): makeOnsetGate/makeLevelMeter in
@@ -2171,7 +2176,7 @@ fixture/tool matrix.
   crash fixed with a load-bearing `?.`), `localbody.js` (ragdoll/mounts/
   pins/dragged/shove — logChat INJECTED via initLocalBody so the chat
   knot stays open), `consent.js` (zero-import), `voicemouths.js`
-  (caption/speech twins merged), `emotebar.js`, `mint.js` (dynamic), and
+  (caption/speech twins merged), `actionbar.js`, `mint.js` (dynamic), and
   `commands/` — registry.js a PURE table importing nothing, chat.js
   deriving autocomplete from it (the hand-kept copy and its duplicate
   /kick row die; chat→handlers→net→chat never closes), handlers.js

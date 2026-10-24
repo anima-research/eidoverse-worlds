@@ -22,7 +22,7 @@
 
 import { THREE, scene } from '/lib/core.js';
 import { remotes } from '/lib/remotes.js';
-import { entities, comps, avatarMounts, socketWorldPos, mountTransform } from '/lib/world.js';
+import { entities, bagOf, avatarMounts, socketWorldPos, mountTransform, seatSocket } from '/lib/world.js';
 import { makeAvatar } from '/lib/avatar.js';
 import { seatClaim, SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y, nameFromAvatarPath, SEAT_CLIP_FILE } from '/lib/seatcore.js';
 import { vrmaShaLoaded } from '/lib/assets.js';
@@ -32,34 +32,37 @@ const _work = new THREE.Vector3();   // per-read scratch, never held across read
 const _q = new THREE.Quaternion();
 const _box = new THREE.Box3();
 
-/** Measure one mounted rider. `localAvatar` supplies the browser-local
+/** Measure one mounted occupant. `localAvatar` supplies the browser-local
  *  body's avatar wrapper when measuring yourself (remotes only hold the
  *  others). Returns a plain JSON-able record, or {error}. */
-export function measureSeat(riderId, { localAvatar = null } = {}) {
-  const m = avatarMounts.get(riderId);
-  if (!m) return { error: `${riderId} is not mounted` };
-  const parent = entities.get(m.to);
-  if (!parent) return { error: `mount parent ${m.to} not present` };
-  const sock = comps.get(m.to)?.sockets?.[m.slot] ?? null;
+export function measureSeat(occupantId, { localAvatar = null } = {}) {
+  const m = avatarMounts.get(occupantId);
+  if (!m) return { error: `${occupantId} is not mounted` };
+  // m.to is the seat's socket child (PLAN-sockets-entities); its host is the thing
+  const ss = seatSocket(m.to);
+  const parent = ss?.host != null ? entities.get(ss.host) : null;
+  if (!parent) return { error: `mount parent ${ss?.host ?? m.to} not present` };
+  const sock = ss?.sock ?? null;
 
   // ---- the seat's claim ----------------------------------------------------
-  const seatPos = socketWorldPos(m.to, m.slot, _sock);
-  if (!seatPos) return { error: `socket ${m.to}/${m.slot} unresolvable` };
+  const seatPos = socketWorldPos(m.to, _sock);
+  if (!seatPos) return { error: `socket ${m.to} unresolvable` };
   parent.getWorldQuaternion(_q);
   // pure math on captured values — the register-aliasing class of error is
   // structurally impossible here (and pinned at nonzero Y by the bun test)
   const claim = seatClaim([seatPos.x, seatPos.y, seatPos.z], [_q.x, _q.y, _q.z, _q.w]);
   const seat = { world: seatPos.toArray().map((n) => +n.toFixed(4)) };
   seat.parentYaw = +claim.parentYaw.toFixed(4);
-  seat.socketLocal = sock ? { pos: sock.pos ?? null, yaw: sock.yaw ?? 0, pose: sock.pose ?? 'sitchair',
-    part: sock.part ?? null, seatAnchor: sock.seatAnchor ?? null } : null;
+  const t = bagOf(m.to)?.transform;
+  seat.socketLocal = sock ? { pos: t?.pos ?? null, q: t?.q ?? null, name: ss.name, pose: sock.body?.pose ?? 'sitchair',
+    part: sock.part ?? null, anchor: sock.body?.anchor ?? null } : null;
   seat.mountOverrides = { offset: m.offset ?? null, yaw: m.yaw ?? null };
   const seatY = claim.seatY;
 
   // ---- the body ------------------------------------------------------------
-  const rec = remotes.get(riderId);
+  const rec = remotes.get(occupantId);
   const avatar = rec?.avatar ?? localAvatar;
-  if (!avatar) return { error: `${riderId} has no avatar here`, seat };
+  if (!avatar) return { error: `${occupantId} has no avatar here`, seat };
   const kind = rec ? 'remote' : 'local';
   const vrm = avatar.vrm ?? null;
   const humanoid = !!vrm?.humanoid;
@@ -86,10 +89,10 @@ export function measureSeat(riderId, { localAvatar = null } = {}) {
   // the composition's own word for this seat (#101): what mountTransform
   // declared — profiled or approximate-with-reason — measured alongside the
   // geometry so the acceptance table can assert both at once
-  const sw = mountTransform(riderId, _work, { path: rec?.avatarPath ?? null, av: avatar });
+  const sw = mountTransform(occupantId, _work, { path: rec?.avatarPath ?? null, av: avatar });
 
   return {
-    rider: riderId, kind,
+    occupant: occupantId, kind,
     rig: humanoid ? 'vrm-humanoid' : 'unsupported (no humanoid mapping)',
     avatarPath: rec?.avatarPath ?? '(local)',
     activeClip: rec?.lastClip ?? avatar.currentSlot ?? null,
@@ -102,7 +105,7 @@ export function measureSeat(riderId, { localAvatar = null } = {}) {
   };
 }
 
-/** Every mounted rider at once — the table row generator. */
+/** Every mounted occupant at once — the table row generator. */
 export function measureAllSeats(opts = {}) {
   return [...avatarMounts.keys()].map((id) => measureSeat(id, opts));
 }

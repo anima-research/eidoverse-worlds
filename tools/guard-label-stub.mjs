@@ -1,5 +1,5 @@
-// guard-label-test substitutes this for everything build.js AND scenegraph.js
-// import — the build-gate stub plus the handful of symbols scenegraph.js
+// picture-note-test and sound-guard-test substitute this for everything build.js AND
+// scenegraph.js import (it was written for guard-label-test, gone with the v1 guard) — the build-gate stub plus the handful of symbols scenegraph.js
 // wants that build.js never did. placer.js is NOT stubbed: it is the module
 // under test, reading the stubbed world/net exactly as the real panels do.
 export * from './build-gate-stub.mjs';
@@ -16,6 +16,8 @@ export const editorsFor = () => [];
 // renders it directly with the fixture instead of through the scene panel
 export const editors = [];
 export const registerEditor = (fn) => { editors.push(fn); };
+export const registerHandler = () => {};   // the edit-mode gestures (upload); these suites test the html block
+export const commitEdit = () => ({ ok: true, errors: [] });
 // pictures.js: assets.js / ui.js — hang() primes the image; upload failures toast
 export const primeFiles = async () => {};
 export const toast = () => {};

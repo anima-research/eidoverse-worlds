@@ -1,4 +1,4 @@
-// lantern-probe — the lantern prompt (client/lib/lantern.js) and the HUD quiet defaults, in the REAL
+// lantern-probe — the lantern prompt (client/lib/commandbar.js) and the HUD quiet defaults, in the REAL
 // client against an owned scratch world (probe-harness). Clouds are forced OFF before boot: a cloudy sky
 // bakes on the CPU in headless Chromium and has frozen the host.
 //
@@ -10,7 +10,7 @@
 //   Enter still opens chat (the prompt is additive);
 //   Ctrl+K opens the prompt; THE KEYS: Enter SAYS what you typed (the say row is always first), Tab
 //   DOES the highlighted action (default: the best match, wearing a Tab badge) — so "sit"+Enter says
-//   "sit" in chat and does NOT sit, "sit"+Tab sits, "wave"+Tab plays the emote (playEmote observed),
+//   "sit" in chat and does NOT sit, "sit"+Tab sits, "wave"+Tab plays the gesture (playOnce observed),
 //   "sky"+Tab opens the world panel on its sky tab; a highlight MOVED with ↑/↓ makes
 //   Enter run that row; "hello there" + Enter goes through chat's own send path (server echo in #chatlog);
 //   the resting line and the open panel keep clear of the chat compose box, and the hint bar and the
@@ -165,13 +165,13 @@ try {
     check('…and back on the left, the chip is first in the row', lf);
   }
 
-  // THE RAIL'S SEARCH ENTRY, between emotes and debug: the house tooltip names it and its chord; a click opens the prompt
+  // THE RAIL'S SEARCH ENTRY, between gestures and debug: the house tooltip names it and its chord; a click opens the prompt
   { const titles = await pg.evaluate(() => Object.fromEntries([...document.querySelectorAll('#dock button[data-toggles]')]
       .map((b) => [b.dataset.toggles, b.getAttribute('title') ?? b._tip])));
     check('every rail tooltip names its key where the registry knows one (real client: main.js merges them)',
       titles.chat === 'Chat · Enter' && titles.debug === 'Debug · F3' && titles.world === 'World' && /^Edit · B/.test(titles.edit ?? ''), JSON.stringify(titles));
     const rail = await pg.evaluate(() => [...document.querySelectorAll('#dock button[data-toggles]')].map((b) => b.dataset.toggles));
-    check('the search entry sits between emotes and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('emotes') + 1
+    check('the search entry sits between gestures and debug, pinned (owner, 10-01)', rail.indexOf('search') === rail.indexOf('actions') + 1
       && rail.indexOf('debug') === rail.indexOf('search') + 1 && !(await pg.evaluate(() => document.querySelector('#dock button[data-toggles="search"]').hidden)), rail.join());
     await pg.hover('#dock button[data-toggles="search"]'); await sleep(700);
     const tipc = await pg.evaluate(() => { const t = document.getElementById('tipchip'); return { show: t.classList.contains('show'), text: t.textContent }; });
@@ -265,7 +265,7 @@ try {
     const back = { frames: await shown(), hintGone: await pg.evaluate(() => document.getElementById('hintbar').classList.contains('gone')), pill: await rect(pg, '#lantern-pill') };
     check('Esc again brings back exactly those panels, and the hint gives the spot back at once', back.frames === before && back.hintGone && back.pill?.shown, JSON.stringify({ before, ...back }));
     // NO PANEL OPEN (owner, 10-01: "Basically only the dock should be visible"): Esc still puts the resting line away
-    await pg.evaluate(async () => { const F = await import('/lib/frames.js'); for (const f of F.allFrames()) f.hide(); });
+    await pg.evaluate(async () => { const F = await import('/lib/windows.js'); for (const f of F.allFrames()) f.hide(); });
     await sleep(200);
     await pg.keyboard.press('Escape'); await sleep(300);
     const bare = { frames: await shown(), pill: await rect(pg, '#lantern-pill'), dock: await rect(pg, '#dock'),
@@ -276,7 +276,7 @@ try {
     await pg.keyboard.press('Escape'); await sleep(300);
     const bareBack = { frames: await shown(), pill: await rect(pg, '#lantern-pill') };
     check('…and the next Esc brings the resting line back, opening no panel', bareBack.frames === '' && bareBack.pill?.shown, JSON.stringify(bareBack));
-    await pg.evaluate(async (ids) => { const F = await import('/lib/frames.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
+    await pg.evaluate(async (ids) => { const F = await import('/lib/windows.js'); for (const id of ids.split(',').filter(Boolean)) F.getFrame(id)?.show(); }, before);
     await sleep(200);
   }
 
@@ -317,8 +317,8 @@ try {
       const a = A.get(id); if (!a?.run) continue;
       const orig = a.run; a.run = (...r) => { globalThis.__acts.push(id); return orig(...r); };
     }
-    const me = globalThis.EW.me(); const orig = me.playEmote.bind(me);
-    globalThis.__emoted = []; me.playEmote = (n, ...r) => { globalThis.__emoted.push(n); return orig(n, ...r); };
+    const me = globalThis.EW.me(); const orig = me.playOnce.bind(me);
+    globalThis.__animPlayed = []; me.playOnce = (n, ...r) => { globalThis.__animPlayed.push(n); return orig(n, ...r); };
   });
   const acts = () => pg.evaluate(() => globalThis.__acts.splice(0));
   const posture = () => pg.evaluate(async () => (await import('/lib/controller.js')).getPosture?.() ?? null);
@@ -383,14 +383,14 @@ try {
   await pg.evaluate(() => { document.querySelector('#dock button[data-toggles="world"]')?.click(); });
   await sleep(300);
 
-  // "wave" + Tab — the emote plays
+  // "wave" + Tab — the gesture plays
   await type(pg, 'wave');
   L = await lantern(pg);
-  check('"wave" highlights the wave emote, its number key and Tab shown', L.hl?.title === 'wave' && /^[1-9]$/.test(L.hl?.key ?? '') && L.hl?.do === 'Tab', JSON.stringify(L.hl));
+  check('"wave" highlights the wave gesture, its number key and Tab shown', L.hl?.title === 'wave' && /^[1-9]$/.test(L.hl?.key ?? '') && L.hl?.do === 'Tab', JSON.stringify(L.hl));
   await shot(pg, '03-lantern-wave-1280x720.png');
   await pg.keyboard.press('Tab'); await sleep(400);
-  check('"wave" + Tab plays the emote (playEmote("wave") observed)', (await pg.evaluate(() => globalThis.__emoted)).includes('wave'),
-    JSON.stringify(await pg.evaluate(() => globalThis.__emoted)));
+  check('"wave" + Tab plays the gesture (playOnce("wave") observed)', (await pg.evaluate(() => globalThis.__animPlayed)).includes('wave'),
+    JSON.stringify(await pg.evaluate(() => globalThis.__animPlayed)));
 
   // a typo + Tab: nothing to do, so nothing happens — Tab never says
   { const before = await said(pg, 'zzqx');

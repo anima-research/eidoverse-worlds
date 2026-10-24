@@ -10,12 +10,14 @@ import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { swimTargets, SWIM_CLIPS } from "../shared/swimpose.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
 import { clampBodyScale } from "../shared/presencewire.js";
+import { foldedIn } from "../shared/wingpresence.js";
+import { readBodyMode } from "../shared/bodymode.js";
 import { poseChannels } from "../shared/humanoid.js";
 import { shown } from "../shared/shown.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
-  pose?: Record<string, number[]> | null; wingsFolded?: boolean; reach?: unknown;
+  pose?: Record<string, number[]> | null; wingsFolded?: boolean; poses?: string[]; reach?: unknown;
   clipTime?: number; clipRate?: number; clipTimeSlot?: string; pitch?: number;
   /** The wearer's chosen body size (shared/presencewire.js bodyWire): sent only
    *  when not 1, so absent = 1; untrusted, read through clampBodyScale. */
@@ -76,7 +78,7 @@ function parseRig(bytes: Uint8Array): Rig {
 function validate(o: BodyObservation) {
   if (o.error) return o.error;
   if (!o.pose) return "no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work";
-  // Your own pose is this door's state, which clear_pose and the world's
+  // Your own pose is this door's state, which anim {stop: true} and the world's
   // restore write; anyone else's is their client's.
   if (!finite3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return o.self
     ? "your published position or facing isn't a finite number, so nothing of your body was read"
@@ -85,7 +87,7 @@ function validate(o: BodyObservation) {
   // the body; only a pose that isn't a map of bones is unusable whole.
   const bag = o.pose.pose;
   if (bag != null && (typeof bag !== "object" || Array.isArray(bag))) return o.self
-    ? "your published pose isn't a map of bones, so nothing of your body was read; clear_pose drops it"
+    ? "your published pose isn't a map of bones, so nothing of your body was read; anim {stop: true} drops it"
     : `this body's published pose isn't a map of bones, so nothing of it was read; ${CLIENT_DATA}`;
   return null;
 }
@@ -118,11 +120,11 @@ function applySwim(body: any, m: number, t: number) {
 
 /** The postures postureUnavailable lets through, for a refusal to name. */
 const EVALUATED = [...CLIP_SLOTS, "sitchair", ...SWIM_CLIPS].join(", ");
-const unevaluated = (o: BodyObservation) => `${whose(o)} joints and contacts weren't read: the posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates (it evaluates ${EVALUATED}, and ragdoll with published bones)`;
+const unevaluated = (o: BodyObservation) => `${whose(o)} joints and contacts weren't read: the clip ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates (it evaluates ${EVALUATED}, and ragdoll with published bones)`;
 /** Why a body the reaches lead to went unread for its posture: a limp one is read from the bones it publishes. */
 const passedOver = (o: BodyObservation) => o.pose?.clip === "ragdoll"
   ? "it's limp with no published bones, and body_state reads a limp body from its bones"
-  : `its posture ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates`;
+  : `its clip ${shown(o.pose?.clip ?? "unknown")} isn't one body_state evaluates`;
 
 /** Geometry withheld, the published pose kept. `error` says why: an
  * unevaluated posture, a posture that changed during the load, or a load
@@ -252,15 +254,15 @@ export class BodyStateReader {
       const bones = p?.pose ?? {}, reaches = normalizeReachBag(p?.reach);
       const count = valid ? Object.keys(bones).length : null;
       const unreadable = valid ? Object.entries(bones).filter(([, v]) => !poseChannels(v)).map(([n]) => n) : [];
-      const wing = p?.wingsFolded === true ? ", wings folded" : p?.wingsFolded === false ? ", wings open" : "";
+      const fold = foldedIn(p); const wing = fold === true ? ", wings folded" : fold === false ? ", wings open" : "";
       return {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${readBodyMode(p) ?? "body-mode unknown"}${p!.clip ? ` (playing ${p!.clip})` : ""}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
-        posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
+        bodyMode: readBodyMode(p), clip: p?.clip ?? null, wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
         // Published bones with nothing the stand-in can use: they cost
@@ -333,7 +335,7 @@ export class BodyStateReader {
       if (!out.ok) return out;
       if (postureUnavailable(latest)) return missingPosture(out, latest, unevaluated(latest));
       if (loaded.get(who)?.clip !== latest.pose?.clip) return missingPosture(out, latest,
-        `${whose(latest)} joints and contacts weren't read: the posture changed from ${shown(loaded.get(who)?.clip)} to ${shown(latest.pose?.clip)} while the skeleton loaded, so calling again can get them`);
+        `${whose(latest)} joints and contacts weren't read: the clip changed from ${shown(loaded.get(who)?.clip)} to ${shown(latest.pose?.clip)} while the skeleton loaded, so calling again can get them`);
       // A load's cause stands only for the body it was loading.
       for (const [id, { observation: was, cause }] of failed) {
         const o = observe(id);
@@ -427,11 +429,11 @@ export class BodyStateReader {
       const incomplete = Object.values(out.reachEvaluation).some((r: any) => !r.ok);
       if (incomplete) {
         out.ok = false;
-        out.error = `some of ${whose(own.observation)} held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb${own.observation.self ? ", and clear_reach releases one" : ""}`;
+        out.error = `some of ${whose(own.observation)} held reaches couldn't be evaluated, so the joints and contacts here are incomplete; reachEvaluation says why for each limb${own.observation.self ? ", and reach {release: true, limb} releases one" : ""}`;
       }
       out.geometry = { status: incomplete ? "incomplete" : "derived", frame: "world", units: "metres", method: "humanoid skeleton + published pose + limb IK",
         inputs: [...loaded.values()].map(({ observation: o }) => ({ who: o.who, observedAt: o.receivedAt, bodyGeneration: o.generation })),
-        limitations: ["Base VRMA posture, pitch, the published pose (rotation, translation and scale) and reach relations are evaluated; clip blending, emotes, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
+        limitations: ["Base VRMA posture, pitch, the published pose (rotation, translation and scale) and reach relations are evaluated; clip blending, gestures, gaze, wing/springbone motion and renderer interpolation are not reproduced.",
           "Contact surfaces are bone-bound anatomical estimates, not mesh measurements. Reach producers are evaluated before dependants; cyclic dependencies are reported as incomplete."] };
       if (detail === "bones" || detail === "all") {
         out.joints = Object.fromEntries(Object.entries(own.body.av.nodes).map(([name, raw]) => {

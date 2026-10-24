@@ -1,7 +1,7 @@
 // Ephemeral screenshot broker. No fold, disk, credentials, or camera control.
 import { randomUUID } from "node:crypto";
 import type { Client, World } from "./world.ts";
-import { wildcardRoleIn } from "../shared/rightsfold.js";
+import { doorOf } from "./access.ts";
 import { LIMITS } from "./limits.ts";
 
 export type CaptureCapability = { version: 1; engine: "unreal"; scene: "underwater-prototype" | "world-projection" };
@@ -15,7 +15,9 @@ type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
 type Pending = { renderer: Client; target: Client; world: World; gen?: number;
   finish: (r: Result) => void; engine: string; scene: string };
 const PREFIX = "data:image/png;base64,";
-const MAX_PNG = 4 * 1024 * 1024;
+// the PNG travels base64 inside one websocket message, and the socket closes past LIMITS.WS_MESSAGE_BYTES: the largest PNG
+// is what fits in it with room for the envelope (review of #260, server I50: 4 MiB here was 5.6 MB on the wire)
+const MAX_PNG = Math.floor((LIMITS.WS_MESSAGE_BYTES - 64 * 1024) / 4) * 3;
 
 // Validate the bounded container before returning untrusted client bytes as PNG.
 // This is not a decoder or a proof that a renderer depicted the right scene.
@@ -88,7 +90,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     c.capture = (c.surface ?? "world") === "world" ? captureCapability(value) : undefined;
   }
   function request(world: World, follow: string, view = "first", engine = "auto",
-    frame: { dist?: number; height?: number; pitch?: number } = {}): Promise<Result> {
+    frame: { dist?: number; height?: number; pitch?: number } = {}, at?: string): Promise<Result> {
     const fail = (err: string, status: number) => Promise.resolve<Result>({ ok: false, err, status });
     if (!["auto", "unreal", "browser"].includes(engine)) return fail("renderer must be auto, unreal, or browser", 400);
     const target = [...world.clients].find(c => c.id === follow && !c.spectator && active(c, world));
@@ -101,21 +103,22 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       // a roamer can only be a browser renderer: an Unreal-only request is not summoned
       if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
       return summon(world, false).then((arrived) => arrived
-        ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs))
-        : { ok: false as const, err: wildcardRoleIn(world.state as any) === "none"
+        ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs), at)
+        : { ok: false as const, err: doorOf(world) === "invite-only"
             ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
             : `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
     }
-    return dispatch(world, follow, view, engine, frame, target, timeoutMs);
+    return dispatch(world, follow, view, engine, frame, target, timeoutMs, at);
   }
   const candidatesIn = (world: World, engine: string) => [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
     && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
     .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
   /** How much a roamer's current world still needs it: 0 — no agent there (parked, free); 1 — agents there, but none
-   *  has asked for a snapshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. */
+   *  has asked for a snapshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. An agent
+   *  here is a body that joined with an agent's enrolment (tokenVerified: its credential, never a declaration, §6a). */
   const need = (c: Client) => {
     const w = c.world!;
-    if (![...w.clients].some(o => o.agent && !o.spectator && active(o, w))) return 0;
+    if (![...w.clients].some(o => o.tokenVerified && !o.spectator && active(o, w))) return 0;
     return now() - (asked.get(w.name) ?? -Infinity) >= recentMs ? 1 : 2;
   };
   /** Send a roaming renderer to `world` and wait for it to join there. One summons per world at a time; a roamer busy
@@ -154,7 +157,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     return arrived;
   }
   function dispatch(world: World, follow: string, view: string, engine: string,
-    frame: { dist?: number; height?: number; pitch?: number }, target: Client, waitMs: number): Promise<Result> {
+    frame: { dist?: number; height?: number; pitch?: number }, target: Client, waitMs: number, at?: string): Promise<Result> {
     const fail = (err: string, status: number) => Promise.resolve<Result>({ ok: false, err, status });
     if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
     const candidates = candidatesIn(world, engine);
@@ -163,7 +166,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       && ![...pending.values()].some(p => p.renderer === c) && (c.ws.getBufferedAmount?.() ?? 0) < 256_000);
     if (!renderer || pending.size >= maxPending) return fail("renderers busy; retry in a few seconds", 429);
     if (!["first", "third", "selfie"].includes(view)) view = "first";
-    const id = `snap-${randomUUID()}`;
+    const id = `capture-${randomUUID()}`;
     last.set(renderer, now());
     return new Promise(resolve => {
       const timer = setTimeout(() => {
@@ -177,9 +180,10 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
         finish(r) { if (!pending.delete(id)) return; clearTimeout(timer); resolve(r); } };
       pending.set(id, p);
       // framing (shared/snapframe.js) rides nested, apart from the image size,
-      // and only when a field is given
-      try { renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, width: 960, height: 540,
-        ...(Object.keys(frame).length ? { frame } : {}) })); }
+      // and only when a field is given; `at` frames a placed thing instead (an agent checks what it built). The request
+      // is `capture` and its answer `capture-result` (docs/WIRE.md; main's wire said snap / snap-result)
+      try { renderer.ws.send(JSON.stringify({ type: "capture", id, follow, view, width: 960, height: 540,
+        ...(Object.keys(frame).length ? { frame } : {}), ...(at ? { at } : {}) })); }
       catch { log(`[snap] ${id}: send to renderer ${who(renderer)} failed — 503`); p.finish({ ok: false, err: "renderer unavailable", status: 503 }); }
     });
   }

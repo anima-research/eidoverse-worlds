@@ -2,7 +2,7 @@
 // each seat a request can come from: an agent's tools, and the browser
 // console's verbs (client/lib/posecommands.js, EW.pose, EW.clearPose and
 // EW.animate), here sending through an agent's socket instead of the
-// browser's. The receiver is a headless body; a browser receiver
+// browser's. (An agent's pose is anim {joints, target}, its release anim {stop: true, target}.) The receiver is a headless body; a browser receiver
 // (client/lib/localbody.js) needs a browser. Also: a body knocked over while
 // kneeling falls from its kneel.
 // Run: bun tools/other-body-pose-test.ts
@@ -20,7 +20,7 @@ const { join } = await import("node:path");
 const { check, tally } = mkCheck();
 
 const eq = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-check("a null pose for someone else is a release, the request clear_pose sends", eq(puppetPose(null), { pose: {} }));
+check("a null pose for someone else is a release, the request anim {stop} sends", eq(puppetPose(null), { pose: {} }));
 check("named bones merge over what they hold", eq(puppetPose({ head: [0, 0, 0, 1] }), { pose: { head: [0, 0, 0, 1] }, merge: true }));
 check("replace sends the whole pose, and a replace with nothing left is a release",
   eq(puppetPose({ head: [0, 0, 0, 1], neck: null }, true), { pose: { head: [0, 0, 0, 1] } }) && eq(puppetPose({ neck: null }, true), { pose: {} }));
@@ -108,11 +108,18 @@ check("replace sends the whole pose, and a replace with nothing left is a releas
 const lib = mkdtempSync(join(tmpdir(), "other-body-library-"));
 mkdirSync(join(lib, "fixtures"));
 writeFileSync(join(lib, "fixtures/body.vrm"), fixture());
-const h = await scratchSequencer("other-body-pose", { portFrom: 9380, serverEnv: { EIDOVERSE_DIR: lib, SKIP_OPT_SWEEP: "1" } });
+const h = await scratchSequencer("other-body-pose", { portFrom: 9380, serverEnv: { EIDOVERSE_DIR: lib, SKIP_OPT_SWEEP: "1" }, worlds: ["puppet-test"] });
 const agents: any[] = [];
 async function agent(name: string) {
-  const a = new WorldAgent({ name, avatar: "fixtures/body.vrm", world: "puppet-test", url: h.BASE.replace("http", "ws") + "/ws" });
-  agents.push(a); await a.connect(); return a as any;
+  const a: any = new WorldAgent({ name, avatar: "fixtures/body.vrm", world: "puppet-test", url: h.BASE.replace("http", "ws") + "/ws" });
+  agents.push(a); await a.connect();
+  // the server checks a request to pose or knock over a body against that body's consent table (pose; a knock-over is
+  // shove): each body here opens both to everyone, as presence-check's do
+  for (const cls of ["pose", "shove"]) {
+    const r = await a.request("consent", { switch: "accept" });
+    if (!r?.ok) throw new Error(`${name}: consent ${cls} refused: ${JSON.stringify(r)}`);
+  }
+  return a;
 }
 async function until(fn: () => boolean, ms = 4000) {
   const end = Date.now() + ms;
@@ -127,12 +134,15 @@ try {
   const arm = { leftUpperArm: [0, 0, 0.3, Math.sqrt(0.91)] };
 
   // The tools' seat.
-  await tool(poser, "pose", { bones: arm, target: held.name });
+  // the server tells a request to pose someone from its own track of where both bodies are: wait for each to see the other
+  const seen = await until(() => !!poser.people.get(held.name)?.pose && !!held.people.get(poser.name)?.pose, 10_000);
+  check("setup: the two bodies see each other", seen);
+  await tool(poser, "anim", { joints: arm, target: held.name });
   check("an agent's pose reaches another body", await until(() => eq(held.heldPose, arm)), JSON.stringify(held.heldPose));
   check("...and that body hears it was posed", await until(() => heard.includes("(posed you)")), heard.join(" | "));
   heard.length = 0;
-  await tool(poser, "clear_pose", { target: held.name });
-  check("clear_pose with a target lets that body go", await until(() => held.heldPose == null), JSON.stringify(held.heldPose));
+  await tool(poser, "anim", { stop: true, target: held.name });
+  check("anim {stop} with a target lets that body go", await until(() => held.heldPose == null), JSON.stringify(held.heldPose));
   check("...and it hears a release, not a pose", await until(() => heard.includes("(released your pose)")) && !heard.includes("(posed you)"), heard.join(" | "));
 
   // The console's seat: its own verbs, sending what they build through a socket.
@@ -161,11 +171,11 @@ try {
 
   // A request that carries nothing (an old console sent `pose: null` and
   // nothing else): the body keeps its pose and isn't told it was posed.
-  await tool(poser, "pose", { bones: arm, target: held.name });
+  await tool(poser, "anim", { joints: arm, target: held.name });
   const ready = await until(() => eq(held.heldPose, arm));
   heard.length = 0;
   poser.puppet(held.name, { pose: null as any });
-  await tool(poser, "pose", { bones: { head: [0, 0, 0, 1] }, target: held.name });   // a marker that the empty request was handled first
+  await tool(poser, "anim", { joints: { head: [0, 0, 0, 1] }, target: held.name });   // a marker that the empty request was handled first
   const marked = await until(() => !!held.heldPose?.head);
   check("a request that carries nothing changes nothing and says nothing",
     ready && marked && eq(held.heldPose, { ...arm, head: [0, 0, 0, 1] }) && eq(heard, ["(posed you)"]), heard.join(" | "));
@@ -173,7 +183,7 @@ try {
   poser.puppet(held.name, { pose: {}, anim: { dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } } });
   check("a release with an animation is told as both", await until(() => heard.includes("(released your pose, with an animation)")), heard.join(" | "));
   // A replacing animation ends a held pose too, and the body is told so.
-  await tool(poser, "pose", { bones: arm, target: held.name });
+  await tool(poser, "anim", { joints: arm, target: held.name });
   const posedFirst = await until(() => eq(held.heldPose, arm));
   heard.length = 0;
   EW.animate({ dur: 1, tracks: { head: [{ t: 0, q: [0, 0, 0, 1] }] } }, { target: held.name, replace: true });
@@ -184,6 +194,7 @@ try {
   // browser's does (its sim starts from the bones it draws). The ragdoll's
   // rest snapshot is taken with the root where the fall starts.
   const kneeler = await agent("kneeler");
+  check("setup: the kneeler and the poser see each other", await until(() => !!poser.people.get(kneeler.name)?.pose && !!kneeler.people.get(poser.name)?.pose, 10_000));
   const knock = async () => {
     const before = kneeler.body?.rd;
     poser.puppet(kneeler.name, { ragdoll: true });
@@ -231,8 +242,19 @@ try {
   check("...and once, from the first blow's slump, when a second blow lands while it waits", twice.begins === 1 && !!slump && eq(twice.pose, slump),
     `${twice.begins} begin(s), ${JSON.stringify(twice.pose)?.slice(0, 80)}`);
   kneeler.setPose(null);
-  kneeler.pos.y = 0.5;     // standing on something above the terrain
+  // standing on something above the terrain: a plinth half a metre up, a collider the feet stand on, so no tick lowers
+  // the body toward the terrain while the blow is on its way (a bare y of 0.5 over nothing falls)
+  const { boxMesh } = await import("./two-storey-fixture.ts");
+  const { registerMeshSupport, removeSupport } = await import("../mcpl/physics.ts");
+  const { x: kx, z: kz } = kneeler.pos;
+  const { pos: bp, idx: bi } = boxMesh([[kx - 1, 0, kz - 1, kx + 1, 0.5, kz + 1]]);
+  const plinth = `${kneeler.world}/plinth`;
+  check("setup: the plinth is a collider", await registerMeshSupport("other-body-pose-test", plinth, { positions: new Float32Array(bp), indices: new Uint32Array(bi) }, { position: [0, 0, 0], yaw: 0, scale: 1 }));
+  kneeler.pos.y = 0.5;
+  await sleep(300);   // a few of the body's ticks: on nothing, it would be falling by now
+  check("setup: the kneeler stands on the plinth", Math.abs(kneeler.pos.y - 0.5) < 1e-6, String(kneeler.pos.y));
   const raised = await knock();
+  await removeSupport("other-body-pose-test", plinth);
   check("...and from the height it stood at, not the terrain under it",
     begun.at(-1)?.rootY === 0.5 && Math.abs(raised - standing - 0.5) < 1e-6, `rootY ${begun.at(-1)?.rootY}, rest hips y ${raised}`);
 } catch (e) {

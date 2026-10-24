@@ -18,3 +18,16 @@ export const markVrmWarmed = () => {};
 // boot.js (splash) reads the byte ledger — nothing to count in a stub world
 export const loadingItems = () => [];
 export const bootBytes = () => ({ done: 0, total: 0 });
+export async function primeFiles() {}   // assets.js: prefetches a list of files; headless, nothing to prime (emitters.js imports it, sockets merge 10-14)
+// assets.js exports clients import that this stub lacked (found 10-14 by bodyscale after the sockets merge; each is the
+// headless truth: nothing is being fetched, decoded, listed or loaded here)
+export const demandState = () => ({ active: false, last: 0 });
+export async function fetchBytes() { return null; }
+export const ktx2Capable = () => false;
+export const ktx2KeyReady = Promise.resolve(null);
+export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
+export async function listLibrary() { return []; }
+export function loadEidoModule() { return null; }
+export async function loadGLB() { return null; }
+export function noiseTexture() { return null; }

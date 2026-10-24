@@ -7,6 +7,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds, saysIn } from "./harness.ts";
 
 // Owned ports: derived from pid so parallel CI runs don't collide; ownership is
 // verified by the world's own snapshot handshake below (a foreign listener would
@@ -14,6 +15,10 @@ import { join } from "node:path";
 const WPORT = 8800 + (process.pid % 150);
 const MPORT = WPORT + 150;
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-spokensay-"));
+foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
+// a scratch enrolment both doors honour ("dev-token" is in the tracked example, which the registry refuses anywhere)
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({ "spokensay-labtok": { id: "claude", name: "Claude", world: "commons" } }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -23,11 +28,11 @@ const check = (name: string, ok: boolean, extra = "") => {
 
 // Child diagnostics preserved: piped, tails printed on any fatal.
 const world = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "" },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },
   stdout: "pipe", stderr: "pipe",
 });
 const mcpl = Bun.spawn(["bun", "mcpl/net-server.ts"], {
-  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws` },
+  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`, MCPL_TOKENS: tokensPath },
   stdout: "pipe", stderr: "pipe",
 });
 const drain = async (p: ReturnType<typeof Bun.spawn>, name: string) => {
@@ -47,11 +52,11 @@ try {
     const t = setTimeout(() => rej(new Error("watcher join timeout — is the owned world up?")), 8000);
     watcher.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); seen.push(m);
       if (m.type === "snapshot") { clearTimeout(t); res(); } };
-    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", spectate: true }));
+    watcher.onopen = () => watcher.send(JSON.stringify({ type: "join", world: "commons", id: "watcher", spectate: true, replica: true }));
   });
 
   // The advertised MCPL surface, exactly as a schema-driven client would use it.
-  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=dev-token`);
+  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=spokensay-labtok`);
   const replies = new Map<number, any>();
   let rpcId = 10;
   const rpc = (obj: any) => host.send(JSON.stringify(obj));
@@ -71,7 +76,8 @@ try {
     for (let i = 0; i < 80 && !replies.has(id); i++) await sleep(100);
     return replies.get(id);
   };
-  const saysSeen = () => seen.filter((m) => m.type === "log" && m.entry?.verb === "say").map((m) => m.entry);
+  // what reached the log: the `say` entries of the log stream ({actor: display name, args: the say body})
+  const saysSeen = () => saysIn(seen).map((x) => ({ actor: x.actor, seq: x.seq, args: x.body }));
 
   // 0. Schema discoverability (B1): the advertised tool declares the trio.
   {

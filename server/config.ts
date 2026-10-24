@@ -9,6 +9,9 @@ import { join, resolve } from "node:path";
 import { totalmem } from "node:os";
 
 export const PORT = Number(process.env.PORT ?? 8940);
+/** Where the server listens. Default every interface, as always; HOST=127.0.0.1 keeps a test world on this machine
+ *  only (research 44: R's first world is served locally, and exposed on the tailnet separately, after a check). */
+export const HOST = process.env.HOST ?? "0.0.0.0";
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
@@ -32,6 +35,10 @@ export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod);
 // serving worlds must be startable without shouldering the optimizer.
 export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
+// TRUST_NAMES=1: a PRIVATE server (a dev box, the owner's own garden on 127.0.0.1) takes a typed name as an account,
+// `local:<name>`, so its owner can be who they say without a login. Never set it on a server strangers can reach: there
+// anyone typing the owner's name would BE the owner (round-2 review R2). Off by default; the server says so at boot.
+export const TRUST_NAMES = process.env.TRUST_NAMES === "1";
 // OPT_MEM_BUDGET_MB bounds the optimizer so serving a world never competes
 // with encoding one: each optimize child runs under RLIMIT_DATA of this
 // many MB (Linux only — XNU accepts the limit and ignores it), and an item
@@ -119,7 +126,8 @@ export const FOLD_EVERY = Number(process.env.FOLD_EVERY ?? 150);
  *  arranging furniture must not. Configurable because a build session and a
  *  show night want different answers. */
 export const VERB_RATE = Number(process.env.VERB_RATE ?? 12);
-/** All messages per client per second — 15Hz of pose plus verbs plus slack. */
+/** All messages per client per second — 15Hz of pose plus verbs plus slack; a token bucket with two seconds of burst
+ *  (server/msgrate.ts), so a backlog the server itself caused isn't charged to the client. */
 export const MSG_RATE = Number(process.env.MSG_RATE ?? 60);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle

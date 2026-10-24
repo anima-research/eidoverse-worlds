@@ -9,6 +9,10 @@
 //   PERFORMERS=24 SPECTATORS=176 DURATION_S=60 URL=ws://host:8940/ws TOKEN=… bun tools/loadtest.ts
 //
 // Exit 0 = all gates pass. Gates are printed at the end.
+//
+// The world must exist (a world is founded by its operator: bun tools/protocol/world.ts found loadtest --owner <you>;
+// joining never founds one). Every connection joins with replica (the world speaks the protocol): chat is read from
+// the snapshot's chat window (state.recentChat) and the log stream's `say` entries, and a say is a door request.
 
 const URL = process.env.URL ?? "ws://127.0.0.1:8940/ws";
 const TOKEN = process.env.TOKEN ?? "";
@@ -35,14 +39,14 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
     const ws = new WebSocket(URL);
     const s: Spec = { ws, joinMs: -1, frames: 0, gaps: 0, lastSeq: -1, lat: [], says: new Set(), openAt: performance.now(), snapAt: 0 };
     const to = setTimeout(() => reject(new Error(`${id}: join timeout`)), 30_000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATARS[n % AVATARS.length], spectate, token: TOKEN, replica: true }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") {
         s.snapAt = performance.now();
         s.joinMs = s.snapAt - s.openAt;
-        // history counts: a late joiner gets earlier chat via replay, not live
-        for (const e of m.entries ?? []) if (e.verb === "say") s.says.add(e.args?.text);
+        // history counts: a late joiner gets earlier chat in the snapshot's chat window, not live
+        for (const c of m.state?.recentChat ?? []) s.says.add(c.text);
         clearTimeout(to);
         resolve(s);
       } else if (m.type === "frame") {
@@ -50,8 +54,11 @@ function connect(id: string, spectate: boolean, n = 0): Promise<Spec> {
         s.lat.push(Date.now() - m.t);
         if (s.lastSeq >= 0 && m.seq > s.lastSeq + 1) s.gaps += m.seq - s.lastSeq - 1;
         s.lastSeq = m.seq;
-      } else if (m.type === "log" && m.entry?.verb === "say") {
-        s.says.add(m.entry.args?.text);
+      } else if (m.type === "log") {
+        for (const e of m.entries ?? []) if (e?.kind === "say") s.says.add(e.body?.text);
+      } else if (m.type === "error") {
+        clearTimeout(to);
+        reject(new Error(`${id}: ${m.error}`));
       }
     };
     ws.onerror = () => { /* close follows */ };
@@ -86,7 +93,7 @@ const tickers = perfs.map((s, i) => setInterval(() => {
 // chat burst mid-run: 24 messages in one second, all must arrive everywhere
 const burstTexts = Array.from({ length: N_PERF }, (_, i) => `burst-${i}-${Math.floor(t0)}`);
 setTimeout(() => {
-  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "verb", verb: "say", args: { text: burstTexts[i] } })); });
+  perfs.forEach((s, i) => { if (s.ws.readyState === 1 && burstTexts[i]) s.ws.send(JSON.stringify({ type: "request", id: `burst-${i}`, verb: "say", args: { text: burstTexts[i] } })); });
 }, DURATION / 2);
 
 // reconnect churn: 10 spectators drop and rejoin mid-run

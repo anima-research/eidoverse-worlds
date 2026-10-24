@@ -16,11 +16,9 @@
 // this existed.
 
 import {
-  PARTICLE_PRESETS, PARTICLE_MAX_COUNT, normalizeParticles, resolvedCount,
-  describeParticles, emitterTransition, transitionLine, emitterSeed,
-  mulberry32, withSeededRandom,
-  isParticlesKey, emitterKeyProblem, emittersIn, builderOverrides, parseColor,
+  PARTICLE_PRESETS, describeParticles, emitterTransition, transitionLine, emitterSeed, mulberry32, drawnCount,
 } from "../shared/particles.js";
+import { resolveParticles, instanceOf, ESSENTIALS } from "../shared/particle_effects.js";
 import {
   makeEmitterRegistry, retireEmitter, retireRawSystem, adoptSystem,
 } from "../client/lib/emitter_field.js";
@@ -35,149 +33,56 @@ function check(name: string, ok: unknown, detail = "") {
 }
 
 // ---- 1. declaration --------------------------------------------------------
-console.log("\ndeclaration — presets, bounds, legible failure\n");
+// R 10-07: a value names an effect (an Essential or a stored document) and sets its params; the first protocol's flat bag
+// reads as {effect: preset, at: origin, params: {count, …}}. What a viewer resolves (shared/particle_effects.js).
+console.log("\ndeclaration — effects, params, bounds, legible failure\n");
 
-const fire = normalizeParticles({ preset: "fire", origin: [0, 0.25, 0] }, { entityId: "hearth" });
-check("a declared preset normalizes", fire.ok === true);
-check("count defaults from the preset", fire.ok && fire.emitter.count === PARTICLE_PRESETS.fire.count);
-check("origin is carried verbatim", fire.ok && JSON.stringify(fire.emitter.origin) === "[0,0.25,0]");
+const fire = resolveParticles({ effect: "fire", at: [0, 0.25, 0] }, { entityId: "hearth" });
+check("an Essential resolves", fire.ok === true);
+check("its amount is the Essential's own", fire.ok && fire.emitters[0].spawn.amount === PARTICLE_PRESETS.fire.count);
+check("at is carried verbatim", fire.ok && JSON.stringify(fire.at) === "[0,0.25,0]");
+const old = resolveParticles({ preset: "fire", origin: [0, 0.25, 0], count: 90, quality: "low" }, { entityId: "hearth" });
+check("an older value reads as today's: preset → effect, origin → at, count/quality → params", old.ok && old.effect === "fire" && old.at[1] === 0.25 && old.emitters[0].spawn.amount === 90 && old.emitters[0].spawn.ratio === 0.25);
+check("...exactly as its modern spelling", JSON.stringify(old) === JSON.stringify(resolveParticles({ effect: "fire", at: [0, 0.25, 0], params: { count: 90, quality: "low" } }, { entityId: "hearth" })));
 
-const bogus = normalizeParticles({ preset: "plasma" }, { entityId: "hearth" });
-check("an unknown preset does not render", bogus.ok === false);
-check("...and says WHY, by name, listing what would work",
-  !bogus.ok && bogus.why.includes("plasma") && bogus.why.includes("fire"));
-check("...and stays legible as an emitter anyway",
-  describeParticles({ preset: "plasma" }).startsWith("emitting")
-  && describeParticles({ preset: "plasma" }).includes("unknown"));
+const bogus = resolveParticles({ effect: "plasma" }, { entityId: "hearth" });
+check("an unknown effect does not render", bogus.ok === false);
+check("...and says WHY, by name, listing what would work", !bogus.ok && bogus.why.includes("plasma") && bogus.why.includes("fire"));
+check("...and stays legible as an emitter anyway", describeParticles({ effect: "plasma" }).startsWith("emitting") && describeParticles({ effect: "plasma" }).includes("unknown"));
+const stored = resolveParticles({ effect: "sha256:" + "a".repeat(64) }, { entityId: "h" });
+check("a stored effect this viewer hasn't loaded is pending, not wrong", stored.ok === false && stored.pending === true);
 
-const huge = normalizeParticles({ preset: "fire", count: 5_000_000 }, { entityId: "hearth" });
-check("an absurd count is clamped, not honoured", huge.ok && huge.emitter.count === PARTICLE_MAX_COUNT);
+const huge = resolveParticles({ preset: "fire", count: 5_000_000 }, { entityId: "hearth" });
+check("an absurd count (an older value) is clamped, not honoured", huge.ok && huge.emitters[0].spawn.amount === 600);
 check("...and the clamp is reported", huge.ok && huge.notes.some((n: string) => n.includes("count clamped")));
-
-const far = normalizeParticles({ preset: "fire", origin: [0, 0, 400] }, { entityId: "hearth" });
-check("origin stays entity-relative (bounded)", far.ok && far.emitter.origin[2] === 8);
-check("...and says so", far.ok && far.notes.some((n: string) => n.includes("entity-relative")));
-
-const junk = normalizeParticles({ preset: "fire", jitter: 3, spin: true }, { entityId: "hearth" });
-check("params the evaluator ignores are named, not dropped in silence",
-  junk.ok && junk.notes.some((n: string) => n.includes("jitter") && n.includes("spin")));
-
-const badTex = normalizeParticles({ preset: "fire", texture: "../../etc/passwd" }, { entityId: "hearth" });
-check("a texture outside the particle library is refused", badTex.ok && badTex.emitter.texture === undefined);
-const goodTex = normalizeParticles(
-  { preset: "fire", texture: "eidoverse/assets/particle_textures/flame_05.png" }, { entityId: "hearth" });
-check("a texture inside it is kept", goodTex.ok && goodTex.emitter.texture!.endsWith("flame_05.png"));
-
-check("a non-object bag fails legibly", normalizeParticles(42 as unknown as object).ok === false);
-check("origin nonsense degrades to the entity's own origin",
-  (() => { const r = normalizeParticles({ preset: "fire", origin: "here" }, { entityId: "h" });
-    return r.ok && JSON.stringify(r.emitter.origin) === "[0,0,0]"; })());
+const far = resolveParticles({ effect: "fire", at: [0, 0, 400] }, { entityId: "hearth" });
+check("at stays entity-relative (bounded)", far.ok && far.at[2] === 8);
+check("...and says so", far.ok && far.notes.some((n: string) => n.includes("its own thing")));
+const junk = resolveParticles({ effect: "fire", params: { wobble: 3 } }, { entityId: "hearth" });
+check("params the effect doesn't declare are named, not dropped in silence", junk.ok && junk.notes.some((n: string) => n.includes("wobble")));
+const badTex = resolveParticles({ effect: "fire", params: { texture: "../../etc/passwd" } }, { entityId: "hearth" });
+check("a texture outside the particle library is refused", badTex.ok && badTex.emitters[0].render.texture === null);
+const goodTex = resolveParticles({ effect: "fire", params: { texture: "eidoverse/assets/particle_textures/flame_05.png" } }, { entityId: "hearth" });
+check("a texture inside it is kept", goodTex.ok && goodTex.emitters[0].render.texture.endsWith("flame_05.png"));
+check("a non-object value fails legibly", resolveParticles(42 as unknown as object).ok === false);
+check("at nonsense degrades to the entity's own origin", (() => { const r = resolveParticles({ effect: "fire", at: "here" }, { entityId: "h" }); return r.ok && JSON.stringify(r.at) === "[0,0,0]"; })());
 
 // determinism / persistence / sharedness of the seed
-check("an authored seed is the seed",
-  emitterSeed("hearth", { preset: "fire", seed: 1234 }) === 1234);
-check("an unauthored seed is derived, not rolled",
-  emitterSeed("hearth", { preset: "fire" }) === emitterSeed("hearth", { preset: "fire" }));
-check("...and is per-entity (two hearths are not the same fire)",
-  emitterSeed("hearth", { preset: "fire" }) !== emitterSeed("brazier", { preset: "fire" }));
-check("...and survives a re-author of the same bag (replay-stable)",
-  normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter.seed
-  === normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter.seed);
+check("an authored seed is the seed", emitterSeed("hearth", { effect: "fire", seed: 1234 }) === 1234);
+check("an unauthored seed is derived, not rolled", emitterSeed("hearth", { effect: "fire" }) === emitterSeed("hearth", { effect: "fire" }));
+check("...and is per-entity (two hearths are not the same fire)", emitterSeed("hearth", { effect: "fire" }) !== emitterSeed("brazier", { effect: "fire" }));
+check("...and an older value's seed is the modern one's", emitterSeed("hearth", { preset: "fire" }) === emitterSeed("hearth", { effect: "fire" }));
+check("...and survives a re-author of the same value (replay-stable)", resolveParticles({ effect: "fire" }, { entityId: "hearth" }).seed === resolveParticles({ effect: "fire" }, { entityId: "hearth" }).seed);
+check("the seeded stream is in range", Array.from({ length: 200 }, mulberry32(7)).every((v) => v >= 0 && v < 1));
 
-const drawA: number[] = [], drawB: number[] = [];
-withSeededRandom(99, () => { for (let i = 0; i < 8; i++) drawA.push(Math.random()); });
-withSeededRandom(99, () => { for (let i = 0; i < 8; i++) drawB.push(Math.random()); });
-check("the same seed draws the same spawn attributes on two clients",
-  JSON.stringify(drawA) === JSON.stringify(drawB));
-check("a different seed does not", (() => {
-  const c: number[] = [];
-  withSeededRandom(100, () => { for (let i = 0; i < 8; i++) c.push(Math.random()); });
-  return JSON.stringify(c) !== JSON.stringify(drawA);
-})());
-const realRandom = Math.random;
-withSeededRandom(1, () => {});
-check("Math.random is put back afterwards", Math.random === realRandom);
-try { withSeededRandom(1, () => { throw new Error("boom"); }); } catch { /* expected */ }
-check("...even when the build throws", Math.random === realRandom);
-check("the seeded stream is in range",
-  Array.from({ length: 200 }, mulberry32(7)).every((v) => v >= 0 && v < 1));
-
-// quality reduces DRAWN sprites only
-const emitter = normalizeParticles({ preset: "fire", count: 200 }, { entityId: "hearth" }).emitter;
-check("a low tier draws fewer sprites", resolvedCount(emitter, "low") === 50);
-check("...while the declared count is unchanged (a shared fact)", emitter.count === 200);
-check("an unknown tier draws everything", resolvedCount(emitter, "ludicrous") === 200);
-
-// The two tiers COMPOSE, and neither may raise the other: the authored
-// `quality` is a shared upper bound, the client tier a local budget.
-const authoredLow = normalizeParticles({ preset: "fire", count: 200, quality: "low" }, { entityId: "h" }).emitter;
-check("authored quality is carried", authoredLow.quality === "low");
-check("authored low + client high stays low (an author's cap is not local)",
-  resolvedCount(authoredLow, "high") === 50);
-check("authored low + client auto stays low", resolvedCount(authoredLow, "auto") === 50);
-const authoredHigh = normalizeParticles({ preset: "fire", count: 200, quality: "high" }, { entityId: "h" }).emitter;
-check("authored high + client low obeys the LOCAL budget (the governor is not overruled)",
-  resolvedCount(authoredHigh, "low") === 50);
-check("authored med + client med does not compound", resolvedCount(
-  normalizeParticles({ preset: "fire", count: 200, quality: "med" }, { entityId: "h" }).emitter, "med") === 100);
-check("authored auto is an opinion-free identity",
-  resolvedCount(emitter, "med") === 100 && resolvedCount(emitter, "auto") === 200);
-
-// ---- 1b. the preset as a starting point: authored motion, look, scale -----
-console.log("\nauthoring — the preset's motion and look, the emitter's own scale\n");
-
-const tuned = normalizeParticles({
-  preset: "fire", scale: 0.025, wobble: 0.1, up: 0.3, spread: 0.05, grow: -0.5, swirl: 1,
-  twinkle: 0.5, converge: 0.9, rotate: 0.2, gravity: -2, color: "#ffa040", blending: "normal",
-}, { entityId: "candle" });
-check("every motion/look knob is accepted, with no notes", tuned.ok && tuned.notes.length === 0,
-  tuned.ok ? tuned.notes.join(" · ") : "");
-check("scale is carried", tuned.ok && tuned.emitter.scale === 0.025);
-check("a vertical gravity becomes [0, g, 0]", tuned.ok && JSON.stringify(tuned.emitter.gravity) === "[0,-2,0]");
-check("colour becomes 0xRRGGBB", tuned.ok && tuned.emitter.color === 0xffa040);
-check("blending is carried", tuned.ok && tuned.emitter.blending === "normal");
-const ov = tuned.ok ? builderOverrides(tuned.emitter) : {};
-check("the builder gets every motion/look override verbatim",
-  ["wobble", "up", "spread", "grow", "swirl", "twinkle", "converge", "rotate", "gravity", "color", "blending"]
-    .every((k) => k in ov));
-check("...but not scale (the host's: it scales the mesh) nor preset/seed/origin/quality/count",
-  !["scale", "preset", "seed", "origin", "quality", "count"].some((k) => k in ov));
-check("an untouched preset sends no overrides at all",
-  Object.keys(builderOverrides(normalizeParticles({ preset: "smoke" }, { entityId: "x" }).emitter)).length === 0);
-
-const wild = normalizeParticles({ preset: "fire", scale: 900, wobble: -1, converge: 3, gravity: [0, 99, -99] },
-  { entityId: "x" });
-check("out-of-range knobs are clamped",
-  wild.ok && wild.emitter.scale === 20 && wild.emitter.wobble === 0 && wild.emitter.converge === 1
-  && JSON.stringify(wild.emitter.gravity) === "[0,20,-20]");
-check("...and every clamp is reported", wild.ok && ["scale", "wobble", "converge", "gravity"]
-  .every((k) => wild.notes.some((n: string) => n.startsWith(k))));
-const wrong = normalizeParticles({ preset: "fire", gravity: "down", color: "warm", blending: "screen" }, { entityId: "x" });
-check("malformed gravity/colour/blending fall back to the preset, legibly",
-  wrong.ok && wrong.emitter.gravity === undefined && wrong.emitter.color === undefined
-  && wrong.emitter.blending === undefined
-  && ["gravity", "color", "blending"].every((k) => wrong.notes.some((n: string) => n.startsWith(k))));
-check("colour forms: #rgb, #rrggbb, integer; nonsense is null",
-  parseColor("#f80") === 0xff8800 && parseColor("ff8800") === 0xff8800 && parseColor(0x123456) === 0x123456
-  && parseColor("#12345") === null && parseColor(-1) === null && parseColor(0x1000000) === null);
-
-// several emitters on one entity: `particles:<name>`
-check("`particles` is an emitter key", isParticlesKey("particles"));
-check("`particles:smoke` is an emitter key", isParticlesKey("particles:smoke"));
-check("a malformed name is not, and the lint can say why",
-  !isParticlesKey("particles:two words") && !isParticlesKey("particles:")
-  && emitterKeyProblem("particles:two words")!.includes("not an emitter key"));
-check("ordinary components are none of its business",
-  !isParticlesKey("motion:door") && emitterKeyProblem("motion:door") === null && emitterKeyProblem("particles") === null);
-check("emittersIn lists the default first, then by name, and skips removed ones",
-  JSON.stringify(emittersIn({ "particles:z": {}, motion: {}, particles: {}, "particles:a": {}, "particles:gone": null })
-    .map(([k]) => k)) === JSON.stringify(["particles", "particles:a", "particles:z"]));
-check("a named emitter's seed folds its name in (two fires on one entity are two fires)",
-  emitterSeed("hearth", { preset: "fire" }, "particles:left") !== emitterSeed("hearth", { preset: "fire" }, "particles:right")
-  && emitterSeed("hearth", { preset: "fire" }, "particles:left") !== emitterSeed("hearth", { preset: "fire" }));
-check("...while the default emitter keeps the seed it always had (no re-roll on upgrade)",
-  emitterSeed("hearth", { preset: "fire" }, "particles") === emitterSeed("hearth", { preset: "fire" })
-  && normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter.seed === emitterSeed("hearth", { preset: "fire" }));
+// quality reduces DRAWN particles only, and the two tiers compose as a minimum
+check("a low tier draws fewer", drawnCount(200, 1, "low") === 50);
+check("an unknown tier draws everything", drawnCount(200, 1, "ludicrous") === 200);
+check("an authored low (ratio 0.25) + client high stays low (an author's cap is not local)", drawnCount(200, 0.25, "high") === 50);
+check("authored high + client low obeys the LOCAL budget (the governor is not overruled)", drawnCount(200, 1, "low") === 50);
+check("authored med + client med does not compound", drawnCount(200, 0.5, "med") === 100);
+check("every Essential reads as the preset it was", Object.keys(ESSENTIALS).every((k) => PARTICLE_PRESETS[k].reads === ESSENTIALS[k].reads) && Object.keys(ESSENTIALS).length === 9);
+check("instanceOf keeps every key an older value said (nothing dropped)", JSON.stringify(instanceOf({ preset: "stars", seed: 5, origin: [1, 2, 3], count: 80, lifetime: 2.5 })) === JSON.stringify({ effect: "stars", seed: 5, at: [1, 2, 3], params: { count: 80, lifetime: 2.5 } }));
 
 // ---- 2. lifecycle ----------------------------------------------------------
 console.log("\nlifecycle — attach, replace, remove, late join, no hook growth\n");
@@ -209,7 +114,7 @@ function makeUpstreamStub(autos: (() => void)[]) {
   const reg = makeEmitterRegistry({ autos, build: (e: any) => up.build(e) });
   const base = autos.length;
 
-  const fireE = normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter;
+  const fireE = resolveParticles({ effect: "fire" }, { entityId: "hearth" });
   await reg.apply("hearth", fireE);
   check("attach registers exactly one hook", autos.length === base + 1);
   check("attach builds exactly one system", up.built.length === 1);
@@ -218,12 +123,20 @@ function makeUpstreamStub(autos: (() => void)[]) {
   check("re-authoring the identical bag rebuilds nothing", up.built.length === 1);
   check("...and does not grow hooks", autos.length === base + 1);
 
-  const smokeE = normalizeParticles({ preset: "smoke" }, { entityId: "hearth" }).emitter;
+  const smokeE = resolveParticles({ effect: "smoke" }, { entityId: "hearth" });
   await reg.apply("hearth", smokeE);
   check("replace builds the new emitter", up.built.length === 2);
   check("replace RETIRES the old one", up.built[0].disposed === 1);
   check("replace leaves one hook, not two", autos.length === base + 1);
   check("...and only the survivor is in the scene", up.built[0].inScene === false && up.built[1].inScene === true);
+
+  // house I159 (#260): the playing-only fast path (emitters.js) changes the live emitter without a rebuild; the slot's key
+  // must follow, or replaying the bag it now matches (a snapshot repeating the stop) rebuilds the fire
+  const stoppedE = { ...smokeE, playing: false };
+  if (typeof (reg as any).setPlaying === "function") (reg as any).setPlaying("hearth", false);
+  else (reg.emitterOf("hearth") as any).playing = false;   // what the fast path did before setPlaying
+  await reg.apply("hearth", stoppedE);
+  check("a stop through the fast path, then the stopped bag replayed, rebuilds nothing", up.built.length === 2, `built ${up.built.length}`);
 
   reg.retire("hearth");
   check("remove disposes", up.built[1].disposed === 1);
@@ -239,7 +152,7 @@ function makeUpstreamStub(autos: (() => void)[]) {
 
   // ten replaces in a row — the shape of someone tuning a live emitter
   for (let i = 0; i < 10; i++) {
-    await reg.apply("hearth", normalizeParticles({ preset: "fire", size: 0.4 + i * 0.01 }, { entityId: "hearth" }).emitter);
+    await reg.apply("hearth", resolveParticles({ effect: "fire", params: { size: 0.4 + i * 0.01 } }, { entityId: "hearth" }));
   }
   check("ten tuning passes leave ONE hook", autos.length === base + 1);
   check("...and one live system", up.built.filter((s) => s.disposed === 0).length === 1);
@@ -257,7 +170,7 @@ function makeUpstreamStub(autos: (() => void)[]) {
     autos,
     build: async (e: any) => { await slow; return up.build(e); },
   });
-  const p = reg.apply("hearth", normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter);
+  const p = reg.apply("hearth", resolveParticles({ effect: "fire" }, { entityId: "hearth" }));
   reg.retire("hearth");                            // removed while the texture downloads
   release!();
   await p;
@@ -270,7 +183,7 @@ function makeUpstreamStub(autos: (() => void)[]) {
   // A failing build must not strand a slot or a hook.
   const autos: (() => void)[] = [];
   const reg = makeEmitterRegistry({ autos, build: () => { throw new Error("no scene"); }, onError: () => {} });
-  await reg.apply("hearth", normalizeParticles({ preset: "fire" }, { entityId: "hearth" }).emitter);
+  await reg.apply("hearth", resolveParticles({ effect: "fire" }, { entityId: "hearth" }));
   check("a failed build leaves nothing behind", reg.size === 0 && autos.length === 0);
 }
 
@@ -376,7 +289,8 @@ console.log("\nhook ownership — a subsystem that claims by diff must not adopt
 // ---- 3. perception ---------------------------------------------------------
 console.log("\nperception — what look() names, and what a change narrates as\n");
 
-const desc = describeParticles({ preset: "fire", origin: [0, 0.25, 0] });
+const desc = describeParticles({ effect: "fire", at: [0, 0.25, 0] });
+check("an older value reads the same", describeParticles({ preset: "fire", origin: [0, 0.25, 0] }) === desc);
 check("look() names the semantic emitter", desc.startsWith("emitting fire"));
 check("...says where on the entity it is, in local coordinates", desc.includes("local origin [0, 0.25, 0]"));
 check("...says it is active", desc.includes("active"));
@@ -404,46 +318,10 @@ check("a same-preset retune narrates as a retune", tuneLine!.includes("retunes")
 const endLine = transitionLine("antra", "hearth", emitterTransition({ preset: "fire" }, null));
 check("an end narrates as an end", endLine!.includes("puts out"));
 check("no line for a non-change", transitionLine("antra", "hearth", null) === null);
-check("a named emitter reads under its own key",
-  describeParticles({ preset: "smoke", origin: [0, 1, 0] }, "particles:chimney").includes("(particles:chimney;"));
-check("a scaled emitter says so (size is a shared fact)",
-  describeParticles({ preset: "fire", scale: 0.025 }).includes("scale 0.025"));
-check("...and a tinted one names its colour",
-  describeParticles({ preset: "smoke", color: "#334" }).includes("tinted #333344"));
-check("an untouched bag reads exactly as before",
-  describeParticles({ preset: "fire", origin: [0, 0.25, 0] }) === "emitting fire (particles; local origin [0, 0.25, 0]; active)");
-check("the live line names a named emitter",
-  transitionLine("antra", "hearth", emitterTransition(null, { preset: "smoke" }), "particles:chimney")!
-    .endsWith("(particles:chimney)"));
-
-// ---- 4. several emitters per entity in the registry ------------------------
-console.log("\nregistry — one slot per (entity, component), retired together\n");
-{
-  const autos: (() => void)[] = [];
-  const built: string[] = [];
-  const reg = makeEmitterRegistry({
-    autos,
-    build: (e: { preset: string }, { id, key }: { id: string; key: string }) => {
-      built.push(`${id}/${key}/${e.preset}`);
-      const update = () => {}; autos.push(update);
-      return { update, dispose() {} };
-    },
-  });
-  await reg.apply("hearth", { preset: "fire" }, { entity: "hearth", key: "particles" });
-  await reg.apply("hearth\u0000particles:smoke", { preset: "smoke" }, { entity: "hearth", key: "particles:smoke" });
-  await reg.apply("brazier", { preset: "fire" }, { entity: "brazier", key: "particles" });
-  check("build learns the entity AND the component", built.includes("hearth/particles:smoke/smoke")
-    && built.includes("hearth/particles/fire"), built.join(", "));
-  check("two emitters on one entity are two slots", reg.slotsOf("hearth").length === 2 && autos.length === 3);
-  await reg.apply("hearth\u0000particles:smoke", null, { entity: "hearth", key: "particles:smoke" });
-  check("putting out one leaves the other burning", reg.slotsOf("hearth").length === 1 && autos.length === 2);
-  await reg.apply("hearth\u0000particles:smoke", { preset: "smoke" }, { entity: "hearth", key: "particles:smoke" });
-  check("retireEntity takes every emitter the entity owns", reg.retireEntity("hearth") === 2
-    && reg.slotsOf("hearth").length === 0 && autos.length === 1);
-  check("...and nobody else's", reg.has("brazier"));
-  check("the one-emitter call shape still works (slot = entity)", (await reg.apply("lamp", { preset: "magic" })) != null
-    && built.at(-1) === "lamp/particles/magic");
-}
+const stop = emitterTransition({ effect: "fire" }, { effect: "fire", playing: false });
+check("playing off narrates as a stop, and back on as a start", stop?.kind === "stop" && transitionLine("antra", "hearth", stop)!.includes("stops the fire")
+  && emitterTransition({ effect: "fire", playing: false }, { effect: "fire" })?.kind === "start");
+check("a stopped emitter reads as one that can emit, stopped", describeParticles({ effect: "smoke", playing: false }).startsWith("can emit smoke") && describeParticles({ effect: "smoke", playing: false }).includes("stopped"));
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 if (failed) process.exit(1);

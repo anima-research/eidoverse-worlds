@@ -2,7 +2,7 @@
 //
 //   bun tools/frames-layout-test.ts
 //
-// frames-resize-test covers the resize drag's finish path. This suite covers what the rest of frames.js
+// frames-resize-test covers the resize drag's finish path. This suite covers what the rest of windows.js
 // promises: a frame can never leave the viewport (the -8 margins, on drag AND on resize), the edge/corner
 // hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui.js's arrange-exit
 // guard), a frame resting on an edge rides that edge through a window resize, z-indexes stay inside the
@@ -12,8 +12,9 @@
 // The persisted-layout purge runs at module scope, so localStorage is seeded BEFORE the import; every
 // assertion about it is therefore a statement about what the import did.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "frames-layout-stubs",
   setup(b) {
@@ -46,8 +47,8 @@ localStorage.setItem("ew-ui-locked", "0");
 (Element.prototype as any).hasPointerCapture = function () { return false; };
 (document as any).elementFromPoint = () => null;
 
-const { makeFrame, resizeZoneAt, setLocked, isLocked, escapeToggle, escapeIsClaimed, claimEscape, allFrames, chromeCost } =
-  await import("../client/lib/frames.js");
+const { makeFrame, resizeZoneAt, setLocked, isLocked, panelsToggle, escapeIsClaimed, claimEscape, allFrames, chromeCost } =
+  await import("../client/lib/windows.js");
 
 // happy-dom measures nothing; report each frame's real state so the zone math and the drag clamp can see it
 function measurable(f: any, chromeH = 30) {
@@ -76,12 +77,12 @@ check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem(
   const world = makeFrame("world", { title: "world", x: -10, y: 52, w: 232, h: 300 });
     // THE BAR DOCKS AT THE TOP. R, 2026-09-11: "let's dock it at the top by
     // default since all the helper notifications display at the bottom where it
-    // currently is". DEFAULT_LAYOUT.emotes went y:-10 (a BOTTOM anchor — a
+    // currently is". DEFAULT_LAYOUT's action bar went y:-10 (a BOTTOM anchor — a
     // negative y re-resolves against innerHeight) to y:10, an absolute offset
     // from the top. A material DEFAULT_LAYOUT change, riding the LAYOUT_VERSION
     // bump this block already exercises.
-    { const tbar = makeFrame("emotes", { title: "emotes", x: "center", y: -10, w: 352, h: 32 });
-      check("the emote bar's DEFAULT is the TOP edge, not the bottom",
+    { const tbar = makeFrame("actions", { title: "actions", x: "center", y: -10, w: 352, h: 32 });
+      check("the action bar's DEFAULT is the TOP edge, not the bottom",
         tbar.state.y < 100, `y=${tbar.state.y} vh=${innerHeight}`); }
   check("a frame with a purged save takes the DEFAULT, not the stale x:1",
     world.state.x !== 1 && world.state.x + world.state.w <= innerWidth - 8, JSON.stringify(world.state));
@@ -206,7 +207,7 @@ console.log("FRAMES — a narrow viewport (the header's 'can never leave the vie
 
 console.log("FRAMES — a viewport too small for the default arrangement opens only chat");
 {
-  // R's phone, 2026-09-10 23:53: world + emotes + the palette stacked on top of
+  // R's phone, 2026-09-10 23:53: world + gestures + the palette stacked on top of
   // chat, all legally inside the viewport and none overlapping by the pairwise
   // check — the palette is makeSection mounting into world's stack, not a frame
   // of its own, so no rect test can see it. The fix is not to pack them better
@@ -285,7 +286,7 @@ console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `m
 
 console.log("FRAMES — reset obeys the viewport rule");
 {
-  // Round 2: one tap of "reset layout" on a phone reopened world+emotes stacked
+  // Round 2: one tap of "reset layout" on a phone reopened world+gestures stacked
   // over chat, and restored authoring-viewport widths uncapped (chat right=555
   // in a 390px viewport). Reset removes the save first, so there is no
   // arrangement to protect — the viewport rule and fit() both apply.
@@ -307,12 +308,12 @@ console.log("FRAMES — reset obeys the viewport rule");
 
 console.log("FRAMES — a hand-placed frame is never re-anchored");
 {
-  // R, 2026-09-11: the emote bar "will always pop sideways to the right
+  // R, 2026-09-11: the action bar "will always pop sideways to the right
   // regardless if there's room for it". x:'center' re-resolved on EVERY fit()
   // because the `!saved` guard reads a closure captured at construction, and a
-  // drag writes localStorage without ever refreshing it. The emote bar calls
+  // drag writes localStorage without ever refreshing it. The action bar calls
   // _fit() 180ms after each drag settles (snapTo), so the placement was undone
-  // every time. Only `emotes` uses x:'center', which is why it was the one.
+  // every time. Only `actions` (the action bar) uses x:'center', which is why it was the one.
   const vw0 = innerWidth, vh0 = innerHeight;
   (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
   localStorage.removeItem("ew-frame-awcx");
@@ -340,22 +341,22 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   // unlatched path would produce, and asserting against it passed either way
   // (round 2: deleting markMoved left this green).
   const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
-  // BINDS frames.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
+  // BINDS windows.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
   // Measured (round 5, correcting the round-2 note that stood here): deleting
   // the drag-end markMoved() alone leaves this GREEN at 61/0; deleting the
   // resize-finish one alone turns it RED at 60/1. The reason is the capture
   // phase — the resize handler registers
   // `document.addEventListener('pointerup', finish, true)`, so a title-bar
   // drag's pointerup reaches finish() (and its f.markMoved?.()) BEFORE the
-  // drag's own up() runs. So the drag-end call at frames.js:454 is the line
+  // drag's own up() runs. So the drag-end call at windows.js:454 is the line
   // nothing binds. Left in place: it is correct, and removing a guard because
   // no test reaches it is the wrong direction.
-  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, frames.js:181)",
+  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
 
   // (4) reset must put the frame back UNDER the anchors — `moved = false`.
-  // THE Y ANCHOR, not just x. R, 2026-09-11: the emote bar "can't be arbitrarily
+  // THE Y ANCHOR, not just x. R, 2026-09-11: the action bar "can't be arbitrarily
   // placed anywhere". fit()'s `opts.y < 0` re-anchor was deliberately ungated —
   // round 2 gated the CLAMP as well and stranded every untouched bottom frame
   // (rotate 700->500 left a bar at y=370 where 428 was wanted), so it was
@@ -400,7 +401,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
       // not chase it further.
       // To bind it later: a fixture whose root.offsetHeight really is state.h +
       // chrome, so the anchor and the ceiling are far apart. The product change
-      // itself (frames.js: `!moved &&` on the y anchor) is one token and is
+      // itself (windows.js: `!moved &&` on the y anchor) is one token and is
       // disclosed in the commit.
       check("a hand-placed frame is still on screen after a fit", ybar.state.y >= 8, `y=${ybar.state.y}`);
       // the CLAMP is NOT gated: shrink the viewport under it and it must come inside
@@ -446,28 +447,39 @@ check("every frame's z-index sits inside [10..25] (below the dock at 27)", zs().
   check("raising another puts IT on top and still inside the band", +f.el.style.zIndex === Math.max(...zs()) && +f.el.style.zIndex <= 25, f.el.style.zIndex);
 }
 
-console.log("FRAMES — Esc close / restore");
+console.log("FRAMES — Tab hides / restores; Esc never touches the set");
 for (const x of allFrames()) x.hide();
 f.show(); mid.show();
-const esc = (target: EventTarget = document.body) => target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+// R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus" — Tab is the
+// panel toggle; Esc is the browser's way out of full screen and closes only transient things (pops, dialogs, edit mode)
+const press = (k: string, target: EventTarget = document.body) => target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+const esc = (target?: EventTarget) => press("Escape", target);
+const tab = (target?: EventTarget) => press("Tab", target);
 const open = () => allFrames().filter((x: any) => x.visible).map((x: any) => x.id);
 check("setup: two frames open", open().join() === "t,mid", open().join());
 const { bus: stubBus } = await import("./chat-core-stub.mjs");
 const quiet: string[] = [];
 stubBus.on("esc-quiet", (d: string) => quiet.push(d));
 esc();
-check("Esc closes every open frame", open().length === 0, open().join());
-check("…and says so on the bus (ui.js flashes 'panels hidden · Esc to bring back')", quiet.join() === "closed", quiet.join());
+check("Esc with panels open leaves them open (it never hides the set)", open().length === 2, open().join());
+check("…and announces nothing on the bus", quiet.length === 0, quiet.join());
 esc();
-check("Esc again restores exactly that set", open().sort().join() === "mid,t", open().join());
+check("…a second Esc doesn't either", open().length === 2 && quiet.length === 0, `${open().join()} | ${quiet.join()}`);
+tab();
+check("Tab closes every open frame", open().length === 0, open().join());
+check("…and says so on the bus (ui.js flashes 'panels hidden · Tab to bring back')", quiet.join() === "closed", quiet.join());
+esc();
+check("Esc while the set is hidden brings nothing back", open().length === 0 && quiet.join() === "closed", `${open().join()} | ${quiet.join()}`);
+tab();
+check("Tab again restores exactly that set", open().sort().join() === "mid,t", open().join());
 check("…and says that too (the hint stops)", quiet.join() === "closed,restored", quiet.join());
 {
   const input = document.createElement("input");
   document.body.appendChild(input);
   input.focus();
   check("escapeIsClaimed() = 'field' while an input is focused", escapeIsClaimed() === "field", String(escapeIsClaimed()));
-  esc(input);
-  check("Esc with an input focused leaves the frames alone", open().length === 2, open().join());
+  tab(input);
+  check("Tab with an input focused leaves the frames alone", open().length === 2, open().join());
   check("…and announces nothing", quiet.join() === "closed,restored", quiet.join());
   input.blur(); input.remove();
   check("...and is unclaimed once it blurs", escapeIsClaimed() === null, String(escapeIsClaimed()));
@@ -475,49 +487,61 @@ check("…and says that too (the hint stops)", quiet.join() === "closed,restored
 {
   const pop = document.createElement("div"); pop.className = "dd-pop";
   document.body.appendChild(pop);
-  check("an open dropdown pop claims Esc", escapeIsClaimed() === "pop");
-  esc();
-  check("Esc with a pop open leaves the frames alone", open().length === 2, open().join());
+  check("an open dropdown pop claims the key", escapeIsClaimed() === "pop");
+  tab();
+  check("Tab with a pop open leaves the frames alone", open().length === 2, open().join());
   pop.remove();
 }
 {
-  // a status chip's popover (statuschips.js #stpop) claims Esc while shown — its own handler folds it — and not while hidden
+  // a status chip's popover (statuschips.js #stpop) claims the key while shown — its own handler folds it on Esc — and not while hidden
   const sp = document.createElement("div"); sp.id = "stpop"; sp.hidden = true;
   document.body.appendChild(sp);
-  check("a HIDDEN status-chip popover does not claim Esc", escapeIsClaimed() === null, String(escapeIsClaimed()));
+  check("a HIDDEN status-chip popover does not claim the key", escapeIsClaimed() === null, String(escapeIsClaimed()));
   sp.hidden = false;
-  check("a shown status-chip popover claims Esc (the panels stay)", escapeIsClaimed() === "pop", String(escapeIsClaimed()));
-  esc();
-  check("…Esc with it open leaves the frames alone", open().length === 2, open().join());
+  check("a shown status-chip popover claims the key (the panels stay)", escapeIsClaimed() === "pop", String(escapeIsClaimed()));
+  tab();
+  check("…Tab with it open leaves the frames alone", open().length === 2, open().join());
   sp.remove();
 }
 {
   let claim: string | null = null;
   claimEscape(() => claim);
   claim = "edit";
-  check("a claimEscape() registrant claims Esc", escapeIsClaimed() === "edit");
-  esc();
-  check("Esc while claimed leaves the frames alone", open().length === 2, open().join());
+  check("a claimEscape() registrant claims the key", escapeIsClaimed() === "edit");
+  tab();
+  check("Tab while claimed leaves the frames alone", open().length === 2, open().join());
   claim = null;
-  esc();
-  check("releasing the claim hands Esc back to the frames", open().length === 0, open().join());
-  check("escapeToggle() reports what it did", escapeToggle() === "restored" && escapeToggle() === "closed" && escapeToggle() === "restored");
+  tab();
+  check("releasing the claim hands Tab back to the frames", open().length === 0, open().join());
+  check("panelsToggle() reports what it did", panelsToggle() === "restored" && panelsToggle() === "closed" && panelsToggle() === "restored");
 }
 {
-  // NO PANELS OPEN (owner, 10-01: "Basically only the dock should be visible"): Esc still goes quiet — the lantern's
-  // resting line goes away (ui.js relays 'closed') — and the next Esc brings it back, with nothing to reopen
+  // NO PANELS OPEN (owner, 10-01: "Basically only the dock should be visible"): Tab still goes quiet — the lantern's
+  // resting line goes away (ui.js relays 'closed') — and the next Tab brings it back, with nothing to reopen
   for (const x of allFrames()) x.hide();
   quiet.length = 0;
-  esc();
-  check("no panels open: Esc still goes quiet (says 'closed' on the bus, opens nothing)", quiet.join() === "closed" && open().length === 0, `${quiet.join()} | ${open().join()}`);
-  esc();
-  check("…and the next Esc says 'restored' (the pill comes back), still opening nothing", quiet.join() === "closed,restored" && open().length === 0, `${quiet.join()} | ${open().join()}`);
-  // quiet with nothing hidden, then a panel opened by hand: Esc hides it, and the next Esc brings back THAT
-  esc(); f.show(); esc();
-  check("quiet, then a panel opened by hand: Esc hides it (still quiet)", open().length === 0 && quiet.join() === "closed,restored,closed,closed", quiet.join());
-  esc();
-  check("…and the next Esc brings that panel back, and the pill", open().join() === "t" && quiet.at(-1) === "restored", `${open().join()} | ${quiet.join()}`);
+  tab();
+  check("no panels open: Tab still goes quiet (says 'closed' on the bus, opens nothing)", quiet.join() === "closed" && open().length === 0, `${quiet.join()} | ${open().join()}`);
+  tab();
+  check("…and the next Tab says 'restored' (the pill comes back), still opening nothing", quiet.join() === "closed,restored" && open().length === 0, `${quiet.join()} | ${open().join()}`);
+  // quiet with nothing hidden, then a panel opened by hand: Tab hides it, and the next Tab brings back THAT
+  tab(); f.show(); tab();
+  check("quiet, then a panel opened by hand: Tab hides it (still quiet)", open().length === 0 && quiet.join() === "closed,restored,closed,closed", quiet.join());
+  tab();
+  check("…and the next Tab brings that panel back, and the pill", open().join() === "t" && quiet.at(-1) === "restored", `${open().join()} | ${quiet.join()}`);
   f.hide();
+}
+{
+  // house I213 (#260): Tab hides t; a panel opened while quiet, then Tab, adds to the hidden set instead of replacing it
+  for (const x of allFrames()) x.hide();
+  if (panelsToggle() === "closed" && open().length === 0) panelsToggle();   // leave any standing quiet
+  const g = makeFrame("t-second", { title: "second", x: 400, y: 100, w: 200, h: 150 });
+  g.hide(); f.show();
+  tab();                       // t hidden, remembered
+  g.show(); tab();             // second opened while quiet, hidden again
+  tab();                       // back
+  check("a panel opened while quiet joins the hidden set: the next Tab brings both back", open().includes("t") && open().includes("t-second"), open().join());
+  f.hide(); g.hide();
 }
 
 console.log("CHROME COST — the declared anchor");
@@ -554,7 +578,7 @@ console.log("CHROME COST — the declared anchor");
 
   // (2) A TOP-DOCKED RAIL CHARGES POSITIONALLY, NOT ZERO. Welded to the top edge
   // says nothing about the horizontal axis: a rail at [10..304] in an 844 viewport
-  // is genuinely LEFT-positioned there. Returning {0,0} put an emote tile under the
+  // is genuinely LEFT-positioned there. Returning {0,0} put an action tile under the
   // rail at 844x390 ("sit" covered by #dock) — the corpus row-33 witness.
   const rail = (chromeCost as any)("#dock", { left: 10, right: 304, width: 294 }, 844);
   check("a top-docked rail charges the side it actually occupies, not zero",
@@ -581,7 +605,7 @@ console.log("AUTO-HIDDEN — survives a reload");
   // `markMoved()` sets `state.placed = true` ad-hoc and save() serialises the whole
   // object, so the flag reached storage the FIRST time. But the state literal had no
   // `placed` key, so the next construction built a state without it and the next
-  // save() erased it. Measured live at 1280x800 on the emote bar:
+  // save() erased it. Measured live at 1280x800 on the action bar:
   //   markMoved + _save -> placed:true · reload -> placed:true
   //   hide/show         -> the key is GONE from storage
   //   reload again      -> _placed:false
@@ -657,16 +681,16 @@ console.log("FRAMES — a shrink is not a decision: grow the window back and eve
     [stored.x, stored.y, stored.w, stored.h].join(",") === before[2], JSON.stringify(stored));
   (window as any).innerHeight = 700; window.dispatchEvent(new Event("resize"));
 
-  // A RIDER owns its frame's size (emotebar.js snapTo writes _state.w/h, then _fit).
+  // A RIDER owns its frame's size (actionbar.js snapTo writes _state.w/h, then _fit).
   // What it writes is the frame's size from then on, so a window resize must keep it
-  // rather than re-projecting the size the frame had before the rider spoke.
-  const rider: any = measurable(makeFrame("rt-rider", { title: "rider", x: 40, y: 400, w: 352, h: 32 })); rider.show();
-  rider._state.w = 124; rider._state.h = 108; rider._fit();
+  // rather than re-projecting the size the frame had before the self-sizer spoke.
+  const sizer: any = measurable(makeFrame("rt-sizer", { title: "sizer", x: 40, y: 400, w: 352, h: 32 })); sizer.show();
+  sizer._state.w = 124; sizer._state.h = 108; sizer._fit();
   (window as any).innerWidth = 1001; window.dispatchEvent(new Event("resize"));
   // Height is the binding axis: an UNPLACED frame's width is re-derived from its
-  // declared w by fit() on purpose (the width-ratchet fix), with or without a rider.
-  check("a rider's height survives the next window resize",
-    rider.state.h === 108, rect(rider));
+  // declared w by fit() on purpose (the width-ratchet fix), with or without a self-sizer.
+  check("a self-sizer's height survives the next window resize",
+    sizer.state.h === 108, rect(sizer));
   (window as any).innerWidth = 1000; window.dispatchEvent(new Event("resize"));
 
   // Reset is the deliberate act of un-placing: after it, a resize must not drag the

@@ -7,6 +7,7 @@
 // was down. routes.ts delegates the endpoint here; nothing else changes hands.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
+import { addressOf } from "./peer.ts";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
@@ -19,8 +20,8 @@ import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
 import { checkFile } from "./buildcheck-queue.ts";
 
-/** What the handler needs from Bun's server object, structurally (the
- *  VerbWorld precedent): the socket address behind the nginx front. */
+/** What the handler needs from Bun's server object, structurally: the
+ *  socket address behind the nginx front. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
 const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
@@ -406,7 +407,7 @@ setTimeout(sweepLibrary, 15_000).unref?.();
 
 /** POST /upload — live asset ingestion. Two destinations:
  *   - models (default): content-addressed into assets/opt/store/<hash>.glb —
- *     immutable by construction, so spawn verbs can reference the path
+ *     immutable by construction, so a thing's `model` can name the path
  *     forever and clients cache it forever. DESIGN.md's "content-addressed
  *     assets" plane, made real.
  *   - ?as=avatar&name=foo: named into the overlay vrms dir, because the
@@ -416,7 +417,7 @@ setTimeout(sweepLibrary, 15_000).unref?.();
  *  mcpl/tokens.json, OR an aid1 credential the home node vouches for
  *  (so Orrery and agents can push generated GLBs here directly — the
  *  store is content-addressed and inert; what enters a WORLD is still
- *  the `asset`/`spawn` verbs, which per-world roles gate), plus per-IP
+ *  a door request, which per-world roles gate), plus per-IP
  *  rate limiting — live generation is the feature, an upload flood is
  *  not. `?by=` is attribution for the console trail. */
 /** Which image container these bytes are, by magic — the three the picture
@@ -433,6 +434,39 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
 
 /** Which audio container these bytes are, by magic — the five the sound
  *  allow-list admits. `null` for anything else: the name is not evidence. */
+/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
+export const MAX_IMAGE_PX = 8192;
+/** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give: the cap
+ *  holds only if every image's size is known. */
+export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): { status: number; why: string } | null {
+  const dims = imageDims(b, kind);
+  // the remedy is one any uploader can take (house 6340433633: "save it again from an image editor" assumed a person at one)
+  if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; sending these bytes again won't change that. Upload a copy whose header gives its size: any encoder writes one (a PNG always has it), so re-encode it with whatever made it, or a library such as sharp or Pillow` };
+  if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
+  return null;
+}
+/** …a zero on either side is no size either (house 6340433633, the lead's decision): a 0×0 WebP header, a PNG with width 0
+ *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
+export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const d = headerDims(b, kind);
+  return d && d[0] > 0 && d[1] > 0 ? d : null;
+}
+function headerDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
+  const u16 = (i: number) => (b[i] << 8) | b[i + 1], u32 = (i: number) => ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+  const le16 = (i: number) => b[i] | (b[i + 1] << 8), le24 = (i: number) => b[i] | (b[i + 1] << 8) | (b[i + 2] << 16);
+  try {
+    if (kind === "png") return b.length >= 24 ? [u32(16), u32(20)] : null;
+    if (kind === "jpg") { let i = 2; while (i + 9 < b.length) { if (b[i] !== 0xff) { i++; continue; } const m = b[i + 1];
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return [u16(i + 7), u16(i + 5)];
+        if (m === 0xff) { i++; continue; }   // a fill byte (any number may pad a marker): the marker is the byte after the last
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; } i += 2 + u16(i + 2); } return null; }
+    if (kind === "webp" && b.length >= 30) { const c = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (c === "VP8X") return [1 + le24(24), 1 + le24(27)];
+      if (c === "VP8 ") return [le16(26) & 0x3fff, le16(28) & 0x3fff];
+      if (c === "VP8L") { const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24); return [1 + (v & 0x3fff), 1 + ((v >> 14) & 0x3fff)]; } }
+  } catch { /* unreadable */ }
+  return null;
+}
 export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a" | null {
   const tag = (off: number, s: string) => b.length >= off + s.length && [...s].every((ch, i) => b[off + i] === ch.charCodeAt(0));
   if (tag(0, "ID3")) return "mp3";
@@ -449,9 +483,8 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   const upTok = url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);
   // The aid1 leg the join door has: guests enrolled via archipelago-home
-  // carry no tokens.json entry, but the scripting tier's `behavior` verb
-  // is already reachable to them through world_verb — the bytes it binds
-  // must be landable by the same identity, or the tier is half-open.
+  // carry no tokens.json entry, but may build in a world that lets them —
+  // what they build with must be landable by the same identity.
   // Same audience/scope/slug derivation as the two doors, no jti burn
   // (an aid1 credential is reusable until expiry at every door).
   if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
@@ -465,35 +498,14 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // Behind the show's nginx front every socket is 127.0.0.1 — the real
-  // client address rides X-Real-IP. (Spoofable only when directly exposed,
-  // which is the tailnet dev case where rate limits hardly matter.)
-  const ip = req.headers.get("x-real-ip") ?? srv.requestIP(req)?.address ?? "?";
+  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts; security review 10-18 H2)
+  const ip = addressOf(req, srv);
   const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
   if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
   u.n++; uploadWin.set(ip, u);
   if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
   const body = new Uint8Array(await req.arrayBuffer());
   if (body.length > UPLOAD_CAP) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
-  if (url.searchParams.get("as") === "script") {
-    // Runtime-script ingestion: plain UTF-8 JS, content-addressed like
-    // models, so a `behavior` entry pins exact bytes forever. The store
-    // is inert — what RUNS is still gated by the behavior verb + sandbox.
-    if (body.length > 64 * 1024) return new Response("script too large (64KB cap)", { status: 413 });
-    let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(body); } catch {
-      return new Response("script must be UTF-8 text", { status: 415 });
-    }
-    if (!text.trim()) return new Response("empty script", { status: 415 });
-    const shash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
-    const sdir = join(OPT_DIR, "store", "scripts");
-    mkdirSync(sdir, { recursive: true });
-    const srel = `store/scripts/${shash}.js`;
-    if (!existsSync(join(OPT_DIR, srel))) writeFileSync(join(OPT_DIR, srel), body);
-    console.log(`[upload] script ${srel} (${body.length}B) by ${upBy}`);
-    return new Response(JSON.stringify({ path: srel }),
-      { headers: { "content-type": "application/json" } });
-  }
   if (url.searchParams.get("as") === "image") {
     // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
     // store/images/<hash>.<ext> and served by the /library route like any
@@ -501,11 +513,13 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     // decoded by the client that hangs it, not re-encoded here). The kind is
     // read from the BYTES, never the name: the store's extension is what the
     // /library route and the picture allow-list key on, so it has to be true.
-    // What enters a WORLD is still the `picture` comp, gated by rank and by
-    // the entity's guard; the store itself stays inert.
+    // What enters a WORLD is still a `picture` component, admitted by the
+    // door; the store itself stays inert.
     if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     const kind = sniffImage(body);
     if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
+    // batch 2: a decompression bomb (a tiny file that decodes to 16k × 16k) is refused before any viewer decodes it
+    { const no = imageSizeRefusal(body, kind); if (no) return new Response(no.why, { status: no.status }); }
     const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
     const idir = join(OPT_DIR, "store", "images");
     mkdirSync(idir, { recursive: true });
@@ -548,7 +562,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     // upload (immutable address). No transcode: the client plays what was
     // given. Kind from the BYTES, never the name — the store's extension is
     // what the sound allow-list keys on. What plays in a WORLD is still the
-    // `sound` comp, gated by rank and the entity's guard; the store is inert.
+    // `sound` component, admitted by the door; the store is inert.
     const kind = sniffAudio(body);
     if (!kind) return new Response("not an MP3, Ogg, WAV, WebM or M4A audio file (judged by content, not by name)", { status: 415 });
     const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);

@@ -3,7 +3,7 @@
 // A faithful port of the eidoverse toolkit's makeTerrain height function
 // (eidoverse-video/eidoverse/terrain.js: mulberry32 → 64×64 value-noise grid
 // → fBm → amplitude + flat-radius blend), re-expressed inside the blessed
-// exact-op set so the deterministic sim (eidosim@0.2.0) may ground bodies on
+// exact-op set so the deterministic sim (eidosim) may ground bodies on
 // it. The toolkit's law was ALREADY almost covenant-clean — integer-hash
 // PRNG, lerp/smoothstep, floor; no transcendental anywhere — with exactly
 // two unblessed calls, substituted here:
@@ -24,8 +24,8 @@
 // replay, bit for bit) holds because ALL sim consumers use THIS law.
 //
 // THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION (Covenant II):
-// this law is pinned by eidosim@0.2.0 — editing anything here that moves a
-// bit is an epoch bump of the SIM, never a patch.
+// this law is held by eidosim's conformance digests (engine-check: the onto-hills scenario): editing anything here that
+// moves a digest is a new engine version, never a patch.
 //
 // SHAPING (features, heightmap — shared/terrainshape.js) rides on top and is
 // carried ONLY when the args use it: for every world that does not, the
