@@ -141,7 +141,7 @@ try {
   const g = myActs().at(-1);
   const gReq = g?.e.body?.request;
   check("G2 …a set of the transform with expect on where the drag started (§3a)", g?.e.verb === "set" && gReq?.component === "transform" && JSON.stringify(gReq?.expect?.[0]?.value) === JSON.stringify(start), gReq);
-  check("G3 …and it moved 1 m on the record", Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3, { now: disk().entities[crate].c.transform.pos, from: start.pos, settled });
+  check("G3 …and it moved 1 m on the record", await waitDisk(() => Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), { now: disk().entities[crate].c.transform.pos, from: start.pos, settled });
 
   // ---- U: undo and redo through the authority ----
   n0 = myActs().length;
@@ -174,7 +174,7 @@ try {
     await evalJson(`(() => { for (let i = 0; i < 2; i++) { dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'z', ctrlKey: true, bubbles: true })); dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyZ', key: 'z', ctrlKey: true, bubbles: true })); } return true; })()`);
     const both = await waitDisk(() => myActs().length >= k + 4 && myActs().slice(k + 2).filter((a) => a.e.verb === "undo" && a.e.body?.refused === undefined).length === 2);
     const reqs = myActs().slice(k + 2).map((a) => a.e.body?.request?.act);
-    check("U7 two quick Ctrl+Z's undo both acts (Y, then X), nothing dropped", both && JSON.stringify(reqs) === JSON.stringify([y, x]) && Math.abs(disk().entities[crate].c.transform.pos[0] - p0) < 1e-3, { reqs, pos: disk().entities[crate].c.transform.pos[0], p0 });
+    check("U7 two quick Ctrl+Z's undo both acts (Y, then X), nothing dropped", await waitDisk(() => both && JSON.stringify(reqs) === JSON.stringify([y, x]) && Math.abs(disk().entities[crate].c.transform.pos[0] - p0) < 1e-3), { reqs, pos: disk().entities[crate].c.transform.pos[0], p0 });
     await waitFor(`globalThis.__editWrites().redo.length >= 2`); }
 
   // ---- Q: a Ctrl+Z pressed in the same tick as the release undoes THAT release (it waits for the authority's reply) ----
@@ -184,7 +184,7 @@ try {
         dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'KeyZ', ctrlKey: true, bubbles: true })); return true; }); })()`);
     const ok2 = await waitDisk(() => myActs().length === n0 + 2);
     const [rel, und] = myActs().slice(n0);
-    check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before, myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
+    check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", await waitDisk(() => ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before), myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
 
   check("N0 by now (a create, a dozen moves, undos and redos) no '[state] seq gap' warning (N1 checks again at the end)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
 
@@ -223,7 +223,7 @@ try {
   check("L3 …and the refused try changed nothing; the attempt itself is on the record (round-2 R7)", myActs().length === n0 && myRefused() >= 1, myRefused());
   await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with throughLock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.throughLock === true && myActs().at(-1).e.body.request.id === IDS.of("cup")), myActs().slice(n0).map((a) => a.e.body.request));
-  check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities[IDS.of("cup")].c.transform.pos[0] - 0.4) < 1e-9 && disk().entities[IDS.of("tbl")].c.lock === true, [disk().entities[IDS.of("cup")].c.transform, disk().entities[IDS.of("tbl")].c.lock]);
+  check("L5 …the cup moved, and the table is still locked", await waitDisk(() => Math.abs(disk().entities[IDS.of("cup")].c.transform.pos[0] - 0.4) < 1e-9 && disk().entities[IDS.of("tbl")].c.lock === true), [disk().entities[IDS.of("cup")].c.transform, disk().entities[IDS.of("tbl")].c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
 
   // ---- D: duplicate ----
@@ -253,7 +253,10 @@ try {
   check("M0 two things selected", await waitFor(`import('/lib/editpanels.js').then((m) => m.selection().length === 2)`), await evalJson(`import('/lib/editpanels.js').then((m) => m.selection())`));
   await key("Delete");
   check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "batch" && myActs().at(-1).e.body.request.ops.length === 2), myActs().slice(n0).map((a) => a.e.body.request));
-  check("M2 …both are gone, on disk and in the page", !disk().entities[crate] && !disk().entities[dup] && await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('${crate}') && !m.entities.has('${dup}'))`));
+  // the act and its change are two appends (writes.js changeEntry): M1 waits for the act, so the change may not be on disk
+  // yet — wait for it too (anima 40115466089 ubuntu read the log between the two)
+  check("M2 …both are gone, on disk and in the page", await waitDisk(() => !disk().entities[crate] && !disk().entities[dup]) && await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('${crate}') && !m.entities.has('${dup}'))`),
+    { onDisk: [crate, dup].filter((id) => disk().entities[id]), inPage: await evalJson(`import('/lib/world.js').then((m) => ['${crate}', '${dup}'].filter((id) => m.entities.has(id)))`) });
   n0 = myActs().length;
   await key("KeyZ", { ctrlKey: true });
   check("M3 one Ctrl+Z brings both back", await waitDisk(() => myActs().length === n0 + 1 && !!disk().entities[crate] && !!disk().entities[dup]));
@@ -269,8 +272,10 @@ try {
   check("S1a it asks for a name first", await waitFor(`!!document.querySelector('#confirm-center input')`, 3000));
   await evalJson(`(() => { const i = document.querySelector('#confirm-center input'); if (!i) return false; i.value = 'tbl'; document.querySelector('#confirm-center .cc-ok').click(); return true; })()`);
   check("S1 it is the authority's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
-  const lib = Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));
-  check("S2 …this world's library has it (2 parts: the table and its cup)", !!lib && disk().entities["@world"].c[lib].parts === 2, lib && disk().entities["@world"].c[lib]);
+  const libOf = () => Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));
+  await waitDisk(() => !!libOf());
+  const lib = libOf();
+  check("S2 …this world's library has it (2 parts: the table and its cup)", await waitDisk(() => !!lib && disk().entities["@world"].c[lib].parts === 2), lib && disk().entities["@world"].c[lib]);
   check("S3 …and its tile shows in 'saved here'", await waitFor(`[...${bf}.querySelectorAll('.sp-tile')].some((t) => t.textContent.trim() === 'tbl')`));
   n0 = myActs().length;
   await evalJson(`[...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'tbl').click(), true`);
