@@ -254,6 +254,8 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () =
 
 const OPT_TRACKED = (spawnSync("git", ["-C", ENGINE, "ls-files", "-z", "assets/opt"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean).map((f) => f.slice("assets/opt/".length));
 const PATH = `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH ?? process.env.Path ?? "/usr/bin:/bin"}`;   // a nested `bun` is this bun
+// files a suite leaves in the checkout fail it (a killed child skips its own cleanup on Windows: #260 review)
+const untracked = () => new Set((spawnSync("git", ["-C", ENGINE, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" }).stdout ?? "").split("\0").filter(Boolean));
 async function run(name: string, file: string): Promise<{ code: number | null; signal: string | null; out: string; timedOut: boolean; leftovers: number; stuck?: boolean }> {
   const dir = fs.mkdtempSync(path.join(GATE_TMP, `${name}-`));
   for (const d of ["home", "library", "opt", "worlds", "patched"]) fs.mkdirSync(path.join(dir, d));
@@ -299,7 +301,10 @@ for (const name of order) {
   if (stopped) { results.push({ name, lane, status: "skip", why: stopped, ms: 0, rowSkips: [], optional: [], leftovers: 0 }); continue; }
   const t = performance.now();
   if (process.env.CI) console.log(`-- start ${name} (${new Date().toISOString()})`);   // a hang between suites names itself (Windows CI 10-19 went silent for 80 min)
+  const before = untracked();
   const r = await run(name, file);
+  const residue = [...untracked()].filter((f) => !before.has(f));
+  for (const f of residue) fs.rmSync(path.join(ENGINE, f), { force: true });
   const lines = r.out.trimEnd().split("\n");
   const fails = lines.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
   const rowSkips = lines.filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim());
@@ -309,6 +314,7 @@ for (const name of order) {
   let why = r.stuck ? `timed out after ${timeoutOf(name)} s, and it wouldn't die: left behind after a minute more (its kill didn't land)` : r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
   if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
   if (r.timedOut) status = "fail";
+  if (residue.length) { status = "fail"; why = `${why ? why + "; " : ""}left ${residue.length} file(s) in the checkout (removed): ${residue.slice(0, 5).join(", ")}`; }
   results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
   console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
   const evidence = failLines(lines); for (const l of evidence.slice(0, 60)) console.log(l);   // each FAIL with what it saw (10-23)
