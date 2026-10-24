@@ -118,7 +118,7 @@ export async function scratchSequencer(name: string, opts: ScratchOptions = {}) 
     reap();
     await Promise.race([Promise.all(procs.map((p) => p.exited)), sleep(2000)]);
     if (code) evidence();
-    else { try { rmSync(SCRATCH, { recursive: true, force: true, maxRetries: 3 }); } catch { /* best effort */ } }
+    else if (!process.env.PROTOCOL_KEEP) { try { rmSync(SCRATCH, { recursive: true, force: true, maxRetries: 3 }); } catch { /* best effort */ } }   // KEEP keeps a passing run's logs too
   }
   async function die(code: number, ...lines: string[]): Promise<never> {
     for (const l of lines) console.error(l);
