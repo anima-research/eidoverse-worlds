@@ -330,7 +330,7 @@ time.
 | 160 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
 | 161 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
 | 162 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 163 | client-tools | browser | `tools/run-client.ts --import-only` | Chromium | 202 s | 1010 s |
+| 163 | client-tools | browser | `tools/run-client.ts --import-only --skip-suites` | Chromium | 202 s | 1010 s |
 
 Lanes: core 18 suites (~79 s), main 135 (~1674 s), browser 10 (~1123 s); 163 suites in all.
 <!-- END GENERATED -->

@@ -60,6 +60,10 @@ for (const [, file] of SUITES) reached.add(rel(join(ROOT, "tools/protocol", file
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 for (const s of Object.values(pkg.scripts ?? {}) as string[]) for (const m of s.matchAll(/tools\/[\w./-]+/g)) reached.add(m[0]);
 const unreached = files.map(rel).filter((p) => !reached.has(p));
+// --skip-suites: the gate runs each of its own suites in full (a load error fails that suite), so loading them here
+// again is the same check twice; on windows-latest those 26 files, each run to the 15 s cap, were what pushed the lane
+// past its budget (358 s, 478 s, then >1010 s on three runs, 10-23)
+const gateSuite = new Map<string, string>(); for (const [n, file] of SUITES) gateSuite.set(rel(join(ROOT, "tools/protocol", file.split(" ")[0])), n);
 
 if (flag("--unreached")) {
   console.log(`${unreached.length} of ${files.length} test files are reached by no other runner (tools/protocol/run.ts, package.json):`);
@@ -80,6 +84,7 @@ type Res = { file: string; kind: "pass" | "red" | "dead" | "timeout" | "env" | "
 const run = (file: string): Promise<Res> => new Promise((done) => {
   const t0 = performance.now(); const name = basename(file); const src = readFileSync(file, "utf8");
   if (!importOnly && SLOW[name] && !flag("--slow")) return done({ file, kind: "skip", why: `slow: ${SLOW[name]} (--slow runs it)`, ms: 0 });
+  if (importOnly && flag("--skip-suites") && gateSuite.has(rel(file))) return done({ file, kind: "skip", why: `the gate runs it in full as ${gateSuite.get(rel(file))}`, ms: 0 });
   if (needsMcpl(src) && !mcplDeps) return done({ file, kind: "env", why: "mcpl/node_modules missing: ln -s <a checkout with deps>/mcpl/node_modules mcpl/", ms: 0 });
   const ch = spawn("bun", [file], { cwd: ROOT, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   live.add(ch.pid!); let out = ""; let timedOut = false;
