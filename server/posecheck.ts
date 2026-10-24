@@ -41,6 +41,8 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];
   if ("scale" in p) { if (fin(p.scale)) p.scale = clampBodyScale(p.scale); else delete p.scale; }
   if ("plateY" in p) { if (fin(p.plateY)) p.plateY = clampPlateY(p.plateY); else delete p.plateY; }
+  // while lying limp: the floor under the body (client/lib/getup.js) — settledPose stands it there
+  if ("floor" in p && !fin(p.floor)) delete p.floor;
   return p;
 }
 

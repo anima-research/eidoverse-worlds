@@ -14,6 +14,7 @@ import { surfaceOffset } from '../../shared/waves.js';
 import { floatStep, footprintSurface } from '../../shared/buoyancy.js';
 import { waterStance, SWIM_SPEED, SWIM_RUN } from '../../shared/terrainshape.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
+import { heightHeld } from './arrivalhold.js';
 import { scaledSpeed, colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';   // this body's chosen size: stride, capsule, eye
 import { chat } from './chat.js';
 import { waterAt as volumeAt, waterTime, movementBounds } from './watervolumes.js';
@@ -256,6 +257,7 @@ export const myState = {
   q: undefined,
   locomotion: undefined,
   seat: null,        // { id, chair } while seated on something
+  floor: undefined,  // while lying limp: the floor the body lies on (getup.js) — presence, so a rejoin stands there
 };
 
 export const keys = new Set();
@@ -828,7 +830,11 @@ export function updateMe(dt, me) {
         grounded = false;
       } else { vy = 5.6; grounded = false; jumped = true; }   // a DELIBERATE jump: the clip may start this frame, no airborne grace
     }
-    if (!mantle) {
+    if (!mantle && heightHeld(myState.pos)) {
+      // just restored, and the building under the body is still arriving
+      // (arrivalhold.js): keep its height until it is solid
+      vy = 0; grounded = true;
+    } else if (!mantle) {
       // reaching the water, not last frame's footing, starts the float: a body walking off a high bank
       // falls through the air first (and lands in the water moving, so it dunks)
       // A float picks up from the body as it is now: a frame this code did not run (a ragdoll, a mantle, a

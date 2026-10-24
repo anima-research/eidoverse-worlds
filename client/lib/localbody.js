@@ -25,6 +25,7 @@ import { html } from './markup.js';   // hint markup is opt-in: html`` escapes w
 import { posable, pushable } from './consent.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
+import { floorUnderLyingBody } from './getup.js';
 
 let logChat = () => {};
 
@@ -63,6 +64,7 @@ export function goLimp(lean = null) {
   clearMyReach();   // a knocked-over body's reach is gone — descriptor AND arm (mirrors agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
+  myState.floor = undefined;       // known once the body settles (stepRagdoll)
   flashHint('limp — move to get up');
 }
 export function getUp() {
@@ -74,9 +76,12 @@ export function getUp() {
   myState.pose = null; me?.clearPose();
   me?.setLimp(false);
   myState.clip = 'idle';
-  // resume from where the body ended up
+  // resume from where the body ended up, on the floor it lay on (getup.js) —
+  // not at height 0, which put the feet inside a stair landing or under an
+  // upper floor
   myState.pos.copy(me.root.position);
-  myState.pos.y = 0;
+  myState.pos.y = me ? floorUnderLyingBody(me) : (myState.floor ?? 0);
+  myState.floor = undefined;
 }
 // ---------------------------------------------------------------- mounted
 // While seated/riding, my body is DERIVED from the parent entity's live
@@ -178,7 +183,10 @@ export function stepRagdoll(dt) {
     const pose = ragdoll.step(dt);
     if (pose) myState.pose = pose;               // stream it through presence
     myState.pos.copy(me.root.position);          // streamed root tracks the sim
-    if (ragdoll.done) { myState.pose = ragdoll.finalPose; ragdoll = null; }
+    if (ragdoll.done) {
+      myState.pose = ragdoll.finalPose; ragdoll = null;
+      myState.floor = floorUnderLyingBody(me);   // where it lies — rides presence (net.js) for a rejoin
+    }
   }
   // The camera lives in updateMe, which we skip while limp — so drive it here
   // too, or it freezes on the frame you fell (which is what it did).
