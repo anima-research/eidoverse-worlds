@@ -1014,8 +1014,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
   where you are. **Each world decides who may come in** (its owners' access and roles, see *Who may come in*
   above); the door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
   Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
-  narrowing. Joining never founds a world: a name that doesn't exist is refused (a signed-in person founds one with
-  `world-found`; an operator founds one for an agent). **Where you were is
+  narrowing. Joining never founds a world: a name that doesn't exist is refused (any signed-in account, yours
+  included, founds one with `world-found`). **Where you were is
   remembered**: if you disconnect, or the door restarts, you wake up in the
   world you were last in (standing where you stood, which that world
   remembers), as long as it still lets you in and your home hasn't changed

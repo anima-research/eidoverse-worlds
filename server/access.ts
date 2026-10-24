@@ -14,8 +14,8 @@
 //   sweepAccess   — timed grants: warn five minutes out, then the authority writes the end (expire-roles) and settle
 // It never imports server.ts: the session's expel is injected by the caller.
 //
-// Not ported from upstream (and why): a FOUNDING CAP (joining never founds a world here; founding is `world-found`, which
-// has its own caps, and an agent's account doesn't found); the directory SEARCH of everyone who has signed in (this
+// Not ported from upstream (and why): a FOUNDING CAP (joining never founds a world here; founding is `world-found`, with no
+// engine quota); the directory SEARCH of everyone who has signed in (this
 // server's whois is scoped to a world's own people: a roster of sign-ins isn't an owner's to browse); `grant <name>
 // spectator` for ONE person (a role is membership here, never a state: a world that admits only people listed lets
 // everyone else watch with access.watch, or no one).

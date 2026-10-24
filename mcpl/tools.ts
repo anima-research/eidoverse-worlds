@@ -1219,7 +1219,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         return `- ${w.name}${here ? " ←" : ""}${door ? ` (${door})` : ""}: ${occupancy}${may ? ` — ${may}` : ""}`;
       });
       const foot = pol
-        ? "`travel` goes to worlds that exist: joining never founds one here (a signed-in person founds a world with world-found; an operator founds one for an agent)."
+        ? "`travel` goes to worlds that exist: joining never founds one here (any signed-in account founds a world with world-found)."
         : ctx.travel ? "" : "This server fronts a single world; there is no travel from here.";
       return text(`Worlds on this server (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },

@@ -444,43 +444,25 @@ export function foundWorld(dir: string, name: string, owner: string, title?: str
   return { worldId: w.worldId, owner: id, account: acct, entries: w.entries.length };
 }
 
-// ---------- a person founds a world they own (ship list 10-07: only an operator could) ----------
-// The authority's own founding act (`new`, genesis naming the founder as owner), built aside and renamed into place, as a fork
-// is. Who may (server/requestwire.ts world-found decides from the connection; this file keeps the ledger):
-//   - a signed-in PERSON: a guest (no account) never founds, and an agent's account doesn't either (an operator founds
-//     for an agent: tools/protocol/world.ts found); spectators don't;
-//   - at most FOUNDING.perAccount worlds per account, ever (deleting isn't offered yet, so this is a lifetime cap);
-//   - one at a time per account (FOUNDING.gapMs apart), and at most FOUNDING.perHour across the whole server, so a
-//     crowd of new accounts can't take every good name in an afternoon (no land rush);
-//   - a name of 3-32 lowercase letters, digits and '-', starting with a letter or digit, that no world has: taken,
-//     loaded or on disk (an existing world is never touched, let alone taken over).
-// The ledger (WORLDS_DIR/.founders.json: name → {account, actor, ts}) is what the caps count; a dot-name is never a world.
-export const FOUNDING = {
-  perAccount: Number(process.env.FOUND_PER_ACCOUNT ?? 3),
-  perHour: Number(process.env.FOUND_PER_HOUR ?? 12),
-  gapMs: Number(process.env.FOUND_GAP_MS ?? 10 * 60_000),
-};
+// ---------- founding: a new, empty world its founder owns ----------
+// The authority's own founding act, built aside and renamed into place. Who may is requestwire.ts world-found; the engine
+// sets no quotas: how many worlds, and how often, is the server runner's policy (notes/eidoverse WISHLIST 🌱, R 10-24).
+// .founders.json records who founded what (name → {account, actor, ts}); a dot-name is never a world.
 export const FOUND_NAME = /^[a-z0-9][a-z0-9-]{2,31}$/;
 const foundersPath = () => path.join(WORLDS_DIR, ".founders.json");
 export function foundersLedger(): Record<string, { account: string; actor: string; ts: number }> {
   try { const v = JSON.parse(fs.readFileSync(foundersPath(), "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; }
 }
-/** Why this account may not found `name` now (a sentence for the person), or null when it may. */
-export function foundRefusal(account: string, name: string, exists: (n: string) => boolean, now = Date.now()): string | null {
+/** Why `name` can't be founded (a sentence for the person), or null when it can. */
+export function foundRefusal(name: string, exists: (n: string) => boolean): string | null {
   if (!FOUND_NAME.test(name)) return `"${name.slice(0, 40)}" can't be a world's name: 3 to 32 lowercase letters, digits and '-', starting with a letter or digit`;
   if (exists(name)) return `there's already a world called "${name}" — pick another name`;
-  const L = Object.values(foundersLedger());
-  const mine = L.filter((x) => x.account === account);
-  if (mine.length >= FOUNDING.perAccount) return `you've founded ${mine.length} worlds here, the most one account may (${FOUNDING.perAccount})`;
-  const last = Math.max(0, ...mine.map((x) => x.ts));
-  if (now - last < FOUNDING.gapMs) return `you founded a world ${Math.round((now - last) / 60000)} min ago — one every ${Math.round(FOUNDING.gapMs / 60000)} min`;
-  if (L.filter((x) => now - x.ts < 3600_000).length >= FOUNDING.perHour) return `this server has had ${FOUNDING.perHour} new worlds in the last hour, its limit — try again later`;
   return null;
 }
 /** Found `name` for `actor` (its owner), recording it in the ledger. Built aside, renamed into place: nothing half-made. */
 export function foundOwnedWorld(name: string, actor: string, account: string, title?: string, exists: (n: string) => boolean = (n) => fs.existsSync(path.join(WORLDS_DIR, n)), now = Date.now()):
   { ok: true; worldId: string } | { ok: false; err: string } {
-  const why = foundRefusal(account, name, exists, now); if (why) return { ok: false, err: why };
+  const why = foundRefusal(name, exists); if (why) return { ok: false, err: why };
   const dest = path.join(WORLDS_DIR, name);
   const tmp = path.join(WORLDS_DIR, `.founding-${name}-${crypto.randomBytes(4).toString("hex")}`);
   try {

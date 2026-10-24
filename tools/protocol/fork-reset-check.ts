@@ -5,7 +5,7 @@
 //   RS  reset: owner-only and name-confirmed; the old log is archived beside it; a fresh genesis whose founding act
 //       names the world it replaced; every owner is still an owner; the people present are told
 //   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the authority's founding act;
-//       a taken or bad name, a guest, and an account past its cap or the server past its hourly limit are refused
+//       a taken or bad name and a guest are refused; there is no quota, and an agent's account founds like a person's
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -36,7 +36,7 @@ async function sock(port) {
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
-    async join(world, id) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true }));
+    async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true, ...extra }));
       await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 }); await sleep(50);
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, (r) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
@@ -49,7 +49,7 @@ const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" && 
 const thingsOf = (st) => Object.fromEntries(Object.entries(st.entities).map(([id, e]) => [id, e.c]));
 
 ok(tool(["found", "src", "--owner", "Ann"]).code === 0 && tool(["found", "taken", "--owner", "Ann"]).code === 0, "(setup) found src and taken, Ann owns both");
-const S = await start({ FOUND_PER_ACCOUNT: "2", FOUND_GAP_MS: "0", FOUND_PER_HOUR: "3" });
+const S = await start();
 const ann = await sock(S.port); const ja0 = await ann.join("src", "Ann"); const annId = ja0.snapshot?.cut?.you;
 const bob = await sock(S.port); const jb = await bob.join("src", "Bob");
 const bobId = jb.snapshot?.cut?.you;
@@ -154,13 +154,15 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   ok(jt.snapshot?.yourRights?.role === "owner", "FD2 they can go there, as its owner", [jt.errors, jt.snapshot?.yourRights]);
   const made = await there.req("create", { id: "first-thing", model: MODEL });
   ok(made.ok, "FD2 …and build in it", made.refused); there.close();
-  const r2 = await bob.raw({ type: "world-found", name: "bobs-second" }, "world-founded", 8000);
-  const r3 = await bob.raw({ type: "world-found", name: "bobs-third" }, "world-founded");
-  ok(r2?.type === "world-founded" && r3?.type === "error" && /the most one account may \(2\)/.test(r3.error) && !fs.existsSync(path.join(W, "bobs-third")), "FD3 an account founds at most its cap (here 2)", [r2, r3]);
-  const cy = await sock(S.port); await cy.join("src", "Cy");   // another account
-  const r4 = await cy.raw({ type: "world-found", name: "cys-place" }, "world-founded", 8000);
-  const r5 = await cy.raw({ type: "world-found", name: "cys-second" }, "world-founded"); cy.close();
-  ok(r4?.type === "world-founded" && r5?.type === "error" && /limit/.test(r5.error), "FD4 the server founds at most its hourly limit (here 3), across every account", [r4, r5]);
+  const more = []; for (const n of ["bobs-second", "bobs-third", "bobs-fourth", "bobs-fifth"]) more.push(await bob.raw({ type: "world-found", name: n }, "world-founded", 8000));
+  ok(more.every((m) => m?.type === "world-founded") && fs.existsSync(path.join(W, "bobs-fifth", "world.jsonl")), "FD3 no quota: one account founds five worlds back to back", more.map((m) => m?.error ?? m?.type));
+  // an agent: an operator-enrolled token (mcpl/tokens.json's shape) founds like a person
+  const TOK = path.join(root, "tokens.json"); fs.writeFileSync(TOK, JSON.stringify({ "tok-ash": { id: "Ash" } }));
+  const A = await start({ AGENT_TOKENS_PATH: TOK });
+  const ash = await sock(A.port); const ja = await ash.join("src", "Ash", { token: "tok-ash" });
+  const ra = await ash.raw({ type: "world-found", name: "ashs-place" }, "world-founded", 8000);
+  ok(!!ja.snapshot && ra?.type === "world-founded" && fs.existsSync(path.join(W, "ashs-place", "world.jsonl")), "FD4 an agent's account founds a world", [ja.errors, ra]);
+  ash.close(); A.proc.kill();
   // a guest: a server that trusts no typed name, so a join with no credential is anonymous
   const G = await start({ TRUST_NAMES: "" });
   const guest = await sock(G.port); const jg = await guest.join("src", "Gus");
