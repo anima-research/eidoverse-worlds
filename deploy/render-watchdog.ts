@@ -18,7 +18,7 @@
 // Env: SHOW_URL WORLD KEY (as run-mac-renderer.sh), plus PORT (devtools),
 //   CHROME, MEM_CAP_GB, MAX_UPTIME_MIN, CHECK_SEC, STRIKES, BOOT_GRACE_SEC.
 
-import { judge, tally, TIMEOUT, type Health } from "./render-health.ts";
+import { health as healthAt, tally, type Health } from "./render-health.ts";
 
 const SHOW_URL = process.env.SHOW_URL;
 if (!SHOW_URL) { console.error("set SHOW_URL (e.g. https://eidoverse.animalabs.ai)"); process.exit(1); }
@@ -69,31 +69,6 @@ async function clientVersion(): Promise<string | null> {
   } catch { return null; }
 }
 
-/** Attach to the renderer page over devtools and let render-health.ts judge it. */
-async function health(): Promise<Health> {
-  let list: any;
-  try { list = await (await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(4000) })).json(); }
-  catch { return { alive: false, healthy: false, reason: "chrome down" }; }
-  const page = list.find((t: any) => t.type === "page" && String(t.url).includes("renderer"));
-  if (!page?.webSocketDebuggerUrl) return { alive: true, healthy: false, reason: "no renderer page" };
-
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  const opened = await new Promise((res) => { ws.onopen = () => res(true); ws.onerror = () => res(false); setTimeout(() => res(false), 4000); });
-  if (!opened) return { alive: true, healthy: false, reason: "cannot attach devtools" };
-
-  let id = 1;
-  const evalx = (expr: string, ms = 5000) => new Promise<unknown>((res) => {
-    const i = id++; let done = false;
-    const h = (e: any) => { const m = JSON.parse(String(e.data)); if (m.id === i) { done = true; ws.removeEventListener("message", h); res(m.result?.result?.value); } };
-    ws.addEventListener("message", h);
-    ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true, awaitPromise: true } }));
-    setTimeout(() => { if (!done) res(TIMEOUT); }, ms);
-  });
-
-  try { return await judge(evalx); }
-  finally { ws.close(); }
-}
-
 async function killTree() {
   await sh(`pkill -9 -f 'user-data-dir=${PROFILE}' || true`);
   await sleep(2000);
@@ -132,7 +107,7 @@ for (;;) {
     await sleep(CHECK_SEC * 1000);
     const upMin = (Date.now() - started) / 60000;
 
-    const h = await health().catch((e) => ({ alive: true, healthy: false, reason: `probe error: ${e?.message ?? e}` } as Health));
+    const h = await healthAt(PORT).catch((e) => ({ alive: true, healthy: false, reason: `probe error: ${e?.message ?? e}` } as Health));
     if (!h.alive) { reason = "crashed"; break; }
 
     const rss = await rssGB();

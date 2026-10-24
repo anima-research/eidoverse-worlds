@@ -3,10 +3,11 @@
 //   bun tools/render-health-test.ts
 //
 // deploy/render-health.ts judge() asks the page four things (alive, frames, joined, capture).
-// Here a fake page answers them. Every outcome is pinned, along with the two pages that fooled the
-// watchdog before: a healthy full client whose #hud shows no fps (it read 0 and was killed every two
-// minutes), and a lite client, which has no EW but can still hand back a frame's worth of bytes from
-// capture.js (seen live on the roamers, 2026-10-24).
+// Here a fake page answers them. Every outcome is pinned, along with the two ways the watchdog was
+// fooled before: a probe that read fps off #hud (it read 0 on a healthy client, which was killed
+// every two minutes), and a lite client, which has no EW but can still hand back a frame's worth of
+// bytes from capture.js (seen live on the roamers, 2026-10-24). tools/roaming-renderer-check.ts runs
+// the same check over real devtools against a real renderer page.
 
 import { judge, tally, PROBES, TIMEOUT, type Evaluate } from "../deploy/render-health.ts";
 
@@ -16,15 +17,15 @@ function check(name: string, cond: boolean, detail = "") {
   else { fail++; console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ""}`); }
 }
 
-type Page = { alive?: unknown; frames?: unknown; joined?: unknown; capture?: unknown; hud?: unknown };
+type Page = { alive?: unknown; frames?: unknown; joined?: unknown; capture?: unknown };
 /** A page that answers the four probes as given (by exact expression), records what was asked,
- *  and answers anything else, such as an old #hud scrape, with `hud`. */
+ *  and answers anything else with 0, as the old #hud scrape read on a client that no longer showed fps. */
 function page(p: Page) {
   const asked: string[] = [];
   const evaluate: Evaluate = async (expr) => {
     const name = (Object.keys(PROBES) as (keyof typeof PROBES)[]).find((k) => PROBES[k] === expr);
     asked.push(name ?? expr);
-    if (!name) return p.hud ?? 0;
+    if (!name) return 0;
     return p[name];
   };
   return { evaluate, asked };
@@ -39,9 +40,11 @@ console.log("verdicts");
   check("…asked alive, frames, joined, capture, in that order, and nothing else", pg.asked.join() === "alive,frames,joined,capture", pg.asked.join());
 }
 {
-  // the incident: the client stopped showing NNfps in #hud; the old probe read 0 and struck a healthy page out
-  const h = await judge(page({ ...healthy, hud: "" }).evaluate);
-  check("a healthy page whose #hud shows no fps is still healthy (the probe reads nothing off the page)", h.healthy, JSON.stringify(h));
+  // the incident: the old probe scraped "NNfps" from #hud, and when the client moved fps elsewhere it read 0 and
+  // struck every healthy page out. No probe may read what the page DISPLAYS; the order check above pins that judge()
+  // asks only the probes.
+  const reads = Object.entries(PROBES).filter(([, e]) => /getElementById|querySelector|textContent|innerText|\bhud\b/.test(e)).map(([k]) => k);
+  check("no probe reads anything off the page's display (the #hud scrape that read 0)", reads.length === 0, reads.join());
 }
 {
   const pg = page({ alive: TIMEOUT });

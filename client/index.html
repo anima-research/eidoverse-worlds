@@ -1801,7 +1801,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
   // for a device that cannot hold the engine in RAM at all. Owner's phone (Android,
   // Chrome) cannot boot the full client, full stop. So the order below puts what a
   // device has PROVEN above anything we infer about it, and puts what a person
-  // asked for above both.
+  // asked for above both. One thing sits above even that: a ?renderer page is never
+  // lite (rule 0). It is no person's page, and a renderer that can't render is
+  // never what anyone asked for.
   (() => {
     // PER WORLD, because capability is a property of the pair, not the device. Measured
     // on a real phone (owner, Android/Chrome, 2026-09-15): an empty instance runs the
@@ -1825,7 +1827,8 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       //    ?lite: no one wants a renderer that can't render.
       if (params.has('renderer')) return { lite: false, why: 'renderer' };
       // 1. An explicit ask wins, both directions, and is shareable — the reliable
-      //    way back for someone whose device just died mid-boot.
+      //    way back for someone whose device just died mid-boot. (Only a renderer
+      //    outranks it: rule 0.)
       if (params.has('lite')) return { lite: params.get('lite') !== '0', why: 'url' };
       // 2. The last full boot armed the tripwire and never came back to clear it.
       //    Whatever killed it — RAM, GPU, an OS that reaped the tab — this device has

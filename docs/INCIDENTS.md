@@ -2456,7 +2456,7 @@ Lesson: liveness is not process existence. Probe the thing the service actually
 provides.
 
 **The watchdog reintroduced the failure it exists to prevent, via its own baseline**
-`deploy/render-watchdog.ts:120-127`
+`deploy/render-watchdog.ts:95-102`
 "The version marker may be unreadable at boot — the sequencer could be mid-restart,
 or (as happened here) running a build that predates the /client-version route and
 answers 500. That used to pin bornVersion at null for the renderer's whole life, and
@@ -2474,7 +2474,7 @@ Lesson: give long-lived automated clients a cheap way to notice a deploy.
 
 **A renderer that cannot render still joined as one, and a world without a renderer stopped getting one (2026-10-24)**
 `client/index.html` decideLite rule 0 and its arming, `client/lib/net.js` sendJoin,
-`deploy/render-watchdog.ts:41-51`, `deploy/render-health.ts:29-46`
+`deploy/render-watchdog.ts:41-51`, `deploy/render-health.ts:32-49`
 Every `/snap` in one resident's world answered 503 "this client has no renderer",
 within half a second. The five roaming renderers had not passed a health check since
 they started a week before. Their watchdog still read fps off `#hud`, where fps no

@@ -113,21 +113,24 @@ check('saved full still loses to no-GPU? no — an explicit choice outranks infe
 check('?lite=1 overrides saved full', d('lite=1', { stored: '0' }).lite === true);
 
 console.log('  -- the page itself, end to end (the call site, not just the function) --');
-const boot = (nav, tripped) => {
-  const st = new Map(tripped ? [['ew-boot-attempt:default', '1']] : []);
-  const h = { ...g, navigator: { gpu: {}, ...nav }, localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) }, addEventListener: () => {} };
+/** The page's inline script, run once against a stubbed browser: `search` is location.search, `nav` the navigator
+ *  (a 3D-capable one unless it says otherwise), `st` localStorage. The caller keeps `st`, so consecutive loads can
+ *  share it. Returns the decision and the keys left in storage. */
+const runPage = ({ search = '', nav = {}, st = new Map() } = {}) => {
+  const h = { ...g, location: { search }, navigator: { gpu: {}, ...nav },
+    localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) },
+    addEventListener: () => {} };
   h.globalThis = h;
   new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
     .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener);
-  return { lite: h.__ewLite, why: h.__ewLiteWhy };
+  return { lite: h.__ewLite, why: h.__ewLiteWhy, keys: [...st.keys()] };
 };
+const boot = (nav, tripped) => runPage({ nav, st: new Map(tripped ? [['ew-boot-attempt:default', '1']] : []) });
 const winUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36';
 const phoneUA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36';
 { // the page spends the retry when it takes it, so a second death in a row lands in lite
   const st = new Map([['ew-boot-attempt:default', '1']]);
-  const run2 = () => { const h = { ...g, navigator: { gpu: {}, userAgent: winUA, deviceMemory: 8 }, localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) }, addEventListener: () => {} };
-    h.globalThis = h; new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
-      .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener); return { lite: h.__ewLite, why: h.__ewLiteWhy }; };
+  const run2 = () => runPage({ nav: { userAgent: winUA, deviceMemory: 8 }, st });
   const a1 = run2();
   check('page: a Windows desktop after a died boot loads FULL (retry), and spends its retry', a1.lite === false && a1.why === 'retry' && st.has('ew-boot-retried:default'), JSON.stringify(a1));
   const a2 = run2();   // that retry died too (no handler ran): the trip key is still set
@@ -150,17 +153,8 @@ check('a renderer outranks a saved lite preference', desk('renderer', { stored: 
 check('a renderer is full even where a phone would start lite', d('renderer').lite === false);
 check('a roaming renderer (?renderer&roam) with a tripped flag and a spent retry is full', desk('renderer&roam', { lastBootDied: true, retried: true }).lite === false && desk('renderer&roam', { lastBootDied: true, retried: true }).why === 'renderer');
 check('?spectate is not a renderer: a died boot still counts for it', desk('spectate', { lastBootDied: true, retried: true }).lite === true);
-/** The page itself at a given URL: returns the decision and what it left in storage. */
-const bootAt = (search, nav, seed = []) => {
-  const st = new Map(seed);
-  const h = { ...g, location: { search }, navigator: { gpu: {}, ...nav },
-    localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) },
-    addEventListener: () => {} };
-  h.globalThis = h;
-  new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
-    .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener);
-  return { lite: h.__ewLite, why: h.__ewLiteWhy, keys: [...st.keys()] };
-};
+/** The page itself at a given URL, from the given storage. */
+const bootAt = (search, nav, seed = []) => runPage({ search, nav, st: new Map(seed) });
 {
   const tripped = [['ew-boot-attempt:roam-lobby-1', '1'], ['ew-boot-retried:roam-lobby-1', '1']];
   const r = bootAt('?world=roam-lobby-1&renderer&roam&name=mac-gpu-roam-roam-lobby-1', { userAgent: macUA, deviceMemory: 8 }, tripped);

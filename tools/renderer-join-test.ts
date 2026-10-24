@@ -91,15 +91,19 @@ console.log("the entry points wire what this test assumes");
 {
   const lite = readFileSync(join(ROOT, "client/lite.js"), "utf8");
   const main = readFileSync(join(ROOT, "client/main.js"), "utf8");
-  const code = (src: string) => src.replace(/\/\/.*$/gm, "");   // comments mention these names too
+  // comments mention these names too; strip only a // that starts a line or follows whitespace, so a URL survives
+  const code = (src: string) => src.replace(/(^|\s)\/\/.*$/gm, "$1");
   const calls = (src: string) => [...code(src).matchAll(/wireNet\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
   check("lite.js wires net.js with no snapshot renderer", calls(lite).length > 0 && calls(lite).every((c) => !/\bsnapshot\b/.test(c)), JSON.stringify(calls(lite).length));
   // sendJoin reads the wiring when the join is sent, and a renderer starts at once: the snapshot must be wired
   // before main.js first calls start() or connect(), not merely somewhere in the module
   const m = code(main);
   const wiredAt = m.search(/wireNet\(\{\s*snapshot\s*\}\)/);
-  const firstStart = Math.min(...[m.search(/\bstart\(\);/), m.search(/\bconnect\(\);/)].filter((i) => i >= 0));
-  check("main.js wires net_snap.js's snapshot before it first calls start() or connect()", wiredAt >= 0 && wiredAt < firstStart, `wired at ${wiredAt}, first start/connect at ${firstStart}`);
+  // a call with or without arguments; if neither is found the check FAILS, it does not pass vacuously
+  const starts = [m.search(/\bstart\(\s*\)/), m.search(/\bconnect\(\s*\)/)].filter((i) => i >= 0);
+  const firstStart = starts.length ? Math.min(...starts) : -1;
+  check("main.js still calls start() or connect() (what the next check measures against)", firstStart >= 0, "found neither");
+  check("main.js wires net_snap.js's snapshot before it first calls start() or connect()", wiredAt >= 0 && firstStart >= 0 && wiredAt < firstStart, `wired at ${wiredAt}, first start/connect at ${firstStart}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

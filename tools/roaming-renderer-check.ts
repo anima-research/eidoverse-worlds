@@ -1,17 +1,23 @@
 // Roaming renderers, end to end, in a real browser against a running server.
 //   bun tools/roaming-renderer-check.ts http://127.0.0.1:<port> [SHOT=path.png]
+//   (each run founds two worlds: start the scratch sequencer with FOUND_DAILY_CAP=off, or the sixth run is refused)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
 // crates). Its arrival alone must send the renderer over (pre-warm); a snapshot must come only once the world is
-// REALIZED (every crate loaded — never a partial frame); a second snapshot is fast (the renderer stays).
+// REALIZED (every crate loaded — never a partial frame); a second snapshot is fast (the renderer stays). Then the
+// watchdog's own check (deploy/render-health.ts health) runs over real devtools: the roamer is healthy, a page with no
+// client is not joined.
 import { chromium } from 'playwright';
 import { strict as assert } from 'node:assert';
 import { writeFileSync } from 'node:fs';
+import { health } from '../deploy/render-health.ts';
 const base = process.argv[2] ?? 'http://127.0.0.1:19347';
 const shot = process.env.SHOT;
 const world = `roam-build-${Date.now().toString(36)}`, lobby = `roam-lobby-${Date.now().toString(36)}`;
 const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ verb: 'spawn', args: { id: `crate-${c}`, lib: `eidoverse/assets/models/crate_large_${c}.glb`, pos: [Math.cos(i * 1.57) * 4, 0, 6 + Math.sin(i * 1.57) * 4], yaw: 0 } }));
 let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | undefined;
-const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+// a devtools port, so the watchdog's own check (deploy/render-health.ts health) can judge the roamer below
+const dbg = (() => { const s = Bun.serve({ port: 0, fetch: () => new Response() }); const p = s.port; s.stop(true); return p; })();
+const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal', `--remote-debugging-port=${dbg}`] });
 try {
   // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
   // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
@@ -83,5 +89,15 @@ try {
   const second = await snap();
   console.log(JSON.stringify({ second: { status: second.status, ms: second.ms } }));
   assert.equal(second.status, 200); assert.ok(second.ms < 3000, 'the renderer stays: the next snapshot is fast');
-  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms`);
+  // THE WATCHDOG'S CHECK, over real devtools: the roamer that just served two snapshots is judged healthy (frames
+  // counted, joined, a frame captured), and a page that is not the client is judged not joined. A verdict that
+  // fails a working renderer killed every roamer every two minutes for a week (docs/INCIDENTS.md, 2026-10-24).
+  const verdict = await health(dbg);
+  console.log(JSON.stringify({ watchdog: verdict }));
+  assert.ok(verdict.healthy && (verdict.fps ?? 0) > 0 && /snap=\d+KB/.test(verdict.reason), `the watchdog judges the working roamer healthy: ${JSON.stringify(verdict)}`);
+  const plain = await browser.newPage();
+  await plain.goto(`${base}/version?probe=plain`);
+  const notClient = await health(dbg, (u) => u.includes('/version?probe=plain'));
+  assert.ok(!notClient.healthy && notClient.reason === 'not joined', `a page with no client is not joined: ${JSON.stringify(notClient)}`);
+  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined`);
 } finally { clearInterval(keepPose); ws?.close(); await browser.close(); }
