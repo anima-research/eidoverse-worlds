@@ -442,3 +442,70 @@ test("a pinned renderer leaving starts its grace at once, before any sweep has s
   time = 20_000; broker.sweep();
   expect(roamer.messages.length).toBe(0);
 });
+// ---- second review of #279 ----
+test("a journey longer than the caller's budget: answered early, retryable, and no snap is sent to the arriving roamer", async () => {
+  const { broker, worldOf, join } = roamSetup({ travelMs: 10_000, timeoutMs: 200, pollMs: 10 });
+  const lobby = worldOf("lobby"), w = worldOf("far");
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent");
+  const t0 = Date.now(); const r = await broker.request(w, "agent", "first", "auto", {}, 1_000);
+  expect(r).toMatchObject({ ok: false, status: 503, retryAfter: 2, err: expect.stringMatching(/a roaming renderer is on its way/) });
+  expect(Date.now() - t0).toBeLessThan(1_200);                       // the 1 s budget, less a frame's minimum
+  expect(roamer.messages.filter((m) => m.type === "renderer-travel")).toEqual([{ type: "renderer-travel", world: "far" }]);   // it keeps coming
+  expect(roamer.messages.some((m) => m.type === "snap")).toBe(false);
+});
+test("a capture-donating player leaving is not a pinned renderer restarting, and a roamer beside one is still needed", async () => {
+  let time = 0;
+  const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0 });
+  const lobby = worldOf("lobby"), w = worldOf("w"), other = worldOf("other");
+  const parked = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
+  const donor = join(w, "player", { capture: { version: 1, engine: "unreal", scene: "world-projection" } });
+  join(w, "agentW", { agent: true });
+  time = 1_000; broker.retire(donor.c); leave(donor.c);               // the donating player leaves
+  broker.sweep();
+  expect(parked.messages.at(-1)).toEqual({ type: "renderer-travel", world: "w" });   // served at once: no grace
+  // a roamer beside a capture donor (not a pinned renderer) is not parked: another world's sweep leaves it alone
+  const w2 = worldOf("w2"), beside = join(w2, "roam2", { renderer: true, roam: true, spectator: true });
+  join(w2, "player2", { capture: { version: 1, engine: "unreal", scene: "world-projection" } }); join(w2, "agentW2", { agent: true });
+  join(other, "agentO", { agent: true });
+  time = 2_000; broker.sweep();
+  expect(beside.messages.some((m) => m.type === "renderer-travel")).toBe(false);
+  await Bun.sleep(450);
+});
+test("first come, first served holds across 'auto' and 'browser' asks for one browser renderer", async () => {
+  // only a browser renderer here, so both kinds of ask compete for it; poll phases as in the FIFO test above, so the
+  // newer ('auto') ask looks first once it is free
+  // (travelMs long enough that the request's deadline leaves the waiters their full queueMs)
+  const { broker, worldOf, join } = roamSetup({ pollMs: 200, queueMs: 5000, timeoutMs: 3000, travelMs: 10_000 });
+  const w = worldOf("w"); const legacy = join(w, "legacy", { renderer: true, spectator: true }); join(w, "agent");
+  const t0 = Date.now(); const at = (ms: number) => Bun.sleep(Math.max(0, ms - (Date.now() - t0)));
+  const holding = broker.request(w, "agent", "first", "browser");
+  await at(5);
+  const order: string[] = [];
+  const older = broker.request(w, "agent", "first", "browser").then((r) => { order.push("browser"); return r; });
+  await at(250);
+  const newer = broker.request(w, "agent", "first", "auto").then((r) => { order.push("auto"); return r; });
+  await at(425);
+  broker.receive(legacy.c, { id: legacy.messages.filter((m) => m.type === "snap")[0].id, dataUrl: png }); await holding;
+  await at(700);
+  const snaps = legacy.messages.filter((m) => m.type === "snap"); expect(snaps.length).toBe(2);
+  broker.receive(legacy.c, { id: snaps[1].id, dataUrl: png });
+  await Bun.sleep(20);
+  expect(order).toEqual(["browser"]);                                // the older 'browser' ask got the renderer
+  await Bun.sleep(400);
+  const third = legacy.messages.filter((m) => m.type === "snap")[2]; expect(third).toBeDefined();
+  broker.receive(legacy.c, { id: third.id, dataUrl: png });
+  expect((await older).ok && (await newer).ok).toBe(true);
+  expect(order).toEqual(["browser", "auto"]);
+});
+test("an Unreal-only waiter does not hold back a browser ask for a renderer it could not use", async () => {
+  const { broker, world, donor, make } = setup({ pollMs: 5, queueMs: 3000, timeoutMs: 3000 });
+  const legacy = make("legacy", { renderer: true, spectator: true });
+  void broker.request(world, "agent", "first", "unreal"); await Bun.sleep(5);   // the donor is now busy
+  const unrealWaiter = broker.request(world, "agent", "first", "unreal"); await Bun.sleep(5);   // waits for the donor
+  const browser = broker.request(world, "agent", "first", "browser");
+  await Bun.sleep(30);
+  const snap = legacy.messages.find((m) => m.type === "snap"); expect(snap).toBeDefined();   // served by the free browser renderer
+  broker.receive(legacy.c, { id: snap.id, dataUrl: png });
+  expect(await browser).toMatchObject({ ok: true });
+  broker.retire(donor.c); await unrealWaiter;
+});

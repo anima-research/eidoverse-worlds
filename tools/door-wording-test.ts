@@ -66,7 +66,13 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
         : later[1] === "busy" ? ["renderers busy; retry in a few seconds", 429]
         : later[1] === "slow" ? ["renderer timed out", 504] : ["<html>bad gateway</html>", 502];
       const retryAfter = later[1] === "loading" ? "2" : later[1] === "proxied" ? null : "1";
-      return new Response(msg as string, { status: st as number, headers: retryAfter ? { "retry-after": retryAfter } : {} });
+      // a proxy's 502 is its own HTML page; the world server answers in plain text
+      return new Response(msg as string, { status: st as number, headers: {
+        ...(retryAfter ? { "retry-after": retryAfter } : {}), ...(later[1] === "proxied" ? { "content-type": "text/html" } : {}) } });
+    }
+    if (follow === "badimage") {
+      snapTries.set("badimage", (snapTries.get("badimage") ?? 0) + 1);
+      return new Response("renderer could not supply a valid image", { status: 502 });   // the world server's own 502
     }
     const [said, status] = renderer !== "auto" && renderer !== "browser" && renderer !== "unreal" ? ["renderer must be auto, unreal, or browser", 400]
       : follow === "gone" ? ['"gone" is not present in "w"', 404]
@@ -213,6 +219,9 @@ try {
     const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: "proxied-9" }, "first", "auto", {}, { budgetMs: 20_000 });
     check("a proxy's 502 without Retry-After is tried once more, then answered: not held for the whole budget",
       r.isError === true && snapTries.get("proxied-9") === 2 && /after 2 tries over 2 s/.test(said(r)) && Date.now() - t0 < 4000, `${said(r)} ${Date.now() - t0}ms`);
+    const own = await snapshotTool({ ...agent, name: "badimage" }, "first", "auto", {}, { budgetMs: 20_000 });
+    check("…but the world server's own 502 (no valid image) is answered at once, not asked again",
+      own.isError === true && snapTries.get("badimage") === 1 && !/tries/.test(said(own)), `${said(own)} tries=${snapTries.get("badimage")}`);
   }
   {
     // the tool tells the server what is left of the call, and nothing when it asks once

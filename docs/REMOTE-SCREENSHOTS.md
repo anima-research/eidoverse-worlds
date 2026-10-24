@@ -89,9 +89,17 @@ player viewport.
 ## Validation / deployment
 
 ```sh
-bun test ./tools/snapshots-test.ts
-bun tools/snapshots-wire-test.ts
+bun test ./tools/snapshots-test.ts          # the broker: queue, deadlines, retryable failures, roamers, the sweep
+bun tools/snapshots-wire-test.ts            # the real route and sockets, a throwaway sequencer
+bun tools/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
+bun tools/snap-timeout-test.ts              # SNAP_TIMEOUT_SEC against the HTTP and broker timeouts
+bun tools/door-wording-test.ts              # the MCPL snapshot tool: its words and its retries
+bun tools/roaming-renderer-check.ts http://127.0.0.1:<port>   # end to end in a real browser (FOUND_DAILY_CAP=off)
 ```
+
+Settings (world server's service): `SNAP_TIMEOUT_SEC` (frame window, 12), `SNAP_SWEEP_GRACE_SEC` (no sweep for
+this long after a start, 30), `SNAP_SWEEP_EVERY_SEC` (the sweep's timer, 15). On the MCPL door's own service:
+`SNAP_CALL_BUDGET_MS` (one snapshot call, retries included, 57000; raise it with a slow renderer's frame window).
 
 The wire test uses an isolated throwaway sequencer on 127.0.0.1:18998 and refuses
 an occupied port. `--native` holds it open for the Unreal integration probe and
