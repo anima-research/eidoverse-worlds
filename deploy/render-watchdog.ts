@@ -18,6 +18,8 @@
 // Env: SHOW_URL WORLD KEY (as run-mac-renderer.sh), plus PORT (devtools),
 //   CHROME, MEM_CAP_GB, MAX_UPTIME_MIN, CHECK_SEC, STRIKES, BOOT_GRACE_SEC.
 
+import { judge, tally, TIMEOUT, type Health } from "./render-health.ts";
+
 const SHOW_URL = process.env.SHOW_URL;
 if (!SHOW_URL) { console.error("set SHOW_URL (e.g. https://eidoverse.animalabs.ai)"); process.exit(1); }
 const WORLD = process.env.WORLD ?? "commons";
@@ -67,7 +69,7 @@ async function clientVersion(): Promise<string | null> {
   } catch { return null; }
 }
 
-type Health = { alive: boolean; healthy: boolean; reason: string; fps?: number };
+/** Attach to the renderer page over devtools and let render-health.ts judge it. */
 async function health(): Promise<Health> {
   let list: any;
   try { list = await (await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(4000) })).json(); }
@@ -80,8 +82,7 @@ async function health(): Promise<Health> {
   if (!opened) return { alive: true, healthy: false, reason: "cannot attach devtools" };
 
   let id = 1;
-  const TIMEOUT = Symbol("timeout");
-  const evalx = (expr: string, ms = 5000) => new Promise<any>((res) => {
+  const evalx = (expr: string, ms = 5000) => new Promise<unknown>((res) => {
     const i = id++; let done = false;
     const h = (e: any) => { const m = JSON.parse(String(e.data)); if (m.id === i) { done = true; ws.removeEventListener("message", h); res(m.result?.result?.value); } };
     ws.addEventListener("message", h);
@@ -89,27 +90,8 @@ async function health(): Promise<Health> {
     setTimeout(() => { if (!done) res(TIMEOUT); }, ms);
   });
 
-  try {
-    if ((await evalx("1+1")) === TIMEOUT) return { alive: true, healthy: false, reason: "main thread hung" };
-    // Frames are COUNTED here, not read off the page: this used to scrape
-    // "NNfps" from #hud, and when the client moved fps into the debug panel
-    // the scrape read 0 forever and a healthy renderer was killed on schedule.
-    // One second of requestAnimationFrame depends on nothing the client names.
-    const counted = await evalx("new Promise(r=>{let n=0;const t=performance.now();const f=()=>{n++;performance.now()-t<1000?requestAnimationFrame(f):r(n)};requestAnimationFrame(f)})", 5000);
-    const fps = counted === TIMEOUT ? 0 : Number(counted) || 0;
-    const joined = (await evalx("!!(window.EW?.net?.joined)")) === true;
-    if (!joined) return { alive: true, healthy: false, reason: "not joined", fps };
-    if (fps <= 0) return { alive: true, healthy: false, reason: "no frames", fps };
-    // A pumping frame loop is not a working renderer: frame.js catches each
-    // section's errors and keeps scheduling, so a client whose world pass
-    // throws every frame still counts 60/s. The thing /snap needs is the thing
-    // /snap does — captureFrame() renders and reads the canvas back as a PNG,
-    // and throws on an empty readback — so that is the health check.
-    const cap = await evalx("import('/lib/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))", 10000);
-    if (cap === TIMEOUT) return { alive: true, healthy: false, reason: "capture timed out", fps };
-    if (typeof cap !== "number") return { alive: true, healthy: false, reason: `capture failed: ${String(cap).slice(0, 120)}`, fps };
-    return { alive: true, healthy: true, reason: `fps=${fps} snap=${(cap / 1024).toFixed(0)}KB`, fps };
-  } finally { ws.close(); }
+  try { return await judge(evalx); }
+  finally { ws.close(); }
 }
 
 async function killTree() {
@@ -167,13 +149,11 @@ for (;;) {
       reason = "client updated"; break;
     }
 
-    if (!h.healthy) {
-      if (++strikes >= STRIKES) { reason = `unhealthy (${h.reason})`; break; }
-      log(`strike ${strikes}/${STRIKES}: ${h.reason}`);
-    } else {
-      if (strikes) log(`recovered (${h.reason})`);
-      strikes = 0;
-    }
+    const was = strikes, t = tally(strikes, h, STRIKES);
+    strikes = t.strikes;
+    if (t.restart) { reason = `unhealthy (${h.reason})`; break; }
+    if (!h.healthy) log(`strike ${strikes}/${STRIKES}: ${h.reason}`);
+    else if (was) log(`recovered (${h.reason})`);
   }
 
   log(`restarting: ${reason}`);

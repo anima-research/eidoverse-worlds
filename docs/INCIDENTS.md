@@ -2445,7 +2445,7 @@ Lesson: the upgrade is an authentication point; use it and keep tokens out of th
 client.
 
 **The renderer's real failure mode is a HANG, not a crash (measured 6.8 GB RSS)**
-`deploy/render-watchdog.ts:1-19`, `:29-30`
+`deploy/render-watchdog.ts:1-19`, `:31-32`
 "after a day or two the client leaks (measured 6.8 GB RSS), the main thread pegs,
 and Chrome keeps its websocket open (so the server still thinks it has a renderer)
 while answering no snap requests. A crash-only loop never notices, so the box sat
@@ -2456,7 +2456,7 @@ Lesson: liveness is not process existence. Probe the thing the service actually
 provides.
 
 **The watchdog reintroduced the failure it exists to prevent, via its own baseline**
-`deploy/render-watchdog.ts:138-145`
+`deploy/render-watchdog.ts:120-127`
 "The version marker may be unreadable at boot — the sequencer could be mid-restart,
 or (as happened here) running a build that predates the /client-version route and
 answers 500. That used to pin bornVersion at null for the renderer's whole life, and
@@ -2474,7 +2474,7 @@ Lesson: give long-lived automated clients a cheap way to notice a deploy.
 
 **A renderer that cannot render still joined as one, and a world without a renderer stopped getting one (2026-10-24)**
 `client/index.html` decideLite rule 0 and its arming, `client/lib/net.js` sendJoin,
-`deploy/render-watchdog.ts:39-49`, `:94-111`
+`deploy/render-watchdog.ts:41-51`, `deploy/render-health.ts:29-46`
 Every `/snap` in one resident's world answered 503 "this client has no renderer",
 within half a second. The five roaming renderers had not passed a health check since
 they started a week before. Their watchdog still read fps off `#hud`, where fps no
