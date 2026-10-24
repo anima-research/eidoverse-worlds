@@ -49,8 +49,14 @@ One in-flight request per renderer, at least two seconds between dispatches,
 sixteen pending globally, and a frame deadline that `SNAP_TIMEOUT_SEC` sets
 (twelve seconds by default). A roaming renderer summoned for the request first
 travels (up to 25 seconds) and then has the longer of 40 seconds and that
-deadline for its first frame. Busy requests return 429 with
-Retry-After; missing renderers 503; missing participants 404; invalid images 502.
+deadline for its first frame. Every request has one deadline, 55 seconds by
+default (under a Connectome host's 60-second deadline for a tool call), and the
+journey, any wait and the frame all come out of it. A request that finds its
+renderer busy waits for it (up to 20 seconds, within the deadline); only one
+still waiting then returns 429 with Retry-After. Missing renderers 503; missing
+participants 404; invalid images 502. The MCPL `snapshot` tool asks again after
+a 429, 502, 503 or 504 within its own 57-second budget
+(`SNAP_CALL_BUDGET_MS`), so an agent gets the picture rather than a "try again".
 Every response is tied to the exact renderer client/session/world and pending
 target. Retirement, travel, takeover, disconnect, and opt-out release requests.
 Images are capped at 4 MiB with PNG container and dimension checks before HTTP
@@ -131,12 +137,20 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   An `unreal`-only request is never sent a roamer (roamers are browser renderers).
 - **Pre-warm:** when an agent's body joins a world no renderer serves, a roamer is sent at once, so the world is
   loaded by the time the agent asks.
+- **Sweep:** every world with an agent in it and no renderer is sent a *parked* roamer (one with no agent where it
+  is): when a roamer joins (its watchdog restarts it into its lobby every few hours and on every client deploy) and
+  every 15 s. So an agent's world goes back to being served after a restart, before anyone asks. A sweep never takes a
+  roamer from another agent's world; with more such worlds than roamers, the rest are served on demand.
 - **No partial worlds:** before capturing, a renderer moves its camera to the followed body (residency loads what is
   near it) and waits until the world is realized there — the body in its scene, the world's builds done, no model
-  loading or standing in, steady for a second. If that does not happen within 20 s the snapshot fails with the counts
+  loading or standing in, steady for a second. It waits as long as the server says it may: each `snap` carries
+  `wait`, the frame's window less a 2 s margin (38 s for a just-arrived roamer). If the world is still not realized
+  by then, the snapshot fails with the counts
   (`the renderer is still loading this world — 3 models still loading (12 in); try again in a few seconds`), as a
-  retryable 503 — never a half-loaded frame. A settled renderer captures at once.
+  retryable 503 — never a half-loaded frame. A settled renderer captures at once. (The renderer used to give up at
+  a fixed 20 s while the server would wait 40, which failed first snapshots of worlds that took a little longer.)
 - Refusals stay explicit: no roamer free → 503 naming the world; a renderer still loading → its own words.
 
 `tools/roaming-renderer-check.ts http://host:port` exercises it end to end (pre-warm, a snapshot asked the instant
-the agent arrives, the renderer's realized model count at capture). `GRACE_MS=0` asks at once.
+the agent arrives, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
+its lobby being swept back before the next snapshot). `GRACE_MS=0` asks at once.
