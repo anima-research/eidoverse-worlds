@@ -10,8 +10,11 @@ export function captureCapability(value: unknown): CaptureCapability | undefined
   return v?.version === 1 && v.engine === "unreal" && (v.scene === "underwater-prototype" || v.scene === "world-projection")
     ? { version: 1, engine: "unreal", scene: v.scene } : undefined;
 }
+// `retryAfter` (seconds) marks a failure that asking again soon can fix: the renderer still loading, busy, slow,
+// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL snapshot tool asks again only when it is there,
+// so a refusal that will not change in seconds (no renderer and no roamer to send, members-only) is answered at once.
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
-  | { ok: false; err: string; status: number };
+  | { ok: false; err: string; status: number; retryAfter?: number };
 type Pending = { renderer: Client; target: Client; world: World; gen?: number;
   finish: (r: Result) => void; engine: string; scene: string };
 const PREFIX = "data:image/png;base64,";
@@ -55,7 +58,8 @@ export function pngFromDataURL(value: unknown): Buffer | null {
 // rarely needs a roamer to travel and load at all.
 export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
-  queueMs = 20_000, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
+  queueMs = 20_000, maxQueued = 32, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
+  sweepBackoffMs = 15_000, sweepBackoffMaxMs = 10 * 60_000,
   allClients = (() => []) as () => Iterable<Client>,
   admits = (() => true) as (world: World, c: Client) => boolean,
   log = (line: string) => console.log(line), dropLogMs = 10_000 } = {}) {
@@ -84,6 +88,11 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
   const sent = new WeakMap<Client, { at: number; to: string }>();   // roamer → where it was last sent, and when
   const pinnedSeen = new Map<string, number>();   // world name → when a renderer of its own (not a roamer) was last seen there
+  const sweepFailed = new Map<string, { until: number; count: number }>();   // world name → a sweep's roamer never arrived: back off
+  // The queue of requests waiting for a busy renderer: first come, first served per world and renderer kind, and
+  // bounded, so waiting can neither starve an early ask nor pile up without limit (each waiter holds an HTTP request).
+  const waiting: { key: string; seq: number }[] = [];
+  let waitSeq = 0;
   const startedAt = now();
   const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
   /** The longest a request can wait: a roamer's journey, then its first frame. */
@@ -92,9 +101,13 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   const active = (c: Client, w: World) => c.world === w && w.clients.has(c) && !c.superseded
     && (c.ws.readyState == null || c.ws.readyState === 1);
   function retire(c: Client) {
+    // a world's own renderer leaving (a restart, every few hours for the commons') starts its grace now, not at the
+    // next sweep: the sweep must not send a roamer to load the world while it comes back
+    if (!c.roam && (c.renderer || c.capture) && c.world) pinnedSeen.set(c.world.name, now());
     for (const [id, p] of pending) if (p.renderer === c || p.target === c) {
       log(`[snap] ${id}: ${p.renderer === c ? "renderer" : "followed body"} ${who(c)} disconnected or changed session — 503`);
-      p.finish({ ok: false, err: "screenshot participant disconnected or changed session", status: 503 });
+      p.finish({ ok: false, err: "screenshot participant disconnected or changed session", status: 503,
+        ...(p.renderer === c ? { retryAfter: 2 } : {}) });
     }
   }
   function configure(c: Client, value: unknown) {
@@ -102,7 +115,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     c.capture = (c.surface ?? "world") === "world" ? captureCapability(value) : undefined;
   }
   function request(world: World, follow: string, view = "first", engine = "auto",
-    frame: { dist?: number; height?: number; pitch?: number } = {}): Promise<Result> {
+    frame: { dist?: number; height?: number; pitch?: number } = {}, callerBudgetMs?: number): Promise<Result> {
     const fail = (err: string, status: number) => Promise.resolve<Result>({ ok: false, err, status });
     if (!["auto", "unreal", "browser"].includes(engine)) return fail("renderer must be auto, unreal, or browser", 400);
     const target = [...world.clients].find(c => c.id === follow && !c.spectator && active(c, world));
@@ -110,7 +123,11 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     asked.set(world.name, now());
     // The request's one deadline. An operator's longer frame window (SNAP_TIMEOUT_SEC, for a software renderer) still
     // gets all of its window; GET /snap's own HTTP timeout (maxWaitMs) is never shorter than this.
-    const deadline = now() + Math.min(maxWait(), Math.max(budgetMs, timeoutMs + 2 * settleMarginMs));
+    // A caller that says how long it will wait (GET /snap ?budget=, the MCPL tool's remaining budget) is not kept
+    // longer than that, so a retry never outlasts the call that made it.
+    const ownDeadline = now() + Math.min(maxWait(), Math.max(budgetMs, timeoutMs + 2 * settleMarginMs));
+    const deadline = typeof callerBudgetMs === "number" && Number.isFinite(callerBudgetMs) && callerBudgetMs > 0
+      ? Math.min(ownDeadline, now() + callerBudgetMs) : ownDeadline;
     const candidates = [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
       && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
       .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
@@ -142,9 +159,12 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
    *  with a snapshot, or on its way somewhere, is not taken. A roamer a world is actively using is taken only for a
    *  snapshot actually asked (never for a pre-warm), and only when no freer one exists. A sweep takes only a PARKED
    *  roamer (no agent where it is), so keeping worlds served never takes a roamer from another world. */
-  function summon(world: World, mode: "ask" | "prewarm" | "sweep"): Promise<boolean> {
+  function summon(world: World, mode: "ask" | "prewarm" | "sweep"): Promise<boolean> { return startSummon(world, mode).arrived; }
+  /** summon(), saying which roamer it sent (none: one was already on its way, or none could go). */
+  function startSummon(world: World, mode: "ask" | "prewarm" | "sweep"): { sent: Client | null; arrived: Promise<boolean> } {
+    const nothing = { sent: null, arrived: Promise.resolve(false) };
     const inFlight = travelling.get(world.name);
-    if (inFlight && now() - inFlight.at < travelMs) return inFlight.arrived;
+    if (inFlight && now() - inFlight.at < travelMs) return { sent: null, arrived: inFlight.arrived };
     const busy = new Set([...pending.values()].map(p => p.renderer));
     const enRoute = new Set([...travelling.keys()]);
     // …and only one the destination will let in. A roamer holding the
@@ -161,9 +181,9 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       .sort((a, b) => a.n - b.n || (last.get(a.c) ?? 0) - (last.get(b.c) ?? 0))
       .map(r => r.c);
     const roamer = roamers[0];
-    if (!roamer) return Promise.resolve(false);
+    if (!roamer) return nothing;
     try { roamer.ws.send(JSON.stringify({ type: "renderer-travel", world: world.name })); }
-    catch { return Promise.resolve(false); }
+    catch { return nothing; }
     const at = now();
     sent.set(roamer, { at, to: world.name });
     const arrived = new Promise<boolean>((resolve) => {
@@ -175,7 +195,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       setTimeout(tick, pollMs);
     });
     travelling.set(world.name, { at, arrived });
-    return arrived;
+    return { sent: roamer, arrived };
   }
   async function dispatch(world: World, follow: string, view: string, engine: string,
     frame: { dist?: number; height?: number; pitch?: number }, target: Client, waitMs: number,
@@ -186,17 +206,32 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // A BUSY RENDERER IS WAITED FOR, not refused. Two agents asking at once in one world, or a second ask while the
     // first is still loading the world, used to get "renderers busy" back on the first try. Now the request waits
     // for a renderer to come free, up to `queueMs`, and never so long that the frame would not fit before its deadline.
-    const queueUntil = Math.min(now() + queueMs, deadline - Math.min(timeoutMs, 3_000));
-    let renderer: Client | undefined;
-    for (;;) {
-      if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
-      if (!candidatesIn(world, engine).length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
-      renderer = free();
-      if (renderer || now() >= queueUntil) break;
-      await sleep(pollMs);
+    // First come, first served: a waiter takes a free renderer only when no older ask for the same world and kind is
+    // still waiting, so a steady stream of new asks cannot starve an early one. At most `maxQueued` wait; beyond that
+    // the answer is "busy" at once, as before.
+    const busy = (): Result => ({ ok: false, err: "renderers busy; retry in a few seconds", status: 429, retryAfter: 2 });
+    if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
+    if (!candidatesIn(world, engine).length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
+    const key = `${world.name}\u0000${engine}`;
+    // a new ask does not jump ahead of older ones already waiting for this world
+    let renderer = waiting.some((t) => t.key === key) ? undefined : free();
+    if (!renderer) {
+      if (waiting.length >= maxQueued) return busy();
+      const ticket = { key, seq: ++waitSeq };
+      waiting.push(ticket);
+      const queueUntil = Math.min(now() + queueMs, deadline - Math.min(timeoutMs, 3_000));
+      try {
+        for (;;) {
+          if (now() >= queueUntil) return busy();
+          await sleep(pollMs);
+          if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
+          if (!candidatesIn(world, engine).length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
+          const first = waiting.find((t) => t.key === ticket.key) === ticket;
+          if (first && (renderer = free())) break;
+        }
+      } finally { waiting.splice(waiting.indexOf(ticket), 1); }
     }
-    if (!renderer) return fail("renderers busy; retry in a few seconds", 429);
-    const chosen = renderer;
+    const chosen = renderer!;
     // the frame gets its window, cut to what is left of the request's deadline
     waitMs = Math.max(1, Math.min(waitMs, deadline - now()));
     if (!["first", "third", "selfie"].includes(view)) view = "first";
@@ -208,7 +243,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
         // say which snap, whose renderer, and how backed-up its socket was
         log(`[snap] ${id} follow=${quote(follow)} view=${view}: no frame from ${who(renderer)} in ${waitMs / 1000}s ` +
           `(renderer ws buffered=${renderer.ws.getBufferedAmount?.() ?? "?"}) — 504`);
-        p.finish({ ok: false, err: "renderer timed out", status: 504 });
+        p.finish({ ok: false, err: "renderer timed out", status: 504, retryAfter: 2 });
       }, waitMs);
       const p: Pending = { renderer, target, world, gen: renderer.gen,
         engine: renderer.capture?.engine ?? "browser", scene: renderer.capture?.scene ?? "world-fold",
@@ -222,7 +257,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       try { renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, width: 960, height: 540,
         wait: Math.max(0, waitMs - settleMarginMs),
         ...(Object.keys(frame).length ? { frame } : {}) })); }
-      catch { log(`[snap] ${id}: send to renderer ${who(renderer)} failed — 503`); p.finish({ ok: false, err: "renderer unavailable", status: 503 }); }
+      catch { log(`[snap] ${id}: send to renderer ${who(renderer)} failed — 503`); p.finish({ ok: false, err: "renderer unavailable", status: 503, retryAfter: 2 }); }
     });
   }
   function receive(c: Client, msg: { id?: unknown; dataUrl?: unknown; error?: unknown }) {
@@ -239,7 +274,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     if (typeof msg.error === "string" && msg.error.trim()) {
       const err = msg.error.trim().slice(0, 300);
       log(`[snap] ${msg.id}: renderer ${who(c)} replied without an image: ${quote(err, 200)} — 503`);
-      return p.finish({ ok: false, err, status: 503 });
+      return p.finish({ ok: false, err, status: 503, retryAfter: 2 });
     }
     const png = pngFromDataURL(msg.dataUrl);
     if (!png) log(`[snap] ${msg.id}: renderer ${who(c)} sent no valid PNG (${typeof msg.dataUrl === "string" ? `${msg.dataUrl.length} chars` : typeof msg.dataUrl}) — 502`);
@@ -269,8 +304,25 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // A world whose own renderer was here moments ago is only waiting for it to restart (the commons renderer does,
     // every few hours): a roamer sent there would load the whole world for nothing. A snapshot asked meanwhile is
     // still served on demand.
-    for (const w of worlds) if (!candidatesIn(w, "auto").length && now() - (pinnedSeen.get(w.name) ?? -Infinity) >= pinnedGraceMs)
-      void summon(w, "sweep");
+    for (const w of worlds) {
+      if (candidatesIn(w, "auto").length) { sweepFailed.delete(w.name); continue; }
+      if (now() - (pinnedSeen.get(w.name) ?? -Infinity) < pinnedGraceMs) continue;
+      // A world a swept roamer never reached (refused, crashed, too slow to rejoin) is not sent another every 15 s:
+      // the sweep backs off, doubling from sweepBackoffMs to sweepBackoffMaxMs, and says so. A snapshot asked there
+      // meanwhile is still served on demand.
+      const failed = sweepFailed.get(w.name);
+      if (failed && now() < failed.until) continue;
+      const s = startSummon(w, "sweep");
+      if (!s.sent) continue;
+      const roamer = s.sent;
+      void s.arrived.then((ok) => {
+        if (ok) { sweepFailed.delete(w.name); return; }
+        const count = (sweepFailed.get(w.name)?.count ?? 0) + 1;
+        const wait = Math.min(sweepBackoffMs * 2 ** (count - 1), sweepBackoffMaxMs);
+        sweepFailed.set(w.name, { until: now() + wait, count });
+        log(`[snap] sweep: roamer ${who(roamer)} did not arrive in "${w.name}" within ${travelMs / 1000}s — no roamer will be swept there for ${Math.round(wait / 1000)}s`);
+      });
+    }
   }
   /** The server's client registry, for finding roaming renderers in other worlds. */
   function setClients(fn: () => Iterable<Client>) { allClients = fn; }

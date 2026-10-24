@@ -77,7 +77,7 @@ export type Srv = {
 };
 
 // ---- snapshots: the world serves views of itself ---------------------------
-// GET /snap?world=W&follow=ID[&view=first|third|selfie][&renderer=auto|unreal|browser]
+// GET /snap?world=W&follow=ID[&view=first|third|selfie][&renderer=auto|unreal|browser][&budget=ms]
 // [&dist=&height=&pitch=] (optional framing, shared/snapframe.js) → the sequencer
 // asks a renderer client (an opt-in Unreal player or legacy browser spectator,
 // dialed OUT like any client) to jump its camera to ID's head and return one
@@ -684,8 +684,15 @@ const ROUTES: Route[] = [
       if (!w || !visibleTo(w, httpCaller(req))) return new Response("unknown world", { status: 404 });
       const q = url.searchParams;
       const frame = normalizeSnapFrame({ dist: q.get("dist"), height: q.get("height"), pitch: q.get("pitch") });
-      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame);
-      if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store", ...(r.status === 429 ? { "retry-after": "2" } : {}) } });
+      // ?budget=<ms>: how long the caller will wait (the MCPL tool sends what is left of its call); the broker never
+      // keeps it longer. Out of range or absent: the broker's own deadline.
+      const budget = Number(q.get("budget"));
+      const callerBudget = Number.isFinite(budget) && budget >= 1_000 && budget <= 600_000 ? budget : undefined;
+      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame, callerBudget);
+      // Retry-After only on a failure asking again soon can fix (snapshots.ts retryAfter): the MCPL tool asks again
+      // exactly when it is there
+      if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store",
+        ...(r.retryAfter ? { "retry-after": String(r.retryAfter) } : {}) } });
       return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store",
         "x-content-type-options": "nosniff", "x-eidoverse-renderer": r.engine, "x-eidoverse-scene": r.scene } });
     },

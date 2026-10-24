@@ -18,6 +18,7 @@ const { check, tally } = mkCheck();
 // The wording checks read ONE answer from the world server; the snapshot tool's retries have their own checks below.
 const ONCE = { budgetMs: 0 };
 const snapTries = new Map<string, number>();
+let lastSnapBudget: string | null = null;   // the ?budget= the tool sent on its latest /snap
 const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=", "base64");
 const said = (r: any) => String(r?.content?.[0]?.text ?? "");
 
@@ -53,7 +54,10 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
     // body followed. The body's name also picks how the world's renderers answer; any other name
     // finds none of the kind asked for serving.
     const renderer = u.searchParams.get("renderer"), follow = u.searchParams.get("follow");
-    // "<answer>-<n>": refuse n times with that answer, then serve a picture (the retry checks below)
+    lastSnapBudget = u.searchParams.get("budget");
+    if (follow === "hang") return new Promise<Response>(() => {});   // a server that never answers
+    // "<answer>-<n>": refuse n times with that answer, then serve a picture (the retry checks below). Like the real
+    // server, the passing refusals carry Retry-After; a proxy's 502 does not.
     const later = /^(loading|busy|slow|proxied)-(\d+)$/.exec(follow ?? "");
     if (later) {
       const seen = (snapTries.get(follow!) ?? 0) + 1; snapTries.set(follow!, seen);
@@ -61,7 +65,8 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
       const [msg, st] = later[1] === "loading" ? ["the renderer is still loading this world — 1 model still loading (0 in); try again in a few seconds", 503]
         : later[1] === "busy" ? ["renderers busy; retry in a few seconds", 429]
         : later[1] === "slow" ? ["renderer timed out", 504] : ["<html>bad gateway</html>", 502];
-      return new Response(msg as string, { status: st as number, headers: st === 429 ? { "retry-after": "1" } : {} });
+      const retryAfter = later[1] === "loading" ? "2" : later[1] === "proxied" ? null : "1";
+      return new Response(msg as string, { status: st as number, headers: retryAfter ? { "retry-after": retryAfter } : {} });
     }
     const [said, status] = renderer !== "auto" && renderer !== "browser" && renderer !== "unreal" ? ["renderer must be auto, unreal, or browser", 400]
       : follow === "gone" ? ['"gone" is not present in "w"', 404]
@@ -199,8 +204,29 @@ try {
     const gone = await snapshotTool({ ...agent, name: "gone" }, "first", "auto", {}, { budgetMs: 20_000 });
     const unreal = await snapshotTool(agent, "first", "unreal", {}, { budgetMs: 20_000 });
     const bad = await snapshotTool(agent, "first", "Unreal", {}, { budgetMs: 20_000 });
-    check("a body that isn't there (404), an Unreal-only ask with none serving, and bad arguments are answered at once, not retried",
-      gone.isError && unreal.isError && bad.isError && !/tries/.test(said(gone) + said(unreal) + said(bad)) && Date.now() - t0 < 1500, `${Date.now() - t0}ms`);
+    const noRoamer = await snapshotTool(agent, "first", "auto", {}, { budgetMs: 20_000 });
+    check("a body that isn't there (404), an Unreal-only ask with none serving, bad arguments, and no renderer with no roamer to send (no Retry-After) are answered at once",
+      [gone, unreal, bad, noRoamer].every((r) => r.isError) && !/tries/.test(said(gone) + said(unreal) + said(bad) + said(noRoamer)) && Date.now() - t0 < 1500, `${Date.now() - t0}ms`);
+  }
+  {
+    // a proxy's bare 502, again and again (a server restarting behind it): tried once more, then answered
+    const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: "proxied-9" }, "first", "auto", {}, { budgetMs: 20_000 });
+    check("a proxy's 502 without Retry-After is tried once more, then answered: not held for the whole budget",
+      r.isError === true && snapTries.get("proxied-9") === 2 && /after 2 tries over 2 s/.test(said(r)) && Date.now() - t0 < 4000, `${said(r)} ${Date.now() - t0}ms`);
+  }
+  {
+    // the tool tells the server what is left of the call, and nothing when it asks once
+    await snapshotTool({ ...agent, name: "loading-0" }, "first", "auto", {}, { budgetMs: 20_000 });
+    const sent = Number(lastSnapBudget);
+    check("the tool sends the server what is left of its budget (?budget=)", sent > 15_000 && sent <= 20_000, String(lastSnapBudget));
+    await snapshotTool({ ...agent, name: "loading-0" }, "first", "auto", {}, ONCE);
+    check("…and no budget when it asks once", lastSnapBudget === null, String(lastSnapBudget));
+  }
+  {
+    // a server that takes the request and never answers: the backstop ends the call, and says what happened
+    const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: "hang" }, "first", "auto", {}, { budgetMs: 1_000, noAnswerGraceMs: 500 });
+    check("a server that never answers is reported as giving no answer (it may still be taking the picture), not as unreachable",
+      r.isError === true && /^snapshot: the world server gave no answer in 2 s; it may still be taking the picture, so try again in a few seconds$/.test(said(r)) && Date.now() - t0 < 3000, `${said(r)} ${Date.now() - t0}ms`);
   }
   const worldsDown = said(await call("worlds"));
   check("worlds names the server's status", /^worlds: the world server answered 500, so the list isn't known/.test(worldsDown), worldsDown);
@@ -213,6 +239,11 @@ try {
   agent.httpBase = goneBase;
   check("a snapshot from a server that's gone says no picture arrived",
     /^snapshot failed: no picture arrived from the world server \(.+\); try again/.test(said(await snapshotTool(agent, "first", "auto", {}, ONCE))));
+  {
+    const t0 = Date.now(); const r = await snapshotTool(agent, "first", "auto", {}, { budgetMs: 20_000 });
+    check("a world server that can't be reached is tried once more, then answered in seconds, not held for the budget",
+      r.isError === true && /^snapshot failed: no picture arrived from the world server \(.+\) after 2 tries over 2 s; try again in a moment$/.test(said(r)) && Date.now() - t0 < 4000, `${said(r)} ${Date.now() - t0}ms`);
+  }
   check("worlds from a server that's gone says it didn't answer",
     /^worlds: the world server didn't answer \(.+\), so the list isn't known/.test(said(await call("worlds"))));
   const geomGone = said(await call("measure", { id: "x" }));
