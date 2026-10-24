@@ -654,6 +654,7 @@ try {
   const moveTip = await evalJson(`document.querySelector('.edit-tool[data-tool="move"]')?.title ?? ''`);
   check("KH1 the move tool's tooltip says the gizmo's hidden key (hold Ctrl to snap) and the tool letters", /hold Ctrl to snap/.test(moveTip) && /P pivot/.test(moveTip), moveTip);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); return true;`); await sleep(500);
+  const nK = myActs().length;
   await evalJson(`(() => { const n = [...document.querySelectorAll('[data-frame="inspector"] .sp-f-num .sp-num')].find((x) => !x.disabled); const r = n.getBoundingClientRect();
     n.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerId: 7, clientX: r.left + 5, clientY: r.top + 5 }));
     n.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientX: r.left + 30, clientY: r.top + 5 })); return true; })()`);
@@ -662,6 +663,10 @@ try {
   await evalJson(`(() => { const n = [...document.querySelectorAll('[data-frame="inspector"] .sp-f-num .sp-num')].find((x) => !x.disabled); n.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7 })); return true; })()`);
   await sleep(300);
   check("KH3 …and gives the bar back when the drag ends", await evalJson(`!/Shift finer/.test(document.getElementById('hintbar')?.textContent ?? '') || document.getElementById('hintbar').classList.contains('gone')`), await evalJson(`document.getElementById('hintbar')?.textContent`));
+  // the scrub's release commits a set; on a slow host it reached the record after CD1 had counted the log, and CD1 saw it as
+  // its own extra act (anima 40104935973, macOS: a transform set on pebble, x -0.007 -> 0.597). Wait for it here.
+  check("KH (setup) the scrub's release is on the record before the next case counts", await waitDisk(() => myActs().slice(nK).some((a) => a.e.verb === "set" && a.e.body?.request?.id === IDS.of("pebble"))),
+    myActs().slice(nK).map((a) => [a.e.verb, a.e.body?.request?.id]));
 
   // Ctrl+D duplicates (R 10-04: "isn't it usually ctrl+d?"), the held D never strafes, and copy #2 nudges toward blueprints
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); return true;`); await sleep(300);
