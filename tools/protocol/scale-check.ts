@@ -212,7 +212,7 @@ function scaleCase(n: number) {
         const g = timed(() => s.call("vic", "grab", { id: t }, 20000));
         const cupY = s.w().state().entities[`cup-${i}`]?.c.transform?.pos?.[1];   // the pass S1 means to time: the cup lost its tray
         if (code(g.r) === "ok" && !(cupY < 0.3)) throw new Error(`setup: cup-${i} didn't come down when ${t} was lifted (y ${cupY})`);
-        for (const to of [[X - 22.2, 0, 39.4], [X - 22.2, 0, 37.4 + i], [X - 23.4, 0, 37.4 + i]]) {   // a teleport can't carry; strides between the trays
+        if (code(g.r) === "ok") for (const to of [[X - 22.2, 0, 39.4], [X - 22.2, 0, 37.4 + i], [X - 23.4, 0, 37.4 + i]]) {   // a teleport can't carry; strides between the trays. (Untimed: a move while carrying is a request S1 does not bound.)
           const walk = s.call("vic", "move", { to }, 20000);
           if (code(g.r) === "ok" && code(walk) !== "ok") throw new Error(`setup: couldn't walk ${t} to ${JSON.stringify(to)}: ${JSON.stringify(walk).slice(0, 200)}`); }
         const d = timed(() => s.call("vic", "drop", { id: t }, 20000));

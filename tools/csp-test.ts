@@ -25,5 +25,7 @@ check("CSP5 a data-src attribute doesn't make an inline script external (it stil
 check("CSP6 a real src attribute does (no hash for an external script)", inlineScriptHashes(`<script type="module" src="/main.js"></script>`).length === 0);
 check("CSP7 \"</script foo>\" closes the script, as the parser closes it", inlineScriptHashes(`<script>${body}</script foo><script>window.y=2;</script>`).join() === [browserHash(body), browserHash("window.y=2;")].join(),
   inlineScriptHashes(`<script>${body}</script foo><script>window.y=2;</script>`));
+check("CSP8 \"</script-z>\" and \"</scripts>\" don't close it (the parser keeps reading)", inlineScriptHashes(`<script>a</script-z>b</scripts>c</script>`)[0] === browserHash("a</script-z>b</scripts>c"),
+  inlineScriptHashes(`<script>a</script-z>b</scripts>c</script>`));
 console.log(`[csp-test] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -76,7 +76,7 @@ try {
   // gate is DRAWN at, once per animation frame for 4 s from just before E. Per frame, not per 40 ms: the gate is only drawn
   // on frames (tickOpenables), and a starved CI runner once drew none for ~3 s while a timer kept sampling the shut gate
   // (anima 40067204678, ubuntu) — that is "no frames", not "drawn wrong", and D3 now says which. A page that draws no frame at
-  // all still ends at 4.5 s (the timer races each frame), so the sample says "starved" rather than the stage timing out.
+  // all still ends at 4.5 s (the timer races each frame), so D3 fails with a reason ("the tween never started" when no frame came at all, "starved" when too few did) rather than the stage timing out.
   await evalJson(`(window.__samp = (async () => { const [o, w] = await Promise.all([import('/lib/openable.js'), import('/lib/world.js')]); const out = []; const t0 = performance.now();
     while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 4500 - (performance.now() - t0)); }); }
     return out; })(), true)`);
