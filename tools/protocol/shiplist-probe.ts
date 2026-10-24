@@ -77,22 +77,36 @@ try {
   // on frames (tickOpenables), and a starved CI runner once drew none for ~3 s while a timer kept sampling the shut gate
   // (anima 40067204678, ubuntu) — that is "no frames", not "drawn wrong", and D3 now says which. A page that draws no frame at
   // all still ends at 4.5 s (the timer races each frame), so D3 fails with a reason ("the tween never started" when no frame came at all, "starved" when too few did) rather than the stage timing out.
-  await evalJson(`(window.__samp = (async () => { const [o, w] = await Promise.all([import('/lib/openable.js'), import('/lib/world.js')]); const out = []; const t0 = performance.now();
-    while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 4500 - (performance.now() - t0)); }); }
+  // A runner that draws no frames for the whole swing is INCONCLUSIVE, not a failure ("starved", below): the swing is closed
+  // and tried again, up to 3 times, each retry printed. Any other reason fails at once, so a gate drawn wrong (frames, but
+  // never part-way) or never moved still goes red the first time. Diagnosis of the one CI failure: anima 40067204678 — timers
+  // sampled 100× on time while the frame-only angle stayed frozen 1.2 s (no frames), Fable 5.1 review 10-24.
+  let samp: any[] = [], moving: any[] = [], first: any, last: any, rest: any, drawnMid = 0, framesInSwing: number | null = null, why = "", tries = 0;
+  for (;;) {
+    tries++;
+    await evalJson(`(window.__samp = (async () => { const [o, w] = await Promise.all([import('/lib/openable.js'), import('/lib/world.js')]); const out = []; const t0 = performance.now();
+    while (performance.now() - t0 < 5000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 5500 - (performance.now() - t0)); }); }
     return out; })(), true)`);
-  await key("KeyE");
-  check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
-    { open: disk().entities[N("gate")]?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
-  const samp: any[] = await evalJson(`window.__samp`);
-  const moving = samp.filter(([, f, to]) => to === 1 && f > 0.05 && f < 0.95);
-  const first = samp.find(([, f, to]) => to === 1), last = samp.at(-1);
-  const rest = samp.find(([, f, to]) => to === 1 && f === 1);
-  const drawnMid = moving.filter(([, , , a]) => a > 0.08 && a < Math.PI / 2 - 0.08).length;
-  const framesInSwing = first ? samp.filter(([t]) => t >= first[0] && t <= first[0] + 1200).length : null;
-  const why = !first ? "the tween never started" : framesInSwing! < 3 ? `starved: only ${framesInSwing} frame(s) drawn in the 1.2 s after E — the swing could not be seen` : drawnMid < 3 ? "frames were drawn but the gate wasn't drawn part-way" : "";
+    await key("KeyE");
+    if (tries === 1) check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
+        { open: disk().entities[N("gate")]?.c.openable, refused: await evalJson(`__refused.map((r) => r.text)`) });
+    else await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true);   // a retry's own open (D2 counted the first)
+    samp = await evalJson(`window.__samp`);
+    moving = samp.filter(([, f, to]) => to === 1 && f > 0.05 && f < 0.95);
+    first = samp.find(([, f, to]) => to === 1); last = samp.at(-1);
+    rest = samp.find(([, f, to]) => to === 1 && f === 1);
+    drawnMid = moving.filter(([, , , a]) => a > 0.08 && a < Math.PI / 2 - 0.08).length;
+    framesInSwing = first ? samp.filter(([t]) => t >= first[0] && t <= first[0] + 1200).length : null;
+    why = !first ? "the tween never started" : framesInSwing! < 3 ? `starved: only ${framesInSwing} frame(s) drawn in the 1.2 s after E — the swing could not be seen` : drawnMid < 3 ? "frames were drawn but the gate wasn't drawn part-way" : "";
+    if (!why.startsWith("starved") || tries >= 3) break;
+    console.log(`  [shiplist-probe] D3 try ${tries} inconclusive (${why}); closing the gate and swinging it again`);
+    await key("KeyE");
+    await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === false);
+    await waitFor(`import('/lib/openable.js').then((o) => (o.openableState('gate')?.f ?? 0) === 0)`, 8000);
+  }
   check("D3 it swings, drawn: part-way for a while (the gate itself drawn between shut and open), then at rest a quarter turn from where it stood",
     moving.length >= 5 && drawnMid >= 3 && rest && first && rest[0] - first[0] >= 600 && last[1] === 1 && Math.abs(last[3] - Math.PI / 2) < 0.02,
-    { why, n: samp.length, framesInSwing, moving: moving.length, drawnMid, swingMs: rest && first ? rest[0] - first[0] : null, last, some: moving.slice(0, 4) });
+    { why, tries, n: samp.length, framesInSwing, moving: moving.length, drawnMid, swingMs: rest && first ? rest[0] - first[0] : null, last, some: moving.slice(0, 4) });
   check("D4 open, the hint says close", await waitFor(`/E\\s*close\\s*“Gate”/.test(${hint})`, 4000), await evalJson(hint));
   await key("KeyE");
   check("D5 E closes it", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === false));
