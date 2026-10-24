@@ -15,12 +15,24 @@ const browser = await chromium.launch({ headless: true, channel: 'chrome', args:
 try {
   // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
   // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
+  // A refusal (a sequencer that wants JOIN_TOKEN, a founding cap) fails the check with the server's reason, and so
+  // does silence: this must never hang with the browser above left open.
   {
     const f = new WebSocket(base.replace('http', 'ws') + '/ws');
-    await new Promise<void>((res, rej) => { f.onopen = () => res(); f.onerror = () => rej(new Error('cannot connect to found the lobby')); });
-    const founded = new Promise<void>((res) => { f.onmessage = (e) => { if (JSON.parse(String(e.data)).type === 'snapshot') res(); }; });
-    f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-founder', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
-    await founded; f.close();
+    try {
+      await new Promise<void>((res, rej) => {
+        const timer = setTimeout(() => rej(new Error(`founding the lobby "${lobby}": no answer in 15 s`)), 15000);
+        const settle = (err?: Error) => { clearTimeout(timer); err ? rej(err) : res(); };
+        f.onerror = () => settle(new Error(`founding the lobby "${lobby}": cannot connect to ${base}`));
+        f.onclose = (e) => settle(new Error(`founding the lobby "${lobby}": the server closed the socket (${e.code} ${e.reason || 'no reason'})`));
+        f.onmessage = (e) => {
+          const m = JSON.parse(String(e.data));
+          if (m.type === 'snapshot') settle();
+          else if (m.type === 'error') settle(new Error(`founding the lobby "${lobby}" was refused: ${m.error}`));
+        };
+        f.onopen = () => f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-founder', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+      });
+    } finally { f.onclose = null; f.close(); }
   }
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   // TRIPPED (default on; TRIPPED=0 skips): the roamer's profile carries what its watchdog's kills leave behind, a

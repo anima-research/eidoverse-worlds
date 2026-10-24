@@ -242,12 +242,12 @@ stays down instead of reconnecting.
   why.
 - **Proxy timeout (deploy):** `GET /snap` sets its own per-request timeout
   from the broker's longest wait, so Bun's idle timer doesn't reset a `/snap`
-  while it waits. But `deploy/nginx-show.conf`'s `location /` sets no
-  `proxy_read_timeout`, so nginx's 60 s default still cuts any `/snap` that
-  waits past 60 s. A roamed one can at the defaults, which allow 25 s for the
-  roamer to arrive (`travelMs`) and 40 s for its first frame, and any one can
-  once `SNAP_TIMEOUT_SEC` is above 60. Raise it to at least the broker's
-  longest wait (see `SNAP_TIMEOUT_SEC` in `server/config.ts`).
+  while it waits. nginx has its own read timeout, 60 s by default, which cuts
+  any `/snap` that waits longer. A roamed one can at the defaults, which allow
+  25 s for the roamer to arrive (`travelMs`) and 40 s for its first frame, and
+  any one can once `SNAP_TIMEOUT_SEC` is above 60. `deploy/nginx-show.conf`
+  gives `location = /snap` a 300 s `proxy_read_timeout`, above the sequencer's
+  255 s cap. A live config made before that block needs it added by hand.
 
 ## Review (independent, 2026-10-17)
 
