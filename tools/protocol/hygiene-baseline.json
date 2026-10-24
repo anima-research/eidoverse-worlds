@@ -142,7 +142,7 @@
   "raw-symlink": 2
  },
  "tools/protocol/shiplist-probe.ts": {
-  "bare-wait": 106
+  "bare-wait": 105
  },
  "tools/protocol/shove-check.ts": {
   "raw-symlink": 2

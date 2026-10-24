@@ -73,9 +73,11 @@ try {
   const q0 = await evalJson(`import('/lib/world.js').then((m) => m.entities.get('gate').quaternion.toArray())`);
   const uses0 = entries().filter((e: any) => e.kind === "act" && e.verb === "use").length;
   // an in-page sampler (CDP round trips are too slow to time a 1.2 s swing): how open the tween says, and the angle the
-  // gate is DRAWN at, every 40 ms for 4 s from just before E
+  // gate is DRAWN at, once per animation frame for 4 s from just before E. Per frame, not per 40 ms: the gate is only drawn
+  // on frames (tickOpenables), and a starved CI runner once drew none for ~3 s while a timer kept sampling the shut gate
+  // (anima 40067204678, ubuntu) — that is "no frames", not "drawn wrong", and D3 now says which.
   await evalJson(`(window.__samp = (async () => { const [o, w] = await Promise.all([import('/lib/openable.js'), import('/lib/world.js')]); const out = []; const t0 = performance.now();
-    while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => setTimeout(r, 40)); }
+    while (performance.now() - t0 < 4000) { const s = o.openableState('gate'); const q = w.entities.get('gate').quaternion; out.push([Math.round(performance.now() - t0), s?.f ?? null, s?.to ?? null, 2 * Math.acos(Math.min(1, Math.abs(q.w)))]); await new Promise((r) => requestAnimationFrame(() => r())); }
     return out; })(), true)`);
   await key("KeyE");
   check("D2 E opens it through the authority: one use act, openable.open = true", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === true && entries().filter((e: any) => e.kind === "act" && e.verb === "use").length === uses0 + 1),
@@ -85,9 +87,11 @@ try {
   const first = samp.find(([, f, to]) => to === 1), last = samp.at(-1);
   const rest = samp.find(([, f, to]) => to === 1 && f === 1);
   const drawnMid = moving.filter(([, , , a]) => a > 0.08 && a < Math.PI / 2 - 0.08).length;
+  const framesInSwing = first ? samp.filter(([t]) => t >= first[0] && t <= first[0] + 1200).length : null;
+  const why = !first ? "the tween never started" : framesInSwing! < 3 ? `starved: only ${framesInSwing} frame(s) drawn in the 1.2 s after E — the swing could not be seen` : drawnMid < 3 ? "frames were drawn but the gate wasn't drawn part-way" : "";
   check("D3 it swings, drawn: part-way for a while (the gate itself drawn between shut and open), then at rest a quarter turn from where it stood",
-    moving.length >= 5 && drawnMid >= 3 && rest && first && rest[0] - first[0] >= 600 && last[1] === 1 && Math.abs(last[3] - Math.PI / 2) < 0.02,
-    { n: samp.length, moving: moving.length, drawnMid, swingMs: rest && first ? rest[0] - first[0] : null, last, some: moving.slice(0, 4) });
+    moving.length >= 3 && drawnMid >= 3 && rest && first && rest[0] - first[0] >= 600 && last[1] === 1 && Math.abs(last[3] - Math.PI / 2) < 0.02,
+    { why, n: samp.length, framesInSwing, moving: moving.length, drawnMid, swingMs: rest && first ? rest[0] - first[0] : null, last, some: moving.slice(0, 4) });
   check("D4 open, the hint says close", await waitFor(`/E\\s*close\\s*“Gate”/.test(${hint})`, 4000), await evalJson(hint));
   await key("KeyE");
   check("D5 E closes it", await waitDisk(() => disk().entities[N("gate")]?.c.openable?.open === false));
