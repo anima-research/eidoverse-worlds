@@ -35,6 +35,19 @@ import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
+import { objectIdentity } from '../shared/label.js';
+
+/** One authored description as one perception line. The cap is per OBJECT and
+ *  a look renders every labelled object in view, so the ceiling that matters is
+ *  the product, not the single string. Cut on a word where there is one. */
+const AFFORDANCE_MAX = 160;
+function affordanceText(value: string): string {
+  const flat = value.replace(/\s+/g, " ").trim();
+  if ([...flat].length <= AFFORDANCE_MAX) return flat;
+  const cut = [...flat].slice(0, AFFORDANCE_MAX).join("");
+  const space = cut.lastIndexOf(" ");
+  return `${space > AFFORDANCE_MAX / 2 ? cut.slice(0, space) : cut}…`;
+}
 
 /** An act's answer for its tool. `ok` is false when the call didn't do what
  *  it asked: a refusal, a cut, a climb or glide that fell short, a name the
@@ -4582,7 +4595,8 @@ export class WorldAgent {
     const ordered = meKnown ? [...ents].sort((a, b) => sortKey(a) - sortKey(b)) : ents;
     for (const e of ordered) {
       const f = fx.get(e.id)!;
-      const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ");
+      const identity = objectIdentity(e, this.st.assets);
+      const short = identity.name;
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
       // a builder declared (sockets/reactions components) reaches everyone
@@ -4633,12 +4647,19 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label"].includes(k) && !isParticlesKey(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
       const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
       if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
+      // The authored description comes LAST, quoted as what someone said it
+      // is, so builder copy ("locked", "safe to sit") can never read as one of
+      // the server-derived facts above. JSON quoting keeps an embedded `"` from
+      // closing the quote early. A description is capped at 2,000 code points
+      // per object, but nothing caps how many labelled objects are in view, and
+      // unlike a browser an agent has no objectLabels=off: one line each here.
+      if (identity.description) aff.push(`described as: ${JSON.stringify(affordanceText(identity.description))}`);
       if (f.ok) {
         // the EFFECTIVE position — mount chain and motion composed at nowMs.
         // For an unmounted, unmoving thing this is exactly the folded pos.
