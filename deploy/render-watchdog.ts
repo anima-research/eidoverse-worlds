@@ -10,7 +10,7 @@
 // This watchdog OWNS the renderer's lifecycle and restarts it on any of:
 //   - crash        — Chrome process gone
 //   - hang         — main thread unresponsive to a trivial CDP eval
-//   - frozen       — booted but 0 fps / not joined for several checks
+//   - frozen       — booted but not joined, no frames, or no frame it can capture, for several checks
 //   - memory       — RSS over a cap, before it reaches the hang zone
 //   - stale code   — the served client changed (a deploy) — reload for new code
 //   - old age      — a max uptime, as a backstop against slow leaks
@@ -36,7 +36,17 @@ const VERSION_URL = `${SHOW_URL}/client-version`;
 // ROAM=1: a roaming renderer — it starts in WORLD and the server sends it to any world a snapshot is asked of
 // where no renderer is serving (server/snapshots.ts). Its name says so: mac-gpu-roam-<WORLD>.
 const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
-const URL = `${SHOW_URL}/?world=${WORLD}&renderer&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
+// lite=0: the client's boot tripwire (index.html, `ew-boot-attempt:<world>`)
+// demotes a device to the engine-less LITE client when its last full boots were
+// killed before the dwell, and this watchdog kills renderers for a living, in
+// a profile that persists. A couple of early kills and every relaunch came up
+// lite: no EW, "not joined", kill, lite again, forever. A lite roamer was worse
+// than none: it still joined as a renderer, the server sent it to a world, and
+// every snapshot there answered "this client has no renderer". The client now
+// never makes a ?renderer page lite (index.html rule 0); asking for the full
+// client here as well keeps a renderer whole against a sequencer still serving
+// a client from before that, since the URL outranks the tripwire.
+const URL = `${SHOW_URL}/?world=${WORLD}&renderer&lite=0&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (m: string) => console.log(`[watchdog ${new Date().toISOString().slice(11, 19)}] ${m}`);
 const sh = async (cmd: string) => (await new Response(Bun.spawn(["bash", "-c", cmd]).stdout).text()).trim();
@@ -75,15 +85,30 @@ async function health(): Promise<Health> {
     const i = id++; let done = false;
     const h = (e: any) => { const m = JSON.parse(String(e.data)); if (m.id === i) { done = true; ws.removeEventListener("message", h); res(m.result?.result?.value); } };
     ws.addEventListener("message", h);
-    ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true } }));
+    ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true, awaitPromise: true } }));
     setTimeout(() => { if (!done) res(TIMEOUT); }, ms);
   });
 
   try {
     if ((await evalx("1+1")) === TIMEOUT) return { alive: true, healthy: false, reason: "main thread hung" };
-    const fps = Number(await evalx("+(document.getElementById('hud')?.textContent?.match(/(\\d+)fps/)?.[1]??0)"));
+    // Frames are COUNTED here, not read off the page: this used to scrape
+    // "NNfps" from #hud, and when the client moved fps into the debug panel
+    // the scrape read 0 forever and a healthy renderer was killed on schedule.
+    // One second of requestAnimationFrame depends on nothing the client names.
+    const counted = await evalx("new Promise(r=>{let n=0;const t=performance.now();const f=()=>{n++;performance.now()-t<1000?requestAnimationFrame(f):r(n)};requestAnimationFrame(f)})", 5000);
+    const fps = counted === TIMEOUT ? 0 : Number(counted) || 0;
     const joined = (await evalx("!!(window.EW?.net?.joined)")) === true;
-    return { alive: true, healthy: fps > 0 && joined, reason: joined ? `fps=${fps}` : "not joined", fps };
+    if (!joined) return { alive: true, healthy: false, reason: "not joined", fps };
+    if (fps <= 0) return { alive: true, healthy: false, reason: "no frames", fps };
+    // A pumping frame loop is not a working renderer: frame.js catches each
+    // section's errors and keeps scheduling, so a client whose world pass
+    // throws every frame still counts 60/s. The thing /snap needs is the thing
+    // /snap does — captureFrame() renders and reads the canvas back as a PNG,
+    // and throws on an empty readback — so that is the health check.
+    const cap = await evalx("import('/lib/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))", 10000);
+    if (cap === TIMEOUT) return { alive: true, healthy: false, reason: "capture timed out", fps };
+    if (typeof cap !== "number") return { alive: true, healthy: false, reason: `capture failed: ${String(cap).slice(0, 120)}`, fps };
+    return { alive: true, healthy: true, reason: `fps=${fps} snap=${(cap / 1024).toFixed(0)}KB`, fps };
   } finally { ws.close(); }
 }
 
