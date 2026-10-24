@@ -52,6 +52,16 @@ jobs:
           bun tools/protocol/run.ts --siblings
           # the project's own playwright, so the browser revision is the one run.ts's import of it looks for
           bun node_modules/playwright/cli.js install chromium
+      - name: let Chrome's sandbox read its own install (Windows)
+        # windows-latest installs playwright's chromium under the runner profile, which Chrome's sandboxed (AppContainer)
+        # processes can't read: stderr says "Sandbox cannot access executable", and ~150 ms after launch the network service
+        # crashes and restarts. A first navigation landing in that gap is cancelled and the page "never boots": client-b2,
+        # build-client and colour-picker each went red on one run and green on the next. Probe 40048347613 (10-23): the
+        # untouched runner showed both lines; granting ALL APPLICATION PACKAGES read showed neither, on 3 of 3 jobs;
+        # --disable-features=NetworkServiceSandbox stopped the crash but not the access error.
+        if: runner.os == 'Windows'
+        shell: bash
+        run: MSYS_NO_PATHCONV=1 icacls "$(cygpath -w "$LOCALAPPDATA/ms-playwright")" /grant '*S-1-15-2-1:(OI)(CI)(RX)' /T /Q
       - name: asset library (pinned in run.ts)
         shell: bash
         run: bun tools/protocol/run.ts --library "$RUNNER_TEMP/eidoverse-video"
