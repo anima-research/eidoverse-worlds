@@ -1801,7 +1801,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
   // for a device that cannot hold the engine in RAM at all. Owner's phone (Android,
   // Chrome) cannot boot the full client, full stop. So the order below puts what a
   // device has PROVEN above anything we infer about it, and puts what a person
-  // asked for above both.
+  // asked for above both. One thing sits above even that: a ?renderer page is never
+  // lite (rule 0). It is no person's page, and a renderer that can't render is
+  // never what anyone asked for.
   (() => {
     // PER WORLD, because capability is a property of the pair, not the device. Measured
     // on a real phone (owner, Android/Chrome, 2026-09-15): an empty instance runs the
@@ -1815,8 +1817,18 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
 
     const decideLite = ({ params, stored, lastBootDied, retried, deviceMemory, gpuApi, mobile }) => {
+      // 0. A RENDERER IS NEVER LITE. A ?renderer page exists to draw (the /snap renderers that
+      //    deploy/render-watchdog.ts keeps), and a lite one is a renderer that cannot render. It
+      //    used to happen: the watchdog kills its renderer for a living, a kill runs no pagehide,
+      //    so the tripwire below read every kill as "this device cannot", and two in a row left
+      //    four of five roaming renderers in lite for a week. One of them was sent into a world
+      //    and answered every snapshot there "this client has no renderer" (2026-10-24).
+      //    Nothing below is about a renderer, so it outranks all of it, even an explicit
+      //    ?lite: no one wants a renderer that can't render.
+      if (params.has('renderer')) return { lite: false, why: 'renderer' };
       // 1. An explicit ask wins, both directions, and is shareable — the reliable
-      //    way back for someone whose device just died mid-boot.
+      //    way back for someone whose device just died mid-boot. (Only a renderer
+      //    outranks it: rule 0.)
       if (params.has('lite')) return { lite: params.get('lite') !== '0', why: 'url' };
       // 2. The last full boot armed the tripwire and never came back to clear it.
       //    Whatever killed it — RAM, GPU, an OS that reaped the tab — this device has
@@ -1913,11 +1925,16 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // loading and it still dropped me down to the lite client"). An OOM kill or a hung
     // renderer runs no handler, so those still count. A bfcache restore re-arms, unless
     // boot.js has already disarmed for good.
+    //
+    // A RENDERER ARMS NOTHING. The tripwire can't demote it (rule 0), and its watchdog's kills
+    // would only leave a flag in the profile for whoever opens this world in it next.
     const armKey = tripKey(params);
     const arm = () => { try { localStorage.setItem(armKey, String(Date.now())); } catch { /* as above */ } };
-    arm();
-    addEventListener('pagehide', () => { try { localStorage.removeItem(armKey); localStorage.removeItem(retryKey(params)); } catch { /* as above */ } });
-    addEventListener('pageshow', (e) => { if (e.persisted && !globalThis.__ewTripDisarmed) arm(); });
+    if (!params.has('renderer')) {
+      arm();
+      addEventListener('pagehide', () => { try { localStorage.removeItem(armKey); localStorage.removeItem(retryKey(params)); } catch { /* as above */ } });
+      addEventListener('pageshow', (e) => { if (e.persisted && !globalThis.__ewTripDisarmed) arm(); });
+    }
 
     for (const href of [
       './node_modules/three/build/three.webgpu.js',

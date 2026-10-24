@@ -1,20 +1,68 @@
 // Roaming renderers, end to end, in a real browser against a running server.
 //   bun tools/roaming-renderer-check.ts http://127.0.0.1:<port> [SHOT=path.png]
+//   (each run founds two worlds: start the scratch sequencer with FOUND_DAILY_CAP=off, or the sixth run is refused)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
 // crates). Its arrival alone must send the renderer over (pre-warm); a snapshot must come only once the world is
-// REALIZED (every crate loaded — never a partial frame); a second snapshot is fast (the renderer stays).
+// REALIZED (every crate loaded — never a partial frame); a second snapshot is fast (the renderer stays). Then the
+// watchdog's own check (deploy/render-health.ts health) runs over real devtools: the roamer is healthy, a page with no
+// client is not joined.
 import { chromium } from 'playwright';
 import { strict as assert } from 'node:assert';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { health } from '../deploy/render-health.ts';
 const base = process.argv[2] ?? 'http://127.0.0.1:19347';
 const shot = process.env.SHOT;
 const world = `roam-build-${Date.now().toString(36)}`, lobby = `roam-lobby-${Date.now().toString(36)}`;
 const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ verb: 'spawn', args: { id: `crate-${c}`, lib: `eidoverse/assets/models/crate_large_${c}.glb`, pos: [Math.cos(i * 1.57) * 4, 0, 6 + Math.sin(i * 1.57) * 4], yaw: 0 } }));
 let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | undefined;
-const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+// A devtools port, so the watchdog's own check (deploy/render-health.ts health) can judge the roamer below. Chrome
+// picks it (port 0) and writes it to DevToolsActivePort in its profile, so no other process can take it between the
+// choosing and the binding; that is why this is a persistent context, in a profile this check owns.
+const profile = mkdtempSync(join(tmpdir(), 'roam-check-'));
+const browser = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chrome', viewport: { width: 960, height: 540 },
+  args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--remote-debugging-port=0'] });
+let dbg = 0;
 try {
-  const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  for (let i = 0; i < 50 && !dbg; i++) {
+    try { dbg = Number(readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]) || 0; } catch { await Bun.sleep(100); }
+  }
+  assert.ok(dbg > 0, `Chrome wrote no DevToolsActivePort in ${profile}`);
+  // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
+  // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
+  // A refusal (a sequencer that wants JOIN_TOKEN, a founding cap) fails the check with the server's reason, and so
+  // does silence: this must never hang with the browser above left open.
+  {
+    const f = new WebSocket(base.replace('http', 'ws') + '/ws');
+    try {
+      await new Promise<void>((res, rej) => {
+        const timer = setTimeout(() => rej(new Error(`founding the lobby "${lobby}": no answer in 15 s`)), 15000);
+        const settle = (err?: Error) => { clearTimeout(timer); err ? rej(err) : res(); };
+        f.onerror = () => settle(new Error(`founding the lobby "${lobby}": cannot connect to ${base}`));
+        f.onclose = (e) => settle(new Error(`founding the lobby "${lobby}": the server closed the socket (${e.code} ${e.reason || 'no reason'})`));
+        f.onmessage = (e) => {
+          const m = JSON.parse(String(e.data));
+          if (m.type === 'snapshot') settle();
+          else if (m.type === 'error') settle(new Error(`founding the lobby "${lobby}" was refused: ${m.error}`));
+        };
+        f.onopen = () => f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-founder', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+      });
+    } finally { f.onclose = null; f.close(); }
+  }
+  const page = await browser.newPage();
+  // TRIPPED (default on; TRIPPED=0 skips): the roamer's profile carries what its watchdog's kills leave behind, a
+  // boot tripwire for its lobby and a spent retry. Before index.html's rule 0 that loaded the LITE client, which still
+  // joined as a renderer, was sent to the agent's world, and answered every snapshot "this client has no renderer"
+  // (2026-10-24). The renderer must boot full anyway, and serve.
+  const tripped = process.env.TRIPPED !== '0';
+  if (tripped) await page.addInitScript((w) => {
+    try { localStorage.setItem(`ew-boot-attempt:${w}`, '1'); localStorage.setItem(`ew-boot-retried:${w}`, '1'); } catch { /* storage blocked */ }
+  }, lobby);
   await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check`);
+  const boot = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
+  console.log(JSON.stringify({ tripped, boot }));
+  assert.equal(boot.lite, false, `the roaming renderer boots the full client: ${JSON.stringify(boot)}`);
   await page.waitForFunction(() => !!globalThis.__waterDebug, null, { timeout: 60000 });
   await Bun.sleep(3000);
   const rendererWorld = () => page.evaluate(async () => (await import('/lib/base.js')).CONFIG.world);
@@ -51,5 +99,15 @@ try {
   const second = await snap();
   console.log(JSON.stringify({ second: { status: second.status, ms: second.ms } }));
   assert.equal(second.status, 200); assert.ok(second.ms < 3000, 'the renderer stays: the next snapshot is fast');
-  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms`);
-} finally { clearInterval(keepPose); ws?.close(); await browser.close(); }
+  // THE WATCHDOG'S CHECK, over real devtools: the roamer that just served two snapshots is judged healthy (frames
+  // counted, joined, a frame captured), and a page that is not the client is judged not joined. A verdict that
+  // fails a working renderer killed every roamer every two minutes for a week (docs/INCIDENTS.md, 2026-10-24).
+  const verdict = await health(dbg);
+  console.log(JSON.stringify({ watchdog: verdict }));
+  assert.ok(verdict.healthy && (verdict.fps ?? 0) > 0 && /snap=\d+KB/.test(verdict.reason), `the watchdog judges the working roamer healthy: ${JSON.stringify(verdict)}`);
+  const plain = await browser.newPage();
+  await plain.goto(`${base}/version?probe=plain`);
+  const notClient = await health(dbg, (u) => u.includes('/version?probe=plain'));
+  assert.ok(!notClient.healthy && notClient.reason === 'not joined', `a page with no client is not joined: ${JSON.stringify(notClient)}`);
+  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined`);
+} finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); }

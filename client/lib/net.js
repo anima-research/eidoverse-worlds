@@ -79,7 +79,9 @@ let forgetBytes = () => {};
 let myReachBag = () => undefined;
 // A client with no renderer must still ANSWER a snap — the asker is blocked on the
 // reply id — so the default is an honest error, not silence.
-let snapshot = async () => ({ error: 'this client has no renderer' });
+const noRenderer = async () => ({ error: 'this client has no renderer' });
+let snapshot = noRenderer;
+let warnedNoRenderer = false;
 
 export function wireNet(h) {
   const { participants, forgetBytes: fb, snapshot: snap, myReachBag: rb, toast: tf, ...rest } = h;
@@ -209,12 +211,31 @@ const PAGE_SESSION = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUU
 export function sendJoin() {
   const id = CONFIG.renderer ? `renderer-${CONFIG.name}`
     : CONFIG.spectate ? `retina-${CONFIG.name}` : CONFIG.name;
+  // ?renderer asks to be a renderer; only a client that can render is one. The server
+  // takes the flag at its word: it sends this client snapshots, and if it roams, sends
+  // it to worlds that have no renderer. A lite page with ?renderer used to send it
+  // anyway, and a roaming one was sent into a world where it answered every snapshot
+  // "this client has no renderer". With a renderer present, the world was never sent
+  // a working one (2026-10-24). A client with no snapshot renderer wired (lite.js wires
+  // none) claims neither flag. What happens next depends on how it came. On a door key
+  // or a login it is admitted as an invisible spectator. On the renderers' own
+  // credential, which admits renderers only, it is refused at the door (4003,
+  // tools/access-test.ts 11b). Either way, no snapshot is routed to it. Its id keeps the
+  // renderer- prefix, since that is its name.
+  //
+  // This reads `snapshot` when the join is SENT. main.js wires it before start() opens
+  // the socket (tools/renderer-join-test.ts pins that order).
+  const rendering = CONFIG.renderer && snapshot !== noRenderer;
+  if (CONFIG.renderer && !rendering && !warnedNoRenderer) {
+    warnedNoRenderer = true;
+    console.warn("[net] ?renderer, but this client has no renderer: it does not join as one. A door key admits it as a spectator; the renderers' credential admits renderers only, so with that it is refused.");
+  }
   net.ws.send(JSON.stringify({
     type: 'join', world: CONFIG.world, id,
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
-    renderer: CONFIG.renderer,
-    ...(CONFIG.roam ? { roam: true } : {}),
+    renderer: rendering,
+    ...(rendering && CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
     clock: true,   // the server's time just before the snapshot ('clock' below)
