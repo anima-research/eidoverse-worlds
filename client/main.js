@@ -34,7 +34,7 @@ import './lib/pictures.js';
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode, photoMode,
+  myState, updateMe, updateInput, updateSpectator, setCamYaw, setPosture, togglePhotoMode, photoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
@@ -51,6 +51,13 @@ import {
 } from './lib/net.js';
 import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+// AFTER build/controller/net, not before them. Import position is evaluation
+// order, and listed first this pulled controller and the world/flora/chat/net
+// knot in ahead of everything above it (PR #171 review, item 9). From here
+// every client module it wants — controller, build, world, net, ui, state,
+// colliders, realize/structure — is already evaluated, so it adds only its own
+// pure shared/interaction.js and the boot order is the one that shipped.
+import { tickInteraction } from './lib/interaction.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
@@ -105,7 +112,7 @@ import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
   rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
-  initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
+  initLocalBody, isDowned, activeRagdoll, goLimp, getUp, updateGetUp,
   stepRagdoll, updateMountedMe, updateSeatHint,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
@@ -487,8 +494,9 @@ bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
   const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.guard || m.guard()));
   if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
-  // any movement stands you back up
-  if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
+  // (getting up on movement lives in updateGetUp: it sees keys, stick and
+  //  touch alike, and unlike an autorepeating keydown it can require a
+  //  neutral frame first — a shove must outlive the key you were holding)
   // emotes on the number row — the world is a performance space and there was
   // no way to wave at anyone
   // the range follows the def-hydrated bar order (§24l) — a ninth listed
@@ -586,6 +594,8 @@ setWaterClock(serverNow);
 setTraversalObjects(() => entities);
 registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
+  updateInput(dt);
+  updateGetUp();                            // movement stands a limp body up, once it starts fresh
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (updateVehicle(dt, getMe())) { if (photoMode) togglePhotoMode(); /* the helm owns the keys and camera: never both */ }
@@ -630,6 +640,7 @@ registerSystem('send-pose', (dt, t, now) => sendPose(now));
 registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
+registerSystem('object-interaction', () => tickInteraction());
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
