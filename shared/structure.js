@@ -949,11 +949,13 @@ export function openingsOf(level, room) {
  *  has its own north, and saying "north" about it while a person reads a world
  *  compass would be a quiet lie. The phrasing says whose north it is. */
 export function describeHere(plan, lx, lz, ly = 0) {
-  const level = plan.levels.find((lv) => lv.rooms.some((r) => r.cells.includes(
-    cellKey(Math.floor(lx / plan.grid.tile), Math.floor(lz / plan.grid.tile)))));
-  if (!level) return null;
-  const room = roomAt(plan, lx, lz, ly);
-  if (!room) return null;
+  // One resolution for both: the level this room belongs to, never a level
+  // re-derived from the cell key alone (cell keys are x,z, so on a stacked
+  // building a key-only lookup always answers with the ground floor and its
+  // doors — ew#140).
+  const here = levelAt(plan, lx, lz, ly);
+  if (!here) return null;
+  const { level, room } = here;
   const w = (room.max[0] - room.min[0]).toFixed(0), d = (room.max[1] - room.min[1]).toFixed(0);
   const name = room.label ? `the ${room.label}` : `an unnamed room (${room.id})`;
   const ways = openingsOf(level, room);
@@ -990,10 +992,17 @@ export function describeStructure(data) {
  *  point, and the thing that makes "which room am I in" O(1) instead of a
  *  geometric query against triangles. */
 export function roomAt(plan, lx, lz, ly = 0) {
-  const tile = plan.grid.tile;
-  void tile;
-  // Nearest level at or below the point, so a first storey doesn't answer for
-  // someone standing on the second.
+  return levelAt(plan, lx, lz, ly)?.room ?? null;
+}
+
+/** The storey a point stands on AND the room it stands in, resolved once:
+ *  the highest level whose surface is at most half a metre above the point
+ *  (so a first storey doesn't answer for someone standing on the second)
+ *  that has a room at that cell. roomAt
+ *  and the describer both go through here, so the doors described to someone
+ *  upstairs are their own room's; with one level it can only ever return that
+ *  level. Null when the point is in no room on any reachable storey. */
+export function levelAt(plan, lx, lz, ly = 0) {
   let best = null;
   for (const lv of plan.levels) {
     if (lv.y > ly + 0.5) continue;
@@ -1002,7 +1011,7 @@ export function roomAt(plan, lx, lz, ly = 0) {
       if (room) best = { y: lv.y, level: lv, room };
     }
   }
-  return best ? best.room : null;
+  return best ? { level: best.level, room: best.room } : null;
 }
 
 // ---- routing ----------------------------------------------------------------

@@ -7,6 +7,7 @@
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
+import { foldOffset } from "../shared/clockoffset.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams, waterStance, SWIM_SPEED, SWIM_RUN } from "../shared/terrainshape.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
@@ -18,7 +19,7 @@ import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, ReachBody, setHeightField, setWaterField, registerSupport, registerSupportGrid, registerMeshSupport, removeSupport, standOn, collidersReady, navProbe, collidersGeneration, inWorld } from "./physics.ts";
-import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, type NavTarget } from "./navgrid.ts";
+import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavTarget } from "./navgrid.ts";
 import { placesOf, inRegion, names, destinationOf, toLocal, type Place, type Destination, type PlaceHolder } from "./places.ts";
 import { collisionTriangles } from "../server/geometry.ts";
 // FLIGHT. The same deterministic integrator the browser bench and the capture
@@ -35,6 +36,31 @@ import { wingFoldPresence } from "../shared/wingpresence.js";
 import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
+/** An act's answer for its tool. `ok` is false when the call didn't do what
+ *  it asked: a refusal, a cut, a climb or glide that fell short, a name the
+ *  world refused. A call that changed nothing because what it asked for
+ *  already held is ok. */
+export interface ActResult { ok: boolean; text: string }
+const done = (text: string): ActResult => ({ ok: true, text });
+const refused = (text: string): ActResult => ({ ok: false, text });
+/** A body down: limp wings, in the air (LEAF), on the ground (RAGDOLL) or sitting up (RECOVER). */
+const isDown = (phase: string) => phase === "LEAF" || phase === "RAGDOLL" || phase === "RECOVER";
+// In the air the limp fall ends when the body reaches the ground (RAGDOLL) or with a recovery
+// (shared/flight.js bodyRecovered, which the door sends only in rehearsal); on the ground, take_off
+// launches afresh from wherever the body lies (takeOff).
+/** Why a body that's down can't fly now, and what gets it flying again. A limp fall whose recovery began
+ *  in the air (LEAF with recoverAt set) flies on by itself once it's done, unless it meets the ground
+ *  first (shared/flight.js). */
+const downRefusal = (f: { phase: string; recoverAt?: number | null }) => f.phase === "LEAF"
+  ? f.recoverAt != null
+    ? "you're falling limp (leaf) with your recovery under way — you fly again once it's done, unless you reach the ground first"
+    : "you're falling limp (leaf) — once you're down on the ground, take_off launches you again"
+  : `you're down on the ground (${f.phase.toLowerCase()}) — take_off to fly again`;
+/** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
+ *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
+ *  8 s beside for what the leg's rate leaves out, such as a climb's lift easing in. */
+const legWaitMs = (legS: number) => Math.round((legS * 1.5 + 8) * 1000);
+
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
 const worldYaw = (y: number) => Math.PI / 2 - y;
@@ -43,6 +69,10 @@ const worldYaw = (y: number) => Math.PI / 2 - y;
 const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
   TOUCH_GAP, sameReach } from "../shared/reachwire.js";
+import { shown } from "../shared/shown.js";
+/** reach and clear_reach refuse a limb in the same words. */
+const unknownLimb = (raw: unknown, done: string) =>
+  `there's no limb called ${shown(raw)}, so nothing was ${done}; limb takes leftHand, rightHand, leftFoot or rightFoot`;
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
@@ -57,11 +87,11 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
-import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeParticles, emitterTransition, transitionLine, isParticlesKey, emittersIn } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
-import { describeStructure, describeHere, localizePoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
+import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -82,6 +112,8 @@ const BONES_NOT_KNOWN = "this body's bones aren't known (its model hasn't loaded
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
  *  fire out" still arrives while you are looking at it. */
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
+/** One narration window per (entity, emitter component). */
+const emitterSlot = (id: string, key: string) => (key === "particles" ? id : `${id}\u0000${key}`);
 
 type Vec2 = { x: number; z: number };
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
@@ -248,6 +280,37 @@ export const WALK_ARGS_REASON = "walk_to needs finite x/z and tolerance between 
  *  log names each once (walkStructures). */
 const UNPLANNABLE_LOGGED = new WeakSet<object>();
 
+/** Whether a structure's level has floor at a point in the structure's own
+ *  frame: a tile under the point and, on a cell a diagonal cuts, a floor on
+ *  the half the point falls in (the other half is a hole). */
+function floorAtLocal(plan: any, lv: any, lx: number, lz: number): boolean {
+  const cx = Math.floor(lx / plan.grid.tile), cz = Math.floor(lz / plan.grid.tile);
+  if (!lv.level.tiles.has(cellKey(cx, cz))) return false;
+  const node = nodeAtPoint(lv.level, plan.grid, lx, lz);
+  return !node.includes(":") || halfFloored(lv.level, cx, cz, node.split(":")[1]);
+}
+
+/** A floor walk's navgrid probe, standing nowhere lower than the walk's
+ *  floor. The walk's feet go no lower than that floor's height to its end:
+ *  its ground is the floor's height (walkHeightAt), and stepFeet stands them
+ *  on what's placed above it, never below. So a column whose ground is
+ *  lower is no ground at all. Without that, placed tops a step apart could
+ *  lead the grid down beside the floor, to the drop walkProbeGround answers
+ *  off it or onto a platform below, and route the walk across them with the
+ *  feet held at the floor's height, over the air. At or above the floor the
+ *  grid stands where the feet do, on what's placed there. `GROUNDED` is
+ *  stepFeet's own nearness: feet that near a surface stand on it. */
+function onOrAboveFloor(probe: NavProbe, floor: number): NavProbe {
+  const GROUNDED = 0.02;
+  return {
+    surfaceUnder: probe.surfaceUnder,
+    stand: (x, y, z) => {
+      const s = probe.stand(x, y, z);
+      return s.ground >= floor - GROUNDED ? s : { ground: -Infinity, push: s.push };
+    },
+  };
+}
+
 /** How far a body standing in a wall looks for a clear point to step out
  *  to, nearest first, and in how many directions (planWalk). */
 const STEP_OUT_METRES = [0.05, 0.1, 0.2, 0.35, 0.5], STEP_OUT_DIRECTIONS = 16;
@@ -345,6 +408,15 @@ export class WorldAgent {
    *  haunted princess across sessions and joiners for weeks (#61). */
   heldPoseAuthored = false;
 
+  /** The height of the feet when this body was last knocked over standing
+   *  (knockDown). A canned slump, held before any sim has run or with no sim
+   *  to run, keeps its root at that height: the fallback with no body to
+   *  simulate shoves it along, and nothing lifts or lowers it until a sim's
+   *  frame or a dragging hand puts it where physics lays it. So a slumped
+   *  body whose root is still at this height is a canned slump (rootCanned),
+   *  and any other has its feet RAGDOLL_ROOT_DROP above its root (feetY). */
+  private cannedY: number | null = null;
+
   /** The exact pose object that was granted "hold this while I walk".
    *
    *  Stored as the OBJECT, not a boolean, and compared by identity — so any
@@ -431,9 +503,10 @@ export class WorldAgent {
     this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
     return true;
   }
-  /** Open coalescing windows for world-change narration, keyed by entity id.
+  /** Open coalescing windows for world-change narration, one per (entity,
+   *  emitter component) — see emitterSlot.
    *  See noteEmitter. */
-  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
+  private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; key: string; timer: ReturnType<typeof setTimeout> }>();
   private lastNear = new Map<string, number>(); // participant -> last approach-ping ts
   /** approach re-arm: after a walk-up ping, the SAME person must actually go
    *  away (> REARM_RADIUS) before another boundary crossing can ever count —
@@ -681,21 +754,31 @@ export class WorldAgent {
     console.error(`[agent ${this.name}] malformed ${verb} entry — position kept: ${JSON.stringify(args)?.slice(0, 160)}`);
   }
 
-  /** Server-to-local clock offset, smoothed — the headless serverNow()
-   *  (mirrors client/lib/remotes.js: same source, same 0.92/0.08 EMA).
+  /** Server-to-local clock offset — the headless serverNow(), kept as
+   *  client/lib/remotes.js keeps it: the same samples, by the same rule
+   *  (shared/clockoffset.js: the least-delayed sample wins, so a late frame
+   *  moves it by no more than the leak), on the same kind of clock: this
+   *  process's monotonic one (localNow), which a step of the host's wall
+   *  clock can't move.
    *  Motion is a function of SEQUENCER time; evaluating it on a skewed host
    *  clock makes this body report a different pendulum phase than every
    *  browser looking at the same swing, while both run the same closed form
-   *  (#92 review, B1). Fed from the embodied plane's frame stamps. */
-  private clockOffset: number | null = null;
+   *  (#92 review, B1). Fed from the clock message the server sends just
+   *  before each snapshot to a join that asks, as this agent's joins do, and
+   *  from the embodied plane's frame stamps. */
+  private clock: { offset: number; at: number } | null = null;
+  /** This process's own clock in epoch ms, monotonic: performance.now() from
+   *  its origin, as a browser's serverNow() reads its own. */
+  localNow(): number { return performance.timeOrigin + performance.now(); }
   noteServerTime(t: unknown) {
     if (typeof t !== "number" || !Number.isFinite(t)) return;
-    const sample = t - Date.now();
-    this.clockOffset = this.clockOffset === null ? sample : this.clockOffset * 0.92 + sample * 0.08;
+    const now = this.localNow();
+    this.clock = foldOffset(this.clock, t - now, now);
   }
   /** Epoch ms on the sequencer's clock, best estimate. Before the first
-   *  frame lands this is local time — the browser's exact fallback. */
-  serverNow(): number { return Date.now() + (this.clockOffset ?? 0); }
+   *  clock message or frame lands this is local time — the browser's exact
+   *  fallback. */
+  serverNow(): number { return this.localNow() + (this.clock?.offset ?? 0); }
 
   /** A composition gap is a perception limit, not a world error: say so a
    *  few times (the noteMalformed bound), then stay quiet. Callers that hit
@@ -733,7 +816,7 @@ export class WorldAgent {
       // Knowing whether the thing across the table thinks in tokens or neurons
       // matters here in a way it doesn't in a chat app.
       ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
       ws.onclose = (ev) => {
         this.joined = false;
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
@@ -924,18 +1007,28 @@ export class WorldAgent {
             // posed BY someone = authored. merge: only the bones sent, over an
             // authored held pose (null releases one); otherwise the pose is
             // theirs whole, and an empty one releases.
+            // Say what the request leaves this body holding, as the browser's
+            // hint does: a pose, or its pose released, whether by the pose it
+            // carried or by a replacing animation, which ends a held pose
+            // too; and any animation. A request that carried no pose and no
+            // animation (a knock-over has its own line above) says nothing.
+            let posed: string | null = null;
             if (msg.pose) {
               const next = msg.merge ? mergePose(this.heldPoseAuthored ? this.heldPose : null, msg.pose)
                 : (Object.keys(msg.pose).length ? msg.pose : null);
               this.heldPose = next; this.heldPoseAuthored = next != null;
+              posed = next ? "posed you" : "released your pose";
             }
             if (msg.anim) {
               const anim = { ...msg.anim, replace: (msg.anim as { replace?: boolean }).replace !== false };
-              if (anim.replace) { this.heldPose = null; this.heldPoseAuthored = false; }
+              if (anim.replace) {
+                if (this.heldPoseAuthored && this.heldPose) posed = "released your pose";
+                this.heldPose = null; this.heldPoseAuthored = false;
+              }
               this.ws?.send(JSON.stringify({ type: "anim", ...anim }));
             }
-            this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,
-              text: `(posed you${msg.anim ? " with an animation" : ""})` } as any);
+            if (posed || msg.anim) this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,
+              text: `(${posed ?? "posed you"}${msg.anim ? `${posed ? "," : ""} with an animation` : ""})` } as any);
             break;
           case "bodydrag":
             // A renderer-backed dragger runs the physics this headless body
@@ -1060,10 +1153,16 @@ export class WorldAgent {
           case "pose":
             this.notePose(msg.id, msg.pose);
             break;
+          case "clock":
+            // the server's time, sent just before each snapshot to a join
+            // that asks, as this agent's do, so the estimate is set from the
+            // join on, as the browser's is
+            this.noteServerTime((msg as { t?: unknown }).t);
+            break;
           case "frame":
             // batched embodied plane: latest pose per id, one message per tick.
             // The frame's server stamp also feeds the clock estimate — the
-            // same source the browser smooths into serverNow() (#92, B1).
+            // same samples the browser folds into serverNow() (#92, B1).
             this.noteServerTime((msg as { t?: unknown }).t);
             for (const [id, pose] of Object.entries(msg.poses as Record<string, Pose>)) {
               if (id !== this.name) this.notePose(id, pose);
@@ -1120,7 +1219,10 @@ export class WorldAgent {
     const mount = this.mounts.get(observation.who);
     if (!mount || !observation.pose) return observation;
     const effective = this.eff(observation.who, this.serverNow());
-    if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
+    // Standing is getting off the seat (setPosture), the one way out a reader has, once joined.
+    if (!effective.ok) return { ...observation, error: observation.self
+      ? `nothing of your body was read, since your seat can't be placed: ${effective.why}; posture {kind: "stand"} gets you off it${this.joined ? "" : " once this body has rejoined the world"}`
+      : `nothing of ${observation.who}'s body was read, since their seat can't be placed: ${effective.why}` };
     const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
     const clip = socket?.pose ?? "sitchair";
     return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
@@ -1444,7 +1546,7 @@ export class WorldAgent {
         // in the world — the one component type with a live sensory event.
         // Replay reconstructs the state above and stops there: a fire that was
         // lit last week is in look(), not in your ears (#25).
-        if (args.type === "particles" && live) {
+        if (isParticlesKey(args.type) && live) {
           // proximity-gate on where the emitter's owner ACTUALLY is — a
           // carried lantern is judged at the carrier, not at its pre-mount
           // spot (#82). When the chain cannot compose, ABSTAIN: gating on
@@ -1452,7 +1554,7 @@ export class WorldAgent {
           // an abandoned address and miss those beside the actual carrier
           // (#92, B2). The gap is logged, bounded, not performed.
           const fx = this.eff(String(args.id), this.serverNow());
-          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
+          if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts, args.type);
           else this.noteEffGap(String(args.id), fx.why);
         }
         // a motion arriving or leaving changes whether this thing may hold a
@@ -1602,7 +1704,8 @@ export class WorldAgent {
    * A live `particles` attach / replace / remove near this body — ONE ambient
    * world-change percept, never per particle and never per frame (#25).
    *
-   * Coalesced by (entity, component): the first change in a quiet period
+   * Coalesced by (entity, component) — `particles` and `particles:smoke` on
+   * one hearth are two emitters and narrate apart: the first change in a quiet period
    * speaks at once (someone lighting a fire beside you is news the moment it
    * happens), and everything inside the following window is folded into at
    * most one further line describing the NET result. So dragging a parameter
@@ -1615,43 +1718,44 @@ export class WorldAgent {
    * `nowMs`/`setTimer` are injectable for tests.
    */
   private noteEmitter(actor: string | undefined, id: string, before: unknown, after: unknown,
-                      pos: number[] | undefined, ts: number) {
+                      pos: number[] | undefined, ts: number, key = "particles") {
     if (!actor || actor === this.name || actor === "world") return;
     if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
-    const slot = this.emitterNarration.get(id);
+    const slot = this.emitterNarration.get(emitterSlot(id, key));
     if (slot) {                       // inside the quiet window — fold, don't speak
       slot.latest = after;
       slot.actor = actor;
       return;
     }
-    const line = transitionLine(actor, id, emitterTransition(before, after));
+    const line = transitionLine(actor, id, emitterTransition(before, after), key);
     if (line) {
       this.act30.builds++;            // it feeds the activity digest like any build
       this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
     }
-    this.openEmitterWindow(id, actor, after);
+    this.openEmitterWindow(id, actor, after, key);
   }
 
-  private openEmitterWindow(id: string, actor: string, announced: unknown) {
+  private openEmitterWindow(id: string, actor: string, announced: unknown, key = "particles") {
+    const slotKey = emitterSlot(id, key);
     const close = () => {
-      const slot = this.emitterNarration.get(id);
+      const slot = this.emitterNarration.get(slotKey);
       if (!slot) return;
-      this.emitterNarration.delete(id);
+      this.emitterNarration.delete(slotKey);
       const t = emitterTransition(slot.announced, slot.latest);
       if (!t) return;                 // the burst netted out to what we already said
-      const line = transitionLine(slot.actor, id, t);
+      const line = transitionLine(slot.actor, id, t, key);
       if (line) {
         this.act30.builds++;
         this.onEvent?.({ ts: Date.now(), kind: "world-change", who: slot.actor, text: line });
       }
       // A continuous burst speaks once per window rather than being silenced
       // forever by its own persistence — same rule the act refractory uses.
-      this.openEmitterWindow(id, slot.actor, slot.latest);
+      this.openEmitterWindow(id, slot.actor, slot.latest, key);
     };
     const timer = setTimeout(close, EMITTER_COALESCE_MS);
     // never hold the process open for a decoration
     (timer as unknown as { unref?: () => void }).unref?.();
-    this.emitterNarration.set(id, { announced, latest: announced, actor, timer });
+    this.emitterNarration.set(slotKey, { announced, latest: announced, actor, key, timer });
   }
 
   /** The push half of sky perception (the pull half is look()). Runs at 1Hz
@@ -1805,6 +1909,142 @@ export class WorldAgent {
     let plan = WorldAgent.plans.get(data);
     if (!plan) { plan = planStructure(data); WorldAgent.plans.set(data, plan); }
     return plan;
+  }
+
+  /** The upper storey of a griddled building that the feet stand on at
+   *  (x, z), if any: the structure, the level's index and the floor's world
+   *  height. Griddled structures are outside the headless colliders (their
+   *  walls are routed by walkStructures), so this is how the feet, a walk's
+   *  support and its routes know such a floor is there (ew#140). A storey
+   *  counts when it rests above its building's base, its floor is more than
+   *  the walk grid's step (NAV_STEP, 0.55 m) above the terrain under the
+   *  point, `yHint`, the feet's height, is no more than a route step
+   *  (ROUTE_STEP_METRES, 0.5 m) below it and less than its storey's height
+   *  (the grid's wallH, the router's floor-to-floor) above it, and it has a
+   *  tile under the point and, on a cell a diagonal cuts, a floor on the half
+   *  the point falls in: the other half is a hole. A level resting on the
+   *  base or below it, such as a ground floor at the base or a basement, is
+   *  the terrain's: a body there walks on the terrain, in and out of the
+   *  building, as the router's terrain walk expects. A ground floor declared
+   *  above the base is a raised floor like any other. A floor within a body's
+   *  step (NAV_STEP) of the terrain is the terrain's, such as a low porch: a
+   *  body steps on and off it as it walks, and a floor route can't step down
+   *  off its edge, so standing on it would keep a body that walked onto it
+   *  there. That's decided under the point, so a deck over rising ground is
+   *  the terrain's, for standing, where the ground comes within a step of it:
+   *  a floor walk on the deck still crosses that part at the deck's height
+   *  (walkProbeGround), and the feet stand on the terrain there once the walk
+   *  ends, as on a porch. Feet anywhere in the storey count, on something
+   *  placed on its floor too (a table, a bed, a landing), so a body standing
+   *  up on a table upstairs walks on from that floor. Where two storeys'
+   *  ranges meet, feet within a route step below the upper floor and still
+   *  under the lower storey's height, the highest floor wins: feet stepping
+   *  up onto it are on it. `yHint` only picks which real floor qualifies and
+   *  never becomes the height, so a body far above the house is not on its
+   *  top storey. Each building is placed where it
+   *  is now (eff), as walkStructures places it, and one that can't be read
+   *  costs only itself. */
+  private storeyUnder(x: number, z: number, yHint = this.pos.y): { entity: string; level: number; height: number } | null {
+    const terrain = this.heightAt(x, z), nowMs = this.serverNow();
+    let best: { entity: string; level: number; height: number } | null = null;
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
+        const plan = this.planOf(data);
+        if (!plan.levels.some((lv: any) => lv.base > 0)) continue;
+        const fx = this.eff(e.id, nowMs);
+        if (!fx.ok) continue;
+        const sc = fx.scale > 0 ? fx.scale : 1;
+        const [lx, ly, lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, yHint, z);
+        for (let i = 0; i < plan.levels.length; i++) {
+          const lv: any = plan.levels[i];
+          if (!(lv.base > 0) || lv.y - ly > ROUTE_STEP_METRES / sc || ly - lv.y >= plan.grid.wallH || !floorAtLocal(plan, lv, lx, lz)) continue;
+          const height = fx.pos[1] + lv.y * sc;
+          if (height - terrain > NAV_STEP && (!best || height > best.height)) best = { entity: e.id, level: i, height };
+        }
+      } catch { /* a malformed house must not cost the body its feet */ }
+    }
+    return best;
+  }
+
+  /** The floors a floor walk tells apart at (x, z): the ground (entity
+   *  null), which takes the terrain and every floor within a step of it, as
+   *  storeyUnder does for standing, and each griddled storey with a floor at
+   *  the point, at any height. Where the walk's own floor, `own`, lies within
+   *  a step of the terrain either way, as at a deck's low end, the ground
+   *  there is that floor: a floor walk crosses it at the floor's height, and
+   *  the feet stand on the terrain once it ends (storeyUnder). */
+  private floorsAt(x: number, z: number, own: { entity: string; level: number }): { entity: string | null; level: number; height: number }[] {
+    type Floor = { entity: string | null; level: number; height: number };
+    const terrain = this.heightAt(x, z), nowMs = this.serverNow();
+    const floors: Floor[] = [{ entity: null, level: -1, height: terrain }];
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
+        const plan = this.planOf(data);
+        const fx = this.eff(e.id, nowMs);
+        if (!fx.ok) continue;
+        const sc = fx.scale > 0 ? fx.scale : 1;
+        const [lx, , lz] = localizePoint({ pos: fx.pos, yaw: fx.yaw, scale: sc }, x, 0, z);
+        plan.levels.forEach((lv: any, i: number) => {
+          if (!(lv.base > 0) || !floorAtLocal(plan, lv, lx, lz)) return;
+          const height = fx.pos[1] + lv.y * sc;
+          if (height - terrain > NAV_STEP) floors.push({ entity: e.id, level: i, height });
+          else if (own.entity === e.id && own.level === i && terrain - height <= NAV_STEP) floors[0] = { entity: e.id, level: i, height };
+        });
+      } catch { /* a malformed house costs only itself, as in storeyUnder */ }
+    }
+    return floors;
+  }
+
+  /** Of the floors a floor walk tells apart at (x, z) (floorsAt), the one a
+   *  destination's height means, by walk_to's rule for a height, the
+   *  navgrid's (mcpl/navgrid.ts, route): the one nearest y, no more than
+   *  `above` (NAV_STEP unless given) above it and, with `below`, no more than
+   *  that below it; null when none is. Ties go to the walk's own floor, then
+   *  to the higher. With `body`, y is a body's root and the floor is the one
+   *  it is on: the highest that fits, not the nearest, since a body lies up to
+   *  RAGDOLL_ROOT_DROP above its root, and none stands with a floor less than
+   *  that above its feet. Surfaces placed there are the navgrid's to read
+   *  (placedNear). */
+  private floorMeant(x: number, z: number, y: number, near: { above?: number; below?: number },
+    own: { entity: string; level: number }, body = false): { entity: string | null; level: number; height: number } | null {
+    type Floor = { entity: string | null; level: number; height: number };
+    const floors = this.floorsAt(x, z, own);
+    const fits = (h: number) => h <= y + (near.above ?? NAV_STEP) && (near.below == null || h >= y - near.below);
+    const isOwn = (f: Floor) => f.entity === own.entity && f.level === own.level;
+    let best: Floor | null = null;
+    for (const f of floors) {
+      if (!fits(f.height)) continue;
+      const d = body ? -f.height : Math.abs(f.height - y), bd = !best ? Infinity : body ? -best.height : Math.abs(best.height - y);
+      if (!best || d < bd - 1e-6 || (Math.abs(d - bd) <= 1e-6 && (isOwn(f) && !isOwn(best) || isOwn(f) === isOwn(best) && f.height > best.height))) best = f;
+    }
+    return best;
+  }
+
+  /** Whether something placed on a floor walk's own floor stands at about
+   *  height y at (x, z): the top of a collider over the point within the
+   *  destination's bounds (`above` and `below`, a step each unless given),
+   *  no lower than the floor, as the walk's own navgrid probe stands
+   *  (onOrAboveFloor), and under `ceiling`, the next floor above it there,
+   *  on which anything higher rests. */
+  private placedNear(x: number, z: number, y: number, near: { above?: number; below?: number }, floor: number, ceiling = Infinity): boolean {
+    const probe = navProbe((px, pz) => this.heightAt(px, pz));
+    if (!probe) return false;
+    const top = inWorld(this.world, () => probe.surfaceUnder(x, z, Math.min(y + (near.above ?? NAV_STEP), ceiling - 0.02)));
+    return top > this.heightAt(x, z) + 1e-6 && top >= y - (near.below ?? NAV_STEP) && top >= floor - 0.02;
+  }
+
+  /** The height the feet belong at: an upper storey's floor under them
+   *  (storeyUnder), else the terrain. Every standing body's ground goes
+   *  through here: the idle tick's, a stand-up's, and a flight's at its
+   *  start and end (a walk's is its support's, walkSupport). A flight under way and a tumble's
+   *  physics read the terrain alone, since griddled floors aren't headless
+   *  colliders. */
+  groundAt(x: number, z: number, yHint = this.pos.y): number {
+    return this.storeyUnder(x, z, yHint)?.height ?? this.heightAt(x, z);
   }
 
   // ---- support surfaces (#17) ----------------------------------------------
@@ -2109,7 +2349,7 @@ export class WorldAgent {
         let sp = this.target.run ? RUN : WALK;
         let swimming = false;
         if (this.water) {
-          const ground = admittedHeight ?? ((x: number, z: number) => this.heightAt(x, z));
+          const ground = admittedHeight ?? this.standingGround();
           const st = waterStance(this.water.level, ground(this.pos.x, this.pos.z), this.stature());
           swimming = st.swimming;
           sp = swimming ? (this.target.run ? SWIM_RUN : SWIM_SPEED) : sp * st.speedFactor!;
@@ -2124,7 +2364,7 @@ export class WorldAgent {
     // A tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // ground is for FEET, and none of those states is standing on them.
     const feetFree = !this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight;
-    const ground = admittedHeight ?? ((x: number, z: number) => this.heightAt(x, z));
+    const ground = admittedHeight ?? this.standingGround();
     const target = this.target;
     const bodyYBeforeFeet = this.pos.y; // entering water starts from the body, not a support snap
     const supportHeld = feetFree && ((collidersReady() && this.mounts.has(this.name)) || this.feetSettling);
@@ -2210,6 +2450,9 @@ export class WorldAgent {
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (!this.pushable || this.draggedBy) return;
+    // knocked over standing, the root is at the feet's height until something
+    // lifts or lowers it; a body already down keeps the reading its root has
+    if (!this.isSlumped()) this.cannedY = this.pos.y;
     if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
@@ -2221,11 +2464,16 @@ export class WorldAgent {
     // knocked over is a fact about the blow, not about our readiness to
     // simulate it; the canned slump holds the shape until the sim produces a
     // real pose, exactly as it does when there is no sim at all.
+    // A fall starts from the pose the body is drawn in, as a browser's sim
+    // starts from the bones it draws (a kneel falls from kneeling height):
+    // what it holds when the fall begins (tumble). This is what it held when
+    // the blow landed, for when that is still the canned slump put up below.
+    const held = this.heldPose;
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
     this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
     this.onEvent?.({ ts: Date.now(), kind: "say", who: by, text: notice } as any);
-    void this.tumble(lean);
+    void this.tumble(lean, held);
   }
 
   private async ensureBody(): Promise<HeadlessBody | null> {
@@ -2248,7 +2496,7 @@ export class WorldAgent {
    *  that finds it changed abandons itself. */
   private bodyEpoch = 0;
 
-  private async tumble(lean: number[] | null) {
+  private async tumble(lean: number[] | null, held: Record<string, PoseValue> | null = null) {
     const epoch = ++this.bodyEpoch;
     const body = await this.ensureBody();
     if (this.bodyEpoch !== epoch) return;
@@ -2278,9 +2526,14 @@ export class WorldAgent {
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
-      // a swimmer goes limp where it floats, not on the bed under it (a browser's doll starts from its live
-      // skeleton; a headless one is stood on the ground unless told otherwise)
-      ...(this.float.on ? { rootY: this.pos.y } : {}),
+      // What the body holds now: a pose given or released while the fall
+      // waited counts. Only the canned slump the blow itself put up isn't a
+      // pose the body was drawn in before it, so then the one it held when
+      // the blow landed.
+      pose: this.heldPose === DOWNED_POSE ? held : this.heldPose,
+      // where it stands, on a floor or a support, or where a swimmer floats:
+      // not the terrain or the bed under it
+      rootY: this.pos.y,
       pins: [...this.pins].map(([j, at]) => ({ j, at })),
     });
     this.clip = "ragdoll";
@@ -2372,6 +2625,13 @@ export class WorldAgent {
   /** The vigil posture, mirrored for anything that renders this body. */
   wingsFolded = false;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
+  /** Counts of the calls that set the flight's course (glide_to, a landing's glide among them, climb_to and take_off's
+   *  fresh flight), and of those that set or end its climb (climb_to, land_at and take_off). A call's own answer ends
+   *  the flight or stops its climb only while no later call has taken it over: the stdio door runs calls as they come,
+   *  and a call whose host has stopped waiting for it goes on beside the host's next one. The flight's own object
+   *  can't tell, since every tick replaces it. */
+  private flightCourse = 0;
+  private climbCourse = 0;
 
   /** Install one server-folded effective-rights answer. If flight was
    * withdrawn while aloft, ownership passes to the visible falling-leaf
@@ -2383,6 +2643,8 @@ export class WorldAgent {
         this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED" &&
         this.flight.phase !== "RAGDOLL" && this.flight.phase !== "LEAF") {
       this.flight = flightDown(this.flight, { eventId: "capability-revoked" });
+      // A wait on the flight hears of the down now, as at flightBodyDown.
+      this.flightSettle();
       this.inbox.push({ ts: Date.now(), kind: "act", who: actor,
         text: "withdrew your flight while you were aloft, so you're coming down under the falling-leaf reflex; you can fly again once the world's owner grants it" });
     }
@@ -2441,12 +2703,12 @@ export class WorldAgent {
     return this.bodyBoneNames;
   }
 
-  private flightBegin() {
+  private flightBegin(feetY = this.pos.y) {
     this.flightCfg ??= flightConfig();
     this.stop();                       // a body that takes off is done walking
     this.flight = flightState({
       phase: "GROUND",
-      pos: { x: this.pos.x, y: this.heightAt(this.pos.x, this.pos.z), z: this.pos.z },
+      pos: { x: this.pos.x, y: this.groundAt(this.pos.x, this.pos.z, feetY), z: this.pos.z },
       // ...in the INTEGRATOR's convention. Seeding it with a world yaw started
       // every flight a quarter-turn off its own heading.
       yaw: intYaw(this.yaw),
@@ -2515,7 +2777,8 @@ export class WorldAgent {
     });
     if (this.flight.climbTo != null &&
         Math.abs(this.flight.climbTo - this.flight.pos.y) < 0.4) {
-      this.flight.pos.y = this.flight.climbTo;
+      // Met in the air, a climb ends at its height. Met on the ground, it ends where the body stands.
+      if (this.flight.phase !== "LANDED" && this.flight.phase !== "GROUND") this.flight.pos.y = this.flight.climbTo;
       this.flight.climbTo = null;
       this.flightSettle();
     }
@@ -2567,38 +2830,47 @@ export class WorldAgent {
     const now = test(this.flight);
     if (now != null) return Promise.resolve(now);
     return new Promise((res) => {
-      const w = { done: res, test };
-      this.flightWaiters.push(w);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const i = this.flightWaiters.indexOf(w);
         if (i >= 0) { this.flightWaiters.splice(i, 1); res("timed out aloft"); }
       }, timeoutMs);
+      // A wait answered before its time clears its timer, so an answered act holds nothing open.
+      const w = { done: (r: string) => { clearTimeout(timer); res(r); }, test };
+      this.flightWaiters.push(w);
     });
   }
 
   /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
-  async takeOff(): Promise<string> {
+  async takeOff(): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.wingsFolded) return `still standing — wings folded; unfold_wings opens them`;
+    if (this.wingsFolded) return refused(`still standing — wings folded; unfold_wings opens them`);
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
     // the ground with the stamina already spent. A launch is a fresh flight
     // from wherever the body actually is.
-    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
+    // A limp fall can't be launched out of: the body is in the air, and starting a fresh flight from the
+    // ground under it would move it there.
+    if (this.flight?.phase === "LEAF") return refused(downRefusal(this.flight));
+    // The floor it takes off from is found from its feet, read before the
+    // slump that puts them RAGDOLL_ROOT_DROP above the root is cleared.
+    const feetY = this.feetY(this.isSlumped());
+    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin(feetY);
     // ...and the ragdoll, if one is still running, no longer owns her.
     this.body?.stop(); this.stopSim();
     this.heldPose = null; this.heldPoseAuthored = false;
     this.flight = flightTakeOff(this.flightCfg, this.flight,
-      { groundY: this.heightAt(this.pos.x, this.pos.z) });
+      { groundY: this.groundAt(this.pos.x, this.pos.z, feetY) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
-    if (ev) { return `still standing — ${ev.reason}`; }
-    return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
+    if (ev) { return refused(`still standing — ${ev.reason}`); }
+    // A fresh flight in the air takes over from any landing or climb still waiting on the one before.
+    this.flightCourse++; this.climbCourse++;
+    return done(`took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`);
   }
 
   // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
@@ -2628,22 +2900,31 @@ export class WorldAgent {
    *  Folding is a GROUND posture and needs no flight state to exist, so it
    *  lazily makes one rather than demanding take_off first -- a body standing
    *  in the world has wings whether or not it has flown today. */
-  async foldWings(fold: boolean): Promise<string> {
+  async foldWings(fold: boolean): Promise<ActResult> {
     await this.loadBodyBones();
     // Folding is body autonomy, not propulsion authority. A world may deny
     // `fly` while the person still closes or opens wings they visibly wear.
     // The rig check prevents a wingless body from claiming a silhouette it
     // cannot render; take_off remains separately grant-gated.
-    // The rig decides a fold, and an unfold when nothing is folded. Releasing a
-    // folded posture never needs it, so unknown bones don't hold a body folded.
+    // The rig decides a fold. An unfold never needs it: it asks for nothing to
+    // be folded, so unknown bones don't hold a body folded, and an unfold with
+    // nothing folded is the no-op it would be on any rig.
     const bones = this.bodyBoneNames;
-    if (bones == null && (fold || !this.wingsFolded)) {
-      return `wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`;
+    if (bones == null && fold) {
+      // Wings already folded are what a fold asks for, bones known or not.
+      if (this.flight ? this.flight.wings === "FOLDED" : this.wingsFolded) {
+        // As below: wings found as asked leave the posture so too, and the answer says when that changed it.
+        const changed = !this.wingsFolded;
+        this.wingsFolded = true;
+        return done(changed ? `wings are already folded; the posture now shows them folded` : `wings are already folded`);
+      }
+      return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
     const body = inspectBody(bones ?? []);
-    if (fold && !body.canAnimateWings) return `this body has no animatable wings to fold`;
-    if (!fold && !body.canAnimateWings && !this.wingsFolded)
-      return `this body has no folded-wing posture to release`;
+    if (fold && !body.canAnimateWings) return refused(`this body has no animatable wings to fold`);
+    // Nothing is folded, which is what unfolding asks for.
+    if (!fold && bones != null && !body.canAnimateWings && !this.wingsFolded)
+      return done(`this body has no folded-wing posture to release`);
 
     // Do not create a flight integrator merely to strike a ground posture. A
     // dormant GROUND flight object owns position on the 10Hz tick and would
@@ -2651,37 +2932,58 @@ export class WorldAgent {
     // state in step; otherwise the semantic presence field is the whole act.
     if (this.flight) {
       this.flightCfg ??= flightConfig();
+      const before = this.flight.wings;
       this.flight = fold ? flightFold(this.flightCfg, this.flight)
                          : flightUnfold(this.flightCfg, this.flight);
       const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
+      // Wings already folded, or already open, are what the call asked for.
       // The reason says why the wings didn't change (shared/flight.js); many
       // reasons name the wings' state too, and flight_status always gives it,
       // so the sentence around the reason doesn't add the state.
-      if (ref) return `wings stay as they are — ${ref.reason}`;
+      if (ref) {
+        const text = `wings stay as they are — ${ref.reason}`;
+        if (before !== (fold ? "FOLDED" : "OPEN")) return refused(text);
+        // The wings are as asked, so the posture says so too, and the answer says when that changed it. A fold
+        // before a down keeps wingsFolded set while recovery opens the flight's wings, and take_off reads wingsFolded.
+        const changed = this.wingsFolded !== fold;
+        this.wingsFolded = fold;
+        return done(changed ? `${text}; ${fold ? "the posture now shows them folded" : "the folded-wing posture is released"}` : text);
+      }
     } else if (this.wingsFolded === fold) {
-      return fold ? `wings are already folded` : `wings are already open`;
+      return done(fold ? `wings are already folded`
+        : bones == null ? `nothing is folded — ${BONES_NOT_KNOWN}` : `wings are already open`);
     }
     this.wingsFolded = fold;
-    if (fold) return "wings folded — the vigil posture; take_off refuses until you unfold";
-    if (bones == null) return `folded-wing posture released — ${BONES_NOT_KNOWN}`;
-    if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
+    if (fold) return done("wings folded — the vigil posture; take_off refuses until you unfold");
+    if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
+    if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
     const cap = this.flightAllowed();
-    return cap.ok ? "wings open — the sky is available again"
-                  : "wings open — propulsion is still not granted here";
+    return done(cap.ok ? "wings open — the sky is available again"
+                       : "wings open — propulsion is still not granted here");
   }
 
-  /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
-  async glideTo(x: number, z: number): Promise<string> {
+  /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
+   *  count this glide set, for land_at to tell whether a later call has taken the flight over during its glide; with
+   *  `takeClimb`, the glide also takes over a climb still under way, as a landing does, in the same step. */
+  async glideTo(x: number, z: number, took?: { course?: number; takeClimb?: boolean }): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return refused("you are on the ground — take_off first");
     }
+    // A down is involuntary: no flight verb flies a body out of one (downRefusal says what does).
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight;
     const reach = glideRange(this.flightCfg, f.pos.y);
     const need = Math.hypot(x - f.pos.x, z - f.pos.z);
     f.phase = "PILOT"; f.mode = "live"; f.holdAt = null;
+    this.flightCourse++;
+    if (took) took.course = this.flightCourse;
+    // A landing's glide takes over a climb still under way: it clears the climb's height, which would otherwise go on
+    // lifting the body through the landing, and takes its count, so that climb's answer says it was taken over. It
+    // does so here, with the course, so no call can come between the two.
+    if (took?.takeClimb) { f.climbTo = null; this.climbCourse++; }
     f.airspeed = bestGlide(this.flightCfg).speed;
     f.yaw = Math.atan2(z - f.pos.z, x - f.pos.x);   // integrator convention
     // ARRIVAL IS A MOMENT, AND IT HAS TO BE CAUGHT. Traced over a 148m glide:
@@ -2695,9 +2997,12 @@ export class WorldAgent {
     // "closest approach" actually means and cannot be missed by a wide step.
     let closest = Infinity;
     const arrived = await this.flightAwait((s) => {
-      if (s.phase === "RAGDOLL") return "cut mid-glide — you are on the ground";
-      if (s.phase === "LANDED" || s.phase === "GROUND") return "landed";
+      // A cut in the air is the limp fall (LEAF); one on the ground, the ragdoll, or the sit-up after it.
+      if (s.phase === "LEAF") return "cut mid-glide — you are falling";
+      if (isDown(s.phase)) return "cut mid-glide — you are on the ground";
       const d = Math.hypot(x - s.pos.x, z - s.pos.z);
+      // Down within the arrival radius is down at the target, not short of it.
+      if (s.phase === "LANDED" || s.phase === "GROUND") return d < 2.0 ? "touched down" : "landed";
       if (d < 2.0) return "arrived";
       // Past the point of closest approach: she is flying away now.
       if (d > closest + 0.5 && closest < 12) return "arrived";
@@ -2715,24 +3020,28 @@ export class WorldAgent {
     if (arrived === "arrived" && this.flight && this.flight.phase === "PILOT") {
       this.flight.holdAt = { x, z };
     }
-    const here = `(${this.flight.pos.x.toFixed(1)}, ${this.flight.pos.z.toFixed(1)})`;
-    if (arrived === "arrived") return `arrived at ${here}, ${this.flight.pos.y.toFixed(1)}m up — holding over it`;
+    // Where the body is now: a later landing can have ended the flight by the time this glide's wait answers.
+    const p = this.flight?.pos ?? this.pos;
+    const here = `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`;
+    if (arrived === "arrived") return done(`arrived at ${here}, ${p.y.toFixed(1)}m up — holding over it`);
+    if (arrived === "touched down") return done(`touched down at ${here}, at the target`);
     if (arrived === "landed") {
-      const short = Math.hypot(x - this.flight.pos.x, z - this.flight.pos.z);
-      return `landed short at ${here} — ${short.toFixed(1)}m short. `
-        + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`;
+      const short = Math.hypot(x - p.x, z - p.z);
+      return refused(`landed short at ${here} — ${short.toFixed(1)}m short. `
+        + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`);
     }
-    return `${arrived} at ${here}`;
+    return refused(`${arrived} at ${here}`);
   }
 
   /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
-  async climbTo(alt: number): Promise<string> {
+  async climbTo(alt: number): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "you are on the ground — take_off first";
+      return refused("you are on the ground — take_off first");
     }
+    if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
     const want = Math.min(alt, cfg.bounds.ceiling);
@@ -2760,55 +3069,142 @@ export class WorldAgent {
     f.stamina = Math.max(0, f.stamina - spend);
     const climbRate = 2.0;   // m/s of ascent while flying forward
     f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
-    const climbed = Math.max(0, reach - from);
+    this.flightCourse++;
+    const climb = ++this.climbCourse;
+    // The wait covers the longer of a rise to the height, at the lift less the polar's sink, and a descent to it from
+    // the ceiling, at the lift alone. stepPilot takes its pitch from the stick, which the door doesn't give, so the
+    // airspeed settles at the polar's minimum-sink speed, where a climb rises about 1.5 m/s with the default polar,
+    // and the lift alone is 2 m/s; a descent goes down faster than that. The descent is there for take-off's launch,
+    // which can carry the body up past a height below it or just above it before the climb brings it back down. The
+    // body never flies above the ceiling, so a descent from there bounds that without the door knowing the launch.
     const got = await this.flightAwait((st) => {
-      if (st.phase === "RAGDOLL") return "cut";
+      if (isDown(st.phase)) return "cut";
+      // A climb that meets the ground ends there, at the height asked (within the tick's 0.4 m) or not. Asked,
+      // not `reach`: a winded or ceiling-capped climb's reach is short of what was asked.
+      if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
-    }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
-    if (got === "cut") return `cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`;
+    }, legWaitMs(Math.max((reach - from) / (climbRate - cfg.polar.sinkAtMinSink), (cfg.bounds.ceiling - reach) / climbRate)));
+    // A later climb_to, or a take-off's fresh flight, has the climb now, so this call's answer leaves it alone.
+    if (got !== "cut" && this.climbCourse !== climb) {
+      return refused(`taken over at ${(this.flight?.pos.y ?? this.pos.y).toFixed(1)}m by a later call`);
+    }
+    if (got === "cut") {
+      // A cut body keeps no climb, so it doesn't resume one when it recovers. The cut answers every climb on the
+      // flight in the one settle, and this runs before any call made after it can set another climb, so it needs no
+      // check of whose climb it is.
+      if (this.flight) this.flight.climbTo = null;
+      return refused(`cut mid-climb at ${(this.flight?.pos.y ?? 0).toFixed(1)}m`);
+    }
+    if (got === "touched down") {
+      if (this.flight) this.flight.climbTo = null;
+      return done(`came down on the ground at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, the height you asked for — take_off to fly again`);
+    }
+    if (got === "landed") {
+      if (this.flight) this.flight.climbTo = null;
+      const y = this.flight?.pos.y ?? 0;
+      return refused(`came down on the ground at ${y.toFixed(1)}m, ${y > alt ? "above" : "below"} the ${alt.toFixed(1)}m you asked for`);
+    }
+    // The wait's own timeout is the other answer that isn't "there": the climb
+    // didn't finish, so it isn't reported as reaching the target. It stops
+    // here too, so the body is where the answer says, not still climbing.
+    if (got !== "there") {
+      if (this.flight) this.flight.climbTo = null;
+      return refused(`${got} at ${(this.flight?.pos.y ?? 0).toFixed(1)}m, short of the climb; the climbing stops there and you fly on`);
+    }
+    // "there" is the tick's snap in the air, which cleared the climb.
     const target = this.flight?.pos.y ?? reach;
     if (winded) {
-      return `winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
-        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`;
+      return refused(`winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
+        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`);
     }
-    return `at ${target.toFixed(1)}m — ${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
+    const left = `${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
+    // Flown to the ceiling, which is below what was asked: short of the climb.
+    if (alt > want) return refused(`at ${target.toFixed(1)}m, the ceiling here, short of the ${alt.toFixed(1)}m you asked for — ${left}`);
+    return done(`at ${target.toFixed(1)}m — ${left}`);
   }
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
-  async landAt(x: number, z: number): Promise<string> {
+  async landAt(x: number, z: number): Promise<ActResult> {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
-    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
-      return "already on the ground";
+      return refused("already on the ground");
     }
-    const r = await this.glideTo(x, z);
+    const took: { course?: number; takeClimb?: boolean } = { takeClimb: true };
+    const glide = await this.glideTo(x, z, took);
     const f = this.flight;
-    if (f && f.phase !== "RAGDOLL") {
-      // A deliberate landing IS a flare: descend the remaining altitude rather
-      // than dropping. This is the one place a landing animation is correct --
-      // T4 forbids it only for a body that never chose to land.
-      f.phase = "PILOT"; f.pitch = 0.2;
-      await this.flightAwait((s) => (s.phase === "LANDED" || s.phase === "GROUND" || s.phase === "RAGDOLL") ? "down" : null, 60_000);
+    // A cut mid-glide is a fall, with no flare to make; the glide says so. The
+    // body keeps its flight state, which its recovery reads. A body already
+    // down is refused by glideTo, and that refusal is the answer too.
+    if (!f || isDown(f.phase)) return refused(glide.text);
+    // A glide that set no course was refused before it flew, and its refusal is the landing's answer.
+    if (took.course === undefined) return refused(glide.text);
+    // A later call that set the flight's course during the glide has the flight, so the landing leaves it to that
+    // call, with no flare.
+    if (this.flightCourse !== took.course) {
+      return refused(`${glide.text} — a later call took over the flight during the glide`);
+    }
+    // A deliberate landing IS a flare: descend the remaining altitude rather
+    // than dropping. This is the one place a landing animation is correct --
+    // T4 forbids it only for a body that never chose to land.
+    f.phase = "PILOT"; f.pitch = 0.2;
+    // The flare comes down at the polar's sink: stepPilot takes its pitch from the stick, which the door doesn't
+    // give, so the airspeed settles at the minimum-sink speed, about 0.46 m/s of sink with the default polar.
+    // Its wait is sized for a flare from the ceiling down to the ground under the body as it begins, since a low
+    // flare can still be rising on take-off's launch, and is never shorter than the 60 s main's flare had, so a flare
+    // that begins over high ground and comes down on lower, or one the launch holds at the ceiling, gets at least the
+    // wait main gave it. A flare that begins well above where its circle comes down can still outlast it.
+    const fall = Math.max(0, this.flightCfg.bounds.ceiling - this.heightAt(f.pos.x, f.pos.z));
+    const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
+      : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null,
+      Math.max(60_000, legWaitMs(fall / this.flightCfg.polar.sinkAtMinSink)));
+    // How the flare ended is read after it, so a cut during it is a fall too,
+    // and the cut body keeps its flight state for its recovery.
+    if (flare === "cut") {
+      const fell = `(${(this.flight?.pos.x ?? this.pos.x).toFixed(1)}, ${(this.flight?.pos.z ?? this.pos.z).toFixed(1)})`;
+      return refused(`${glide.text} — cut during the flare, down at ${fell}`);
+    }
+    // A later call that set the flight's course has the flight now, so this landing leaves it to that call, whether
+    // its wait heard the body come down or ran out: ending the flight would pull the body out of that call's. The
+    // landing's course is its glide's, since the flare follows it.
+    if (this.flightCourse !== took.course) {
+      return refused(`${glide.text} — a later call took over the flight during the flare`);
     }
     this.flightEnd();
-    return `${r} — landed at (${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+    const at = `(${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+    // The flare's own timeout: the body didn't come down, and flightEnd set it down.
+    if (flare !== "down") return refused(`${glide.text} — the flare ${flare}, so the body was set down at ${at}`);
+    // A flare after an arrival sinks on the circle held over the point, so
+    // the answer says how far from it the body came down.
+    const off = Math.hypot(x - this.pos.x, z - this.pos.z);
+    const where = `${glide.text} — landed at ${at}, ${off.toFixed(1)}m from (${x.toFixed(1)}, ${z.toFixed(1)})`;
+    // Done when the glide's own answer was: it arrived (within 2 m, or at its
+    // closest approach under 12 m, as glideTo's rule has it) or touched down
+    // within 2 m, and the landing was deliberate. The distance says the rest.
+    return glide.ok ? done(where) : refused(where);
   }
 
   /** Hand the body back to ordinary locomotion. */
   flightEnd() {
     this.flight = null;
-    this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    // The floor it comes down on is found from its feet: a body a flight's
+    // ragdoll laid down has them RAGDOLL_ROOT_DROP above its root.
+    this.pos.y = this.groundAt(this.pos.x, this.pos.z, this.feetY(this.isSlumped()));
     this.speed = 0; this.clip = "idle";
   }
 
   /** The trusted-event seam, unchanged: the body cannot cry wolf, so these are
    *  NOT verbs the pilot may call. Reachable only from a rehearsal control or,
    *  later, the Connectome adapter. */
-  flightBodyDown(eventId: string) {
-    if (!this.flight) return "not airborne";
+  flightBodyDown(eventId: string): ActResult {
+    if (!this.flight) return refused("not airborne — take_off first");
     this.flight = flightDown(this.flight, { eventId });
+    // A wait on the flight hears of the down now. The ragdoll's sim, started below, owns the body from its first
+    // step, and the flight tick, which settles waits, doesn't run while it does, so a climb, glide or flare
+    // waiting could otherwise hear of the cut only once the body came to rest, or at its wait's end.
+    this.flightSettle();
     // R2 hands the body to the REAL ragdoll, from altitude. HeadlessBody.begin
     // already takes a rootY "for a lifted drop", so a cut at 20m is the case it
     // was written for -- and using it means a cut body is hit by props, catches
@@ -2818,7 +3214,7 @@ export class WorldAgent {
     // shared/leafforce.js. The kinematic leafAt() stays for the deterministic
     // bench and the capture path, where a bit-exact trajectory is the point.
     if (this.flight.phase === "LEAF") void this.flightRagdoll();
-    return `down — ${this.flight.phase}`;
+    return done(`down — ${this.flight.phase}`);
   }
 
   /** Drop the real ragdoll from where the flight left the body. */
@@ -2849,10 +3245,17 @@ export class WorldAgent {
   private leafT = 0;
   /** Air model for the limp fall. Config, like everything else in flight. */
   leafCfg: any = { ...LEAF_FORCE };
-  flightBodyRecovered(eventId: string, recoveryGeneration?: string) {
-    if (!this.flight) return "not airborne";
+  flightBodyRecovered(eventId: string, recoveryGeneration?: string): ActResult {
+    if (!this.flight) return refused("not airborne — take_off first");
+    // Only a body that is down has anything to recover from; bodyRecovered
+    // leaves every other phase as it is. A body sitting up, or one whose
+    // recovery in the air has begun (still LEAF, with recoverAt set), already is.
+    if (this.flight.phase === "RECOVER" || (this.flight.phase === "LEAF" && this.flight.recoverAt != null)) return done("already recovering");
+    if (this.flight.phase !== "LEAF" && this.flight.phase !== "RAGDOLL") {
+      return refused(`nothing to recover from — the body isn't down (${this.flight.phase.toLowerCase()})`);
+    }
     this.flight = flightRecovered(this.flight, { eventId, recoveryGeneration });
-    return `recovering`;
+    return done(`recovering`);
   }
 
   /** Where the sky has left you. */
@@ -2868,13 +3271,41 @@ export class WorldAgent {
     ].join("\n");
   }
 
-  /** What the feet stand on for a walk from here. On main the body stands on
-   * terrain only, so this answers terrain. The storey-standing work (#200)
-   * answers the floor it holds the feet on, when it holds them on one, and
-   * walkTo's floor branch serves that answer; the router never manufactures
-   * floor support itself. */
-  private walkSupport(): WalkSupport {
-    return { kind: "terrain", height: this.heightAt(this.pos.x, this.pos.z) };
+  /** The ground a walk's navgrid probe stands on: the terrain, or on a floor
+   *  walk the walk's own floor, at its height, wherever that level has floor
+   *  and the ground there is no more than a step (NAV_STEP) above it, with
+   *  everywhere else a drop the grid won't take. A floor walk's feet go no
+   *  lower than its floor's height to its end, so its grid must not step off
+   *  onto the terrain or onto another floor, however close below they are.
+   *  On its own floor it goes where the floor route goes, over ground that
+   *  comes within a step of the floor too; where the ground rises more than a
+   *  step above the floor, the floor is buried and no walk crosses it at its
+   *  height. The grid also stands on what's placed there, as it does on the ground
+   *  (navProbe takes placed models' tops over this surface), beside the floor
+   *  too: a placed top within a step above the floor is a step it can take,
+   *  and one lower than the floor is not (onOrAboveFloor). */
+  private walkProbeGround(support: WalkSupport): (x: number, z: number) => number {
+    if (support.kind !== "floor") return (x, z) => this.heightAt(x, z);
+    const drop = support.height - 2 * NAV_STEP;
+    // The walk's floor, placed as walkSupport found it a moment ago.
+    const e = this.entities.get(support.entity)!, plan = this.planOf(e.comp!.structure), lv: any = plan.levels[support.level];
+    const fx = this.eff(e.id, this.serverNow());
+    if (!fx.ok) return () => drop;   // as storeyUnder passes over a building it can't place
+    const sc = fx.scale > 0 ? fx.scale : 1, place = { pos: fx.pos, yaw: fx.yaw, scale: sc };
+    return (x, z) => {
+      const [lx, , lz] = localizePoint(place, x, 0, z);
+      return floorAtLocal(plan, lv, lx, lz) && this.heightAt(x, z) - support.height <= NAV_STEP ? support.height : drop;
+    };
+  }
+
+  /** What the feet stand on for a walk from here: the upper storey of a
+   * griddled building the feet stand on (storeyUnder), which walkTo's floor
+   * branch then serves, else the terrain. The router never manufactures
+   * floor support itself. `yHint` is the feet's height (feetY), which for a
+   * body a sim has laid down is RAGDOLL_ROOT_DROP above its root. */
+  private walkSupport(yHint = this.pos.y): WalkSupport {
+    const floor = this.storeyUnder(this.pos.x, this.pos.z, yHint);
+    return floor ? { kind: "floor", ...floor } : { kind: "terrain", height: this.heightAt(this.pos.x, this.pos.z) };
   }
 
   /** Every known structure as a walk sees it: placed where it is now, and
@@ -3010,7 +3441,7 @@ export class WorldAgent {
    *  exactly, as a named room's is). `near.inside`: only spots in a region.
    *  `receipt`: this request's own refusal (the plan may wait for geometry). */
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE, y?: number,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> = {}, receipt?: { refusal: string | null }): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } } = {}, receipt?: { refusal: string | null }): Promise<boolean> {
     if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4 || (y != null && !Number.isFinite(y))) {
       // Not a walk request at all: the walk under way, if any, goes on.
       this.walkRefusal = WALK_ARGS_REASON;
@@ -3052,28 +3483,80 @@ export class WorldAgent {
   private walkTicket = 0;
 
   private walkNow(x: number, z: number, run: boolean, timeoutMs: number, tolerance: number, y: number | undefined,
-    near: Pick<NavTarget, "reach" | "above" | "below" | "inside">): Promise<boolean> {
+    near: Pick<NavTarget, "reach" | "above" | "below" | "inside"> & { bodyAt?: { x: number; z: number } }): Promise<boolean> {
     // Plan before touching the body, from the ground under it: a refused walk
-    // leaves it seated, pinned, dragged, posed or tumbling as it was.
-    const support = this.walkSupport();
+    // leaves it seated, pinned, dragged, posed or tumbling as it was. The
+    // walk's floor, its grid's start and where it stands up are all found
+    // from the feet, as when it stands up (setPosture, feetGround).
+    const slumped = this.isSlumped();
+    const feetY = this.feetY(slumped);
+    const support = this.walkSupport(feetY);
     const plan = this.planWalk({ x, z }, support);
     if ("refusal" in plan) { this.walkRefusal = plan.refusal; return Promise.resolve(false); }
+    // A walk from a floor stays on it: the router plans it on that floor
+    // alone, and a griddled building's storeys have no stairs between
+    // them or to the ground. So a destination whose height means another
+    // of the floors there (floorMeant: walk_to's own rule for a height,
+    // with the destination's bounds), another storey, another building's
+    // or the ground, is refused here, once the router has planned the
+    // walk and before the navgrid routes it or its legs are walked (the
+    // planner's legs never read y), rather than walked to at the same x
+    // and z on this floor. Unless something placed on this floor, under
+    // the next floor above, stands at about that height there
+    // (placedNear): then the walk goes, and the navgrid, when it routes
+    // the walk, reads the height against what is placed. A named
+    // destination's height and bounds are the world's: a place, a seat, a
+    // room, a thing's entrance, a person, whose floor is the one their
+    // body is on where they are, not where the walk stops short of them.
+    if (support.kind === "floor" && y != null) {
+      const at = near.bodyAt ?? { x, z };
+      const meant = this.floorMeant(at.x, at.z, y, near, support, near.bodyAt != null);
+      const ceiling = Math.min(Infinity, ...this.floorsAt(at.x, at.z, support).filter((f) => f.height > support.height + 0.02).map((f) => f.height));
+      if ((!meant || meant.entity !== support.entity || meant.level !== support.level) && !this.placedNear(at.x, at.z, y, near, support.height, ceiling)) {
+        const whose = meant ? `whose floor is at ${meant.height.toFixed(2)}m` : "";
+        const where = !meant ? "on no floor here" : meant.entity === null ? "at ground level"
+          : meant.entity === support.entity ? `on another storey of this building, ${whose}` : `on a storey of another building, ${whose}`;
+        // a person's height is their root, not a height anyone gave or sees
+        const what = near.bodyAt ? "the destination" : `the destination (height ${y.toFixed(2)}m)`;
+        this.walkRefusal = `${what} is ${where}, not on the floor you stand on (${support.height.toFixed(2)}m). A walk from a floor stays on it, since a griddled building's storeys have no stairs between them or to the ground; pick a destination on this floor, or give coordinates without y, which stay on it`;
+        return Promise.resolve(false);
+      }
+    }
     // Through placed models: a walk the structure planner leaves as one
     // straight leg is routed against the colliders the feet will meet —
     // round the furniture, through the door, up the stair (mcpl/navgrid.ts).
     let legs = plan.legs, snapped = false, routed = false;
-    const probe = plan.legs.length === 1 ? navProbe((wx, wz) => this.heightAt(wx, wz)) : null;
+    // A floor walk's probe stands on that storey, which the colliders don't
+    // hold, so placed models on it are routed round as they are on the
+    // ground (walkProbeGround), and nowhere lower than that floor
+    // (onOrAboveFloor). Its grid is the walk's own: the cached one answers
+    // for the terrain.
+    const surface = this.walkProbeGround(support);
+    const raw = plan.legs.length === 1 ? navProbe(surface) : null;
+    const probe = raw && support.kind === "floor" ? onOrAboveFloor(raw, support.height) : raw;
     if (probe) {
-      // plan from the floor under the body, not its root: a tumbling or
-      // seated body's y is not where its feet will be
-      const feet = { x: this.pos.x, y: this.pos.y, z: this.pos.z };
+      // plan from the floor under the feet: a tumbling body's root is not
+      // where its feet will be
+      const feet = { x: this.pos.x, y: feetY, z: this.pos.z };
       // a grid is good until the colliders or the terrain change
       const navKey = `${collidersGeneration()}|${this.navTerrainRev}`;
-      if (this.navGrid?.gen !== navKey) this.navGrid = { gen: navKey, grid: makeNavGrid(probe) };
-      const grid = this.navGrid.grid;
+      let grid;
+      if (support.kind === "floor") grid = makeNavGrid(probe);
+      else {
+        if (this.navGrid?.gen !== navKey) this.navGrid = { gen: navKey, grid: makeNavGrid(probe) };
+        grid = this.navGrid.grid;
+      }
       const nav = inWorld(this.world, () => {
-        const fy = standOn(feet, (wx, wz) => this.heightAt(wx, wz)) ?? this.pos.y;
-        return grid.route({ x: this.pos.x, y: fy, z: this.pos.z }, { x, z, y, ...near });
+        const fy = standOn(feet, surface) ?? feetY;
+        const from = { x: this.pos.x, y: fy, z: this.pos.z };
+        const first = grid.route(from, { x, z, y, ...near });
+        // A person's bound reaches the surface a body lies on (destination()),
+        // which no route may reach, such as a top bunk: then the place to
+        // stand nearest them within a step, as for someone standing there,
+        // the floor beside it.
+        if (!("refusal" in first) || !near.bodyAt) return first;
+        const withinStep = grid.route(from, { x, z, y, ...near, above: undefined });
+        return "refusal" in withinStep ? first : withinStep;
       });
       if ("refusal" in nav) { this.walkRefusal = nav.refusal; return Promise.resolve(false); }
       // griddled structures keep their walls out of the headless colliders,
@@ -3114,10 +3597,11 @@ export class WorldAgent {
     // glues this body to its socket on every renderer, wherever the feet go
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
     // and stand on the ground you got up onto: with colliders loaded, the
-    // floor under the feet found from where the body is (a body seated
-    // upstairs stands up upstairs); the planner's support answer otherwise
+    // floor under the feet found from where they are (a body seated upstairs
+    // stands up upstairs); the planner's support answer otherwise
     const supportAt = support.kind === "terrain" ? (wx: number, wz: number) => this.heightAt(wx, wz) : () => support.height;
-    this.pos.y = inWorld(this.world, () => (collidersReady() ? standOn(this.pos, supportAt) : null)) ?? support.height;
+    const standFrom = { x: this.pos.x, y: feetY, z: this.pos.z };
+    this.pos.y = inWorld(this.world, () => (collidersReady() ? standOn(standFrom, supportAt) : null)) ?? support.height;
     this.vy = 0; this.grounded = true; this.stallTicks = 0; this.walkStall = null;
     // A structure route's corners are reached exactly (its doorways are
     // planned to the centimetre); a routed walk's may sit where something
@@ -3187,8 +3671,20 @@ export class WorldAgent {
       if (!ci(p.id, q)) continue;
       const xyz = posePosition(p.pose);
       if (!xyz) return { refusal: `${p.id}'s position is not known yet` };
-      const [x, y, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
-      return { x: x + (me.x - x) * back, y, z: z + (me.z - z) * back, reach: 0.6, label: p.id };
+      const [x, root, z] = xyz, d = Math.hypot(me.x - x, me.z - z), back = d > 0.01 ? Math.min(0.9, d) / d : 0;
+      // Presence carries the root, not how a body came to be there: one
+      // standing, or held by a canned slump, has its root on its floor; one a
+      // sim laid down, under clip "ragdoll" or a physics pose held under
+      // another, has it about RAGDOLL_ROOT_DROP below the surface it lies on.
+      // So their floor may be up to that drop above the root: the navgrid
+      // takes the place to stand nearest the root within it (the floor they
+      // lie on, or the floor beside the bed they lie on; where no route
+      // reaches it, walkNow routes again within a step), and a floor walk's
+      // check the floor their body is on where they are (bodyAt). Without the
+      // bound, a walk to someone lying on this floor reads as one to a floor
+      // beneath.
+      return { x: x + (me.x - x) * back, y: root, z: z + (me.z - z) * back, reach: 0.6, label: p.id,
+        above: RAGDOLL_ROOT_DROP + 0.05, bodyAt: { x, z } };
     }
     const slash = q.indexOf("/");
     const ents = [...this.entities.values()].filter((e) => isFiniteVec3(e.pos));
@@ -3230,25 +3726,29 @@ export class WorldAgent {
    *  already there. `remove` retires a name (null: that also hides one the
    *  model itself declares). `at` may leave out y: the floor there nearest
    *  the body's own height. Answers once the world accepts or refuses it. */
-  namePlace(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } } = {}): Promise<string> {
+  namePlace(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } } = {}): Promise<ActResult> {
     const run = this.placeEdits.then(() => this.namePlaceNow(name, opts));
     this.placeEdits = run.catch(() => {});
     return run;
   }
 
-  private async namePlaceNow(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } }): Promise<string> {
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/.test(name)) return "a place name is 1-48 letters, digits, spaces, _ . : ' or -, starting with a letter, digit or _";
+  private async namePlaceNow(name: string, opts: { on?: string; label?: string; remove?: boolean; at?: { x: number; z: number; y?: number } }): Promise<ActResult> {
+    if (!/^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$/.test(name)) return refused("a place name is 1-48 letters, digits, spaces, _ . : ' or -, starting with a letter, digit or _");
     let w: number[];
     if (opts.at) {
       const { x, z } = opts.at;
-      const y = opts.at.y ?? inWorld(this.world, () => standOn({ x, y: this.pos.y, z }, (wx, wz) => this.heightAt(wx, wz))) ?? this.heightAt(x, z);
+      // the floor there nearest the feet's height: a placed model's, a
+      // griddled storey's, or the terrain
+      const feetY = this.feetY(this.isSlumped());
+      const ground = (wx: number, wz: number) => this.groundAt(wx, wz, feetY);
+      const y = opts.at.y ?? inWorld(this.world, () => standOn({ x, y: feetY, z }, ground)) ?? ground(x, z);
       w = [x, y, z];
     } else w = [this.pos.x, this.pos.y, this.pos.z];
     const now = Date.now();
     let e: Entity | undefined;
     if (opts.on) {
       e = [...this.entities.values()].find((x) => x.id.toLowerCase() === opts.on!.toLowerCase());
-      if (e && (!e.lib || e.lib === "(light)")) return `[${e.id}] is a light — places hang on placed things (a model), not lights`;
+      if (e && (!e.lib || e.lib === "(light)")) return refused(`[${e.id}] is a light — places hang on placed things (a model), not lights`);
     } else {
       e = this.placesAt(w)[0]?.entity;
       if (!e) {
@@ -3262,9 +3762,9 @@ export class WorldAgent {
         }
       }
     }
-    if (!e) return opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id>";
+    if (!e) return refused(opts.on ? `no thing called "${opts.on}" here` : "no placed thing within 15m to hang the name on — pass on: <thing id>");
     const h = this.placeHolder(e, now);
-    if (!h) return `where [${e.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`;
+    if (!h) return refused(`where [${e.id}] is right now cannot be worked out, so a spot on it cannot be named — try again when it rests`);
     const cur = (e.comp?.places && typeof e.comp.places === "object") ? { ...e.comp.places } : {};
     if (opts.remove) {
       // always a hiding entry: whether the model declares the name is not
@@ -3275,18 +3775,19 @@ export class WorldAgent {
       cur[name] = { at: l, ...(opts.label ? { label: opts.label.slice(0, 80) } : {}) };
     }
     const data = JSON.stringify(cur);
-    if (data.length > 8000) return `[${e.id}]'s places would exceed the 8KB component limit — retire some first`;
+    if (data.length > 8000) return refused(`[${e.id}]'s places would exceed the 8KB component limit — retire some first`);
     const t0 = Date.now(), id = e.id;
     this.verb("comp", { id, type: "places", data: cur });
     // the world's answer: our component echoed back, or a refusal
     for (const deadline = t0 + 3000; Date.now() < deadline;) {
-      if (this.lastRefusal && this.lastRefusal.ts >= t0) return `not named — the world refused: ${this.lastRefusal.text}`;
+      if (this.lastRefusal && this.lastRefusal.ts >= t0) return refused(`not named — the world refused: ${this.lastRefusal.text}`);
       if (JSON.stringify(this.entities.get(id)?.comp?.places ?? null) === data) {
-        return opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — walk_to {to: "${id}/${name}"} reaches it`;
+        return done(opts.remove ? `retired "${name}" on [${id}]` : `named this spot "${name}" on [${id}] — walk_to {to: "${id}/${name}"} reaches it`);
       }
       await new Promise((r) => setTimeout(r, 50));
     }
-    return `sent "${name}" to [${id}], but the world has not confirmed it yet — look will show it once it lands`;
+    // Sent and not refused: whether it landed is for look to show.
+    return done(`sent "${name}" to [${id}], but the world has not confirmed it yet — look will show it once it lands`);
   }
 
   // ---- feet ----------------------------------------------------------------
@@ -3324,14 +3825,46 @@ export class WorldAgent {
     }
   }
 
+  /** Whether the body lies as a sim lays one: the ragdoll clip, or a held
+   *  pose it didn't author, a physics pose kept under another clip. */
+  private isSlumped(): boolean {
+    return this.clip === "ragdoll" || (this.heldPose != null && !this.heldPoseAuthored);
+  }
+
+  /** The ground the tick holds a body's feet to when nothing else does:
+   *  groundAt from the feet (feetY), so a body holding a physics pose under
+   *  another clip, its root RAGDOLL_ROOT_DROP under its feet, keeps the
+   *  storey it lies on. */
+  private standingGround(): (x: number, z: number) => number {
+    const feetY = this.feetY(this.isSlumped());
+    return (x, z) => this.groundAt(x, z, feetY);
+  }
+
+  /** The height of the feet, for finding the floor a body stands on: its y,
+   *  but a slumped or tumbling body has its feet RAGDOLL_ROOT_DROP above its
+   *  root, as a sim lays it, unless the slump is canned (rootCanned): held
+   *  before any sim has run or with no sim to run, its root is at its feet's
+   *  height. */
+  private feetY(slumped: boolean): number {
+    return slumped && !this.rootCanned() ? this.pos.y + RAGDOLL_ROOT_DROP : this.pos.y;
+  }
+
+  /** A canned slump's root: still at the height knockDown found the feet at. */
+  private rootCanned(): boolean {
+    return this.cannedY != null && this.pos.y === this.cannedY;
+  }
+
   /** The ground under the feet as a standing body finds it: the fitted
-   *  colliders when loaded (an upstairs floor stays upstairs), else terrain. */
+   *  colliders when loaded, over the ground groundAt gives (an upper
+   *  storey's floor, else the terrain); without colliders, that ground. */
   private feetGround(fromRagdoll = false): number {
-    const terrain = (x: number, z: number) => this.heightAt(x, z);
     // a settled ragdoll's root lies ~0.68m BELOW the surface holding it up
     // (support-lifecycle-test's hipsOffset); probing from the root itself
-    // would start under a thin upper floor and find the storey beneath
-    const from = { x: this.pos.x, y: this.pos.y + (fromRagdoll ? RAGDOLL_ROOT_DROP : 0), z: this.pos.z };
+    // would start under a thin upper floor and find the storey beneath. A
+    // canned slump's root is at its feet, and the probe starts there (feetY).
+    const from = { x: this.pos.x, y: this.feetY(fromRagdoll), z: this.pos.z };
+    // under the colliders, the terrain or a griddled storey's floor
+    const terrain = (x: number, z: number) => this.groundAt(x, z, from.y);
     const g = inWorld(this.world, () => (collidersReady() ? standOn(from, terrain) : null));
     if (g != null) { this.pos.x = from.x; this.pos.z = from.z; }
     return g ?? terrain(this.pos.x, this.pos.z);
@@ -3565,14 +4098,16 @@ export class WorldAgent {
     const path = self ? this.avatar : (person!.avatar || WorldAgent.DEFAULT_BODY);
     const body = this.reachBodySync(path);
     if (body === undefined) return undefined;
-    if (!body) return { err: `${t.who}'s skeleton could not be read` };
-    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    // null: its model, or this door's skeleton solver, didn't load (ReachBody.create)
+    if (!body) return { err: `${self ? "your" : `${t.who}'s`} body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach` };
+    // A limp body draws no raw layer, so its contacts have none either.
+    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null, 1, this.clip !== "ragdoll");
     else {
       const pose = person!.pose;
       const pp = posePosition(pose);
       if (!pp) return { err: `${t.who} has no known position yet` };
       // their chosen size (absent = 1): contacts scale about their root, as in every browser
-      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale);
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale, pose?.clip !== "ragdoll");
     }
     const c = body.contact(t.point!, t.standoff ?? 0.02);
     if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
@@ -3587,7 +4122,10 @@ export class WorldAgent {
       const reading = this.reachReading;
       if (!reading || !sameReach(reading.reaches?.[limb], entry)) return { state: "pending" };
       const solved = reading.reachEvaluation?.[limb];
-      if (!solved?.ok) return { state: "err", err: solved?.why ?? reading.error ?? "body pose could not be evaluated" };
+      // cyclic-reach is body_state's code for the loop (docs/body-state.md); the reply says it in words.
+      if (!solved?.ok) return { state: "err", err: solved?.why === "cyclic-reach"
+        ? "it depends on a loop of reaches (limbs reaching for limbs that reach back), so it can't be solved until a limb in the loop lets go"
+        : solved?.why ?? reading.error ?? "body pose could not be evaluated" };
       const dist = solved.target && solved.shoulder ? Math.hypot(...solved.target.map((v: number, i: number) => v - solved.shoulder[i])) : null;
       return { state: "ok", reached: solved.reached, gap: solved.gap, bound: solved.bound,
         dist, arm: reading.body?.armLength(limb) ?? null, palmResidual: solved.palmResidual };
@@ -3597,7 +4135,7 @@ export class WorldAgent {
     if ("err" in tp) return { state: "err", err: tp.err };
     const own = this.reachBodySync(this.avatar);
     if (own === undefined) return { state: "pending" };
-    if (!own) return { state: "err", err: "this body's own skeleton could not be read, so there is no local verdict" };
+    if (!own) return { state: "err", err: "your body couldn't be set up on this door (its model, or the door's skeleton solver, didn't load), so it can't check this reach" };
     own.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
     const s = own.solve(limb, tp, { palm: entry.palm !== false });
     if (!s.ok) return { state: "err", err: s.why };
@@ -3610,12 +4148,12 @@ export class WorldAgent {
   /** Reach a limb toward a target (wire grammar: {who, point, standoff?} or
    *  {p:[x,y,z], space?: 'world'|'self'|id}). Sets the descriptor streaming
    *  either way; the reply says what the arm actually achieves. */
-  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<{ ok: boolean; text: string }> {
+  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<ActResult> {
     const limb = canonicalLimb(limbRaw ?? "rightHand");
-    if (!limb) return { ok: false, text: `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot` };
+    if (!limb) return { ok: false, text: unknownLimb(limbRaw, "reached") };
     const t = normalizeReachTarget(targetRaw);
     if (!t) {
-      return { ok: false, text: "unusable target — pass {who, point} for a named contact point on a body, or {x, y, z} with optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
+      return { ok: false, text: "reach couldn't use that target, so nothing was reached: pass {who, point} for a named contact point on a body (who a participant id from look), or {x, y, z} with an optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
     }
     // load the skeletons this reach needs BEFORE solving, so the reply is a
     // real verdict rather than a shrug
@@ -3652,17 +4190,18 @@ export class WorldAgent {
 
   /** Let go with one limb, or all of them. Propagates as absence: the next
    *  presence packet simply stops carrying the descriptor. */
-  releaseReach(limbRaw?: string | null): string {
+  releaseReach(limbRaw?: string | null): ActResult {
     if (limbRaw == null) {
       const n = this.reaches.size;
       this.reaches.clear();
-      return n ? "let go — all reaches released" : "you weren't reaching for anything";
+      return done(n ? "let go — all reaches released" : "you weren't reaching for anything");
     }
     const limb = canonicalLimb(limbRaw);
-    if (!limb) return `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot`;
-    return this.reaches.delete(limb)
+    if (!limb) return refused(unknownLimb(limbRaw, "released"));
+    // A limb that wasn't reaching is already let go, which is what was asked.
+    return done(this.reaches.delete(limb)
       ? `${WorldAgent.LIMB_WORD[limb]} released`
-      : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`;
+      : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`);
   }
 
   /** Re-attest `reached` for every live reach (runs at ~2Hz off tick()).
@@ -3766,28 +4305,28 @@ export class WorldAgent {
     if (this.water) void this.measureStature(); else { this.statureFor = null; this.bodyH = null; ++this.statureGen; }
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
-        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
+        agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken, clock: true }));
     }
   }
 
   /** Play a one-off animation on yourself — relayed once, never logged.
    *  Over your held pose and other animations; `replace` ends them first. */
   animate(data: { dur: number; loop?: boolean; replace?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
+    // Sent or refused, as puppet() is: an animation that never left must not read as playing.
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     if (data.replace) this.setPose(null);
-    if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
-        replace: data.replace === true }));
-    }
+    this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
+      replace: data.replace === true }));
   }
 
   /** Ask another body to hold a pose or play an animation. It decides.
    *  `ragdoll: true` asks it to go limp; `{lean:[x,y,z]}` (m/s) says which
    *  way the shove sends it — the receiver simulates and caps for itself. */
   puppet(target: string, spec: { pose?: Record<string, PoseValue | null>; merge?: boolean; anim?: unknown; ragdoll?: boolean | { lean: number[] } }) {
-    if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "puppet", target,
-        pose: spec.pose ?? null, ...(spec.merge ? { merge: true } : {}), anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
-    }
+    // Sent or refused, as verb() is: a request that never left must not read as made.
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
+    this.ws.send(JSON.stringify({ type: "puppet", target,
+      pose: spec.pose ?? null, ...(spec.merge ? { merge: true } : {}), anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
   }
 
   /** Ask the world what happened in a range of its history.
@@ -3856,7 +4395,8 @@ export class WorldAgent {
   }
   /** Private, point-to-point, never appended to the world log. */
   whisper(to: string, text: string) {
-    if (!this.joined || this.ws?.readyState !== 1) return;
+    // Sent or refused, as verb() is: a whisper that never left must not read as said.
+    if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type: "whisper", to, text }));
   }
 
@@ -3965,11 +4505,14 @@ export class WorldAgent {
     // this runs in a headless agent with no scene and no triangles, which is
     // the entire point of keeping the planner pure.
     if (meKnown) {
+      // The storey is found from the feet: a laid body's root lies
+      // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
+      const feet = selfEff?.ok ? me.y : this.feetY(this.isSlumped());
       for (const e of this.entities.values()) {
         const data = (e.comp ?? {}).structure;
         if (!data) continue;
         try {
-          const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
+          const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
           const here = describeHere(this.planOf(data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
@@ -4015,7 +4558,14 @@ export class WorldAgent {
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
+      // Their heading is on the wire (pose.yaw, world yaw like our own) — say it,
+      // or an agent can't tell which side of someone it will see. A rider's body
+      // follows the seat's socket, so their root yaw isn't where they face. A body
+      // knocked over (ragdoll) or lying down keeps its standing yaw — the clip
+      // changes, not the heading — so for those too say nothing rather than lie.
+      const lying = p.pose.clip === "ragdoll" || p.pose.clip === "lie";
+      const facing = !ride && !lying && Number.isFinite(p.pose.yaw) ? `, facing ${this.bearing(Math.sin(p.pose.yaw), Math.cos(p.pose.yaw))}` : "";
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${facing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     const ents = [...this.entities.values()];
@@ -4049,7 +4599,9 @@ export class WorldAgent {
       // `components: particles`. Nothing is claimed about heat, light, sound
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
-      if (c.particles) aff.push(describeParticles(c.particles));
+      // Every emitter it carries, the default first: a hearth reads "emitting
+      // fire …; emitting smoke (particles:smoke …)", each on its own terms.
+      for (const [k, v] of emittersIn(c)) aff.push(describeParticles(v, k));
       // A picture is named by what its author SAID it shows, on the part that
       // carries it — never by its pixels. Rung 1 of the projector ladder.
       if (c.picture) aff.push(describePicture(c.picture));
@@ -4081,7 +4633,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k) && !isParticlesKey(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

@@ -28,7 +28,7 @@ const nativeLogin = createNativeLogin({
   login: HN_LOGIN_URL, enabled: Boolean(HN_ISSUER_KEY), session: sessionFromCookie,
   issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
 });
-import { resolveLibFile, libraryPath, onLadder } from "./lint.ts";
+import { resolveLibFile, libraryPath, libraryRel, onLadder } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale } from "./buildcheck-queue.ts";
@@ -1095,7 +1095,11 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname.startsWith("/library/"),
     handler: ({ req, url }) => {
-      const rel = url.pathname.slice("/library/".length);
+      // url.pathname keeps percent-encoding; libraryRel() decodes it to the
+      // disk name (and refuses a decoded ".."), the same function lint, /geom,
+      // boxes and the rosters resolve through, so they agree on every name.
+      const rel = libraryRel(url.pathname.slice("/library/".length));
+      if (rel === null) return new Response("forbidden", { status: 403 });
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
       // Native importers do not necessarily ship the browser's Draco/WebP

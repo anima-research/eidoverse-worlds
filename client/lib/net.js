@@ -79,7 +79,9 @@ let forgetBytes = () => {};
 let myReachBag = () => undefined;
 // A client with no renderer must still ANSWER a snap — the asker is blocked on the
 // reply id — so the default is an honest error, not silence.
-let snapshot = async () => ({ error: 'this client has no renderer' });
+const noRenderer = async () => ({ error: 'this client has no renderer' });
+let snapshot = noRenderer;
+let warnedNoRenderer = false;
 
 export function wireNet(h) {
   const { participants, forgetBytes: fb, snapshot: snap, myReachBag: rb, toast: tf, ...rest } = h;
@@ -121,14 +123,17 @@ export function sendPuppet(target, { pose = null, merge = false, anim = null, ra
  *
  *  Folding bounds what a join costs, which necessarily means a joiner is not
  *  handed everything ever said. This is how the rest is reachable: scroll up
- *  and the client asks for what came before. */
+ *  and the client asks for what came before. A request that gets no answer,
+ *  because no socket is joined or nothing came back within 8 s, rejects, so
+ *  a caller can tell it from an empty page, which is an answer: there is
+ *  nothing there. */
 const pendingHistory = new Map();
 let histId = 0;
 export function requestHistory(opts = {}) {
-  if (!net.joined || net.ws?.readyState !== 1) return Promise.resolve({ entries: [], hasMore: false });
+  if (!net.joined || net.ws?.readyState !== 1) return Promise.reject(new Error('history: not connected'));
   const reqId = `h${++histId}`;
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { pendingHistory.delete(reqId); resolve({ entries: [], hasMore: false }); }, 8000);
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { pendingHistory.delete(reqId); reject(new Error('history: no answer within 8 s')); }, 8000);
     pendingHistory.set(reqId, (m) => { clearTimeout(t); resolve(m); });
     net.ws.send(JSON.stringify({ type: 'history', reqId, ...opts }));
   });
@@ -206,14 +211,34 @@ const PAGE_SESSION = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUU
 export function sendJoin() {
   const id = CONFIG.renderer ? `renderer-${CONFIG.name}`
     : CONFIG.spectate ? `retina-${CONFIG.name}` : CONFIG.name;
+  // ?renderer asks to be a renderer; only a client that can render is one. The server
+  // takes the flag at its word: it sends this client snapshots, and if it roams, sends
+  // it to worlds that have no renderer. A lite page with ?renderer used to send it
+  // anyway, and a roaming one was sent into a world where it answered every snapshot
+  // "this client has no renderer". With a renderer present, the world was never sent
+  // a working one (2026-10-24). A client with no snapshot renderer wired (lite.js wires
+  // none) claims neither flag. What happens next depends on how it came. On a door key
+  // or a login it is admitted as an invisible spectator. On the renderers' own
+  // credential, which admits renderers only, it is refused at the door (4003,
+  // tools/access-test.ts 11b). Either way, no snapshot is routed to it. Its id keeps the
+  // renderer- prefix, since that is its name.
+  //
+  // This reads `snapshot` when the join is SENT. main.js wires it before start() opens
+  // the socket (tools/renderer-join-test.ts pins that order).
+  const rendering = CONFIG.renderer && snapshot !== noRenderer;
+  if (CONFIG.renderer && !rendering && !warnedNoRenderer) {
+    warnedNoRenderer = true;
+    console.warn("[net] ?renderer, but this client has no renderer: it does not join as one. A door key admits it as a spectator; the renderers' credential admits renderers only, so with that it is refused.");
+  }
   net.ws.send(JSON.stringify({
     type: 'join', world: CONFIG.world, id,
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
-    renderer: CONFIG.renderer,
-    ...(CONFIG.roam ? { roam: true } : {}),
+    renderer: rendering,
+    ...(rendering && CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
+    clock: true,   // the server's time just before the snapshot ('clock' below)
   }));
 }
 
@@ -406,9 +431,13 @@ export async function connect() {
       // message can slip between the two.
       while (early.buffered.length) {
         const raw = early.buffered.shift();
+        // When the boot script's message handler ran, so the server's `t` it
+        // carries is sampled then rather than after the wait for this drain. Undefined
+        // from a boot script older than `arrived`: the sample is taken now.
+        const at = early.arrived?.shift();
         let msg;
         try { msg = JSON.parse(raw); } catch { continue; }
-        try { await handle(msg); } catch (e) { report(`net ${msg.type}`, e); }
+        try { await handle(msg, at); } catch (e) { report(`net ${msg.type}`, e); }
       }
       wireSocket(net.ws);   // live delivery takes over (onopen stays the boot script's)
       return;
@@ -542,8 +571,17 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
-async function handle(msg) {
+/** `at`: the performance.now() when the boot script's handler took an
+ *  early-socket message (the drain in connect()); undefined for a message
+ *  handled as its event runs. */
+async function handle(msg, at) {
   switch (msg.type) {
+    // The server's time, sent just before each snapshot to a join that asks
+    // (sendJoin's and the boot script's do): a sample for serverNow()'s
+    // estimate (remotes.js), taken before the snapshot's sounds are seeked
+    // or the editor stamps anything. How closely that estimate follows the
+    // server's clock is shared/clockoffset.js's to say.
+    case 'clock': noteServerTime(msg.t, at); break;
     case 'snapshot': return onSnapshot(msg);
 
     case 'your-rights': {
@@ -598,7 +636,7 @@ async function handle(msg) {
       // id. Same law as `pose`: update-only, never create — and with no
       // creation there is no fire-and-forget load whose completion could
       // deliver a departed generation's sample into a successor's buffer.
-      noteServerTime(msg.t);
+      noteServerTime(msg.t, at);
       for (const [id, pose] of Object.entries(msg.poses)) {
         if (id === net.myId) continue; // our own echo — local prediction owns this body
         if (remotes.has(id)) pushPose(id, pose, msg.t);

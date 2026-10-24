@@ -113,21 +113,24 @@ check('saved full still loses to no-GPU? no — an explicit choice outranks infe
 check('?lite=1 overrides saved full', d('lite=1', { stored: '0' }).lite === true);
 
 console.log('  -- the page itself, end to end (the call site, not just the function) --');
-const boot = (nav, tripped) => {
-  const st = new Map(tripped ? [['ew-boot-attempt:default', '1']] : []);
-  const h = { ...g, navigator: { gpu: {}, ...nav }, localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) }, addEventListener: () => {} };
+/** The page's inline script, run once against a stubbed browser: `search` is location.search, `nav` the navigator
+ *  (a 3D-capable one unless it says otherwise), `st` localStorage. The caller keeps `st`, so consecutive loads can
+ *  share it. Returns the decision and the keys left in storage. */
+const runPage = ({ search = '', nav = {}, st = new Map() } = {}) => {
+  const h = { ...g, location: { search }, navigator: { gpu: {}, ...nav },
+    localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) },
+    addEventListener: () => {} };
   h.globalThis = h;
   new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
     .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener);
-  return { lite: h.__ewLite, why: h.__ewLiteWhy };
+  return { lite: h.__ewLite, why: h.__ewLiteWhy, keys: [...st.keys()] };
 };
+const boot = (nav, tripped) => runPage({ nav, st: new Map(tripped ? [['ew-boot-attempt:default', '1']] : []) });
 const winUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36';
 const phoneUA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36';
 { // the page spends the retry when it takes it, so a second death in a row lands in lite
   const st = new Map([['ew-boot-attempt:default', '1']]);
-  const run2 = () => { const h = { ...g, navigator: { gpu: {}, userAgent: winUA, deviceMemory: 8 }, localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) }, addEventListener: () => {} };
-    h.globalThis = h; new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
-      .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener); return { lite: h.__ewLite, why: h.__ewLiteWhy }; };
+  const run2 = () => runPage({ nav: { userAgent: winUA, deviceMemory: 8 }, st });
   const a1 = run2();
   check('page: a Windows desktop after a died boot loads FULL (retry), and spends its retry', a1.lite === false && a1.why === 'retry' && st.has('ew-boot-retried:default'), JSON.stringify(a1));
   const a2 = run2();   // that retry died too (no handler ran): the trip key is still set
@@ -135,6 +138,32 @@ const phoneUA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chr
 }
 { const r = boot({ userAgent: phoneUA, deviceMemory: 4 }, true); check('page: an Android phone after a died boot loads lite (crash)', r.lite === true && r.why === 'crash', JSON.stringify(r)); }
 { const r = boot({ userAgent: winUA, deviceMemory: 8 }, false); check('page: a healthy desktop loads full (default)', r.lite === false && r.why === 'default', JSON.stringify(r)); }
+
+console.log('  -- a renderer is never lite (rule 0; 2026-10-24, the roaming renderers) --');
+// The /snap renderers' watchdog kills them by design, and a kill runs no pagehide: the tripwire read every kill as a
+// device that cannot, two in a row landed four of five roamers in lite, and a lite roamer answered every snapshot in
+// the world it was sent to "this client has no renderer".
+const macUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 HeadlessChrome/141 Safari/537.36';
+check('a renderer is full on a desktop', desk('renderer').lite === false && desk('renderer').why === 'renderer');
+check('a renderer whose last boot AND its retry died is still full (the watchdog\'s kills)',
+  desk('renderer&world=roam-lobby-1', { lastBootDied: true, retried: true }).lite === false
+    && desk('renderer&world=roam-lobby-1', { lastBootDied: true, retried: true }).why === 'renderer');
+check('a renderer outranks an explicit ?lite=1', desk('renderer&lite=1').lite === false);
+check('a renderer outranks a saved lite preference', desk('renderer', { stored: '1' }).lite === false);
+check('a renderer is full even where a phone would start lite', d('renderer').lite === false);
+check('a roaming renderer (?renderer&roam) with a tripped flag and a spent retry is full', desk('renderer&roam', { lastBootDied: true, retried: true }).lite === false && desk('renderer&roam', { lastBootDied: true, retried: true }).why === 'renderer');
+check('?spectate is not a renderer: a died boot still counts for it', desk('spectate', { lastBootDied: true, retried: true }).lite === true);
+/** The page itself at a given URL, from the given storage. */
+const bootAt = (search, nav, seed = []) => runPage({ search, nav, st: new Map(seed) });
+{
+  const tripped = [['ew-boot-attempt:roam-lobby-1', '1'], ['ew-boot-retried:roam-lobby-1', '1']];
+  const r = bootAt('?world=roam-lobby-1&renderer&roam&name=mac-gpu-roam-roam-lobby-1', { userAgent: macUA, deviceMemory: 8 }, tripped);
+  check('page: a roaming renderer with a tripped flag AND a spent retry loads full', r.lite === false && r.why === 'renderer', JSON.stringify(r));
+  const fresh = bootAt('?world=roam-lobby-1&renderer&roam', { userAgent: macUA, deviceMemory: 8 });
+  check('page: a renderer arms no tripwire (its watchdog\'s kill would leave the flag behind)', fresh.keys.length === 0, JSON.stringify(fresh));
+  const person = bootAt('?world=roam-lobby-1', { userAgent: macUA, deviceMemory: 8 });
+  check('page: …while a person in the same world still arms it', person.keys.includes('ew-boot-attempt:roam-lobby-1'), JSON.stringify(person));
+}
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} ok, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

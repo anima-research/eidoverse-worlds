@@ -18,7 +18,10 @@
 // restarted the walk neither moves the cursor past the new hole nor ends the
 // walk. And (its third) a trim of a merged row that the walk's cursor sits
 // inside restarts the walk, and a walk that ended at the present opens again
-// once a trim makes history.
+// once a trim makes history. And a re-join's catch-up that stops short of
+// the last delivered seq, at its 1,000-line cap or on a page that fails,
+// restarts the walk from where it stopped, never lower than a trim has
+// already restarted it, and a page that fails is not the beginning.
 //
 // Each scenario gets a FRESH chat.js (cache-busted specifier): the paging
 // cursor is module state, and one scenario's walk must not leak into another.
@@ -38,7 +41,7 @@ plugin({
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 
-const { setLog, holdNext, release, inFlight } = await import("./chat-history-stub.mjs");
+const { setLog, holdNext, failNext, release, inFlight, requests } = await import("./chat-history-stub.mjs");
 const { frameStub } = await import("./chat-frames-stub.mjs");
 const { emptyState, foldEntry } = await import("../shared/fold.js");
 
@@ -481,6 +484,215 @@ console.log("a page that lands after a trim restarted the walk does not end it")
   const final = shownIn(logEl);
   check("scrolling up brings #1–#41 back: every say once, in order",
     final.length === 441 && isSorted(final) && final[0] === "#1", `${final.length}, first ${final[0]}`);
+}
+
+// ------------------------------------------------- a catch-up that stops short
+//
+// The socket drops after #200 (day's last say) and `missed` more says follow.
+// The re-join replays its new window and catches up from #200, newest first,
+// 25 pages of 40 at most. Whatever the catch-up doesn't fetch is the walk's to
+// bring back, wherever the walk stood before the drop.
+const END = "— the beginning of this world —";
+const endMarkers = (logEl: HTMLElement) => [...logEl.children].filter((c) => c.textContent === END).length;
+// scroll until three scrolls in a row land nothing, not stopping at an end
+// marker, so a stale one shows as a second marker rather than an early stop
+async function scrollAll(logEl: HTMLElement, max = 80) {
+  for (let i = 0, still = 0; i < max && still < 3; i++) {
+    const was = rowsOf(logEl).length;
+    await scrollUp(logEl);
+    still = rowsOf(logEl).length === was ? still + 1 : 0;
+  }
+}
+async function dropAndCatchUp(walk: "beginning" | "one page" | "unmoved", missed: number, fail?: number) {
+  const chat = await freshChat();
+  const { logChat, logEl, resyncChatAfter } = chat;
+  setLog(day);
+  for (const m of windowOf(day)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  if (walk === "beginning") await scrollToTop(logEl);
+  if (walk === "one page") await scrollUp(logEl);
+  const atBeginning = endMarkers(logEl) === 1;
+  const later = [...day];
+  const t1 = Date.now() - 3_600_000;
+  for (let s = 201; s <= 200 + missed; s++) later.push(say(s, s % 2 ? "cairn" : "mythos", t1 + s * 1000));
+  setLog(later);
+  if (fail !== undefined) failNext(fail);
+  // what net.js does on a re-join: the catch-up's first page goes out, and
+  // the realizer replays the new window while it is on its way
+  const pending = resyncChatAfter(200);
+  for (const m of windowOf(later)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  const threw = await pending.then(() => false, () => true);
+  await settle();
+  const missing = (from: number, to: number) => {
+    const shown = new Set(shownIn(logEl));
+    return later.filter((e) => e.seq >= from && e.seq <= to && !shown.has(e.args.text)).map((e) => e.seq);
+  };
+  return { ...chat, later, atBeginning, threw, missing };
+}
+const range = (xs: number[]) => xs.length ? `${xs.length} missing, #${xs[0]}–#${xs.at(-1)}` : "none missing";
+const wholeOnce = (logEl: HTMLElement, later: any[]) => {
+  const final = shownIn(logEl);
+  return { ok: final.length === later.length && final.join(" ") === later.map((e) => e.args.text).join(" "),
+    detail: `${final.length} of ${later.length} shown` };
+};
+
+console.log("a catch-up past its 1,000 lines leaves the rest to the walk");
+for (const walk of ["beginning", "one page", "unmoved"] as const) {
+  // 1,100 missed: the catch-up fetches #301–#1300 and stops at its cap
+  const { logEl, later, atBeginning, missing } = await dropAndCatchUp(walk, 1100);
+  check(`precondition (walk ${walk}): ${walk === "beginning" ? "the walk had ended" : "the walk had not ended"}`,
+    atBeginning === (walk === "beginning"));
+  check(`precondition (walk ${walk}): the catch-up stopped at its cap, short of #201–#300`,
+    missing(201, 300).length === 100 && !missing(301, 1300).length, range(missing(201, 1300)));
+  await scrollAll(logEl);
+  const { ok, detail } = wholeOnce(logEl, later);
+  check(`walk ${walk}: scrolling up brings back every say once, in world order`, ok, `${detail}; ${range(missing(1, 1300))}`);
+  check(`walk ${walk}: …and the walk ends once, with one end marker`, endMarkers(logEl) === 1, `${endMarkers(logEl)} markers`);
+}
+
+console.log("a catch-up that fetched everything leaves a finished walk finished");
+{
+  // 900 missed: the catch-up gets back to #200 on its own, so nothing is
+  // left for the walk, and a walk that had ended stays ended
+  const { logEl, later, atBeginning, missing } = await dropAndCatchUp("beginning", 900);
+  check("precondition: the walk had ended", atBeginning);
+  check("the catch-up fetched every missed say", !missing(201, 1100).length, range(missing(201, 1100)));
+  const asked = requests.length;
+  await scrollUp(logEl);
+  check("a scroll-up asks for nothing more", requests.length === asked, `${requests.length - asked} requests`);
+  check("…and the end marker stays, once", endMarkers(logEl) === 1, `${endMarkers(logEl)} markers`);
+  check("every say is on screen once, in world order", wholeOnce(logEl, later).ok, wholeOnce(logEl, later).detail);
+}
+
+console.log("a catch-up whose page fails leaves the rest to the walk");
+for (const [label, missed, fail] of [["its first page", 60, 0], ["its second page", 200, 1]] as const) {
+  // the walk had ended at the beginning, the hardest case: on its own it
+  // never asks again
+  const { logEl, later, threw, missing } = await dropAndCatchUp("beginning", missed, fail);
+  check(`${label} fails: the catch-up settles without rejecting`, !threw);
+  check(`precondition (${label}): some of what was missed isn't on screen`, missing(201, 200 + missed).length > 0,
+    range(missing(201, 200 + missed)));
+  await scrollAll(logEl);
+  const { ok, detail } = wholeOnce(logEl, later);
+  check(`${label} fails: scrolling up brings back every say once, in world order`, ok,
+    `${detail}; ${range(missing(1, 200 + missed))}`);
+  check(`${label} fails: …and the walk ends once`, endMarkers(logEl) === 1, `${endMarkers(logEl)} markers`);
+}
+
+console.log("a page that fails while scrolling up isn't the beginning");
+{
+  // control for loadOlder's catch: a rejected page leaves the walk where it
+  // was, and the next scroll-up asks again
+  const { logChat, logEl } = await freshChat();
+  setLog(day);
+  for (const m of windowOf(day)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  const before = shownIn(logEl).length;
+  failNext();
+  await scrollUp(logEl);
+  check("the failed scroll-up shows no end marker", endMarkers(logEl) === 0);
+  check("…and lands nothing", shownIn(logEl).length === before, `${shownIn(logEl).length} of ${before}`);
+  await scrollAll(logEl);
+  check("the next scroll-ups walk on to the beginning: every say once, in order",
+    wholeOnce(logEl, day).ok && endMarkers(logEl) === 1, wholeOnce(logEl, day).detail);
+}
+
+console.log("a trim during the catch-up keeps what it trimmed in the walk's reach");
+{
+  // The walk had ended at the beginning; 1,100 were missed. The catch-up's
+  // 25th page (#301–#340) is in flight when a live line trims the log to
+  // 400 rows, taking #1–#200 and the catch-up's oldest rows (#341–#901) off
+  // the top. The trim restarts the walk from the present. When the catch-up
+  // then stops at its cap, its own restart (from #301) must not move the
+  // walk's start down past #341–#901, or nothing would bring them back.
+  const { logChat, logEl, resyncChatAfter } = await freshChat();
+  setLog(day);
+  for (const m of windowOf(day)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  await scrollToTop(logEl);
+  const later = [...day];
+  const t1 = Date.now() - 3_600_000;
+  for (let s = 201; s <= 1300; s++) later.push(say(s, s % 2 ? "cairn" : "mythos", t1 + s * 1000));
+  setLog(later);
+  holdNext(24);
+  const pending = resyncChatAfter(200);
+  for (const m of windowOf(later)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  for (let i = 0; i < 200 && !inFlight(); i++) await Bun.sleep(1);
+  check("precondition: the catch-up's 25th page is in flight", inFlight() && requests.length === 25, `${requests.length} requests`);
+  later.push(say(1301, "cairn", Date.now()));
+  logChat("cairn", "#1301", "", { seq: 1301, ts: Date.now() });
+  check("precondition: the live line trimmed #1–#200 and #341–#901",
+    shownIn(logEl)[0] === "#902" && rowsOf(logEl).length === 400, `${shownIn(logEl)[0]}, ${rowsOf(logEl).length} rows`);
+  release(); await pending; await settle();
+  await scrollAll(logEl);
+  const { ok, detail } = wholeOnce(logEl, later);
+  check("scrolling up brings back every say once, in world order", ok, detail);
+}
+
+console.log("a catch-up's restart doesn't move a walk that stands higher down");
+{
+  // The walk had never moved; 1,100 were missed. The catch-up's first page is
+  // held while the window replays and a scroll-up walks back from the present
+  // to the first line the window lacks, above #1200. Its 20th page (#501–#540)
+  // is then held while a live line trims the log to 400 rows: #541–#901 go,
+  // all below the walk's cursor, so the trim restarts nothing. When the
+  // catch-up stops at its cap, its restart from #301 must leave the cursor
+  // where the walk stands, or #541–#901 would sit above it with nothing to
+  // bring them back.
+  const { logChat, logEl, resyncChatAfter } = await freshChat();
+  setLog(day);
+  for (const m of windowOf(day)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  const later = [...day];
+  const t1 = Date.now() - 3_600_000;
+  for (let s = 201; s <= 1300; s++) later.push(say(s, s % 2 ? "cairn" : "mythos", t1 + s * 1000));
+  setLog(later);
+  holdNext(0);
+  const pending = resyncChatAfter(200);
+  for (const m of windowOf(later)) logChat(m.actor, m.text, "", { seq: m.seq, ts: m.ts });
+  for (let i = 0; i < 200 && !inFlight(); i++) await Bun.sleep(1);
+  check("precondition: the catch-up's first page is in flight", inFlight() && requests.length === 1, `${requests.length} requests`);
+  await scrollUp(logEl);
+  const walkedTo = Math.min(...shownIn(logEl).map(num).filter((s) => s > 200)), asked = requests.length;
+  check("precondition: one scroll-up walked back from the present, staying above #1200",
+    walkedTo > 1200 && asked >= 2, `walked to #${walkedTo}, ${asked} requests`);
+  holdNext(18);                       // the catch-up's pages 2, 3, … go out as the next requests
+  release();
+  for (let i = 0; i < 400 && !inFlight(); i++) await Bun.sleep(1);
+  check("precondition: the catch-up's 20th page is in flight", inFlight() && requests.length === asked + 19,
+    `${requests.length - asked} requests since the walk's`);
+  later.push(say(1301, "cairn", Date.now()));
+  logChat("cairn", "#1301", "", { seq: 1301, ts: Date.now() });
+  check("precondition: the live line trimmed the log to #902–#1301",
+    shownIn(logEl)[0] === "#902" && rowsOf(logEl).length === 400, `${shownIn(logEl)[0]}, ${rowsOf(logEl).length} rows`);
+  release(); await pending; await settle();
+  await scrollAll(logEl);
+  const { ok, detail } = wholeOnce(logEl, later);
+  check("scrolling up brings back every say once, in world order", ok, `${detail}; ${range(later.filter((e) =>
+    !shownIn(logEl).includes(e.args.text)).map((e) => e.seq))}`);
+}
+
+console.log("a trim that takes the end marker alone opens the walk where it stands");
+{
+  // The newest 360 of 399 says arrive live and the walk pages the other 39 in
+  // and ends: 399 rows and the marker. One live line trims the marker alone.
+  // The walk still stands at the beginning, so the next scroll-up asks once,
+  // finds nothing older, and puts the marker back.
+  const { logChat, logEl } = await freshChat();
+  const t0 = Date.now() - 500_000;
+  const log = Array.from({ length: 400 }, (_, i) => say(i + 1, voices[(i + 1) % 3], t0 + (i + 1) * 1000));
+  setLog(log.slice(0, 399));
+  for (const e of log.slice(39, 399)) logChat(e.actor, e.args.text, "", { seq: e.seq, ts: e.ts });
+  await scrollToTop(logEl);
+  check("precondition: the walk ended with 399 rows and the marker",
+    endMarkers(logEl) === 1 && rowsOf(logEl).length === 399 && logEl.children.length === 400,
+    `${rowsOf(logEl).length} rows, ${logEl.children.length} children`);
+  setLog(log);
+  logChat(log[399].actor, "#400", "", { seq: 400, ts: log[399].ts });
+  check("precondition: the live line trimmed the marker alone",
+    endMarkers(logEl) === 0 && shownIn(logEl)[0] === "#1" && rowsOf(logEl).length === 400,
+    `${endMarkers(logEl)} markers, first ${shownIn(logEl)[0]}, ${rowsOf(logEl).length} rows`);
+  const asked = requests.length;
+  await scrollUp(logEl);
+  check("the next scroll-up asks once and puts the marker back", requests.length === asked + 1 && endMarkers(logEl) === 1,
+    `${requests.length - asked} requests, ${endMarkers(logEl)} markers`);
+  check("…with every say once, in order", wholeOnce(logEl, log).ok, wholeOnce(logEl, log).detail);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

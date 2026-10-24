@@ -424,11 +424,6 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
-    if (auth?.nativeWorld && auth.nativeWorld !== "*" && wname !== auth.nativeWorld) {
-      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to its approved world; sign in again for multi-world access" }));
-      ws.close(4003, "native session world restriction");
-      return null;
-    }
     if (!/^[a-z0-9_-]{1,64}$/i.test(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `"${wname}" is not a world name — check the link that brought you here` }));
       c.ws.close?.(4005, "bad world name");
@@ -802,6 +797,16 @@ function buildSnapshot(w: World, c: Client) {
 const server = Bun.serve({
   port: PORT,
   hostname: process.env.HOST ?? "0.0.0.0",
+  // Bun closes a connection after 10s with no bytes moving (its default
+  // idleTimeout) — and that includes a response mid-stream. Over a relayed or
+  // transcontinental link a big download (a VRM, an unoptimized library glb)
+  // routinely stalls longer than that, so the transfer was cut short and the
+  // client saw a truncated body. 255s is Bun's maximum: a stalled transfer
+  // rides it out, and an HTTP connection that stays silent is still closed
+  // after 255s (by this same timer; TCP alone would take far longer to
+  // notice). A WebSocket has its own idle timer, websocket.idleTimeout, which
+  // the websocket block below leaves at Bun's default of 120s.
+  idleTimeout: 255,
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
@@ -947,6 +952,15 @@ const server = Bun.serve({
           // what lets an owner grant someone who is not here right now
           if (c.sub) notePrincipal(c.sub, auth ? auth.name : c.id, c.agent ? "agent" : "human");
           installJoin(c, w);
+          // The server's clock, just before the snapshot, for a join that asks
+          // (`clock: true`). A browser seeks shared sounds and stamps their
+          // start in server time, and an agent evaluates motion in it
+          // (serverNow in client/lib/remotes.js and mcpl/agent.ts); both learn
+          // it from a message's `t`. The snapshot's own transfer time would
+          // bias the first sample, so a small message carries it first. A join
+          // that doesn't ask gets the messages it always did, so a client that
+          // takes the first message after a join as the snapshot still works.
+          if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: Date.now() }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
           if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, session: presenceSession(c) }, c);

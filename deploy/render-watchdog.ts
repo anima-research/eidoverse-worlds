@@ -10,13 +10,15 @@
 // This watchdog OWNS the renderer's lifecycle and restarts it on any of:
 //   - crash        — Chrome process gone
 //   - hang         — main thread unresponsive to a trivial CDP eval
-//   - frozen       — booted but 0 fps / not joined for several checks
+//   - frozen       — booted but not joined, no frames, or no frame it can capture, for several checks
 //   - memory       — RSS over a cap, before it reaches the hang zone
 //   - stale code   — the served client changed (a deploy) — reload for new code
 //   - old age      — a max uptime, as a backstop against slow leaks
 //
 // Env: SHOW_URL WORLD KEY (as run-mac-renderer.sh), plus PORT (devtools),
 //   CHROME, MEM_CAP_GB, MAX_UPTIME_MIN, CHECK_SEC, STRIKES, BOOT_GRACE_SEC.
+
+import { health as healthAt, tally, type Health } from "./render-health.ts";
 
 const SHOW_URL = process.env.SHOW_URL;
 if (!SHOW_URL) { console.error("set SHOW_URL (e.g. https://eidoverse.animalabs.ai)"); process.exit(1); }
@@ -36,7 +38,17 @@ const VERSION_URL = `${SHOW_URL}/client-version`;
 // ROAM=1: a roaming renderer — it starts in WORLD and the server sends it to any world a snapshot is asked of
 // where no renderer is serving (server/snapshots.ts). Its name says so: mac-gpu-roam-<WORLD>.
 const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
-const URL = `${SHOW_URL}/?world=${WORLD}&renderer&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
+// lite=0: the client's boot tripwire (index.html, `ew-boot-attempt:<world>`)
+// demotes a device to the engine-less LITE client when its last full boots were
+// killed before the dwell, and this watchdog kills renderers for a living, in
+// a profile that persists. A couple of early kills and every relaunch came up
+// lite: no EW, "not joined", kill, lite again, forever. A lite roamer was worse
+// than none: it still joined as a renderer, the server sent it to a world, and
+// every snapshot there answered "this client has no renderer". The client now
+// never makes a ?renderer page lite (index.html rule 0); asking for the full
+// client here as well keeps a renderer whole against a sequencer still serving
+// a client from before that, since the URL outranks the tripwire.
+const URL = `${SHOW_URL}/?world=${WORLD}&renderer&lite=0&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (m: string) => console.log(`[watchdog ${new Date().toISOString().slice(11, 19)}] ${m}`);
 const sh = async (cmd: string) => (await new Response(Bun.spawn(["bash", "-c", cmd]).stdout).text()).trim();
@@ -55,36 +67,6 @@ async function clientVersion(): Promise<string | null> {
     if (!r.ok) return null;
     return (await r.text()).trim().slice(0, 200);
   } catch { return null; }
-}
-
-type Health = { alive: boolean; healthy: boolean; reason: string; fps?: number };
-async function health(): Promise<Health> {
-  let list: any;
-  try { list = await (await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(4000) })).json(); }
-  catch { return { alive: false, healthy: false, reason: "chrome down" }; }
-  const page = list.find((t: any) => t.type === "page" && String(t.url).includes("renderer"));
-  if (!page?.webSocketDebuggerUrl) return { alive: true, healthy: false, reason: "no renderer page" };
-
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  const opened = await new Promise((res) => { ws.onopen = () => res(true); ws.onerror = () => res(false); setTimeout(() => res(false), 4000); });
-  if (!opened) return { alive: true, healthy: false, reason: "cannot attach devtools" };
-
-  let id = 1;
-  const TIMEOUT = Symbol("timeout");
-  const evalx = (expr: string, ms = 5000) => new Promise<any>((res) => {
-    const i = id++; let done = false;
-    const h = (e: any) => { const m = JSON.parse(String(e.data)); if (m.id === i) { done = true; ws.removeEventListener("message", h); res(m.result?.result?.value); } };
-    ws.addEventListener("message", h);
-    ws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: expr, returnByValue: true } }));
-    setTimeout(() => { if (!done) res(TIMEOUT); }, ms);
-  });
-
-  try {
-    if ((await evalx("1+1")) === TIMEOUT) return { alive: true, healthy: false, reason: "main thread hung" };
-    const fps = Number(await evalx("+(document.getElementById('hud')?.textContent?.match(/(\\d+)fps/)?.[1]??0)"));
-    const joined = (await evalx("!!(window.EW?.net?.joined)")) === true;
-    return { alive: true, healthy: fps > 0 && joined, reason: joined ? `fps=${fps}` : "not joined", fps };
-  } finally { ws.close(); }
 }
 
 async function killTree() {
@@ -125,7 +107,7 @@ for (;;) {
     await sleep(CHECK_SEC * 1000);
     const upMin = (Date.now() - started) / 60000;
 
-    const h = await health().catch((e) => ({ alive: true, healthy: false, reason: `probe error: ${e?.message ?? e}` } as Health));
+    const h = await healthAt(PORT).catch((e) => ({ alive: true, healthy: false, reason: `probe error: ${e?.message ?? e}` } as Health));
     if (!h.alive) { reason = "crashed"; break; }
 
     const rss = await rssGB();
@@ -142,13 +124,11 @@ for (;;) {
       reason = "client updated"; break;
     }
 
-    if (!h.healthy) {
-      if (++strikes >= STRIKES) { reason = `unhealthy (${h.reason})`; break; }
-      log(`strike ${strikes}/${STRIKES}: ${h.reason}`);
-    } else {
-      if (strikes) log(`recovered (${h.reason})`);
-      strikes = 0;
-    }
+    const was = strikes, t = tally(strikes, h, STRIKES);
+    strikes = t.strikes;
+    if (t.restart) { reason = `unhealthy (${h.reason})`; break; }
+    if (!h.healthy) log(`strike ${strikes}/${STRIKES}: ${h.reason}`);
+    else if (was) log(`recovered (${h.reason})`);
   }
 
   log(`restarting: ${reason}`);

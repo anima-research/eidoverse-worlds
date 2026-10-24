@@ -16,9 +16,18 @@
 //   2. Autoplay: the browser may refuse play() until a gesture. Every sound
 //      rides the shared unlock queue (client/lib/audiounlock.js), which retries
 //      all held elements on the first gesture and SAYS SO in chat.
-//   3. The clock is the author's: with `t0` every client seeks to the same
-//      playhead ((now - t0) mod duration when looping), so a late joiner hears
+//   3. The clock is the SERVER's: with `t0` every client seeks to the same
+//      playhead ((serverNow - t0) mod duration when looping), so a late joiner hears
 //      the same bar as everyone else. Without it, the top of the track.
+//      serverNow() (remotes.js) is this machine's clock plus an offset
+//      estimated from the `t` the server stamps on its messages: the clock
+//      message it sends just before the snapshot to a join that asks, as
+//      this client's joins do (net.js 'clock'), and each frame. How closely
+//      that estimate follows the server's clock, behind a late message,
+//      after a step of the server's clock, or through a quiet spell with no
+//      frames, is shared/clockoffset.js's to say. A server older than the
+//      clock message sends none, and there the machine's clock serves until
+//      a frame brings a sample.
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop,
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced
@@ -39,6 +48,7 @@ import { volumeFor } from './voiceconsent.js';
 import { registerEditor } from './inspect.js';
 import { toast, flashHint } from './ui.js';
 import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — by placer, never latest actor (#190)
+import { serverNow } from './remotes.js';   // the estimated SERVER clock: the playhead is shared, so it runs on the clock everyone shares (see the clock note below)
 import { normalizeSound, SOUND_LOOK_MAX, SOUND_STORE } from '../../shared/sound.js';
 
 // id → { sound, el, srcNode, gain, panner }
@@ -100,7 +110,11 @@ function seekTo(h) {
   const apply = () => {
     const dur = el.duration;
     if (!sound.t0 || !Number.isFinite(dur) || dur <= 0) return;
-    const elapsed = (Date.now() - sound.t0) / 1000;
+    // t0 is server time (the editor stamps it from serverNow(); a behavior
+    // script's Date.now() IS the server's). Elapsed against the machine's
+    // own clock made two listeners with skewed clocks hear the same radio
+    // their skew apart — and an author with a skewed clock shifted everyone.
+    const elapsed = (serverNow() - sound.t0) / 1000;
     const at = sound.loop ? ((elapsed % dur) + dur) % dur : Math.min(dur, Math.max(0, elapsed));
     try { el.currentTime = at; } catch { /* not seekable yet — the loadedmetadata retry below covers it */ }
   };
@@ -210,7 +224,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       const bagFrom = (playingNow) => {
         const data = { src: q('src').value.trim(), volume: Number(q('volume').value), radius: Number(q('radius').value), loop: !!q('loop').checked, playing: playingNow };
         const look = q('look').value.trim(); if (look) data.look = look;
-        if (playingNow) data.t0 = Date.now();   // (re)start: everyone seeks to the same place
+        if (playingNow) data.t0 = serverNow();   // (re)start: everyone seeks to the same place — stamped in SERVER time, the clock every listener seeks against
         return data;
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());
