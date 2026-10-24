@@ -8,17 +8,27 @@
 // client is not joined.
 import { chromium } from 'playwright';
 import { strict as assert } from 'node:assert';
-import { writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { health } from '../deploy/render-health.ts';
 const base = process.argv[2] ?? 'http://127.0.0.1:19347';
 const shot = process.env.SHOT;
 const world = `roam-build-${Date.now().toString(36)}`, lobby = `roam-lobby-${Date.now().toString(36)}`;
 const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ verb: 'spawn', args: { id: `crate-${c}`, lib: `eidoverse/assets/models/crate_large_${c}.glb`, pos: [Math.cos(i * 1.57) * 4, 0, 6 + Math.sin(i * 1.57) * 4], yaw: 0 } }));
 let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | undefined;
-// a devtools port, so the watchdog's own check (deploy/render-health.ts health) can judge the roamer below
-const dbg = (() => { const s = Bun.serve({ port: 0, fetch: () => new Response() }); const p = s.port; s.stop(true); return p; })();
-const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal', `--remote-debugging-port=${dbg}`] });
+// A devtools port, so the watchdog's own check (deploy/render-health.ts health) can judge the roamer below. Chrome
+// picks it (port 0) and writes it to DevToolsActivePort in its profile, so no other process can take it between the
+// choosing and the binding; that is why this is a persistent context, in a profile this check owns.
+const profile = mkdtempSync(join(tmpdir(), 'roam-check-'));
+const browser = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chrome', viewport: { width: 960, height: 540 },
+  args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--remote-debugging-port=0'] });
+let dbg = 0;
 try {
+  for (let i = 0; i < 50 && !dbg; i++) {
+    try { dbg = Number(readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]) || 0; } catch { await Bun.sleep(100); }
+  }
+  assert.ok(dbg > 0, `Chrome wrote no DevToolsActivePort in ${profile}`);
   // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
   // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
   // A refusal (a sequencer that wants JOIN_TOKEN, a founding cap) fails the check with the server's reason, and so
@@ -40,7 +50,7 @@ try {
       });
     } finally { f.onclose = null; f.close(); }
   }
-  const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  const page = await browser.newPage();
   // TRIPPED (default on; TRIPPED=0 skips): the roamer's profile carries what its watchdog's kills leave behind, a
   // boot tripwire for its lobby and a spent retry. Before index.html's rule 0 that loaded the LITE client, which still
   // joined as a renderer, was sent to the agent's world, and answered every snapshot "this client has no renderer"
@@ -100,4 +110,4 @@ try {
   const notClient = await health(dbg, (u) => u.includes('/version?probe=plain'));
   assert.ok(!notClient.healthy && notClient.reason === 'not joined', `a page with no client is not joined: ${JSON.stringify(notClient)}`);
   console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined`);
-} finally { clearInterval(keepPose); ws?.close(); await browser.close(); }
+} finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); }
