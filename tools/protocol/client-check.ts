@@ -129,10 +129,10 @@ try {
   const start = disk().entities[crate].c.transform;
   // the drag adds 1 m to where the PAGE has the thing; a slow host may still be easing it in from where it was drawn, and
   // then the record lands off by that gap (Windows, fork run 40067199839: x 1.308, 0.4 short of the 1 m). Wait until the
-  // page agrees with the record, and say so when it never does.
+  // page agrees with the record; a page that never converges to its own record is a client bug, so that is a row too.
   const pageX = () => evalJson(`import('/lib/world.js').then((m) => m.entities.get('${crate}')?.position.x ?? null)`);
   const settled = await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.entities.get('${crate}')?.position.x ?? 1e9) - ${start.pos[0]}) < 1e-3)`);
-  if (!settled) console.error(`[client-check] G: the page never put ${crate} where the record has it (page x ${await pageX()}, record x ${start.pos[0]})`);
+  check("G (setup) the page has the crate where the record does before the drag", settled, { pageX: await pageX(), recordX: start.pos[0] });
   n0 = myActs().length;
   const drag = (dx: number, end = true) => evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
     return import('/lib/world.js').then((m) => { const o = m.entities.get('${crate}'); o.position.x += ${dx}; c.dispatchEvent({ type: 'objectChange' }); ${end ? "c.dispatchEvent({ type: 'dragging-changed', value: false });" : ""} return true; }); })()`);

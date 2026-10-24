@@ -201,15 +201,24 @@ function scaleCase(n: number) {
     op("set", (i) => s.call("olive", "set", { id: `c-${20 + i}`, component: "label", value: "x" }, 20000));
     op("batch", (i) => s.call("olive", "batch", { ops: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
     s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
-    // grab a cup and set it back on its tray. (It grabbed trays and dropped them "straight down": they stacked at vic's feet,
-    // the third claimed an overlap (implausible) and stayed held, and the fifth grab met hold-limit; a tray put back where it
-    // stood lands in its own cup, which stays in the air. A fast host never repeats grab — best() stops under the bound —
-    // so only a slow one hit it: fork run 40067199839, Windows, grab "hold-limit".)
-    const at = (id: string) => s.w().state().entities[id]?.c.transform?.pos;
-    op("grab", (i) => { const c = `cup-${i}`, p = at(c);
-      const r = s.call("vic", "grab", { id: c }, 20000), d = s.call("vic", "drop", { id: c, pos: p });
-      if (code(r) === "ok" && code(d) !== "ok") throw new Error(`setup: ${c} wouldn't go back to ${JSON.stringify(p)}: ${JSON.stringify(d).slice(0, 200)}`);
-      return r; });
+    // grab a tray WITH its cup on it (so grab's "what rested on it loses support" pass is timed: the cup is set down), walk
+    // it — untimed — to its own clear spot and drop it there straight down (timed). The op is grab + drop, as before. (It
+    // used to drop every tray at vic's feet: they stacked, the third claimed an overlap (implausible) and stayed held, and
+    // the fifth grab met hold-limit. A fast host never repeats grab — best() stops under the bound — so only a slow one hit
+    // it: fork run 40067199839, Windows, grab "hold-limit".)
+    { let bestG: any = null;
+      for (let i = 0; i < 5; i++) { const t = `tray-${i}`;
+        s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
+        const g = timed(() => s.call("vic", "grab", { id: t }, 20000));
+        const cupY = s.w().state().entities[`cup-${i}`]?.c.transform?.pos?.[1];   // the pass S1 means to time: the cup lost its tray
+        if (code(g.r) === "ok" && !(cupY < 0.3)) throw new Error(`setup: cup-${i} didn't come down when ${t} was lifted (y ${cupY})`);
+        for (const to of [[X - 22.2, 0, 39.4], [X - 22.2, 0, 37.4 + i], [X - 23.4, 0, 37.4 + i]]) {   // a teleport can't carry; strides between the trays
+          const walk = s.call("vic", "move", { to }, 20000);
+          if (code(g.r) === "ok" && code(walk) !== "ok") throw new Error(`setup: couldn't walk ${t} to ${JSON.stringify(to)}: ${JSON.stringify(walk).slice(0, 200)}`); }
+        const d = timed(() => s.call("vic", "drop", { id: t }, 20000));
+        if (code(g.r) === "ok" && code(d.r) !== "ok") throw new Error(`setup: ${t} wouldn't go down: ${JSON.stringify(d.r).slice(0, 200)}`);
+        const x = { ms: g.ms + d.ms, r: g.r }; if (!bestG || x.ms < bestG.ms) bestG = x; if (x.ms <= bound()) break; }
+      ms.grab = r1(bestG.ms); codes.grab = code(bestG.r); }
     return { n, ms, codes, things: Object.keys(s.w().state().entities).length - 1, load: r1(LOAD), bound: r1(bound()) }; };
 }
 const scaleGood = (o: any) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound)
