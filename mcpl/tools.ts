@@ -208,7 +208,44 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
     && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
-export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {}) {
+/** How long one snapshot call may take in all, retries included (SNAP_CALL_BUDGET_MS; 0 asks once). Under a
+ *  Connectome host's 60 s per-call deadline, and over the world server's own 55 s request deadline
+ *  (server/snapshots.ts budgetMs), so the server's answer always arrives before the tool gives up. */
+const snapCallBudgetMs = () => {
+  const n = Number(process.env.SNAP_CALL_BUDGET_MS ?? 57_000);
+  return Number.isFinite(n) && n >= 0 ? n : 57_000;
+};
+// A FIRST CALL SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24). The world can answer "not yet" for reasons that
+// pass in seconds: the renderer still loading the world (503), renderers busy (429), a frame that did not come in time
+// (504), a proxy in front cutting the wait (502). The tool asks again within one budget, waiting `retry-after` (or 2 s)
+// between tries, and hands the agent the last answer only once the budget is spent. Not retried: a refusal that
+// asking again cannot change (4xx other than 429), and an Unreal-only request with no Unreal renderer (no roamer is
+// ever sent for one; the answer says to ask for "browser").
+const SNAP_RETRY_MS = 2_000, SNAP_MIN_TRY_MS = 5_000;
+export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {},
+  { budgetMs = snapCallBudgetMs() }: { budgetMs?: number } = {}) {
+  const started = Date.now();
+  const left = () => budgetMs - (Date.now() - started);
+  let tries = 0;
+  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((Date.now() - started) / 1000)} s` : "";
+  for (;;) {
+    tries++;
+    const r = await snapshotOnce(ag, view, renderer, frame, budgetMs > 0 ? Math.max(1, left()) : undefined);
+    const retryable = r.kind === "unreachable"
+      || (r.kind === "refused" && [429, 502, 503, 504].includes(r.status) && !(r.status === 503 && renderer === "unreal"));
+    const pause = r.kind === "refused" && r.status === 429 && r.retryAfterMs ? r.retryAfterMs : SNAP_RETRY_MS;
+    if (r.kind === "ok" || !retryable || left() - pause < SNAP_MIN_TRY_MS) {
+      if (r.kind === "ok") return r.result;
+      if (r.kind === "unreachable") return fail(`snapshot failed: no picture arrived from the world server (${r.message})${after()}; try again in a moment`);
+      return fail(`snapshot: no picture was taken; the world server answered ${r.status}${r.said ? ` (${r.said})` : ""}${after()}, so ${r.remedy}`);
+    }
+    await new Promise((res) => setTimeout(res, pause));
+  }
+}
+type SnapTry = { kind: "ok"; result: any } | { kind: "unreachable"; message: string }
+  | { kind: "refused"; status: number; said: string; remedy: string; retryAfterMs?: number };
+async function snapshotOnce(ag: ToolAgent, view: string, renderer: string, frame: { dist?: unknown; height?: unknown; pitch?: unknown },
+  timeoutMs?: number): Promise<SnapTry> {
   try {
     const norm = normalizeSnapFrame(frame);
     const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
@@ -221,7 +258,8 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
       : `${ignored.join(" and ")} ${ignored.length > 1 ? "apply" : "applies"} only to views third and selfie; ignored`;
     // as this identity: a members-only world's snap answers only its members
     const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}${extra}`,
-      ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : undefined);
+      { ...(ag.agentToken ? { headers: { authorization: `Bearer ${ag.agentToken}` } } : {}),
+        ...(timeoutMs !== undefined ? { signal: AbortSignal.timeout(timeoutMs) } : {}) });
     if (!r.ok) {
       // The server's text in parentheses, where its own quoted names can't
       // nest in ours; the remedy is the status's (server/snapshots.ts).
@@ -233,16 +271,18 @@ export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "au
         : r.status === 404 ? "calling again works only once what it says has changed"
         : r.status < 500 ? "calling again with the same arguments won't change that"
         : "try again in a while";
-      return fail(`snapshot: no picture was taken; the world server answered ${r.status}${said ? ` (${said})` : ""}, so ${remedy}`);
+      const retryAfter = Number(r.headers.get("retry-after"));
+      return { kind: "refused", status: r.status, said, remedy,
+        ...(Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterMs: Math.min(retryAfter, 10) * 1000 } : {}) };
     }
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
     const label = r.headers.get("x-eidoverse-scene") === "world-projection"
       ? "Unreal server-world projection: models, structures, terrain and avatars; unsupported components and effects may be absent. This is a donor-rendered image, not authoritative state."
       : "Unreal underwater prototype view: local terrain/habitats and networked avatars; persistent world buildings are not mirrored.";
     const image = { type: "image", data: b64, mimeType: "image/png" };
-    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] };
+    return { kind: "ok", result: { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: label }] : []), image, ...(note ? [{ type: "text", text: note }] : [])] } };
   } catch (e) {
-    return fail(`snapshot failed: no picture arrived from the world server (${(e as Error).message}); try again in a moment`);
+    return { kind: "unreachable", message: (e as Error).message };
   }
 }
 

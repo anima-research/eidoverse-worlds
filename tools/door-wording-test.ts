@@ -15,6 +15,10 @@ import { SWIM_CLIPS } from "../shared/swimpose.js";
 import { fixture, postureFixture } from "./body-fixture.ts";
 
 const { check, tally } = mkCheck();
+// The wording checks read ONE answer from the world server; the snapshot tool's retries have their own checks below.
+const ONCE = { budgetMs: 0 };
+const snapTries = new Map<string, number>();
+const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=", "base64");
 const said = (r: any) => String(r?.content?.[0]?.text ?? "");
 
 // Bodies for body_state: the fixture rig, one without a left forearm, one
@@ -49,6 +53,16 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
     // body followed. The body's name also picks how the world's renderers answer; any other name
     // finds none of the kind asked for serving.
     const renderer = u.searchParams.get("renderer"), follow = u.searchParams.get("follow");
+    // "<answer>-<n>": refuse n times with that answer, then serve a picture (the retry checks below)
+    const later = /^(loading|busy|slow|proxied)-(\d+)$/.exec(follow ?? "");
+    if (later) {
+      const seen = (snapTries.get(follow!) ?? 0) + 1; snapTries.set(follow!, seen);
+      if (seen > Number(later[2])) return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
+      const [msg, st] = later[1] === "loading" ? ["the renderer is still loading this world — 1 model still loading (0 in); try again in a few seconds", 503]
+        : later[1] === "busy" ? ["renderers busy; retry in a few seconds", 429]
+        : later[1] === "slow" ? ["renderer timed out", 504] : ["<html>bad gateway</html>", 502];
+      return new Response(msg as string, { status: st as number, headers: st === 429 ? { "retry-after": "1" } : {} });
+    }
     const [said, status] = renderer !== "auto" && renderer !== "browser" && renderer !== "unreal" ? ["renderer must be auto, unreal, or browser", 400]
       : follow === "gone" ? ['"gone" is not present in "w"', 404]
       : follow === "busy" ? ["renderers busy; retry in a few seconds", 429]
@@ -134,33 +148,60 @@ try {
   const single = await call("travel", { world: "annex" });
   check("travel on a single-world door says the door fronts one world, which its operator chooses",
     single.isError === true && said(single) === "travel isn't available on this door: it fronts a single world, so you stayed where you are; its operator chooses that world (WORLD_NAME)", said(single));
-  const snap = said(await snapshotTool(agent));
+  const snap = said(await snapshotTool(agent, "first", "auto", {}, ONCE));
   check("a snapshot the server refused gives its status and its answer, with no quotes nested in ours",
     snap === `snapshot: no picture was taken; the world server answered 503 (no renderer is currently serving world "w"), so try again in a while`, snap);
-  const unrealOnly = said(await snapshotTool(agent, "first", "unreal"));
+  const unrealOnly = said(await snapshotTool(agent, "first", "unreal", {}, ONCE));
   check("...an Unreal-only one with none there says to try again, or that browser can get one",
     unrealOnly === `snapshot: no picture was taken; the world server answered 503 (no unreal renderer is currently serving world "w"), so try again in a while, or ask for renderer "browser"`, unrealOnly);
-  const unrealAway = said(await snapshotTool({ ...agent, name: "gone" }, "first", "unreal"));
+  const unrealAway = said(await snapshotTool({ ...agent, name: "gone" }, "first", "unreal", {}, ONCE));
   check("...but an Unreal-only one refused for another reason gets that reason's remedy",
     unrealAway === `snapshot: no picture was taken; the world server answered 404 ("gone" is not present in "w"), so calling again works only once what it says has changed`, unrealAway);
-  const badRenderer = said(await snapshotTool(agent, "first", "Unreal"));
+  const badRenderer = said(await snapshotTool(agent, "first", "Unreal", {}, ONCE));
   check("...a renderer the server refuses says the same arguments won't change that",
     badRenderer === "snapshot: no picture was taken; the world server answered 400 (renderer must be auto, unreal, or browser), so calling again with the same arguments won't change that", badRenderer);
-  const away = said(await snapshotTool({ ...agent, name: "gone" }));
+  const away = said(await snapshotTool({ ...agent, name: "gone" }, "first", "auto", {}, ONCE));
   check("...a body that isn't in the world says calling again works once what the server said has changed",
     away === `snapshot: no picture was taken; the world server answered 404 ("gone" is not present in "w"), so calling again works only once what it says has changed`, away);
-  const busy = said(await snapshotTool({ ...agent, name: "busy" }));
+  const busy = said(await snapshotTool({ ...agent, name: "busy" }, "first", "auto", {}, ONCE));
   check("...busy renderers say a few seconds",
     busy === "snapshot: no picture was taken; the world server answered 429 (renderers busy; retry in a few seconds), so try again in a few seconds", busy);
-  const slow = said(await snapshotTool({ ...agent, name: "slow" }));
+  const slow = said(await snapshotTool({ ...agent, name: "slow" }, "first", "auto", {}, ONCE));
   check("...a renderer that timed out says a while",
     slow === "snapshot: no picture was taken; the world server answered 504 (renderer timed out), so try again in a while", slow);
-  const proxied = said(await snapshotTool({ ...agent, name: "proxied" }));
+  const proxied = said(await snapshotTool({ ...agent, name: "proxied" }, "first", "auto", {}, ONCE));
   check("...an answer over several lines reads as one",
     proxied === "snapshot: no picture was taken; the world server answered 502 (<html> <h1>502 Bad Gateway</h1> </html>), so try again in a while", proxied);
-  const blank = said(await snapshotTool({ ...agent, name: "blank" }));
+  const blank = said(await snapshotTool({ ...agent, name: "blank" }, "first", "auto", {}, ONCE));
   check("...and an answer of nothing but whitespace gives the status alone",
     blank === "snapshot: no picture was taken; the world server answered 502, so try again in a while", blank);
+  // A first call should come back with a picture: "not yet" answers are asked again within the call's budget.
+  const img = (r: any) => r?.content?.some((c: any) => c.type === "image") && r.isError !== true;
+  for (const [who, what] of [["loading-1", "a renderer still loading the world (503)"], ["busy-1", "busy renderers (429, after its retry-after)"],
+    ["slow-1", "a frame that came too late (504)"], ["proxied-1", "a proxy cutting the wait (502)"]] as const) {
+    const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: who }, "first", "auto", {}, { budgetMs: 20_000 });
+    check(`a first call that met ${what} once still comes back with the picture`, img(r) && snapTries.get(who) === 2, `${said(r)} tries=${snapTries.get(who)} ${Date.now() - t0}ms`);
+  }
+  {
+    const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: "loading-2" }, "first", "auto", {}, { budgetMs: 20_000 });
+    const ms = Date.now() - t0;
+    check("…and one refused twice, after two pauses of about 2 s", img(r) && snapTries.get("loading-2") === 3 && ms >= 3500 && ms < 8000, `${said(r)} ${ms}ms`);
+  }
+  {
+    // a budget that runs out: the last answer, saying how many tries and how long
+    const r = await snapshotTool({ ...agent, name: "loading-99" }, "first", "auto", {}, { budgetMs: 8_000 });
+    check("a world still loading after the whole budget gives its answer, how many tries, and how long",
+      r.isError === true && /^snapshot: no picture was taken; the world server answered 503 \(the renderer is still loading this world — 1 model still loading \(0 in\); try again in a few seconds\) after 2 tries over [0-9]+ s, so try again in a while$/.test(said(r)), said(r));
+  }
+  {
+    // what asking again cannot change is not asked again
+    const t0 = Date.now();
+    const gone = await snapshotTool({ ...agent, name: "gone" }, "first", "auto", {}, { budgetMs: 20_000 });
+    const unreal = await snapshotTool(agent, "first", "unreal", {}, { budgetMs: 20_000 });
+    const bad = await snapshotTool(agent, "first", "Unreal", {}, { budgetMs: 20_000 });
+    check("a body that isn't there (404), an Unreal-only ask with none serving, and bad arguments are answered at once, not retried",
+      gone.isError && unreal.isError && bad.isError && !/tries/.test(said(gone) + said(unreal) + said(bad)) && Date.now() - t0 < 1500, `${Date.now() - t0}ms`);
+  }
   const worldsDown = said(await call("worlds"));
   check("worlds names the server's status", /^worlds: the world server answered 500, so the list isn't known/.test(worldsDown), worldsDown);
   const notGeometry = said(await call("measure", { id: "x" }));
@@ -171,7 +212,7 @@ try {
     geomError === `measure: the world server answered 404 (no entity "err" in w), so nothing was measured`, geomError);
   agent.httpBase = goneBase;
   check("a snapshot from a server that's gone says no picture arrived",
-    /^snapshot failed: no picture arrived from the world server \(.+\); try again/.test(said(await snapshotTool(agent))));
+    /^snapshot failed: no picture arrived from the world server \(.+\); try again/.test(said(await snapshotTool(agent, "first", "auto", {}, ONCE))));
   check("worlds from a server that's gone says it didn't answer",
     /^worlds: the world server didn't answer \(.+\), so the list isn't known/.test(said(await call("worlds"))));
   const geomGone = said(await call("measure", { id: "x" }));
