@@ -60,20 +60,28 @@ try {
     await connect("other-founder", {}, "other-world");
     const other = await connect("other-renderer", { renderer: true }, "other-world");
     other.send({ type: "snap-result", id: request.id, dataUrl: png });
-    assert.equal((await fetch(url)).status, 429);
+    // The stray reply finished nothing: the donor is still busy with the first ask, so a second one WAITS for it
+    // (server/snapshots.ts: a busy renderer is waited for, not refused) instead of being served the stray frame.
+    let queuedDone = false;
+    const queued = fetch(url).then((q) => { queuedDone = true; return q; });
+    await Bun.sleep(300); assert.equal(queuedDone, false, "a second ask waits while the donor is busy");
     donor.send({ type: "snap-result", id: request.id, dataUrl: png });
     const r = await response; assert.equal(r.status, 200); assert.equal(r.headers.get("x-eidoverse-renderer"), "unreal");
     assert.equal(r.headers.get("x-eidoverse-scene"), "underwater-prototype");
     assert.equal(Buffer.from(await r.arrayBuffer()).toString("base64"), png.split(",")[1]);
+    // …and once the donor is free (after its cooldown), the waiting ask goes to it and is served: no "busy" on a first try
+    await wait(() => donor.messages.filter(m => m.type === "snap").length === 2, "queued capture dispatched");
+    donor.send({ type: "snap-result", id: donor.messages.filter(m => m.type === "snap")[1].id, dataUrl: png });
+    assert.equal((await queued).status, 200, "the ask that waited is served");
     donor.send({ type: "capture-capabilities", capture: null }); await Bun.sleep(50); assert.equal((await fetch(url)).status, 503);
     const legacy = await connect("legacy", { renderer: true });
     const oldResponse = fetch(url + "&renderer=browser"); await wait(() => legacy.messages.some(m => m.type === "snap"), "browser capture");
     legacy.send({ type: "snap-result", id: legacy.messages.find(m => m.type === "snap").id, dataUrl: png }); assert.equal((await oldResponse).status, 200);
     donor.send({ type: "capture-capabilities", capture: cap }); await Bun.sleep(2100);
-    const pending = fetch(url + "&renderer=unreal"); await wait(() => donor.messages.filter(m => m.type === "snap").length === 2, "second capture");
+    const pending = fetch(url + "&renderer=unreal"); await wait(() => donor.messages.filter(m => m.type === "snap").length === 3, "third capture");
     donor.ws.close(); assert.equal((await pending).status, 503);
     const log = readFileSync(join(scratch, "worlds", "snapshot-test", "log.jsonl"), "utf8");
     assert.ok(!log.includes("snap-result") && !log.includes("capture-capabilities"), "capture is ephemeral");
-    console.log("SNAPSHOTS_WIRE_PASS: embodied donor, PNG route, ownership, quota, opt-out, legacy browser, disconnect cleanup, no log writes");
+    console.log("SNAPSHOTS_WIRE_PASS: embodied donor, PNG route, ownership, a busy renderer waited for, opt-out, legacy browser, disconnect cleanup, no log writes");
   }
 } finally { control?.stop(true); for (const ws of sockets) ws.close(); child.kill(); await child.exited; }

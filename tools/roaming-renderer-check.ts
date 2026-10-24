@@ -109,5 +109,21 @@ try {
   await plain.goto(`${base}/version?probe=plain`);
   const notClient = await health(dbg, (u) => u.includes('/version?probe=plain'));
   assert.ok(!notClient.healthy && notClient.reason === 'not joined', `a page with no client is not joined: ${JSON.stringify(notClient)}`);
-  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined`);
+  // THE ROAMER RESTARTS (its watchdog does this every few hours, and on every client deploy): it comes back as a new page
+  // in its lobby, with the agent's world left unserved. The sweep (server/snapshots.ts) must send it straight back
+  // without a snapshot being asked, so the agent's next snapshot is served at once (2026-10-24: "failing on first try
+  // is bad").
+  await page.close();
+  const again = await browser.newPage();
+  await again.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check`);
+  const againWorld = () => again.evaluate(async () => (await import('/lib/base.js')).CONFIG.world).catch(() => null);
+  const tb = Date.now(); while (Date.now() - tb < 30000 && (await againWorld()) !== world) await Bun.sleep(250);
+  const backMs = Date.now() - tb;
+  assert.equal(await againWorld(), world, 'the restarted roamer was sent back to the agent\'s world with no snapshot asked (sweep)');
+  await again.waitForFunction(async () => { const m = await import('/lib/realize/models.js'); const r = m.residencyDebug(); return r.real >= 4 && r.loading === 0 && r.standins === 0; }, null, { timeout: 60000 });
+  const afterRestart = await snap();
+  console.log(JSON.stringify({ afterRestart: { status: afterRestart.status, ms: afterRestart.ms, backMs } }));
+  assert.equal(afterRestart.status, 200, `the first snapshot after the roamer's restart is served: ${afterRestart.err}`);
+  assert.ok(afterRestart.ms < 3000, `…at once, from the roamer already there (${afterRestart.ms} ms)`);
+  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next snapshot took ${afterRestart.ms} ms`);
 } finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); }

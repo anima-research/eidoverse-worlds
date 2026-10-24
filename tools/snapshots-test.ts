@@ -48,7 +48,7 @@ test("legacy browser renderer and explicit selection remain compatible", async (
   expect(await result).toMatchObject({ ok: true, engine: "browser", scene: "world-fold" });
 });
 test("no target, invalid selector, no donor, busy, invalid result, backpressure", async () => {
-  const { broker, world, donor } = setup();
+  const { broker, world, donor } = setup({ queueMs: 0 });   // busy answers at once when nothing may wait (queueing: below)
   expect(await broker.request(world, "missing")).toMatchObject({ status: 404 });
   expect(await broker.request(world, "agent", "first", "bad")).toMatchObject({ status: 400 });
   expect(await broker.request(world, "agent", "first", "browser")).toMatchObject({ status: 503 });
@@ -59,11 +59,11 @@ test("no target, invalid selector, no donor, busy, invalid result, backpressure"
 });
 test("bounded inflight work, cooldown, timeout cleanup", async () => {
   let time = 0;
-  const { broker, world, donor } = setup({ cooldownMs: 2000, timeoutMs: 5, now: () => time });
+  const { broker, world, donor } = setup({ cooldownMs: 2000, timeoutMs: 5, now: () => time, queueMs: 0 });
   expect(await broker.request(world, "agent")).toMatchObject({ status: 504 }); expect(broker.pendingCount).toBe(0);
   expect(await broker.request(world, "agent")).toMatchObject({ status: 429 }); time = 2000;
   const result = broker.request(world, "agent"); broker.retire(donor.c); expect(await result).toMatchObject({ status: 503 });
-  const blocked = setup({ maxPending: 0 }); expect(await blocked.broker.request(blocked.world, "agent")).toMatchObject({ status: 429 });
+  const blocked = setup({ maxPending: 0, queueMs: 0 }); expect(await blocked.broker.request(blocked.world, "agent")).toMatchObject({ status: 429 });
 });
 test("opt-out, target disconnect, renderer retirement release pending work", async () => {
   for (const who of ["donor", "target", "opt-out"] as const) {
@@ -231,4 +231,116 @@ test("a reply for a snap dispatched to another renderer is a drop like any other
   expect(broker.pendingCount).toBe(1);
   broker.receive(donor.c, { id: request.id, dataUrl: png });
   expect(await result).toMatchObject({ ok: true });
+});
+
+// ---- a first snapshot comes back with a picture (2026-10-24) ----
+test("a busy renderer is waited for: two asks at once both come back with a picture", async () => {
+  const { broker, world, donor } = setup({ pollMs: 5, queueMs: 2000, timeoutMs: 1000 });
+  const first = broker.request(world, "agent"), second = broker.request(world, "agent");
+  await Bun.sleep(20);
+  expect(donor.messages.filter((m) => m.type === "snap").length).toBe(1);   // one at a time per renderer
+  broker.receive(donor.c, { id: donor.messages[0].id, dataUrl: png });
+  expect(await first).toMatchObject({ ok: true });
+  await Bun.sleep(30);
+  const next = donor.messages.filter((m) => m.type === "snap");
+  expect(next.length).toBe(2);
+  broker.receive(donor.c, { id: next[1].id, dataUrl: png });
+  expect(await second).toMatchObject({ ok: true });
+});
+test("…waiting is bounded: a renderer busy past queueMs is still 'busy', and a body that leaves is 404", async () => {
+  const { broker, world, donor, target } = setup({ pollMs: 5, queueMs: 60, timeoutMs: 1000 });
+  void broker.request(world, "agent");
+  const t0 = Date.now(); const late = await broker.request(world, "agent");
+  expect(late).toMatchObject({ ok: false, status: 429 }); expect(Date.now() - t0).toBeGreaterThanOrEqual(50);
+  const queued = broker.request(world, "agent");
+  world.clients.delete(target.c);
+  expect(await queued).toMatchObject({ ok: false, status: 404 });
+  broker.retire(donor.c);
+});
+test("the renderer is told how long it may load the world: its frame window less the margin", async () => {
+  const { broker, world, donor } = setup({ timeoutMs: 12_000, settleMarginMs: 2_000 });
+  const r = broker.request(world, "agent");
+  expect(donor.messages[0]).toMatchObject({ type: "snap", wait: 10_000 });
+  broker.receive(donor.c, { id: donor.messages[0].id, dataUrl: png }); await r;
+});
+test("a summoned roamer gets the arrival window to load the world, cut to the request's deadline", async () => {
+  const { broker, worldOf, join, leave } = roamSetup({ travelMs: 10_000, arrivalTimeoutMs: 40_000, timeoutMs: 12_000, budgetMs: 55_000, settleMarginMs: 2_000 });
+  const lobby = worldOf("lobby"), w = worldOf("w");
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent");
+  const result = broker.request(w, "agent");
+  await Bun.sleep(20); leave(roamer.c);
+  const there = join(w, "roam", { renderer: true, roam: true, spectator: true });
+  await Bun.sleep(40);
+  const snap = there.messages.find((m) => m.type === "snap");
+  // the full arrival window (40 s) fits inside the 55 s deadline after a quick journey: 40 s less the 2 s margin
+  expect(snap.wait).toBe(38_000);
+  broker.receive(there.c, { id: snap.id, dataUrl: png }); expect(await result).toMatchObject({ ok: true });
+  // a deadline shorter than the arrival window cuts the renderer's wait to fit it
+  const tight = roamSetup({ travelMs: 10_000, arrivalTimeoutMs: 40_000, timeoutMs: 1_000, budgetMs: 5_000, settleMarginMs: 1_000 });
+  const l2 = tight.worldOf("lobby"), w2 = tight.worldOf("w2");
+  const r2 = tight.join(l2, "roam", { renderer: true, roam: true, spectator: true }); tight.join(w2, "agent");
+  const res2 = tight.broker.request(w2, "agent"); await Bun.sleep(20); tight.leave(r2.c);
+  const t2 = tight.join(w2, "roam", { renderer: true, roam: true, spectator: true }); await Bun.sleep(40);
+  const s2 = t2.messages.find((m) => m.type === "snap");
+  expect(s2.wait).toBeLessThanOrEqual(4_000); expect(s2.wait).toBeGreaterThan(3_000);
+  tight.broker.receive(t2.c, { id: s2.id, dataUrl: png }); await res2;
+});
+test("sweep: an agent's world with no renderer gets a PARKED roamer; a served world and a roamer in use are left alone", async () => {
+  const { broker, worldOf, join } = roamSetup({ sweepAfterMs: 0 });
+  const lobby = worldOf("lobby"), a = worldOf("a"), b = worldOf("b"), served = worldOf("served"), used = worldOf("used");
+  const parked = join(lobby, "roam-parked", { renderer: true, roam: true, spectator: true });
+  const inUse = join(used, "roam-used", { renderer: true, roam: true, spectator: true });
+  join(used, "agentUsed", { agent: true });
+  join(served, "renderer", { renderer: true, spectator: true }); join(served, "agentServed", { agent: true });
+  join(a, "agentA", { agent: true }); join(b, "agentB", { agent: true });
+  broker.sweep();
+  const sentTo = parked.messages.filter((m) => m.type === "renderer-travel").map((m) => m.world);
+  expect(sentTo.length).toBe(1);                                   // one parked roamer goes to ONE world, not two
+  expect(["a", "b"]).toContain(sentTo[0]);
+  expect(inUse.messages.some((m) => m.type === "renderer-travel")).toBe(false);   // never taken from an agent's world
+  broker.sweep();                                                  // a second sweep while it travels sends nothing new
+  expect(parked.messages.filter((m) => m.type === "renderer-travel").length).toBe(1);
+  await Bun.sleep(450);
+});
+test("sweep: a world with no agent in it is not served, and a roamer restarted into its lobby goes back", async () => {
+  const { broker, worldOf, join, leave } = roamSetup({ sweepAfterMs: 0 });
+  const lobby = worldOf("lobby"), empty = worldOf("empty"), w = worldOf("w");
+  join(empty, "a-person");                                         // people alone don't need a renderer
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
+  broker.sweep(); expect(roamer.messages.length).toBe(0);
+  join(w, "agent", { agent: true });
+  // the roamer served w, then its watchdog restarted it into its lobby: a new connection there
+  leave(roamer.c); const back = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
+  broker.sweep();
+  expect(back.messages.filter((m) => m.type === "renderer-travel")).toEqual([{ type: "renderer-travel", world: "w" }]);
+  await Bun.sleep(450);
+});
+test("sweep waits out a start (renderers reconnecting), then serves", async () => {
+  let time = 0;
+  const { broker, worldOf, join } = roamSetup({ now: () => time, sweepAfterMs: 30_000 });
+  const lobby = worldOf("lobby"), w = worldOf("w");
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent", { agent: true });
+  time = 29_000; broker.sweep(); expect(roamer.messages.length).toBe(0);
+  time = 30_000; broker.sweep(); expect(roamer.messages).toEqual([{ type: "renderer-travel", world: "w" }]);
+});
+test("sweep leaves a world whose own renderer is restarting; a roamer that came while it was gone is free again", async () => {
+  let time = 0;
+  const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0, pinnedGraceMs: 120_000, travelMs: 400 });
+  const lobby = worldOf("lobby"), commons = worldOf("commons"), other = worldOf("other");
+  const pinned = join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true });
+  join(commons, "agentC", { agent: true });
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
+  broker.sweep();                                       // commons is served: nothing to do, and its renderer is noted
+  leave(pinned.c);                                      // the commons renderer restarts…
+  time = 60_000; broker.sweep();
+  expect(roamer.messages.length).toBe(0);               // …a minute in, no roamer is sent to load the commons for nothing
+  time = 125_000; broker.sweep();                       // past the grace it really is unserved: a roamer goes
+  expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "commons" });
+  // the roamer arrives; then the commons renderer is back: the roamer is not needed there, so it counts as parked
+  leave(roamer.c); const inCommons = join(commons, "roam", { renderer: true, roam: true, spectator: true });
+  join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true });
+  join(other, "agentO", { agent: true });
+  await Bun.sleep(30);                                  // the summons to commons sees its roamer arrive
+  time = 200_000; broker.sweep();
+  expect(inCommons.messages.at(-1)).toEqual({ type: "renderer-travel", world: "other" });
 });

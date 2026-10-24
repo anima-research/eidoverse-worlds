@@ -368,6 +368,10 @@ snapshots.setClients(() => clients.values());   // roaming renderers are found a
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
 snapshots.setAdmission((w, c) => canEnter(w, whoOf(c), "watch").ok);
 snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
+// Keep agents' worlds served (snapshots.ts sweep): a parked roamer goes to any world with an agent in it and no
+// renderer, so its first snapshot finds the world loaded. On a timer, as the backstop for everything that leaves a
+// world unserved; a roamer joining also runs it at once (below).
+setInterval(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 15_000);
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -709,6 +713,10 @@ function installJoin(c: Client, w: World) {
     // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
     // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
     if (c.agent && !c.spectator) snapshots.prewarm(w);
+    // …and a roaming renderer joining (its watchdog restarts it into its lobby, after a deploy or every few hours)
+    // is sent straight back to an agent's world that has none, rather than waiting for the timer above. A second
+    // later, so its own join has settled before it is asked to travel.
+    if (c.roam) setTimeout(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
     // eidosim@0.3.0: know the world's standing geometry before anyone spawns
     // or epochs into it (boxes.ts — the sync validators read a warm cache).
     // AFTER admission, never before: a rejected or invalid join must not
