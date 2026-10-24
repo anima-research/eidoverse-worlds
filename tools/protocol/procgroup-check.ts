@@ -88,6 +88,13 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG9 a live suite's tree is killed children first, the root last", !!plan && JSON.stringify(plan(100, T, false)) === JSON.stringify([300, 200, 100]), plan && plan(100, T, false));
   check("PG10 after the suite exited, an id that's in the table again is someone else's: nothing is killed", !!plan && plan(100, reused, true).length === 0, plan && plan(100, reused, true));
   check("PG11 after the suite exited, its orphans are killed and the dead root's id never is", !!plan && JSON.stringify(plan(100, gone, true)) === JSON.stringify([300, 200]), plan && plan(100, gone, true));
+  // PG14 (CI 10-23, run 40054616217: the gate died mid-lane, exit 1, no tally): the gate (900) was started by a shell (60)
+  // whose own parent id is 100 — a long-dead process's number, now the dead suite root's too. 60 → 900 → 950 look like
+  // 100's orphans; the gate and its shell must never be in the plan, and neither must anything below them
+  const stale = parseWinTable("4 0\r\n60 100\r\n900 60\r\n950 900\r\n200 100\r\n");
+  const plan14 = plan && (plan as any)(100, stale, true, 900);
+  check("PG14 an exited root's sweep never kills the gate, its shell, or anything under them (a reused id as a stale parent)",
+    !!plan14 && JSON.stringify(plan14) === JSON.stringify([200]), plan14);
   const pg = fs.readFileSync(new URL("./procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   check("PG12 the sweep after a suite exits says so (exited), and killChild never blocks or kills an exited child",

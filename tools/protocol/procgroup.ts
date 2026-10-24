@@ -91,11 +91,16 @@ export async function suiteMembersAsync(root: number, platform: NodeJS.Platform 
  *  Windows reuses process ids (CI 10-22: the runner "lost communication" mid-gate, with a tree kill aimed at an exited
  *  suite's id on every suite): once the suite has `exited`, an id that is in the table again belongs to someone else, so
  *  nothing is killed; if the id is free, only its orphans are, and the dead root's id never is. */
-export function winKillPlan(root: number, table: Row[], exited: boolean): number[] {
+export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid): number[] {
   if (exited && table.some((r) => r.pid === root)) return [];
+  // never ourselves or an ancestor: a parent id on Windows is only a number, and once the dead root's id is reused a
+  // stale ParentProcessId can make the gate (or the shell that started it) look like that root's orphan. A tree kill
+  // landed there once: the gate died mid-lane with exit 1 and no tally (windows-latest, 10-23, run 40054616217)
+  const byPid = new Map(table.map((r) => [r.pid, r])), mine = new Set<number>();
+  for (let p: number | undefined = self; p !== undefined && !mine.has(p); p = byPid.get(p)?.ppid) mine.add(p);
   const kids = new Map<number, number[]>(); for (const r of table) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
   const depth = new Map<number, number>(), todo: [number, number][] = [[root, 0]];
-  while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
+  while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root && !mine.has(c)) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
   return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
