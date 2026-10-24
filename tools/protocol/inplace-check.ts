@@ -84,7 +84,10 @@ const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; cons
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const W = path.join(root, "worlds"), OPT = path.join(root, "opt"); fs.mkdirSync(OPT, { recursive: true });
 const tool = (args: string[], env: Record<string, string> = {}) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
-  env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
+  env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, timeout: 45_000 });
+  // Bounded: on windows-latest the suite hangs about 1 run in 6 (10-23: anima 40061183406, fork 40065156981), each time with a
+  // world.ts child running (after IP2, after IP13); a child never returning had no bound. Now it's named and its output kept.
+  if (r.exitedDueToTimeout) console.log(`  [inplace-check] world.ts ${args.slice(0, 2).join(" ")} gave no answer in 45 s (killed); output so far:\n${(r.stdout.toString() + r.stderr.toString()).slice(-800)}`);
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 /** The dry run's report hash for a world (review of PR #260 item 6: a translation needs an approval bound to it). */
 const dryHash = (words: string[], env: Record<string, string> = {}) => { const r = tool(["translate", ...words, "--dry-run", "--no-founder-key"], env); return /^report-hash ([0-9a-f]{64})$/m.exec(r.out)?.[1] ?? "no-hash"; };
