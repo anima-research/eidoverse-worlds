@@ -138,7 +138,7 @@ const NUMERIC_BOUNDS = {
  *  bounded. Smoke rises at +0.45, sparks fall at −4. */
 const GRAVITY_BOUND = [-20, 20];
 const BLENDINGS = new Set(['additive', 'normal']);
-const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', 'gravity', 'color', 'blending',
+const KNOWN_KEYS = new Set(['preset', 'seed', 'texture', 'origin', 'quality', 'part', 'gravity', 'color', 'blending',
   ...Object.keys(NUMERIC_BOUNDS)]);
 
 /** A colour as the renderer takes it (0xRRGGBB), from `"#rgb"`, `"#rrggbb"`
@@ -222,14 +222,14 @@ const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
 function normalizeOrigin(origin, problems) {
   if (origin == null) return [0, 0, 0];
   if (!Array.isArray(origin) || origin.length !== 3 || !origin.every((n) => typeof n === 'number' && Number.isFinite(n))) {
-    problems.push('origin must be [x, y, z] numbers (entity-relative metres)');
+    problems.push('origin must be [x, y, z] numbers (entity-relative, or part-relative when part is named)');
     return [0, 0, 0];
   }
   // Entity-RELATIVE by contract: the emitter hangs off the thing that owns it
   // and travels with it. A 200m offset is not a local origin, it is a second
   // entity nobody can see, move or remove.
   if (origin.some((n) => Math.abs(n) > 8)) {
-    problems.push('origin is entity-relative and bounded to ±8m — place a far emitter on its own entity');
+    problems.push('origin is entity-relative (part-relative with part) and bounded to ±8m — place a far emitter on its own entity');
     return origin.map((n) => clamp(n, [-8, 8]));
   }
   return origin.slice();
@@ -264,6 +264,10 @@ export function normalizeParticles(data, { entityId = '', key = 'particles' } = 
     origin: normalizeOrigin(data.origin, notes),
     quality: Object.hasOwn(QUALITY_TIERS, data.quality) ? data.quality : 'auto',
   };
+  if (data.part != null) {
+    if (typeof data.part === 'string' && data.part.trim() && data.part.length <= 256) emitter.part = data.part;
+    else notes.push('part must be a non-empty name of at most 256 characters — using the entity frame');
+  }
   if (data.quality != null && !Object.hasOwn(QUALITY_TIERS, data.quality)) {
     notes.push(`quality ${JSON.stringify(data.quality)} is unknown (${Object.keys(QUALITY_TIERS).join('/')}) — using auto`);
   }
@@ -360,6 +364,9 @@ export function describeParticles(data, key = 'particles') {
   const bits = [tag];
   const o = Array.isArray(data.origin) && data.origin.length === 3 && data.origin.every((n) => typeof n === 'number' && Number.isFinite(n))
     ? data.origin : null;
+  if (typeof data.part === 'string' && data.part.trim() && data.part.length <= 256) {
+    bits.push(`declared part ${JSON.stringify(data.part)} (part-local origin; entity fallback if unavailable)`);
+  }
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);
   // Size is a shared fact a resident can act on ("a candle flame", not "a
   // bonfire"), so a scaled emitter says so; colour likewise. Neither is
