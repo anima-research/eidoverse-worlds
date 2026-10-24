@@ -201,7 +201,15 @@ function scaleCase(n: number) {
     op("set", (i) => s.call("olive", "set", { id: `c-${20 + i}`, component: "label", value: "x" }, 20000));
     op("batch", (i) => s.call("olive", "batch", { ops: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
     s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
-    op("grab", (i) => { const r = s.call("vic", "grab", { id: `tray-${i}` }, 20000); s.call("vic", "drop", { id: `tray-${i}` }); return r; });
+    // grab a cup and set it back on its tray. (It grabbed trays and dropped them "straight down": they stacked at vic's feet,
+    // the third claimed an overlap (implausible) and stayed held, and the fifth grab met hold-limit; a tray put back where it
+    // stood lands in its own cup, which stays in the air. A fast host never repeats grab — best() stops under the bound —
+    // so only a slow one hit it: fork run 40067199839, Windows, grab "hold-limit".)
+    const at = (id: string) => s.w().state().entities[id]?.c.transform?.pos;
+    op("grab", (i) => { const c = `cup-${i}`, p = at(c);
+      const r = s.call("vic", "grab", { id: c }, 20000), d = s.call("vic", "drop", { id: c, pos: p });
+      if (code(r) === "ok" && code(d) !== "ok") throw new Error(`setup: ${c} wouldn't go back to ${JSON.stringify(p)}: ${JSON.stringify(d).slice(0, 200)}`);
+      return r; });
     return { n, ms, codes, things: Object.keys(s.w().state().entities).length - 1, load: r1(LOAD), bound: r1(bound()) }; };
 }
 const scaleGood = (o: any) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound)
