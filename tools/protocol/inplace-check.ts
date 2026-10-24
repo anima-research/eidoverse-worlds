@@ -468,8 +468,13 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
   const writer = setInterval(() => { try { fs.appendFileSync(logf, JSON.stringify({ seq: 100 + n, ts: T0 + 100000 + n, actor: "Bob", verb: "say", args: { text: `late ${n}` } }) + "\n"); n++; } catch { /* gone */ } }, 2);
   const proc = Bun.spawn(["bun", "tools/protocol/world.ts", "translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash([name])], { cwd: ENGINE, stdout: "pipe", stderr: "pipe",
     env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
-  const code = await proc.exited; clearInterval(writer);
-  const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+  // Bounded: on windows-latest the suite once died at its 180 s with IP13 the last line printed (anima run 40061183406,
+  // 10-23); cause not yet known (not the pipes: translate prints ~600 bytes here). A hang is now a red IP14 row carrying
+  // translate's output, not a killed suite. Pipes read while it runs, so they can never be the reason it waits.
+  const outP = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  const hung = setTimeout(() => { try { proc.kill(); } catch {} }, 90_000);
+  const code = await proc.exited; clearTimeout(hung); clearInterval(writer);
+  const out = (await outP).join("") + (proc.signalCode ? `\n[inplace-check] translate killed after 90 s (${proc.signalCode})` : "");
   const lines = fs.readFileSync(logf, "utf8").split("\n").filter(Boolean).length;
   ok(code !== 0 && /changed while it was being translated|is not the one that was approved/.test(out) && !fs.existsSync(path.join(d, "world.jsonl")) && fs.existsSync(logf) && lines === L.length + n && !temps().some((t) => t.includes(name)),
     "IP14 an old log written to during the translation: the approval check or the swap refuses (the report changed / stop the old server), nothing moves, and every line written is still there", { code, out: out.slice(-500), world: fs.existsSync(path.join(d, "world.jsonl")), lines, wrote: n }); }
