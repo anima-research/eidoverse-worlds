@@ -19,5 +19,11 @@ const page = readFileSync(new URL("../client/index.html", import.meta.url), "utf
 const lf = inlineScriptHashes(page.replace(/\r\n?/g, "\n")), crlf = inlineScriptHashes(page.replace(/\r\n?/g, "\n").replaceAll("\n", "\r\n"));
 check("CSP4 client/index.html gets the same policy whether it was checked out LF or CRLF", lf.length > 0 && lf.join() === crlf.join(), { lf: lf.length, crlf: crlf.length });
 
+// the tokeniser: only a real src attribute makes a script external, and a closing tag may carry spaces or junk before its >
+check("CSP5 a data-src attribute doesn't make an inline script external (it still runs, so it needs its hash)",
+  inlineScriptHashes(`<script data-src="x">${body}</script>`)[0] === browserHash(body), inlineScriptHashes(`<script data-src="x">${body}</script>`));
+check("CSP6 a real src attribute does (no hash for an external script)", inlineScriptHashes(`<script type="module" src="/main.js"></script>`).length === 0);
+check("CSP7 \"</script foo>\" closes the script, as the parser closes it", inlineScriptHashes(`<script>${body}</script foo><script>window.y=2;</script>`).join() === [browserHash(body), browserHash("window.y=2;")].join(),
+  inlineScriptHashes(`<script>${body}</script foo><script>window.y=2;</script>`));
 console.log(`[csp-test] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
