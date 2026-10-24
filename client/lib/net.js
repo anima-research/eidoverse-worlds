@@ -79,7 +79,9 @@ let forgetBytes = () => {};
 let myReachBag = () => undefined;
 // A client with no renderer must still ANSWER a snap — the asker is blocked on the
 // reply id — so the default is an honest error, not silence.
-let snapshot = async () => ({ error: 'this client has no renderer' });
+const noRenderer = async () => ({ error: 'this client has no renderer' });
+let snapshot = noRenderer;
+let warnedNoRenderer = false;
 
 export function wireNet(h) {
   const { participants, forgetBytes: fb, snapshot: snap, myReachBag: rb, toast: tf, ...rest } = h;
@@ -209,12 +211,25 @@ const PAGE_SESSION = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUU
 export function sendJoin() {
   const id = CONFIG.renderer ? `renderer-${CONFIG.name}`
     : CONFIG.spectate ? `retina-${CONFIG.name}` : CONFIG.name;
+  // ?renderer asks to be a renderer; only a client that can render is one. The server
+  // takes the flag at its word: it sends this client snapshots, and if it roams, sends
+  // it to worlds that have no renderer. A lite page with ?renderer used to send it
+  // anyway, and a roaming one was sent into a world where it answered every snapshot
+  // "this client has no renderer". With a renderer present, the world was never sent
+  // a working one (2026-10-24). A client with no snapshot renderer wired
+  // (lite.js wires none) joins as what it is, an invisible spectator. Its id keeps the
+  // renderer- prefix, since that is its name.
+  const rendering = CONFIG.renderer && snapshot !== noRenderer;
+  if (CONFIG.renderer && !rendering && !warnedNoRenderer) {
+    warnedNoRenderer = true;
+    console.warn('[net] ?renderer, but this client has no renderer: joining as a spectator, not as a renderer');
+  }
   net.ws.send(JSON.stringify({
     type: 'join', world: CONFIG.world, id,
     avatar: hooks.myAvatarPath(),
     spectate: CONFIG.spectate || CONFIG.renderer,
-    renderer: CONFIG.renderer,
-    ...(CONFIG.roam ? { roam: true } : {}),
+    renderer: rendering,
+    ...(rendering && CONFIG.roam ? { roam: true } : {}),
     token: CONFIG.token,
     session: PAGE_SESSION,
     clock: true,   // the server's time just before the snapshot ('clock' below)

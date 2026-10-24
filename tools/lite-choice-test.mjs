@@ -136,5 +136,40 @@ const phoneUA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chr
 { const r = boot({ userAgent: phoneUA, deviceMemory: 4 }, true); check('page: an Android phone after a died boot loads lite (crash)', r.lite === true && r.why === 'crash', JSON.stringify(r)); }
 { const r = boot({ userAgent: winUA, deviceMemory: 8 }, false); check('page: a healthy desktop loads full (default)', r.lite === false && r.why === 'default', JSON.stringify(r)); }
 
+console.log('  -- a renderer is never lite (rule 0; 2026-10-24, the roaming renderers) --');
+// The /snap renderers' watchdog kills them by design, and a kill runs no pagehide: the tripwire read every kill as a
+// device that cannot, two in a row landed four of five roamers in lite, and a lite roamer answered every snapshot in
+// the world it was sent to "this client has no renderer".
+const macUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 HeadlessChrome/141 Safari/537.36';
+check('a renderer is full on a desktop', desk('renderer').lite === false && desk('renderer').why === 'renderer');
+check('a renderer whose last boot AND its retry died is still full (the watchdog\'s kills)',
+  desk('renderer&world=roam-lobby-1', { lastBootDied: true, retried: true }).lite === false
+    && desk('renderer&world=roam-lobby-1', { lastBootDied: true, retried: true }).why === 'renderer');
+check('a renderer outranks an explicit ?lite=1', desk('renderer&lite=1').lite === false);
+check('a renderer outranks a saved lite preference', desk('renderer', { stored: '1' }).lite === false);
+check('a renderer is full even where a phone would start lite', d('renderer').lite === false);
+check('a roaming renderer (?renderer&roam) is full', desk('renderer&roam&lite=0').why === 'renderer');
+check('?spectate is not a renderer: a died boot still counts for it', desk('spectate', { lastBootDied: true, retried: true }).lite === true);
+/** The page itself at a given URL: returns the decision and what it left in storage. */
+const bootAt = (search, nav, seed = []) => {
+  const st = new Map(seed);
+  const h = { ...g, location: { search }, navigator: { gpu: {}, ...nav },
+    localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) },
+    addEventListener: () => {} };
+  h.globalThis = h;
+  new Function('globalThis', 'navigator', 'location', 'localStorage', 'document', 'console', 'URLSearchParams', 'addEventListener', src)
+    .call(h, h, h.navigator, h.location, h.localStorage, h.document, h.console, URLSearchParams, h.addEventListener);
+  return { lite: h.__ewLite, why: h.__ewLiteWhy, keys: [...st.keys()] };
+};
+{
+  const tripped = [['ew-boot-attempt:roam-lobby-1', '1'], ['ew-boot-retried:roam-lobby-1', '1']];
+  const r = bootAt('?world=roam-lobby-1&renderer&roam&name=mac-gpu-roam-roam-lobby-1', { userAgent: macUA, deviceMemory: 8 }, tripped);
+  check('page: a roaming renderer with a tripped flag AND a spent retry loads full', r.lite === false && r.why === 'renderer', JSON.stringify(r));
+  const fresh = bootAt('?world=roam-lobby-1&renderer&roam', { userAgent: macUA, deviceMemory: 8 });
+  check('page: a renderer arms no tripwire (its watchdog\'s kill would leave the flag behind)', fresh.keys.length === 0, JSON.stringify(fresh));
+  const person = bootAt('?world=roam-lobby-1', { userAgent: macUA, deviceMemory: 8 });
+  check('page: …while a person in the same world still arms it', person.keys.includes('ew-boot-attempt:roam-lobby-1'), JSON.stringify(person));
+}
+
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} ok, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

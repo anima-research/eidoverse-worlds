@@ -13,8 +13,28 @@ const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ verb: 'spawn'
 let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | undefined;
 const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
 try {
+  // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
+  // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
+  {
+    const f = new WebSocket(base.replace('http', 'ws') + '/ws');
+    await new Promise<void>((res, rej) => { f.onopen = () => res(); f.onerror = () => rej(new Error('cannot connect to found the lobby')); });
+    const founded = new Promise<void>((res) => { f.onmessage = (e) => { if (JSON.parse(String(e.data)).type === 'snapshot') res(); }; });
+    f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-founder', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+    await founded; f.close();
+  }
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  // TRIPPED (default on; TRIPPED=0 skips): the roamer's profile carries what its watchdog's kills leave behind, a
+  // boot tripwire for its lobby and a spent retry. Before index.html's rule 0 that loaded the LITE client, which still
+  // joined as a renderer, was sent to the agent's world, and answered every snapshot "this client has no renderer"
+  // (2026-10-24). The renderer must boot full anyway, and serve.
+  const tripped = process.env.TRIPPED !== '0';
+  if (tripped) await page.addInitScript((w) => {
+    try { localStorage.setItem(`ew-boot-attempt:${w}`, '1'); localStorage.setItem(`ew-boot-retried:${w}`, '1'); } catch { /* storage blocked */ }
+  }, lobby);
   await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check`);
+  const boot = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
+  console.log(JSON.stringify({ tripped, boot }));
+  assert.equal(boot.lite, false, `the roaming renderer boots the full client: ${JSON.stringify(boot)}`);
   await page.waitForFunction(() => !!globalThis.__waterDebug, null, { timeout: 60000 });
   await Bun.sleep(3000);
   const rendererWorld = () => page.evaluate(async () => (await import('/lib/base.js')).CONFIG.world);
