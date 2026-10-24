@@ -58,7 +58,7 @@ export function pngFromDataURL(value: unknown): Buffer | null {
 // rarely needs a roamer to travel and load at all.
 export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
-  queueMs = 20_000, maxQueued = 32, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
+  queueMs = 20_000, maxQueued = 16, maxQueuedTotal = 64, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
   sweepBackoffMs = 15_000, sweepBackoffMaxMs = 10 * 60_000,
   allClients = (() => []) as () => Iterable<Client>,
   admits = (() => true) as (world: World, c: Client) => boolean,
@@ -92,8 +92,14 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   // The queue of requests waiting for a busy renderer: first come, first served per world and renderer kind, and
   // bounded, so waiting can neither starve an early ask nor pile up without limit (each waiter holds an HTTP request).
   const waiting: { world: World; engine: string; seq: number }[] = [];
-  /** Could a renderer serve an ask of this kind? (auto takes any; browser and unreal take their own.) */
+  /** Could a renderer serve an ask of this kind? (auto takes any; browser and unreal take their own.) The one
+   *  place this is decided: candidatesIn and the queue both use it. */
   const eligible = (c: Client, engine: string) => engine === "auto" || (c.capture?.engine ?? "browser") === engine;
+  // When each client last (re)joined a world. A ROAMER that arrived within the arrival window may still be loading the
+  // world it was sent to, whoever sent it (this request, a pre-warm, a sweep), so it gets the arrival window to settle.
+  const joinedAt = new WeakMap<Client, number>();
+  const noRenderer = (world: World, engine: string) =>
+    `no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`;
   let waitSeq = 0;
   const startedAt = now();
   const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
@@ -114,6 +120,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   }
   function configure(c: Client, value: unknown) {
     retire(c, false);   // a change of capability ends its pending shots; it is not a renderer leaving its world
+    joinedAt.set(c, now());   // the server configures every client as it joins (and re-joins, on travel)
     c.capture = (c.surface ?? "world") === "world" ? captureCapability(value) : undefined;
   }
   function request(world: World, follow: string, view = "first", engine = "auto",
@@ -130,29 +137,28 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     const ownDeadline = now() + Math.min(maxWait(), Math.max(budgetMs, timeoutMs + 2 * settleMarginMs));
     const deadline = typeof callerBudgetMs === "number" && Number.isFinite(callerBudgetMs) && callerBudgetMs > 0
       ? Math.min(ownDeadline, now() + callerBudgetMs) : ownDeadline;
-    const candidates = [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
-      && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
-      .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
-    if (!candidates.length) {
+    if (!candidatesIn(world, engine).length) {
       // a roamer can only be a browser renderer: an Unreal-only request is not summoned
-      if (engine === "unreal") return fail(`no unreal renderer is currently serving world "${world.name}"`, 503);
+      if (engine === "unreal") return fail(noRenderer(world, "unreal"), 503);
       // The journey comes out of the deadline too: a caller with less time than a journey and a frame is not held
       // for the whole journey and then sent a snap it cannot get. It hears that a roamer is on its way, and when to
       // ask again; the roamer keeps travelling, so the next ask finds it there.
       const late = Symbol("late");
       const journey = Math.max(0, deadline - now() - Math.min(timeoutMs, 3_000));
-      return Promise.race([summon(world, "ask"), sleep(journey).then(() => late)]).then((arrived): Promise<Result> | Result => arrived === late
+      let lateTimer: ReturnType<typeof setTimeout> | undefined;
+      const tooLate = new Promise<typeof late>((res) => { lateTimer = setTimeout(() => res(late), journey); });
+      return Promise.race([summon(world, "ask"), tooLate]).finally(() => clearTimeout(lateTimer)).then((arrived): Promise<Result> | Result => arrived === late
         ? { ok: false, err: `no renderer is serving world "${world.name}" yet; a roaming renderer is on its way, so ask again in a few seconds`, status: 503, retryAfter: 2 }
         : arrived
         ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs), deadline)
         : { ok: false as const, err: wildcardRoleIn(world.state as any) === "none"
             ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
-            : `no renderer is currently serving world "${world.name}", and no roaming renderer could come`, status: 503 });
+            : `${noRenderer(world, "auto")}, and no roaming renderer could come`, status: 503 });
     }
     return dispatch(world, follow, view, engine, frame, target, timeoutMs, deadline);
   }
   const candidatesIn = (world: World, engine: string) => [...world.clients].filter(c => active(c, world) && (c.renderer || c.capture)
-    && (engine === "auto" || (c.capture?.engine ?? "browser") === engine))
+    && eligible(c, engine))
     .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
   /** How much a roamer's current world still needs it: 0 — no agent there (parked, free); 1 — agents there, but none
    *  has asked for a snapshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. */
@@ -219,14 +225,15 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // A BUSY RENDERER IS WAITED FOR, not refused. Two agents asking at once in one world, or a second ask while the
     // first is still loading the world, used to get "renderers busy" back on the first try. Now the request waits
     // for a renderer to come free, up to `queueMs`, and never so long that the frame would not fit before its deadline.
-    // At most `maxQueued` wait; beyond that the answer is "busy" at once, as before.
+    // At most `maxQueued` wait in a world (and `maxQueuedTotal` in all); beyond that the answer is "busy" at once.
     const busy = (): Result => ({ ok: false, err: "renderers busy; retry in a few seconds", status: 429, retryAfter: 2 });
     if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
-    if (!candidatesIn(world, engine).length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
+    if (!candidatesIn(world, engine).length) return fail(noRenderer(world, engine), 503);
     // a new ask is younger than every waiter: it takes no renderer one of them could use
     let renderer = free(Infinity);
     if (!renderer) {
-      if (waiting.length >= maxQueued) return busy();
+      // capped per world, so a burst in one world never turns another world's first ask into "busy"; and in all
+      if (waiting.filter((t) => t.world === world).length >= maxQueued || waiting.length >= maxQueuedTotal) return busy();
       const ticket = { world, engine, seq: ++waitSeq };
       waiting.push(ticket);
       const queueUntil = Math.min(now() + queueMs, deadline - Math.min(timeoutMs, 3_000));
@@ -235,12 +242,16 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
           if (now() >= queueUntil) return busy();
           await sleep(pollMs);
           if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
-          if (!candidatesIn(world, engine).length) return fail(`no ${engine === "auto" ? "" : engine + " "}renderer is currently serving world "${world.name}"`, 503);
+          if (!candidatesIn(world, engine).length) return fail(noRenderer(world, engine), 503);
           if ((renderer = free(ticket.seq))) break;
         }
       } finally { waiting.splice(waiting.indexOf(ticket), 1); }
     }
     const chosen = renderer!;
+    // A roamer that arrived within the arrival window may still be loading the world (a pre-warm or a sweep sent it
+    // moments ago): it gets the arrival window, not the frame window. A pinned renderer keeps the operator's frame
+    // window (SNAP_TIMEOUT_SEC) even just after a restart; caught mid-load, its own "still loading" is retryable.
+    if (chosen.roam && now() - (joinedAt.get(chosen) ?? -Infinity) < arrivalTimeoutMs) waitMs = Math.max(waitMs, arrivalTimeoutMs);
     // the frame gets its window, cut to what is left of the request's deadline
     waitMs = Math.max(1, Math.min(waitMs, deadline - now()));
     if (!["first", "third", "selfie"].includes(view)) view = "first";

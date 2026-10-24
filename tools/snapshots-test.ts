@@ -4,7 +4,9 @@ import type { World, Client } from "../server/world.ts";
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
-  const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 100, ...options });
+  // these renderers have long been serving the world: no arrival window for having just joined (that rule's own tests
+  // are below, "a renderer that joined moments ago…")
+  const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 100, arrivalTimeoutMs: 0, ...options });
   // a world has a folded state; an open one (no owner) lets every renderer in (server/access.ts)
   const world = { name: "test", clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World;
   const make = (id: string, opts = {}) => {
@@ -508,4 +510,51 @@ test("an Unreal-only waiter does not hold back a browser ask for a renderer it c
   broker.receive(legacy.c, { id: snap.id, dataUrl: png });
   expect(await browser).toMatchObject({ ok: true });
   broker.retire(donor.c); await unrealWaiter;
+});
+// ---- third review of #279 ----
+test("a roamer that arrived moments ago (swept, pre-warmed) gets the arrival window to load the world; a pinned renderer does not", async () => {
+  let time = 100_000;
+  const { broker, worldOf, join } = roamSetup({ now: () => time, timeoutMs: 12_000, arrivalTimeoutMs: 40_000, travelMs: 25_000, settleMarginMs: 2_000 });
+  const w = worldOf("w"); join(w, "agent");
+  const swept = join(w, "roam", { renderer: true, roam: true, spectator: true });
+  broker.configure(swept.c, undefined);                     // the server configures every client as it joins
+  time += 3_000;                                            // the agent asks 3 s after the sweep's roamer arrived
+  const r = broker.request(w, "agent");
+  expect(swept.messages.find((m) => m.type === "snap").wait).toBe(38_000);   // the arrival window, not the 12 s frame window
+  broker.receive(swept.c, { id: swept.messages.find((m) => m.type === "snap").id, dataUrl: png }); await r;
+  time += 60_000;                                           // long settled: the frame window again
+  const r2 = broker.request(w, "agent");
+  expect(swept.messages.filter((m) => m.type === "snap")[1].wait).toBe(10_000);
+  broker.receive(swept.c, { id: swept.messages.filter((m) => m.type === "snap")[1].id, dataUrl: png }); await r2;
+  // a PINNED renderer that just joined keeps the operator's frame window (SNAP_TIMEOUT_SEC governs it)
+  const p = worldOf("p"); join(p, "agentP");
+  const pinned = join(p, "renderer-mac-gpu-p", { renderer: true, spectator: true }); broker.configure(pinned.c, undefined);
+  time += 1_000;
+  const r3 = broker.request(p, "agentP");
+  expect(pinned.messages.find((m) => m.type === "snap").wait).toBe(10_000);
+  broker.receive(pinned.c, { id: pinned.messages.find((m) => m.type === "snap").id, dataUrl: png }); await r3;
+});
+test("the queue cap is per world: waiters in one world do not turn another world's ask into 'busy'", async () => {
+  const { broker, worldOf, join } = roamSetup({ pollMs: 5, queueMs: 3_000, timeoutMs: 3_000, travelMs: 10_000, maxQueued: 1, maxQueuedTotal: 64 });
+  const a = worldOf("a"), b = worldOf("b");
+  const ra = join(a, "ra", { renderer: true, spectator: true }), rb = join(b, "rb", { renderer: true, spectator: true });
+  join(a, "agentA"); join(b, "agentB");
+  void broker.request(a, "agentA"); await Bun.sleep(5);                  // a's renderer busy
+  void broker.request(a, "agentA"); await Bun.sleep(5);                  // a's one allowed waiter
+  const t0 = Date.now(); expect(await broker.request(a, "agentA")).toMatchObject({ status: 429 }); expect(Date.now() - t0).toBeLessThan(50);
+  void broker.request(b, "agentB"); await Bun.sleep(5);                  // b's renderer busy
+  const waitsInB = broker.request(b, "agentB"); await Bun.sleep(30);     // b still has room to wait
+  let settled = false; void waitsInB.then(() => { settled = true; });
+  await Bun.sleep(20); expect(settled).toBe(false);
+  broker.retire(ra.c); broker.retire(rb.c);
+});
+test("…and a global ceiling still bounds all waiters", async () => {
+  const { broker, worldOf, join } = roamSetup({ pollMs: 5, queueMs: 3_000, timeoutMs: 3_000, travelMs: 10_000, maxQueued: 16, maxQueuedTotal: 1 });
+  const a = worldOf("a"), b = worldOf("b");
+  const ra = join(a, "ra", { renderer: true, spectator: true }), rb = join(b, "rb", { renderer: true, spectator: true });
+  join(a, "agentA"); join(b, "agentB");
+  void broker.request(a, "agentA"); void broker.request(b, "agentB"); await Bun.sleep(5);   // both renderers busy
+  void broker.request(a, "agentA"); await Bun.sleep(5);                                    // the one waiter allowed in all
+  expect(await broker.request(b, "agentB")).toMatchObject({ status: 429 });
+  broker.retire(ra.c); broker.retire(rb.c);
 });
