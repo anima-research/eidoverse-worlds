@@ -159,7 +159,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   // an agent: an operator-enrolled token (mcpl/tokens.json's shape) founds like a person
   const TOK = path.join(root, "tokens.json"); fs.writeFileSync(TOK, JSON.stringify({ "tok-ash": { id: "Ash" } }));
   const A = await start({ AGENT_TOKENS_PATH: TOK });
-  const ash = await sock(A.port); const ja = await ash.join("src", "Ash", { token: "tok-ash" });
+  const ash = await sock(A.port); const ja = await ash.join("src", "Ash", { agentToken: "tok-ash" });
   const ra = await ash.raw({ type: "world-found", name: "ashs-place" }, "world-founded", 8000);
   ok(!!ja.snapshot && ra?.type === "world-founded" && fs.existsSync(path.join(W, "ashs-place", "world.jsonl")), "FD4 an agent's account founds a world", [ja.errors, ra]);
   ash.close(); A.proc.kill();
