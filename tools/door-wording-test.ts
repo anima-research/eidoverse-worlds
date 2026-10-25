@@ -2,7 +2,7 @@
 // with the agent's own value where that was the problem.
 // Run: bun tools/door-wording-test.ts
 import { mkCheck } from "./harness.ts";
-import { handleTool, snapshotTool, TOOLS } from "../mcpl/tools.ts";
+import { handleTool, snapshotTool, snapCallBudgetMs, TOOLS } from "../mcpl/tools.ts";
 import { rawShapeError } from "../mcpl/shape.ts";
 import { shown } from "../shared/shown.js";
 import { VERB_NEEDS } from "../server/rights.ts";
@@ -230,6 +230,17 @@ try {
     check("the tool sends the server what is left of its budget (?budget=)", sent > 15_000 && sent <= 20_000, String(lastSnapBudget));
     await snapshotTool({ ...agent, name: "loading-0" }, "first", "auto", {}, ONCE);
     check("…and no budget when it asks once", lastSnapBudget === null, String(lastSnapBudget));
+  }
+  {
+    // SNAP_CALL_BUDGET_MS: 57 s unset or empty, 0 asks once, up to 600000; anything else is said once and ignored
+    const saved = process.env.SNAP_CALL_BUDGET_MS, warns: string[] = [], warn = console.warn;
+    console.warn = (...a: unknown[]) => { warns.push(a.join(" ")); };
+    const at = (v: string | undefined) => { if (v === undefined) delete process.env.SNAP_CALL_BUDGET_MS; else process.env.SNAP_CALL_BUDGET_MS = v; return snapCallBudgetMs(); };
+    const got = [at(undefined), at(""), at("0"), at("20000"), at("600000"), at("600001"), at("-1"), at("soon")];
+    console.warn = warn; if (saved === undefined) delete process.env.SNAP_CALL_BUDGET_MS; else process.env.SNAP_CALL_BUDGET_MS = saved;
+    check("SNAP_CALL_BUDGET_MS: unset/empty 57 s, 0 once, 20000, the 600000 cap; past it, negative or junk → 57 s",
+      JSON.stringify(got) === JSON.stringify([57_000, 57_000, 0, 20_000, 600_000, 57_000, 57_000, 57_000]), JSON.stringify(got));
+    check("…and a bad value is said once, not on every call", warns.length === 1 && /SNAP_CALL_BUDGET_MS="600001" is not a number of ms from 0 to 600000; using 57000/.test(warns[0]), JSON.stringify(warns));
   }
   {
     // a server that takes the request and never answers: the backstop ends the call, and says what happened

@@ -347,30 +347,40 @@ test("sweep leaves a world whose own renderer is restarting; a roamer that came 
   expect(inCommons.messages.at(-1)).toEqual({ type: "renderer-travel", world: "other" });
 });
 // ---- review of #279: a fair, bounded queue; retryable only when it is; the caller's budget; sweep back-off ----
+/** A hand-driven poll for queue tests: each waiter's next look at its renderers waits here until the test lets
+ *  it go, in the order the test chooses, so who looks first is decided, not left to timers. */
+function manualPolls() {
+  const looks: (() => void)[] = [];
+  const settle = async () => { for (let i = 0; i < 5; i++) await Bun.sleep(0); };
+  return {
+    pollSleep: () => new Promise<void>((res) => { looks.push(res); }),
+    waiting: () => looks.length,
+    /** let the i-th waiting look happen (0 = the one that started waiting earliest) */
+    async look(i: number) { const [go] = looks.splice(i, 1); go(); await settle(); },
+    settle,
+  };
+}
 test("the queue is first come, first served: an older ask is never passed by a newer one", async () => {
-  // Poll phases are arranged so the NEWER waiter looks first once the renderer is free: the older one polls at
-  // ~200/400/600 ms, the newer (started at ~250) at ~450/650; the renderer comes free at ~425. Only the
-  // first-in-line rule makes the newer one leave the renderer to the older.
-  const { broker, world, donor } = setup({ pollMs: 200, queueMs: 5000, timeoutMs: 3000 });
-  const t0 = Date.now(); const at = (ms: number) => Bun.sleep(Math.max(0, ms - (Date.now() - t0)));
-  const holding = broker.request(world, "agent");                    // keeps the renderer busy
-  await at(5);
+  const polls = manualPolls();
+  const { broker, world, donor } = setup({ queueMs: 5000, timeoutMs: 3000, pollSleep: polls.pollSleep });
+  const snaps = () => donor.messages.filter((m) => m.type === "snap");
+  const holding = broker.request(world, "agent");                    // the renderer is busy
   const order: string[] = [];
   const older = broker.request(world, "agent").then((r) => { order.push("older"); return r; });
-  await at(250);
+  await polls.settle();
   const newer = broker.request(world, "agent").then((r) => { order.push("newer"); return r; });
-  await at(425);
-  broker.receive(donor.c, { id: donor.messages[0].id, dataUrl: png }); await holding;
-  await at(700);
-  const snaps = donor.messages.filter((m) => m.type === "snap"); expect(snaps.length).toBe(2);
-  broker.receive(donor.c, { id: snaps[1].id, dataUrl: png });
-  await Bun.sleep(20);
-  expect(order).toEqual(["older"]);                                  // the second frame went to the older ask
-  await Bun.sleep(400);
-  const third = donor.messages.filter((m) => m.type === "snap")[2]; expect(third).toBeDefined();
-  broker.receive(donor.c, { id: third.id, dataUrl: png });
-  expect((await older).ok && (await newer).ok).toBe(true);
-  expect(order).toEqual(["older", "newer"]);
+  await polls.settle();
+  expect(polls.waiting()).toBe(2);                                    // [older's look, newer's look]
+  broker.receive(donor.c, { id: snaps()[0].id, dataUrl: png }); await holding;   // the renderer is free
+  await polls.look(1);                                                // the NEWER looks first…
+  expect(snaps().length).toBe(1);                                     // …and leaves the renderer to the older
+  await polls.look(0);                                                // the older looks: it takes it
+  expect(snaps().length).toBe(2);
+  broker.receive(donor.c, { id: snaps()[1].id, dataUrl: png });
+  expect((await older).ok).toBe(true); expect(order).toEqual(["older"]);
+  await polls.look(0);                                                // now the newer's turn
+  broker.receive(donor.c, { id: snaps()[2].id, dataUrl: png });
+  expect((await newer).ok).toBe(true); expect(order).toEqual(["older", "newer"]);
 });
 test("…and a new ask arriving as the renderer comes free does not jump ahead of one already waiting", async () => {
   const { broker, world, donor } = setup({ pollMs: 50, queueMs: 5000, timeoutMs: 2000 });
@@ -420,19 +430,55 @@ test("a caller's budget bounds the request: the renderer's wait is cut to it", a
   expect(donor.messages[0].wait).toBeLessThanOrEqual(4_000); expect(donor.messages[0].wait).toBeGreaterThan(3_500);
   broker.receive(donor.c, { id: donor.messages[0].id, dataUrl: png }); await r;
 });
-test("sweep backs off a world its roamer never reached, and says so", async () => {
+test("a roamer that never arrives is backed off itself, so the next sweep sends a healthy one", async () => {
   let time = 0; const lines: string[] = [];
-  const { broker, worldOf, join } = roamSetup({ now: () => time, sweepAfterMs: 0, travelMs: 400, pollMs: 10,
+  const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0, travelMs: 400, pollMs: 10,
     sweepBackoffMs: 15_000, log: (l: string) => lines.push(l) });
-  const lobby = worldOf("lobby"), w = worldOf("unreachable");
-  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent", { agent: true });
-  broker.sweep(); expect(roamer.messages.length).toBe(1);
-  time = 500; await Bun.sleep(40);                         // the summons expires: the roamer never arrived
-  expect(lines.some((l) => /sweep: roamer "roam" did not arrive in "unreachable" within 0.4s — no roamer will be swept there for 15s/.test(l))).toBe(true);
-  time = 5_000; broker.sweep(); expect(roamer.messages.length).toBe(1);    // backing off
-  time = 16_000; broker.sweep(); expect(roamer.messages.length).toBe(2);   // tried again after the back-off
+  const lobby = worldOf("lobby"), lobby2 = worldOf("lobby2"), w = worldOf("w");
+  const broken = join(lobby, "roam-broken", { renderer: true, roam: true, spectator: true });   // ranks first, never travels
+  join(w, "agent", { agent: true });
+  broker.sweep(); expect(broken.messages.length).toBe(1);
+  time = 500; await Bun.sleep(40);                                  // its journey expires
+  expect(lines.some((l) => /roamer "roam-broken" did not arrive in "w" within 0.4s — it is sent nowhere for 15s/.test(l))).toBe(true);
+  const healthy = join(lobby2, "roam-healthy", { renderer: true, roam: true, spectator: true });
+  time = 1_000; broker.sweep();
+  expect(broken.messages.length).toBe(1);                           // the broken roamer is not sent again…
+  expect(healthy.messages.at(-1)).toEqual({ type: "renderer-travel", world: "w" });   // …a healthy one goes instead
+  // the healthy one arrives; later the world needs a roamer again and only the broken one is free, still backed off
+  leave(healthy.c); const there = join(w, "roam-healthy", { renderer: true, roam: true, spectator: true });
+  await Bun.sleep(30); leave(there.c);
+  time = 10_000; broker.sweep(); expect(broken.messages.length).toBe(1);
+  time = 16_000; broker.sweep(); expect(broken.messages.length).toBe(2);   // after its back-off, it may try again
   time = 16_500; await Bun.sleep(40);
-  expect(lines.some((l) => /no roamer will be swept there for 30s/.test(l))).toBe(true);   // and the next one doubles
+  expect(lines.some((l) => /roam-broken.*sent nowhere for 30s/.test(l))).toBe(true);   // and failing again doubles it
+});
+test("…an asked snapshot still takes a backed-off roamer when it is the only one, and arriving clears its back-off", async () => {
+  let time = 0;
+  const { broker, worldOf, join } = roamSetup({ now: () => time, sweepAfterMs: 0, travelMs: 400, pollMs: 10, timeoutMs: 200 });
+  const lobby = worldOf("lobby"), w = worldOf("w"), v = worldOf("v");
+  const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent", { agent: true });
+  // a roamer travels by re-joining on the same connection: the same client, moved to another world
+  const travel = (to: World) => { roamer.c.world?.clients.delete(roamer.c); roamer.c.world = to; to.clients.add(roamer.c); };
+  broker.sweep(); time = 500; await Bun.sleep(40);                  // a failed journey to w: backed off
+  join(v, "agentV", { agent: true });
+  broker.prewarm(v); expect(roamer.messages.length).toBe(1);        // pre-warm skips it
+  const asked = broker.request(v, "agentV"); await Bun.sleep(20);   // an asked snapshot takes it: no other roamer can go
+  expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "v" });
+  travel(v); await Bun.sleep(40);                                    // it arrives (in v, which it was sent to)
+  const snap = roamer.messages.find((m) => m.type === "snap"); broker.receive(roamer.c, { id: snap.id, dataUrl: png });
+  expect(await asked).toMatchObject({ ok: true });
+  // arriving cleared its back-off: back in its lobby, the next sweep sends it to w (still unserved) at once
+  travel(lobby);
+  time = 1_000; broker.sweep();                                      // past its last journey's window, well inside a 15 s back-off
+  expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "w" });
+  await Bun.sleep(450);
+});
+test("a renderer that goes while a request waits for it: 503 with Retry-After, not the permanent 'no roamer' answer", async () => {
+  const { broker, world, donor } = setup({ pollMs: 5, queueMs: 3_000, timeoutMs: 3_000 });
+  void broker.request(world, "agent"); await Bun.sleep(5);           // the renderer is busy
+  const waiting = broker.request(world, "agent"); await Bun.sleep(10);
+  world.clients.delete(donor.c); broker.retire(donor.c);            // and then gone
+  expect(await waiting).toMatchObject({ ok: false, status: 503, retryAfter: 2 });
 });
 test("a pinned renderer leaving starts its grace at once, before any sweep has seen it", async () => {
   let time = 0;
@@ -474,30 +520,28 @@ test("a capture-donating player leaving is not a pinned renderer restarting, and
   await Bun.sleep(450);
 });
 test("first come, first served holds across 'auto' and 'browser' asks for one browser renderer", async () => {
-  // only a browser renderer here, so both kinds of ask compete for it; poll phases as in the FIFO test above, so the
-  // newer ('auto') ask looks first once it is free
-  // (travelMs long enough that the request's deadline leaves the waiters their full queueMs)
-  const { broker, worldOf, join } = roamSetup({ pollMs: 200, queueMs: 5000, timeoutMs: 3000, travelMs: 10_000 });
+  // only a browser renderer here, so both kinds of ask compete for it; the newer ('auto') ask looks first once it is free
+  const polls = manualPolls();
+  const { broker, worldOf, join } = roamSetup({ queueMs: 5000, timeoutMs: 3000, travelMs: 10_000, pollSleep: polls.pollSleep });
   const w = worldOf("w"); const legacy = join(w, "legacy", { renderer: true, spectator: true }); join(w, "agent");
-  const t0 = Date.now(); const at = (ms: number) => Bun.sleep(Math.max(0, ms - (Date.now() - t0)));
+  const snaps = () => legacy.messages.filter((m) => m.type === "snap");
   const holding = broker.request(w, "agent", "first", "browser");
-  await at(5);
   const order: string[] = [];
   const older = broker.request(w, "agent", "first", "browser").then((r) => { order.push("browser"); return r; });
-  await at(250);
+  await polls.settle();
   const newer = broker.request(w, "agent", "first", "auto").then((r) => { order.push("auto"); return r; });
-  await at(425);
-  broker.receive(legacy.c, { id: legacy.messages.filter((m) => m.type === "snap")[0].id, dataUrl: png }); await holding;
-  await at(700);
-  const snaps = legacy.messages.filter((m) => m.type === "snap"); expect(snaps.length).toBe(2);
-  broker.receive(legacy.c, { id: snaps[1].id, dataUrl: png });
-  await Bun.sleep(20);
-  expect(order).toEqual(["browser"]);                                // the older 'browser' ask got the renderer
-  await Bun.sleep(400);
-  const third = legacy.messages.filter((m) => m.type === "snap")[2]; expect(third).toBeDefined();
-  broker.receive(legacy.c, { id: third.id, dataUrl: png });
-  expect((await older).ok && (await newer).ok).toBe(true);
-  expect(order).toEqual(["browser", "auto"]);
+  await polls.settle();
+  expect(polls.waiting()).toBe(2);
+  broker.receive(legacy.c, { id: snaps()[0].id, dataUrl: png }); await holding;
+  await polls.look(1);                                                // the 'auto' ask looks first…
+  expect(snaps().length).toBe(1);                                     // …and leaves it to the older 'browser' ask
+  await polls.look(0);
+  expect(snaps().length).toBe(2);
+  broker.receive(legacy.c, { id: snaps()[1].id, dataUrl: png });
+  expect((await older).ok).toBe(true); expect(order).toEqual(["browser"]);
+  await polls.look(0);
+  broker.receive(legacy.c, { id: snaps()[2].id, dataUrl: png });
+  expect((await newer).ok).toBe(true); expect(order).toEqual(["browser", "auto"]);
 });
 test("an Unreal-only waiter does not hold back a browser ask for a renderer it could not use", async () => {
   const { broker, world, donor, make } = setup({ pollMs: 5, queueMs: 3000, timeoutMs: 3000 });

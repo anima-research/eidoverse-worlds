@@ -60,6 +60,8 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
   queueMs = 20_000, maxQueued = 16, maxQueuedTotal = 64, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
   sweepBackoffMs = 15_000, sweepBackoffMaxMs = 10 * 60_000,
+  /** How a queued request waits between looks at its renderers. Tests inject their own to decide who looks first. */
+  pollSleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms)),
   allClients = (() => []) as () => Iterable<Client>,
   admits = (() => true) as (world: World, c: Client) => boolean,
   log = (line: string) => console.log(line), dropLogMs = 10_000 } = {}) {
@@ -88,7 +90,11 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   const travelling = new Map<string, { at: number; arrived: Promise<boolean> }>();   // world name → a summons in flight
   const sent = new WeakMap<Client, { at: number; to: string }>();   // roamer → where it was last sent, and when
   const pinnedSeen = new Map<string, number>();   // world name → when a renderer of its own (not a roamer) was last seen there
-  const sweepFailed = new Map<string, { until: number; count: number }>();   // world name → a sweep's roamer never arrived: back off
+  // A roamer that was sent somewhere and never arrived (a frozen page, a client that claims to roam and ignores travel)
+  // is backed off: sweeps and pre-warms skip it, and an asked snapshot takes it only when no other roamer can go.
+  // It clears the moment the roamer arrives anywhere.
+  const roamerFailed = new WeakMap<Client, { until: number; count: number }>();
+  const backedOff = (c: Client) => (roamerFailed.get(c)?.until ?? -Infinity) > now();
   // The queue of requests waiting for a busy renderer: first come, first served per world and renderer kind, and
   // bounded, so waiting can neither starve an early ask nor pile up without limit (each waiter holds an HTTP request).
   const waiting: { world: World; engine: string; seq: number }[] = [];
@@ -192,8 +198,9 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     const onItsWay = (c: Client) => { const s = sent.get(c); return !!s && now() - s.at < travelMs && c.world?.name !== s.to; };
     const roamers = [...allClients()].filter(c => c.roam && c.renderer && c.world && active(c, c.world)
       && c.world !== world && !busy.has(c) && !enRoute.has(c.world.name) && !onItsWay(c) && admits(world, c))
-      .map(c => ({ c, n: need(c) })).filter(r => mode === "ask" || (mode === "prewarm" ? r.n !== 2 : r.n === 0))
-      .sort((a, b) => a.n - b.n || (last.get(a.c) ?? 0) - (last.get(b.c) ?? 0))
+      .map(c => ({ c, n: need(c), off: backedOff(c) }))
+      .filter(r => mode === "ask" || (!r.off && (mode === "prewarm" ? r.n !== 2 : r.n === 0)))
+      .sort((a, b) => Number(a.off) - Number(b.off) || a.n - b.n || (last.get(a.c) ?? 0) - (last.get(b.c) ?? 0))
       .map(r => r.c);
     const roamer = roamers[0];
     if (!roamer) return nothing;
@@ -203,8 +210,21 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     sent.set(roamer, { at, to: world.name });
     const arrived = new Promise<boolean>((resolve) => {
       const tick = () => {
-        if (candidatesIn(world, "auto").length) { travelling.delete(world.name); return resolve(true); }
-        if (now() - at >= travelMs) { travelling.delete(world.name); return resolve(false); }
+        if (candidatesIn(world, "auto").length) {
+          travelling.delete(world.name);
+          if (roamer.world === world) roamerFailed.delete(roamer);   // it came: whatever went wrong before is over
+          return resolve(true);
+        }
+        if (now() - at >= travelMs) {
+          travelling.delete(world.name);
+          if (roamer.world !== world) {                              // it never came: back IT off, not the world
+            const count = (roamerFailed.get(roamer)?.count ?? 0) + 1;
+            const wait = Math.min(sweepBackoffMs * 2 ** (count - 1), sweepBackoffMaxMs);
+            roamerFailed.set(roamer, { until: now() + wait, count });
+            log(`[snap] roamer ${who(roamer)} did not arrive in "${world.name}" within ${travelMs / 1000}s — it is sent nowhere for ${Math.round(wait / 1000)}s unless no other roamer can go`);
+          }
+          return resolve(false);
+        }
         setTimeout(tick, pollMs);
       };
       setTimeout(tick, pollMs);
@@ -228,7 +248,10 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // At most `maxQueued` wait in a world (and `maxQueuedTotal` in all); beyond that the answer is "busy" at once.
     const busy = (): Result => ({ ok: false, err: "renderers busy; retry in a few seconds", status: 429, retryAfter: 2 });
     if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
-    if (!candidatesIn(world, engine).length) return fail(noRenderer(world, engine), 503);
+    // A renderer that was here (or a roamer that just arrived) and is gone again: another world's ask took the roamer,
+    // or a pinned renderer restarted. Retryable, unlike "no renderer and no roamer to send" (request).
+    const gone = (): Result => ({ ok: false, err: noRenderer(world, engine), status: 503, retryAfter: 2 });
+    if (!candidatesIn(world, engine).length) return gone();
     // a new ask is younger than every waiter: it takes no renderer one of them could use
     let renderer = free(Infinity);
     if (!renderer) {
@@ -240,9 +263,9 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
       try {
         for (;;) {
           if (now() >= queueUntil) return busy();
-          await sleep(pollMs);
+          await pollSleep(pollMs);
           if (!active(target, world)) return fail(`"${follow}" is not present in "${world.name}"`, 404);
-          if (!candidatesIn(world, engine).length) return fail(noRenderer(world, engine), 503);
+          if (!candidatesIn(world, engine).length) return gone();
           if ((renderer = free(ticket.seq))) break;
         }
       } finally { waiting.splice(waiting.indexOf(ticket), 1); }
@@ -325,23 +348,11 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // every few hours): a roamer sent there would load the whole world for nothing. A snapshot asked meanwhile is
     // still served on demand.
     for (const w of worlds) {
-      if (candidatesIn(w, "auto").length) { sweepFailed.delete(w.name); continue; }
+      if (candidatesIn(w, "auto").length) continue;
       if (now() - (pinnedSeen.get(w.name) ?? -Infinity) < pinnedGraceMs) continue;
-      // A world a swept roamer never reached (refused, crashed, too slow to rejoin) is not sent another every 15 s:
-      // the sweep backs off, doubling from sweepBackoffMs to sweepBackoffMaxMs, and says so. A snapshot asked there
-      // meanwhile is still served on demand.
-      const failed = sweepFailed.get(w.name);
-      if (failed && now() < failed.until) continue;
-      const s = startSummon(w, "sweep");
-      if (!s.sent) continue;
-      const roamer = s.sent;
-      void s.arrived.then((ok) => {
-        if (ok) { sweepFailed.delete(w.name); return; }
-        const count = (sweepFailed.get(w.name)?.count ?? 0) + 1;
-        const wait = Math.min(sweepBackoffMs * 2 ** (count - 1), sweepBackoffMaxMs);
-        sweepFailed.set(w.name, { until: now() + wait, count });
-        log(`[snap] sweep: roamer ${who(roamer)} did not arrive in "${w.name}" within ${travelMs / 1000}s — no roamer will be swept there for ${Math.round(wait / 1000)}s`);
-      });
+      // A roamer that never arrives is backed off itself (startSummon), so the next sweep sends a healthy one, and a
+      // broken roamer cannot make every agent's world wait in turn.
+      void startSummon(w, "sweep");
     }
   }
   /** The server's client registry, for finding roaming renderers in other worlds. */

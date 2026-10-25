@@ -215,7 +215,7 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
  *  budget. An operator who wants longer calls for a slow renderer raises this too. A bad value is said once and
  *  ignored. */
 let warnedSnapBudget = false;
-const snapCallBudgetMs = () => {
+export const snapCallBudgetMs = () => {
   const raw = process.env.SNAP_CALL_BUDGET_MS;
   if (raw === undefined || raw === "") return 57_000;
   const n = Number(raw);

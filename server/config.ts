@@ -70,11 +70,13 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // longest wait (5s), capped at 255s, the largest idleTimeout Bun.serve
 // accepts. So the most this window can be is 225 (255, less the 25s journey
 // and the 5s): a larger value is refused like any other invalid one, and 12 is
-// used with a warning. A proxy in front must allow the same longest wait:
+// used with a warning. Each request also has one deadline (snapshots.ts
+// budgetMs, 55 s by default, or the caller's ?budget=), which the journey, any
+// wait and the frame all come out of; a window this long still gets its whole
+// length, past 55 s. A proxy in front must allow the longest of these:
 // deploy/nginx-show.conf gives `location = /snap` a 300s proxy_read_timeout,
-// above the 255s cap. Without it, nginx's 60s default cuts any /snap that waits
-// past 60s, which a roamed one can at the defaults (25s + 40s), and any one can
-// once SNAP_TIMEOUT_SEC is above 60.
+// above the 255s cap. nginx's 60s default would cut a /snap once
+// SNAP_TIMEOUT_SEC is past about 56 s.
 export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
 // How long after a start the snapshot broker waits before it sweeps parked roamers to agents' worlds
 // (snapshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.

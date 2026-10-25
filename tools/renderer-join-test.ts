@@ -49,7 +49,7 @@ function pageLoad(search: string, wire: "none" | "snapshot" | "other-hooks", joi
     net.net.ws = { send: (s) => { const m = JSON.parse(s); if (m.type === "join") sent.push(m); }, readyState: 1 };
     for (let i = 0; i < ${joins}; i++) net.sendJoin();
     console.log(JSON.stringify({ sent, warnings }));`;
-  const r = Bun.spawnSync(["bun", "-e", code], { stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync([process.execPath, "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(r.stdout.toString().trim().split("\n").pop()!) as { sent: Join[]; warnings: string[] }; }
   catch { return { sent: [] as Join[], warnings: [`ERROR ${r.stderr.toString().slice(0, 300)}`] }; }
 }

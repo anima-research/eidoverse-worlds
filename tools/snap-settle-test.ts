@@ -42,7 +42,7 @@ function snapCase(readyAt: number | null, wait: number | undefined) {
     const msg = { follow: "agent", view: "third" ${wait === undefined ? "" : `, wait: ${wait}`} };
     const r = await snap.snapshot(msg);
     console.log(JSON.stringify({ r, ms: Math.round(performance.now() - t0), budget: snap.settleBudget(msg) }));`;
-  const out = Bun.spawnSync(["bun", "-e", code], { stdout: "pipe", stderr: "pipe" });
+  const out = Bun.spawnSync([process.execPath, "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(out.stdout.toString().trim().split("\n").pop()!) as { r: any; ms: number; budget: number }; }
   catch { return { r: { error: `ERROR ${out.stderr.toString().slice(0, 300)}` }, ms: -1, budget: -1 }; }
 }
