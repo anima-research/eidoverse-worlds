@@ -93,7 +93,14 @@ async function join_(br: any, name: string) {
   pg.on('websocket', (ws: any) => ws.on('framereceived', (f: any) => { if (typeof f.payload === 'string' && f.payload.includes('video')) wsIn.push(f.payload); }));
   pg.on('dialog', (d: any) => d.dismiss().catch(() => {}));
   await pg.goto(`${world.origin}/?world=vprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
-  await pg.waitForFunction(() => import('/lib/net.js').then((n: any) => n.net?.ws?.readyState === 1).catch(() => false), null, { timeout: 60000, polling: 500 });
+  // Joined, not just open: sendRequest refuses until the snapshot has landed (net.joined). Polled with evaluate, which
+  // awaits the import: a waitForFunction predicate that returns import(…).then(…) returns a Promise, which is truthy,
+  // so it passed at once, before the page had joined; on #260's 9d60447f the snapshot lands after the first create.
+  const t0 = Date.now();
+  while (!(await pg.evaluate(() => import('/lib/net.js').then((n: any) => n.net?.joined === true && n.net?.ws?.readyState === 1)).catch(() => false))) {
+    if (Date.now() - t0 > 60000) throw new Error(`${name}: not joined to the world after 60 s`);
+    await sleep(250);
+  }
   return pg;
 }
 const pa = await join_(A, 'owner');
