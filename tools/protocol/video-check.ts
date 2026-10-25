@@ -18,13 +18,13 @@
 import "./fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree } from "./common.ts";
+import { ENGINE, scratch, copyTree, archiveTo } from "./common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
-const BASE = "b731a8ec";   // #260's head video is stacked on (restacked 10-21 from 9263268c)
+const BASE = "9d60447f";   // #260's head video is stacked on (restacked 10-25 from b731a8ec, at Mica's approved head)
 
 // [name, file, find, replace, cases that must turn red]
 const MUTANTS: [string, string, string, string, string[]][] = [
@@ -80,7 +80,13 @@ if (argv.includes("--mutants")) {
   console.log(`[video-check --mutants] ${MUTANTS.length} mutations run, ${bad} wrong (each must turn its cases red)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("vctl"); const r0 = Bun.spawnSync(["sh", "-c", `git archive ${BASE} shared server tools client/lib defs | tar -x -C ${d} && ln -s ${fs.realpathSync(path.join(ENGINE, "node_modules"))} ${d}/node_modules && cp ${path.join(ENGINE, "tools/protocol/video-check.ts")} ${d}/tools/protocol/`], { cwd: ENGINE });
+  // The base's tree by archiveTo (its paths go to sh as arguments, never pasted into the script), then this suite's own copy
+  // of video-check, and the engine's node_modules, as batch2-check's control does.
+  const d = scratch("vctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib", "defs"], d);
+  if (r0.exitCode === 0) {
+    fs.symlinkSync(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+    fs.copyFileSync(path.join(ENGINE, "tools/protocol/video-check.ts"), path.join(d, "tools/protocol/video-check.ts"));
+  }
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
