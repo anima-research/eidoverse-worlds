@@ -10,7 +10,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS } from "./config.ts";
+import { PORT, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { canEnter, whoOf, foundingRefusal, noteFounding, notePrincipal, sweepAccess, worldForAccess, ACCESS_CLOSE, NOT_YET_CLOSE, type AccessWorld, type Expel } from "./access.ts";
@@ -368,6 +368,11 @@ snapshots.setClients(() => clients.values());   // roaming renderers are found a
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
 snapshots.setAdmission((w, c) => canEnter(w, whoOf(c), "watch").ok);
 snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
+snapshots.setSweepGrace(SNAP_SWEEP_GRACE_MS);   // config.ts SNAP_SWEEP_GRACE_SEC
+// Keep agents' worlds served (snapshots.ts sweep): a parked roamer goes to any world with an agent in it and no
+// renderer, so its first snapshot finds the world loaded. On a timer, as the backstop for everything that leaves a
+// world unserved; a roamer joining also runs it at once (below).
+setInterval(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, SNAP_SWEEP_EVERY_MS);   // config.ts SNAP_SWEEP_EVERY_SEC
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -706,9 +711,14 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
+    snapshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
     // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
     // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
     if (c.agent && !c.spectator) snapshots.prewarm(w);
+    // …and a roaming renderer joining (its watchdog restarts it into its lobby, after a deploy or every few hours)
+    // is sent straight back to an agent's world that has none, rather than waiting for the timer above. A second
+    // later, so its own join has settled before it is asked to travel.
+    if (c.roam) setTimeout(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
     // eidosim@0.3.0: know the world's standing geometry before anyone spawns
     // or epochs into it (boxes.ts — the sync validators read a warm cache).
     // AFTER admission, never before: a rejected or invalid join must not
