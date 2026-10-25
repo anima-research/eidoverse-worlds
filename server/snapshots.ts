@@ -326,7 +326,10 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     if (typeof msg.error === "string" && msg.error.trim()) {
       const err = msg.error.trim().slice(0, 300);
       log(`[snap] ${msg.id}: renderer ${who(c)} replied without an image: ${quote(err, 200)} — 503`);
-      return p.finish({ ok: false, err, status: 503, retryAfter: 2 });
+      // Retryable only when the renderer says it is still loading (client/lib/net_snap.js: "still loading this world",
+      // "not in local scene (still loading?)"): that passes in seconds. Any other refusal (a capture that throws, a
+      // frame that will not compose) would fail the same way again, so the asker hears it at once.
+      return p.finish({ ok: false, err, status: 503, ...(/still loading/i.test(err) ? { retryAfter: 2 } : {}) });
     }
     const png = pngFromDataURL(msg.dataUrl);
     if (!png) log(`[snap] ${msg.id}: renderer ${who(c)} sent no valid PNG (${typeof msg.dataUrl === "string" ? `${msg.dataUrl.length} chars` : typeof msg.dataUrl}) — 502`);

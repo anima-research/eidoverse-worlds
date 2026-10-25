@@ -416,6 +416,13 @@ test("retryAfter marks only what asking again soon can fix", async () => {
   const refused = broker.request(w, "agent");
   broker.receive(r.c, { id: r.messages.find((m) => m.type === "snap").id, error: "the renderer is still loading this world — 1 model still loading (0 in); try again in a few seconds" });
   expect(await refused).toMatchObject({ status: 503, retryAfter: 2 });
+  const notInScene = broker.request(w, "agent");
+  broker.receive(r.c, { id: r.messages.filter((m) => m.type === "snap")[1].id, error: "agent not in local scene (still loading?)" });
+  expect(await notInScene).toMatchObject({ status: 503, retryAfter: 2 });
+  // a refusal that would fail the same way again (a capture that throws) is answered without Retry-After
+  const broken = broker.request(w, "agent");
+  broker.receive(r.c, { id: r.messages.filter((m) => m.type === "snap")[2].id, error: "TypeError: cannot read the canvas" });
+  const brokenR = await broken; expect(brokenR).toMatchObject({ status: 503 }); expect((brokenR as any).retryAfter).toBeUndefined();
   expect(await broker.request(w, "agent")).toMatchObject({ status: 504, retryAfter: 2 });
   const gone = broker.request(w, "agent"); broker.retire(r.c);
   expect(await gone).toMatchObject({ status: 503, retryAfter: 2 });
