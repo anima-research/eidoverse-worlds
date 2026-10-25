@@ -58,14 +58,14 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
     if (follow === "hang") return new Promise<Response>(() => {});   // a server that never answers
     // "<answer>-<n>": refuse n times with that answer, then serve a picture (the retry checks below). Like the real
     // server, the passing refusals carry Retry-After; a proxy's 502 does not.
-    const later = /^(loading|busy|slow|proxied)-(\d+)$/.exec(follow ?? "");
+    const later = /^(loading|busy|busy60|slow|proxied)-(\d+)$/.exec(follow ?? "");
     if (later) {
       const seen = (snapTries.get(follow!) ?? 0) + 1; snapTries.set(follow!, seen);
       if (seen > Number(later[2])) return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
       const [msg, st] = later[1] === "loading" ? ["the renderer is still loading this world — 1 model still loading (0 in); try again in a few seconds", 503]
-        : later[1] === "busy" ? ["renderers busy; retry in a few seconds", 429]
+        : later[1] === "busy" || later[1] === "busy60" ? ["renderers busy; retry in a few seconds", 429]
         : later[1] === "slow" ? ["renderer timed out", 504] : ["<html>bad gateway</html>", 502];
-      const retryAfter = later[1] === "loading" ? "2" : later[1] === "proxied" ? null : "1";
+      const retryAfter = later[1] === "loading" ? "2" : later[1] === "proxied" ? null : later[1] === "busy60" ? "60" : "1";
       // a proxy's 502 is its own HTML page; the world server answers in plain text
       return new Response(msg as string, { status: st as number, headers: {
         ...(retryAfter ? { "retry-after": retryAfter } : {}), ...(later[1] === "proxied" ? { "content-type": "text/html" } : {}) } });
@@ -241,6 +241,14 @@ try {
     check("SNAP_CALL_BUDGET_MS: unset/empty 57 s, 0 once, 20000, the 600000 cap; past it, negative or junk → 57 s",
       JSON.stringify(got) === JSON.stringify([57_000, 57_000, 0, 20_000, 600_000, 57_000, 57_000, 57_000]), JSON.stringify(got));
     check("…and a bad value is said once, not on every call", warns.length === 1 && /SNAP_CALL_BUDGET_MS="600001" is not a number of ms from 0 to 600000; using 57000/.test(warns[0]), JSON.stringify(warns));
+  }
+  {
+    // a server asking for a long pause (Retry-After: 60) is waited at most 10 s; with 17 s of budget that still leaves a
+    // try (without the cap, 60 s would not fit and the call would be answered at once, with no picture)
+    const t0 = Date.now(); const r = await snapshotTool({ ...agent, name: "busy60-1" }, "first", "auto", {}, { budgetMs: 17_000 });
+    const ms = Date.now() - t0;
+    check("a Retry-After past 10 s is waited 10 s, and a try that fits the budget still comes back with the picture",
+      img(r) && snapTries.get("busy60-1") === 2 && ms >= 9_500 && ms < 12_000, `${said(r)} ${ms}ms`);
   }
   {
     // a server that takes the request and never answers: the backstop ends the call, and says what happened

@@ -233,9 +233,10 @@ export const snapCallBudgetMs = () => {
 // down should not hold an agent for a minute. The world server's own 502 (a renderer that sent no valid image)
 // carries no Retry-After and is not asked again.
 const SNAP_UNREACHABLE_RETRY_MS = 2_000, SNAP_MIN_TRY_MS = 5_000;
-// The fetch is not cut at the budget: the server's own deadline (sent with ?budget=) ends a try. This backstop only
-// catches a server that never answers at all, and says so, rather than calling it unreachable.
-const SNAP_NO_ANSWER_GRACE_MS = 15_000;
+// The fetch is not cut at the budget: the server's own deadline (sent with ?budget=, which it answers half a second
+// inside) ends a try. This backstop only catches a server that never answers at all, and says so, rather than calling
+// it unreachable: at what is left of the budget plus 1.5 s, so the default call still answers inside a host's 60 s.
+const SNAP_NO_ANSWER_GRACE_MS = 1_500;
 export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {},
   { budgetMs = snapCallBudgetMs(), noAnswerGraceMs = SNAP_NO_ANSWER_GRACE_MS }: { budgetMs?: number; noAnswerGraceMs?: number } = {}) {
   const started = Date.now();

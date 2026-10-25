@@ -245,7 +245,9 @@ stays down instead of reconnecting.
   while it waits. Each request has one deadline, 55 s by default (or the
   caller's `?budget=`), and a roamer's journey (up to 25 s), any wait for a busy
   renderer and the frame all come out of it, so at the defaults a `/snap`
-  answers within 55 s. A longer `SNAP_TIMEOUT_SEC` still gets its whole window.
+  answers within 55 s. A longer `SNAP_TIMEOUT_SEC` stretches the deadline: a
+  renderer that is free and already there gets the whole window, while waiting
+  for a busy one or a roamer's journey comes out of the same deadline.
   nginx has its own read timeout, 60 s by default, which would cut such a
   `/snap`: `deploy/nginx-show.conf` gives `location = /snap` a 300 s
   `proxy_read_timeout`, above the sequencer's 255 s cap. A live config made

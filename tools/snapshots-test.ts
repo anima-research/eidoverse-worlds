@@ -329,7 +329,7 @@ test("sweep leaves a world whose own renderer is restarting; a roamer that came 
   let time = 0;
   const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0, pinnedGraceMs: 120_000, travelMs: 400 });
   const lobby = worldOf("lobby"), commons = worldOf("commons"), other = worldOf("other");
-  const pinned = join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true });
+  const pinned = join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true, trustedRenderer: true });
   join(commons, "agentC", { agent: true });
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
   broker.sweep();                                       // commons is served: nothing to do, and its renderer is noted
@@ -340,7 +340,7 @@ test("sweep leaves a world whose own renderer is restarting; a roamer that came 
   expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "commons" });
   // the roamer arrives; then the commons renderer is back: the roamer is not needed there, so it counts as parked
   leave(roamer.c); const inCommons = join(commons, "roam", { renderer: true, roam: true, spectator: true });
-  join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true });
+  join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true, trustedRenderer: true });
   join(other, "agentO", { agent: true });
   await Bun.sleep(30);                                  // the summons to commons sees its roamer arrive
   time = 200_000; broker.sweep();
@@ -427,7 +427,8 @@ test("retryAfter marks only what asking again soon can fix", async () => {
 test("a caller's budget bounds the request: the renderer's wait is cut to it", async () => {
   const { broker, world, donor } = setup({ timeoutMs: 12_000, settleMarginMs: 2_000 });
   const r = broker.request(world, "agent", "first", "auto", {}, 6_000);
-  expect(donor.messages[0].wait).toBeLessThanOrEqual(4_000); expect(donor.messages[0].wait).toBeGreaterThan(3_500);
+  // the budget less 0.5 s (answered inside it) less the 2 s margin for the capture and the send
+  expect(donor.messages[0].wait).toBeLessThanOrEqual(3_500); expect(donor.messages[0].wait).toBeGreaterThan(3_000);
   broker.receive(donor.c, { id: donor.messages[0].id, dataUrl: png }); await r;
 });
 test("a roamer that never arrives is backed off itself, so the next sweep sends a healthy one", async () => {
@@ -485,7 +486,7 @@ test("a pinned renderer leaving starts its grace at once, before any sweep has s
   const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0, pinnedGraceMs: 120_000 });
   const lobby = worldOf("lobby"), commons = worldOf("commons");
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true });
-  const pinned = join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true }); join(commons, "agentC", { agent: true });
+  const pinned = join(commons, "renderer-mac-gpu-commons", { renderer: true, spectator: true, trustedRenderer: true }); join(commons, "agentC", { agent: true });
   time = 1_000; broker.retire(pinned.c); leave(pinned.c);   // it restarts; no sweep ran while it was there
   time = 20_000; broker.sweep();
   expect(roamer.messages.length).toBe(0);
@@ -561,7 +562,7 @@ test("a roamer that arrived moments ago (swept, pre-warmed) gets the arrival win
   const { broker, worldOf, join } = roamSetup({ now: () => time, timeoutMs: 12_000, arrivalTimeoutMs: 40_000, travelMs: 25_000, settleMarginMs: 2_000 });
   const w = worldOf("w"); join(w, "agent");
   const swept = join(w, "roam", { renderer: true, roam: true, spectator: true });
-  broker.configure(swept.c, undefined);                     // the server configures every client as it joins
+  broker.noteJoin(swept.c);                                 // the server notes every join
   time += 3_000;                                            // the agent asks 3 s after the sweep's roamer arrived
   const r = broker.request(w, "agent");
   expect(swept.messages.find((m) => m.type === "snap").wait).toBe(38_000);   // the arrival window, not the 12 s frame window
@@ -572,7 +573,7 @@ test("a roamer that arrived moments ago (swept, pre-warmed) gets the arrival win
   broker.receive(swept.c, { id: swept.messages.filter((m) => m.type === "snap")[1].id, dataUrl: png }); await r2;
   // a PINNED renderer that just joined keeps the operator's frame window (SNAP_TIMEOUT_SEC governs it)
   const p = worldOf("p"); join(p, "agentP");
-  const pinned = join(p, "renderer-mac-gpu-p", { renderer: true, spectator: true }); broker.configure(pinned.c, undefined);
+  const pinned = join(p, "renderer-mac-gpu-p", { renderer: true, spectator: true }); broker.noteJoin(pinned.c);
   time += 1_000;
   const r3 = broker.request(p, "agentP");
   expect(pinned.messages.find((m) => m.type === "snap").wait).toBe(10_000);
@@ -601,4 +602,50 @@ test("…and a global ceiling still bounds all waiters", async () => {
   void broker.request(a, "agentA"); await Bun.sleep(5);                                    // the one waiter allowed in all
   expect(await broker.request(b, "agentB")).toMatchObject({ status: 429 });
   broker.retire(ra.c); broker.retire(rb.c);
+});
+// ---- fifth review of #279 ----
+test("an asker that went away leaves the queue: it is never dispatched, and does not hold back the next ask", async () => {
+  const polls = manualPolls();
+  const { broker, world, donor } = setup({ queueMs: 5000, timeoutMs: 3000, pollSleep: polls.pollSleep });
+  const snaps = () => donor.messages.filter((m) => m.type === "snap");
+  const holding = broker.request(world, "agent");
+  const asker = new AbortController();
+  const abandoned = broker.request(world, "agent", "first", "auto", {}, undefined, asker.signal);
+  await polls.settle();
+  const live = broker.request(world, "agent");
+  await polls.settle();
+  asker.abort();                                                      // the first waiter's HTTP request is gone
+  broker.receive(donor.c, { id: snaps()[0].id, dataUrl: png }); await holding;
+  await polls.look(0);                                                // the abandoned one looks: it leaves
+  expect(await abandoned).toMatchObject({ ok: false, status: 499 });
+  await polls.look(0);                                                // the live one looks: it is served
+  expect(snaps().length).toBe(2);
+  broker.receive(donor.c, { id: snaps()[1].id, dataUrl: png });
+  expect((await live).ok).toBe(true);
+});
+test("a client that only CLAIMS to be a renderer is not taken for the world's pinned one", async () => {
+  let time = 0;
+  const { broker, worldOf, join, leave } = roamSetup({ now: () => time, sweepAfterMs: 0 });
+  const lobby = worldOf("lobby"), w = worldOf("w"), other = worldOf("other");
+  join(w, "agentW", { agent: true });
+  const serving = join(w, "roam-serving", { renderer: true, roam: true, spectator: true });   // the roamer serving w
+  const claimer = join(w, "says-renderer", { renderer: true, spectator: true });             // no credential, no frame yet
+  join(other, "agentO", { agent: true });
+  const spares = [join(lobby, "spare", { renderer: true, roam: true, spectator: true })];
+  const sentTo = (world: string) => spares.reduce((n, r) => n + r.messages.filter((m) => m.type === "renderer-travel" && m.world === world).length, 0);
+  broker.sweep();
+  expect(serving.messages.some((m) => m.type === "renderer-travel")).toBe(false);   // not counted as "parked" beside it
+  // and its leaving does not start a pinned renderer's grace: w is swept at once
+  time = 1_000; broker.retire(claimer.c); leave(claimer.c); leave(serving.c);
+  time = 2_000; spares.push(join(lobby, "spare2", { renderer: true, roam: true, spectator: true })); broker.sweep();
+  expect(sentTo("w")).toBe(1);
+  // a renderer that delivered a frame, though, is believed: it counts as pinned, and its restart's grace holds
+  const proved = join(other, "renderer-other", { renderer: true, spectator: true });
+  const ask = broker.request(other, "agentO"); await Bun.sleep(10);
+  broker.receive(proved.c, { id: proved.messages.find((m) => m.type === "snap").id, dataUrl: png }); await ask;
+  time = 3_000; broker.retire(proved.c); leave(proved.c);
+  const toOther = sentTo("other");
+  time = 4_000; spares.push(join(lobby, "spare3", { renderer: true, roam: true, spectator: true })); broker.sweep();
+  expect(sentTo("other")).toBe(toOther);                              // no roamer sent to load "other" in its grace
+  await Bun.sleep(450);
 });

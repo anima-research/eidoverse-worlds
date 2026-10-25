@@ -711,6 +711,7 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
+    snapshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
     // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
     // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
     if (c.agent && !c.spectator) snapshots.prewarm(w);

@@ -688,7 +688,8 @@ const ROUTES: Route[] = [
       // keeps it longer. Out of range or absent: the broker's own deadline.
       const budget = Number(q.get("budget"));
       const callerBudget = Number.isFinite(budget) && budget >= 1_000 && budget <= 600_000 ? budget : undefined;
-      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame, callerBudget);
+      // req.signal aborts when the asker goes away: a waiting ask then leaves the queue unserved (snapshots.ts)
+      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame, callerBudget, req.signal);
       // Retry-After only on a failure asking again soon can fix (snapshots.ts retryAfter): the MCPL tool asks again
       // exactly when it is there
       if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store",

@@ -72,8 +72,10 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // and the 5s): a larger value is refused like any other invalid one, and 12 is
 // used with a warning. Each request also has one deadline (snapshots.ts
 // budgetMs, 55 s by default, or the caller's ?budget=), which the journey, any
-// wait and the frame all come out of; a window this long still gets its whole
-// length, past 55 s. A proxy in front must allow the longest of these:
+// wait and the frame all come out of. The deadline stretches past 55 s for a
+// longer window, so a frame from a renderer that is free and already there gets
+// all of it; waiting for a busy renderer or a roamer's journey comes out of the
+// same deadline. A proxy in front must allow the longest of these:
 // deploy/nginx-show.conf gives `location = /snap` a 300s proxy_read_timeout,
 // above the 255s cap. nginx's 60s default would cut a /snap once
 // SNAP_TIMEOUT_SEC is past about 56 s.

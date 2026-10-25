@@ -120,7 +120,7 @@ try {
   const tb = Date.now(); while (Date.now() - tb < 30000 && (await againWorld()) !== world) await Bun.sleep(250);
   const backMs = Date.now() - tb;
   assert.equal(await againWorld(), world, 'the restarted roamer was sent back to the agent\'s world with no snapshot asked (sweep)');
-  await again.waitForFunction(async () => { const m = await import('/lib/realize/models.js'); const r = m.residencyDebug(); return r.real >= 4 && r.loading === 0 && r.standins === 0; }, null, { timeout: 60000 });
+  await again.waitForFunction(async (n) => { const m = await import('/lib/realize/models.js'); const r = m.residencyDebug(); return r.real >= n && r.loading === 0 && r.standins === 0; }, crates.length, { timeout: 60000 });
   const afterRestart = await snap();
   console.log(JSON.stringify({ afterRestart: { status: afterRestart.status, ms: afterRestart.ms, backMs } }));
   assert.equal(afterRestart.status, 200, `the first snapshot after the roamer's restart is served: ${afterRestart.err}`);
