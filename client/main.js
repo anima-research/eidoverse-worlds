@@ -157,7 +157,7 @@ const isViewer = CONFIG.spectate || CONFIG.renderer;
 
 setSkyArgsSource(skyArgs);
 setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency too (§13.3)
-// a renderer takes a snapshot only once the world is realized around the body it follows (net_snap.js settle): the
+// a renderer takes a snapshot only once the world is realized around the body it follows (net_capture.js settle): the
 // body in the scene, the world's builds done, no model loading or standing in. (Shaders still warming do not block:
 // the renderer compiles any it meets — a stall, never a missing object.)
 setSnapReadiness(async (follow) => {

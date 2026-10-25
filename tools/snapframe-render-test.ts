@@ -4,7 +4,7 @@
 //
 // snapframe-test.ts checks the normaliser, the first-person pitch and the wire,
 // but its fake renderer places no camera, so it passes whatever
-// client/lib/net_snap.js does with dist / height. This runs the shipped
+// client/lib/net_capture.js does with dist / height. This runs the shipped
 // snapshot() with only the browser boundary stubbed (core.js's camera, the
 // remotes map, capture.js, fp_view.js's composer) and checks the eye and the
 // aim for third and selfie, with and without framing, that pitch reaches
