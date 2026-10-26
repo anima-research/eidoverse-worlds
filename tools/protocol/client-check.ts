@@ -191,7 +191,7 @@ try {
   // ---- C: undo refused when someone changed it since ----
   const moved = disk().entities[crate].c.transform;
   check("(setup) bob moves the crate after me", (await bobReq("set", { id: crate, component: "transform", value: { ...moved, pos: [moved.pos[0], moved.pos[1], moved.pos[2] + 2] } })).ok);
-  await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['${crate}'].c.transform.pos[2] === ${moved.pos[2] + 2})`);
+  await waitFor(`import('/lib/net.js').then((m) => Math.abs(m.replica.st.entities['${crate}'].c.transform.pos[2] - ${moved.pos[2] + 2}) < 1e-3)`);
   n0 = myActs().length; const r0 = await evalJson(`__refused.length`);
   await key("KeyZ", { ctrlKey: true });
   check("C1 Ctrl+Z on something bob changed since is refused", await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'conflict'`), await evalJson(`__refused.at(-1)`));
