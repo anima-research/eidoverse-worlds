@@ -40,6 +40,10 @@ export const CHAT = {
   private: "chat:private",
   group: "chat:group",
   thread: "chat:thread",
+  // Kind facet (RFC-001 rev 3): a notice from the place, not a message anyone
+  // sent — weather, someone arriving or leaving, a visible change to the world.
+  // Hosts don't let a notice decide where the agent's plain speech goes.
+  system: "chat:system",
 } as const;
 
 /** This producer's own namespace (§16.1: it SHOULD match the producer's declared
@@ -76,7 +80,8 @@ const CLOSURE: Record<string, string[]> = {
  * §16.3: `chat:addressed` and `chat:ambient` are opposites, and a host that
  * receives both MUST resolve it by dropping `chat:ambient`. Producers SHOULD NOT
  * emit the pair at all — so we resolve it here, identically, rather than shipping
- * a set whose meaning depends on the consumer's rule ordering.
+ * a set whose meaning depends on the consumer's rule ordering. `chat:system`
+ * goes the same way (RFC-001 rev 3): something directed at you is not a notice.
  */
 export function tags(...list: (string | false | null | undefined)[]): string[] {
   const out = new Set<string>();
@@ -85,7 +90,7 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
     out.add(t);
     for (const implied of CLOSURE[t] ?? []) out.add(implied);
   }
-  if (out.has(CHAT.addressed)) out.delete(CHAT.ambient);
+  if (out.has(CHAT.addressed)) { out.delete(CHAT.ambient); out.delete(CHAT.system); }
   return [...out];
 }
 
@@ -163,7 +168,7 @@ const TAG_ONTOLOGY = {
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
     CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
-    CHAT.fromAgent,
+    CHAT.fromAgent, CHAT.system,
   ],
   tags: {
     [EIDO.whisper]: {

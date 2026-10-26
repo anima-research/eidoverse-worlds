@@ -814,7 +814,9 @@ class Session {
       } else if (ev.kind === "weather") {
         // The sky changed ON ITS OWN — a forecast boundary, an override
         // landing/expiring, or a day-phase crossing. One line per boundary,
-        // provenance in the text, ambient like every world-system signal.
+        // provenance in the text, ambient like every world-system signal, and
+        // `chat:system` (RFC-001 rev 3): a notice, not speech, so a host never
+        // sends the agent's plain speech here because the forecast came last.
         // Pull-only hosts get it from the `activity` tool's held ring, same
         // as activity digests — resting agents shouldn't need a renderer to
         // know it started raining.
@@ -822,7 +824,7 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.weather), metadata: { weather: true } });
+          { tags: tags(CHAT.ambient, CHAT.system, EIDO.weather), metadata: { weather: true } });
       } else if (ev.kind === "world-change") {
         // Someone changed what the world LOOKS like near this body — today, an
         // emitter beginning/changing/ending. Ambient, coalesced producer-side,
@@ -833,10 +835,10 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
+          { tags: tags(CHAT.ambient, CHAT.system, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence, from) });
+          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.presence, from) });
       }
     };
     this.agent.onPing = (p) => {
@@ -900,7 +902,7 @@ class Session {
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.catchup) });
         for (const m of missedSeq.slice(-10)) {
           // replay = ORIGINAL addressing + the catchup marker, exactly as the
           // ontology declares (issue #39: these shipped as bare legacy
@@ -916,7 +918,7 @@ class Session {
       const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && this.agent.mentionsMe(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.catchup) });
         for (const m of missed.slice(-10)) this.deliver(m.text ?? "", authorOf(m.who),
           { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
       }
