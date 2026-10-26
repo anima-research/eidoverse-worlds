@@ -58,10 +58,9 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
   // RFC-001 rev 3: chat:system marks a notice; chat:addressed excludes it
   // exactly as it excludes chat:ambient, so nothing directed at the agent can
   // be muted or ignored as a notice.
+  // (What each world event is tagged lives in event-wire.ts, held to it by
+  // tools/event-wire-test.ts.)
   const { tags } = await import("../mcpl/declaration.ts");
-  const notice = tags(CHAT.ambient, CHAT.system, EIDO.weather);
-  check("a world notice carries chat:system and chat:ambient",
-    notice.includes(CHAT.system) && notice.includes(CHAT.ambient), JSON.stringify(notice));
   const named = tags(CHAT.system, CHAT.mention);
   check("addressed drops chat:system — being named is not a notice",
     !named.includes(CHAT.system) && named.includes(CHAT.addressed), JSON.stringify(named));

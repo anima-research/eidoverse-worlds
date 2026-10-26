@@ -33,12 +33,13 @@ import {
   type ChannelsPublishResult,
 } from "@animalabs/mcpl-core";
 import {
-  CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
+  CAP, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
 import { shown } from "../shared/shown.js";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
+import { eventTags, catchupHeaderTags, catchupReplayTags } from "./event-wire.ts";
 import { TypingRelay } from "./typing-relay.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken, aid1Slug } from "../server/aid1.ts";
@@ -776,12 +777,14 @@ class Session {
       // corresponding evidence for humanity — a browser client simply omits the
       // flag — so `chat:from-human` is NOT emitted from an absence. Claiming it
       // would put an unmarked bot in the band a resident reserves for people.
-      const from = this.agent.isAgent(ev.who) ? CHAT.fromAgent : null;
+      // The tags each event goes out with live in event-wire.ts, where a test
+      // can hold them to what declaration.ts promises.
+      const fromAgent = this.agent.isAgent(ev.who);
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
         this.deliver(ev.text!, authorOf(ev.who), ev.mention
-          ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true }
-          : { tags: tags(CHAT.ambient, from) });
+          ? { tags: eventTags("say", { fromAgent, mention: true }), mentioned: true }
+          : { tags: eventTags("say", { fromAgent }) });
       } else if (ev.kind === "whisper") {
         // A closed door does not stop a whisper — being addressed privately IS
         // the knock. Rendered with its privacy stated, because an agent that
@@ -791,12 +794,12 @@ class Session {
         // you. `chat:dm` ⇒ addressed + private under §16.3's closure, emitted
         // directly here as §16.3 recommends.
         this.deliver(`(whispers to you) ${ev.text}`, authorOf(ev.who),
-          { tags: tags(CHAT.dm, CHAT.private, CHAT.addressed, EIDO.whisper, from), mentioned: true });
+          { tags: eventTags("whisper", { fromAgent }), mentioned: true });
       } else if (ev.kind === "act") {
         // embodied transitions — an emote, a pose struck or released, someone
         // sitting down. Ambient by nature: a closed door mutes them.
         if (this.channelOpen) this.deliver(`* ${ev.who} ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.act, from) });
+          { tags: eventTags("act", { fromAgent }) });
       } else if (ev.kind === "activity") {
         // The ambient-activity pulse: at most one per window, and ONLY while
         // something is happening within this body's activity radius. Overheard,
@@ -810,7 +813,7 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.activityDigest), metadata: { activity: true } });
+          { tags: eventTags("activity", { fromAgent }), metadata: { activity: true } });
       } else if (ev.kind === "weather") {
         // The sky changed ON ITS OWN — a forecast boundary, an override
         // landing/expiring, or a day-phase crossing. One line per boundary,
@@ -824,7 +827,7 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, CHAT.system, EIDO.weather), metadata: { weather: true } });
+          { tags: eventTags("weather", { fromAgent }), metadata: { weather: true } });
       } else if (ev.kind === "world-change") {
         // Someone changed what the world LOOKS like near this body — today, an
         // emitter beginning/changing/ending. Ambient, coalesced producer-side,
@@ -835,15 +838,15 @@ class Session {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, CHAT.system, EIDO.worldChange, EIDO.particles, from), metadata: { worldChange: true } });
+          { tags: eventTags("world-change", { fromAgent }), metadata: { worldChange: true } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.presence, from) });
+          { id: "world", name: this.agent.world }, { tags: eventTags(ev.kind, { fromAgent }) });
       }
     };
     this.agent.onPing = (p) => {
       // The ping→channel mapping (approach addressed+mentioned, depart
-      // ambient, reach/touch worded by the agent) lives in ping-wire.ts,
+      // ambient + chat:system, reach/touch worded by the agent) lives in ping-wire.ts,
       // where a test can hold it to what declaration.ts promises.
       const d = pingDelivery(p as WirePing, this.agent.isAgent(p.who));
       if (d) this.deliver(d.text, { id: "world", name: this.agent.world },
@@ -902,14 +905,14 @@ class Session {
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
         for (const m of missedSeq.slice(-10)) {
           // replay = ORIGINAL addressing + the catchup marker, exactly as the
           // ontology declares (issue #39: these shipped as bare legacy
           // ["mention"], which no declared rule could match). deliver()
           // renders the author itself — passing "who: text" here doubled it.
           this.deliver(m.text, authorOf(m.who),
-            { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
+            { tags: catchupReplayTags(), mentioned: true });
         }
       }
     }
@@ -918,9 +921,9 @@ class Session {
       const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && this.agent.mentionsMe(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
-          { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, CHAT.system, EIDO.catchup) });
+          { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
         for (const m of missed.slice(-10)) this.deliver(m.text ?? "", authorOf(m.who),
-          { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
+          { tags: catchupReplayTags(), mentioned: true });
       }
     }
     lastSeen[this.auth.id] = Date.now();
