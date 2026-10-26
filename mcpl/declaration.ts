@@ -81,7 +81,8 @@ const CLOSURE: Record<string, string[]> = {
  * receives both MUST resolve it by dropping `chat:ambient`. Producers SHOULD NOT
  * emit the pair at all — so we resolve it here, identically, rather than shipping
  * a set whose meaning depends on the consumer's rule ordering. `chat:system`
- * goes the same way (RFC-001 rev 3): something directed at you is not a notice.
+ * is another facet (kind, not addressing) and is left alone: nothing this door
+ * sends is both, and elsewhere a notice can be addressed by its place.
  */
 export function tags(...list: (string | false | null | undefined)[]): string[] {
   const out = new Set<string>();
@@ -90,7 +91,7 @@ export function tags(...list: (string | false | null | undefined)[]): string[] {
     out.add(t);
     for (const implied of CLOSURE[t] ?? []) out.add(implied);
   }
-  if (out.has(CHAT.addressed)) { out.delete(CHAT.ambient); out.delete(CHAT.system); }
+  if (out.has(CHAT.addressed)) out.delete(CHAT.ambient);
   return [...out];
 }
 
