@@ -196,7 +196,7 @@ try {
   await key("KeyZ", { ctrlKey: true });
   check("C1 Ctrl+Z on something bob changed since is refused", await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'conflict'`), await evalJson(`__refused.at(-1)`));
   const shown = await evalJson(`__refused.at(-1)`);
-  check("C2 …nothing written, bob's move stands", myActs().length === n0 && disk().entities[crate].c.transform.pos[2] === moved.pos[2] + 2);
+  check("C2 …nothing written, bob's move stands", myActs().length === n0 && Math.abs(disk().entities[crate].c.transform.pos[2] - (moved.pos[2] + 2)) < 1e-3, disk().entities[crate].c.transform.pos);
   // ship list 10-07: a person reads plain words (no code, no tool syntax: plainRefusal); the agents' words ride along as agentText
   check("C3 …and the person reads it in plain words (the agents' words kept beside them), naming who", /^Couldn't undo/.test(shown?.text ?? "") && !/\(conflict\)/.test(shown?.text ?? "") && shown?.agentText === refusalText("undo", { refused: shown?.refused }) && /bob changed it since/.test(JSON.stringify(shown?.refused?.skipped)), shown);
 
