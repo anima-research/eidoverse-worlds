@@ -9,11 +9,11 @@
 // holds it to that.
 //
 // The kind facet (RFC-001 rev 3): a notice nobody sent (weather, a visible
-// change to the world, someone arriving or leaving, the catch-up header)
-// carries `chat:system` beside `chat:ambient`, so a host never sends the
-// agent's plain speech into the world because a notice arrived there last,
-// while rules written for ambient traffic keep matching. Speech, emotes and
-// the activity digest are people doing things and stay plain `chat:ambient`.
+// change to the world, someone arriving or leaving, the activity digest, the
+// catch-up header) carries `chat:system` beside `chat:ambient`, so a host that
+// routes speech by the latest message doesn't follow a notice into the world,
+// while rules written for ambient traffic keep matching. Speech and emotes
+// are people doing things and stay plain `chat:ambient`.
 
 import { CHAT, EIDO, tags } from "./declaration.ts";
 
@@ -35,9 +35,11 @@ export function eventTags(kind: WireEventKind, opts: { fromAgent: boolean; menti
     case "act":
       return tags(CHAT.ambient, EIDO.act, from);
     case "activity":
-      // A digest of what people near this body are saying and doing: overheard
-      // conversation, summarized, so answering it in-world is answering them.
-      return tags(CHAT.ambient, EIDO.activityDigest);
+      // The door's own summary of what is happening nearby, written by the
+      // world, not said by anyone: a notice. It is also the most frequent
+      // world-authored line, so leaving it plain ambient would let it win
+      // "most recent message" whenever anything stirs near the body.
+      return tags(CHAT.ambient, CHAT.system, EIDO.activityDigest);
     case "weather":
       return tags(CHAT.ambient, CHAT.system, EIDO.weather);
     case "world-change":

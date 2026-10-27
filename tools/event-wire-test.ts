@@ -22,6 +22,7 @@ for (const [kind, own] of [
   ["world-change", EIDO.worldChange],
   ["arrive", EIDO.presence],
   ["leave", EIDO.presence],
+  ["activity", EIDO.activityDigest],
 ] as const) {
   const t = eventTags(kind, { fromAgent: false });
   check(`${kind} is a chat:system notice`, has(t, CHAT.system), show(t));
@@ -42,10 +43,10 @@ check("an agent's arrival says it was an agent",
 }
 
 // ---------------------------------------------------------------- people: someone did something
-for (const kind of ["act", "activity"] as const) {
-  const t = eventTags(kind, { fromAgent: false });
-  check(`${kind} is ambient`, has(t, CHAT.ambient), show(t));
-  check(`${kind} is not a notice: people did it`, !has(t, CHAT.system), show(t));
+{
+  const t = eventTags("act", { fromAgent: false });
+  check("act is ambient", has(t, CHAT.ambient), show(t));
+  check("act is not a notice: someone did it", !has(t, CHAT.system), show(t));
 }
 {
   const overheard = eventTags("say", { fromAgent: false });

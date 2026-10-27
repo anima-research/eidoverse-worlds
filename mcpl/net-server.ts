@@ -806,7 +806,8 @@ class Session {
         // never addressed — a host opts in by matching `eidoverse:activity-digest`
         // (or plain `chat:ambient`) in its wake gate, which yields regular wakes
         // exactly as long as there is life nearby, and stops by itself when the
-        // area goes quiet. A closed door mutes it like any ambient signal.
+        // area goes quiet. A closed door mutes it like any ambient signal. The
+        // world wrote it, so it is a `chat:system` notice too (event-wire.ts).
         if (!this.granted(CAP.channelsIncoming)) {
           // No push channel this digest could ride — hold it for the
           // `activity` tool to hand over. deliver() would drop it silently.

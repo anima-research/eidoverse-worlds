@@ -213,7 +213,7 @@ const TAG_ONTOLOGY = {
       facet: "lifecycle",
     },
     [EIDO.activityDigest]: {
-      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool.",
+      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool. Arrives as a chat:system notice (with chat:ambient): the world wrote it, nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.weather]: {
