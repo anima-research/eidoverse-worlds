@@ -1,12 +1,12 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
+import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds, isWorldName } from './base.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadow } from './state.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -339,6 +339,98 @@ export function rejoin() {
 }
 
 let intentionalClose = false;
+let everJoined = false;   // has this page been let in at all (a snapshot arrived)
+let worldSaved = false;   // has this join remembered its world yet (rememberWorld)
+let browserSaved = false;   // has this PAGE written the browser's last world (once: see rememberWorld)
+
+/** Has anyone made anything here: a thing, ground, grass or sky. A join to a name
+ *  nobody has used FOUNDS that world (server.ts admitJoin), so a mistyped ?world=
+ *  is let in to an empty one; main.js warns about it on arrival. An empty world is
+ *  not remembered: a bare link must not keep leading to a typo. */
+export const builtIn = (st) => {
+  if (!st) return false;
+  for (const _ in st.entities ?? {}) return true;   // one is enough: no key list built over a big world
+  return st.terrain != null || st.grass != null || st.sky != null;
+};
+
+/** The world a person is IN: where a bare link brings this browser next time
+ *  (base.js pickWorld). Called at the door's yes and on each live entry until it
+ *  sticks, so a refused ?world= is never remembered and a new world is, the moment
+ *  someone builds in it. Watchers and renderers write nothing.
+ *  The tab's memory is refreshed on every join. The BROWSER's is written once per
+ *  page: a reconnect is not arriving, and an old tab waking from sleep must not take
+ *  the browser's last world back from the tab the person moved on to. */
+function rememberWorld() {
+  if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
+  worldSaved = true;   // decided for this join either way, so live entries stop asking
+  if (loggedOutElsewhere()) return;   // the person this page was signed in as has left this browser
+  try { sessionStorage.setItem(TAB_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+  if (browserSaved) return;
+  browserSaved = true;
+  try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+}
+
+/** This page entered signed in, and since then someone logged this browser out (ui.js
+ *  logOut, in any tab, clears ew-authed). Where that person has been is no longer this
+ *  browser's to remember: a tab still open must not write it back for the next visitor. */
+function loggedOutElsewhere() {
+  try { return !!CONFIG.authed && localStorage.getItem('ew-authed') !== '1'; } catch { return false; }
+}
+/** This browser was signed in, and this page is not: identity did not come through
+ *  (/whoami or /authcfg failed, a bounce already spent this minute). A refusal then may
+ *  be about WHO we are, not where, and must not cost the person their memory of the
+ *  world: a reload with identity back would get in. */
+function identityMissing() {
+  if (CONFIG.authed || CONFIG.token) return false;   // a door key is an identity of its own, never bounced to the login
+  try { return localStorage.getItem('ew-authed') === '1'; } catch { return false; }
+}
+
+/** Forget a world from both memories (this tab's and the browser's) wherever it is the one held. */
+function forgetWorld(name) {
+  for (const [s, k] of [[globalThis.localStorage, LAST_WORLD_KEY], [globalThis.sessionStorage, TAB_WORLD_KEY]]) {
+    try { if (s?.getItem(k) === name) s.removeItem(k); } catch { /* storage blocked */ }
+  }
+}
+
+/** The other half of rememberWorld's rule: the memory only ever holds a world with
+ *  something in it. One found empty at the door (reset, or wiped and founded again)
+ *  is forgotten, so bare links stop leading there. The page stays — the person may
+ *  be about to build, and anything built remembers it again — and main.js's
+ *  empty-world notice says how to go elsewhere. */
+function forgetEmptyWorld() {
+  if (CONFIG.spectate || CONFIG.renderer || builtIn(shadow.st)) return;
+  forgetWorld(CONFIG.world);
+}
+
+/** A world's door refused us (4010 not open to you, 4006 removed). Wherever it
+ *  is what a bare link would bring us back to (this tab's memory or the
+ *  browser's), forget it: the memory (base.js pickWorld) must not keep leading
+ *  to a closed door. And when a memory, not the link, brought this page here and
+ *  we never got in, go where a bare link now leads — the person did not ask for
+ *  this world, and a refusal for a place they did not name is no way to arrive.
+ *  Every refusal removes the memory that led to it, so this ends: in a world
+ *  that lets us in, or in the commons. */
+function forgetRefusedWorld() {
+  if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
+  if (identityMissing()) return false;   // maybe refused for who we are: keep the memory, say the old words
+  forgetWorld(CONFIG.world);
+  if (!CONFIG.worldRemembered || everJoined) return false;
+  toast(`you can't go back into "${CONFIG.world}" — taking you to ${whereNext()}`, 'warn', 8000);
+  setTimeout(() => location.reload(), 3000);
+  return true;
+}
+/** Where a reload of this page leads now (after any forgetting), for the words. */
+function whereNext() {
+  const next = pickWorld(CONFIG.params, ...rememberedWorlds()).world;
+  return next === 'commons' ? 'the commons' : `"${next}"`;
+}
+/** The tail of a refusal toast that leaves the page where it is. A reload of a page
+ *  a memory brought here no longer comes back here (the memory is forgotten), so
+ *  the words say where it does go, and how to come back on purpose. */
+function reloadHint(plain) {
+  if (!CONFIG.worldRemembered || CONFIG.spectate || CONFIG.renderer || identityMissing()) return plain;
+  return `a reload now takes you to ${whereNext()} — ?world=${CONFIG.world} comes back here`;
+}
 
 // archipelago-home session (home-node.md §7): the server may know who we are
 // from the ew_sess cookie (set by /auth after a Discord login). Fetched once;
@@ -472,7 +564,8 @@ function wireSocket(ws) {
     if (ev.code === 4006) {
       net.status = 'rejected';
       bus.emit('net', net);
-      toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+      if (forgetRefusedWorld()) return;
+      toast(`you were removed from this world — ${reloadHint('reload if you believe you may return')}`, 'warn', 60000);
       return;
     }
     // 4010 = this world is not open to you: refused at the door (members
@@ -483,7 +576,8 @@ function wireSocket(ws) {
     if (ev.code === 4010) {
       net.status = 'rejected';
       bus.emit('net', net);
-      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
+      if (forgetRefusedWorld()) return;
+      toast(`you're not in "${CONFIG.world}" — ${reloadHint('reload if your access changes')}`, 'warn', 60000);
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
@@ -738,6 +832,7 @@ async function handle(msg, at) {
       // the realizers are active this IS the delivery: the fold event
       // drives state realization, and 'live-entry' carries the causes.
       shadowFold(msg.entry);
+      if (!worldSaved) rememberWorld();   // a new world, the moment something is built in it
       if (hydrating) pendingLive.push(msg.entry);
       else if ((msg.entry.seq ?? -1) > lastSeq) {
         lastSeq = msg.entry.seq;
@@ -749,7 +844,7 @@ async function handle(msg, at) {
     case 'renderer-travel':
       // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
       // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
-      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+      if (CONFIG.renderer && CONFIG.roam && isWorldName(msg.world) && msg.world !== CONFIG.world) {
         CONFIG.world = msg.world; rejoin();
       }
       return;
@@ -854,6 +949,8 @@ async function onSnapshot(msg) {
   bus.emit('your-rights', net.myRights);
   markPhase('connect', 1);
   net.joined = true;
+  everJoined = true;
+  worldSaved = false;   // every join remembers afresh (after the shadow adopts the snapshot, below)
   net.status = 'live';
   net.myId = msg.you;
   net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
@@ -934,6 +1031,8 @@ async function onSnapshot(msg) {
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);
+  rememberWorld();   // the door said yes, and the shadow now holds what is here
+  forgetEmptyWorld();   // …or holds nothing, and a bare link should stop leading here
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.

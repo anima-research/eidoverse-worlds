@@ -1731,13 +1731,28 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       if (cached && cached.name === wantName && typeof cached.path === 'string') wantAvatar = cached.path;
     } catch (e) { /* a bare name is fine */ }
     globalThis.__ewWantAvatar = wantAvatar;
+    // The world, chosen once for the page the same way (base.js pickWorld, whose comment
+    // says why): ?world=, else this tab's last world, else this browser's, else the
+    // commons. base.js CONFIG takes this answer, so the join below and net.js's agree.
+    const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
+    {
+      const asked = params.get('world');
+      const ok = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+      let last = null, tab = null;
+      try { last = localStorage.getItem('ew-world'); } catch (e) { /* storage blocked */ }
+      try { tab = sessionStorage.getItem('ew-world-tab'); } catch (e) { /* storage blocked */ }
+      globalThis.__ewWorld = asked ? { world: asked, remembered: false }
+        : person && ok(tab) ? { world: tab, remembered: true }
+        : person && ok(last) ? { world: last, remembered: true }
+        : { world: 'commons', remembered: false };
+    }
 
     if (params.get('earlysock') === '0') return;
-    if (params.has('spectate') || params.has('renderer') || params.has('mintthumbs')) return;
+    if (!person) return;
     const name = params.get('name')
       || (localStorage.getItem('ew-name-set') === '1' ? localStorage.getItem('ew-name') : null);
     if (!name) return;   // the first-run door decides identity — never preempt it
-    const world = params.get('world') || 'commons';
+    const world = globalThis.__ewWorld.world;
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
     const avatar = wantAvatar;   // resolved above, and published for lite.js to match
     const sent = { world, id: name, avatar, token };
@@ -1811,8 +1826,16 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // browser. One global flag would answer "this device cannot" when the truth is
     // "this device cannot hold THAT world", and would strand a phone in lite on worlds
     // it handles comfortably.
-    const tripKey = (params) => `ew-boot-attempt:${params.get('world') || 'default'}`;
-    const retryKey = (params) => `ew-boot-retried:${params.get('world') || 'default'}`;   // a desktop's one retry (rule 2)
+    // Keyed on the world the page actually opens (the early-socket script's choice:
+    // ?world=, else a remembered world), so a crash in a world is found by the next
+    // load of that world however the link was spelled. The commons is always
+    // 'default', the key its bare link has always had, so its evidence carries over.
+    const keyWorld = (params) => {
+      const w = globalThis.__ewWorld?.world || params.get('world') || 'commons';
+      return w === 'commons' ? 'default' : w;
+    };
+    const tripKey = (params) => `ew-boot-attempt:${keyWorld(params)}`;
+    const retryKey = (params) => `ew-boot-retried:${keyWorld(params)}`;   // a desktop's one retry (rule 2)
     globalThis.__ewRetryKey = retryKey;   // boot.js and litechoice.js clear it with the trip key
     globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
 
