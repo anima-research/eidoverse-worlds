@@ -1,12 +1,11 @@
-// watervolumes — data-driven water VOLUMES (the 'water'/'air' components: pools, oceans in a box,
-// (On this protocol the volume components aren't registered yet — an entity's `water` would collide with @world.water —
-// so no world carries a volume and only the LEVEL's underwater optics below draw; the readers already read records flat.)
-// dry interiors that move). Distinct from water.js, the world's one water LEVEL.
-// Data-driven water volumes and moving dry interiors. No world names or layouts.
+// watervolumes — water bodies and dry pockets (things with zone + water / water-exclusion, read through shared/zone.js),
+// drawn and fogged; also the level's underwater optics. Distinct from water.js, the world's one water LEVEL. No world names or layouts.
 import { THREE, TSL, scene, camera, sun, hemi } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
-import { MAX_WATER, MAX_AIR, waterParams, mediumAt, vector } from '../../shared/water.js';
+import { MAX_WATER, MAX_AIR, mediumAt, vector } from '../../shared/water.js';
+import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView } from '../../shared/zone.js';
+import { worldPose } from '../../shared/protocol/simlayer.js';
 import { setEnvironmentFloor } from './terrain.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
@@ -87,7 +86,7 @@ const fogFn = Fn(([color, a, b]) => {
   return vec4(color.rgb.mul(trans).add(source.div(max(total, 0.000001)).mul(vec3(1).sub(trans))), color.a);
 });
 const fogNode = fogFn(output,cameraPosition,positionWorld);
-let previousFog = null, installed = false, dirty = true;
+let previousFog = null, installed = false, dirty = true, fold = { entities: {} };
 let skyDome=null, skySaved=null, particles=null;
 const warned=new Set();
 function warn(message){if(!warned.has(message)){warned.add(message);report('water',new Error(message));}}
@@ -126,15 +125,17 @@ export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],wa
 export function waterTime() { return clock.value; }
 let rebuilds = 0;
 export function waterDebug() { return { waters:waters.length, air:airs.length, enabled:installed, time:clock.value, rebuilds, slots:waterCount.value, under:underLevelNow, background:backgroundOn, dryPocket:dryIdx.value }; }
-function matrixFor(id,ent) {
+// a body's pose: its live object's (a moving carrier draws between records), else the record's (simlayer worldPose)
+const _s = new THREE.Vector3();
+function poseFor(fold,id) {
   const obj=objects().get(id);
-  if(obj) { obj.updateWorldMatrix(true,false);return obj.matrixWorld; }
-  return new THREE.Matrix4().compose(new THREE.Vector3(...(ent.pos??[0,0,0])),
-    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),ent.yaw??0),new THREE.Vector3().setScalar(ent.scale??1));
+  if(!obj) return worldPose(fold,id);
+  obj.updateWorldMatrix(true,false);obj.matrixWorld.decompose(_p,_q,_s);
+  return {pos:_p.toArray(),q:_q.toArray(),scale:_s.toArray()};
 }
 function clearSurfaces() { for(const o of surfaces){scene.remove(o);o.geometry.dispose();o.material.dispose();} surfaces.length=0; }
 function makeSurface(w) {
-  const material=new THREE.MeshStandardNodeMaterial({color:0x235363,metalness:.12,roughness:.19,side:THREE.DoubleSide,transparent:true,opacity:.72,depthWrite:false});
+  const material=new THREE.MeshStandardNodeMaterial({color:Number.isInteger(w.color)?w.color:0x235363,metalness:.12,roughness:.19,side:THREE.DoubleSide,transparent:true,opacity:Number.isFinite(w.opacity)?w.opacity:.72,depthWrite:false});
   const geo=new THREE.PlaneGeometry(w.size[0],w.size[2],256,256).rotateX(-Math.PI/2);
   // Grade the grid toward its centre instead of spending every vertex at the horizon.
   const positions=geo.attributes.position;
@@ -249,60 +250,37 @@ export function updateWater() {
   const rebuild=dirty;dirty=false;
   if(rebuild){rebuilds++;clearSurfaces();volumeIds.clear();if(particles){scene.remove(particles);particles.geometry.dispose();particles.material.dispose();particles=null;}}
   waters.length=0;airs.length=0;
-  for(const [id,e] of entries()) {
-    const comp=e, matrix=matrixFor(id,e);   // the record's components, flat (view.js): water / air / environment
-    if(rebuild&&(comp.water||comp.environment))volumeIds.add(id);
-    if(comp.water) {
-      if(waters.length>=MAX_WATER){warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);continue;}
-      const w=waterParams(comp.water);_p.fromArray(w.center).applyMatrix4(matrix);w.center=_p.toArray();
-      // Water bounds stay axis-aligned and horizontal; entity scale is inherited.
-      const s=new THREE.Vector3();matrix.decompose(_p,_q,s);w.size=w.size.map((v,i)=>v*Math.abs(s.getComponent(i)));
-      w.top=w.center[1]+w.size[1]/2;w.bottom=w.center[1]-w.size[1]/2;
-      const i=waters.length;waters.push(w);
-      const slot=i+1;   // fog slot 0 is the level's; volumes follow it (higher = priority)
-      mins.array[slot].set(w.center[0]-w.size[0]/2,w.bottom,w.center[2]-w.size[2]/2,0);
-      maxs.array[slot].set(w.center[0]+w.size[0]/2,w.top,w.center[2]+w.size[2]/2,0);
-      absorption.array[slot].set(...w.absorption,0);scatter.array[slot].set(...w.scatter,0);
-      if(rebuild)makeSurface(w);
-      else if(surfaces[i]){surfaces[i].position.set(w.center[0],w.top,w.center[2]);surfaces[i].userData.centre?.value.set(w.center[0],w.center[2]);}
-    }
-    for(const box of (Array.isArray(comp.air?.boxes)?comp.air.boxes:[])) {
-      if(!box || typeof box!=='object')continue;
-      if(airs.length>=MAX_AIR){warn(`Water renderer supports ${MAX_AIR} dry volumes; extra volumes are inactive`);break;}
-      const size=vector(box.size,[1,1,1]).map(x=>Math.max(.001,Math.abs(x)));
-      const q=Array.isArray(box.q)&&box.q.length===4&&box.q.every(Number.isFinite)?new THREE.Quaternion().fromArray(box.q).normalize():new THREE.Quaternion();
-      const inv=new THREE.Matrix4().compose(new THREE.Vector3(...vector(box.center)),q,new THREE.Vector3(1,1,1)).premultiply(matrix).invert();
-      const i=airs.length;dryInverse.array[i].copy(inv);dryExtent.array[i].set(size[0]/2,size[1]/2,size[2]/2,0);
-      airs.push({size,toLocal:p=>new THREE.Vector3(...p).applyMatrix4(inv).toArray()});
-    }
+  if(rebuild){fold=foldOfView(state.st);for(const [id,e] of entries())if(e.environment)volumeIds.add(id);}
+  const zones=zonesOf(fold,{poseOf:id=>poseFor(fold,id)});
+  if(rebuild)for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);
+  const vol=waterVolumes(zones);
+  if(vol.waters.length>MAX_WATER)warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);
+  // the highest-priority bodies are kept (the list runs lowest first)
+  for(const w of vol.waters.slice(-MAX_WATER)) {
+    const i=waters.length;waters.push(w);
+    const slot=i+1;   // fog slot 0 is the level's; volumes follow it (higher = priority)
+    mins.array[slot].set(w.center[0]-w.size[0]/2,w.bottom,w.center[2]-w.size[2]/2,0);
+    maxs.array[slot].set(w.center[0]+w.size[0]/2,w.top,w.center[2]+w.size[2]/2,0);
+    absorption.array[slot].set(...w.absorption,0);scatter.array[slot].set(...w.scatter,0);
+    if(rebuild)makeSurface(w);
+    else if(surfaces[i]){surfaces[i].position.set(w.center[0],w.top,w.center[2]);surfaces[i].userData.centre?.value.set(w.center[0],w.center[2]);}
+  }
+  if(vol.airs.length>MAX_AIR)warn(`Water renderer supports ${MAX_AIR} dry volumes; extra volumes are inactive`);
+  // the GPU fog keeps every pocket out of every body (as mediumAt does for a pocket without bodies or priority)
+  for(const a of vol.airs.slice(-MAX_AIR)) {
+    const inv=new THREE.Matrix4().compose(new THREE.Vector3(...a.center),new THREE.Quaternion().fromArray(a.q).normalize(),new THREE.Vector3(1,1,1)).invert();
+    const i=airs.length;dryInverse.array[i].copy(inv);dryExtent.array[i].set(a.size[0]/2,a.size[1]/2,a.size[2]/2,0);
+    airs.push(a);
   }
   airCount.value=airs.length;
   updateWaterView();   // the camera-dependent half, now (main.js runs it again after this frame's movement)
   if(rebuild){const env=environmentSettings();setEnvironmentFloor(Number.isFinite(env?.floor)?env.floor:null);updateEnvironmentSky(env);makeParticles(env?.particles);}
   if(skyDome)skyDome.position.copy(camera.position);
 }
-// Rebuild surfaces/particles/sky only when water or environment data can have changed: a reset, a water or
-// environment comp, or an edit to an entity that carries (or carried, at the last build) one — or to any
-// carrier above one in its mount chain, whose scale sizes the water it carries. Positions and dry boxes
-// refresh every frame anyway, so unrelated edits cost nothing here.
-const volumeIds = new Set();   // owners at the last rebuild: a same-id respawn or removal still counts
-function touchesVolume(id) {
-  if (id == null) return false;
-  if (volumeIds.has(id)) return true;
-  const c = state.st.entities[id];
-  if (c?.water || c?.environment) return true;
-  for (const v of volumeIds) {   // is `id` a carrier somewhere above a volume owner?
-    let p = state.st.entities[v]?.parent?.to;
-    for (let hops = 0; p && hops < 8; hops++, p = state.st.entities[p]?.parent?.to) if (p === id) return true;
-  }
-  return false;
-}
-onWorldChange(ev=>{
-  if(ev.type!=='entry'){dirty=true;return;}
-  const {verb,args}=ev.entry,id=args?.id;
-  if(verb==='comp'&&(args?.type==='water'||args?.type==='environment')){dirty=true;return;}
-  if(['comp','spawn','remove','place','mount','dismount'].includes(verb)&&touchesVolume(id))dirty=true;
-});
+// Rebuild surfaces/particles/sky only when what they read can have changed (shared/zone.js zoneChangeTouches): a reset, a
+// zone / water / water-exclusion / environment, or a pose or parent of a holder or a carrier above one. Positions refresh every frame.
+const volumeIds = new Set();   // holders at the last rebuild: a same-id respawn or removal still counts
+onWorldChange(ev=>{ if(zoneChangeTouches(ev,state.st.entities,volumeIds))dirty=true; });
 
 /** 1 where a point is inside any dry box, else 0 (portable TSL). water.js masks the level's sheet with it: a dry
  *  shaft or room reaching up through the surface has no water across its mouth. */
