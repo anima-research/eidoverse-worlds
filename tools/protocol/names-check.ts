@@ -71,7 +71,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["/worlds sorts by kind", "server/routes.ts", "people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),", "people: present.filter((c) => c.declares !== \"agent\").map((c) => c.id), agents: present.filter((c) => c.declares === \"agent\").map((c) => c.id),", ["W1"]],
   ["the tool says (agent)", "mcpl/tools.ts", "p.declares ? `${p.id} (${p.declares})` : p.id", "p.declares === \"agent\" ? `${p.id} (agent)` : p.id", ["W2"]],
   ["the plate says agent", "client/lib/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
-  ["the alt note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
+  ["the description note sets agents against people", "shared/sound.js", "anyone who can\\'t hear it (or reads the world as text)", "agents and people who can\\'t hear it", ["W4"]],
   ["the agent's seat again", "mcpl/agent.ts", "mayVacate(kind: \"move\"", "mayLeaveSeat(kind: \"move\"", ["O1"]],
   ["socketRole says seat", "shared/sockbody.js", "!isPurged(c.station) ? 'station' :", "!isPurged(c.station) ? 'seat' :", ["O2"]],
   ["the toast says seat", "client/lib/localbody.js", "moved what you were occupying, so you stood up", "moved the seat you were on, so you stood up", ["O3"]],
@@ -354,10 +354,10 @@ const cases: Case[] = [
       return { net: (net.match(/declares: (msg|p)\.declares \?\? null/g) ?? []).length, rem: /declares: meta\.declares \?\? null/.test(rem) && !/agent: !!meta\.agent/.test(rem),
         pc: /r\.declares : null/.test(pc) && !/r\.agent \? 'agent'/.test(pc), ch: /w\.dataset\.declares = declared/.test(ch) && !/\?\.agent\)/.test(ch), css: /\.who\[data-declares\]::after/.test(ix) && !/\.line\.agent/.test(ix) }; },
     good: (o) => o.net === 2 && o.rem && o.pc && o.ch && o.css },
-  { id: "W4", what: "…no text sets humans against agents: the gesture tool, the sound and picture alt notes, refusal.js, grab.js, sockbody.js, browservoice.js", run() {
+  { id: "W4", what: "…no text sets humans against agents: the gesture tool, the sound and picture description notes, refusal.js, grab.js, sockbody.js, browservoice.js", run() {
       const t = readText("mcpl/tools.ts"), so = readText("shared/sound.js"), pi = readText("shared/picture.js"), rf = readText("shared/protocol/refusal.js"), gr = readText("shared/grab.js"), sb = readText("shared/sockbody.js"), bv = readText("client/lib/browservoice.js");
-      return { bar: /one-shots humans have/.test(t), alt: /agents and people who can/.test(so + pi), rf: /shown to humans|for agents and people|by agents' tools/.test(rf), alike: /for people and agents alike/.test(gr + sb), bv: /a human and an\s*\/\/\s*agent|a human and an agent/.test(bv), same: /the same for people and agents/.test(t) }; },
-    good: (o) => !o.bar && !o.alt && !o.rf && !o.alike && !o.bv && !o.same },
+      return { bar: /one-shots humans have/.test(t), desc: /agents and people who can/.test(so + pi), rf: /shown to humans|for agents and people|by agents' tools/.test(rf), alike: /for people and agents alike/.test(gr + sb), bv: /a human and an\s*\/\/\s*agent|a human and an agent/.test(bv), same: /the same for people and agents/.test(t) }; },
+    good: (o) => !o.bar && !o.desc && !o.rf && !o.alike && !o.bv && !o.same },
   // ---------------- O: the occupy family ----------------
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
       const ag = readText("mcpl/agent.ts"), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/clickuse.js");

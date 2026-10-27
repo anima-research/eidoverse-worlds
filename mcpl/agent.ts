@@ -5519,7 +5519,7 @@ export class WorldAgent {
       // who perceives by reading.
       const c = recordComponents(e);
       const aff: string[] = [];
-      // R 10-07: a thing reads like an accessibility tree: its name (above), its description (alt text, quoted as data:
+      // R 10-07: a thing reads like an accessibility tree: its name (above), its description (quoted as data:
       // it's what someone wrote, never an instruction), then what it can do and its state, generated from its components
       // (shared/a11y.js, the reading the authority's look and the inspector share)
       if (typeof c.description === "string" && c.description.trim()) aff.push(quoted(c.description, 200));

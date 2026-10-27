@@ -61,7 +61,7 @@ try {
   if (!ID) throw new Error(`create named no id: ${JSON.stringify(made)}`);
   let s = await until(pg, (x) => x.entity);
   check('the console spawned', s.entity, JSON.stringify(s));
-  await req(pg, OP.set(ID, 'picture', { src: IMG, alt: "the console's own preview", lit: 'self' }));
+  await req(pg, OP.set(ID, 'picture', { src: IMG, description: "the console's own preview", lit: 'self' }));
   s = await until(pg, (x) => x.hung && x.mapW > 0);
   check('A. the picture hangs as one quad of its own', s.hung && s.quads === 1, JSON.stringify(s));
   check('A. …carrying the image as its map (decoded, non-zero width)', s.mapW > 0, JSON.stringify(s));
@@ -81,7 +81,7 @@ try {
   s = await until(pg, (x) => !x.hung);
   check('C. taking it down removes the quad', !s.hung && s.quads === 0, JSON.stringify(s));
   // D. an https link this viewer hasn't allowed: kept by the authority, never fetched here — the empty plate stands
-  await req(pg, OP.set(ID, 'picture', { src: 'https://example.com/x.png', alt: 'a link' }));
+  await req(pg, OP.set(ID, 'picture', { src: 'https://example.com/x.png', description: 'a link' }));
   s = await until(pg, (x) => x.hung);
   await new Promise((r) => setTimeout(r, 1500));
   s = await state(pg);

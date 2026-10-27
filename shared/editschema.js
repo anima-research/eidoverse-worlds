@@ -29,8 +29,8 @@ const sockRot = (s) => eulerFromQ(socketQ(s), 'ZXY').e;
 const SOCKET_POSES = ['sitchair', 'sit', 'lie', 'idle', 'sitting_nervous_arm_rub_chair'];
 import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './protocol/requests.js';
-import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, ALT_HINT } from './picture.js';
-import { normalizeSound, SOUND_ALT_MAX, SOUND_MAX_RADIUS } from './sound.js';
+import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HINT } from './picture.js';
+import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
@@ -433,7 +433,7 @@ export function inspectSchema(ent, id, live = {}) {
     { t: 'enum', k: 'layer', label: 'layer', value: LAYERS.includes(c[LAYER_KEY]) ? c[LAYER_KEY] : 'auto', options: [{ v: 'auto', label: `auto (${defaultLayer(ent)})` }, ...LAYERS.map((v) => ({ v, label: v }))],
       hint: 'which selection layer it is on: each person chooses in Select ▾ which layers their clicks can land on (the Hierarchy selects anything). auto = by kind; anything riding an avatar is on people' },
     { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
-    // R 10-07: how it is described to anyone who reads rather than sees (alt text); what it can do and its state are read
+    // R 10-07: how it is described to anyone who reads rather than sees; what it can do and its state are read
     // out from its components (shared/a11y.js), shown below as everyone who reads it gets it
     { t: 'text', k: 'description', label: 'description', value: typeof c.description === 'string' ? c.description : '', multiline: true, placeholder: 'what it is and looks like, for people who can\'t see it and for agents',
       hint: `${graphemes(typeof c.description === 'string' ? c.description : '')} / ${SPEC.description.maxLen}. Don't list what it does: that is read from its components. A visible nameplate is a child thing with a sign (Text, billboard yaw)` },
@@ -669,7 +669,7 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
-  // picture (shared/picture.js): an image on a part of its model, or (no part) a framed picture of its own. Every field
+  // picture (shared/picture.js): a standalone image, a quad of its own (a model's node is material's). Every field
   // edit merges into the bag and must pass normalizePicture before a verb goes out.
   if (c.picture && typeof c.picture === 'object') {
     const p = c.picture;
@@ -680,7 +680,7 @@ export function inspectSchema(ent, id, live = {}) {
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t see this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'btn', k: 'upload', label: 'upload image…', client: true, hint: 'PNG, JPEG or WebP into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
       PI('width', { label: 'width', hint: 'its height follows the image' }),
-      PI('alt', { label: 'alt text', value: p.alt ?? '', placeholder: 'what it shows, in words', hint: `${ALT_HINT} (≤${PICTURE_ALT_MAX})` }),
+      PI('description', { label: 'description', value: p.description ?? '', placeholder: 'what it shows, in words', hint: `${DESCRIPTION_HINT} (≤${PICTURE_DESCRIPTION_MAX})` }),
       PI('lit', { label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) }),
     ];
     const n = normalizePicture(p);
@@ -701,7 +701,7 @@ export function inspectSchema(ent, id, live = {}) {
       { t: 'info', label: 'state', value: playing ? (d.loop === false ? '▶ played (one-shot)' : '▶ playing') : '⏸ paused' },
       SO('src', { label: 'file', value: d.src ?? '', placeholder: 'upload, or store/audio/…, or an https link', hint: tier.tier === 'bad' ? 'a file in the store, or an https link' : tierWords(tier, 'audio') }),
       { t: 'btn', k: 'upload', label: 'upload audio…', client: true, hint: 'MP3, Ogg, WAV, WebM or M4A into this server\'s store; the path fills in. Make sure you own the rights to it before you upload it' },
-      SO('alt', { label: 'alt text', value: d.alt ?? '', placeholder: 'what is playing, in words', hint: `Alternative text: describes this for people who can't hear it, and for agents (≤${SOUND_ALT_MAX})` }),
+      SO('description', { label: 'description', value: d.description ?? '', placeholder: 'what is playing, in words', hint: `${SOUND_DESCRIPTION_HINT} (≤${SOUND_DESCRIPTION_MAX})` }),
       SO('volume', { label: 'volume' }),
       SO('pitch', { label: 'pitch', hint: 'playback rate: 2 = an octave up and twice as fast' }),
       SO('near', { label: 'full volume within', max: SOUND_MAX_RADIUS }),
@@ -1431,10 +1431,10 @@ export function editOps(ent, id, edits, live = {}) {
       case 'picture': {
         if (k === 'down') { bags.set('picture', null); break; }
         const b = bag('picture', () => ({})); if (!b) { errors.push('picture: taken down in this same edit'); break; }
-        if (!['src', 'alt', 'lit', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
+        if (!['src', 'description', 'lit', 'width'].includes(k)) { errors.push(`${key}: no such field`); break; }
         if (writeField('Picture', k, key, f, raw, b)) break;
         if (k === 'width') { const n = num({ value: b.width ?? 1 }, raw); if (n == null || outOfDoor('picture', 'width', round(n), key)) break; b.width = round(n); }   // no row yet: the picture is being made
-        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b[k]; else b[k] = v; }
+        else { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'description') delete b[k]; else b[k] = v; }
         break;
       }
       case 'sound': {
@@ -1452,7 +1452,7 @@ export function editOps(ent, id, edits, live = {}) {
         else if (writeField('Sound', k, key, f, raw, b)) { /* written */ }
         else if (['volume', 'radius', 'near', 'pitch'].includes(k)) { const was = { volume: 0.8, radius: 12, near: 1.5, pitch: 1 }[k];   // no row yet: the sound is being made
           const n = num({ value: b[k] ?? was }, raw); if (n == null || outOfDoor('sound', k, round(n), key)) break; b[k] = round(n); }
-        else if (k === 'src' || k === 'alt') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'alt') delete b.alt; else b[k] = v; }
+        else if (k === 'src' || k === 'description') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'description') delete b.description; else b[k] = v; }
         else errors.push(`${key}: no such field`);
         break;
       }

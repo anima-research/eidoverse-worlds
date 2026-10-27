@@ -106,7 +106,7 @@ try {
 
   // C. hang: one comp, normalized, on the chosen part
   await pg.selectOption('[data-pe="part"]', 'screenplane');
-  await pg.fill('[data-pe="look"]', 'a red square, hung by hand');
+  await pg.fill('[data-pe="description"]', 'a red square, hung by hand');
   await pg.selectOption('[data-pe="lit"]', 'self');
   await pg.click('[data-pe="hang"]');
   // the comp landing (hung) and the panel's repaint of it (down) are two
@@ -158,9 +158,9 @@ try {
   s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
   check('G. a refusal is in the block again', /not an allowed picture source/.test(s.msg ?? ''), JSON.stringify({ msg: s.msg }));
   // not through the block: a request, as another actor's hand would be
-  await req(pg, OP.set(ID, 'picture', { src: uploaded, alt: 'hung by someone else' }));
+  await req(pg, OP.set(ID, 'picture', { src: uploaded, description: 'hung by someone else' }));
   s = await until(pg, (x) => x.hung && x.down);
-  check('G. …the outside hang lands and the block repaints with take down', s.hung && s.down && s.comp?.alt === 'hung by someone else', JSON.stringify({ hung: s.hung, down: s.down, comp: s.comp }));
+  check('G. …the outside hang lands and the block repaints with take down', s.hung && s.down && s.comp?.description === 'hung by someone else', JSON.stringify({ hung: s.hung, down: s.down, comp: s.comp }));
   check('G. …and the refusal line is gone: it was about a bag the world moved past', (s.msg ?? '') === '', JSON.stringify({ msg: s.msg }));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } catch (e: any) {

@@ -1,4 +1,4 @@
-// text — words a builder writes into the world (a sign's text, a story, a picture's alt), read by every visitor and every
+// text — words a builder writes into the world (a sign's text, a story, a picture's description), read by every visitor and every
 // agent. Pure: the authority (shared/protocol/authority.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
 // the agent describers all use these, so they can't disagree about what a string is, how long it is, or how it wraps.
 //

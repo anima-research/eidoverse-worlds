@@ -10,7 +10,7 @@
 // Cases:
 //   W  words: story, text, the length caps (graphemes), cleanText, the sign layout, the quoting
 //   T  the translator: a v1 story's practice and markedEntity land in story
-//   P  picture: quad mode, defaults, alt, src
+//   P  picture: quad mode, defaults, description, src
 //   S  sound: src, the authority's clock (t0), the play reaction, ranges, the falloff that reaches silence, no start-paused
 //   M  media links: the tiers (store / trusted host / untrusted link / refused) and who may fetch
 //   L  look-at: the shape, the target, one driver per node, the turn, the editor's name for it
@@ -205,16 +205,16 @@ const cases: Case[] = [
       const set = (t: string) => s.call("olive", "set", { id: "sign", component: "text", value: { text: t } });
       return { long: code(set("a".repeat(401))), cjk: show(set("日".repeat(400))), fam: show(set(ZWJ.repeat(400))), lines: code(set(Array(17).fill("a").join("\n"))) }; },
     good: (o) => o.long === "bounds" && o.cjk === "ok" && o.fam === "ok" && o.lines === "bounds" },
-  { id: "W6", what: "cleanText: U+202E refused in a sign, a story and a picture's alt (saying which character); an LRM kept; a 4-accent grapheme refused; a newline in a title refused", run(s) { cast(s);
+  { id: "W6", what: "cleanText: U+202E refused in a sign, a story and a picture's description (saying which character); an LRM kept; a 4-accent grapheme refused; a newline in a title refused", run(s) { cast(s);
       s.call("olive", "create", { id: "sign", model: "crate", place: { at: [0, 0] } });
       const rlo = s.call("olive", "set", { id: "sign", component: "text", value: { text: "abc\u202Eexe.txt" } });
       const st = s.call("olive", "set", { id: "sign", component: "story", value: { title: "t", text: "x\u202E" } });
-      const alt = s.call("olive", "set", { id: "sign", component: "picture", value: { src: IMG, alt: "a\u202Eb" } });
+      const desc = s.call("olive", "set", { id: "sign", component: "picture", value: { src: IMG, description: "a\u202Eb" } });
       const lrm = s.call("olive", "set", { id: "sign", component: "text", value: { text: "שלום \u200E 1" } });
       const zalgo = s.call("olive", "set", { id: "sign", component: "text", value: { text: "a\u0301\u0302\u0303\u0304" } });
       const nl = s.call("olive", "set", { id: "sign", component: "story", value: { title: "a\nb", text: "x" } });
-      return { rlo: code(rlo), why: rlo.refused?.reason, st: code(st), alt: code(alt), lrm: show(lrm), zalgo: code(zalgo), nl: code(nl) }; },
-    good: (o) => o.rlo === "shape" && /U\+202E/.test(o.why) && o.st === "shape" && o.alt === "shape" && o.lrm === "ok" && o.zalgo === "shape" && o.nl === "shape" },
+      return { rlo: code(rlo), why: rlo.refused?.reason, st: code(st), desc: code(desc), lrm: show(lrm), zalgo: code(zalgo), nl: code(nl) }; },
+    good: (o) => o.rlo === "shape" && /U\+202E/.test(o.why) && o.st === "shape" && o.desc === "shape" && o.lrm === "ok" && o.zalgo === "shape" && o.nl === "shape" },
   { id: "W7", what: "text's ranges and defaults: size 3 and width 0 refused; a plain sign gets its defaults written out (unlit, outlined, flat, centred)", run(s) { cast(s);
       s.call("olive", "create", { id: "sign", model: "crate", place: { at: [0, 0] } });
       const big = s.call("olive", "set", { id: "sign", component: "text", value: { text: "hi", size: 3 } });
@@ -249,7 +249,7 @@ const cases: Case[] = [
   // ---------------- P: picture ----------------
   { id: "P1", what: "picture with no part (a quad of its own): admitted, {lit: scene, flip: false, width: 1} written out, on an Empty too", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
-      const r = s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "a print of the hearth at dusk" } });
+      const r = s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: "a print of the hearth at dusk" } });
       return { r: show(r), v: comp(s, "poster", "picture"), noted: (r.notes ?? []).some((n: any) => /isn't a component/.test(n.why)) }; },
     good: (o) => o.r === "ok" && o.v?.lit === "scene" && !("flip" in (o.v ?? {})) && o.v?.width === 1 && !o.noted },
   { id: "P2", what: "picture src: http://, a dot segment, %2e, an IP address, localhost, user:pw@ and a port of its own are refused (shape)", run(s) { cast(s);
@@ -257,19 +257,19 @@ const cases: Case[] = [
       const bad = ["http://x.org/a.png", "store/images/../a.png", "store/images/%2e.png", "https://192.168.1.1/a.png", "https://localhost/a.png", "https://me:pw@cdn.example.org/a.png", "https://cdn.example.org:8443/a.png", "https://printer.local/a.png", "javascript:alert(1)"];
       return { codes: bad.map((src) => code(s.call("olive", "set", { id: "poster", component: "picture", value: { src } }))) }; },
     good: (o) => o.codes.every((c: string) => c === "shape") },
-  { id: "P3", what: "picture alt: 201 characters refused (bounds); 200 ZWJ families admitted (graphemes, not code units)", run(s) { cast(s);
+  { id: "P3", what: "picture description: 201 characters refused (bounds); 200 ZWJ families admitted (graphemes, not code units)", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
-      return { long: code(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "a".repeat(201) } })),
-        fam: show(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: ZWJ.repeat(200) } })) }; },
+      return { long: code(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: "a".repeat(201) } })),
+        fam: show(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: ZWJ.repeat(200) } })) }; },
     good: (o) => o.long === "bounds" && o.fam === "ok" },
   { id: "P4", what: "picture on @world refused (thing-only); width 25 refused", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
       return { w: code(s.call("olive", "set", { id: "@world", component: "picture", value: { src: IMG } })), wide: code(s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, width: 25 } })) }; },
     good: (o) => o.w === "thing-only" && o.wide === "bounds" },
-  { id: "P5", what: "the authority's look says a picture: «alt» (quad), on its part, or by file name with no alt", run(s) { cast(s);
+  { id: "P5", what: "the authority's look says a picture: «description» (quad), or by file name with none", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "tv", model: "crate", place: { at: [2, 0] } }); s.call("olive", "create", { id: "bare", components: { transform: { pos: [4, 0, 0] } } });
-      s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, alt: "the hearth at dusk" } });
-      s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, alt: "static" } });
+      s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: "the hearth at dusk" } });
+      s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, description: "static" } });
       s.call("olive", "set", { id: "bare", component: "picture", value: { src: IMG } });
       return { q: sayLines(s, "poster")?.[0], p: sayLines(s, "tv")?.[0], b: sayLines(s, "bare")?.[0] }; },
     good: (o) => o.q === "a picture: «the hearth at dusk»" && o.p === "a picture: «static»" && o.b === "a picture (0123456789abcdef.png)" },
@@ -462,8 +462,8 @@ const cases: Case[] = [
       s.call("olive", "batch", { ops: [
         { verb: "set", args: { id: "kiosk", component: "story", value: { title: "Kiosk", text: "Where the map was." } } },
         { verb: "set", args: { id: "kiosk", component: "text", value: { text: "MAP" } } },
-        { verb: "set", args: { id: "kiosk", component: "picture", value: { src: IMG, alt: "a map" } } },
-        { verb: "set", args: { id: "kiosk", component: "sound", value: { src: AUD, alt: "a hum" } } },
+        { verb: "set", args: { id: "kiosk", component: "picture", value: { src: IMG, description: "a map" } } },
+        { verb: "set", args: { id: "kiosk", component: "sound", value: { src: AUD, description: "a hum" } } },
         { verb: "set", args: { id: "kiosk", component: "look-at", value: { target: "lamp" } } }] });
       return { names, play: !!rx.play, says: sayLines(s, "kiosk"), vis: sayLines(s, "kiosk", "vic") }; },
     good: (o) => o.names.length === 5 && o.play && o.says?.length === 5 && /^story «Kiosk»/.test(o.says[0]) && /^a sign reading «MAP»/.test(o.says[1]) && /^a picture: «a map»/.test(o.says[2]) && /^a sound, playing \(loops; heard within 12 m\): «a hum»/.test(o.says[3]) && /^turns to face/.test(o.says[4]) && JSON.stringify(o.vis) === JSON.stringify(o.says) },

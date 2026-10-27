@@ -193,7 +193,9 @@ export const RENAMED_COMPONENTS = Object.freeze({ "@world": Object.freeze({ trus
  *  (to: null in its note). {value, renamed: [{field, from, to}]} */
 export const RENAMED_FIELDS = Object.freeze({ grabbable: Object.freeze({ pose: "anim", "grips.*.fingers": "grasp" }), station: Object.freeze({ pose: "anim" }),
   // a VALUE renamed (R 10-17 21:40): a motion's type bob is oscillate, on a whole motion and on every motion:<slot>
-  motion: Object.freeze({ "type=bob": "type=oscillate" }) });
+  motion: Object.freeze({ "type=bob": "type=oscillate" }),
+  // R 10-27: a picture's and a sound's describing text is description (a stored alt, or the look before it); no live read alias
+  picture: Object.freeze({ alt: "description", look: "description" }), sound: Object.freeze({ alt: "description", look: "description" }) });
 /** The RENAMED_FIELDS entry a component key reads by: a part's motion (motion:<slot>) is a motion. */
 export const renamedFieldsKey = (comp) => (typeof comp === "string" && comp.startsWith("motion:") ? "motion" : comp);
 export function renameFields(comp0, v) {
@@ -201,6 +203,8 @@ export function renameFields(comp0, v) {
   if (!bag(v) || !Object.hasOwn(RENAMED_FIELDS, comp)) return { value: v, renamed: [] };
   if (comp === "motion") { const t = motionType(v); return t === v.type ? { value: v, renamed: [] } : { value: { ...v, type: t }, renamed: [{ field: "type", from: v.type, to: t }] }; }
   let out = v; const renamed = []; const edit = () => (out === v ? (out = { ...v }) : out);
+  if (comp === "picture" || comp === "sound") for (const f of ["alt", "look"]) if (f in out) { edit(); const a = out[f]; delete out[f];
+    if (a !== null && out.description === undefined) out.description = a; renamed.push({ field: f, to: a === null ? null : "description" }); }
   if ("pose" in out) { edit(); const p = out.pose; delete out.pose;
     if (comp === "grabbable" && p === "two-hand") { if (out.twoHanded === undefined) out.twoHanded = true; renamed.push({ field: "pose", from: p, to: { twoHanded: out.twoHanded } }); }
     else if (p === null) renamed.push({ field: "pose", to: null });   // a stored null is a removal (review r11 L3: anim is never null)

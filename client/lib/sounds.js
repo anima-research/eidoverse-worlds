@@ -1,7 +1,7 @@
 // sounds — the browser realizer for the `sound` component: an audio file
 // playing FROM an entity, positional, through the page's ONE AudioContext.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}}
+//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
 //
 // Graph per sound: <audio> → MediaElementSource → gain (volume) → panner
 // (position, distance falloff) → destination. The panner follows the entity
@@ -64,7 +64,7 @@ import { playWhenAllowed } from './audiounlock.js';
 import { volumeFor } from './voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { normalizeSound, gainAt, TAPER_START, SOUND_ALT_MAX, SOUND_STORE } from '../../shared/sound.js';
+import { normalizeSound, gainAt, TAPER_START, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_STORE } from '../../shared/sound.js';
 import { mediaTier, clientMayFetch, mediaUrl } from '../../shared/mediasrc.js';
 import { allowUntrusted, isMineMuted, toggleMineMuted, RIGHTS_WARNING } from './mediaprefs.js';
 
@@ -253,8 +253,8 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         <input data-se="src" type="text" placeholder="store/audio/… or an https link" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
         <input data-se="file" type="file" accept="${SOUND_ACCEPT}" style="display:none">
         <button data-se="pick" title="upload an MP3, Ogg, WAV, WebM or M4A into the store and use it">upload…</button></label>
-      <label style="display:flex;flex-direction:column;gap:2px" title="Alternative text: describes this for people who can't hear it, and for agents">alt text <span style="color:var(--dim);font-size:11px">(what is playing, in words; ≤${SOUND_ALT_MAX})</span>
-        <textarea data-se="look" maxlength="${SOUND_ALT_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.alt ?? '')}</textarea></label>
+      <label style="display:flex;flex-direction:column;gap:2px" title="${esc(SOUND_DESCRIPTION_HINT)}">description <span style="color:var(--dim);font-size:11px">(what is playing, in words; ≤${SOUND_DESCRIPTION_MAX})</span>
+        <textarea data-se="description" maxlength="${SOUND_DESCRIPTION_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">volume <input data-se="volume" type="range" min="0" max="1" step="0.05" value="${vol}"></label>
         <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="100" step="1" value="${rad}" style="width:4em"> m (silent beyond)</label>
@@ -272,7 +272,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       const msg = (t, warn = false) => { const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; } };
       const bagFrom = (playingNow) => {
         const data = { src: q('src').value.trim(), volume: Number(q('volume').value), radius: Number(q('radius').value), loop: !!q('loop').checked, playing: playingNow };
-        const alt = q('look').value.trim(); if (alt) data.alt = alt;   // (re)start: the authority stamps t0 on its clock
+        const said = q('description').value.trim(); if (said) data.description = said;   // (re)start: the authority stamps t0 on its clock
         return data;
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());

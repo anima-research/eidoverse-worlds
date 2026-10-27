@@ -207,11 +207,34 @@ await tryRow('GR', async () => {
 // ===================================================================== picture: −part −flip (to material)
 await tryRow('PI', () => {
   const P = COMPONENTS.picture;
-  check('PI1 picture is {src, width, alt, lit}', keys(P.fields) === keys({ src: 1, width: 1, alt: 1, lit: 1 }) && !('flip' in (P.defaults ?? {})), [Object.keys(P.fields), P.defaults]);
+  check('PI1 picture is {src, width, description, lit}', keys(P.fields) === keys({ src: 1, width: 1, description: 1, lit: 1 }) && !('flip' in (P.defaults ?? {})), [Object.keys(P.fields), P.defaults]);
   const W = scratchWorld('w2r-picture').seed({ frame: { model: 'crate', pos: [0, 0, 0] } });
   const r = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', part: 'canvas' } });
   check('PI2 part (and flip) are refused, saying texturing a model\'s node is the reserved material\'s', code(r) === 'schema' && /material/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
   check('PI2 …material is reserved', statusOf('material') === 'reserved');
+});
+
+// ===================================================================== description: the describing text on a picture and a sound (R 10-27)
+await tryRow('DS', async () => {
+  const Pi = await import('../shared/picture.js'), So = await import('../shared/sound.js');
+  check('DS1 sound stores description, never alt', 'description' in COMPONENTS.sound.fields && !('alt' in COMPONENTS.sound.fields) && COMPONENTS.sound.ranges?.description?.maxLen === 200, Object.keys(COMPONENTS.sound.fields));
+  check('DS1 …neither help names alt', !/\balt\b/i.test(COMPONENTS.picture.help + COMPONENTS.sound.help + JSON.stringify(COMPONENTS.picture.docs) + JSON.stringify(COMPONENTS.sound.docs)), [COMPONENTS.picture.help, COMPONENTS.sound.help]);
+  const np = Pi.normalizePicture({ src: 'store/images/0123456789abcdef.png', description: 'the hearth at dusk' }), ns = So.normalizeSound({ src: 'store/audio/0123456789abcdef.ogg', description: 'rain', t0: 1 });
+  check('DS2 normalize keeps description', np.ok && np.picture.description === 'the hearth at dusk' && ns.ok && ns.sound.description === 'rain' && !np.notes.length && !ns.notes.length, [np, ns]);
+  check('DS2 …look reads it', /«the hearth at dusk»/.test(Pi.describePicture(np.picture)) && /«rain»/.test(So.describeSound(ns.sound)), [Pi.describePicture(np.picture), So.describeSound(ns.sound)]);
+  const oldP = Pi.normalizePicture({ src: 'store/images/0123456789abcdef.png', alt: 'x', look: 'y' });
+  check('DS3 no live read alias: a bag\'s alt or look is not read', oldP.ok && !('description' in oldP.picture) && !/«/.test(Pi.describePicture({ src: 'store/images/a.png', alt: 'x' }) + So.describeSound({ src: 'store/audio/a.ogg', alt: 'x' })), oldP);
+  const W = scratchWorld('ds-door').seed({ frame: { pos: [0, 0, 0] }, radio: { pos: [1, 0, 0] } });
+  const r1 = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', description: 'a print' } });
+  const r2 = W.call('set', { id: 'radio', component: 'sound', value: { src: 'store/audio/0123456789abcdef.ogg', alt: 'rain' } });
+  check('DS4 the door takes description and refuses alt', r1.ok && W.state().entities.frame.c.picture.description === 'a print' && code(r2) === 'schema', [r1.refused, r2.refused]);
+  const { renameFields, renameOps } = await repairMod();
+  const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
+  check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);
+  const ops = renameOps({ entities: { f: { c: { picture: { src: 'store/images/a.png', alt: 'a print' } } }, g: { c: { picture: { src: 'store/images/a.png', description: 'd' } } } } });
+  check('DS5 …renameOps writes only what needs it', ops.length === 1 && ops[0].id === 'f' && ops[0].value.description === 'a print', ops);
+  const src = ['shared/protocol/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
+  check('DS6 alt leaves the editors (descriptors, editschema, components, the client\'s panels)', !/['"]alt['"]|\.alt\b|\balt:|ALT_/.test(src), (src.match(/.{0,40}(['"]alt['"]|\.alt\b|\balt:|ALT_).{0,40}/g) ?? []).slice(0, 5));
 });
 
 // ===================================================================== captions: the current cue only

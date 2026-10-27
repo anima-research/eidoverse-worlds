@@ -28,7 +28,7 @@ import { CONFIG } from './base.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { namedParts } from './parts.js';
 import { toast, flashHint } from './ui.js';
-import { normalizePicture, PICTURE_LIT, PICTURE_ALT_MAX, PICTURE_STORE, ALT_HINT } from '../../shared/picture.js';
+import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, PICTURE_STORE, DESCRIPTION_HINT } from '../../shared/picture.js';
 import { clientMayFetch } from '../../shared/mediasrc.js';
 import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
 
@@ -262,7 +262,7 @@ function pictureKey(data) {
   if (data == null) return 'none';
   const n = normalizePicture(data);
   const p = n.ok ? n.picture : data;
-  return JSON.stringify([p?.src ?? '', p?.alt ?? '', p?.lit ?? 'scene', p?.width ?? 1]);
+  return JSON.stringify([p?.src ?? '', p?.description ?? '', p?.lit ?? 'scene', p?.width ?? 1]);
 }
 
 /** A picture echo for `id`: the line stays only if it was about this very bag. */
@@ -292,7 +292,7 @@ export { THREE as _THREE };
 //
 // The scene panel's generic layer already edits the comp as raw JSON; this is
 // the semantic block (client/lib/inspect.js): a file door that lands the image
-// in the store and fills `src`, the alt line with its bound, and lit. One verb per
+// in the store and fills `src`, the description with its bound, and lit. One verb per
 // gesture — `hang` commits the whole bag, `take down` commits null — and the
 // bag goes through normalizePicture FIRST so a refusal is a hint here, not a
 // console warning after the round-trip.
@@ -329,8 +329,8 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         <input data-pe="src" type="text" placeholder="eidoverse/assets/… or store/images/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
         <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
         <button data-pe="pick" title="upload a PNG, JPEG or WebP into the store and use it">upload…</button></label>
-      <label style="display:flex;flex-direction:column;gap:2px" title="${esc(ALT_HINT)}">alt text <span style="color:var(--dim);font-size:11px">(what it shows, in words; ≤${PICTURE_ALT_MAX})</span>
-        <textarea data-pe="look" maxlength="${PICTURE_ALT_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.alt ?? '')}</textarea></label>
+      <label style="display:flex;flex-direction:column;gap:2px" title="${esc(DESCRIPTION_HINT)}">description <span style="color:var(--dim);font-size:11px">(what it shows, in words; ≤${PICTURE_DESCRIPTION_MAX})</span>
+        <textarea data-pe="description" maxlength="${PICTURE_DESCRIPTION_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">lit
           <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
@@ -363,10 +363,10 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         ev.target.value = '';
       });
       q('hang')?.addEventListener('click', (ev) => {
-        // part and flip went with the shape audit (10-16: shared/picture.js keeps src/width/alt/lit), so the block offers neither (I59)
+        // part and flip went with the shape audit (10-16: shared/picture.js keeps src/width/description/lit), so the block offers neither (I59)
         const data = { src: q('src').value.trim(), lit: q('lit').value };
-        const alt = q('look').value.trim();
-        if (alt) data.alt = alt;
+        const said = q('description').value.trim();
+        if (said) data.description = said;
         const norm = normalizePicture(data);
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('picture', norm.picture);

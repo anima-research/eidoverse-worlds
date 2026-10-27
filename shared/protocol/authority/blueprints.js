@@ -245,7 +245,7 @@ function buildDuplicate(ctx, a) {
 // a thing in a refusal's words: its label and its id (R 10-17: an id is opaque; the label is what a reader calls it)
 const thingSaid = (st, id) => { const l = st?.entities?.[id]?.c?.label; return typeof l === "string" && l.trim() ? `${l.trim()} (${id})` : id; };
 // ---------- reads ----------
-// R 10-07: a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (alt text; a look clips it,
+// R 10-07: a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (a look clips it,
 // inspect has it whole), then what it can do and its state, generated from its components by shared/a11y.js, the reading
 // mcpl's look and the inspector share
 // a surface's size as a placement reads it: a turned top's own rectangle (with its x axis on the ground), else its box

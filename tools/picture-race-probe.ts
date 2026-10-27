@@ -76,7 +76,7 @@ const spawn = async (pg: any) => {
   if (!ID) throw new Error(`create named no id: ${JSON.stringify(r)}`);
 };
 const remove = (pg: any) => req(pg, OP.remove(ID));
-const comp = (pg: any, src: string | null) => req(pg, src ? OP.set(ID, 'picture', { src, alt: 'race', lit: 'self' }) : OP.unset(ID, 'picture'));
+const comp = (pg: any, src: string | null) => req(pg, src ? OP.set(ID, 'picture', { src, description: 'race', lit: 'self' }) : OP.unset(ID, 'picture'));
 const state = (pg: any) => pg.evaluate(async (id: string) => {
   const { entities } = await import('/lib/world.js');
   const { _hung } = await import('/lib/pictures.js');

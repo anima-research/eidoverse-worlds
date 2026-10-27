@@ -81,7 +81,7 @@ try {
   let s = await until(pg, (x) => x.entity, 90_000);
   check('the model spawned', s.entity, JSON.stringify(s));
   const t0 = Date.now() - 10_000;   // started ten seconds ago
-  await sound(pg, { src, t0, alt: 'a probe tone', volume: 0.5, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.5, radius: 20 });
   s = await until(pg, (x) => x.has && x.dur > 0);
   check('A. one graph on the shared context, sourced from the store path', s.has && s.graphs === 1 && String(s.src).includes(src.split('/').pop()!) && s.ctx !== 'none', JSON.stringify(s));
   check('A. the gain carries the volume', s.gain === 0.5, JSON.stringify(s.gain));
@@ -101,14 +101,14 @@ try {
   const expected = ((Date.now() - t0) / 1000) % 30;
   check('B. …from the shared playhead ((now - t0) mod duration), not the top', Math.abs(s.t - expected) < 2.5 && s.t > 5, `currentTime=${s.t.toFixed(2)} expected≈${expected.toFixed(2)}`);
   // C. same src, new volume: in place
-  await sound(pg, { src, t0, alt: 'a probe tone', volume: 0.9, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, radius: 20 });
   s = await until(pg, (x) => Math.abs((x.gain ?? 0) - 0.9) < 1e-3, 5000);   // AudioParam holds float32
   check('C. a same-src replace adjusts in place: volume 0.9, still one graph, still playing', Math.abs(s.gain - 0.9) < 1e-3 && s.graphs === 1 && s.paused === false, JSON.stringify(s));
   // F. a partial preference composes with the authored volume, and follows a same-source update
   await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 0.5)));
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 3000);
   check('F. world 0.5 under authored 0.9 is heard at 0.45, authored kept at 0.9', Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && Math.abs(s.gain - 0.9) < 1e-3, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
-  await sound(pg, { src, t0, alt: 'a probe tone', volume: 0.6, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.6, radius: 20 });
   s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.3) < 1e-3, 5000);
   check('F. a same-src update to 0.6 under world 0.5 is heard at 0.3, one graph', Math.abs((s.eff ?? 0) - 0.3) < 1e-3 && s.graphs === 1, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff, graphs: s.graphs }));
   // F. gone and back: the entity removed takes its graph; respawned and re-authored, it is heard under the same preference
@@ -117,19 +117,19 @@ try {
   check('F. the entity removed: no graph', !s.has && s.graphs === 0, JSON.stringify({ has: s.has, graphs: s.graphs, entity: s.entity }));
   await spawn(pg);
   s = await until(pg, (x) => x.entity, 90_000);
-  await sound(pg, { src, t0, alt: 'a probe tone', volume: 0.9, radius: 20 });
+  await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, radius: 20 });
   s = await until(pg, (x) => x.has && x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 15000);
   check('F. …respawned and re-authored at 0.9, heard at 0.45 under the listener\'s 0.5 that never changed', s.has && Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && s.world === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
   await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
   // D. pause, then silence
-  await sound(pg, { src, alt: 'a probe tone', playing: false });
+  await sound(pg, { src, description: 'a probe tone', playing: false });
   s = await until(pg, (x) => x.paused === true, 5000);
   check('D. playing:false pauses', s.paused === true, JSON.stringify(s));
   await sound(pg, null);
   s = await until(pg, (x) => !x.has, 5000);
   check('D. data:null tears the graph down', !s.has && s.graphs === 0, JSON.stringify(s));
   // E. a URL source
-  await sound(pg, { src: 'https://example.com/x.mp3', alt: 'a link' });   // kept by the authority; this viewer hasn't allowed links
+  await sound(pg, { src: 'https://example.com/x.mp3', description: 'a link' });   // kept by the authority; this viewer hasn't allowed links
   await new Promise((r) => setTimeout(r, 1200));
   s = await state(pg);
   check('E. a URL source realizes nothing', !s.has && s.graphs === 0, JSON.stringify(s));

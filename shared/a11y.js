@@ -1,5 +1,5 @@
 // a11y — how a thing reads to anyone who perceives by reading (R 10-07: "this is how the object is described to any
-// text-based entity"), on the accessibility model: its NAME (label), its DESCRIPTION (description: alt text), then what
+// text-based entity"), on the accessibility model: its NAME (label), its DESCRIPTION (description), then what
 // it CAN do and its STATE, GENERATED from its components, so a description never restates an affordance and can never
 // contradict one. One reading for the authority's look/inspect (shared/protocol/authority.js describe), mcpl's look
 // (mcpl/agent.ts) and the human inspector (shared/editschema.js), so they can't disagree. Compact on purpose: an agent's

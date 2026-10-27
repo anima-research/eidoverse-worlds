@@ -1114,7 +1114,7 @@
    "radius": "number",
    "spatial": "bool",
    "t0": "number",
-   "alt": "string"
+   "description": "string"
   },
   "defaults": {
    "playing": true,
@@ -1145,7 +1145,7 @@
    "src": {
     "maxLen": 2048
    },
-   "alt": {
+   "description": {
     "maxLen": 200
    }
   },
@@ -1153,6 +1153,7 @@
    "src"
   ],
   "absentMeans": {
+   "description": "no description: a reader gets the file name",
    "law": "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt"
   },
   "docs": {
@@ -1165,7 +1166,7 @@
    "radius": "silent at and beyond this many metres: nobody further hears it at all",
    "spatial": "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)",
    "t0": "when it started, epoch ms (the authority stamps it)",
-   "alt": "what is playing, in words: for people who can't hear it and for agents"
+   "description": "what is playing, in words: for people who can't hear it and for agents"
   },
   "units": {
    "near": "m",
@@ -1179,7 +1180,7 @@
   "fields": {
    "src": "string",
    "width": "number",
-   "alt": "string",
+   "description": "string",
    "lit": "string"
   },
   "defaults": {
@@ -1200,17 +1201,20 @@
    "src": {
     "maxLen": 2048
    },
-   "alt": {
+   "description": {
     "maxLen": 200
    }
   },
   "required": [
    "src"
   ],
+  "absentMeans": {
+   "description": "no description: a reader gets the file name"
+  },
   "docs": {
    "src": "the image: store/images/…, eidoverse/assets/…, or an https link",
    "width": "the quad's width, metres; its height follows the image",
-   "alt": "what it shows, in words: for people who can't see it and for agents",
+   "description": "what it shows, in words: for people who can't see it and for agents",
    "lit": "scene (takes the scene's light) | self (a screen, unlit)"
   },
   "units": {

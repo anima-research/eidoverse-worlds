@@ -41,11 +41,11 @@ export const COMPONENTS = {
   label:     { on: "thing", type: "string", maxLen: 80, help: "its display name, a short string (its name to every reader: the accessible name; description says what it is)" },
   // R 10-07 (our answer to upstream PR #168's label {name, description, visibility, offset}): the accessibility model's
   // name / description / role+state. label stays the name; description is how the thing is described to any text-based
-  // reader (alt text), one plain string, like label and picture.alt; what it can do and its state are GENERATED from its
+  // reader, one plain string, like label and picture.description; what it can do and its state are GENERATED from its
   // components (shared/a11y.js), so a description never restates them; why it's here, as a titled placard with marks, is
   // story's (the long-form details beside the short description). A visible nameplate is a child thing with text.
   description: { on: "thing", type: "string", maxLen: 500, cleanAs: "lines",
-               help: "how it is described to anyone who reads rather than sees it (alt text), a sentence or two of plain text (≤ 500): what it is and what it looks like. Its name is label. What it can do and its state (it opens, it's locked, it can be picked up or sat on, it's playing…) are read out from its components, so don't restate them here; why it is here, as a titled placard, is story. A visible nameplate isn't a component: it's a child thing (parent {to: this}) with text {text, billboard: 'yaw'}" },
+               help: "how it is described to anyone who reads rather than sees it, a sentence or two of plain text (≤ 500): what it is and what it looks like. Its name is label. What it can do and its state (it opens, it's locked, it can be picked up or sat on, it's playing…) are read out from its components, so don't restate them here; why it is here, as a titled placard, is story. A visible nameplate isn't a component: it's a child thing (parent {to: this}) with text {text, billboard: 'yaw'}" },
   // every client honours it (the editor's Hide; shared/editschema.js flags); registered 10-07 when bare names became the
   // registry's (PROTOCOL §4), with the meaning it already had
   // the collision shape every client and the authority's solids honour (shared/editschema.js Collider): its triangles or
@@ -314,28 +314,28 @@ export const COMPONENTS = {
   // which leaked about −21 dB across the whole world), cap 100 m, near ≤ radius (valueCheck), the authority stamps t0 when it
   // starts. src: this server's store, an allowlisted host's https link (everyone hears it), or another https link (only
   // viewers who allow untrusted links hear it; shared/mediasrc.js). Registered so it isn't refused as a near-miss of bounds
-  sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", pitch: "number", near: "number", radius: "number", spatial: "bool", t0: "number", alt: "string" },
+  sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", pitch: "number", near: "number", radius: "number", spatial: "bool", t0: "number", description: "string" },
                 defaults: { playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true }, required: ["src"],
-                ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
+                ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, src: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
                 units: { near: "m", radius: "m", t0: "ms" },
                 // pinned (shape audit 10-16, render-media-env §6): the distance law every client hears (shared/sound.js gainAt);
                 // a future curve choice is an addition (rolloff, absent = this law)
-                absentMeans: { law: "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt" },
+                absentMeans: { description: "no description: a reader gets the file name", law: "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt" },
                 docs: { src: "the sound file: store/audio/…, eidoverse/assets/…, or an https link", playing: "it plays now (false: paused)", loop: "plays again when it ends", volume: "linear amplitude gain (not dB): 0 silent to 1 full", pitch: "playback rate: 2 = an octave up and twice as fast",
                   near: "full volume within this many metres", radius: "silent at and beyond this many metres: nobody further hears it at all", spatial: "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)", t0: "when it started, epoch ms (the authority stamps it)",
-                  alt: "what is playing, in words: for people who can't hear it and for agents" },
-                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), alt? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
+                  description: "what is playing, in words: for people who can't hear it and for agents" },
+                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), description? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
   // an image on a thing (shared/picture.js; batch 2): a framed quad of its own (width m, height from the image's aspect,
   // facing +Z on its origin). src as sound's, for images. Shape audit 10-16 (render-media-env §5): texturing one node of a
   // model (part, flip) is a material override, the reserved `material`'s, not a picture of its own: both are cut (0 stored)
-  picture:    { on: "thing", fields: { src: "string", width: "number", alt: "string", lit: "string" },
+  picture:    { on: "thing", fields: { src: "string", width: "number", description: "string", lit: "string" },
                 defaults: { lit: "scene", width: 1 }, required: ["src"], enums: { lit: ["scene", "self"] },
                 dropped: { part: "texturing a node of a model is a material override: the reserved material component's (a picture is a quad of its own)", flip: "a part's upside-down UVs are the reserved material's, with part" },
-                ranges: { width: { gt: 0, max: 20 }, src: { maxLen: 2048 }, alt: { maxLen: 200 } }, clean: { alt: "line" },
-                units: { width: "m" },
-                docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", width: "the quad's width, metres; its height follows the image", alt: "what it shows, in words: for people who can't see it and for agents",
+                ranges: { width: { gt: 0, max: 20 }, src: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
+                units: { width: "m" }, absentMeans: { description: "no description: a reader gets the file name" },
+                docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", width: "the quad's width, metres; its height follows the image", description: "what it shows, in words: for people who can't see it and for agents",
                   lit: "scene (takes the scene's light) | self (a screen, unlit)" },
-                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), width? m (the quad's, facing +Z on its origin; its height follows the image), alt? (alternative text: what it shows, for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. To texture a node of its model: the material component (reserved)" },
+                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), width? m (the quad's, facing +Z on its origin; its height follows the image), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. To texture a node of its model: the material component (reserved)" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],

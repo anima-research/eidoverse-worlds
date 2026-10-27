@@ -178,13 +178,12 @@ const DEFS = [
   { name: 'Particles', category: 'Effects', summary: 'an effect: fire, smoke, sparks… or a stored effect document',
     params: paramsOf('Particles', { effect: { options: [...ESSENTIAL_NAMES], default: null }, part: { default: null }, at: { default: [0, 0, 0] }, seed: { default: null }, params: { default: null } }),
     fallback: { visual: 'an effect this client doesn\'t know draws nothing', text: 'described by its effect' } },
-  // batch 2 (10-07): v2 of Picture and Sound (new hashes, L5): a picture needs no model (no part = a quad of its own),
-  // `look` became `alt`; a sound is silent at radius (cap 100), with near, pitch and spatial
-  { name: 'Picture', category: 'Rendering', summary: 'an image: on a part of its model, or a framed picture of its own',
-    params: paramsOf('Picture', { src: { t: 'asset', default: null }, part: { default: null }, alt: { default: null } }),
+  // a picture is a quad of its own; its describing text is description (R 10-27); a sound is silent at radius (cap 100)
+  { name: 'Picture', category: 'Rendering', summary: 'an image: a framed picture of its own, its height from the image',
+    params: paramsOf('Picture', { src: { t: 'asset', default: null } }),
     fallback: { visual: 'nothing hung', text: 'not shown: <why>' } },
   { name: 'Sound', category: 'Audio', summary: 'positional audio, silent past its radius',
-    params: paramsOf('Sound', { src: { t: 'asset', default: null }, t0: { default: null }, alt: { default: null } }),
+    params: paramsOf('Sound', { src: { t: 'asset', default: null }, t0: { default: null } }),
     fallback: { visual: 'silent', text: 'not heard: <why>' } },
   { name: 'Story', category: 'Info', summary: 'why it is here: a title and a few paragraphs (shown on Inspect, read by agents)',
     params: paramsOf('Story', { title: { default: null }, text: { default: null }, marks: { default: null } }),
@@ -201,8 +200,8 @@ const DEFS = [
   { name: 'Lock', category: 'Rules', summary: 'nailed down: nobody can move, replace or remove it', params: {}, fallback: { text: '🔒 locked' } },
   { name: 'Hidden', category: 'Rendering', summary: 'not drawn, still there', params: {}, fallback: { text: '(hidden)' } },
   { name: 'Label', category: 'Core', summary: 'a display name people see', params: paramsOf('Label', { text: { t: 'text', default: '', max: COMPONENTS.label.maxLen } }), fallback: { text: 'the label' } },
-  // R 10-07: how it is described to anyone who reads rather than sees (alt text); the header's, beside its name
-  { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it (alt text)', params: paramsOf('Description', { text: { t: 'text', default: '', max: COMPONENTS.description.maxLen } }), fallback: { text: 'the description' } },
+  // R 10-07: how it is described to anyone who reads rather than sees; the header's, beside its name
+  { name: 'Description', category: 'Core', summary: 'how it is described to anyone who reads it', params: paramsOf('Description', { text: { t: 'text', default: '', max: COMPONENTS.description.maxLen } }), fallback: { text: 'the description' } },
   { name: 'Captions', category: 'Media', readOnly: true, summary: 'live captions (written by the caption verb)', params: paramsOf('Captions', { feed: { t: 'json', default: null } }), fallback: { text: 'captions' } },
   { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: paramsOf('Stage', { speaker: { default: null } }), fallback: { text: 'components: stage' } },
   // R 10-12 (primitives): a parametric body on a thing with no model, registered bare (componentspec `mesh`); one place per

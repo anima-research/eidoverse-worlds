@@ -2,18 +2,13 @@
 // browser host (client/lib/pictures.js) and the mcpl agent (text-tier
 // perception), so the two can never describe different pictures.
 //
-//   picture {src, width?, alt?, lit?}   (a quad of its own, facing +Z on the thing's origin; look → alt)
-// Shape audit 10-16 (render-media-env §5): part and flip (texturing a node of the model) are cut: that is a material
-// override, the reserved `material` component's. An older bag naming a part is drawn as a quad of its own (0 were stored).
+//   picture {src, width?, description?, lit?}   (a quad of its own, facing +Z on the thing's origin)
 //   comp {id, type: "picture", data: null}          # take it down
 //
-// A picture is an image on a NAMED PART of the entity that owns it — the #167
-// shape: the comp names a GLB node, the host textures that node's material.
-// It is rung 1 of the projector ladder (anima_dev/eidoverse_projector_design.md):
-// the screen comp is a picture whose texture is a video, so every seam here
-// (allow-listed source, named part, the look line, restore-on-remove) is the
-// seam the screen will reuse.
-//
+// A picture is a standalone image (Godot's Sprite3D, Unity's SpriteRenderer): it owns its quad, `width` metres wide,
+// its height from the image's aspect once the image loads. A texture on a NAMED node of a model is the `material`
+// component's (shared/material.js; R 10-27: two shapes, no overlap).
+
 // (Batch 2, R 10-07: an https link is a source too now; shared/mediasrc.js decides whose browser may fetch it,
 // and an untrusted host is fetched only for a viewer who opted in. What follows is the rule for the store paths.)
 // SOURCE ALLOW-LIST. `src` is a library-relative path under one of two roots,
@@ -26,8 +21,8 @@
 // the whole content story for this rung, and it is what keeps a picture inside
 // the world log's trust boundary instead of reaching out of it.
 //
-// THE LOOK LINE. Text-tier residents perceive by reading. A picture with no
-// `look` reads as "a picture (<file>)", which is true and nearly useless; the
+// THE DESCRIPTION. Text-tier residents perceive by reading. A picture with no
+// `description` reads as "a picture (<file>)", which is true and nearly useless; the
 // author can say what it shows in ≤200 chars and that sentence is what look()
 // carries. Nothing about pixels is ever claimed — the host renders, the line
 // describes, and the two are the author's responsibility to keep honest.
@@ -39,16 +34,13 @@ export const PICTURE_DIR = 'eidoverse/assets/';
 export const PICTURE_STORE = 'store/images/';
 export const PICTURE_DIRS = Object.freeze([PICTURE_DIR, PICTURE_STORE]);
 const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
-export const PICTURE_ALT_MAX = 200;
-export const PICTURE_LOOK_MAX = PICTURE_ALT_MAX;   // the old name, for callers not yet renamed
+export const PICTURE_DESCRIPTION_MAX = 200;
 export const PICTURE_MAX_WIDTH = 20;
 export const PICTURE_DEFAULTS = Object.freeze({ lit: 'scene', width: 1 });
-/** The alt field's tooltip, in plain words (R 10-07). */
-export const ALT_HINT = 'Alternative text: describes this for people who can\'t see it, and for agents';
+/** The description field's tooltip, in plain words (R 10-07). */
+export const DESCRIPTION_HINT = 'Describes this in words, for people who can\'t see it and for agents';
 export const PICTURE_LIT = Object.freeze({ scene: 'lit by the scene', self: 'self-lit (a screen)' });
-const KNOWN_KEYS = new Set(['src', 'width', 'alt', 'lit']);
-// alt was named look before release: a picture stored under the old name is read by it (never written so: alt wins)
-const altOf = (data) => data.alt ?? data.look;
+const KNOWN_KEYS = new Set(['src', 'width', 'description', 'lit']);
 
 /** Is `src` an allowed picture source? Library-relative, under one of PICTURE_DIRS,
  *  image extension, no scheme, no leading slash, no dot segments — and no
@@ -75,25 +67,24 @@ export function allowedPictureSrc(src) {
 
 /** Validate an authored bag. `ok:false` carries WHY (legible, once per authoring);
  *  `ok:true` carries the normalized picture plus notes for anything coerced.
- *  Batch 2 (10-07): `part` is optional (absent = a quad of its own, `width` m wide); `alt` is the describing line
- *  (renamed from `look`: HTML's word); src may be an https link (shared/mediasrc.js says who may fetch it). */
+ *  `description` is the describing line (R 10-27); src may be an https link (shared/mediasrc.js says who may fetch it). */
 export function normalizePicture(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'picture data must be an object {src, width?, alt?, lit?}' };
+    return { ok: false, why: 'picture data must be an object {src, width?, description?, lit?}' };
   }
   const tier = mediaTier(data.src, 'image');
   if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.fix}` };
   const notes = [];
-  const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && k !== 'look' && !k.startsWith('_'));
+  const unknown = Object.keys(data).filter((k) => !KNOWN_KEYS.has(k) && !k.startsWith('_'));
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   const picture = { src: data.src, width: PICTURE_DEFAULTS.width, lit: 'scene' };
   if (data.width !== undefined) { const w = Number(data.width); if (Number.isFinite(w) && w > 0) picture.width = Math.min(PICTURE_MAX_WIDTH, w); else notes.push('width is a number of metres above 0 — using 1'); }
-  if (altOf(data) != null) {
-    const alt = String(altOf(data)).replace(/\s+/g, ' ').trim();
-    if (graphemes(alt) > PICTURE_ALT_MAX) { notes.push(`alt clipped to ${PICTURE_ALT_MAX} characters`); picture.alt = graphemeList(alt).slice(0, PICTURE_ALT_MAX).join(''); }
-    else if (alt) picture.alt = alt;
+  if (data.description != null) {
+    const d = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); picture.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
+    else if (d) picture.description = d;
   }
-  if (!picture.alt) notes.push('no alt text — anyone who can\'t see it (or reads the world as text) gets only the file name; say what it shows');
+  if (!picture.description) notes.push('no description — anyone who can\'t see it (or reads the world as text) gets only the file name; say what it shows');
   if (data.lit != null) {
     if (Object.hasOwn(PICTURE_LIT, data.lit)) picture.lit = data.lit;
     else notes.push(`lit ${JSON.stringify(data.lit)} is unknown (${Object.keys(PICTURE_LIT).join('/')}) — using scene`);
@@ -106,12 +97,11 @@ export function normalizePicture(data) {
 export function describePicture(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a picture (malformed declaration)';
   const file = typeof data.src === 'string' ? (/^https:/i.test(data.src) ? (() => { try { return new URL(data.src).hostname; } catch { return 'a link'; } })() : data.src.split('/').pop()) : null;
-  const alt = typeof altOf(data) === 'string' && altOf(data).trim() ? altOf(data) : null;
-  const where = '';   // a picture is a quad of its own (part was cut, shape audit 10-16)
+  const said = typeof data.description === 'string' && data.description.trim() ? data.description : null;
   const ok = mediaTier(data.src, 'image').tier !== 'bad';
   const bits = [];
   if (!ok) bits.push('not shown: invalid declaration');
   if (data.lit === 'self') bits.push('self-lit');
   const tail = bits.length ? ` (${bits.join('; ')})` : '';
-  return alt ? `a picture${where}: ${quoted(alt, PICTURE_ALT_MAX)}${tail}` : `a picture${where} (${file ?? 'no file'})${tail}`;
+  return said ? `a picture: ${quoted(said, PICTURE_DESCRIPTION_MAX)}${tail}` : `a picture (${file ?? 'no file'})${tail}`;
 }

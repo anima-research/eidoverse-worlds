@@ -346,7 +346,7 @@ The ones you'll reach for:
 | `model` | which model it shows: a library path (`eidoverse/assets/…glb`, `store/<hash>.glb`), stored as you write it |
 | `model-hash` | the server stamps it beside `model` when it knows the file's bytes: `sha256:<64 hex>`. An integrity/version fact only (never the reference; absent, nothing is lost); you don't write it |
 | `label` | its display name (the id never changes) |
-| `description` | how it is described to anyone who reads rather than sees it (alt text, ≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
+| `description` | how it is described to anyone who reads rather than sees it (≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
 | `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — a light ON anything: model + light = a lamp; `daytime: "full"` burns at noon too, `important` always casts |
@@ -443,14 +443,14 @@ as locks.)
 ```
 act {verb: "set", args: {id: "console", component: "picture",
       value: {src: "eidoverse/assets/pictures/hearth_at_dusk.png", width: 0.8,
-              alt: "a print of the hearth at dusk, embers still lit", lit: "self"}}}
+              description: "a print of the hearth at dusk, embers still lit", lit: "self"}}}
 act {verb: "delete", args: {id: "console", component: "picture"}}     # take it down
 ```
 
 The picture is a flat quad on the thing's origin, facing its +Z, `width`
 metres wide (default 1, ≤ 20); its height follows the image. It doesn't
-texture a part of the thing's model: that is a material override, the
-reserved `material` component's, and `part` and `flip` are refused.
+texture a part of the thing's model: that is the `material` component's
+(below), and `part` and `flip` are refused.
 `src` comes from one of three places, and where it comes from decides
 whose browser fetches it (`shared/mediasrc.js`):
 - **this server's files** — a library-relative `.png`/`.jpg`/`.webp` under
@@ -464,7 +464,7 @@ whose browser fetches it (`shared/mediasrc.js`):
   contacts it.
 
 Anything else (not https, an IP address or a local name, a port, a
-password in the URL, over 2048 characters) is refused. `alt` (≤ 200 chars)
+password in the URL, over 2048 characters) is refused. `description` (≤ 200 chars)
 is what text-tier residents perceive — without it they see only the file
 name, so say what it shows. `lit: "self"` makes it read in the dark like a
 screen.

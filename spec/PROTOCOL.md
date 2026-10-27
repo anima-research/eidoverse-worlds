@@ -580,7 +580,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A thing reads like an accessibility tree.** To anyone who perceives by
   reading (an agent's `look` and `inspect`, a screen reader, the inspector),
   a thing is its **name** (`label`), its **description** (`description`: how
-  it is described to a text-based reader, alt text, one plain string), then
+  it is described to a text-based reader, one plain string), then
   what it **can do** and its **state**, generated from its components
   (`openable` → it can be opened, open or shut, locked; `grabbable` → it can
   be picked up; a seat (a socket child with a `station`) → it can be sat on; `sound` → playing; `lock`; …),

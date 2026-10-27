@@ -68,8 +68,8 @@ try {
   // ---- PRIV: an untrusted link is never fetched for a viewer who hasn't opted in ----
   check("PRIV0 the viewer hasn't opted in (the default)", (await page(`return (await import('/lib/mediaprefs.js')).allowUntrusted();`)) === false);
   const n0 = outside.length;
-  const p1 = await empty("linkpic", [2, 0, -4], { picture: { src: `https://${UNTRUSTED}/party.png`, alt: "a poster from elsewhere" } });
-  const s1 = await empty("linkradio", [-2, 0, -4], { sound: { src: `https://${UNTRUSTED}/party.mp3`, alt: "music from elsewhere" } });
+  const p1 = await empty("linkpic", [2, 0, -4], { picture: { src: `https://${UNTRUSTED}/party.png`, description: "a poster from elsewhere" } });
+  const s1 = await empty("linkradio", [-2, 0, -4], { sound: { src: `https://${UNTRUSTED}/party.mp3`, description: "music from elsewhere" } });
   check("PRIV1 the authority takes both links (said: only viewers who opted in)", p1?.ok && s1?.ok && JSON.stringify([p1, s1]).includes("opted-in"), [p1?.notes, s1?.notes]);
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('linkpic') && m.entities.has('linkradio'))`);
   await sleep(2500);   // time enough for any fetch, preload or decode to have been attempted
@@ -96,7 +96,7 @@ try {
     await evalJson(`({ tab: document.querySelector('#sec-safety-tab')?.title ?? null, body: (document.querySelector('#sec-safety')?.textContent ?? '').slice(0, 120) })`));
 
   // ---- PIC: a quad of its own, the image's aspect ----
-  await empty("moon", [0, 1, -3], { picture: { src: "eidoverse/assets/sky/moon_color_1k.jpg", width: 2, alt: "the moon" } });
+  await empty("moon", [0, 1, -3], { picture: { src: "eidoverse/assets/sky/moon_color_1k.jpg", width: 2, description: "the moon" } });
   check("PIC1 a picture with no part is a quad 2 m wide, as tall as the image's aspect (a 2:1 moon: 1 m)", await waitFor(`import('/lib/pictures.js').then((p) => { const h = p._hung.get('moon'); if (!h?.quad || !h.aspect) return false;
       const g = h.quad.children[0].geometry.parameters; return Math.abs(g.width - 2) < 1e-6 && Math.abs(g.height - 1) < 0.01 && h.quad.children.length === 2; })`, 12000),
     await page(`const p = await import('/lib/pictures.js'); const h = p._hung.get('moon'); return h ? { aspect: h.aspect, kids: h.quad?.children.length, g: h.quad?.children[0]?.geometry.parameters } : null;`));

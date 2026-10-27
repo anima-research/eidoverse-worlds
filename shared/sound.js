@@ -2,7 +2,7 @@
 // host (client/lib/sounds.js) and the mcpl agent (text-tier perception), so
 // the two can never describe different sounds.
 //
-//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}}   (batch 2: look → alt)
+//   comp {id, type: "sound", data: {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}}
 //   comp {id, type: "sound", data: null}          # silence it
 //
 // A sound is an audio file playing FROM an entity: positional, in the world,
@@ -27,7 +27,7 @@
 // agent). The authority stamps it when a sound starts playing; without it each
 // client starts from the top and they drift.
 //
-// THE LOOK LINE. A text-tier resident cannot hear. `look` says what is
+// THE DESCRIPTION. A text-tier resident cannot hear. `description` says what is
 // playing (≤200 chars) and that sentence, with playing/paused, is what
 // look() carries. Nothing about the waveform is ever claimed.
 
@@ -38,12 +38,13 @@ export const SOUND_DIR = 'eidoverse/assets/';
 export const SOUND_STORE = 'store/audio/';
 export const SOUND_DIRS = Object.freeze([SOUND_DIR, SOUND_STORE]);
 const AUDIO_EXT = /\.(mp3|ogg|opus|wav|webm|m4a)$/i;
-export const SOUND_ALT_MAX = 200;
-export const SOUND_LOOK_MAX = SOUND_ALT_MAX;   // the old name, for callers not yet renamed
+export const SOUND_DESCRIPTION_MAX = 200;
+/** The description field's tooltip, in plain words. */
+export const SOUND_DESCRIPTION_HINT = 'Describes what is playing in words, for people who can\'t hear it and for agents';
 export const SOUND_MAX_RADIUS = 100;
 // R 10-07: a placed sound plays (no start-paused); distance is what keeps it from covering the world
 export const SOUND_DEFAULTS = Object.freeze({ playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true });
-const KNOWN_KEYS = new Set(['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'alt']);
+const KNOWN_KEYS = new Set(['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'description']);
 
 /** Is `src` an allowed sound source? Same rule as pictures (shared/picture.js):
  *  library-relative under one of SOUND_DIRS, an audio extension, no scheme,
@@ -88,7 +89,7 @@ export function gainAt(d, near = SOUND_DEFAULTS.near, radius = SOUND_DEFAULTS.ra
  *  (shared/mediasrc.js). */
 export function normalizeSound(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, alt?}' };
+    return { ok: false, why: 'sound data must be an object {src, playing?, loop?, volume?, pitch?, near?, radius?, spatial?, t0?, description?}' };
   }
   const tier = mediaTier(data.src, 'audio');
   if (tier.tier === 'bad') return { ok: false, why: `src: ${tier.why} — ${tier.fix}` };
@@ -111,12 +112,12 @@ export function normalizeSound(data) {
     if (Number.isFinite(t0) && t0 > 0) sound.t0 = t0;
     else notes.push('t0 is not an epoch-ms number — ignored; listeners will not agree on the playhead');
   } else if (sound.playing) notes.push('no t0 — the authority stamps one when it starts; without it each client starts from the top');
-  if (data.alt != null) {
-    const alt = String(data.alt).replace(/\s+/g, ' ').trim();
-    if (graphemes(alt) > SOUND_ALT_MAX) { notes.push(`alt clipped to ${SOUND_ALT_MAX} characters`); sound.alt = graphemeList(alt).slice(0, SOUND_ALT_MAX).join(''); }
-    else if (alt) sound.alt = alt;
+  if (data.description != null) {
+    const d = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(d) > SOUND_DESCRIPTION_MAX) { notes.push(`description clipped to ${SOUND_DESCRIPTION_MAX} characters`); sound.description = graphemeList(d).slice(0, SOUND_DESCRIPTION_MAX).join(''); }
+    else if (d) sound.description = d;
   }
-  if (!sound.alt) notes.push('no alt text — anyone who can\'t hear it (or reads the world as text) gets only the file name; say what is playing');
+  if (!sound.description) notes.push('no description — anyone who can\'t hear it (or reads the world as text) gets only the file name; say what is playing');
   return { ok: true, sound, tier, notes };
 }
 
@@ -126,7 +127,7 @@ export function normalizeSound(data) {
 export function describeSound(data, now = null) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a sound (malformed declaration)';
   const file = typeof data.src === 'string' ? (/^https:/i.test(data.src) ? (() => { try { return new URL(data.src).hostname; } catch { return 'a link'; } })() : data.src.split('/').pop()) : null;
-  const alt = typeof data.alt === 'string' && data.alt.trim() ? data.alt : null;
+  const said = typeof data.description === 'string' && data.description.trim() ? data.description : null;
   const ok = mediaTier(data.src, 'audio').tier !== 'bad';
   const radius = num(data.radius, 1, SOUND_MAX_RADIUS, SOUND_DEFAULTS.radius);
   let state;
@@ -134,5 +135,5 @@ export function describeSound(data, now = null) {
   else if (data.loop === false) state = Number.isFinite(data.t0) && Number.isFinite(now) ? `last played ${Math.max(0, Math.round((now - data.t0) / 1000))} s ago (one-shot)` : 'a one-shot';
   else state = `playing (loops; heard within ${+radius.toFixed(1)} m)`;
   const tail = ok ? '' : ' (not heard: invalid declaration)';
-  return alt ? `a sound, ${state}: ${quoted(alt, SOUND_ALT_MAX)}${tail}` : `a sound, ${state} (${file ?? 'no file'})${tail}`;
+  return said ? `a sound, ${state}: ${quoted(said, SOUND_DESCRIPTION_MAX)}${tail}` : `a sound, ${state} (${file ?? 'no file'})${tail}`;
 }

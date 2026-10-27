@@ -332,3 +332,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - motion.period: its meaning of absence "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s" → "pendulum: 3.5 s (an old value's reading; a swing written today carries the default, 2.4 s); spin and orbit: their degPerSec; oscillate: 4 s"
   - motion.damp: its meaning of absence "0: it swings forever" → "0: it swings forever (an old value's reading; the default is 0.08)"
   - motion.maxAmp: its meaning of absence "0.9 rad" → "1.1 rad (an old value's reading, the first protocol's push cap; the default is 0.9 rad)"
+- 2026-10-27: description (R 10-27): picture.alt and sound.alt are description; a stored alt (or the look before it) is renamed once by the load (shaperepair RENAMED_FIELDS), no live read alias
+  - sound.alt: type string → gone
+  - picture.alt: type string → gone
