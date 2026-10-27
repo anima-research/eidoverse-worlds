@@ -149,11 +149,16 @@ if (m && lite) {
 console.log("net.js");
 // "snapshot": the door's yes into a world with something built in it; "fresh": into one
 // nobody has built in (what a mistyped name founds); "spawn": someone builds, live.
-type Step = "snapshot" | "fresh" | "spawn" | "say" | "connect" | { close: number } | "timers";
-type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[] };
-function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null): Out {
+// {early: w}: the inline boot script's socket, which already sent a join to world w, for connect() to adopt
+// only if that is byte-for-byte the join net.js would send. {set: [k, v]}: another tab writes localStorage.
+type Step = "snapshot" | "fresh" | "spawn" | "say" | "connect" | "timers"
+  | { close: number } | { early: string } | { set: [string, string] };
+type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number };
+function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null,
+                  inline: { world: string; remembered: boolean } | null = null): Out {
   const L = join(ROOT, "client/lib") + "/";
   const code = `
+    ${inline ? `globalThis.__ewWorld = ${JSON.stringify(inline)};   // the early-socket script's answer` : ""}
     const mem = new Map([["ew-name", "helen"]${stored === null ? "" : `, ["ew-world", ${JSON.stringify(stored)}]`}]);
     let reloads = 0;
     globalThis.location = { search: ${JSON.stringify(search)}, host: "x", pathname: "/", protocol: "http:", reload: () => { reloads++; } };
@@ -181,14 +186,19 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
       else if (s === "fresh") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: {} });
       else if (s === "spawn") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "spawn", args: { id: "box1", lib: "box" } } });
       else if (s === "say") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "say", args: { text: "hello?" } } });
+      else if (s.early) {
+        const ws = new globalThis.WebSocket(); ws.readyState = 1;
+        globalThis.__ewEarlySocket = { ws, sent: { world: s.early, id: "helen", avatar: "", token: "" }, buffered: [], arrived: [], failed: false };
+      }
+      else if (s.set) mem.set(s.set[0], s.set[1]);
       else if (s === "connect") await net.connect();
       else if (s === "timers") timers.splice(0).forEach((f) => f());
       else sockets[sockets.length - 1].onclose({ code: s.close });
     }
-    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts }));`;
+    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length }));`;
   const r = Bun.spawnSync(["bun", "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(r.stdout.toString().trim().split("\n").pop()!) as Out; }
-  catch { return { world: `ERROR ${r.stderr.toString().slice(0, 400)}`, stored: null, tab: null, reloads: 0, toasts: [] }; }
+  catch { return { world: `ERROR ${r.stderr.toString().slice(0, 400)}`, stored: null, tab: null, reloads: 0, toasts: [], sockets: 0 }; }
 }
 {
   const first = pageLoad("?world=garden", null, ["snapshot"]);
@@ -215,9 +225,18 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   check("a new world is remembered the moment something is built in it", newPlace.stored === "atelier", JSON.stringify(newPlace));
   const chatter = pageLoad("?world=gardn", "garden", ["fresh", "say"]);
   check("…but not for something said in it: a say builds nothing", chatter.stored === "garden" && chatter.tab === null, JSON.stringify(chatter));
-  const wiped = pageLoad("", "garden", ["fresh"]);
-  check("a remembered world that comes back empty (reset) is still where a bare link goes, and stays remembered",
-    wiped.world === "garden" && wiped.stored === "garden" && wiped.reloads === 0, JSON.stringify(wiped));
+  // the memory only ever holds a world with something in it: one found empty is forgotten
+  const wiped = pageLoad("", "garden", ["fresh"], "garden");
+  check("a remembered world found empty (reset, wiped) is forgotten from tab and browser",
+    wiped.stored === null && wiped.tab === null, JSON.stringify(wiped));
+  check("…but the page stays in it: the person may be about to build", wiped.world === "garden" && wiped.reloads === 0, JSON.stringify(wiped));
+  const rebuilt = pageLoad("", "garden", ["fresh", "spawn"]);
+  check("…and building there remembers it again", rebuilt.stored === "garden", JSON.stringify(rebuilt));
+  const linkedEmpty = pageLoad("?world=garden", "garden", ["fresh"]);
+  check("an empty world by link is forgotten too, when it is the one remembered", linkedEmpty.stored === null, JSON.stringify(linkedEmpty));
+  const watchEmpty = pageLoad("?spectate&world=garden", "garden", ["fresh"], "garden");
+  check("a spectator finding garden empty leaves the person's memory alone",
+    watchEmpty.stored === "garden" && watchEmpty.tab === "garden", JSON.stringify(watchEmpty));
 
   // tabs: each keeps its own world across a reload, whatever another tab joined since
   const tabA = pageLoad("", "lab", ["snapshot"], "garden");
@@ -231,6 +250,29 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   check("a remembered world that refuses us (4010) is forgotten", shut.stored === null, JSON.stringify(shut));
   check("…and the page goes to the commons, once, saying why",
     shut.reloads === 1 && shut.toasts.some((t) => t.includes("commons")), JSON.stringify(shut));
+  const early = pageLoad("", "garden", [{ early: "garden" }, "connect", { close: 4010 }, "timers"]);
+  check("through the adopted early socket (a returning person's usual path): adopted, not replaced",
+    early.sockets === 1, JSON.stringify(early));
+  check("…and its 4010 forgets garden and goes to the commons, once",
+    early.stored === null && early.reloads === 1 && early.toasts.some((t) => t.includes("the commons")), JSON.stringify(early));
+  // the early socket's world and net.js's agree, so it is adopted (no arrive → leave → arrive)
+  const adopt = pageLoad("", "garden", [{ early: "garden" }, "connect"]);
+  check("a bare link to remembered garden: net.js adopts the early socket's join to garden", adopt.sockets === 1 && adopt.world === "garden", JSON.stringify(adopt));
+  const inlineWins = pageLoad("", "lab", [{ early: "garden" }, "connect"], null, { world: "garden", remembered: true });
+  check("CONFIG takes the early-socket script's answer over re-reading storage, and adopts its socket",
+    inlineWins.world === "garden" && inlineWins.sockets === 1, JSON.stringify(inlineWins));
+  const mismatch = pageLoad("", "garden", [{ early: "lab" }, "connect"]);
+  check("(control) an early join to another world is not adopted: a fresh socket replaces it", mismatch.sockets === 2, JSON.stringify(mismatch));
+
+  // a reconnect is not an arrival: an old tab waking must not take the browser's memory back
+  const stale = pageLoad("", "garden", ["snapshot", { set: ["ew-world", "lab"] }, "snapshot"], "garden");
+  check("an old garden tab reconnecting after another tab joined lab leaves the browser's world at lab",
+    stale.stored === "lab", JSON.stringify(stale));
+  check("…while its own tab memory stays garden", stale.tab === "garden" && stale.world === "garden", JSON.stringify(stale));
+  const built = pageLoad("?world=atelier", "garden", ["fresh", { set: ["ew-world", "lab"] }, "fresh", "spawn"]);
+  check("a page whose world was empty at first writes the browser's memory once something is built, reconnects or not",
+    built.stored === "atelier", JSON.stringify(built));
+
   const banned = pageLoad("", "garden", ["connect", { close: 4006 }, "timers"]);
   check("removed from a remembered world (4006): forgotten, off to the commons", banned.stored === null && banned.reloads === 1, JSON.stringify(banned));
 
@@ -257,6 +299,26 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   }
   const blip = pageLoad("", "garden", ["connect", { close: 1006 }, "timers"]);
   check("an ordinary disconnect forgets nothing", blip.stored === "garden" && blip.reloads === 0, JSON.stringify(blip));
+}
+
+// ---- logging out forgets where you have been -------------------------------------------
+console.log("log out");
+{
+  const { forgetRememberedWorlds } = await import("../client/lib/base.js");
+  const lm = new Map([["ew-world", "garden"], ["ew-name", "helen"]]), sm = new Map([["ew-world-tab", "garden"]]);
+  const st = (m: Map<string, string>) => ({ getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => m.set(k, v), removeItem: (k: string) => m.delete(k) });
+  const g = globalThis as Record<string, unknown>;
+  const was = [g.localStorage, g.sessionStorage];
+  g.localStorage = st(lm); g.sessionStorage = st(sm);
+  forgetRememberedWorlds();
+  [g.localStorage, g.sessionStorage] = was;
+  check("forgetRememberedWorlds clears the browser's and the tab's world, and nothing else",
+    !lm.has("ew-world") && !sm.has("ew-world-tab") && lm.get("ew-name") === "helen");
+  // ui.js is the DOM shell and does not import headless; read logOut from source instead
+  const ui = readFileSync(join(ROOT, "client/lib/ui.js"), "utf8");
+  const logOut = ui.match(/async function logOut\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+  check("ui.js logOut forgets the remembered worlds before it reloads",
+    /forgetRememberedWorlds\(\);[\s\S]*location\.reload\(\)/.test(logOut), logOut.slice(0, 200));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

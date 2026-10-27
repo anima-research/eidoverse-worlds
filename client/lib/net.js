@@ -341,6 +341,7 @@ export function rejoin() {
 let intentionalClose = false;
 let everJoined = false;   // has this page been let in at all (a snapshot arrived)
 let worldSaved = false;   // has this join remembered its world yet (rememberWorld)
+let browserSaved = false;   // has this PAGE written the browser's last world (once: see rememberWorld)
 
 /** Has anyone made anything here: a thing, ground, grass or sky. A join to a name
  *  nobody has used FOUNDS that world (server.ts admitJoin), so a mistyped ?world=
@@ -352,12 +353,34 @@ export const builtIn = (st) => !!st && (Object.keys(st.entities ?? {}).length > 
 /** The world a person is IN: where a bare link brings this browser next time
  *  (base.js pickWorld). Called at the door's yes and on each live entry until it
  *  sticks, so a refused ?world= is never remembered and a new world is, the moment
- *  someone builds in it. Watchers and renderers write nothing. */
+ *  someone builds in it. Watchers and renderers write nothing.
+ *  The tab's memory is refreshed on every join. The BROWSER's is written once per
+ *  page: a reconnect is not arriving, and an old tab waking from sleep must not take
+ *  the browser's last world back from the tab the person moved on to. */
 function rememberWorld() {
   if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
   worldSaved = true;
-  try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
   try { sessionStorage.setItem(TAB_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+  if (browserSaved) return;
+  browserSaved = true;
+  try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+}
+
+/** Forget a world from both memories (this tab's and the browser's) wherever it is the one held. */
+function forgetWorld(name) {
+  for (const [s, k] of [[globalThis.localStorage, LAST_WORLD_KEY], [globalThis.sessionStorage, TAB_WORLD_KEY]]) {
+    try { if (s?.getItem(k) === name) s.removeItem(k); } catch { /* storage blocked */ }
+  }
+}
+
+/** The other half of rememberWorld's rule: the memory only ever holds a world with
+ *  something in it. One found empty at the door (reset, or wiped and founded again)
+ *  is forgotten, so bare links stop leading there. The page stays — the person may
+ *  be about to build, and anything built remembers it again — and main.js's
+ *  empty-world notice says how to go elsewhere. */
+function forgetEmptyWorld() {
+  if (CONFIG.spectate || CONFIG.renderer || builtIn(shadow.st)) return;
+  forgetWorld(CONFIG.world);
 }
 
 /** A world's door refused us (4010 not open to you, 4006 removed). Wherever it
@@ -370,9 +393,7 @@ function rememberWorld() {
  *  that lets us in, or in the commons. */
 function forgetRefusedWorld() {
   if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
-  for (const [s, k] of [[globalThis.localStorage, LAST_WORLD_KEY], [globalThis.sessionStorage, TAB_WORLD_KEY]]) {
-    try { if (s?.getItem(k) === CONFIG.world) s.removeItem(k); } catch { /* storage blocked */ }
-  }
+  forgetWorld(CONFIG.world);
   if (!CONFIG.worldRemembered || everJoined) return false;
   const next = pickWorld(CONFIG.params, ...rememberedWorlds()).world;
   toast(`you can't go back into "${CONFIG.world}" — taking you to ${next === 'commons' ? 'the commons' : `"${next}"`}`, 'warn', 8000);
@@ -980,6 +1001,7 @@ async function onSnapshot(msg) {
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);
   rememberWorld();   // the door said yes, and the shadow now holds what is here
+  forgetEmptyWorld();   // …or holds nothing, and a bare link should stop leading here
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.

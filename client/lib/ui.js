@@ -4,7 +4,7 @@
 
 import { chooseClient } from './litechoice.js';
 import { confirmCenter } from './confirmcenter.js';
-import { bus, CONFIG, setName, setToken, setErrorSink, report } from './base.js';
+import { bus, CONFIG, setName, setToken, setErrorSink, report, forgetRememberedWorlds } from './base.js';
 import { resizeZoneAt, fitTabStrip } from './frames.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
@@ -958,6 +958,9 @@ async function logOut() {
   // net.js bounces a browser that USED to be signed in straight back through the login (silent while Discord still
   // authorizes) — forget that, or logging out would log you back in
   try { localStorage.removeItem('ew-authed'); } catch { /* private mode */ }
+  // and where they have been: the reload must leave the world the confirm said it would, and a shared
+  // browser's next visitor must not land in (or be told the name of) the last person's world
+  forgetRememberedWorlds();
   location.reload();
 }
 function topItems() {

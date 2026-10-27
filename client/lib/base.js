@@ -62,6 +62,12 @@ export function rememberedWorlds() {
   const read = (s, k) => { try { return s?.getItem(k) ?? null; } catch { return null; } };
   return [read(globalThis.localStorage, LAST_WORLD_KEY), read(globalThis.sessionStorage, TAB_WORLD_KEY)];
 }
+/** Forget where this person has been (ui.js logOut): the memory is the person's,
+ *  and the browser may be the next person's. */
+export function forgetRememberedWorlds() {
+  try { globalThis.localStorage?.removeItem(LAST_WORLD_KEY); } catch { /* private mode */ }
+  try { globalThis.sessionStorage?.removeItem(TAB_WORLD_KEY); } catch { /* private mode */ }
+}
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const store = globalThis.localStorage ?? null;
@@ -69,8 +75,9 @@ const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
   world: picked.world,
-  // true when the memory chose the world, not the link: a refusal at its door
-  // then forgets it and takes the person to the commons (net.js wireSocket)
+  // true when a memory chose the world, not the link: a refusal at its door
+  // then forgets it and reloads to wherever a bare link leads next — the other
+  // memory, or the commons (net.js forgetRefusedWorld)
   worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),

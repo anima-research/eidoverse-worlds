@@ -539,10 +539,15 @@ bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState
 // exactly as designed.
 bus.on('hydrated', () => {
   if (entities.size > 0) return;
+  // Three ways here: the link named it; the browser's memory chose it (base.js
+  // pickWorld — the last world this person was in, found empty now, and so
+  // forgotten: net.js forgetEmptyWorld); or the commons, by default.
   const named = CONFIG.params.has('world');
   logChat('*', named
     ? `"${CONFIG.world}" is empty — nothing has ever been built here.`
-    : `you are in "${CONFIG.world}", which is empty. Add ?world=<name> to the link to go somewhere else.`);
+    : CONFIG.worldRemembered
+      ? `"${CONFIG.world}", the last world you were in, is empty now. Add ?world=<name> to the link to go somewhere else (?world=commons for the commons).`
+      : `you are in "${CONFIG.world}", which is empty. Add ?world=<name> to the link to go somewhere else.`);
   logChat('*', 'press B to start building, or ? for the controls.');
   toast(`"${CONFIG.world}" is an empty world — press B to build in it`, 'warn', 14000);
 });
