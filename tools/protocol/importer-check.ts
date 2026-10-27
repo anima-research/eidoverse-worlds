@@ -347,6 +347,16 @@ row("IM-W4", () => {
   const o = { open: at([5, -5, 5]), room: at([2, -5, 0]), unturned: at([0, -5, 2]), above: at([5, 1, 5]) };   // the room's yaw turns its box's centre +z → +x
   ok(o.open === TV1.waterChildId("tank") && o.room === null && o.unturned === TV1.waterChildId("tank") && o.above === null, "IM-W4 the translated world's medium (shared/zone.js mediumOf): open water wet, the air box dry where its thing's yaw puts it, above the surface dry", o);
 });
+row("IM-W5", () => {
+  // main sized both by its host's scale (client/lib/watervolumes.js at ccd5c53fa: size × |matrixWorld scale|; an air box through the inverse matrixWorld)
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "big", lib: "b.glb", pos: [0, -10, 0], scale: 2 } },
+    { actor: "Ann", verb: "comp", args: { id: "big", type: "water", data: { center: [1, 0, 0], size: [10, 2, 4] } } }, { actor: "Ann", verb: "comp", args: { id: "big", type: "air", data: { boxes: [{ center: [0, 0, 1], size: [1, 1, 1] }] } } }]);
+  const r = TV1.translate(L), T = r.final.translated, st = { entities: Object.fromEntries(Object.entries(T).map(([id, c]) => [id, { c }])) }, z = ZN.zonesOf(st);
+  const b = z.bodies.find((x: any) => x.id === TV1.waterChildId("big")), a = z.exclusions.find((x: any) => x.id === TV1.airChildId("big", 0));
+  const o = { host: T.big?.transform?.scale, body: b && { center: b.center, size: b.size }, air: a && { center: a.center, size: a.size }, mapped: r.stats.mapped?.map((m: any) => m.feature) };
+  ok(JSON.stringify(o.body) === JSON.stringify({ center: [2, -10, 0], size: [20, 4, 8] }) && JSON.stringify(o.air) === JSON.stringify({ center: [0, -10, 2], size: [2, 2, 2] }),
+    "IM-W5 a scaled host's water and air boxes are main's size in metres: the host keeps its scale, its children's zones are read through it (main: size × the host's scale), no correction needed", o);
+});
 
 // ---- IM-I36, IM-I37, IM-I13, IM-I3: values read as v1 read them ----
 const finalOf = (L: any[]) => TV1.translate(seqd(L)).final.translated;
