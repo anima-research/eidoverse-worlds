@@ -12,6 +12,8 @@
 //   US5  world-upgrade with the reviewed hash: a verified backup, the CLI's translation bound to it, the world joinable at once; the result names the backup and the hash
 //   US6  operator requests are rate-limited
 //   US7  an agent (mcpl/agent.ts) refused at an old-format world says, in words, who can upgrade it and where the doc is
+//   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
+//   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -77,16 +79,27 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
     "UB5 a BACKUPS_DIR inside WORLDS_DIR is refused (every directory there is served as a world), nothing written", { code: r.code, out: r.out.slice(-400) });
 }
 
+// ================= UB6-8: names and paths the CLI must not take (review finding 4) =================
+const elsewhere = path.join(root, "elsewhere"); fs.mkdirSync(elsewhere, { recursive: true });
+function linkedWorld(name: string) { const real = oldWorld(name); const to = path.join(elsewhere, name); fs.renameSync(real, to); fs.symlinkSync(to, real); return to; }
+{ const d = oldWorld("-x"), before = tree(d); const r = tool(["translate", "-x", "--dry-run", "--no-founder-key"]);
+  ok(r.code !== 0 && !/report-hash/.test(r.out) && same(tree(d), before), "UB6 a world named \"-x\" (it would read as a flag) is refused by the CLI, nothing written", { code: r.code, out: r.out.slice(-300) }); }
+{ const to = linkedWorld("linked"), before = tree(to); const r = tool(["translate", "linked", "--dry-run", "--no-founder-key"]);
+  ok(r.code !== 0 && /symlink/.test(r.out) && same(tree(to), before), "UB7 a WORLDS_DIR/<name> that is a symlink is refused (backup and translate never follow it), nothing written", { code: r.code, out: r.out.slice(-300) }); }
+{ oldWorld("porch3"); const r = tool(["translate", "porch3", "--no-founder-key", "--", "--dry-run"]), d = tool(["translate", "--dry-run", "--no-founder-key", "--", "porch3"]);
+  ok(r.code !== 0 && !/report-hash/.test(r.out) && d.code === 0 && /report-hash/.test(d.out), "UB8 after `--` nothing is a flag: `-- --dry-run` is a (refused) name, not a dry run; `-- porch3` is the world", { r: r.out.slice(-200), d: d.code }); }
+
 // ================= US: the join refusal and the operator's upgrade, on a real server =================
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-const OP = "a".repeat(64), VIS = "b".repeat(64);
+const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64);
 const sf = path.join(root, "sessions.json");
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
-  [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [OP2]: { sub: "human:test:op2", name: "Otto", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "human:test:op", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "human:test:op,human:test:op2", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })))
   { console.log(`  FAIL the server didn't come up: ${fs.existsSync(slog + ".err") ? fs.readFileSync(slog + ".err", "utf8").slice(-500) : ""}`); process.exit(1); }
@@ -136,6 +149,10 @@ let reviewed = "";
     && s.msgs.some((x) => x.type === "snapshot"),
     "US5 world-upgrade with the reviewed hash: the verified backup first, the CLI's translation bound to that hash (operator only, no owner), the world joinable at once; the result names the backup, the hash and the rollback command", { r, b, joined: s.msgs.map((x) => x.type).slice(0, 4) });
 }
+{ const x = path.join(W, "-x"), xb = tree(x), to = path.join(elsewhere, "linked"), lb = tree(to);
+  const a = await ask(OP2, "world-upgrade-review", { world: "-x" }), b = await ask(OP2, "world-upgrade-review", { world: "linked" });
+  ok(a.refused?.code === "not-old" && b.refused?.code === "not-old" && same(tree(x), xb) && same(tree(to), lb) && backupsOf("linked").length === 0 && backupsOf("-x").length === 0,
+    "US8 the server refuses a world named \"-x\" and a symlinked world dir (not-old), nothing written", { a: a.refused ?? a.ok, b: b.refused ?? b.ok }); }
 { oldWorld("cellar"); const seen: any[] = [];
   for (let k = 0; k < 6; k++) { const r = await ask(OP, "world-upgrade-review", { world: "cellar" }); seen.push(r.ok ? "ok" : r.refused?.code); if (!r.ok) break; }
   ok(seen.includes("ok") && seen[seen.length - 1] === "rate", "US6 the operator's upgrade requests are rate-limited (refused 'rate' past the limit)", seen);

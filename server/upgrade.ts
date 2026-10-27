@@ -66,7 +66,7 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "world-upgrade-review": (ctx, msg) => {
     const type = "world-upgrade-review"; const a = admit(ctx, msg, type); if (!a) return;
     running.add(a.world);
-    void runCli(["translate", a.world, "--dry-run", "--no-founder-key", "--json"]).then((r) => {
+    void runCli(["translate", "--dry-run", "--no-founder-key", "--json", "--", a.world]).then((r) => {
       const got = tagged(r.out, "report-json");
       if (!got) { a.refuse("failed", `the dry run didn't finish: ${(r.err || r.out).trim().slice(-1200)}`); return; }
       console.log(`[upgrade] ${a.world}: reviewed by ${a.account} (report ${got.hash}${got.report?.refused ? ", refused" : ""})`);
@@ -79,7 +79,7 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (!/^[0-9a-f]{64}$/.test(approved) && isOperator(provenAccount(ctx.c, msg))) { ctx.ws.send(JSON.stringify({ type, id: msg.id ?? null, ok: false, refused: { code: "shape", reason: "approved must be the reviewed report's hash (64 hex)", fix: "review the upgrade first" } })); return; }
     const a = admit(ctx, msg, type); if (!a) return;
     running.add(a.world);
-    void runCli(["translate", a.world, "--no-founder-key", "--operator-only-no-owner", "--approved", approved, "--json"]).then((r) => {
+    void runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", approved, "--json", "--", a.world]).then((r) => {
       const got = r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();
       if (!got) { a.refuse(/is not the one that was approved/.test(said) ? "stale" : "refused", said.slice(-1500)); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} refused`); return; }

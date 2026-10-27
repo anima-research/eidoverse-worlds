@@ -42,7 +42,7 @@ export function noFoldRefusal(world: string, native: boolean): string {
     : `"${world}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent`;
 }
 
-const NAME = /^[a-z0-9_-]{1,64}$/i;
+const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first: "-x" would read as a flag to the CLI
 const TOOL = "bun tools/protocol/world.ts";
 export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
 const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. Read it; then translate it, bound to that hash:";
@@ -71,8 +71,8 @@ export function visitorText(name: string, kind: OldWorldKind): string {
 export function oldWorldAt(dir: string, name: string): OldWorld | null {
   if (!NAME.test(name)) return null;
   const d = path.join(dir, name);
-  let st: fs.Stats; try { st = fs.statSync(d); } catch { return null; }
-  if (!st.isDirectory() || isWorldDir(d)) return null;
+  let st: fs.Stats; try { st = fs.lstatSync(d); } catch { return null; }
+  if (!st.isDirectory() || isWorldDir(d)) return null;   // lstat: a symlinked world dir is never followed (backup, translate)
   const suggestedName = freeName(dir, name);
   const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`;
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)

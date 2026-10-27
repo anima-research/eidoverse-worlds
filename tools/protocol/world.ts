@@ -45,9 +45,11 @@ import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../.
 import { backupWorld, type Backup } from "../../server/backups.ts";
 import { shellWord } from "../../server/oldworlds.ts";
 
-const [cmd, ...rest] = process.argv.slice(2);
+// `--` ends the flags: what follows is only words (the server passes it before a world name: server/upgrade.ts)
+const [cmd, ...argv0] = process.argv.slice(2);
+const DD = argv0.indexOf("--"), rest = DD < 0 ? argv0 : argv0.slice(0, DD), AFTER_DD = DD < 0 ? [] : argv0.slice(DD + 1);
 const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : undefined; };
-const NAME = /^[a-z0-9_-]{1,64}$/i;
+const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first (server/oldworlds.ts)
 const die = (m: string) => { console.error(m); process.exit(1); };
 
 /** An in-place translation keeps the old world's files beside the new one under these names (never written, never deleted). */
@@ -348,12 +350,13 @@ if (cmd === "found") {
     + `(Founding a brand-new world is different: create-world takes its founder's own key.) Nothing was changed.`);
   // the words that aren't flags: `translate <world>` (in place) or `translate <old world> <new name>`
   const VALUED = new Set(["--approved"]);   // --operator-only-no-owner, --no-founder-key, --dry-run take no value
-  const words = rest.filter((w, i) => !w.startsWith("--") && !VALUED.has(rest[i - 1]));
+  const words = [...rest.filter((w, i) => !w.startsWith("--") && !VALUED.has(rest[i - 1])), ...AFTER_DD];
   const USAGE = "usage: translate <world> [<new name>] --dry-run --no-founder-key   (the report and its hash; nothing written)\n"
     + "       translate <world> --no-founder-key --approved <hash> --operator-only-no-owner   (in place: it keeps its name; the old log stays beside it as log.original.jsonl; the host's operator key countersigns; no owner attested, tier 0 empty)\n"
     + "       translate <old world> <new name> (the same flags)   (into a new name; the old directory is left as it was)";
   if (!words.length || words.length > 2 || !words.every((w) => NAME.test(w))) die(USAGE);
   const [src, dest] = words;
+  for (const w of words) { try { if (fs.lstatSync(path.join(WORLDS_DIR, w)).isSymbolicLink()) die(`"${w}" in ${WORLDS_DIR} is a symlink: translate and its backup never follow one. Nothing was changed.`); } catch { /* absent */ } }
   { const half = isWorldSaved(src) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
   if (isWorldSaved(src)) die(fs.existsSync(path.join(WORLDS_DIR, src, ORIGINAL.log))
     ? `"${src}" is already translated: it's a world in this protocol, and its original old log is kept beside it as ${ORIGINAL.log}. Nothing was changed.`
