@@ -24,7 +24,7 @@ tryRow('ST', () => {
   const mk = (id: string, socket: any, extra: any = {}) => W.call('create', { id, components: { parent: { to: 'bench' }, transform: { pos: [0, 0.5, 0] }, socket, ...extra } });
 
   check('ST1 the registry: socket is {name, part?, accepts?, radius?} (no body)', JSON.stringify(Object.keys(COMPONENTS.socket.fields)) === '["name","part","accepts","radius"]', COMPONENTS.socket.fields);
-  check('ST1 …station is its own component, core {action, anim, anchor, exit, leaveBy, who} (R 10-17: anim was pose)', JSON.stringify(Object.keys(COMPONENTS.station?.fields ?? {})) === '["action","anim","anchor","exit","leaveBy","who"]', COMPONENTS.station);
+  check('ST1 …station is its own component, core {action, anim, anchor, exit, leaveBy, who, input} (R 10-17: anim was pose; input opened for the drive helm, step 3b)', JSON.stringify(Object.keys(COMPONENTS.station?.fields ?? {})) === '["action","anim","anchor","exit","leaveBy","who","input"]', COMPONENTS.station);
   check('ST1 …sockets (the old map) is reserved, lift-only', statusOf('sockets') === 'reserved' && !!COMPONENTS.sockets.lifted);
 
   let r = mk('lie1', { name: 'bunk' }, { station: { action: 'lie' } });
@@ -39,7 +39,9 @@ tryRow('ST', () => {
   r = mk('old1', { name: 'stool', body: { action: 'sit' } });
   check('ST4 a socket written with the old body block is lifted: socket without body + station', r.ok && C('old1')?.socket && !('body' in C('old1').socket) && C('old1')?.station?.action === 'sit' && C('old1')?.station?.anim === 'sitchair', [r.refused, C('old1')]);
   check('ST5 a station key the alpha holds back (reach) is refused as reserved', code(mk('rb1', { name: 'rb' }, { station: { reach: { leftHand: { at: [0, 1, 0] } } } })) === 'reserved');
-  check('ST5 …so are input, poses, sync, approach, enter, leave, look, fromSeat', ['input', 'poses', 'sync', 'approach', 'enter', 'leave', 'look', 'fromSeat'].every((k, i) => code(mk(`rb${i + 2}`, { name: `rb${i + 2}` }, { station: { [k]: k === 'fromSeat' ? true : k === 'sync' || k === 'enter' || k === 'leave' ? 'x' : k === 'approach' ? [0, 0, 0, 0] : {} } })) === 'reserved'));
+  check('ST5 …so are poses, sync, approach, enter, leave, look, fromSeat', ['poses', 'sync', 'approach', 'enter', 'leave', 'look', 'fromSeat'].every((k, i) => code(mk(`rb${i + 2}`, { name: `rb${i + 2}` }, { station: { [k]: k === 'fromSeat' ? true : k === 'sync' || k === 'enter' || k === 'leave' ? 'x' : k === 'approach' ? [0, 0, 0, 0] : {} } })) === 'reserved'));
+  { const r = mk('in1', { name: 'helm' }, { station: { action: 'drive', input: { move: 'drive' } } });
+    check('ST5 …while input is a field now (step 3b, the drive helm): input {move: \'drive\'} is read, not reserved (here the helm rule answers: the host has no drive)', r.refused?.code === 'shape' && /helm/.test(r.refused.reason) && /drive/.test(r.refused.reason), [r.refused, C('in1')]); }
   check('ST5 …and the bone overrides (hold) are cut: an unknown key', code(mk('hb1', { name: 'hb' }, { station: { hold: { spine: [0, 0, 0, 1] } } })) === 'schema');
   W.call('create', { id: 'crate2', model: 'crate' });
   check('ST6 a station hangs only on a socket entity', code(W.call('set', { id: 'crate2', component: 'station', value: { action: 'sit' } })) !== 'ok');
