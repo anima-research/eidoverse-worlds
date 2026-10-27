@@ -112,7 +112,10 @@ import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/li
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
-import { worldPose } from "../shared/protocol/simlayer.js";
+import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
+import { spawnOf, belowWorld, FELL } from "../shared/spawn.js";
+/** A record (components flat, view.js) whose collision is off: componentspec collider.enabled, the authority's own reading. */
+const solidOffRecord = (e: any) => solidOff(e);
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";
@@ -2369,6 +2372,7 @@ export class WorldAgent {
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
+    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
     // A moving thing supports nothing here — and stops supporting the moment
     // it starts moving, so this is the drop path as well as the skip path.
     // Mounted cargo is the same story told by a different verb: it rides a
@@ -2384,7 +2388,7 @@ export class WorldAgent {
     if ((!g && !mesh) || !e || e.model !== before.model) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
-    if (this.hasActiveMotion(e) || this.mounts.has(id)) { this.dropSupport(id); return; }
+    if (this.hasActiveMotion(e) || this.mounts.has(id) || solidOffRecord(e)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
     // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
     const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
@@ -2496,6 +2500,19 @@ export class WorldAgent {
 
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
+  private respawning = false;
+  /** Back to the world's arrival place after a fall out of it (shared/spawn.js spawnOf), the reason on the record (move teleport). */
+  async respawnFell() {
+    const sp = spawnOf(this.replica?.st); if (!sp) return;
+    this.respawning = true;
+    try {
+      this.target = null; this.flight = null; this.endFloat(); this.vy = 0;
+      this.pos.x = sp.pos[0]; this.pos.y = sp.pos[1]; this.pos.z = sp.pos[2]; this.yaw = sp.yaw;
+      const r = await this.request("move", { to: sp.pos, teleport: true, reason: FELL });
+      if (r?.ok) { this.trackAt = [...sp.pos]; this.trackArrived = true; }
+      this.lastWalkNote = `you fell below this world's bounds: you are back at its arrival place (${sp.pos.map((n: number) => n.toFixed(1)).join(", ")})${r?.ok ? "" : `, though the authority said ${r?.refused?.code ?? "nothing"}`}`;
+    } finally { this.respawning = false; }
+  }
   // ---------------- anim (R 10-17 15:31/15:32): one way to play a pose or a clip, by name or live ----------------
   /** The anims this body plays or holds now, when they last (mode loop or hold), oldest first; a once anim ends by itself,
    *  silently. Each is a LAYER (R 10-17 16:26): a clip (held as the presence clip), the named pose wings-folded, a held
@@ -2759,6 +2776,8 @@ export class WorldAgent {
     // "floating a few feet off the ground" Janus saw. The flight state stays
     // alive (recovery still needs it) -- it just no longer drives.
     if (this.flight && !this.simTicker) this.flightTick(dt);
+    // KILLZ (shared/spawn.js, as the browser's controller): fallen below @world.bounds.min.y, back to an arrival place, on the record
+    if (!this.myOccupancy && !this.draggedBy && !this.respawning && belowWorld(this.replica?.st, [this.pos.x, this.pos.y, this.pos.z])) void this.respawnFell();
     // keep the `reached` attestation honest at ~2Hz while reaching: the
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here

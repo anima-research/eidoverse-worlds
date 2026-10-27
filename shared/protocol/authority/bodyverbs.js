@@ -2,6 +2,7 @@
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
 import { TRACK, tokensAfter } from "../../mover.js";
+import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
 import { REACH, HAND_Y, MAX_HELD, KICK } from "../physconst.js";
@@ -54,18 +55,24 @@ const EMBODIED_VERBS = {
     // until the wall caught up, refusing a plain run too-fast (gate 18 navgrid/places). A host without one paces by w.now
     const now = w.pace ? w.pace() : w.now();
     const size = sizeOf(a, me?.size);   // this body's height and scale: what it sends now, else what it sent last
+    // a KillZ respawn (shared/spawn.js): a teleport whose reason is on the record, to an arrival place, never from a seat
+    const fell = a.reason !== undefined;
+    if (fell && (a.reason !== FELL || a.teleport !== true)) refuse("shape", `move's reason is '${FELL}', with teleport: true (a body that fell below the world's bounds, sent back to an arrival place)`, `move {to: <a spawn>, teleport: true, reason: '${FELL}'}`);
+    if (fell && !B) refuse("out-of-bounds", "this world has no bounds to fall out of", "teleport without a reason");
+    if (fell && occupantOf(w, st, actor)) refuse("doesnt-apply", "a seated body rides its seat: it doesn't fall out of the world", "stand up first");
+    if (fell && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
       if (mine.length) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
       const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to, size)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
-      const sp = st.entities["@world"]?.c.spawn;
-      if (sp && Array.isArray(sp.pos) && !may(st, actor, "build") && dist(sp.pos, to) > (sp.radius ?? TRACK.spawnR))
-        refuse("spawn", `this world's arrivals are within ${sp.radius ?? TRACK.spawnR} m of [${sp.pos.join(", ")}]`, "arrive there, then walk", { at: me?.at });
+      // a visitor arrives at an arrival place: @world.spawn or a spawn-point (shared/spawn.js)
+      if (!may(st, actor, "build") && !atASpawn(st, to)) { const all = spawnsOf(st);
+        refuse("spawn", `this world's arrivals are within ${all.map((s) => `${s.radius} m of [${s.pos.join(", ")}]`).join(" or ")}`, "arrive there, then walk", { at: me?.at }); }
       rateCheck(w, actor);
       // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
-      const act = me ? w.append(actOf(w, actor, "move", { teleport: true })) : undefined;
+      const act = me || fell ? w.append(actOf(w, actor, "move", { teleport: true, ...(fell ? { reason: FELL } : {}) })) : undefined;   // a fall is on the record even as an arrival
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftOccupied(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }

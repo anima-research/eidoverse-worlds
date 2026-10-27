@@ -71,7 +71,8 @@
  "collider": {
   "status": "trial",
   "fields": {
-   "shape": "string"
+   "shape": "string",
+   "enabled": "bool"
   },
   "enums": {
    "shape": [
@@ -81,10 +82,12 @@
    ]
   },
   "absentMeans": {
-   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)"
+   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)",
+   "enabled": "true: it is solid"
   },
   "docs": {
-   "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide"
+   "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
+   "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed"
   },
   "on": "thing"
  },
@@ -202,7 +205,8 @@
   "enums": {
    "kind": [
     "point",
-    "spot"
+    "spot",
+    "directional"
    ],
    "daytime": [
     "dim",
@@ -238,7 +242,7 @@
    "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
   },
   "docs": {
-   "kind": "point (shines every way) or spot (a cone along its -Z)",
+   "kind": "point (shines every way), spot (a cone along its -Z) or directional (a sun: parallel light along its -Z everywhere, KHR_lights_punctual's; range and decay unread; the first by id is the renderer's sun)",
    "color": "its colour, 0xRRGGBB, sRGB",
    "intensity": "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise",
    "range": "a hard cutoff, metres: nothing beyond it is lit",
@@ -883,7 +887,7 @@
    "centerOfMass": "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape"
   },
   "docs": {
-   "kind": "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)",
+   "kind": "dynamic (falls, tumbles, can be pushed) | static (never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (not simulated: the engine never moves it). Whether it is solid is collider.enabled's, never the kind's",
    "who": "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
    "shape": "its collision shape, measured from its model by the authority (you never send it)",
    "mass": "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size",
@@ -1463,7 +1467,8 @@
    "exposure": "number",
    "ambient": "number",
    "forecast": "object",
-   "override": "object"
+   "override": "object",
+   "gradient": "object"
   },
   "defaults": {
    "hours": 12,
@@ -1533,6 +1538,7 @@
    "transition": "the renderer's own ease (30 s in a forecast)",
    "forecast": "no forecast: the authored weather holds",
    "override": "no manual weather inside the current forecast segment",
+   "gradient": "the renderer's own sky (its day, clouds and weather)",
    "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
   "docs": {
@@ -1549,7 +1555,8 @@
    "exposure": "× this renderer's tone mapping",
    "ambient": "× this renderer's ambient curve",
    "forecast": "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}",
-   "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)"
+   "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)",
+   "gradient": "a painted sky in place of the day's: {top, horizon, bottom?}, each a linear [r, g, b] 0..1 (OMI_environment_sky gradient; absent bottom = horizon). rate: 0 already pins the clock"
   },
   "units": {
    "hours": "h",
@@ -2009,29 +2016,123 @@
   "status": "trial",
   "fields": {
    "pos": "vec3",
-   "radius": "number"
+   "radius": "number",
+   "yaw": "number"
   },
   "ranges": {
    "radius": {
     "min": 0,
     "max": 100
+   },
+   "yaw": {
+    "min": -6.283185307179586,
+    "max": 6.283185307179586
    }
   },
   "required": [
    "pos"
   ],
   "absentMeans": {
-   "radius": "2 m"
+   "radius": "2 m",
+   "yaw": "0: facing the world's +z"
   },
   "docs": {
    "pos": "where visitors arrive, [x, y, z] world metres",
-   "radius": "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)"
+   "radius": "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)",
+   "yaw": "which way an arrival faces, radians about +y (0: the world's +z)"
   },
   "units": {
    "pos": "m",
-   "radius": "m"
+   "radius": "m",
+   "yaw": "rad"
   },
   "on": "world"
+ },
+ "spawn-point": {
+  "status": "trial",
+  "fields": {
+   "title": "string",
+   "team": "string",
+   "group": "string"
+  },
+  "ranges": {
+   "title": {
+    "maxLen": 80
+   },
+   "team": {
+    "maxLen": 80
+   },
+   "group": {
+    "maxLen": 80
+   }
+  },
+  "absentMeans": {
+   "title": "untitled",
+   "team": "any team's",
+   "group": "no group"
+  },
+  "docs": {
+   "title": "its name, as a menu lists it (≤ 80)",
+   "team": "the team that arrives here (≤ 80; OMI_spawn_point team)",
+   "group": "a group of spawn points chosen among together (≤ 80; OMI_spawn_point group)"
+  },
+  "on": "thing"
+ },
+ "climb": {
+  "status": "trial",
+  "fields": {
+   "points": "array",
+   "reach": "number",
+   "speed": "number",
+   "face": "vec3",
+   "ends": "string"
+  },
+  "enums": {
+   "ends": [
+    "both",
+    "start",
+    "end"
+   ]
+  },
+  "ranges": {
+   "points": {
+    "maxItems": 16
+   },
+   "reach": {
+    "min": 0.3,
+    "max": 3
+   },
+   "speed": {
+    "min": 0.3,
+    "max": 4
+   },
+   "face": {
+    "min": -10000,
+    "max": 10000
+   }
+  },
+  "required": [
+   "points"
+  ],
+  "absentMeans": {
+   "reach": "1.4 m",
+   "speed": "1.3 m/s",
+   "face": "along the route's run in the ground plane, from its first point to its last; a route with no run (straight up) faces the thing's own +z",
+   "ends": "both: it may be boarded at either end"
+  },
+  "docs": {
+   "points": "2–16 points [x, y, z] in the thing's own frame (metres before its scale), climbed in straight lines between them",
+   "reach": "how near an end a body must stand to board it, metres",
+   "speed": "how fast a climber moves along it, metres a second in its own frame",
+   "face": "which way a climber faces, a direction [x, y, z] in the thing's frame (its ground-plane part is used)",
+   "ends": "which ends it may be boarded at: both, start (the first point) or end (the last)"
+  },
+  "units": {
+   "points": "m",
+   "reach": "m",
+   "speed": "m/s"
+  },
+  "on": "thing"
  },
  "terrain": {
   "status": "trial",

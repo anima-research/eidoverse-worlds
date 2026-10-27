@@ -1,6 +1,6 @@
 // the water level seen from under it (#254): fog, the background, Snell's window (watervolumes.js); authored water volumes,
 // air boxes and environments (#248) wait for their components to be registered (PROTOCOL ยง4)
-import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, environmentSettings, waterDebug, applyEnvLight } from './lib/watervolumes.js';
+import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, waterDebug, applyEnvLight } from './lib/watervolumes.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -38,9 +38,10 @@ import { tickTexts } from './lib/texts.js';      // batch 2: signs (the text com
 import { tickOpenables } from './lib/openable.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, flying as flyingNow, capSpeed,
+  setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, setRespawnHooks, respawnMe, flying as flyingNow, capSpeed,
 } from './lib/controller.js';
 import { initUsePrompt } from './lib/useprompt.js';
+import { setClimbObjects } from './lib/climb.js';
 import { initClickUse, clickUseApi } from './lib/clickuse.js';
 import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 import { initOccupants } from './lib/occupants.js';
@@ -97,7 +98,7 @@ import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
 import { initChat, logChat, chatXRPanel, mentionPerson } from './lib/chat.js';
 import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
-import { initThingPhysics, physicsApi, simShown } from './lib/thingphysics.js';
+import { initThingPhysics, physicsApi, simShown, requestWithBody as thingPhysicsRequest } from './lib/thingphysics.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
 import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
 import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
@@ -477,6 +478,7 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
+setRespawnHooks({ fold: () => replica.st ?? null, send: (args) => thingPhysicsRequest('move', args) });   // KillZ (controller.js respawnMe)
 initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
 initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
@@ -564,8 +566,7 @@ function people() {
 let hydrated = false, propsWait = false;
 bus.on('hydrated', () => {
   updateWater();
-  const spawn = environmentSettings()?.spawn;
-  if (!restoredPosition && Array.isArray(spawn) && spawn.length === 3 && spawn.every(Number.isFinite)) myState.pos.fromArray(spawn);
+  if (!restoredPosition) respawnMe(replica.st);   // @world.spawn or a spawn-point, facing its yaw (shared/spawn.js spawnOf)
   hydrated = true; checkReady();
 });
 bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState.locomotion=undefined; });
@@ -621,6 +622,7 @@ registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather โ
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 setWaterObjects(() => entities);
+setClimbObjects(() => entities);   // climb routes resolve through their hosts' live objects (client/lib/climb.js)
 setWaterClock(serverNow);
 setSkyHider(hideSkyForWater);
 registerSystem('water', updateWater);

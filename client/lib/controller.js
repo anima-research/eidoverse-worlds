@@ -49,6 +49,8 @@ import { pilotInput } from '../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 import { inspectBody } from '../../shared/flightbody.js';
 import { applyOwnedWingFold } from '../../shared/wingpresence.js';
+import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
+import { spawnOf, belowWorld, FELL } from '../../shared/spawn.js';
 
 let flight = null, flightCfg = null, flightProv = null;
 let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
@@ -376,6 +378,11 @@ bus.on('key', (e) => {
   // (remove / find / move tool) and a chorded Z is undo, never 'lie'
   if (editingNow?.()) return;
   if (e.ctrlKey || e.metaKey) return;
+  // E boards the nearest climb route's end, or lets go (upstream main #248); the use prompt then stands aside (worldHandled)
+  if (e.code === 'KeyE' && !e.altKey && !CONFIG.spectate && !photoMode && !myState.seat && myState.locomotion?.mode !== 'pilot') {
+    if (climbing()) { cancelClimb(); e.worldHandled = true; }
+    else if (startClimb(myState.pos)) { e.worldHandled = true; flashHint('climbing — E to let go'); }
+  }
   BODY_KEYS.find((k) => k.code === e.code)?.run();
 });
 
@@ -622,7 +629,7 @@ const _eye = new THREE.Vector3();
 const _facing = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
-let swimVelocity = [0, 0, 0];
+let swimVelocity = [0, 0, 0], lastClimbHint = null;
 const _swimProbe = new THREE.Vector3(), _swimOld = new THREE.Vector3();
 const _swimQ = new THREE.Quaternion(), _swimTilt = new THREE.Quaternion();
 /** Keep a swimming body inside the world: @world.bounds as walking keeps them (clampToBounds), and the stage's 78 m
@@ -733,6 +740,22 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
+  // ON A CLIMB ROUTE (client/lib/climb.js): the route owns the body; presence carries {host, progress}, not a world pose
+  const climb = stepOnClimb(dt);
+  myState.climb = climbPresence() ?? undefined;
+  if (climb) {
+    if (flight) { flight = null; releaseWings(); }
+    mantle = null; posture = null; myState.seat = null; swimVelocity = [0, 0, 0]; vy = 0; grounded = false; airborneFor = 0;
+    myState.pos.copy(climb.pos); myState.yaw = climb.yaw; myState.speed = climb.speed;
+    myState.clip = 'climb'; myState.locomotion = { mode: 'climb', medium: 'air', body: 'diver' }; myState.q = undefined;
+    me.locomotion = null; me.root.position.copy(myState.pos); me.root.rotation.set(0, myState.yaw, 0); me.setClip('climb', climb.speed);
+    updateFollowCamera(dt, me); return;
+  }
+  // KILLZ (Unreal's; shared/spawn.js): fallen below @world.bounds.min.y, back to an arrival place, and the authority records why
+  { const fold = worldFold(); if (fold && belowWorld(fold, myState.pos.toArray(), { riding: !!myState.seat || mountedHook() })) respawnMe(fold, FELL); }
+  { const near = nearbyClimb(myState.pos), hint = near ? `${near.host}/${near.dir}` : null;
+    if (hint && hint !== lastClimbHint) flashHint(`E — ${near.dir < 0 ? 'climb down' : 'climb up'} ${near.name}`);
+    lastClimbHint = hint; }
   // AUTO-WALK (R, 10-10: click something out of reach and "your avatar could sprint/walk over until it's in grabbing
   // distance and get it"). The same inputs a hand on the keys would give, so everything downstream (speed, collision,
   // the walk clip, what the authority sees) is ordinary walking. Any real input ends it; so does arriving, getting
@@ -1229,6 +1252,18 @@ export function setPosture(p) { posture = p; }
 // so the tiles ask first: sitting on a swing, 'sit' is a no-op and 'stand' is the dismount
 let mountedHook = () => false;
 export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook = fn; }
+// the strict fold (replica.st) and the request a respawn sends (thingphysics requestWithBody), injected by main.js
+let worldFold = () => null, respawnSend = () => {};
+export function setRespawnHooks({ fold, send } = {}) { if (typeof fold === 'function') worldFold = fold; if (typeof send === 'function') respawnSend = send; }
+/** Put my body at the world's arrival place (shared/spawn.js spawnOf), facing its yaw; with a reason, the authority records it. */
+export function respawnMe(fold = worldFold(), reason) {
+  const sp = fold && spawnOf(fold); if (!sp) return null;
+  cancelClimb(); mantle = null; posture = null; myState.seat = null; swimVelocity = [0, 0, 0]; vy = 0; grounded = true; airborneFor = 0;
+  if (flight) { flight = null; releaseWings(); }
+  myState.pos.fromArray(sp.pos); myState.yaw = sp.yaw; setCamYaw(sp.yaw + Math.PI);
+  if (reason) { flashHint('you fell out of the world: back at the start'); bus.emit('respawned', { reason, at: sp.pos, spawn: sp.id }); Promise.resolve().then(() => respawnSend({ to: sp.pos, teleport: true, reason })).catch(() => {}); }
+  return sp;
+}
 export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
 export function standUp() {
   if (mountedHook()) { occupyHook(); return; }

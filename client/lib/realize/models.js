@@ -594,6 +594,7 @@ function syncCompLight(id) {
   const ent = state.st.entities[id];
   const L = ent ? lightOf(ent) : null;
   if (!L || offIn(state.st.entities, id)) { dropCompLight(id); return; }   // a switched-off thing casts nothing (I34)
+  if (L.kind === 'directional') { dropCompLight(id); return; }   // a sun: the rig's own sun draws it (watervolumes.js sunOf)
   const host = entities.get(id) ?? null;
   const spec = {
     color: L.color, intensity: L.intensity, range: L.range, decay: L.decay, keep: L.important, dayAware: L.daytime !== 'full',   // the rig's `keep` tier is light.important; decay is the value's (shape audit 10-16)
@@ -621,6 +622,10 @@ function syncCompLight(id) {
  *  preference (the promote tail reads colliderOf fresh, so an entity whose
  *  collider has not landed yet needs nothing). */
 function applyColliderPref(id) {
+  // collision switched off or back on (collider.enabled): the walker's collider goes, or is fitted again (a full-tier thing)
+  const ent = state.st.entities[id], obj = entities.get(id);
+  if (collisionOwnedElsewhere(ent, obj?.userData?.mountedTo)) { if (colliders.has(id)) removeCollider(id); return; }
+  if (!colliders.has(id) && obj && !isPlaceholder(obj) && obj.userData.tier !== 'lod' && ['model', 'mesh'].includes(tracked.get(id)?.kind)) { fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true }); bus.emit('entity', { id, kind: 'place' }); return; }
   const e = colliders.get(id);
   if (!e) return;
   e.pref = colliderOf(state.st.entities[id]);

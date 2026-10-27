@@ -1,8 +1,8 @@
 // bun tools/water/import.ts MANIFEST --dry                         print the requests, nothing sent (no server needed)
 // bun tools/water/import.ts MANIFEST SERVER WORLD [--apply]        preflight (read-only), or upload the files and send them
 // A manifest carries its `requests` (prepare.ts writes them), or main's `verbs` (world-data/water/manifest.json), which
-// requests.js maps (the old-world translator's own mapping). Features this protocol doesn't carry yet (traversal, vehicle,
-// collision) are listed and never sent; --apply refuses while any remain. Credentials come only from EIDO_TOKEN.
+// requests.js maps (the old-world translator's own mapping). Features this protocol doesn't carry yet (the vehicle) are
+// listed and never sent; --apply refuses while any remain. Credentials come only from EIDO_TOKEN.
 // @ts-nocheck
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -22,9 +22,9 @@ for (const f of files) {
   if (createHash('sha256').update(data).digest('hex') !== f.sha256) throw Error(`asset hash mismatch: ${f.file}`);
   bytes.set(f.path, data);
 }
-const req = manifest.requests ? { batch: manifest.requests[0], deferred: manifest.deferred ?? [], mapped: manifest.mapped ?? [] } : requestsOf(manifest.verbs, world ?? 'water');
+const req = manifest.requests ? { batch: manifest.requests[0], deferred: manifest.deferred ?? [], mapped: manifest.mapped ?? [], unmapped: manifest.unmapped ?? [] } : requestsOf(manifest.verbs, world ?? 'water');
 if (dry) {
-  console.log(JSON.stringify({ requests: [req.batch], mapped: req.mapped, deferred: req.deferred, files: { checked: bytes.size, absent } }, null, 1));
+  console.log(JSON.stringify({ requests: [req.batch], mapped: req.mapped, unmapped: req.unmapped ?? [], deferred: req.deferred, files: { checked: bytes.size, absent } }, null, 1));
   process.exit(0);
 }
 const base = new URL(server);

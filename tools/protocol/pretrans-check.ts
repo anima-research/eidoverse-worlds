@@ -758,7 +758,7 @@ await C("PN1", "the pin records each name's status, ranges and required fields",
   const p = CAT.pinOf(); return [p.light?.status === "trial" && p.joint?.status === "reserved" && p.sound?.ranges?.volume?.max === 1 && JSON.stringify(p.sound?.required) === '["src"]', [p.light?.status, p.joint?.status, p.sound?.ranges?.volume, p.sound?.required]]; });
 await C("PN2", "a break on a trial name (a narrowed range, a removed enum member, a gone name) is refused without --ack and admitted with one, the changelog line naming it and why", () => {
   const pin = CAT.pinOf(), now = CAT.pinOf();
-  now.sound.ranges.volume = { min: 0, max: 0.5 }; now.light.enums.kind = ["point"]; delete now.stage;
+  now.sound.ranges.volume = { min: 0, max: 0.5 }; now.light.enums.kind = ["point", "directional"]; delete now.stage;
   const bare = CAT.pinVerdict(pin, now, null), acked = CAT.pinVerdict(pin, now, "test: why", "2026-10-16");
   return [!bare.ok && /--ack/.test(bare.why) && bare.breaks.length === 3 && acked.ok && /^- 2026-10-16: test: why\n/.test(acked.changelog) && /sound\.volume: its range narrowed/.test(acked.changelog) && /light\.kind: "spot" is no longer allowed/.test(acked.changelog) && /stage: the name is gone/.test(acked.changelog), [bare, acked]]; });
 await C("PN3", "a stable name's break is never re-pinned, acknowledged or not; an addition or a widened range needs no acknowledgement", () => {

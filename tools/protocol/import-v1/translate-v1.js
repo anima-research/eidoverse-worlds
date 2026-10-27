@@ -273,10 +273,77 @@ export const DROPPED = {
 // used (deferredFeatures below), and the dry-run report lists them, so the owner decides with the loss in front of them.
 // Main's water volume and air boxes are carried (VOLUMES below), except on @world, which has no frame of its own to hold them.
 export const DEFERRED = {
-  traversal: { feature: "climb route", since: "main #248", shape: "traversal {routes: [{name, path, radius, speed}]}" },
   vehicle:   { feature: "vehicle", since: "main #248", shape: "vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}" },
-  collision: { feature: "collision on/off toggle", since: "main #248", shape: "collision {enabled: false}" },
 };
+// main #248's climb routes, collision toggle and environment, each to its home (spec/PROTOCOL.md §14; DESIGN.md env-components)
+// Still @20: traversal and collision were refused at @20 (no translated log held one), and environment came only with them, in #248's water world
+export const CARRIED = {
+  traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
+  collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
+  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds, floor → a hidden mesh box thing, sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
+};
+export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
+export const envChildId = (host, part) => `${part}-${sha256(`eido-environment\0${host}\0${part}`).slice(0, 26)}`;
+const clampN = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
+/** main's traversal {routes} → {children: [[id, components]], left (routes no climb can hold: carried on the host)} */
+export function climbPartsOf(host, d) {
+  const children = [], left = [];
+  (Array.isArray(d?.routes) ? d.routes : []).forEach((r, i) => {
+    const pts = r?.path, ok = Array.isArray(pts) && pts.length >= 2 && pts.length <= 16 && pts.every((p) => Array.isArray(p) && p.length === 3 && p.every((x) => Number.isFinite(x) && Math.abs(x) <= 1e4));
+    if (!ok) { left.push(r); return; }
+    const { name, path, radius, speed, ...rest } = r;
+    children.push([climbChildId(host, i), { transform: ID_POSE([0, 0, 0]), parent: { to: host }, label: typeof name === "string" && name ? name.slice(0, 80) : "ladder",
+      climb: { points: path.map((p) => [...p]), reach: clampN(radius, 0.3, 3, 1.4), speed: clampN(speed, 0.3, 4, 1.3) }, ...(Object.keys(rest).length ? { [keyed("imported", "climb")]: rest } : {}) }]); });
+  return { children, left };
+}
+// '#rrggbb' (or 0xRRGGBB) sRGB → linear [r, g, b], as three.js's Color reads one
+const srgbLin = (c, d) => { const n = typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? parseInt(c.slice(1), 16) : Number.isInteger(c) ? c : d;
+  return [16, 8, 0].map((k) => { const x = ((n >> k) & 255) / 255; return +(x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4).toFixed(6); }); };
+const hexInt = (c, d) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? parseInt(c.slice(1), 16) : Number.isInteger(c) ? c : d);
+// the rotation taking +Z to unit d (the sun stands along its light's +Z: it shines along its -Z)
+function qZTo(d) { const n = Math.hypot(...d); if (!(n > 0)) return [0, 0, 0, 1]; const [x, y, z] = d.map((v) => v / n);
+  if (z < -1 + 1e-9) return [0, 1, 0, 0]; const w = 1 + z, q = [-y, x, 0, w], m = Math.hypot(...q); return q.map((v) => +(v / m).toFixed(9)); }
+/** main's environment {floor, spawn, bounds, sky, particles, …} on `host` → {world: {spawn?, bounds?, sky?}, things, left (no home:
+ *  imported:environment), fields (what went where, for the report)}. `has`: what @world already holds (spawn, bounds). Main's own
+ *  readings (watervolumes.js) are the defaults: a sky lights a sun at [0.4, 0.8, 0.2], #fff4df, 3. */
+export function environmentPartsOf(host, env, has = {}) {
+  const world = {}, things = [], left = {}, fields = [];
+  const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  const { floor, spawn, bounds, sky, particles, ...rest } = env && typeof env === "object" && !Array.isArray(env) ? env : {};
+  const B = bounds && v3(bounds.min) && v3(bounds.max) && [0, 1, 2].every((i) => bounds.min[i] < bounds.max[i]) ? bounds : null;
+  if (B && !has.bounds) { world.bounds = { min: [...B.min], max: [...B.max] }; fields.push(["bounds", "@world.bounds"]); } else if (bounds !== undefined) { left.bounds = bounds; fields.push(["bounds", null]); }
+  if (v3(spawn) && !has.spawn) { world.spawn = { pos: [...spawn] }; fields.push(["spawn", "@world.spawn"]); }
+  else if (v3(spawn)) { const id = envChildId(host, "spawn"); things.push([id, { transform: ID_POSE([...spawn]), label: "arrival", "spawn-point": {} }]); fields.push(["spawn", id]); }
+  else if (spawn !== undefined) { left.spawn = spawn; fields.push(["spawn", null]); }
+  if (Number.isFinite(floor)) { const id = envChildId(host, "floor"), lo = B ? B.min : [-1000, 0, -1000], hi = B ? B.max : [1000, 0, 1000], w = [hi[0] - lo[0], hi[2] - lo[2]];
+    things.push([id, { transform: { pos: [(lo[0] + hi[0]) / 2, floor - 1, (lo[2] + hi[2]) / 2], q: [0, 0, 0, 1], scale: [Math.min(1e3, w[0] / 200), 1, Math.min(1e3, w[1] / 200)] }, mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, label: "floor" }]); fields.push(["floor", id]); }
+  else if (floor !== undefined) { left.floor = floor; fields.push(["floor", null]); }
+  if (sky && typeof sky === "object" && !Array.isArray(sky)) { const { horizon, zenith, sunColor, sunIntensity, sunDirection, ...skyRest } = sky;
+    world.sky = { gradient: { top: srgbLin(zenith, 0x3686b8), horizon: srgbLin(horizon, 0xb8d4e0) } }; fields.push(["sky.horizon, sky.zenith", "@world.sky.gradient"]);
+    const id = envChildId(host, "sun"), dir = v3(sunDirection) && Math.hypot(...sunDirection) > 0 ? sunDirection : [0.4, 0.8, 0.2];
+    things.push([id, { transform: ID_POSE([0, 0, 0], qZTo(dir)), label: "sun", light: { kind: "directional", color: hexInt(sunColor, 0xfff4df), intensity: Number.isFinite(sunIntensity) ? Math.max(0, sunIntensity) : 3, decay: 2, daytime: "full" } }]);
+    fields.push(["sky.sunColor, sky.sunIntensity, sky.sunDirection", id]);
+    if (Object.keys(skyRest).length) { left.sky = skyRest; fields.push([Object.keys(skyRest).map((k) => `sky.${k}`).join(", "), null]); } }
+  else if (sky !== undefined) { left.sky = sky; fields.push(["sky", null]); }
+  if (particles && typeof particles === "object" && !Array.isArray(particles)) { const id = envChildId(host, "particles"), p = particles;
+    const count = clampN(Math.floor(p.count), 1, 600, 600), size = clampN(p.size, 0.005, 4, 0.018), area = clampN(p.range, 0, 8, 8);
+    things.push([id, { transform: ID_POSE([0, 0, 0]), parent: { to: host }, label: "particles", particles: { effect: "dust", params: { count, size, area } } }]); fields.push(["particles", id]);
+    const kept = { count: p.count === count, size: p.size === size, range: p.range === area };   // a clamped value, or one the effect has no knob for, rides along
+    const lost = Object.fromEntries(Object.entries(p).filter(([k]) => !kept[k]));
+    if (Object.keys(lost).length) { left.particles = lost; fields.push([Object.keys(lost).map((k) => `particles.${k}`).join(", "), null]); } }
+  else if (particles !== undefined) { left.particles = particles; fields.push(["particles", null]); }
+  if (Object.keys(rest).length) { Object.assign(left, rest); fields.push([Object.keys(rest).join(", "), null]); }
+  return { world, things, left, fields };
+}
+/** Every environment in a v1 state, in id order, as project() places it: [{id (as written), host, parts}]. The first one's spawn
+ *  and bounds go to @world; a later one's spawn is a spawn-point and its bounds ride imported:environment. */
+export function environmentPlan(st) {
+  const out = [], has = {};
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const env = st.entities[id]?.comp?.environment; if (env == null) continue;
+    const parts = environmentPartsOf(enc(id), env, { ...has }); if (parts.world.spawn) has.spawn = true; if (parts.world.bounds) has.bounds = true;
+    out.push({ id, host: enc(id), parts }); }
+  return out;
+}
 const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
@@ -322,6 +389,24 @@ export function volumeMappings(st) {
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
     out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)] });
   }
+  return out;
+}
+/** main #248's climb routes, collision toggles and environments a v1 state holds, as the report lists them: [{component, feature, id, into}] */
+export function carriedMappings(st) {
+  const out = [], env = new Map(environmentPlan(st).map((x) => [x.id, x.parts]));
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
+    if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
+    if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
+    if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] }); }
+  return out;
+}
+/** What of them has no home here, carried as imported:<component> on its thing: [{component, id, fields, as}] */
+export function unmappedOf(st) {
+  const out = [];
+  for (const { id, host, parts } of environmentPlan(st)) { const f = parts.fields.filter(([, to]) => to === null).map(([k]) => k); if (f.length) out.push({ component: "environment", id, fields: f, as: `${host} imported:environment` }); }
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
+    if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
+    if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); } }
   return out;
 }
 /** Every use in a v1 log of a feature v4 doesn't carry yet that still stands at its end: [{component, feature, id, seq,
@@ -464,10 +549,12 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
     const volumes = {};    // main #248's water volume / air boxes (VOLUMES)
+    const carried = {};    // main #248's climb routes, collision toggle, environment (CARRIED)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
       if (accountNamed(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       if ((k === "water" || k === "air") && v != null) { volumes[k] = v; continue; }   // main #248's: zone things (VOLUMES)
+      if ((k === "traversal" || k === "collision" || k === "environment") && v != null) { carried[k] = v; continue; }   // main #248's (CARRIED)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
       c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : v; }
@@ -482,8 +569,15 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
     const vol = volumePartsOf(enc(id), volumes, c); Object.assign(c, vol.own);
+    // collision off is collider {enabled: false}; anything else it said rides imported:collision
+    if (carried.collision && typeof carried.collision === "object") { const { enabled, ...rest } = carried.collision;
+      if (enabled === false) c.collider = { ...(c.collider && typeof c.collider === "object" ? c.collider : {}), enabled: false };
+      if (Object.keys(rest).length || (enabled !== undefined && typeof enabled !== "boolean")) c[keyed("imported", "collision")] = carried.collision; }
+    else if (carried.collision !== undefined) c[keyed("imported", "collision")] = carried.collision;
+    const climbs = carried.traversal !== undefined ? climbPartsOf(enc(id), carried.traversal) : { children: [], left: [] };
+    if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
     out[enc(id)] = shapeRepaired(c);
-    for (const [cid, cc] of vol.children) out[cid] = shapeRepaired(cc);
+    for (const [cid, cc] of [...vol.children, ...climbs.children]) out[cid] = shapeRepaired(cc);
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: newParticles(seeded) });
@@ -536,6 +630,12 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       : who && v && typeof v.author === "string" && !SYSTEM.has(v.author) ? { ...v, author: who(v.author, {}) } : v; }
   const known = new Set(["entities", "sky", "terrain", "grass", "assets", "roles", "bans", "behaviors", "mounts", "recentChat", "chatTotal"]);
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
+  // main #248's environment: its world fields, its things, and what has no home on its host (environmentPlan)
+  for (const { host, parts } of environmentPlan(st)) {
+    if (parts.world.spawn) w.spawn = parts.world.spawn; if (parts.world.bounds) w.bounds = parts.world.bounds;
+    if (parts.world.sky) w.sky = { ...(w.sky && typeof w.sky === "object" ? w.sky : {}), ...parts.world.sky };
+    for (const [cid, cc] of parts.things) out[cid] = shapeRepaired(cc);
+    if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
   // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
   // grass in the flora spelling, a preset kept by its name)
@@ -734,7 +834,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
-  const mapped = volumeMappings(v1); if (mapped.length) stats.mapped = mapped;   // main's water volumes and air boxes, carried (VOLUMES)
+  const mapped = [...volumeMappings(v1), ...carriedMappings(v1)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
+  const unmapped = unmappedOf(v1); if (unmapped.length) stats.unmapped = unmapped;   // …and what of them has no home (imported:<component>), never silent
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
   return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

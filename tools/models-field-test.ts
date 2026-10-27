@@ -100,10 +100,9 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("an unrelated comp changes nothing",
     !collisionOwnedElsewhere({ ...model("x.glb"), lock: true }, false));
   check("missing entity is not a crash", !collisionOwnedElsewhere(undefined, false));
-  // house I243 (#260): a collision switched off is honoured — today's physics {kind: 'none'} (the authority's sim skips it,
-  // shared/protocol/simlayer.js) and a stored collision {enabled: false} from before the rename
-  check("physics kind none gets no box", collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "none" } }, false));
-  check("a stored collision {enabled: false} gets no box", collisionOwnedElsewhere({ ...model("x.glb"), collision: { enabled: false } }, false));
+  // house I243 (#260): collision off is collider {enabled: false} (componentspec; simlayer.js solidOff), never physics.kind
+  check("collider {enabled: false} gets no box", collisionOwnedElsewhere({ ...model("x.glb"), collider: { enabled: false } }, false));
+  check("physics kind none still gets one (not simulated, still solid)", !collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "none" } }, false));
   check("…a static body still does", !collisionOwnedElsewhere({ ...model("x.glb"), physics: { kind: "static" } }, false));
 }
 

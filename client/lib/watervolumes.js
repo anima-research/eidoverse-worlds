@@ -1,12 +1,11 @@
 // watervolumes — water bodies and dry pockets (things with zone + water / water-exclusion, read through shared/zone.js),
 // drawn and fogged; also the level's underwater optics. Distinct from water.js, the world's one water LEVEL. No world names or layouts.
-import { THREE, TSL, scene, camera, sun, hemi } from './core.js';
+import { THREE, TSL, scene, camera, sun } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
-import { MAX_WATER, MAX_AIR, mediumAt, vector } from '../../shared/water.js';
-import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt } from '../../shared/zone.js';
+import { MAX_WATER, MAX_AIR, mediumAt } from '../../shared/water.js';
+import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
-import { setEnvironmentFloor } from './terrain.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
 // the boot gate, the baked domes) into everything that imports the controller
@@ -91,40 +90,36 @@ const fogFn = Fn(([color, a, b]) => {
 });
 const fogNode = fogFn(output,cameraPosition,positionWorld);
 let previousFog = null, installed = false, dirty = true, fold = { entities: {} };
-let skyDome=null, skySaved=null, particles=null;
+let skyDome=null, skySaved=null;
 const warned=new Set();
 function warn(message){if(!warned.has(message)){warned.add(message);report('water',new Error(message));}}
-function updateEnvironmentSky(settings) {
-  const sky=settings?.sky;
+// The painted sky (@world.sky.gradient, OMI_environment_sky) and the sun (the first directional light thing by id, KHR_lights_punctual):
+// shared/zone.js lookOf reads both off the fold; null for each the world doesn't author
+function updateEnvironmentSky(look) {
   if(skyDome){scene.remove(skyDome);skyDome.geometry.dispose();skyDome.material.dispose();skyDome=null;}
-  if(!sky){
+  if(look?.gradient){
+    const g=look.gradient,c=(v)=>new THREE.Color().setRGB(v[0],v[1],v[2],THREE.LinearSRGBColorSpace);
+    const mat=new THREE.MeshBasicNodeMaterial({side:THREE.BackSide,depthWrite:false}),y=TSL.positionLocal.y.div(18000);
+    mat.colorNode=TSL.mix(TSL.mix(TSL.color(c(g.horizon)),TSL.color(c(g.top)),y.max(0).pow(.45)),TSL.color(c(g.bottom??g.horizon)),y.negate().max(0).pow(.45));
+    skyDome=new THREE.Mesh(new THREE.SphereGeometry(18000,32,16),mat);
+    skyDome.userData.skyExempt=true;skyDome.userData.noWet=true;skyDome.userData.noCloudShadow=true;skyDome.renderOrder=-100;
+    scene.add(skyDome);
+  }
+  if(!look?.sun){
     envLight=null;
-    if(skySaved){sun.color.copy(skySaved.sunColor);sun.intensity=skySaved.sunIntensity;sun.position.copy(skySaved.sunPosition);hemi.intensity=skySaved.ambient;skySaved=null;}
+    if(skySaved){sun.color.copy(skySaved.sunColor);sun.intensity=skySaved.sunIntensity;sun.position.copy(skySaved.sunPosition);skySaved=null;}
     return;
   }
-  skySaved ??= {sunColor:sun.color.clone(),sunIntensity:sun.intensity,sunPosition:sun.position.clone(),ambient:hemi.intensity};
-  const mat=new THREE.MeshBasicNodeMaterial({side:THREE.BackSide,depthWrite:false});
-  const horizon=new THREE.Color(sky.horizon??'#b8d4e0'),zenith=new THREE.Color(sky.zenith??'#3686b8');
-  mat.colorNode=TSL.mix(TSL.color(horizon),TSL.color(zenith),TSL.positionLocal.y.div(18000).max(0).pow(.45));
-  skyDome=new THREE.Mesh(new THREE.SphereGeometry(18000,32,16),mat);
-  skyDome.userData.skyExempt=true;skyDome.userData.noWet=true;skyDome.userData.noCloudShadow=true;skyDome.renderOrder=-100;
-  scene.add(skyDome);
-  // The environment owns the sun and ambient while it is authored: the world sky (sky.js) rewrites them every
-  // frame, so main.js's sky system calls applyEnvLight right after it — before materials and the shadow rig
-  // read sun.position, so the shadow camera is fitted to the direction that actually renders.
-  envLight={color:new THREE.Color(sky.sunColor??'#fff4df'),intensity:Number.isFinite(sky.sunIntensity)?Math.max(0,sky.sunIntensity):3,
-    position:new THREE.Vector3().fromArray(vector(sky.sunDirection,[.4,.8,.2])).normalize().multiplyScalar(60),   // a direction at the sky's 60 m (shadow fit, lightrig.js)
-    ambient:Number.isFinite(sky.ambient)?Math.max(0,sky.ambient):1.5};
+  skySaved ??= {sunColor:sun.color.clone(),sunIntensity:sun.intensity,sunPosition:sun.position.clone()};
+  // The authored sun owns the rig's sun: the world sky (sky.js) rewrites it every frame, so main.js's sky system calls
+  // applyEnvLight right after it, before materials and the shadow rig read sun.position (lightrig.js fits to it)
+  envLight={color:new THREE.Color(look.sun.color),intensity:Math.max(0,look.sun.intensity),
+    position:new THREE.Vector3().fromArray(look.sun.toward).normalize().multiplyScalar(60)};   // toward the sun, at the sky's 60 m (shadow fit)
   applyEnvLight();
 }
 let envLight=null;
-export function applyEnvLight(){if(!envLight)return;sun.color.copy(envLight.color);sun.intensity=envLight.intensity;sun.position.copy(envLight.position);hemi.intensity=envLight.ambient;}
+export function applyEnvLight(){if(!envLight)return;sun.color.copy(envLight.color);sun.intensity=envLight.intensity;sun.position.copy(envLight.position);}
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion();
-const entries = () => Object.entries(state.st.entities).sort(([a],[b])=>a.localeCompare(b));
-export function environmentSettings() {
-  return entries().map(([,e])=>e.environment).find(Boolean) ?? null;   // a component sits flat on the record (view.js)
-}
-export function movementBounds() { const env=environmentSettings(); return env?.bounds ?? (env || waters.length ? {} : null); }
 export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],waters,airs,clock.value); }
 /** @world's `level` at p, or null in a pocket that keeps it out (zone.js worldLevelAt: mediumOf) */
 export function levelAt(p, level) { return worldLevelAt(Array.isArray(p)?p:[p.x,p.y,p.z],zonesNow,level,{volumes:volumesNow}); }
@@ -254,9 +249,9 @@ export function updateWater() {
   // Epoch wrapped for float precision; same clock on every peer.
   clock.value=(serverNow()%3600000)/1000;
   const rebuild=dirty;dirty=false;
-  if(rebuild){rebuilds++;clearSurfaces();volumeIds.clear();if(particles){scene.remove(particles);particles.geometry.dispose();particles.material.dispose();particles=null;}}
+  if(rebuild){rebuilds++;clearSurfaces();volumeIds.clear();}
   waters.length=0;airs.length=0;airMasks.length=0;
-  if(rebuild){fold=foldOfView(state.st);for(const [id,e] of entries())if(e.environment)volumeIds.add(id);}
+  if(rebuild)fold=foldOfView(state.st);
   const zones=zonesOf(fold,{poseOf:id=>poseFor(fold,id)});
   if(rebuild)for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);
   const vol=waterVolumes(zones);zonesNow=zones;volumesNow=vol;
@@ -281,13 +276,14 @@ export function updateWater() {
   });
   airCount.value=airs.length;
   updateWaterView();   // the camera-dependent half, now (main.js runs it again after this frame's movement)
-  if(rebuild){const env=environmentSettings();setEnvironmentFloor(Number.isFinite(env?.floor)?env.floor:null);updateEnvironmentSky(env);makeParticles(env?.particles);}
+  if(lookDirty){lookDirty=false;const f=foldOfView(state.st),look=lookOf(f,state.st.sky,{poseOf:id=>poseFor(f,id)});lookIds.clear();if(look.sun)lookIds.add(look.sun.id);updateEnvironmentSky(look);}
   if(skyDome)skyDome.position.copy(camera.position);
 }
-// Rebuild surfaces/particles/sky only when what they read can have changed (shared/zone.js zoneChangeTouches): a reset, a
-// zone / water / water-exclusion / environment, or a pose or parent of a holder or a carrier above one. Positions refresh every frame.
+// Rebuild the surfaces only when what they read can have changed (shared/zone.js zoneChangeTouches): a reset, a zone / water /
+// water-exclusion, or a pose or parent of a holder or a carrier above one; the sky and sun on lookChangeTouches. Positions refresh every frame.
 const volumeIds = new Set();   // holders at the last rebuild: a same-id respawn or removal still counts
-onWorldChange(ev=>{ if(zoneChangeTouches(ev,state.st.entities,volumeIds))dirty=true; });
+onWorldChange(ev=>{ if(zoneChangeTouches(ev,state.st.entities,volumeIds))dirty=true; if(lookChangeTouches(ev,lookIds))lookDirty=true; });
+let lookDirty=true;const lookIds=new Set();   // the sun thing at the last look (a removed or moved one still counts)
 
 /** 1 where a point is inside any dry box, else 0 (portable TSL). water.js masks the level's sheet with it: a dry
  *  shaft or room reaching up through the surface has no water across its mouth. */
@@ -299,30 +295,3 @@ export const dryAt = Fn(([p]) => {
   });
   return dry;
 });
-// 1 inside a water slot no pocket there keeps out (zone.js fogSlots' masks), else 0 (portable TSL, as the fog)
-const particleAlpha = Fn(([p]) => {
-  const alpha = float(0).toVar();
-  Loop({ start: int(0), end: waterCount, type: 'int', name: 'w' }, ({ w }) => {
-    If(all(p.greaterThanEqual(mins.element(w).xyz)).and(all(p.lessThanEqual(maxs.element(w).xyz))), () => {
-      const dry = bool(false).toVar();
-      Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
-        const q = dryInverse.element(j).mul(vec4(p, 1)).xyz;
-        If(clears(dryExtent.element(j).w, w).and(all(q.abs().lessThanEqual(dryExtent.element(j).xyz))), () => { dry.assign(true); Break(); });
-      });
-      If(dry.not(), () => { alpha.assign(1); Break(); });
-    });
-  });
-  return alpha;
-});
-function makeParticles(spec){
- if(!spec||!waters.length)return;
- const count=Math.max(0,Math.min(3000,Math.floor(Number(spec.count)||1200))),range=Math.max(2,Math.min(60,Number(spec.range)||16));
- const positions=new Float32Array(count*3);let seed=1729;
- for(let i=0;i<positions.length;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;positions[i]=(seed/4294967296*2-1)*range;}
- const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
- const mat=new THREE.PointsNodeMaterial({color:spec.color??'#aec8b4',size:Math.max(.005,Math.min(.08,Number(spec.size)||.018)),transparent:true,depthWrite:false,sizeAttenuation:true});
- const p=TSL.positionLocal.add(TSL.vec3(clock.mul(.025),clock.mul(-.035),0)).sub(cameraPosition).add(range).mod(range*2).sub(range).add(cameraPosition);
- mat.positionNode=p;
- mat.opacityNode=particleAlpha(p).mul(p.distance(cameraPosition).div(range).oneMinus().max(0)).mul(.55);
- particles=new THREE.Points(geo,mat);particles.frustumCulled=false;particles.userData.skyExempt=true;particles.userData.noWet=true;particles.userData.noCloudShadow=true;scene.add(particles);
-}

@@ -160,6 +160,14 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
       && isNum(w.amplitude) && w.amplitude >= 0 && w.amplitude <= 5 && isNum(w.wavelength) && w.wavelength >= 0.1 && w.wavelength <= 1e4
       && Array.isArray(w.direction) && w.direction.length === 2 && w.direction.every(isNum) && Math.hypot(...w.direction) > 0 && (w.phase === undefined || isNum(w.phase));
     if (!ok) refuse("shape", `${at}.waves[${i}] is {amplitude (m, 0..5), wavelength (m, 0.1..10000), direction [x, z] (not zero), phase? (rad)}`, "e.g. waves: [{amplitude: 0.3, wavelength: 12, direction: [1, 0]}]"); });
+  // a climb route's points and facing (componentspec climb; shared/climb.js reads them)
+  if (comp === "climb" && obj && v.points !== undefined && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 16 && v.points.every((p) => Array.isArray(p) && p.length === 3 && p.every((x) => isNum(x) && Math.abs(x) <= 1e4))))
+    refuse("shape", `${at}.points is 2–16 points [x, y, z] in the thing's own frame (metres, each within ±10000)`, "e.g. climb {points: [[0, 0, 0.3], [0, 3, 0.3]]}");
+  if (comp === "climb" && obj && Array.isArray(v.face) && !(Math.hypot(v.face[0], v.face[2]) > 1e-6)) refuse("shape", `${at}.face is a direction with a part in the ground plane (x or z not 0)`, "e.g. face: [0, 0, 1]: the climber faces the thing's +z");
+  // a painted sky (OMI_environment_sky gradient): closed, linear colours
+  if (comp === "sky" && obj && v.gradient !== undefined) { const g = v.gradient, rgb = (c) => Array.isArray(c) && c.length === 3 && c.every((x) => isNum(x) && x >= 0 && x <= 1);
+    if (!(g && typeof g === "object" && !Array.isArray(g) && Object.keys(g).every((k) => ["top", "horizon", "bottom"].includes(k)) && rgb(g.top) && rgb(g.horizon) && (g.bottom === undefined || rgb(g.bottom))))
+      refuse("shape", `${at}.gradient is {top, horizon, bottom?}, each a linear colour [r, g, b] 0..1`, "e.g. gradient: {top: [0.03, 0.25, 0.53], horizon: [0.51, 0.72, 0.79]} (absent bottom is the horizon's)"); }
   // a zone's geometry is its shape's own fields, as OMI_physics_shape's (componentspec zone)
   if (comp === "zone" && obj && typeof v.shape === "string") { const need = { box: ["size"], sphere: ["radius"], capsule: ["radius", "height"], cylinder: ["radius", "height"] }[v.shape];
     const geo = ["size", "radius", "height"], fix = "e.g. zone {shape: 'box', size: [4, 2, 4]}, {shape: 'sphere', radius: 3} or {shape: 'cylinder', radius: 2, height: 5}";
@@ -427,6 +435,13 @@ export function zoneRules(s, ids) {
     if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
     const g = globalWater(id, c); if (g) return g;
     if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` }; }
+  return null;
+}
+// collision off with dynamics on: it would fall through everything, forever (componentspec collider.enabled)
+export function colliderRules(s, ids) {
+  for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
+    if (c.collider?.enabled === false && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id} has collider {enabled: false} and physics {kind: 'dynamic'}: a dynamic thing that collides with nothing would fall forever`,
+      fix: `keep it solid (delete collider.enabled), or don't let the engine move it: physics {kind: 'kinematic'} (moved by its motion or edits) or {kind: 'none'}` }; }
   return null;
 }
 export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

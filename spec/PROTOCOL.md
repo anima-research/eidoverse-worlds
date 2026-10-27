@@ -309,6 +309,33 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   medium does not survive export. For now `water` and `water-exclusion` read
   a box zone only: a sphere, capsule or cylinder zone under either is refused
   with that fix (a zone of any shape is taken alone).
+- **Collision off is `collider {enabled: false}`**, an axis apart from how a
+  thing moves (Godot CollisionShape3D.disabled, Unity Collider.enabled, Roblox
+  CanCollide): nothing stands on it or bumps into it (walkers, agents, the
+  authority's track and index, the engine), and it still moves as its `physics`
+  and `motion` say. `physics.kind: none` means not simulated, and is still
+  solid. `enabled: false` with `physics.kind: dynamic` is refused (it would fall
+  forever). shared/protocol/simlayer.js `solidOff` is the one reading.
+- **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
+  speed?, face?, ends?}`, straight lines between its points (Godot Path3D +
+  PathFollow3D); its name is its `label`. A climber's presence is `{host,
+  progress}` (metres along the route, PathFollow3D.progress), resolved through
+  the host's live pose by every receiver, never a world pose. Absent `face`, a
+  climber faces along the route's run, and a route straight up faces the
+  host's +z. shared/climb.js is the one reader.
+- **Arrivals and falling out** (shared/spawn.js): `@world.spawn` gains `yaw`;
+  `spawn-point {title?, team?, group?}` on a thing is another arrival place
+  (OMI_spawn_point), facing its rotation. The arrival taken: `@world.spawn` when
+  declared, else the first spawn-point by id among those of the team or group
+  asked for; a visitor may arrive at any of them. A body below
+  `@world.bounds.min.y` has fallen out (Unreal's KillZ): its own client sends it
+  back with `move {teleport: true, reason: 'below-bounds'}`, an act on the
+  record even as an arrival; a seated or climbing body is exempt.
+- **The look**: `@world.sky.gradient {top, horizon, bottom?}` (linear colours;
+  OMI_environment_sky, absent bottom = horizon) paints the sky; `rate: 0`
+  already pins its clock. A `light {kind: 'directional'}` thing is a sun
+  (KHR_lights_punctual), shining along its −Z; the first by id lights the
+  world. A floor is geometry (a hidden thing), never a world value.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
@@ -1380,9 +1407,16 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   `attenuationColor` e^−σ over `attenuationDistance` 1 m, scatter as `scatterColor`, other fields in `imported:water`;
   each `air` box is a child `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform.
   The report lists each under `mapped` with the things it became.
-- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a climb route,
-  a vehicle or a collision toggle (`traversal`/`vehicle`/`collision` on an entity), or a water volume or air box on
-  `@world` (`water` on `@world` without one is the world's water level and is carried). No approval overrides the refusal. Carried
+- **Main's climb routes, collision toggle and environment are carried**: each `traversal` route is a child thing with
+  `climb {points: path, reach: radius, speed}` and `label: name` (main's clamps); `collision {enabled: false}` is
+  `collider {enabled: false}`; `environment`'s `spawn` is `@world.spawn` (a later one a `spawn-point` thing), `bounds`
+  `@world.bounds`, `floor` a hidden `mesh` box whose top is the floor, `sky` `@world.sky.gradient` (sRGB to linear) and
+  a directional `light` thing (main's sun, defaults included), `particles` a `particles {effect: 'dust'}` child. What has
+  no home (the sky's `ambient`, a value an effect clamps, an unknown key) rides `imported:<component>` on its thing and
+  is listed under the report's `unmapped`.
+- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a vehicle
+  (`vehicle` on an entity), or a water volume or air box on `@world` (`water` on `@world` without one is the world's
+  water level and is carried). No approval overrides the refusal. Carried
   inert as `imported:<name>` they would change the world in a way that matters: a pool nobody can swim in, a ladder nobody
   can climb, a car nobody can drive, a wall the old world let people through. A translated world would look whole and
   play broken, so the translation waits until this protocol carries each feature, rather than translating a world that

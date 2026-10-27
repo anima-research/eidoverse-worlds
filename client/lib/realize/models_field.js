@@ -126,7 +126,6 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
  *  @param {any} ent   the folded entity record
  *  @param {boolean} mounted  whether the scene object rides a carrier */
 export function collisionOwnedElsewhere(ent, mounted = false) {
-  // a collision switched off has no box either: physics {kind: 'none'} (the authority's sim skips it too, simlayer.js), or
-  // a stored collision {enabled: false} from before physics replaced it (house I243)
-  return !!mounted || !!ent?.structure || ent?.physics?.kind === 'none' || ent?.collision?.enabled === false;
+  // collision off has no box either: collider {enabled: false} (componentspec; the authority's solidity reads it too, simlayer.js solidOff)
+  return !!mounted || !!ent?.structure || ent?.collider?.enabled === false;
 }

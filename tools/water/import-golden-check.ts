@@ -1,6 +1,6 @@
 // tools/water/import-golden-check.ts — upstream's public #248 world (world-data/water/manifest.json) through tools/water/import.ts
 // --dry: the zone / water / water-exclusion things it asks for, their parents and priorities, the features it holds back
-// (traversal, vehicle, collision), the batch taken by a real authority, and shared/zone.js mediumOf on the result agreeing
+// (the vehicle), its climb routes, collision toggle and environment as mapped, the batch taken by a real authority, and shared/zone.js mediumOf on the result agreeing
 // with main's own mediumAt (main's shared/water.js at MAIN, from git) on main's reading of the same records.
 //   bun tools/water/import-golden-check.ts
 // @ts-nocheck
@@ -34,10 +34,21 @@ const sameBoxes = (host) => by(host).length === main[host].length && by(host).ev
 C("G2", "fifteen pockets, one per main air box: 8 under water-habitat, 7 under water-submarine, each zone {box, main's size} + water-exclusion {} at main's centre, priority 1 (above the body's 0)",
   pockets.length === 15 && sameBoxes("water-habitat") && sameBoxes("water-submarine") && pockets.every((a) => a.components.zone.priority === 1 && JSON.stringify(a.components["water-exclusion"]) === "{}"),
   pockets.map((a) => [a.components.parent?.to, a.components.zone]));
-const banned = creates.filter((a) => Object.keys(a.components).some((k) => /(^|\/)(traversal|vehicle|collision|air)(:|$)/.test(k)));
-C("G3", "held back, and said so: the three climb routes, the vehicle and the collision toggle are listed as deferred and in no request; no `air` component goes out",
-  JSON.stringify(dry.deferred.map((u) => `${u.component}@${u.id}`)) === JSON.stringify(["traversal@water-habitat", "traversal@water-submarine", "vehicle@water-submarine", "traversal@water-platform", "collision@water-scenery"]) && banned.length === 0
-  && JSON.stringify(dry.mapped.map((m) => [m.component, m.id, m.into.length])) === JSON.stringify([["water", "water-terrain", 1], ["air", "water-habitat", 8], ["air", "water-submarine", 7]]), { deferred: dry.deferred, banned: banned.map((a) => a.id), mapped: dry.mapped });
+const banned = creates.filter((a) => Object.keys(a.components).some((k) => /(^|\/)(traversal|vehicle|collision|air|environment)(:|$)/.test(k)));
+C("G3", "held back, and said so: the vehicle is listed as deferred and in no request; no `air`, `traversal`, `collision` or `environment` component goes out; the volumes, the three climb routes, the collision toggle and the environment are listed as mapped",
+  JSON.stringify(dry.deferred.map((u) => `${u.component}@${u.id}`)) === JSON.stringify(["vehicle@water-submarine"]) && banned.length === 0
+  && JSON.stringify(dry.mapped.map((m) => [m.component, m.id, m.into.length])) === JSON.stringify([["water", "water-terrain", 1], ["air", "water-habitat", 8], ["air", "water-submarine", 7],
+    ["traversal", "water-habitat", 1], ["traversal", "water-platform", 1], ["collision", "water-scenery", 1], ["traversal", "water-submarine", 1], ["environment", "water-terrain", 6]]), { deferred: dry.deferred, banned: banned.map((a) => a.id), mapped: dry.mapped });
+const climbs = creates.filter((a) => a.components.climb), mainRoute = (host) => manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "traversal" && v.args.id === host)?.args.data.routes[0];
+C("G3c", "each of main's three routes is a climb child of its host: main's path as points, radius as reach, speed, name as label; the scenery's collision toggle is collider {enabled: false}",
+  climbs.length === 3 && ["water-habitat", "water-submarine", "water-platform"].every((h) => { const a = climbs.find((x) => x.components.parent?.to === `$${h}`), m = mainRoute(h);
+    return a && JSON.stringify(a.components.climb) === JSON.stringify({ points: m.path, reach: m.radius, speed: m.speed }) && a.components.label === m.name; })
+  && JSON.stringify(creates.find((a) => a.id === "$water-scenery")?.components.collider) === JSON.stringify({ enabled: false }), climbs);
+const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "environment").args.data, setOf = (k) => ops.find((o) => o.verb === "set" && o.args.id === "@world" && o.args.component === k)?.args.value;
+C("G3e", "main's environment: @world.spawn and bounds as main's, @world.sky.gradient, a hidden floor, a directional sun and a dust child; ambient and the particles' count and range (clamped) listed as unmapped",
+  JSON.stringify(setOf("spawn")) === JSON.stringify({ pos: envMain.spawn }) && JSON.stringify(setOf("bounds")) === JSON.stringify(envMain.bounds) && !!setOf("sky")?.gradient
+  && creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box") && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => a.components.particles?.effect === "dust" && a.components.parent?.to === "$water-terrain")
+  && JSON.stringify(dry.unmapped) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count, particles.range"], as: "water-terrain imported:environment" }]), { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
 
 // the batch through a real authority (a scratch world): placeholders minted, every op taken
 const D = await import(ENGINE + "shared/protocol/authority.js"), F = await import(ENGINE + "shared/protocol/fold.js"), Z = await import(ENGINE + "shared/zone.js");

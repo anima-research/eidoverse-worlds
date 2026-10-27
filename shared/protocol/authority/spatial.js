@@ -1,7 +1,7 @@
 // shared/protocol/authority/spatial.js — the spatial index and the work budget (refactor C11, 2026-10-12; moved from
 // authority.js's "the spatial index" section unchanged). A leaf over math, the catalogue and storage: the budget refuses
 // through refuse.js, and the gate's enter() reads WORK_BUDGET/clockMs from here.
-import { offChain } from "../simlayer.js";
+import { offChain, solidOff } from "../simlayer.js";
 import { CTX } from "./ctx.js";
 import { refuse } from "./refuse.js";
 import { LAB_CATALOGUE, geomE } from "./catalogue.js";
@@ -75,10 +75,12 @@ function fileIx(ix, id, g, cloned) {
   const cs = cellsOf(g); if (!cs) { ix.big.push(id); return; }
   for (const k of cs) { let a = ix.grid.get(k); if (!a) ix.grid.set(k, (a = [])); else if (cloned && !cloned.has(k)) { ix.grid.set(k, (a = a.slice())); } cloned?.add(k); a.push(id); }
 }
+// switched off, or collision off: nothing to stand on, bump into or overlap (componentspec disabled, collider.enabled)
+const unindexed = (st, id) => !!offChain(st, id) || solidOff(st.entities[id]?.c);
 function buildIx(st, ver) {
   const ix = { cat: CTX.cat, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };
   for (const id of Object.keys(st.entities)) { ix.order.set(id, ix.next++);
-    if (offChain(st, id)) continue;   // switched off: nothing to stand on, bump into or overlap (componentspec disabled)
+    if (unindexed(st, id)) continue;
     const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, null); }
   return ix;
 }
@@ -101,7 +103,7 @@ function deriveIx(prev, st) {
     if (old) { ix.rec.delete(id); const cs = cellsOf(old);
       if (cs) for (const k of cs) { const a = ix.grid.get(k); if (!a) continue; const b = a.filter((x) => x !== id); if (b.length) ix.grid.set(k, b); else ix.grid.delete(k); cloned.add(k); } } }
   ix.big = prev.big.filter((x) => !touched.has(x));
-  for (const id of touched) { if (E[id] === undefined || offChain(st, id)) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
+  for (const id of touched) { if (E[id] === undefined || unindexed(st, id)) continue; const g = geoOf(st, id); if (!g?.q) continue; ix.rec.set(id, g); fileIx(ix, id, g, cloned); }
   // the children map is rebuilt (lazily) only when a parent link changed
   if (added.length || removed.length || changed.some((id) => P[id]?.c.parent?.to !== E[id]?.c.parent?.to)) ix.kids = null;
   return ix;
@@ -121,8 +123,8 @@ export function indexAudit(w) {
       order: Object.keys(st.entities).filter((id) => x.order.has(id)).sort((a, b) => x.order.get(a) - x.order.get(b)).join(), boxes: [...x.rec.entries()].map(([id, g]) => `${id}:${JSON.stringify(g.q)}`).sort().join() });
     const a = norm(ix), b = norm(fresh); for (const k of Object.keys(a)) if (a[k] !== b[k]) out.push(k);
     if (JSON.stringify([...kidsMap(st).entries()]) !== JSON.stringify([...kidsOfIx({ kids: null }, st.entities).entries()])) out.push("kids");
-    // a switched-off thing is out of the index (buildIx), so it's expected there with no box and no surfaces
-    for (const id of Object.keys(st.entities)) { const box = offChain(st, id) ? null : aabb(st, id);
+    // a switched-off or collision-off thing is out of the index (buildIx), so it's expected there with no box and no surfaces
+    for (const id of Object.keys(st.entities)) { const box = unindexed(st, id) ? null : aabb(st, id);
       if (JSON.stringify(ix.rec.get(id)?.box ?? null) !== JSON.stringify(box) || JSON.stringify(ix.rec.get(id)?.surfs ?? []) !== JSON.stringify(box ? surfacesOf(st, id) : [])) { out.push(`geometry of ${id}`); break; } }
     return out; } finally { CTX.cat = prevCat; }
 }

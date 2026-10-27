@@ -40,7 +40,7 @@ const newer = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i 
 export const stampOf = (name) => Object.keys(ENGINES).filter((k) => engineName(k) === name).reduce((best, k) => (best === null || newer(k, best) ? k : best), null);
 
 // P7: what releases a body (or reseats a collider) is WHICH COMPONENT changed, never which verb carried it.
-const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "disabled"]);
+const PHYSICAL = new Set(["transform", "parent", "model", "mesh", "physics", "collider", "disabled"]);   // collider: its enabled is solidity (solidOff)
 // the writes that end a hold, as the authority's commit() reads them (writes.js): a transform, a parent or a whole delete of the
 // thing, or switching it off (disabled set true; setting it false ends nothing). Switching off or deleting a thing also ends the
 // holds of whatever hangs under it. Keep these two in step with commit()
@@ -84,6 +84,8 @@ function fixedSet(st) {
 }
 // switched off (componentspec disabled), itself or anything it hangs under: no body, no collider
 export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
+// collision off (componentspec collider.enabled): not solid to anything, itself only (its children keep their own)
+export const solidOff = (c) => !!c && c.collider !== PURGED && c.collider?.enabled === false;
 // a purged physical value is no body: the strict fold holds PURGED there, and this layer follows it (review of #260)
 const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === PURGED);
 // a place the record lost: a transform or parent purged, or stripped to its commit with no purge naming it (§12), on the
@@ -96,15 +98,15 @@ export function lostPlace(st, id) {
 }
 // a body this layer's engine lacks only because a purge took what it is read from (purgedPhysical, lostPlace): the engine
 // that wrote the log had it, so what this one computes beside it is unknown (review of #260). A thing that would be no
-// body either way (physics none, switched off, a model that isn't a collider) is no loss
+// body either way (collision off, switched off, a model that isn't a collider) is no loss
 function lostBody(st, id, models) {
   const e = st.entities[id], c = e?.c; if (!c || !(purgedPhysical(c) || lostPlace(st, id))) return false;
-  if (c.physics !== PURGED && c.physics?.kind === "none") return false;
+  if (solidOff(c)) return false;
   if (offChain(st, id)) return false;
   return c.model === PURGED || c.physics === PURGED || !!(models[c.model] || engineBox(c.physics) || sphereShape(c.physics));
 }
 function engineEntity(st, id, models = MODELS, fixed = null) {
-  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || e.c.physics?.kind === "none") return null;
+  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || solidOff(e.c)) return null;
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)

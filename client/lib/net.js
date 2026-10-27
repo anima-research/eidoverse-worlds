@@ -423,6 +423,7 @@ export function sendPose(now) {
   // full-body orientation and a locomotion bag (docs/UNDERWATER-PRESENCE.md): presence only, optional, never authority
   if (s.q) pose.q = s.q;
   if (s.locomotion) pose.locomotion = s.locomotion;
+  if (s.climb) pose.climb = s.climb;   // on a climb route: {host, progress} (shared/climb.js), resolved by every receiver through the host
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
   if (s.pose !== undefined) pose.pose = s.pose;

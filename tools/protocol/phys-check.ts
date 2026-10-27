@@ -794,7 +794,7 @@ function playground(name) {
     ["a purged model, the collider the catalogue's (no stamped shape)", (W) => call(W, "rowan", "set", { id: "table-1", component: "model", value: "table" }), (L) => unstamped(L, "table-1")],
     ["a purged physics value, its shape stamped and no catalogue model", (W) => { call(W, "rowan", "create", { id: "slab", components: { transform: { pos: [-3, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static", shape: [[-0.3, 0, -0.3], [0.3, 0.4, 0.3]] } } });
       return call(W, "rowan", "set", { id: "slab", component: "physics", value: { kind: "static", shape: [[-0.3, 0, -0.3], [0.3, 0.4, 0.3]] } }); }],
-    ["a collider under a thing whose place was purged (the thing itself no body)", (W) => { call(W, "rowan", "create", { id: "stand", model: "table", components: { physics: { kind: "none" } }, place: { at: [-3, 3] } });
+    ["a collider under a thing whose place was purged (the thing itself no body)", (W) => { call(W, "rowan", "create", { id: "stand", model: "table", components: { collider: { enabled: false } }, place: { at: [-3, 3] } });
       call(W, "rowan", "create", { id: "box", model: "crate", components: { parent: { to: "stand" } }, place: { on: "stand" } });
       return call(W, "rowan", "set", { id: "stand", component: "transform", value: { pos: [-3, 0, 3.2], q: [0, 0, 0, 1], scale: [1, 1, 1] } }); }],
   ];
@@ -802,10 +802,10 @@ function playground(name) {
     const L = shape ? shape(log(W)) : log(W); const last = L[L.length - 1]; const P = purgeSet(L, seq); const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000);
     ok(w.ok && L[seq].kind === "change" && base.checks.disagree.length === 0 && base.checks.agree > 0 && v.checks.disagree.length === 0 && v.checks.agree === 0,
       `U7n ${what}: the epoch after it is unknown, so its digests are neither judged nor disagreements`, { w: w.ok ?? w.refused, seq, shape: shape ? JSON.stringify(fold(L).entities["table-1"]?.c.physics) : null, base: base.checks, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2) }); });
-  // …and a purge that takes nothing the engine had leaves the epoch known: a thing with physics none, one switched off,
+  // …and a purge that takes nothing the engine had leaves the epoch known: a thing with collision off, one switched off,
   // and one with no collider at all. A wrong digest after them is still reported
   const W = playground("purge-no-loss");
-  call(W, "rowan", "create", { id: "mat", model: "rug", components: { physics: { kind: "none" } }, place: { at: [3, 3] } });
+  call(W, "rowan", "create", { id: "mat", model: "rug", components: { collider: { enabled: false } }, place: { at: [3, 3] } });
   call(W, "rowan", "create", { id: "spare", model: "crate", place: { at: [-3, 3] } }); call(W, "rowan", "set", { id: "spare", component: "disabled", value: true });
   call(W, "rowan", "create", { id: "note", components: { transform: { pos: [3, 0, -3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: "a note" } });
   const seqs = ["mat", "spare", "note"].map((id, i) => { const r = call(W, "rowan", "set", { id, component: "transform", value: { pos: [3 - i, 0, -2], q: [0, 0, 0, 1], scale: [1, 1, 1] } }); return r.ok ? log(W).length - 1 : -1; });

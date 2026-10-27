@@ -65,7 +65,7 @@ for(const name of Object.keys(meta.groups)){
   comp('sockets',{passenger:{pos:convert([1,-1.8,-5]),pose:'sitchair'}});
  }
 }
-const {batch,deferred,mapped}=requestsOf(records);
-const manifest={version:2,source:meta.world,coordinateSystem:corrected?'metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)':'metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)',files,requests:[batch],mapped,deferred};
+const {batch,deferred,mapped,unmapped}=requestsOf(records);
+const manifest={version:2,source:meta.world,coordinateSystem:corrected?'metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)':'metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)',files,requests:[batch],mapped,unmapped,deferred};
 writeFileSync(join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({manifest:join(output,'manifest.json'),files:files.length,ops:batch.args.ops.length,deferred:deferred.length,bytes:files.reduce((n,f)=>n+f.bytes,0)}));

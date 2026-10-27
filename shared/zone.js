@@ -86,16 +86,16 @@ export function fogSlots({ waters = [], airs = [] } = {}, { maxWater = MAX_WATER
 }
 
 // the components and change kinds a rebuild of the bodies reads (client/lib/watervolumes.js; state.js's events)
-const READS = new Set(["zone", "water", "water-exclusion", "disabled", "environment"]);
-/** Does a world change touch what zonesOf read? `entities`: the view's (state.st.entities); `owners`: the ids that held a body,
- *  an exclusion or an environment at the last build (a removed one still counts). */
+const READS = new Set(["zone", "water", "water-exclusion", "disabled"]);
+/** Does a world change touch what zonesOf read? `entities`: the view's (state.st.entities); `owners`: the ids that held a body
+ *  or an exclusion at the last build (a removed one still counts). */
 export function zoneChangeTouches(ev, entities, owners) {
   if (ev?.type === "hydrated" || ev?.type === "reset") return true;
   if (ev?.type === "world") return ev.key === "water";
   if (ev?.type !== "change") return false;
   const { what, comp: name } = ev; if (what === "comp" && !READS.has(name)) return false;
   const id = ev.id; if (owners.has(id)) return true;
-  const c = entities?.[id]; if (c && (c.zone || c.water || c["water-exclusion"] || c.environment)) return true;
+  const c = entities?.[id]; if (c && (c.zone || c.water || c["water-exclusion"])) return true;
   for (const v of owners) for (let p = entities?.[v]?.parent?.to, n = 0; p && n < 33; p = entities?.[p]?.parent?.to, n++) if (p === id) return true;   // a carrier above one
   return false;
 }
@@ -109,4 +109,24 @@ export function foldOfView(view) {
   }
   if (view?.water) entities["@world"] = { c: { water: view.water } };
   return { entities };
+}
+
+/** The authored look: {gradient (@world.sky.gradient, OMI_environment_sky; bottom absent = horizon) | null, sun | null}. The sun
+ *  is the first directional light thing by id (componentspec light): {id, color, intensity, toward (unit, world: its +Z)}. */
+export function lookOf(st, sky, { poseOf = (id) => worldPose(st, id) } = {}) {
+  const g = sky?.gradient, rgb = (c) => v3(c) && c.every((x) => x >= 0 && x <= 1);
+  const gradient = g && rgb(g.top) && rgb(g.horizon) ? { top: [...g.top], horizon: [...g.horizon], bottom: rgb(g.bottom) ? [...g.bottom] : [...g.horizon] } : null;
+  let sun = null;
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const L = st.entities[id].c.light;
+    if (id === "@world" || L?.kind !== "directional" || offChain(st, id)) continue;
+    const sunPose = poseOf(id); if (!sunPose) continue;
+    const t = qRotate(sunPose.q ?? [0, 0, 0, 1], [0, 0, 1]);   // it shines along its -Z, so the sun stands along its +Z
+    sun = { id, color: Number.isInteger(L.color) ? L.color : 0xffffff, intensity: fin(L.intensity) ? L.intensity : 3, toward: t }; break; }
+  return { gradient, sun };
+}
+/** Does a world change touch lookOf? @world's sky, any light, the sun thing itself (`sunIds`: the last look's), or a reset. */
+export function lookChangeTouches(ev, sunIds) {
+  if (ev?.type === "hydrated" || ev?.type === "reset") return true;
+  if (ev?.type === "world") return ev.key === "sky";
+  return ev?.type === "change" && (ev.comp === "light" || ev.comp === "disabled" || ev.what === "born" || sunIds.has(ev.id));
 }

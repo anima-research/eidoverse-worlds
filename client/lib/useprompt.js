@@ -88,6 +88,6 @@ export async function useNearest() {
 
 registerAction({ id: 'body:use', key: 'E', title: 'use what\'s in front of you (open a door, ring a bell)', keywords: ['use', 'open', 'interact', 'press'], icon: 'hand', group: 'body', run: () => { void useNearest(); } });
 bus.on('key', (e) => {
-  if (e.code !== 'KeyE' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || hooks?.editing?.() || hooks?.busy?.()) return;
+  if (e.code !== 'KeyE' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.worldHandled || hooks?.editing?.() || hooks?.busy?.()) return;   // worldHandled: a climb took the E (controller.js)
   void useNearest();
 });

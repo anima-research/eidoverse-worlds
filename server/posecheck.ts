@@ -6,6 +6,7 @@
 import { clampBodyScale, clampPlateY } from "../shared/presencewire.js";
 import { cleanPoses } from "../shared/wingpresence.js";
 import { isBodyMode } from "../shared/bodymode.js";
+import { climbWire } from "../shared/climb.js";
 
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const finArr = (a: unknown, n: number) => Array.isArray(a) && a.length === n && a.every(fin);
@@ -56,6 +57,8 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   if ("wingsFolded" in p && typeof p.wingsFolded !== "boolean") delete p.wingsFolded;
   // bodyMode (R 10-17: the body's self-declared mode, stand | sit | lie | swim | fly | fall): the grammar only; it grants nothing
   if ("bodyMode" in p && !isBodyMode(p.bodyMode)) delete p.bodyMode;
+  // climb: {host, progress} on a climb route (shared/climb.js): a bad one costs the field
+  if ("climb" in p) { const c = climbWire(p.climb); if (c) p.climb = c; else delete p.climb; }
   // a sample's capture time (authority clock, ms) and its sender's count (spec/PHYSICS.md §5.1): bad ones cost the field
   if ("t" in p && !fin(p.t)) delete p.t;
   if ("seq" in p && !(Number.isInteger(p.seq) && (p.seq as number) >= 0 && (p.seq as number) <= Number.MAX_SAFE_INTEGER)) delete p.seq;

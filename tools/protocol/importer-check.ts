@@ -16,6 +16,8 @@
 //   IM-I10  the remembered places: a write that fails is reported, not counted; an unreadable file and dropped names are said
 //   IM-I7   lines of the old log that don't parse are counted, in the report and in the result
 //   IM-I15  a deferred feature removed on the old server (comp null, or the thing removed) no longer refuses
+//   IM-C1/2 main #248's collision toggle → collider.enabled; its climb routes → climb children (the rest imported, listed)
+//   IM-E1   main #248's environment → @world.spawn/bounds/sky.gradient + floor, sun and particles things; the rest imported, listed
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
 //   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
@@ -215,15 +217,15 @@ row("IM-I7", () => {
 
 // ---- IM-I15: the deferred refusal's remedy works ----
 row("IM-I15", () => {
-  const route = { routes: [{ name: "ladder", path: [[0, 0, 0], [0, 3, 0]], radius: 0.5, speed: 1 }] };
-  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: route } }];
-  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: null } }]);
+  const route = { helm: [0, 0, 0], speed: 4 };
+  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: route } }];
+  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: null } }]);
   const L2 = seqd([...set, { actor: "Ann", verb: "remove", args: { id: "pool" } }]);
   const L3 = seqd(set);
-  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: route } }]);
+  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: route } }]);
   const d = [L1, L2, L3, L4].map((L) => TV1.deferredFeatures(L));
   ok(d[0].length === 0 && d[1].length === 0 && d[2].length === 1 && d[2][0].seq === 2 && d[3].length === 1 && d[3][0].seq === 4,
-    "IM-I15 a climb route removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
+    "IM-I15 a vehicle removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
 });
 
 // ---- IM-W: main #248's water volume and air boxes translate (zone + water / water-exclusion); traversal, vehicle, collision still refuse ----
@@ -255,8 +257,51 @@ row("IM-W3", () => {
     { actor: "Ann", verb: "comp", args: { id: "boat", type: "traversal", data: { routes: [] } } }, { actor: "Ann", verb: "comp", args: { id: "boat", type: "vehicle", data: { helm: [0, 0, 0] } } },
     { actor: "Ann", verb: "comp", args: { id: "boat", type: "collision", data: { enabled: false } } }]);
   const got = TV1.deferredFeatures(L).map((u: any) => u.component);
-  ok(JSON.stringify(got) === JSON.stringify(["traversal", "vehicle", "collision"]) && !("water" in TV1.DEFERRED) && !("air" in TV1.DEFERRED),
-    "IM-W3 water and air are no longer deferred; traversal, vehicle and collision still refuse the translation", got);
+  ok(JSON.stringify(got) === JSON.stringify(["vehicle"]) && JSON.stringify(Object.keys(TV1.DEFERRED)) === JSON.stringify(["vehicle"]),
+    "IM-W3 water, air, traversal and collision are no longer deferred; the vehicle still refuses the translation", got);
+});
+// ---- IM-C / IM-E: main #248's collision toggle, climb routes and environment, each to its home ----
+row("IM-C1", () => {
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "rock", lib: "r.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "rock", type: "collider", data: { shape: "box" } } },
+    { actor: "Ann", verb: "comp", args: { id: "rock", type: "collision", data: { enabled: false } } },
+    { actor: "Ann", verb: "spawn", args: { id: "post", lib: "p.glb", pos: [2, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "post", type: "collision", data: { enabled: true, layer: 3 } } }]);
+  const r = TV1.translate(L), T = r.final.translated;
+  ok(r.stats.divergences === 0 && JSON.stringify(T.rock.collider) === JSON.stringify({ shape: "box", enabled: false }) && !Object.keys(T.rock).some((k) => /collision/.test(k))
+    && T.post.collider === undefined && JSON.stringify(T.post["imported:collision"]) === JSON.stringify({ enabled: true, layer: 3 })
+    && JSON.stringify(r.stats.unmapped) === JSON.stringify([{ component: "collision", id: "post", fields: ["layer"], as: "post imported:collision" }]),
+    "IM-C1 collision {enabled: false} becomes collider {enabled: false} beside its shape; enabled: true is the default; anything else it said rides imported:collision and the report lists it", { rock: T.rock, post: T.post, unmapped: r.stats.unmapped });
+});
+row("IM-C2", () => {
+  const routes = [{ name: "hatch ladder", path: [[0, -3, -15], [0, -1.5, -15], [0, -1.7, -16.8]], radius: 1.6, speed: 1.25, grip: "rungs" }, { name: "rope", path: [[0, 0, 0], [0, 9, 0]], radius: 9, speed: 0.1 }, { name: "bad", path: [[0, 0, 0]] }];
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "sub", lib: "s.glb", pos: [0, -10, 0] } }, { actor: "Ann", verb: "comp", args: { id: "sub", type: "traversal", data: { routes } } }]);
+  const r = TV1.translate(L), T = r.final.translated, c0 = T[TV1.climbChildId("sub", 0)], c1 = T[TV1.climbChildId("sub", 1)];
+  ok(r.stats.divergences === 0 && TV1.deferredFeatures(L).length === 0 && c0?.parent?.to === "sub" && c0.label === "hatch ladder" && JSON.stringify(c0.climb) === JSON.stringify({ points: routes[0].path, reach: 1.6, speed: 1.25 })
+    && JSON.stringify(c0["imported:climb"]) === JSON.stringify({ grip: "rungs" }) && c1?.climb?.reach === 3 && c1.climb.speed === 0.3 && !T[TV1.climbChildId("sub", 2)]
+    && JSON.stringify(T.sub["imported:traversal"]) === JSON.stringify({ routes: [routes[2]] }) && !("traversal" in T.sub)
+    && r.stats.mapped?.some((m: any) => m.component === "traversal" && m.into.length === 2) && r.stats.unmapped?.some((u: any) => u.component === "traversal" && u.id === "sub"),
+    "IM-C2 each route becomes a child with climb {points (path), reach (radius, main's 0.3..3), speed (main's 0.3..4)} and label (name); a route no climb holds rides imported:traversal, listed", { c0, c1, sub: T.sub, mapped: r.stats.mapped, unmapped: r.stats.unmapped });
+});
+row("IM-E1", () => {
+  const env = { floor: -260, spawn: [-29, -25, 89], particles: { count: 1400, range: 16, size: 0.018, color: "#aec8b4" }, sky: { horizon: "#bedce6", zenith: "#338ac1", sunIntensity: 3, ambient: 1.5 }, bounds: { min: [-800, -250, -800], max: [800, 100, 800] }, fogDensity: 0.2 };
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "land", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "land", type: "environment", data: env } },
+    { actor: "Ann", verb: "spawn", args: { id: "zz", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "zz", type: "environment", data: { spawn: [1, 2, 3] } } }]);
+  const r = TV1.translate(L), T = r.final.translated, W = T["@world"];
+  const floor = T[TV1.envChildId("land", "floor")], sun = T[TV1.envChildId("land", "sun")], fx = T[TV1.envChildId("land", "particles")], sp2 = T[TV1.envChildId("zz", "spawn")];
+  const lin = (h: number) => [16, 8, 0].map((k) => { const x = ((h >> k) & 255) / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; });
+  const near = (a: number[], b: number[]) => a?.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-5);
+  const top = floor ? floor.transform.pos[1] + floor.mesh.size[1] * floor.transform.scale[1] : NaN;
+  const toward = sun ? (() => { const [x, y, z, w] = sun.transform.q; return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]; })() : [];
+  const d = Math.hypot(0.4, 0.8, 0.2);
+  ok(r.stats.divergences === 0 && JSON.stringify(W.spawn) === JSON.stringify({ pos: [-29, -25, 89] }) && JSON.stringify(W.bounds) === JSON.stringify(env.bounds)
+    && near(W.sky?.gradient?.top, lin(0x338ac1)) && near(W.sky?.gradient?.horizon, lin(0xbedce6)) && W.sky.gradient.bottom === undefined
+    && floor?.hidden === true && floor.mesh?.shape === "box" && Math.abs(top - -260) < 1e-9 && floor.transform.scale[0] * 200 === 1600 && !floor.parent
+    && sun?.light?.kind === "directional" && sun.light.color === 0xfff4df && sun.light.intensity === 3 && near(toward, [0.4 / d, 0.8 / d, 0.2 / d])
+    && fx?.parent?.to === "land" && JSON.stringify(fx.particles) === JSON.stringify({ effect: "dust", params: { count: 600, size: 0.018, area: 8 } })
+    && sp2?.["spawn-point"] && JSON.stringify(sp2.transform.pos) === "[1,2,3]" && !("environment" in T.land) && !Object.keys(T.land).some((k) => /^[^:]*\/environment/.test(k))
+    && JSON.stringify(T.land["imported:environment"]) === JSON.stringify({ sky: { ambient: 1.5 }, particles: { count: 1400, range: 16, color: "#aec8b4" }, fogDensity: 0.2 })
+    && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "environment")?.fields) === JSON.stringify(["sky.ambient", "particles.count, particles.range, particles.color", "fogDensity"]),
+    "IM-E1 environment: spawn → @world.spawn (a second one a spawn-point thing), bounds → @world.bounds, floor → a hidden mesh box whose top is the floor, as wide as the bounds, sky → @world.sky.gradient (linear) + a directional sun thing (main's defaults), particles → a dust child; ambient, clamped particle values and unknown keys ride imported:environment, each listed in the report",
+    { W: { spawn: W.spawn, bounds: W.bounds, sky: W.sky }, floor, sun, fx, sp2, land: T.land, unmapped: r.stats.unmapped });
 });
 const ZN = await import("../../shared/zone.js");
 row("IM-W4", () => {

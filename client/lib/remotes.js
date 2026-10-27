@@ -33,6 +33,7 @@ const BUF_MAX = 12;
 // where net.js and the body code have always found it.
 export { noteServerTime, serverNow } from './serverclock.js';
 import { serverNow } from './serverclock.js';   // a re-export binds no local name: this module's own frame loop needs it too
+import { climbAt } from './climb.js';
 
 /** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
  *  of an id bumps it, and async continuations validate record identity
@@ -464,6 +465,9 @@ export function updateRemotes(dt, now = performance.now()) {
         if (b.q) _qb.fromArray(b.q).normalize(); else _qb.setFromAxisAngle(_up, b.yaw ?? 0);
         r.avatar.root.quaternion.copy(_qa).slerp(_qb, k);
       } else r.avatar.root.rotation.set(0, (a.yaw ?? 0) + angleDelta(a.yaw ?? 0, b.yaw ?? a.yaw ?? 0) * k, 0);   // upright (a dismount from a tilted seat)
+      // on a climb route: {host, progress} through the host's live pose, so a moving carrier never leaves its climber (shared/climb.js)
+      if (b.climb) { const c = climbAt(a.climb?.host === b.climb.host ? { host: b.climb.host, progress: a.climb.progress + (b.climb.progress - a.climb.progress) * k } : b.climb);
+        if (c) { r.avatar.root.position.fromArray(c.pos); r.avatar.root.rotation.set(0, c.yaw, 0); } }
       r.avatar.locomotion = b.locomotion ?? null;
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt

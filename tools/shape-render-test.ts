@@ -229,8 +229,8 @@ await tryRow('CA', () => {
 // ===================================================================== sky: 19 → 14, radians, stamped fields refused, defaults in the registry
 await tryRow('SK', async () => {
   const K = COMPONENTS.sky;
-  const want = ['hours', 'rate', 'ts', 'tz', 'clouds', 'weather', 'weatherK', 'transition', 'azimuth', 'fog', 'exposure', 'ambient', 'forecast', 'override'];
-  check('SK1 sky has 14 fields (clock, dormantRated, sun, fill, world cut; weatherSeconds → transition)', keys(K.fields) === keys(Object.fromEntries(want.map((k) => [k, 1]))), Object.keys(K.fields));
+  const want = ['hours', 'rate', 'ts', 'tz', 'clouds', 'weather', 'weatherK', 'transition', 'azimuth', 'fog', 'exposure', 'ambient', 'forecast', 'override', 'gradient'];   // gradient: OMI_environment_sky (step 3a)
+  check('SK1 sky has 15 fields (gradient joined; clock, dormantRated, sun, fill, world cut; weatherSeconds → transition)', keys(K.fields) === keys(Object.fromEntries(want.map((k) => [k, 1]))), Object.keys(K.fields));
   check('SK1 …azimuth in radians (default π), defaults and enums in the registry, units written', K.units?.azimuth === 'rad' && K.defaults?.azimuth === Math.PI && K.defaults?.hours === 12 && K.defaults?.clouds === 'cumulus' && K.enums?.weather?.includes('storm') && K.enums?.clouds?.includes('cirrus') && K.units?.ts === 'ms' && K.units?.transition === 's', [K.units, K.defaults]);
   const W = scratchWorld('w2r-sky');
   let r = W.call('set', { id: '@world', component: 'sky', value: { hours: 9, ts: 5 } });

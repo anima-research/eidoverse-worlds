@@ -23,9 +23,13 @@ absorption, scatter, speed?, waves}` → a body (on its own thing when that has 
 or light and the box is centred on it, else a child at the centre; σ → `attenuationColor`
 e^−σ over 1 m; `speed` rides in `imported:water`); `air {boxes}` → one child per box,
 `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform.
-`traversal`, `vehicle` and `collision` are not carried yet: `import.ts` lists them and
-leaves them out, and `--apply` refuses while they remain. `environment` rides as
-`<world>/environment` until it maps to `@world`'s own fields.
+Each `traversal` route is a child with `climb {points, reach, speed}` and its name as
+`label`; `collision {enabled: false}` is `collider {enabled: false}`; `environment` goes
+to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, a hidden floor thing, a
+directional sun thing and a dust `particles` child, and what has no home (the sky's
+`ambient`, the particles' clamped count and range) rides `imported:environment`, listed
+under `unmapped`. The `vehicle` is not carried yet: `import.ts` lists it and leaves it
+out, and `--apply` refuses while it remains.
 
 The renderer supports four water bodies, sixteen pockets, and eight waves per body.
 Excess bodies and pockets produce a diagnostic and are inactive (the highest-priority
@@ -148,8 +152,7 @@ Run from the repo root with Bun. In the gate: `zone-water-check`, `water-vectors
 `water-import` (this manifest through `import.ts --dry`, a real authority, and `mediumOf`
 against main's `mediumAt`). `fog-mask-check.ts` runs the fog in headless Chromium on
 WebGL. The rest require Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`); the
-regression check also needs the scene imported and the climb routes, which wait for
-`traversal`:
+regression check also needs the scene imported (`--apply`, which waits for the vehicle):
 
 ```sh
 bun tools/protocol/zone-water-check.ts

@@ -232,7 +232,7 @@ await C("Z10", "the GPU fog's uniforms are the law's: each pocket's mask clears 
   const z = Z.zonesOf(s.st()), v = Z.waterVolumes(z), f = Z.fogSlots(v), lim = Z.fogSlots(v, { maxWater: 1 });
   const law = (slots: any) => slots.airs.map((a: any) => [{ id: "@world", priority: -Infinity }, ...slots.waters].reduce((m: number, w: any, i: number) => (W.excludes(a, w) ? m | (1 << i) : m), 0));
   const src = fs.readFileSync(path.join(ENGINE, "client/lib/watervolumes.js"), "utf8");
-  const reads = ["const fogFn", "export const dryAt", "const particleAlpha"].every((k) => { const i = src.indexOf(k); return i >= 0 && /clears\(/.test(src.slice(i, src.indexOf("\n});", i))); });
+  const reads = ["const fogFn", "export const dryAt"].every((k) => { const i = src.indexOf(k); return i >= 0 && /clears\(/.test(src.slice(i, src.indexOf("\n});", i))); });
   const o = { airs: f.airs.map((a: any) => a.id), masks: f.masks, law: law(f), lim: { waters: lim.waters.map((w: any) => w.id), masks: lim.masks }, writes: /fogSlots\(/.test(src) && /dryExtent\.array\[i\]\.set\([^)]*mask/.test(src), reads };
   return [o.airs.join() === "mid,named,sealevel" && o.masks.join() === "3,4,1" && o.law.join() === o.masks.join() && o.lim.waters.join() === "high" && o.lim.masks.join() === "1,2,1" && o.writes && o.reads, o]; });
 
