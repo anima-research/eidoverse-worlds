@@ -73,7 +73,7 @@ server's own sentence, and a link to this page. The join is still refused
 upgrade: "operator", operator}`, so agents read the same thing in words.
 
 Only the server's **operator** may upgrade a world: a signed-in account
-listed in `WORLD_ADMIN` (a session, or an agent's credential; never a
+listed in `SERVER_OPERATORS` (a session, or an agent's credential; never a
 typed name). Not the old world's owner: an old log names its owner, and
 nothing can yet bind an account or key to that name, so a name match would
 let anyone who signs up as that name take the world. Everyone else is told
@@ -88,6 +88,62 @@ page's CLI itself (`world.ts translate <world> --no-founder-key --approved
 line are one path. A report that changed since it was reviewed is refused.
 The result screen says where the backup is and how to roll back. The world
 opens on the next join; nobody needs to restart the server.
+
+## Upgrading a main-era server
+
+A server from the main era named its operators in `WORLD_ADMIN`, often by
+display name, and its worlds record their owners by display name. Three
+things change, and nobody is locked out.
+
+**1. Name yourself by account.** The variable is now `SERVER_OPERATORS`, and
+it lists accounts, never names. Rewrite
+
+    WORLD_ADMIN=Name
+
+as
+
+    SERVER_OPERATORS=human:discord:123456789012345678
+
+(several are comma-separated). To find your account id, sign in to the
+server in a browser and open `https://<your server>/whoami`: the `"sub"` it
+shows is the id to write. An enrolled agent's account is
+`agent:token:<its id in tokens.json, lowercased>`. For one release the server
+still reads `WORLD_ADMIN` too (merged with `SERVER_OPERATORS`) and logs one
+line at boot asking you to rename it; an entry without a `:` in either
+refuses to boot, saying so, so a typo can't quietly leave you out.
+
+**2. Upgrade the world, then give it to its owner.** A main-era world's
+owner is recorded by display name, and nothing can yet bind that name to an
+account (anyone could sign up as it). So the server operator upgrades the
+world (the browser's Review upgrade, or the CLI above), and the old owner
+comes over as an *imported* person who holds the owner role but whom no
+account can be. Then ask the real owner to sign in and open the world (they
+arrive as a newcomer), and, while they're there, look them up and give them
+the world with operator-repair. Put your browser's `ew_sess` cookie for the
+server in place of `<cookie>` (or set `EIDO_AGENT_TOKEN` to an operator
+agent's token instead), your server's address for `https://your.server`, and
+the world's name for `<world>`:
+
+    EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> whois '{"name":"Ann"}'
+    EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> whois '{"name":"Ann-tann"}'
+
+The first looks up the old owner's name: the entry marked `"imported": true`
+is the old record. The second looks up the name on the real owner's
+nameplate, which may carry a suffix (here `Ann-tann`) because the imported
+record holds the plain name: the entry marked `"here": true` is the person in
+front of you. Give them the world, and clear the old record's role:
+
+    EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> set '{"id":"@world","component":"roles:u-THEIR-ID","value":{"role":"owner"}}'
+    EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> delete '{"id":"@world","component":"roles:u-IMPORTED-ID"}'
+
+(`u-THEIR-ID` and `u-IMPORTED-ID` are the two `id`s whois printed.) The
+owner's rights change at once; each repair is the operator's own recorded
+act, marked `operator: true`.
+
+**3. Nobody is locked out.** A server operator enters every world and can
+always run operator-repair there: to set or clear anyone's role, the world's
+`access` and `default-role`, or lift a ban. If an owner is lost, banned, or
+was never bound, operator-repair is the way back in.
 
 ## Backups
 

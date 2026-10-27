@@ -17,6 +17,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
+| `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name refuses to boot. Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
 
 ## URLs
 

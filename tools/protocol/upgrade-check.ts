@@ -14,6 +14,8 @@
 //   US7  an agent (mcpl/agent.ts) refused at an old-format world says, in words, who can upgrade it and where the doc is
 //   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
 //   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
+//   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
+//        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -92,12 +94,13 @@ function linkedWorld(name: string) { const real = oldWorld(name); const to = pat
 // ================= US: the join refusal and the operator's upgrade, on a real server =================
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64);
+const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64);
 const sf = path.join(root, "sessions.json");
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP2]: { sub: "human:test:op2", name: "Otto", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
-  [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [ANN]: { sub: "human:test:ann", name: "Ann", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
@@ -164,6 +167,39 @@ let reviewed = "";
   const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });
   let said = ""; try { await ag.connect(); } catch (x) { said = String(x?.message ?? x); } try { ag.close(); } catch {}
   ok(/operator/.test(said) && /TRANSLATING-OLD-WORLDS\.md/.test(said) && /upgrade/.test(said) && /older/.test(said), "US7 an agent refused at an old-format world is told in words: saved by an older Eidoverse, a one-time upgrade only the server's operator can run, and where the doc is", said);
+}
+// ================= UD: the main-era upgrade section, its commands run as the doc writes them =================
+{ const doc = fs.readFileSync(path.join(ENGINE, "docs/TRANSLATING-OLD-WORLDS.md"), "utf8");
+  const sec = /^## Upgrading a main-era server\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(doc)?.[1] ?? "";
+  const LEGACY = "WORLD" + "_ADMIN";   // the migration note's old variable, spelled apart (hygiene role-words)
+  ok(new RegExp(`${LEGACY}=\\S+`).test(sec) && /SERVER_OPERATORS=\S+/.test(sec) && /\/whoami/.test(sec) && /locked out/.test(sec) && /display name/.test(sec),
+    "UD1 the doc has 'Upgrading a main-era server': the old variable=… becomes SERVER_OPERATORS=…, /whoami finds your account, the owner is a display name, nobody is locked out", sec.slice(0, 300));
+  const who = await (await fetch(`http://127.0.0.1:${port}/whoami`, { headers: { cookie: `ew_sess=${ANN}` } })).json().catch(() => ({}));
+  ok(who.sub === "human:test:ann", "UD2 /whoami (signed in) answers the account to list, as its sub", who);
+  // each documented call: EIDO_SESSION=… bun tools/operator-repair.ts <server> <world> <verb> ['<args>']
+  const calls = [...sec.matchAll(/^\s*EIDO_SESSION=\S+ bun tools\/operator-repair\.ts (\S+) (\S+) (\S+)(?: '(.*)')?$/gm)].map((m) => ({ verb: m[3], args: m[4] ?? "{}" }));
+  const d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: { id: "Ann", role: "owner" } }, { actor: "Ann", verb: "say", args: { text: "mine" } }]
+    .map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n");
+  const up = xlate("den");
+  const ann = await sock(ANN); ann.send({ type: "join", world: "den", id: "Ann", avatar: "", replica: true });
+  await tryUntil("Ann is in the upgraded den", () => ann.msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 8000, step: 50 });
+  const before = ann.msgs.find((m) => m.type === "snapshot")?.yourRights?.role;
+  const run = (verb: string, args: string, ids: Record<string, string>) => { let a = args; for (const [k, v] of Object.entries(ids)) a = a.split(k).join(v);
+    const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", `http://127.0.0.1:${port}`, "den", verb, a], { cwd: ENGINE, env: { ...process.env, EIDO_SESSION: OP, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+    let reply: any = {}; try { reply = JSON.parse(r.stdout.toString()); } catch { reply = { raw: r.stdout.toString() + r.stderr.toString() }; } return { code: r.exitCode, reply }; };
+  const shown = ann.msgs.find((m) => m.type === "snapshot")?.you ?? "?";   // her nameplate: the plain name is the imported record's
+  const looks = calls.filter((c) => c.verb === "whois").map((c) => run(c.verb, c.args, { "Ann-tann": shown })), give = calls.find((c) => c.verb === "set"), drop = calls.find((c) => c.verb === "delete");
+  const people = looks.flatMap((l) => l.reply.people ?? []);
+  const real = people.find((x: any) => !x.imported && x.here)?.id ?? "?", old = people.find((x: any) => x.imported && x.role === "owner")?.id ?? "?";
+  const found = { code: looks.length === 2 && looks.every((l) => l.code === 0) ? 0 : 1, reply: looks.map((l) => l.reply) };
+  const ids = { "u-THEIR-ID": real, "u-IMPORTED-ID": old };
+  const g = give ? run(give.verb, give.args, ids) : { code: -1, reply: {} }, x = drop ? run(drop.verb, drop.args, ids) : { code: -1, reply: {} };
+  await tryUntil("Ann's rights say owner", () => ann.msgs.some((m) => m.type === "your-rights" && m.rights?.role === "owner"), { ms: 5000, step: 50 }); ann.ws.close();
+  ok(up.code === 0 && before === "inhabitant" && found.code === 0 && real.startsWith("u-") && old.startsWith("u-") && g.code === 0 && x.code === 0
+    && ann.msgs.some((m) => m.type === "your-rights" && m.rights?.role === "owner") && x.reply?.after?.["@world"]?.[`roles:${old}`] === null,
+    "UD3 the doc's calls, as written: a main-era owner (a name) comes over as an imported identity; Ann signed in is a newcomer; whois finds both; operator-repair set gives Ann the world, delete clears the imported name's role",
+    { up: up.out.slice(-200), calls, before, found: found.reply, give: g, drop: x });
 }
 try { proc.kill(); } catch {}
 
