@@ -67,7 +67,7 @@ const M: Mutant[] = [
     find: "  if ((a as any).owner !== null) return", repl: "  if (false) return", suite: "inplace", rows: ["IP29"], expect: 20 },
   { id: "M6f", what: "the writer accepts a founder key for a translation (tier 0 filled with an unbound key)", file: "tools/protocol/import-v1/world.ts",
     find: "  if (founderKey !== undefined) throw new Error(`a translation takes no founder key:", repl: "  if (false) throw new Error(`a translation takes no founder key:", suite: "inplace", rows: ["IP29"], expect: 20 },
-  { id: "M7", what: "a deferred feature (a vehicle) is dropped quietly instead of refusing the translation", file: "tools/protocol/import-v1/world.ts",
+  { id: "M7", what: "a deferred feature (an air box on @world) is dropped quietly instead of refusing the translation", file: "tools/protocol/import-v1/world.ts",
     find: '    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,', repl: "    refused: null,", suite: "inplace", rows: ["IP26"], expect: 20 },
   { id: "M8", what: "governance not marked reserved: a log holding a sequencer entry is served", file: "server/livehost.ts",
     find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance (sequencer) entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },

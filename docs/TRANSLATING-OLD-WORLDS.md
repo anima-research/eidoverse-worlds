@@ -35,11 +35,12 @@ operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
 attested): provenance a reader checks against `log.original.jsonl`. The fold
 never reads it (§1).
 
-A world that uses a **deferred feature** — a water volume, an air box, a
-climb route, a vehicle, a collision toggle (`water`/`air`/`traversal`/
-`vehicle`/`collision` components on an entity, from main's #248/#254 merges;
-`water` on `@world` is the world's water level and is carried) — is
-**refused**, naming each use (component, entity, actor, seq); an approval
+Main's #248/#254 components (`water`/`air`/`traversal`/`vehicle`/`collision`/
+`environment` on an entity) are carried, each to its home (spec/PROTOCOL.md
+§14); the translator's DEFERRED table is empty. A world that uses a
+**deferred feature** — a water volume or an air box on `@world`, which has
+no frame to hold one (`water` on `@world` without one is the world's water
+level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
 It is translated in place: the world keeps its name, and the old log stays

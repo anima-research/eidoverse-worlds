@@ -272,17 +272,28 @@ export const DROPPED = {
 // never carries one of these quietly: a log that uses one is REFUSED at `translate`, naming the feature and where it was
 // used (deferredFeatures below), and the dry-run report lists them, so the owner decides with the loss in front of them.
 // Main's water volume and air boxes are carried (VOLUMES below), except on @world, which has no frame of its own to hold them.
-export const DEFERRED = {
-  vehicle:   { feature: "vehicle", since: "main #248", shape: "vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}" },
-};
+// Empty since step 3b (the vehicle is carried: CARRIED below); a volume on @world (ON_WORLD) is the one use still refused.
+export const DEFERRED = {};
 // main #248's climb routes, collision toggle and environment, each to its home (spec/PROTOCOL.md §14; DESIGN.md env-components)
 // Still @20: traversal and collision were refused at @20 (no translated log held one), and environment came only with them, in #248's water world
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
+  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds, floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
+export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
+/** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, left (no home: imported:vehicle)}; main's clamps */
+export function vehiclePartsOf(host, d) {
+  const v = d && typeof d === "object" && !Array.isArray(d) ? d : {}, v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  const { helm, exit, speed, turnRate, ...rest } = v, s = clampN(speed, 0.1, 15, 4);
+  const drive = { maxSpeed: s, turnRate: clampN(turnRate, 0.1, 2, 0.45), climbRate: s };   // main normalised (0, ½·rise, thrust) × speed: straight up ran at speed
+  const kid = v3(helm) ? [helmChildId(host), { transform: ID_POSE([...helm]), parent: { to: host }, socket: { name: "helm" }, label: "helm",
+    station: { action: "drive", input: { move: "drive" }, leaveBy: "menu", ...(v3(exit) ? { exit: [...exit] } : {}) } }] : null;   // main left the helm by its E alone: Space rises
+  const left = { ...rest, ...(kid ? {} : { helm }), ...(exit !== undefined && !v3(exit) ? { exit } : {}) };
+  return { drive, helm: kid, left };
+}
 export const envChildId = (host, part) => `${part}-${sha256(`eido-environment\0${host}\0${part}`).slice(0, 26)}`;
 const clampN = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
 /** main's traversal {routes} → {children: [[id, components]], left (routes no climb can hold: carried on the host)} */
@@ -396,6 +407,7 @@ export function carriedMappings(st) {
   const out = [], env = new Map(environmentPlan(st).map((x) => [x.id, x.parts]));
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
+    if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : [])] }); }
     if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
     if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] }); }
   return out;
@@ -406,6 +418,7 @@ export function unmappedOf(st) {
   for (const { id, host, parts } of environmentPlan(st)) { const f = parts.fields.filter(([, to]) => to === null).map(([k]) => k); if (f.length) out.push({ component: "environment", id, fields: f, as: `${host} imported:environment` }); }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
+    if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle` }); }
     if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); } }
   return out;
 }
@@ -554,7 +567,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (accountNamed(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       if ((k === "water" || k === "air") && v != null) { volumes[k] = v; continue; }   // main #248's: zone things (VOLUMES)
-      if ((k === "traversal" || k === "collision" || k === "environment") && v != null) { carried[k] = v; continue; }   // main #248's (CARRIED)
+      if ((k === "traversal" || k === "collision" || k === "environment" || k === "vehicle") && v != null) { carried[k] = v; continue; }   // main #248's (CARRIED)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
       c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : v; }
@@ -576,8 +589,10 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     else if (carried.collision !== undefined) c[keyed("imported", "collision")] = carried.collision;
     const climbs = carried.traversal !== undefined ? climbPartsOf(enc(id), carried.traversal) : { children: [], left: [] };
     if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
+    const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle) : null;
+    if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left; }
     out[enc(id)] = shapeRepaired(c);
-    for (const [cid, cc] of [...vol.children, ...climbs.children]) out[cid] = shapeRepaired(cc);
+    for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : [])]) out[cid] = shapeRepaired(cc);
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: newParticles(seeded) });

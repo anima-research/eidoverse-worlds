@@ -280,6 +280,9 @@ export function checkStation(v, at = 'station') {
   // anim (R 10-17: was pose): a pose or clip by name, or {clip, …} / a blend: the body grammar's own check, under its name
   if (v.anim !== undefined && (r = checkPose(v.anim, `${at}.anim`))) return r;
   if (isReservedAnimName(v.anim)) return bad('shape', `${at}.anim "${v.anim}" is reserved: it names ad-libbed anims, never a pose or clip`, 'name the pose or clip');
+  // input (opened for the helm): {move: 'drive'} on a drive station only (componentspec station.input; shared/drive.js)
+  if (v.input !== undefined && !(isObj(v.input) && Object.keys(v.input).length === 1 && v.input.move === 'drive' && v.action === 'drive'))
+    return bad('shape', `${at}.input is {move: 'drive'}, on a station whose action is 'drive' (the helm)`, "station {action: 'drive', input: {move: 'drive'}} on a socket child of a thing with drive");
   const { anim: _a, ...rest } = v;
   return checkBody(rest, at);
 }

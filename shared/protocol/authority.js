@@ -67,6 +67,8 @@ import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, occupyRights, 
 import { arrivalBox, body, buildEpoch, dist, gripPoint, gripOf, lawOf, pathBlocked, restampEngine, settleSim, shearFree, sizeOf, solidAt } from "./authority/physics.js";
 import { fliesIn, flyingWorld, gripHow, homeScale, launch, recentRests, releasePos, returnDue, returnHome, returnPlan, sameHome, secondGrip, shaped, shoveGate, snapTarget, stampHomes, stampResetHomes, vec3s } from "./authority/manipulate.js";
 import { EMBODIED_VERBS } from "./authority/bodyverbs.js";
+import { DRIVE_VERBS } from "./authority/drive.js";
+export { drives, hullHit } from "./authority/drive.js";
 import { CAPACITY, CAPACITY_CEILING, capacityCheck } from "./authority/capacity.js";
 export { CAPACITY, CAPACITY_CEILING } from "./authority/capacity.js";
 import { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck } from "./authority/checks.js";
@@ -223,7 +225,7 @@ function placeholders(w, verb, args) {
 // "muted": its refusal would put the muted words in the public log (review 10-07)
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "muted"]);
 const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
-const PRESENCE_VERBS = new Set(["move", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged
+const PRESENCE_VERBS = new Set(["move", "drive", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged
 const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;
 /** The argument names a refused request is logged with: the verb's own (VERBSPEC), sorted; the rest only counted. */
 function argNames(verb, args) {
@@ -329,6 +331,7 @@ function guess(s, opts) {
 // ---------- the verb table's bodies: authority/verbs.js ----------
 const VERBS = {
   ...EMBODIED_VERBS,
+  ...DRIVE_VERBS,
   ...BODY_VERBS,
   ...FOUNDING_VERBS,
   ...READ_VERBS,

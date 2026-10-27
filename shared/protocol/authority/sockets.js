@@ -42,7 +42,11 @@ export function socketRules(s, ids) {
     const under = kidsOf(id).find((k) => isSocketC(s.entities[k].c));
     if (under) return { code: "shape", reason: `${under} is a socket under the socket ${id}: a socket hangs on a thing, never on another socket`, fix: `parent ${under} to ${host}` };
     hosts.add(host); }
-  // (the one-driver rule went with station.input, reserved for later: shape audit 10-16)
+  // the helm (station.input {move: 'drive'}): one per host, and only on a host with drive (shared/drive.js)
+  const helmHosts = new Set(hosts); for (const id of ids) if (s.entities[id] && !isSocketC(s.entities[id].c)) helmHosts.add(id);
+  for (const h of helmHosts) { const helms = kidsOf(h).filter((k) => isSocketC(s.entities[k].c) && s.entities[k].c.station?.input?.move === "drive");
+    if (helms.length > 1) return { code: "shape", reason: `${h} has ${helms.length} helms (${helms.join(", ")}): one seat drives a thing`, fix: "keep input {move: 'drive'} on one; passengers' seats leave it out" };
+    if (helms.length && !bag(s.entities[h]?.c.drive)) return { code: "shape", reason: `${helms[0]} is a helm, but ${h} has no drive to steer`, fix: `set {id: '${h}', component: 'drive', value: {maxSpeed, turnRate}}, or take input off the station` }; }
   for (const h of hosts) { const socks = kidsOf(h).filter((k) => isSocketC(s.entities[k].c)); const byName = new Map();
     for (const k of socks) { const v = s.entities[k].c.socket; const n = v.name;
       if (byName.has(n)) return { code: "name-taken", reason: `${h} already has a socket called '${v.name}' (${byName.get(n)})`, fix: "a socket's name is unique among its host's sockets: give it another", taken: byName.get(n) };

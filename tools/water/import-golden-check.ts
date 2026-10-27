@@ -1,6 +1,6 @@
 // tools/water/import-golden-check.ts — upstream's public #248 world (world-data/water/manifest.json) through tools/water/import.ts
-// --dry: the zone / water / water-exclusion things it asks for, their parents and priorities, the features it holds back
-// (the vehicle), its climb routes, collision toggle and environment as mapped, the batch taken by a real authority, and shared/zone.js mediumOf on the result agreeing
+// --dry: the zone / water / water-exclusion things it asks for, their parents and priorities, the features it holds back (none now)
+// its vehicle (drive + a helm), climb routes, collision toggle and environment as mapped, the batch taken by a real authority, and shared/zone.js mediumOf on the result agreeing
 // with main's own mediumAt (main's shared/water.js at MAIN, from git) on main's reading of the same records.
 //   bun tools/water/import-golden-check.ts
 // @ts-nocheck
@@ -35,10 +35,10 @@ C("G2", "fifteen pockets, one per main air box: 8 under water-habitat, 7 under w
   pockets.length === 15 && sameBoxes("water-habitat") && sameBoxes("water-submarine") && pockets.every((a) => a.components.zone.priority === 1 && JSON.stringify(a.components["water-exclusion"]) === "{}"),
   pockets.map((a) => [a.components.parent?.to, a.components.zone]));
 const banned = creates.filter((a) => Object.keys(a.components).some((k) => /(^|\/)(traversal|vehicle|collision|air|environment)(:|$)/.test(k)));
-C("G3", "held back, and said so: the vehicle is listed as deferred and in no request; no `air`, `traversal`, `collision` or `environment` component goes out; the volumes, the three climb routes, the collision toggle and the environment are listed as mapped",
-  JSON.stringify(dry.deferred.map((u) => `${u.component}@${u.id}`)) === JSON.stringify(["vehicle@water-submarine"]) && banned.length === 0
+C("G3", "nothing held back: no use is deferred; no `air`, `traversal`, `vehicle`, `collision` or `environment` component goes out; the volumes, the three climb routes, the vehicle, the collision toggle and the environment are listed as mapped",
+  JSON.stringify(dry.deferred) === "[]" && banned.length === 0
   && JSON.stringify(dry.mapped.map((m) => [m.component, m.id, m.into.length])) === JSON.stringify([["water", "water-terrain", 1], ["air", "water-habitat", 8], ["air", "water-submarine", 7],
-    ["traversal", "water-habitat", 1], ["traversal", "water-platform", 1], ["collision", "water-scenery", 1], ["traversal", "water-submarine", 1], ["environment", "water-terrain", 6]]), { deferred: dry.deferred, banned: banned.map((a) => a.id), mapped: dry.mapped });
+    ["traversal", "water-habitat", 1], ["traversal", "water-platform", 1], ["collision", "water-scenery", 1], ["traversal", "water-submarine", 1], ["vehicle", "water-submarine", 2], ["environment", "water-terrain", 6]]), { deferred: dry.deferred, banned: banned.map((a) => a.id), mapped: dry.mapped });
 const climbs = creates.filter((a) => a.components.climb), mainRoute = (host) => manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "traversal" && v.args.id === host)?.args.data.routes[0];
 C("G3c", "each of main's three routes is a climb child of its host: main's path as points, radius as reach, speed, name as label; the scenery's collision toggle is collider {enabled: false}",
   climbs.length === 3 && ["water-habitat", "water-submarine", "water-platform"].every((h) => { const a = climbs.find((x) => x.components.parent?.to === `$${h}`), m = mainRoute(h);
@@ -48,7 +48,8 @@ const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === 
 C("G3e", "main's environment: @world.spawn and bounds as main's, @world.sky.gradient, @world.terrain flat at main's floor (no floor thing), a directional sun and a dust child; ambient and the particles' count and range (clamped) listed as unmapped",
   JSON.stringify(setOf("spawn")) === JSON.stringify({ pos: envMain.spawn }) && JSON.stringify(setOf("bounds")) === JSON.stringify(envMain.bounds) && !!setOf("sky")?.gradient
   && JSON.stringify(setOf("terrain")) === JSON.stringify({ kind: "flat", height: envMain.floor }) && !creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box") && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => a.components.particles?.effect === "dust" && a.components.parent?.to === "$water-terrain")
-  && JSON.stringify(dry.unmapped) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count, particles.range"], as: "water-terrain imported:environment" }]), { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
+  && JSON.stringify(dry.unmapped) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count, particles.range"], as: "water-terrain imported:environment" },
+    { component: "vehicle", id: "water-submarine", fields: ["minY", "maxY", "probes"], as: "water-submarine imported:vehicle" }]), { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
 
 // the batch through a real authority (a scratch world): placeholders minted, every op taken
 const D = await import(ENGINE + "shared/protocol/authority.js"), F = await import(ENGINE + "shared/protocol/fold.js"), Z = await import(ENGINE + "shared/zone.js");
@@ -69,6 +70,10 @@ const st = w.state(), id = (name) => r.ids?.[`$${name}`];
 C("G4", "a real authority takes the whole batch: every create and set, its placeholders minted, each pocket and the body under its minted host",
   r.ok && Object.keys(r.ids ?? {}).length === creates.length && st.entities[id(bodies[0].id.slice(1))]?.c.parent?.to === id("water-terrain") && by("water-submarine").every((a) => st.entities[id(a.id.slice(1))]?.c.parent?.to === id("water-submarine")),
   { refused: r.refused, ids: Object.keys(r.ids ?? {}).length });
+{ const DRV = await import(ENGINE + "shared/drive.js"), sub = id("water-submarine"), helm = DRV.helmOf?.(st, sub), m = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "vehicle").args.data;
+  C("G4v", "main's vehicle drives here: the authority took drive on the submarine (maxSpeed main's speed, climbRate the same) and its helm child where main's helm was, exit as main's",
+    !!helm && JSON.stringify(DRV.driveOf(st.entities[sub]?.c)) === JSON.stringify({ maxSpeed: m.speed, turnRate: m.turnRate, climbRate: m.speed, response: 1 / 1.5, throttle: false })
+    && JSON.stringify(st.entities[helm].c.transform.pos) === JSON.stringify(m.helm) && JSON.stringify(st.entities[helm].c.station.exit) === JSON.stringify(m.exit), { helm, drive: st.entities[sub]?.c.drive }); }
 { const SPX = await import(ENGINE + "shared/protocol/authority/spatial.js"), G = SPX.groundOf(st), down: any[] = [];
   const tp = call("move", { to: [300, -240, -300], teleport: true }); for (let y = -243.5; y > -260; y -= 3.5) down.push(call("move", { to: [300, y, -300] }));
   down.push(call("move", { to: [300, -260, -300] })); const under = SPX.supportBelow(w.state(), 300, -300, -250);

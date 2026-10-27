@@ -28,7 +28,8 @@ function occupantOf(w, st, who) { const s = w.presence.occupants?.[who];
   return s && typeof s.to === "string" && isSocketC(st.entities[s.to]?.c) && !offChain(st, s.to) ? s : null; }
 // `since`: the log's length when they sat (review r9 M1): what was written from then on isn't part of the seat's own motion they consented to
 // `near`: the body was tracked within sitting reach when it sat (review r10 M1): only then does leaving re-anchor the track at the seat
-const setOccupant = (w, who, to, near = false) => { (w.presence.occupants ??= {})[who] = { to, since: w.entries.length, ...(near ? { near: true } : {}) }; w.presenceDirty = true; };
+// `t`: when they sat, on the speed track's clock (a helm's lease is paced from it: shared/protocol/authority/drive.js)
+const setOccupant = (w, who, to, near = false) => { (w.presence.occupants ??= {})[who] = { to, since: w.entries.length, t: w.pace ? w.pace() : w.now(), ...(near ? { near: true } : {}) }; w.presenceDirty = true; };
 const clearOccupant = (w, who) => { if (w.presence.occupants?.[who]) { delete w.presence.occupants[who]; w.presenceDirty = true; } };
 // Leaving a seat is presence, like arriving (scars r9 M2): a seated client sends no steps, so the authority's track of the
 // body is where it boarded. When the seat lets them go (vacated, the socket removed or switched off, or their own first

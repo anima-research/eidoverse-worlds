@@ -323,6 +323,15 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   the host's live pose by every receiver, never a world pose. Absent `face`, a
   climber faces along the route's run, and a route straight up faces the
   host's +z. shared/climb.js is the one reader.
+- **Drive** (shared/drive.js; the lease in shared/protocol/authority/drive.js): the hull carries `drive {maxSpeed m/s,
+  turnRate rad/s, climbRate? m/s, response? s, throttle?}` (OMI_vehicle_body's `maxSpeed` and `useThrottle`; the rest
+  ours), forward its +Z; its helm is a socket child with `station {action: 'drive', input: {move: 'drive'}}` (input lives
+  on the seat only; one helm per hull, on a hull with drive). Taking the helm (`use … drive`; `station.who` and the lock
+  gate it) leases the hull to its occupant (Roblox network ownership): their client steps it kinematically and sends
+  `drive {id, pos, q}` (presence, relayed only from the helm); the authority checks each step against the spec (with
+  slack) and the hull's own collider against what's solid, answering a refusal with the pose that stands. Only the last
+  accepted pose is written, as the system's act `drive-commit {id, driver, why}`: on getting up, every 5 s, and when the
+  steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). A passenger can't take a held helm.
 - **Arrivals and falling out** (shared/spawn.js): `@world.spawn` gains `yaw`;
   `spawn-point {title?, team?, group?}` on a thing is another arrival place
   (OMI_spawn_point), facing its rotation. The arrival taken: `@world.spawn` when
@@ -936,7 +945,7 @@ Only what the asker could have written themselves, on what they are writing anyw
 | a deletion's reference clears (§4), and their restoration by its undo | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | a deletion's set-down of unparented things resting on what it removes | the asker's change | the asker | no rights, locks or keys (shape checks) | `followUps` |
 | occupants set down or dropped when a host's geometry changes | its own act `resettle {hosts, occupants, asked}` (`riders` in entries before 10-17), caused by the asker's act, and its change | `system` | the system's capability, scoped to those occupants | the actor |
-| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles | their own act and change | `system` | the system's capability | the actor |
+| settle, return-lost, return-held, restamp-engine, lift-sockets, repair-shapes, expire-roles, drive-commit | their own act and change | `system` | the system's capability | the actor |
 | components and fields renamed before release (§4), by the explicit `repair` command (never at load) | its own act `rename-components {renamed, why, failed?}` and its change | `system` | the system's capability, per thing | the actor |
 | a physics rest | its own change, caused by the launch | `sim` | the rest capability | the actor |
 | stamps on what the asker is writing (a physics shape, a home, a media or model hash; a home for a reset's target) | the asker's change | the asker | the asker's rights (a target they may not edit refuses the write) | no: they are the asker's |
@@ -1419,9 +1428,14 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   a directional `light` thing (main's sun, defaults included), `particles` a `particles {effect: 'dust'}` child. What has
   no home (the sky's `ambient`, a value an effect clamps, an unknown key) rides `imported:<component>` on its thing and
   is listed under the report's `unmapped`.
-- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a vehicle
-  (`vehicle` on an entity), or a water volume or air box on `@world` (`water` on `@world` without one is the world's
-  water level and is carried). No approval overrides the refusal. Carried
+- **Main's vehicle is carried**: `vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}` is `drive {maxSpeed: speed,
+  turnRate, climbRate: speed}` on its thing (main's clamps) and a helm child, a socket at `helm` with `station {action:
+  'drive', input: {move: 'drive'}, exit}`; `minY`, `maxY` and `probes` ride `imported:vehicle`, listed under `unmapped`
+  (vertical limits come from the medium and colliders, collision from the hull's own collider). Driving is not
+  bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
+- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume
+  or air box on `@world`, which has no frame to hold one (`water` on `@world` without one is the world's water level and
+  is carried). No approval overrides the refusal. Carried
   inert as `imported:<name>` they would change the world in a way that matters: a pool nobody can swim in, a ladder nobody
   can climb, a car nobody can drive, a wall the old world let people through. A translated world would look whole and
   play broken, so the translation waits until this protocol carries each feature, rather than translating a world that

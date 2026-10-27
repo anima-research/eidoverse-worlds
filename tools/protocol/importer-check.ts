@@ -19,6 +19,7 @@
 //   IM-C1/2 main #248's collision toggle → collider.enabled; its climb routes → climb children (the rest imported, listed)
 //   IM-E1   main #248's environment → @world.spawn/bounds/sky.gradient/terrain (flat at the floor) + sun and particles things; the rest imported, listed
 //   IM-E2   a floor where the world already has a terrain: the terrain kept, the floor listed as the conflict
+//   IM-V1   main #248's vehicle → drive on its host + a helm child (station {action: 'drive', input: {move: 'drive'}, exit}); the rest imported, listed
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
 //   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
@@ -218,15 +219,15 @@ row("IM-I7", () => {
 
 // ---- IM-I15: the deferred refusal's remedy works ----
 row("IM-I15", () => {
-  const route = { helm: [0, 0, 0], speed: 4 };
-  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: route } }];
-  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: null } }]);
-  const L2 = seqd([...set, { actor: "Ann", verb: "remove", args: { id: "pool" } }]);
+  const route = { boxes: [{ center: [0, 0, 0], size: [2, 2, 2] }] };   // an air box on @world: the one use still deferred (no frame to hold it)
+  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "@world", type: "air", data: route } }];
+  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "@world", type: "air", data: null } }]);
+  const L2 = seqd([...set, { actor: "Ann", verb: "remove", args: { id: "@world" } }]);
   const L3 = seqd(set);
-  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "vehicle", data: route } }]);
+  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "@world", type: "air", data: null } }, { actor: "Ann", verb: "comp", args: { id: "@world", type: "air", data: route } }]);
   const d = [L1, L2, L3, L4].map((L) => TV1.deferredFeatures(L));
   ok(d[0].length === 0 && d[1].length === 0 && d[2].length === 1 && d[2][0].seq === 2 && d[3].length === 1 && d[3][0].seq === 4,
-    "IM-I15 a vehicle removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
+    "IM-I15 an air box on @world removed later (comp null, or removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
 });
 
 // ---- IM-W: main #248's water volume and air boxes translate (zone + water / water-exclusion); traversal, vehicle, collision still refuse ----
@@ -258,8 +259,22 @@ row("IM-W3", () => {
     { actor: "Ann", verb: "comp", args: { id: "boat", type: "traversal", data: { routes: [] } } }, { actor: "Ann", verb: "comp", args: { id: "boat", type: "vehicle", data: { helm: [0, 0, 0] } } },
     { actor: "Ann", verb: "comp", args: { id: "boat", type: "collision", data: { enabled: false } } }]);
   const got = TV1.deferredFeatures(L).map((u: any) => u.component);
-  ok(JSON.stringify(got) === JSON.stringify(["vehicle"]) && JSON.stringify(Object.keys(TV1.DEFERRED)) === JSON.stringify(["vehicle"]),
-    "IM-W3 water, air, traversal and collision are no longer deferred; the vehicle still refuses the translation", got);
+  ok(JSON.stringify(got) === JSON.stringify([]) && JSON.stringify(Object.keys(TV1.DEFERRED)) === JSON.stringify([]),
+    "IM-W3 water, air, traversal, vehicle and collision are no longer deferred: DEFERRED is empty (only a volume on @world, which has no frame, still refuses)", got);
+});
+row("IM-V1", () => {
+  const veh = { helm: [0, -1.7, -2.1], exit: [0, -1.7, -3.2], speed: 4, turnRate: 0.4, minY: -230, maxY: -4, probes: [[0, 0, 0], [2, 0, -10]] };
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "sub", lib: "s.glb", pos: [26, -18, 60], yaw: 1 } }, { actor: "Ann", verb: "comp", args: { id: "sub", type: "vehicle", data: veh } },
+    { actor: "Ann", verb: "spawn", args: { id: "raft", lib: "r.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "raft", type: "vehicle", data: { helm: [0, 0.5, 0], speed: 99, turnRate: 0 } } }]);
+  const r = TV1.translate(L), T = r.final.translated, h = T[TV1.helmChildId?.("sub")], h2 = T[TV1.helmChildId?.("raft")];
+  ok(r.stats.divergences === 0 && JSON.stringify(T.sub?.drive) === JSON.stringify({ maxSpeed: 4, turnRate: 0.4, climbRate: 4 }) && !("vehicle" in (T.sub ?? {}))
+    && JSON.stringify(T.sub["imported:vehicle"]) === JSON.stringify({ minY: -230, maxY: -4, probes: veh.probes })
+    && h?.parent?.to === "sub" && h.socket?.name === "helm" && JSON.stringify(h.transform?.pos) === JSON.stringify(veh.helm) && h.station?.action === "drive" && JSON.stringify(h.station.input) === JSON.stringify({ move: "drive" }) && h.station.leaveBy === "menu" && JSON.stringify(h.station.exit) === JSON.stringify(veh.exit)
+    && JSON.stringify(T.raft?.drive) === JSON.stringify({ maxSpeed: 15, turnRate: 0.1, climbRate: 15 }) && h2 && h2.station.exit === undefined
+    && r.stats.mapped?.some((m: any) => m.component === "vehicle" && m.id === "sub" && m.into.length === 2)
+    && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "vehicle" && u.id === "sub")?.fields) === JSON.stringify(["minY", "maxY", "probes"]),
+    "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY, maxY and probes ride imported:vehicle, listed under unmapped",
+    { sub: T.sub, h, raft: T.raft, h2, mapped: r.stats.mapped, unmapped: r.stats.unmapped });
 });
 // ---- IM-C / IM-E: main #248's collision toggle, climb routes and environment, each to its home ----
 row("IM-C1", () => {

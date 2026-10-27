@@ -16,7 +16,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
@@ -312,7 +312,7 @@ export class WorldLog {
     if (this.retired) return;
     if (this.live.state().status !== "ok") return;
     const from = this.live.entries.length; const held = this.holdsKey();
-    try { authoritySettle(this.live); }
+    try { authoritySettle(this.live); authorityDrives(this.live); }
     finally { if (this.live.entries.length > from) this.afterWrite(from); if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); }
   }
   /** Someone arrived or left: scripts that listen for enter / leave hear it (by their identity). */

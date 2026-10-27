@@ -210,7 +210,7 @@ r = W.sendAll(cplan({ 'sockets.back|anchor': 'feet', 'sockets.back|leaveBy': 'me
 const back = bodyOf(carSocks().back.body);
 const backKid = Object.keys(W.state().entities).find((k) => W.state().entities[k].c.socket?.name === 'back');
 check('…the planner writes them and the door takes them, as the socket child\'s station', r.ok && back.anchor === 'feet' && back.leaveBy === 'menu' && W.state().entities[backKid]?.c.station?.anchor === 'feet', [r.refused, carSocks().back]);
-r = W.call('set', { id: 'car', component: 'sockets', value: { ...carSocks(), back: { ...carSocks().back, body: { ...carSocks().back.body, input: { look: 'locked' } } } } });
+r = W.call('set', { id: 'car', component: 'sockets', value: { ...carSocks(), back: { ...carSocks().back, body: { ...carSocks().back.body, look: { yaw: [-30, 30] } } } } });
 check('…a reserved key written through the map is refused as reserved', r.refused?.code === 'reserved', r.refused);
 r = W.sendAll(cplan({ 'sockets.back|anchor': 'root', 'sockets.back|leaveBy': 'any' }).ops);
 check('…and a default: leaveBy any leaves the key out; the anchor is written down (a station is materialized)', r.ok && carSocks().back.body.anchor === 'root' && carSocks().back.body.leaveBy === undefined, carSocks().back);

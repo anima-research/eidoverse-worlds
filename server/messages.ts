@@ -380,6 +380,13 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const scale = Array.isArray(msg.scale) && msg.scale.length === 3 && msg.scale.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0 && n < 1000) ? msg.scale : null;   // a scrubbed size
     c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), ...(scale ? { scale } : {}), ...(msg.end === true ? { end: true } : {}), by: c.id }, c);
   },
+  "drive": ({ c, ws }, msg) => {
+    // a hull's pose from its helm: presence like drag, gated on sitting at the helm (never on build rights); the authority checks it (shared/protocol/authority/drive.js)
+    if (!c.world || c.spectator || typeof msg.id !== "string") return;
+    const r: any = c.world.log!.requestSync(actorIdOf(c), "drive", { id: msg.id, pos: msg.pos, q: msg.q });
+    if (r?.ok) c.world.broadcast({ type: "drive", id: msg.id, pos: r.pose.pos, q: r.pose.q, by: c.id }, c);
+    else ws.send(JSON.stringify({ type: "drive", id: msg.id, snap: true, ...(r?.refused?.pose ? { pos: r.refused.pose.pos, q: r.refused.pose.q } : {}), why: r?.refused?.reason ?? "refused" }));
+  },
   // spec/PHYSICS.md §5.1: a round-trip clock. {t0} (the asker's own clock, echoed untouched) → {t0, t}: t on the
   // world's AUTHORITY clock, the one that stamps entries' ts and frames' t. The asker's offset is t − (t0 + t1) / 2.
   "clock": ({ c, ws }, msg) => {

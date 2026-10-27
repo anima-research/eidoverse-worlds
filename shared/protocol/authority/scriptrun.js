@@ -570,4 +570,4 @@ const SCRIPT_VERBS = {
       return { ok: true, dry: true, test: activate(w, a.id, a.script, { by: actor, ...ev, dry: true, requester: actor }) }; }
     return { ok: true, ...scriptsOf(w, st, a.id) }; },
 };
-export { SCRIPT_VERBS, activate, drainAll, drainHeld, drainScripts, heldEvent };
+export { SCRIPT_VERBS, activate, drainAll, drainHeld, drainScripts, heldEvent, withAuthority };

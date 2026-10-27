@@ -11,6 +11,7 @@ import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHid
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
 import { say } from './lib/net.js';
+import { updateHelm } from './lib/vehicles.js';
 import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
@@ -630,7 +631,7 @@ registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) { myState.q = undefined; myState.locomotion = undefined; const me = getMe(); if (me) me.locomotion = null; stepRagdoll(dt); }     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) updateMountedMe(dt);  // seated (or being carried off a seat): derived, not driven
+  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) { updateHelm(dt); updateMountedMe(dt); }  // seated (or being carried off a seat): derived, not driven; at a helm the hull moves first
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 });

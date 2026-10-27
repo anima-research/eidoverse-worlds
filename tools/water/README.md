@@ -28,8 +28,9 @@ Each `traversal` route is a child with `climb {points, reach, speed}` and its na
 to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, `@world.terrain {kind: 'flat', height}` (the floor), a
 directional sun thing and a dust `particles` child, and what has no home (the sky's
 `ambient`, the particles' clamped count and range) rides `imported:environment`, listed
-under `unmapped`. The `vehicle` is not carried yet: `import.ts` lists it and leaves it
-out, and `--apply` refuses while it remains.
+under `unmapped`. The `vehicle` is `drive` on the submarine and a helm child
+(`station {action: 'drive', input: {move: 'drive'}, exit}`); `minY`, `maxY` and `probes`
+ride `imported:vehicle`, listed under `unmapped`. Nothing is deferred.
 
 The renderer supports four water bodies, sixteen pockets, and eight waves per body.
 Excess bodies and pockets produce a diagnostic and are inactive (the highest-priority
@@ -152,7 +153,7 @@ Run from the repo root with Bun. In the gate: `zone-water-check`, `water-vectors
 `water-import` (this manifest through `import.ts --dry`, a real authority, and `mediumOf`
 against main's `mediumAt`). `fog-mask-check.ts` runs the fog in headless Chromium on
 WebGL. The rest require Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`); the
-regression check also needs the scene imported (`--apply`, which waits for the vehicle):
+regression check also needs the scene imported (`--apply`):
 
 ```sh
 bun tools/protocol/zone-water-check.ts

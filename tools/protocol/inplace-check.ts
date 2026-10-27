@@ -331,23 +331,24 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
     { actor: "Bob", verb: "comp", args: { id: "cup_1", type: "traversal", data: { routes: [{ name: "ladder", path: [[0, 0, 0], [0, 3, 0]], radius: 0.5, speed: 1 }] } } },
     { actor: "Bob", verb: "comp", args: { id: "cup_1", type: "vehicle", data: { helm: [0, 1, 0], exit: [1, 0, 0], speed: 3, turnRate: 1 } } },
     { actor: "Ann", verb: "comp", args: { id: "table_1", type: "collision", data: { enabled: false } } },
-    { actor: "Ann", verb: "comp", args: { id: "@world", type: "water", data: { level: 1.5 } } }];   // the world's water LEVEL: carried, not deferred (control)
+    { actor: "Ann", verb: "comp", args: { id: "@world", type: "water", data: { level: 1.5 } } },   // the world's water LEVEL: carried, not deferred (control)
+    { actor: "Bob", verb: "comp", args: { id: "@world", type: "air", data: { boxes: [{ center: [0, 0, 0], size: [2, 2, 2] }] } } }];   // an air box on @world: no frame to hold it, deferred
   const d = oldWorld("sunk", { extra: uses }); fs.rmSync(path.join(d, "snapshot.json")); const fp = fingerprint(d); const dirBefore = fs.readFileSync(dirf, "utf8");
   const dr = tool(["translate", "sunk", "--dry-run", "--no-founder-key"]); let rep: any = null; try { rep = JSON.parse(dr.out.slice(dr.out.indexOf("{"), dr.out.lastIndexOf("}") + 1)); } catch {}
   const h = /^report-hash ([0-9a-f]{64})$/m.exec(dr.out)?.[1];
-  const want = [["vehicle", "cup_1", 9, "Bob"]];
+  const want = [["air box on @world", "@world", 12, "Bob"]];
   ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string"
-    && same(rep.mapped?.map((m: any) => [m.feature, m.id, m.into.length]), [["water volume", "table_1", 1], ["air box (dry interior)", "table_1", 1], ["climb route", "cup_1", 1], ["collision on/off toggle", "table_1", 1]]),
+    && same(rep.mapped?.map((m: any) => [m.feature, m.id, m.into.length]), [["water volume", "table_1", 1], ["air box (dry interior)", "table_1", 1], ["climb route", "cup_1", 1], ["vehicle", "cup_1", 2], ["collision on/off toggle", "table_1", 1]]),
     "IP26 the dry run lists the deferred use (feature, entity, seq, actor) — not the world's water level, nor the water volume, air box, climb route and collision toggle it carries (listed as mapped) — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred, mapped: rep?.mapped });
   const text = rep?.refused ?? "";
-  ok(/can't translate "sunk": it uses 1 thing\(s\) this protocol does not carry yet — vehicle —/.test(text) && !/water volume|air box|climb route|collision/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
+  ok(/can't translate "sunk": it uses 1 thing\(s\) this protocol does not carry yet — air box on @world —/.test(text) && !/water volume|air box \(dry|climb route|vehicle|collision/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
     && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in this protocol/.test(text) && /remove them from the old world first/.test(text),
     "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
   const forced = tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
-  const named = oldWorld("sunk-src", { extra: uses.slice(3, 4) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
-  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /vehicle/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
+  const named = oldWorld("sunk-src", { extra: uses.slice(6, 7) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
+  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /air box on @world/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
     "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
 
 // ================= IP1: in place, the happy path (continued) =================

@@ -269,6 +269,11 @@ export function sendDrag(id, pos, yaw, q = null, { end = false, scale = null } =
   }
 }
 
+/** A hull's pose from its helm (presence; the authority checks it and relays it: server/messages.ts drive). */
+export function sendDrive(id, pos, q) {
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'drive', id, pos, q }));
+}
+
 /** This page's presence session: one id for as long as the page lives, sent
  *  with every join, so listeners can tell a reconnect (the same page, whose
  *  utterance counter goes on) from a new page (whose counter starts again).
@@ -956,6 +961,7 @@ async function handle(msg, at) {
       bus.emit('drag', msg);
       break;
     }
+    case 'drive': { bus.emit('drive', msg); break; }   // a hull's live pose, or my refused step's snap (client/lib/vehicles.js)
 
     case 'history': case 'debug': {
       const p = pendingHistory.get(msg.reqId);

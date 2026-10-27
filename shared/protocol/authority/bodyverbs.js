@@ -19,6 +19,7 @@ import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
+import { endDrivesBy } from "./drive.js";
 import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, refuseForeign, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 import * as R from "../roles.js";
@@ -47,7 +48,7 @@ const warnings = (...a) => UP.warnings(...a);
 const EMBODIED_VERBS = {
   move(w, actor, a) {
     if (!Array.isArray(a.to) || a.to.length !== 3 || a.to.some((n) => !Number.isFinite(n))) refuse("shape", "move needs to: [x, y, z]", "");
-    const st = w.state(); const B = boundsOf(st);
+    let st = w.state(); const B = boundsOf(st);
     if (B && outsideWorld(B, a.to)) refuse("out-of-bounds", `[${a.to.join(", ")}] is outside this world (x ${B.min[0]}…${B.max[0]}, up to y ${B.max[1]}, z ${B.min[2]}…${B.max[2]})`, "pick a spot inside the bounds");
     let me = w.presence.bodies[actor]; const to = a.to.slice();
     // the speed track's clock is elapsed time (w.pace: a host's monotonic clock), never the log's: a wall clock stepped back
@@ -82,6 +83,8 @@ const EMBODIED_VERBS = {
     // still seated in the authority's view: a seated client sends no steps, so this is their first step off the seat (a
     // person's stand-up is presence, never a request): it is measured from the seat, not from where they boarded (r9 M2)
     // the first step is the stand-up (holes r10 L5): the seat clears now, wherever the step goes
+    // a driver's first step off the helm ends their lease: its last accepted pose commits first, so the track restarts at the helm where it is
+    { if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }
     { const sat = occupantOf(w, st, actor); if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
@@ -355,6 +358,7 @@ const EMBODIED_VERBS = {
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
+    endDrivesBy(w, w.state(), actor);   // a driver leaving: the lease commits, the helm frees (shared/protocol/authority/drive.js)
     delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearOccupant(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },
