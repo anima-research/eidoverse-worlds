@@ -2494,7 +2494,7 @@
    "bodies": "every water body its zone overlaps, @world's level included"
   },
   "docs": {
-   "bodies": "the water bodies (things with water, or @world) it keeps out; it keeps out only those at or below its zone's priority, @world's level always"
+   "bodies": "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)"
   },
   "on": "thing"
  },
