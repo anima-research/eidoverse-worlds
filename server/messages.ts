@@ -439,11 +439,11 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   },
   "global-mod": ({ c, ws, now, expel }, msg) => {
     // Instance-wide moderation. Not world verbs — there is no global log
-    // — so these are messages, gated on WORLD_ADMIN and persisted in
+    // — so these are messages, gated on SERVER_OPERATORS and persisted in
     // .bans.json (same posture as .sessions.json). Replies come back as
     // `mod` messages; refusals as `error`, like everything else.
-    if (!isOperator(c.account)) {   // WORLD_ADMIN names ACCOUNTS (security review C3), never a typed name
-      ws.send(JSON.stringify({ type: "error", error: "global moderation needs WORLD_ADMIN — per-world /ban is the owner tool" }));
+    if (!isOperator(c.account)) {   // SERVER_OPERATORS names ACCOUNTS (security review C3), never a typed name
+      ws.send(JSON.stringify({ type: "error", error: "global moderation is for this server's operators (SERVER_OPERATORS) — per-world /ban is the world owner's tool" }));
       return;
     }
     if (msg.type === "global-bans") {
@@ -477,7 +477,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // knows under that name. Nothing to bind → refused, said plainly.
     const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id));
     if (present.some((o) => isOperator(o.account))) {
-      ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` }));
+      ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` }));
       return;
     }
     if (fold(id) === fold(c.id) || present.some((o) => o === c)) {
@@ -486,7 +486,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
     const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
-    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` })); return; }
+    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
     const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
     if (!accounts.size && !guestAddrs.size) {
       ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));

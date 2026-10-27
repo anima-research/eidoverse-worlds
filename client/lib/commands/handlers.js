@@ -291,7 +291,7 @@ register('bans', async () => {
   for (const l of lines) logChat('*', l);
 });
 
-// global moderation — WORLD_ADMIN only, the server enforces
+// global moderation — server operators only, the server enforces
 function moderateGlobal(cmd, arg) {
   const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
   if (!id) return logChat('*', `usage: /${cmd} <name>${cmd === 'gban' ? ' [reason] — bans from every world on this server' : ''}`);

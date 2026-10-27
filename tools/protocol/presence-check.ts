@@ -23,7 +23,7 @@ const ok = (cond, what, detail?) => { if (cond) pass++; else { fail++; console.l
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
 const r0 = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", "glade", "--owner", "Ann"], { cwd: ENGINE, env: env() });
 ok(r0.exitCode === 0, "(setup) found glade, Ann owns it", r0.stderr.toString().slice(-300));
 let port = 9420; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }

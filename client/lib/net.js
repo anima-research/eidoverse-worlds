@@ -244,7 +244,7 @@ export function sendWorldReset() {
 
 /** Moderation messages that are not world verbs: 'world-bans' (list this
  *  world's bans — anyone), 'global-ban' / 'global-unban' / 'global-bans'
- *  (operator only; the server enforces). Replies arrive as `mod` messages. */
+ *  (server operator only; the server enforces). Replies arrive as `mod` messages. */
 export function sendMod(type, extra = {}) {
   if (net.joined && net.ws?.readyState === 1) {
     net.ws.send(JSON.stringify({ type, ...extra }));

@@ -132,7 +132,7 @@ async function freePort(from: number) { for (let p = from; p < from + 200; p++) 
 async function boot(tag: string, extra: Record<string, string> = {}) {
   const port = await freePort(9240); const log = path.join(root, `${tag}.log`);
   const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "", ...extra }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "", ...extra }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
   process.on("exit", () => { try { proc.kill(); } catch {} });
   if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc, log };
   throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);

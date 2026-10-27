@@ -2,7 +2,7 @@
 // world-upgrade-review {id, world} → {type, id, ok, world, report, hash}: the CLI's dry run (nothing written).
 // world-upgrade {id, world, approved} → {type, id, ok, world, backup, report, rollback}: the CLI's in-place translation, bound to
 // that hash (a verified backup first: server/backups.ts). Both run tools/protocol/world.ts itself: the translation has one code path.
-// Operator only (WORLD_ADMIN, by a proven account): an old world's owner is a name nothing binds yet (docs/TRANSLATING-OLD-WORLDS.md).
+// Server operator only (SERVER_OPERATORS, by a proven account): an old world's owner is a name nothing binds yet (docs/TRANSLATING-OLD-WORLDS.md).
 import path from "node:path";
 import { WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ROOT } from "./config.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
@@ -50,7 +50,7 @@ function admit({ c, ws }: Ctx, msg: Any, type: string) {
   const id = msg.id ?? null;
   const refuse = (code: string, reason: string, fix?: string) => { ws.send(JSON.stringify({ type, id, ok: false, refused: { code, reason, ...(fix ? { fix } : {}) } })); return null; };
   const account = provenAccount(c, msg);
-  if (!isOperator(account)) return refuse("rights", `upgrading a world saved in an older format is for this server's operator (WORLD_ADMIN, a signed-in account). ${ASK_OPERATOR}`, "ask the server's operator");
+  if (!isOperator(account)) return refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS, signed in). ${ASK_OPERATOR}`, "ask the server's operator");
   const world = String(msg.world ?? "");
   const old = oldWorldAt(WORLDS_DIR, world);
   if (!old) return refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`);

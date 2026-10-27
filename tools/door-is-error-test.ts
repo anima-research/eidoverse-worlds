@@ -1023,9 +1023,9 @@ ag.people.delete('someone');
 // The world's answer decides a moderation verb's result.
 const realSendMod = ag.sendMod, realOutcome = ag.modOutcome;
 ag.sendMod = () => {};
-ag.modOutcome = async () => 'refused: only a world admin can ban everywhere';
+ag.modOutcome = async () => 'refused: only a server operator can ban everywhere';
 r = await call('act', { verb: 'ban', args: { who: 'someone', global: true } });
-check('a global ban the world refused is failed, with its words', failed(r) && said(r) === 'refused: only a world admin can ban everywhere', said(r));
+check('a global ban the world refused is failed, with its words', failed(r) && said(r) === 'refused: only a server operator can ban everywhere', said(r));
 ag.modOutcome = async () => 'banned someone';
 r = await call('act', { verb: 'ban', args: { who: 'someone', global: true } });
 check('a global ban the world confirmed is done', ok(r) && said(r) === 'banned someone', said(r));

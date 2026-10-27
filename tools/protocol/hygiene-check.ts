@@ -24,6 +24,7 @@
 //   lab-clock     the authority's clock env set or deleted by hand: 124 inline "advance then pin" copies in 34 files (10-22),
 //                 where a helper that forgot to advance (or two sharing one counter) could run time backwards silently. Use
 //                 tools/protocol/clock.ts (labClock().advance, pin, unpinned).
+//   role-words    WORLD_ADMIN / "world admin" / "world operator" for the server's operator (R 10-27): say "server operator".
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE } from "./common.ts";
@@ -56,6 +57,22 @@ export function scan(text: string): Record<string, number> {
   return out;
 }
 
+const ROLE_WORDS = /WORLD_ADMIN|\bworld[- ]admins?\b|\bworld operators?\b/gi;
+export const roleWords = (text: string) => [...text.matchAll(ROLE_WORDS)].length;
+// where the legacy name stays (R 10-27): its reader, its compatibility test, the migration notes; and dated records kept verbatim
+const ROLE_WORDS_OK = new Set([SELF, "server/operators.ts", "tools/protocol/identity-check.ts", "docs/TRANSLATING-OLD-WORLDS.md", "deploy/SHOW_RUNBOOK.md", "docs/INCIDENTS.md", "TEL0S_NOTES.md"]);
+/** "file:line" for each role-word hit in the repo's text outside ROLE_WORDS_OK (frozen/ is history, never edited). */
+export function roleWordHits(): string[] {
+  const out: string[] = [];
+  const go = (dir: string) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === "node_modules" || e.name.startsWith(".") || e.name === "frozen") continue;
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) go(p);
+    else if (/\.(ts|js|mjs|md|sh|conf|service|html)$/.test(e.name) && !ROLE_WORDS_OK.has(rel(p)))
+      fs.readFileSync(p, "utf8").split("\n").forEach((l, n) => { if (roleWords(l)) out.push(`${rel(p)}:${n + 1}`); });
+  } };
+  go(ENGINE); return out;
+}
 const rel = (p: string) => path.relative(ENGINE, p).split(path.sep).join("/");
 function walk(dir: string, acc: string[]) {
   if (!fs.existsSync(dir)) return acc;
@@ -121,6 +138,14 @@ if (import.meta.main) {
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
   // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop
   // and isn't a gate suite. The good string carries it so a broadened pattern shows up here first.
+
+  // role words (R 10-27): the server's operator is a "server operator", never an admin or world admin; the legacy variable
+  // is named only where it's read, its compatibility test, and the migration notes. Checked over every text file.
+  const bareWords = ["only a world admin can ban", "remove them from WORLD_ADMIN", "a world operator", "(WORLD_ADMIN)"].join(" ");
+  const fineWords = "SERVER_OPERATORS=human:discord:1; a server operator; the world's owner";
+  check(`H${i++} role-words: caught in its known-bad form (4), and not in the right way`, roleWords(bareWords) === 4 && roleWords(fineWords) === 0, [roleWords(bareWords), roleWords(fineWords)]);
+  const wordHits = roleWordHits();
+  check(`H${i++} role-words: no file outside the legacy reader, its test and the migration notes says WORLD_ADMIN, world admin or world operator`, wordHits.length === 0, wordHits.join("\n      "));
 
   // then the gate's code against the baseline (may only go down)
   const now = measure();

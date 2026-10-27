@@ -153,7 +153,7 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   const SKEW = 3_600_000;
   const W = path.join(root, "worlds-sv"); fs.mkdirSync(W, { recursive: true });
   const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
-    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
   // found the world with the authority's clock an hour ahead (an imported world, or a host whose clock was ahead): its log
   // ends at a ts the wall clock hasn't reached
   const f = Bun.spawnSync(["bun", "-e", `process.env.WORLDS_DIR=${JSON.stringify(W)}; const { foundWorld } = await import(${JSON.stringify(path.join(ENGINE, "server/worldlog.ts"))});

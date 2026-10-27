@@ -1586,7 +1586,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const st2 = err ? null : w.state();
   ok(!err && st1?.entities.sign.c.label === PURGED && st1.diagnostics.some(([q, c]) => q === at && c === "commit-unpurged") && st2?.entities.sign.c.label === PURGED && !st2.diagnostics.some(([, c]) => c === "commit-unpurged"),
     "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commit-unpurged until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
-// ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered but could mend nothing).
+// ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: a server operator entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
 { const name = "oprepair";

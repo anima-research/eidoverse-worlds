@@ -33,10 +33,10 @@ import { tryUntil } from "./wait.ts";
 process.env.AGENT_BODY_ENGINE = "verlet";
 // any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
 const V1 = process.env.V1_LOG ?? path.resolve(import.meta.dir, "../../spec/fixtures/01-build/log.jsonl");
-// W10/W11: a signed-in operator (WORLD_ADMIN) and its session, beside the guest the other rows are
+// W10/W11: a signed-in server operator (SERVER_OPERATORS) and its session, beside the guest the other rows are
 const OP_SID = "e".repeat(64), SESS = path.join(fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "refusedjoin-sess-")), "sessions.json");
 fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
-const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", WORLD_ADMIN: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
+const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
   prepare: (scratch) => {
     // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line); old-y is W11's to upgrade
     const lines = fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean);

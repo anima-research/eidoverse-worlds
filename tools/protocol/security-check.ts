@@ -37,7 +37,7 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
       TRUST_NAMES: "1",
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
       JOIN_TOKEN: "",
-      WORLD_ADMIN: "",
+      SERVER_OPERATORS: "",
       EIDO_FLIGHT_REHEARSAL: "",
       ...env
     },
@@ -131,9 +131,9 @@ console.log("\n=== C2: aid1 human token as agent → refused; subs match ===");
   alice.close();
 }
 
-console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
-// C3: WORLD_ADMIN matched on display id (rights.ts), ban bypass + global ban/unban/expel
-// Attack: set WORLD_ADMIN="Alice" (bare name) → Alice can ban/unban across all worlds
+console.log("\n=== C3: SERVER_OPERATORS bare name → boot refused ===");
+// C3: the server operator list matched on display id (rights.ts), ban bypass + global ban/unban/expel
+// Attack: set SERVER_OPERATORS="Alice" (bare name) → Alice can ban/unban across all worlds
 // Fix: subs only, refuse boot if entry has no ':'
 {
   const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
@@ -145,8 +145,8 @@ console.log("\n=== C3: WORLD_ADMIN bare name → boot refused ===");
   const banAlice = await alice.req("ban", { who: BOB_ID, reason: "test" });
   ok(banAlice.ok, "C3 founder Alice can ban", banAlice);
 
-  // Now test that WORLD_ADMIN accounts (not bare names) are enforced at boot
-  // The test confirms server refuses to boot if WORLD_ADMIN is bare name (operators.ts)
+  // Now test that SERVER_OPERATORS accounts (not bare names) are enforced at boot
+  // The test confirms server refuses to boot if SERVER_OPERATORS is a bare name (operators.ts)
   const f3 = tool(["found", "sec-test-3", "--owner", "Alice", "--title", "third world"]);
   ok(f3.code === 0, "C3 world created", f3.out);
   alice.close();

@@ -1,5 +1,5 @@
 // server/operators.ts — who operates this server (SERVER_OPERATORS), by ACCOUNT only (security review 10-06 C3).
-// A server operator is owner everywhere and the unban path of last resort, so the list names proven accounts —
+// A server operator holds a world owner's powers in every world and is the unban path of last resort, so the list names proven accounts —
 // "human:discord:<id>", "agent:token:<id>", "aid1:<iss>:<sub>" — never a display name, which anyone can type.
 // An entry with no ":" is refused at boot rather than silently ignored: an operator who THINKS they listed
 // themselves must find out now, not when they're locked out.

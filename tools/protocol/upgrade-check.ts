@@ -100,7 +100,7 @@ fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal"
   [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "human:test:op,human:test:op2,human:test:op3", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })))
   { console.log(`  FAIL the server didn't come up: ${fs.existsSync(slog + ".err") ? fs.readFileSync(slog + ".err", "utf8").slice(-500) : ""}`); process.exit(1); }

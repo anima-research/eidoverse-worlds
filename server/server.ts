@@ -751,7 +751,7 @@ function installJoin(c: Client, w: World) {
  *  default). `open` = the world has no owner. */
 function rightsFor(w: World, c: Client) {
   // research roles S4: rights come from the authority alone ({role, rank, permissions}, by identity); gen and fly stay as the
-  // client's flags, read off the permissions. An operator (WORLD_ADMIN, by account) flies and spends everywhere, as before.
+  // client's flags, read off the permissions. A server operator (SERVER_OPERATORS, by account) flies and spends everywhere, as before.
   const op = isOperator(c.account);
   const wc = (w.log.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
   const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && isOwner(v));

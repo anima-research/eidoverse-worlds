@@ -347,12 +347,12 @@ const VERBS = {
 /** Every verb the authority answers (VERBSPEC must have a row for each: scars-check's verb-row check). */
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
-/** A server operator's recorded repair (review of PR #260, server.ts:742: WORLD_ADMIN entered every world but could mend
+/** A server operator's recorded repair (review of PR #260, server.ts:742: a server operator entered every world but could mend
  *  nothing in it). NARROW: set / delete of @world's door components (roles:<id>, access, default-role, role-defs) and unban
  *  (which lifts a ban or a kick); everything else is refused here, before the authority is entered. RECORDED: the act is the
  *  operator's own identity's, its body carries `operator: true` (an unban's moderator-log record likewise), so history and
  *  modlog say who mended what and by what right. Not god mode: shape, value, roles and last-owner checks all still apply,
- *  and no other component, thing or verb is opened. Only the server reaches it (a WORLD_ADMIN account's operator-repair
+ *  and no other component, thing or verb is opened. Only the server reaches it (a server operator account's operator-repair
  *  message); no request word does. */
 export function operatorRepair(w, actor, verb, args = {}) {
   const door = (verb === "set" || verb === "delete") && args && args.id === "@world" && REPAIR_COMP(args.component);

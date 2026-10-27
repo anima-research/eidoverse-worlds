@@ -92,7 +92,7 @@ Guards: ownership never expires, and the wildcard never expires (an expiring
 first, and refused if the result would leave a closed world with no owner (an
 ownerless world reads as open) or would shut out the owner making the change.
 The guards check the result rather than the one record named, because a grant
-whose sub merges records can touch more than one. `WORLD_ADMIN` remains the
+whose sub merges records can touch more than one. `SERVER_OPERATORS` remains the
 recovery of last resort.
 
 ### Naming who
@@ -293,7 +293,7 @@ prefilter, a 1 s sweep, and the agent's `/snap` carrying its credential.
   but passing the sub would be cleaner.
 - An idle world's first `/worlds` listing parses its whole `snapshot.json`
   once (it is cached after that).
-- Pre-existing: `WORLD_ADMIN` matches display names as well as subs. Anyone
+- Pre-existing: the server operator list matched display names as well as subs. Anyone
   listed there by *name* passes every access check under a typed name. List
   operators by sub.
 - Inside a closed world, verb rights still honour name-keyed records. Entry

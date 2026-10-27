@@ -77,7 +77,7 @@ if (process.argv.includes("--mutants")) {
 }
 const root = scratch("txn");
 process.env.WORLDS_DIR = path.join(root, "w"); process.env.OPT_DIR = path.join(root, "opt"); process.env.SKIP_OPT_SWEEP = "1";
-process.env.WORLD_ADMIN = "local:opie";
+process.env.SERVER_OPERATORS = "local:opie";
 fs.mkdirSync(process.env.WORLDS_DIR, { recursive: true });
 const ENGINE = path.resolve(import.meta.dir, "../..");
 const { foundWorld, WorldLog } = await import("../../server/worldlog.ts");

@@ -4852,7 +4852,7 @@ export class WorldAgent {
 
   /** Moderation messages that aren't requests: 'world-bans' (list this
    *  world's bans — anyone present), 'global-ban' / 'global-unban' /
-   *  'global-bans' (server: WORLD_ADMIN only). Answers arrive as `mod`. */
+   *  'global-bans' (server: server operators only). Answers arrive as `mod`. */
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw this.notJoined();
     this.ws.send(JSON.stringify({ type, ...extra }));

@@ -31,7 +31,7 @@ const M: Mutant[] = [
     find: "        if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", repl: "        if (false) { const { code, reason, fix, ...rest } = bad; refuse(code, `batch op ${i}", suite: "authority", rows: ["BT1"], expect: 9 },
   { id: "B4", what: "a request whose connection was superseded while it awaited still writes", file: "server/reqcap.ts",
     find: "  if (!(c.world === w && !c.superseded && w.clients.has(c) && (c.gen ?? null) === cap.gen))", repl: "  if (false)", suite: "reset-race", rows: ["SR1"], expect: 1 },
-  { id: "B5", what: "WORLD_ADMIN's repair is not narrow: any verb through the operator door", file: "shared/protocol/authority.js",
+  { id: "B5", what: "a server operator's repair is not narrow: any verb through the operator door", file: "shared/protocol/authority.js",
     find: '  if (!(door || verb === "unban"))\n    return { ok: false, refused: { code: "rights", reason: `an operator\'s repair covers', repl: '  if (false)\n    return { ok: false, refused: { code: "rights", reason: `an operator\'s repair covers', suite: "authority", rows: ["OP4"], expect: 9 },
   { id: "B6", what: "a created child's pose is read from before the write (resettle planned against the wrong state)", file: "shared/protocol/authority/followups.js",
     find: "const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);", repl: "const was = (k) => worldT(before, k);", suite: "r10", rows: ["F3"], expect: 2 },

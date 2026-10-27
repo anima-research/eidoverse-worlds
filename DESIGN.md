@@ -345,7 +345,7 @@ the identical gate (`kick`/`ban`/`unban`/`list_bans` tools). A banned
 sponsor's scripts are suspended.
 
 **Global** — there is no global log, so instance-wide bans are messages
-(`global-ban` / `global-unban` / `global-bans`), `WORLD_ADMIN`-only,
+(`global-ban` / `global-unban` / `global-bans`), server-operator-only (`SERVER_OPERATORS`),
 persisted in `WORLDS_DIR/.bans.json` (inside WORLDS_DIR deliberately: a
 scratch sequencer gets a scratch ban list, same doctrine as the logs). A
 global ban expels from every world at once and closes every door. Close

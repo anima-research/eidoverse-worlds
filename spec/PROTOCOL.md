@@ -794,7 +794,7 @@ Speech in a world is public and **arrival-only**:
   `history` read, or a door built on them (an agent's catch-up). A connection's arrival is the log head at its join;
   an identity with several connections here counts from the earliest one present. A reconnect is a new arrival.
 - Reading the master log's speech back past your own arrival is a permission, `readChat` (§7: a role holds it; owners
-  hold every permission), or a server operator's (`WORLD_ADMIN`). Their join says how many lines the log holds
+  hold every permission), or a server operator's (`SERVER_OPERATORS`). Their join says how many lines the log holds
   (`state.chatTotal`); everyone else's says 0. No built-in role below owner holds it, and a grant whose end has passed
   holds nothing. A world that turns it on through the newcomer role (`default-role.can`) hands every past line to anyone
   who joins: an owner's choice, made in the open.
@@ -1071,7 +1071,7 @@ role holds `build`). The *invoker* (whoever's request this is). The
 *affected participant* (whoever's body a request touches). A *sponsor*
 (whoever's rights a script acts with, §8).
 
-**Operator repair (narrow, recorded).** A server operator (an account the host names, `WORLD_ADMIN`) enters every
+**Operator repair (narrow, recorded).** A server operator (an account the host names in `SERVER_OPERATORS`) enters every
 world, but its ordinary requests are judged by the world like anyone's. To mend a world whose owners are gone or locked
 out it has one more capability, reached only by the server's `operator-repair` message, never by a request word: `set`
 and `delete` of @world's door components (`roles:<id>`, `access`, `default-role`, `role-defs`) and `unban` (lifting a

@@ -201,7 +201,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       }
     }, (r) => { if (!answered) reply(r); });
   },
-  // operator-repair {id, verb, args} → {type: "reply", id, verb, ok, operator: true, reply}: a WORLD_ADMIN account mends the
+  // operator-repair {id, verb, args} → {type: "reply", id, verb, ok, operator: true, reply}: a server operator's account mends the
   // world it is in, through the authority (review of PR #260, server.ts:742: an operator entered every world but could repair
   // nothing in it). NARROW — set/delete of @world's roles:<id>, access, default-role, role-defs, and unban (a ban or a kick)
   // — and RECORDED: the operator's own identity's act, its body operator: true (an unban's moderator-log record likewise),
@@ -213,7 +213,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const args = msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {};
     let answered = false;
     const reply = (r: Any) => { answered = true; ws.send(JSON.stringify({ type: "reply", id: rid, verb, ok: r.ok === true, operator: true, ...(typeof r?.txn === "string" ? { txn: r.txn } : {}), reply: r })); };
-    if (!isOperator(c.account)) { reply({ ok: false, refused: { code: "rights", reason: "operator-repair needs a server operator's account (WORLD_ADMIN)", fix: "ask whoever runs this server" } }); return; }   // an owner can't repair what only an operator may (an operator's ban, a shape repair)
+    if (!isOperator(c.account)) { reply({ ok: false, refused: { code: "rights", reason: "operator-repair needs a server operator's account (SERVER_OPERATORS)", fix: "ask whoever runs this server" } }); return; }   // an owner can't repair what only an operator may (an operator's ban, a shape repair)
     if (!c.actorId) { reply({ ok: false, refused: { code: "identity", reason: "this connection has no identity here", fix: "join the world first" } }); return; }
     // the same one capability as request (server/reqcap.ts), and it must still be an operator's when the queue reaches it:
     // recheck covers isOperator(account) as captured; the only await before the synchronous repair is the queue itself

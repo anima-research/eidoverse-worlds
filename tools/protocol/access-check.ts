@@ -43,7 +43,7 @@ const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
 fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" }, "tok-wren": { id: "Wren" }, "tok-fen": { id: "Fen" }, "tok-ivy": { id: "Ivy" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"),
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"),
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
@@ -228,11 +228,11 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
       "A10 an old native session (nativeWorld water) reads another world as its account does (/geom 200, on /worlds, /access enter): no per-world fence",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
   try { s2.proc.kill(); } catch {} }
-{ // A11 (review of PR #260, server.ts:742): an operator (WORLD_ADMIN) has a NARROW, RECORDED repair capability through the
+{ // A11 (review of PR #260, server.ts:742): a server operator (SERVER_OPERATORS) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
-  const s3 = await start({ WORLD_ADMIN: "agent:token:fen" });
+  const s3 = await start({ SERVER_OPERATORS: "agent:token:fen" });
   const fen = await sock(s3.port); const jf = await fen.join("keep", "Fen", { agentToken: "tok-fen" }); const fenId = you(jf);
   let k = 0; const repair = async (s, verb, args) => { const id = `op${++k}`; s.raw({ type: "operator-repair", id, verb, args });
     await tryUntil(`the reply to operator-repair ${verb}`, () => s.msgs.some((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return s.msgs.find((m) => m.type === "reply" && m.id === id); };
@@ -319,7 +319,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const { directoryFor } = await import("../../server/directory.ts");
   directoryFor(W).resolve({ sub: "aid1:https://id.example.org:agent-9c1d", name: "Nine" });
   ok(tool(["found", "d12", "--owner", "Ann"]).code === 0, "(D12 setup) found d12");
-  const s = await start({ WORLD_ADMIN: "agent:token:fen" });
+  const s = await start({ SERVER_OPERATORS: "agent:token:fen" });
   const op = await sock(s.port); const jo = await op.join("keep", "Fen", { agentToken: "tok-fen" });
   const k = op.msgs.length; op.raw({ type: "global-unban", id: "aid1:https://id.example.org:agent-7f3a" }); op.raw({ type: "global-unban", id: "Nine" });
   await tryUntil("the operator hears back on both global unbans", () => op.msgs.length >= k + 2, { ms: 3000, step: 50 });
