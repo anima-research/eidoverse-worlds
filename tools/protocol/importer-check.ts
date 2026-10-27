@@ -19,6 +19,8 @@
 //   IM-C1/2 main #248's collision toggle → collider.enabled; its climb routes → climb children (the rest imported, listed)
 //   IM-E1   main #248's environment → @world.spawn/bounds/sky.gradient/terrain (flat at the floor) + sun and particles things; the rest imported, listed
 //   IM-E2   a floor where the world already has a terrain: the terrain kept, the floor listed as the conflict
+//   IM-E3   (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor, listed under mapped
+//   IM-E3   (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor, listed under mapped
 //   IM-V1   main #248's vehicle → drive on its host + a helm child (station {action: 'drive', input: {move: 'drive'}, exit}); the rest imported, listed
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
@@ -307,7 +309,7 @@ row("IM-E1", () => {
   const near = (a: number[], b: number[]) => a?.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-5);
   const toward = sun ? (() => { const [x, y, z, w] = sun.transform.q; return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]; })() : [];
   const d = Math.hypot(0.4, 0.8, 0.2);
-  ok(r.stats.divergences === 0 && JSON.stringify(W.spawn) === JSON.stringify({ pos: [-29, -25, 89] }) && JSON.stringify(W.bounds) === JSON.stringify(env.bounds)
+  ok(r.stats.divergences === 0 && JSON.stringify(W.spawn) === JSON.stringify({ pos: [-29, -25, 89] }) && JSON.stringify(W.bounds) === JSON.stringify({ min: [-800, -262, -800], max: [800, 100, 800] })
     && near(W.sky?.gradient?.top, lin(0x338ac1)) && near(W.sky?.gradient?.horizon, lin(0xbedce6)) && W.sky.gradient.bottom === undefined
     && JSON.stringify(W.terrain) === JSON.stringify({ kind: "flat", height: -260 }) && floorKid === undefined && !Object.values(T).some((c: any) => c?.label === "floor")
     && sun?.light?.kind === "directional" && sun.light.color === 0xfff4df && sun.light.intensity === 3 && near(toward, [0.4 / d, 0.8 / d, 0.2 / d])
@@ -315,7 +317,7 @@ row("IM-E1", () => {
     && sp2?.["spawn-point"] && JSON.stringify(sp2.transform.pos) === "[1,2,3]" && !("environment" in T.land) && !Object.keys(T.land).some((k) => /^[^:]*\/environment/.test(k))
     && JSON.stringify(T.land["imported:environment"]) === JSON.stringify({ sky: { ambient: 1.5 }, particles: { count: 1400, range: 16, color: "#aec8b4" }, fogDensity: 0.2 })
     && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "environment")?.fields) === JSON.stringify(["sky.ambient", "particles.count, particles.range, particles.color", "fogDensity"]),
-    "IM-E1 environment: spawn → @world.spawn (a second one a spawn-point thing), bounds → @world.bounds, floor → @world.terrain {kind: 'flat', height: floor} (no floor thing), sky → @world.sky.gradient (linear) + a directional sun thing (main's defaults), particles → a dust child; ambient, clamped particle values and unknown keys ride imported:environment, each listed in the report",
+    "IM-E1 environment: spawn → @world.spawn (a second one a spawn-point thing), bounds → @world.bounds (its min.y under the floor: IM-E3), floor → @world.terrain {kind: 'flat', height: floor} (no floor thing), sky → @world.sky.gradient (linear) + a directional sun thing (main's defaults), particles → a dust child; ambient, clamped particle values and unknown keys ride imported:environment, each listed in the report",
     { W: { spawn: W.spawn, bounds: W.bounds, sky: W.sky, terrain: W.terrain }, floorKid, sun, fx, sp2, land: T.land, unmapped: r.stats.unmapped });
 });
 row("IM-E2", () => {
@@ -325,6 +327,16 @@ row("IM-E2", () => {
   ok(W.terrain?.seed === 7 && W.terrain.kind !== "flat" && T.land?.["imported:environment"]?.floor === -40
     && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "environment")?.fields) === JSON.stringify(["floor (the world already has a terrain)"]),
     "IM-E2 a floor in a world that already has a terrain: the terrain is kept, the floor rides imported:environment and the report lists the conflict under unmapped", { terrain: W.terrain, land: T.land, unmapped: r.stats.unmapped });
+});
+row("IM-E3", () => {
+  const envL = (env: any) => seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "land", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "land", type: "environment", data: env } }]);
+  const low = TV1.translate(envL({ floor: -260, bounds: { min: [-800, -250, -800], max: [800, 100, 800] } }));
+  const high = TV1.translate(envL({ floor: -10, bounds: { min: [-800, -250, -800], max: [800, 100, 800] } }));
+  const Wl = low.final.translated["@world"], Wh = high.final.translated["@world"];
+  const m = low.stats.mapped?.find((x: any) => x.component === "environment" && /bounds/.test(x.feature) && /floor/.test(x.feature));
+  ok(low.stats.divergences === 0 && JSON.stringify(Wl.bounds) === JSON.stringify({ min: [-800, -262, -800], max: [800, 100, 800] }) && m?.id === "land" && JSON.stringify(m.into) === JSON.stringify(["@world.bounds"]) && m.was === -250 && m.now === -262
+    && JSON.stringify(Wh.bounds) === JSON.stringify({ min: [-800, -250, -800], max: [800, 100, 800] }) && !high.stats.mapped?.some((x: any) => /floor/.test(x.feature ?? "")),
+    "IM-E3 (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor (else everyone on the floor has fallen), listed under mapped; a floor inside the bounds leaves them", { low: Wl.bounds, high: Wh.bounds, mapped: low.stats.mapped });
 });
 const ZN = await import("../../shared/zone.js");
 row("IM-W4", () => {

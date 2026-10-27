@@ -280,7 +280,7 @@ export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
   vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed" },
-  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds, floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
+  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
@@ -353,6 +353,10 @@ export function environmentPlan(st) {
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const env = st.entities[id]?.comp?.environment; if (env == null) continue;
     const parts = environmentPartsOf(enc(id), env, { ...has }); if (parts.world.spawn) has.spawn = true; if (parts.world.bounds) has.bounds = true; if (parts.world.terrain) has.terrain = true;
     out.push({ id, host: enc(id), parts }); }
+  // a flat ground below the bounds' floor would count everyone standing on it as fallen (#248): bounds.min.y goes 2 m under it
+  const b = out.find((x) => x.parts.world.bounds), t = out.find((x) => x.parts.world.terrain);
+  const ground = t ? t.parts.world.terrain.height : st?.terrain?.kind === "flat" && Number.isFinite(st.terrain.height) ? st.terrain.height : undefined;
+  if (b && Number.isFinite(ground) && ground < b.parts.world.bounds.min[1]) { const was = b.parts.world.bounds.min[1]; b.parts.world.bounds.min[1] = ground - 2; b.parts.lowered = { was, now: ground - 2 }; }
   return out;
 }
 const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
@@ -409,7 +413,8 @@ export function carriedMappings(st) {
     if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
     if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : [])] }); }
     if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
-    if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] }); }
+    if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] });
+    if (env.get(id)?.lowered) out.push({ component: "environment", feature: "bounds.min.y lowered to 2 m below the floor (the floor lay below the bounds)", id, into: ["@world.bounds"], ...env.get(id).lowered }); }
   return out;
 }
 /** What of them has no home here, carried as imported:<component> on its thing: [{component, id, fields, as}] */
