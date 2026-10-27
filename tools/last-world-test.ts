@@ -215,7 +215,7 @@ console.log("net.js");
 // "ground": the door's yes into a world with ground and nothing placed. "authed": this page entered signed in.
 // A refusal's words reach the person as a toast or on the boot splash (boot.js refuseBoot): both are `toasts` here.
 type Step = "snapshot" | "fresh" | "ground" | "spawn" | "say" | "connect" | "timers" | "authed"
-  | { close: number } | { early: string } | { set: [string, string] };
+  | { close: number } | { early: string } | { summon: string } | { set: [string, string] };
 type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number; authedReads: number };
 function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null,
                   inline: { world: string; remembered: boolean } | null = null): Out {
@@ -266,6 +266,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
       else if (s.set) mem.set(s.set[0], s.set[1]);
       else if (s === "connect") await net.connect();
       else if (s === "timers") timers.splice(0).forEach((f) => f());
+      else if (s.summon) { CONFIG.renderer = true; CONFIG.roam = true; await net._dispatch({ type: "renderer-travel", world: s.summon }); }
       else sockets[sockets.length - 1].onclose({ code: s.close });
     }
     console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length, authedReads }));
@@ -287,6 +288,8 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
 
   const spec = pageLoad("?spectate&world=lab", "garden", ["snapshot"]);
   check("watching ?spectate&world=lab leaves the memory at garden, and pins no tab", spec.stored === "garden" && spec.tab === null, JSON.stringify(spec));
+  const summoned = pageLoad("?world=lab", "garden", ["snapshot", { summon: "garden" }]);
+  check("a roaming renderer summoned to garden goes there", summoned.world === "garden", JSON.stringify(summoned));
   const rend = pageLoad("?renderer&world=lab", "garden", ["snapshot"]);
   check("a renderer in lab leaves the memory at garden", rend.stored === "garden", JSON.stringify(rend));
 
