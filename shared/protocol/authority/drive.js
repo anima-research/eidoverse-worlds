@@ -1,13 +1,13 @@
 // shared/protocol/authority/drive.js — the hull's lease (DESIGN.md env-components "Drive"; Roblox network ownership): the helm's
 // occupant streams the hull's pose (presence), the authority checks plausibility and the hull's own collision, and commits only
 // the last accepted pose, as the system's act, on exit, every LEASE.commitMs and when the stream stops (shared/drive.js).
-import { driveOf, helmOf, implausible, LEASE } from "../../drive.js";
+import { driveOf, helmOf, implausible, LEASE, turnBetween } from "../../drive.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { holdsCustody, lockedC, qr3, scratch, setOp } from "./storage.js";
-import { ancestors, obbs, worldT } from "./math.js";
-import { familyOf, groundOf, hitsIx, near } from "./spatial.js";
+import { ancestors, obbs, satDepth, worldT } from "./math.js";
+import { familyOf, geoOf, groundOf, hitsIx, near } from "./spatial.js";
 import { clearOccupant, occupantOf } from "./occupants.js";
 import { withAuthority } from "./scriptrun.js";
 const admit = (...a) => UP.admit(...a);
@@ -20,21 +20,35 @@ const leases = (w) => (w.presence.drives ??= {});
 const paceOf = (w) => (w.pace ? w.pace() : w.now());
 const poseOf = (st, id) => { const t = st.entities[id]?.c.transform ?? {}; return { pos: (t.pos ?? [0, 0, 0]).slice(), q: (t.q ?? [0, 0, 0, 1]).slice() }; };
 
-/** What the hull would run into at `pose` (its transform's pos and q): a thing's id, "ground", or null. The hull's own
- *  family, and whatever it already touched at `from`, never block (a hull may back out of what it was in). */
+/** What the hull runs into sweeping `from` → `pose` (sub-steps ≤ its smallest half-extent): an id, "ground", or null; an
+ *  overlap it starts in blocks only a sub-step that deepens it (drive-check D10, D11). */
 export function hullHit(st, id, pose, from) {
   const e = st.entities[id]; if (!e || e.c.collider?.enabled === false) return null;
-  const fam = familyOf(st, id);
+  const fam = familyOf(st, id), G = groundOf(st);
   const at = (p) => obbs(scratch(st, [setOp(id, "transform", { ...(e.c.transform ?? {}), pos: p.pos, q: p.q })]), id);
   const ext = (o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; };
-  const touching = (H) => { const out = new Set(); for (const o of H) { const x = ext(o); for (const k of near(st, x.min, x.max)) if (!fam.has(k) && hitsIx(st, null, k, 0.01, o)) out.add(k); } return out; };
-  const H = at(pose); if (!H.length) return null;
-  const was = from ? touching(at(from)) : new Set(), now = touching(H);
-  for (const k of now) if (!was.has(k)) return k;
-  const G = groundOf(st); if (!G.ready) return null;
-  const under = (HH) => HH.some((o) => { const x = ext(o); return x.min[1] < G.height(o.c[0], o.c[2]) - 0.01; });
-  return under(H) && !(from && under(at(from))) ? "ground" : null;
+  // each overlapped thing's (and the ground's) penetration depth at the hull's boxes H
+  const depths = (H) => { const out = new Map();
+    for (const o of H) { const x = ext(o);
+      for (const k of near(st, x.min, x.max)) if (!fam.has(k) && hitsIx(st, null, k, 0.01, o)) { const d = Math.max(...geoOf(st, k).obbs.map((b) => satDepth(o, b))); out.set(k, Math.max(out.get(k) ?? 0, d)); }
+      if (G.ready) { const d = G.height(o.c[0], o.c[2]) - x.min[1]; if (d > 0.01) out.set("ground", Math.max(out.get("ground") ?? 0, d)); } }
+    return out; };
+  const H1 = at(pose); if (!H1.length) return null;
+  if (!from) { const d = depths(H1); return d.size ? [...d.keys()][0] : null; }
+  const H0 = at(from), small = Math.max(0.01, Math.min(...H0.flatMap((o) => o.h)));
+  const reach = Math.max(...H0.map((o) => Math.hypot(...o.c.map((v, i) => v - from.pos[i])) + Math.hypot(...o.h)));
+  const sweep = Math.hypot(...pose.pos.map((v, i) => v - from.pos[i])) + turnBetween(from.q, pose.q) * reach;
+  const n = Math.max(1, Math.ceil(sweep / small));   // the work budget (spend) bounds a very thin hull
+  const qb = dot4(from.q, pose.q) < 0 ? pose.q.map((v) => -v) : pose.q;
+  let prev = depths(H0);
+  for (let i = 1; i <= n; i++) { const t = i / n;
+    const q = from.q.map((v, j) => v + (qb[j] - v) * t), m = Math.hypot(...q) || 1;
+    const now = depths(i === n ? H1 : at({ pos: from.pos.map((v, j) => v + (pose.pos[j] - v) * t), q: q.map((v) => v / m) }));
+    for (const [k, d] of now) if (!prev.has(k) || d > prev.get(k) + 1e-4) return k;
+    prev = now; }
+  return null;
 }
+const dot4 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 
 /** The lease on `host`, if its holder still sits at the helm; a stale one (the holder got up or the helm went) is ended. */
 function liveLease(w, st, host) {

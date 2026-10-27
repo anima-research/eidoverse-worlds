@@ -25,6 +25,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["getting up commits nothing", "protocol/authority/bodyverbs.js", "{ if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }", "", ["D7"]],
   ["no periodic commit", "protocol/authority/drive.js", "const recorded = now - L.committed >= LEASE.commitMs && commitLease(", "const recorded = false && commitLease(", ["D8"]],
   ["no periodic commit on the beat", "protocol/authority/drive.js", "else if (now - L.committed >= LEASE.commitMs) commitLease(", "else if (false) commitLease(", ["D8"]],
+  ["only the end pose is tested", "protocol/authority/drive.js", "Math.max(1, Math.ceil(sweep / small))", "1", ["D10"]],
+  ["what it was in never blocks", "protocol/authority/drive.js", "if (!prev.has(k) || d > prev.get(k) + 1e-4) return k;", "if (!prev.has(k)) return k;", ["D11"]],
   ["a locked hull drives", "protocol/authority/drive.js", "if (lock) refuse(", "if (false) refuse(", ["D9"]],
   ["two helms taken", "protocol/authority/sockets.js", "if (helms.length > 1) return", "if (false) return", ["D1"]],
   ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
@@ -176,5 +178,18 @@ await C("D9", "the lock and station.who gate who may drive: a locked hull's step
   const t = session({ seats: false }); t.call("create", { id: "helm", components: helm("hull", { who: "builder" }) });
   const who = t.board("vic");
   return [locked.refused?.code === "locked" && who.refused?.code === "rights", { locked: show(locked), who: show(who) }]; });
+
+await C("D10", "the step is swept, not only its end: a 50 m/s hull's 18 m step clean through a 0.2 m wall is refused solid naming the wall (the end pose is clear of it); the same step with no wall is taken", () => {
+  const fast = { ...HULL, drive: { maxSpeed: 50, turnRate: 0.5 } };
+  const s = session({ hull: fast }); s.call("create", { id: "wall", components: { transform: tf([0, 1, 9]), mesh: { shape: "box", size: [6, 3, 0.2] } } }); s.board("vic");
+  const through = s.call("drive", { id: "hull", pos: [0, 1, 18], q: [0, 0, 0, 1] }, "vic");
+  const t = session({ hull: fast }); t.board("vic"); const clear = t.call("drive", { id: "hull", pos: [0, 1, 18], q: [0, 0, 0, 1] }, "vic");
+  return [through.refused?.code === "solid" && through.refused.blocker === "wall" && clear.ok, { through: show(through), clear: show(clear) }]; });
+
+await C("D11", "a hull already inside a slab may only move out: a step deeper is refused solid naming the slab; a step that lessens the overlap is taken", () => {
+  const s = session(); s.call("create", { id: "slab", components: { transform: tf([0, -2, 1.5]), mesh: { shape: "box", size: [10, 6, 1] } } }); s.board("vic");
+  const deeper = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic");
+  const out = s.call("drive", { id: "hull", pos: [0, 1, -1], q: [0, 0, 0, 1] }, "vic");
+  return [deeper.refused?.code === "solid" && deeper.refused.blocker === "slab" && out.ok, { deeper: show(deeper), out: show(out)}]; });
 
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
