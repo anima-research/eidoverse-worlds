@@ -51,11 +51,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   // research §4); `none` is gone (R 10-21): refused like any id the world doesn't define (a stored one reads as no grant)
   const wcS = s.entities["@world"]?.c ?? {}; const roleIds = () => R.rolesOf(wcS).map((r) => r.id);
   if (id === "@world" && comp === "default-role" && (R.isOwner(v) || !R.roleDef(wcS, v?.role)))
-    refuse("shape", `${at}.role must be a role here other than owner (${roleIds().filter((x) => x !== "owner").join(", ")}; got ${JSON.stringify(v?.role)})`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
+    refuse("shape", `${at}.role must be a role here other than owner (${roleIds().filter((x) => x !== "owner").join(", ")}; got ${JSON.stringify(v?.role)})${R.renamedRole(wcS, v?.role)}`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
   if (id === "@world" && comp === "default-role" && v?.guests !== undefined && (v.guests === "owner" || !R.roleDef(wcS, v.guests) || (R.GUESTS_AT_MOST_DEFAULT && R.rankOfRole(wcS, v.guests) > R.rankOfRole(wcS, v.role))))
-    refuse("shape", `${at}.guests must be a role here at or below role (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
+    refuse("shape", `${at}.guests must be a role here at or below role (guests never get more than everyone else; got ${JSON.stringify(v.guests)} with role ${JSON.stringify(v.role)})${R.renamedRole(wcS, v.guests)}`, "to let people without an account build here: {role: 'builder', guests: 'builder'}");
   if (id === "@world" && comp.startsWith("roles:") && (!obj || !R.roleDef(wcS, v.role)))
-    refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
+    refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})${R.renamedRole(wcS, v?.role)}`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
   if (id === "@world" && comp.startsWith("roles:") && obj) {
     for (const k of Object.keys(v)) if (!["role", "can", "note", "until"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?, until?}", { didYouMean: guessKey(k, ["role", "can", "note", "until"]) });
     // a timed grant (upstream #258): `until` is when it ends (epoch ms, the authority's clock); the authority writes its end

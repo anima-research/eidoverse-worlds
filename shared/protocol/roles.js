@@ -41,6 +41,10 @@ export const BELOW = -1;
 /** The words for a lock's strength: who may lift it (display only). */
 export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
 export const BUILTIN_IDS = Object.freeze(["inhabitant", "builder", "moderator", "owner"]);
+/** A built-in's old name, never an alias: a role written with it is refused, naming the new one (R 10-27). */
+export const RENAMED_ROLES = Object.freeze({ visitor: "inhabitant" });
+/** The refusal's words for an unknown role id that is an old name (or ""): a world's own role of that id is just its role. */
+export const renamedRole = (wc, id) => (typeof id === "string" && Object.hasOwn(RENAMED_ROLES, id) && !roleDef(wc, id) ? `; '${id}' is called ${RENAMED_ROLES[id]} now` : "");
 
 // ---------------- the closed permission list ----------------
 // [name, plain words (UI and help), needs]. The order is the order the grid shows.

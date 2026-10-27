@@ -245,6 +245,11 @@ const cases: Case[] = [
         up: code(set(s, "olive", "default-role", { role: "builder", guests: "moderator" })), ok: show(set(s, "olive", "default-role", { role: "moderator", guests: "builder" })),
         guest: eff(s, "guest-1")?.role, stranger: eff(s, "zed")?.role }; },
     good: (o) => o.crew === "ok" && o.own === "shape" && o.up === "shape" && o.ok === "ok" && o.guest === "builder" && o.stranger === "moderator" },
+  { id: "R10", what: "a role named visitor is refused naming inhabitant, its name now (R 10-27: no alias), for a person, the default and guests", run(s) { cast(s);
+      const why = (r: any) => `${r?.refused?.code}: ${r?.refused?.reason} | ${r?.refused?.fix}`;
+      return { one: why(role(s, "vic", { role: "visitor" })), def: why(set(s, "olive", "default-role", { role: "visitor" })),
+        guests: why(set(s, "olive", "default-role", { role: "builder", guests: "visitor" })) }; },
+    good: (o) => [o.one, o.def, o.guests].every((t) => /^shape: /.test(t) && /'visitor' is called inhabitant now/.test(t)) },
   { id: "R7", what: "per-person can: exceptions both ways, refused with did-you-mean, and checked for dependencies at write", run(s) { cast(s);
       const up = role(s, "vic", { role: "inhabitant", can: { fly: true } }), down = role(s, "mo", { role: "moderator", can: { ban: false } });
       const typo = role(s, "ann", { role: "inhabitant", can: { flie: true } }), dep = role(s, "ann", { role: "inhabitant", can: { editOthers: true } });

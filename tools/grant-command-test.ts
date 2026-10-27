@@ -59,5 +59,13 @@ world.c = {};
 r = await run('wren builder +fly');
 check('a role with exceptions for someone new is one whole grant', r?.args?.value?.role === 'builder' && r.args.value.can?.fly === true && !('until' in r.args.value), JSON.stringify(r?.args));
 
+// the help teaches only what runs (sweep-2 C2/C3, R 10-27): the base role is inhabitant, and +gen, +fly and /epoch still work
+sent.length = 0; dispatch('epoch', ''); await settle();
+check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?.verb === 'set' && sent.at(-1)?.args?.component === 'physics-engine', JSON.stringify(sent.at(-1)));
+{ const fs = await import('node:fs'); const help = fs.readFileSync(fileURLToPath(new URL('../defs/ui/_help.json', import.meta.url)), 'utf8');
+  const { COMMANDS } = await import('../client/lib/commands/registry.js'); const g = (COMMANDS as any[]).find((c) => c.name === 'grant')?.help ?? '';
+  check('the help sheet teaches no visitor role (it is inhabitant)', !/\bvisitors?\b/i.test(help) && /\/grant \* inhabitant/.test(help), help.match(/[^.]*visitor[^.]*/i)?.[0]);
+  check('…and names +gen, +fly and /epoch', /\+gen/.test(help) && /\+fly/.test(help) && /\/epoch/.test(help) && /\+gen/.test(g) && /\+fly/.test(g), g); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
