@@ -34,11 +34,35 @@ export const bus = {
 // "who am I" from query params. Both are guarded: headless hosts have neither,
 // and get the defaults.
 
+// Which world: the link's ?world= if it names one; otherwise the world this
+// browser was last IN as a person (written at the join ack, net.js
+// onSnapshot), so a bare link (a bookmark, the login's return to '/') goes
+// back where you were; the commons only for a browser that has been nowhere.
+// Spectators, renderers and the thumbnail minter ignore the memory: a link
+// points them, and a renderer must never inherit a person's last stop.
+// index.html's early-socket script makes this same choice before any module
+// loads and publishes it as __ewWorld, which CONFIG takes when present, so
+// the page has one answer (tools/last-world-test.ts holds the two copies
+// in agreement).
+export const LAST_WORLD_KEY = 'ew-world';
+export function pickWorld(params, stored) {
+  const asked = params.get('world');
+  if (asked) return { world: asked, remembered: false };
+  const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
+  if (person && typeof stored === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(stored)) return { world: stored, remembered: true };
+  return { world: 'commons', remembered: false };
+}
+
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const store = globalThis.localStorage ?? null;
+const picked = globalThis.__ewWorld
+  ?? pickWorld(params, (() => { try { return store?.getItem(LAST_WORLD_KEY); } catch { return null; } })());
 export const CONFIG = {
   params,
-  world: params.get('world') || 'commons',
+  world: picked.world,
+  // true when the memory chose the world, not the link: a refusal at its door
+  // then forgets it and takes the person to the commons (net.js wireSocket)
+  worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
   // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)

@@ -1,7 +1,7 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { CONFIG, report, bus, nameFromJoinAck } from './base.js';
+import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY } from './base.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -339,6 +339,22 @@ export function rejoin() {
 }
 
 let intentionalClose = false;
+let everJoined = false;   // has this page been let in at all (a snapshot arrived)
+
+/** A world's door refused us (4010 not open to you, 4006 removed). If it is the
+ *  world a bare link would bring this browser back to, forget it: the memory
+ *  (base.js pickWorld) must not keep leading to a closed door. And when the
+ *  memory, not the link, brought this page here and we never got in, go to the
+ *  commons now — the person did not ask for this world, and a refusal for a
+ *  place they did not name is no way to arrive. One reload at most: the
+ *  memory is gone, so the next load is the link's or the commons. */
+function forgetRefusedWorld() {
+  try { if (localStorage.getItem(LAST_WORLD_KEY) === CONFIG.world) localStorage.removeItem(LAST_WORLD_KEY); } catch { /* storage blocked */ }
+  if (!CONFIG.worldRemembered || everJoined) return false;
+  toast(`you can't go back into "${CONFIG.world}" — taking you to the commons`, 'warn', 8000);
+  setTimeout(() => location.reload(), 3000);
+  return true;
+}
 
 // archipelago-home session (home-node.md §7): the server may know who we are
 // from the ew_sess cookie (set by /auth after a Discord login). Fetched once;
@@ -472,6 +488,7 @@ function wireSocket(ws) {
     if (ev.code === 4006) {
       net.status = 'rejected';
       bus.emit('net', net);
+      if (forgetRefusedWorld()) return;
       toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
       return;
     }
@@ -483,6 +500,7 @@ function wireSocket(ws) {
     if (ev.code === 4010) {
       net.status = 'rejected';
       bus.emit('net', net);
+      if (forgetRefusedWorld()) return;
       toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
       return;
     }
@@ -854,8 +872,15 @@ async function onSnapshot(msg) {
   bus.emit('your-rights', net.myRights);
   markPhase('connect', 1);
   net.joined = true;
+  everJoined = true;
   net.status = 'live';
   net.myId = msg.you;
+  // the world a person is IN: where a bare link brings this browser next time
+  // (base.js pickWorld). Written here, at the door's yes, so a refused or
+  // mistyped ?world= is never remembered; watchers and renderers write nothing.
+  if (!CONFIG.spectate && !CONFIG.renderer) {
+    try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+  }
   net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
