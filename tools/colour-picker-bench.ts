@@ -53,8 +53,7 @@ check('a typed hex recolours it', await waitFor(`${lampColour}.then((c) => c ===
 await evalJson(`(() => { const h = ${row}.querySelector('.sp-pick-hex'); h.value = '#abc'; h.dispatchEvent(new Event('change')); return true; })()`);
 check('a three-digit hex is the CSS shorthand', await waitFor(`${lampColour}.then((c) => c === 0xaabbcc)`));
 await evalJson(`(() => { const h = ${row}.querySelector('.sp-pick-hex'); h.value = 'banana'; h.dispatchEvent(new Event('change')); return true; })()`);
-await sleep(500);
-check('nonsense in the hex field changes nothing, and the field shows the colour again', (await evalJson(lampColour)) === 0xaabbcc && (await evalJson(`${row}.querySelector('.sp-pick-hex').value`)) === '#aabbcc');
+check('nonsense in the hex field changes nothing, and the field shows the colour again', await waitFor(`${row}.querySelector('.sp-pick-hex').value === '#aabbcc'`) && (await evalJson(lampColour)) === 0xaabbcc);
 const recents = await evalJson(`[...${row}.querySelectorAll('.sp-pick-recent .sp-pick-cell')].map((c) => +c.dataset.c)`);
 check('recents are newest first, no repeats', JSON.stringify(recents?.slice(0, 3)) === JSON.stringify([0xaabbcc, 0x123456, pick]), JSON.stringify(recents));
 check('…and kept for this viewer', await evalJson(`JSON.parse(localStorage.getItem('eido-recent-colours'))[0] === 0xaabbcc`));
