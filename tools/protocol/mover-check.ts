@@ -216,6 +216,26 @@ if (M) {
   const dryShort = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 1, height: 1.2 }, pool(null));
   ok(!tall.stance.swimming && short.stance.swimming && near(short.pos[1], 1.0 - 0.75 * 1.2) && near(short.moved, 0.9) && near(dryShort.moved, 1.55), "W5 height: a 1.2 m body swims in 1 m of water a 1.7 m one wades; dry, its stride is the mover's", { tall: tall.stance, short: short.stance, dryShort: dryShort.moved });
 }
+{ // W8: a dry pocket below @world's level (the combine law: an exclusion beats @world.water). The client's level reads go
+  // through one reader (shared/zone.js worldLevelAt over mediumOf), so its wading and its level dive see the pocket as dry
+  const { stepWalk } = await import(ENGINE + "shared/mover.js");
+  const Z = await import(ENGINE + "shared/zone.js");
+  const ent = (pos, comps) => ({ c: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...comps } });
+  const st = { entities: { "@world": { c: { water: { level: 0 } } }, room: ent([0, -2, 0], { zone: { shape: "box", size: [6, 4, 6] }, "water-exclusion": {} }) } };
+  const zones = Z.zonesOf(st), feetIn = [0, -1.2, 0], feetOut = [8, -1.2, 0];
+  const lvIn = Z.worldLevelAt(feetIn, zones, 0), lvOut = Z.worldLevelAt(feetOut, zones, 0);
+  ok(lvIn === null && lvOut === 0, "W8 a pocket below sea level is dry to the client's level reader; the sea beside it is the level", { lvIn, lvOut });
+  // the controller's env: the level where the reader gives one, none (a dry walk) where it doesn't
+  const env = (lv) => (lv == null ? {} : { floorAt: () => -1.2, waterAt: () => lv });
+  const inside = stepWalk({ pos: feetIn, dir: [1, 0], dt: 1 }, env(lvIn)), outside = stepWalk({ pos: feetOut, dir: [1, 0], dt: 1 }, env(lvOut));
+  ok(near(inside.moved, 1.55) && (inside.stance === undefined || inside.stance === null || (inside.stance.speedFactor === 1 && !inside.stance.swimming)), "W8 no wading in the pocket: a dry walk at full pace", inside);
+  ok(outside.moved < 1.55 && outside.stance && !outside.stance.swimming && outside.stance.speedFactor < 1, "W8 beside it, 1.2 m of sea drags the same stride", outside);
+  // the level dive and the wading ask the same reader: the controller reads waterLevel() once, inside levelHere
+  const ctrl = src("client/lib/controller.js"), body = (name) => { const i = ctrl.indexOf(`function ${name}(`); return i < 0 ? "" : ctrl.slice(i, ctrl.indexOf("\n}", i)); };
+  const reads = (ctrl.match(/\bwaterLevel\(\)/g) ?? []).length, here = ctrl.match(/const levelHere = [^\n]*/)?.[0] ?? "";
+  ok(reads === 1 && /waterLevel\(\)/.test(here) && /worldLevelAt|levelAt\(/.test(here) && /levelHere\(\)/.test(body("levelDiveWater")) && /const wl = levelHere\(\)/.test(ctrl),
+    "W8 no dive there either: the controller's level dive and its wading read the level only through levelHere (mediumOf), never waterLevel() directly", { reads, here, dive: body("levelDiveWater").slice(0, 200) });
+}
 { // G: THE GROUND (owner 22:34, holes review H2). The authority judges a body on the same ground the walker walks on: the
   // terrain heightfield (shared/terrainmath.js over @world's terrain) and the water (the mover's own water law). Every row
   // runs the SAME stride through stepWalk and through the real authority's `move`, and requires the same verdict: what the

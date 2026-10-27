@@ -25,7 +25,7 @@ import { isOverlayOpen, flashHint, html } from './ui.js';
 import { selectClip, AIRBORNE_GRACE } from './locomotion_clip.js';
 import { bodyModeOf } from '../../shared/bodymode.js';
 // the 3D swim (under a water level, and in water volumes where a world has them): the mover's law (shared/mover.js stepSwim)
-import { waterAt as volumeAt, waterTime } from './watervolumes.js';
+import { waterAt as volumeAt, waterTime, levelAt } from './watervolumes.js';
 import { swimStep, waveHeight } from '../../shared/water.js';
 import { register as registerAction } from './actions.js';
 import {
@@ -637,9 +637,11 @@ export function constrainMovement(pos) {
 // use — WASD where you look, Space up, C / Ctrl down — with the surface at the wave above you. Coming back up to the
 // surface (not diving) hands the body back to the float.
 let levelDiving = false;
+// the world's level where my feet are: none while flying or in a dry pocket below it (watervolumes levelAt: mediumOf)
+const levelHere = () => { const wl = flight ? null : waterLevel(); return wl == null ? null : levelAt(myState.pos, wl); };
 const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
 function levelDiveWater(me) {
-  const wl = flight ? null : waterLevel();
+  const wl = levelHere();
   const w = wl == null ? null : waterAt(myState.pos.x, myState.pos.z);
   if (!w) { levelDiving = false; return null; }
   const stature = deskEyeY(me?.userScale) / deskEyeY(1);
@@ -786,7 +788,7 @@ export function updateMe(dt, me) {
   // WATER (upstream #242): one level for the world (water.js), none while flying. The mover reads it (env.waterAt) and
   // its stance decides the pace — wading drags, past the chest the body swims; the float below is presentation.
   // Measured against this body's own stature (a taller body wades deeper), from what the body would stand on.
-  const wl = flight ? null : waterLevel();
+  const wl = levelHere();
   const wadeH = wl == null ? 0 : me.bodyHeight?.() ?? colliderFor(me.userScale).tall;
 
   // first person: the body faces where I look, standing still too (R, 10-10). Others see which way I'm looking, and what I

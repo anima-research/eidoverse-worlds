@@ -2,7 +2,7 @@
 // and the waters/airs shared/water.js reads (mediumAt, inBox, waterPath, swimStep). Pure.
 import { worldPose, offChain } from "./protocol/simlayer.js";
 import { qRotate, qConj } from "./rot.js";
-import { waterParams, mediumAt, waveHeight, inBox, excludes } from "./water.js";
+import { waterParams, mediumAt, waveHeight, inBox, excludes, MAX_WATER, MAX_AIR } from "./water.js";
 
 const fin = Number.isFinite;
 const v3 = (x) => Array.isArray(x) && x.length === 3 && x.every(fin);
@@ -66,6 +66,23 @@ export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } =
   const g = zones.bodies.find((b) => b.global);
   if (g && p[1] <= g.top && !volumes.airs.some((a) => inBox(p, a) && excludes(a, AT_WORLD))) return { medium: "water", level: g.top, flow: worldFlow(g.water.flow, null), body: g.id, priority: g.priority };
   return { medium: "air", level: null, flow: null, body: null, priority: null };
+}
+
+/** @world's level at p as the client's walk and level dive read it: `level`, unless mediumOf says the point (at most the
+ *  surface) is dry: a pocket that keeps @world's water out. No pockets, no change. */
+export function worldLevelAt(p, zones, level, { volumes = waterVolumes(zones) } = {}) {
+  if (!fin(level)) return null;
+  const g = { id: "@world", global: true, priority: -Infinity, water: { level }, top: level };
+  const m = mediumOf([p[0], Math.min(p[1], level), p[2]], { bodies: [g, ...(zones?.bodies ?? []).filter((b) => !b.global)], exclusions: zones?.exclusions ?? [] }, { volumes });
+  return m.medium === "air" ? null : level;
+}
+
+/** What the GPU fog reads (client/lib/watervolumes.js): the highest `maxWater` bodies (slots 1.., slot 0 @world's level), the
+ *  last `maxAir` pockets, and each pocket's mask of the slots it clears (bit 0 the level, bit i+1 waters[i]): excludes(). */
+export function fogSlots({ waters = [], airs = [] } = {}, { maxWater = MAX_WATER, maxAir = MAX_AIR } = {}) {
+  const ws = waters.slice(-maxWater), as = airs.slice(-maxAir);
+  const masks = as.map((a) => [AT_WORLD, ...ws].reduce((m, w, i) => (excludes(a, w) ? m | (1 << i) : m), 0));
+  return { waters: ws, airs: as, masks };
 }
 
 // the components and change kinds a rebuild of the bodies reads (client/lib/watervolumes.js; state.js's events)

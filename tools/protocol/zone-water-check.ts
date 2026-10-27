@@ -31,6 +31,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a pocket beats @world's level", "zone.js", "&& !volumes.airs.some((a) => inBox(p, a) && excludes(a, AT_WORLD))", "", ["Z4w"]],
   ["ties by id", "zone.js", "|| (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)", "", ["Z3t"]],
   ["attenuation as σ", "zone.js", "return c.map((x) => -Math.log(Math.max(1e-6, Math.min(1, x))) / d);", "return c.map((x) => 1 - x);", ["Z8"]],
+  ["the fog's mask is the law", "zone.js", "(excludes(a, w) ? m | (1 << i) : m)", "(m | (1 << i))", ["Z10"]],
+  ["the level asks the pockets", "zone.js", "return m.medium === \"air\" ? null : level;", "return level;", ["Z11"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// the components and change kinds", "//  the components and change kinds", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -218,6 +220,31 @@ await C("Z8", "attenuation converts to upstream's σ per metre exactly (σ = −
   const v = Z.waterVolumes(Z.zonesOf(s.st())); const c = v.waters.find((w) => w.id === "clear"), p = v.waters.find((w) => w.id === "plain");
   const near = (a: number[], b: number[]) => a.every((x, i) => Math.abs(x - b[i]) < 1e-12);
   return [near(c.absorption, [0.16, 0.055, 0.025]) && near(c.scatter, [0.1, 0.2, 0.3]) && JSON.stringify(p.absorption) === JSON.stringify(W.waterParams({}).absorption), { clear: c.absorption, plain: p.absorption }]; });
+
+await C("Z10", "the GPU fog's uniforms are the law's: each pocket's mask clears @world's level and exactly the bodies at or below its priority (only its bodies when named), slot for slot as excludes() says; the shader reads that mask", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "water", value: { level: 0 } });
+  s.call("create", { id: "low", components: { transform: tf([0, -5, 0]), zone: box([20, 10, 20]), water: {} } });
+  s.call("create", { id: "high", components: { transform: tf([0, -5, 0]), zone: box([20, 10, 20], { priority: 5 }), water: {} } });
+  s.call("create", { id: "mid", components: { transform: tf([0, -5, 0]), zone: box([2, 2, 2], { priority: 2 }), "water-exclusion": {} } });
+  s.call("create", { id: "named", components: { transform: tf([5, -5, 0]), zone: box([2, 2, 2], { priority: 9 }), "water-exclusion": { bodies: ["high"] } } });
+  s.call("create", { id: "sealevel", components: { transform: tf([-5, -5, 0]), zone: box([2, 2, 2], { priority: 9 }), "water-exclusion": { bodies: ["@world"] } } });
+  const z = Z.zonesOf(s.st()), v = Z.waterVolumes(z), f = Z.fogSlots(v), lim = Z.fogSlots(v, { maxWater: 1 });
+  const law = (slots: any) => slots.airs.map((a: any) => [{ id: "@world", priority: -Infinity }, ...slots.waters].reduce((m: number, w: any, i: number) => (W.excludes(a, w) ? m | (1 << i) : m), 0));
+  const src = fs.readFileSync(path.join(ENGINE, "client/lib/watervolumes.js"), "utf8");
+  const reads = ["const fogFn", "export const dryAt", "const particleAlpha"].every((k) => { const i = src.indexOf(k); return i >= 0 && /clears\(/.test(src.slice(i, src.indexOf("\n});", i))); });
+  const o = { airs: f.airs.map((a: any) => a.id), masks: f.masks, law: law(f), lim: { waters: lim.waters.map((w: any) => w.id), masks: lim.masks }, writes: /fogSlots\(/.test(src) && /dryExtent\.array\[i\]\.set\([^)]*mask/.test(src), reads };
+  return [o.airs.join() === "mid,named,sealevel" && o.masks.join() === "3,4,1" && o.law.join() === o.masks.join() && o.lim.waters.join() === "high" && o.lim.masks.join() === "1,2,1" && o.writes && o.reads, o]; });
+
+await C("Z11", "the client's level asks mediumOf: worldLevelAt is null in a pocket below sea level (a pocket naming only a thing body leaves it), the level beside it, above it and in a world with no pockets (unchanged)", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "water", value: { level: 0 } });
+  const none = Z.zonesOf(s.st());
+  s.call("create", { id: "room", components: { transform: tf([0, -6, 0]), zone: box([4, 4, 4]), "water-exclusion": {} } });
+  s.call("create", { id: "picky", components: { transform: tf([20, -6, 0]), zone: box([4, 4, 4], { priority: 5 }), "water-exclusion": { bodies: ["somewhere"] } } });
+  const z = Z.zonesOf(s.st()), L = (p: number[], zz = z) => Z.worldLevelAt(p, zz, 0);
+  const o = { room: L([0, -7.5, 0]), beside: L([6, -7.5, 0]), above: L([0, 3, 0]), picky: L([20, -7.5, 0]), none: [L([0, -7.5, 0], none), L([0, 3, 0], none)], noLevel: Z.worldLevelAt([0, -7.5, 0], z, null) };
+  return [o.room === null && o.beside === 0 && o.above === 0 && o.picky === 0 && o.none.join() === "0,0" && o.noLevel === null, o]; });
 
 // tools/water/math-test.ts's expectations, on bodies and pockets built through zone.js (a thing's zone, not a hand-made box)
 await C("ZM", "math-test on zone-built bodies: wet/dry boundaries, a pocket, path lengths (nested, overlapping, rotated pockets), ascent to the float, diving, a half-size body, waves", () => {

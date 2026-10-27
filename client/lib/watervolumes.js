@@ -4,7 +4,7 @@ import { THREE, TSL, scene, camera, sun, hemi } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, mediumAt, vector } from '../../shared/water.js';
-import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView } from '../../shared/zone.js';
+import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
 import { setEnvironmentFloor } from './terrain.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
@@ -13,14 +13,15 @@ import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './wate
 let hideSkyForWater = (_on) => {};
 export function setSkyHider(fn) { hideSkyForWater = typeof fn === 'function' ? fn : () => {}; }
 const { uniform, uniformArray, positionWorld, cameraPosition, output, Fn, Loop, If, Break, Continue, float, int, bool, vec2, vec3, vec4,
-  array, select, min, max, exp, distance, all } = TSL;
+  array, select, min, max, exp, exp2, distance, all } = TSL;
 let objects = () => new Map();
 export function setWaterObjects(fn) { objects = fn; }
 // The shared wave clock (server time). Injected by main.js: importing remotes.js
 // here closes an import cycle back to controller.js through the XR modules.
 let serverNow = () => Date.now();
 export function setWaterClock(fn) { serverNow = fn; }
-const waters = [], airs = [], surfaces = [];
+const waters = [], airs = [], airMasks = [], surfaces = [];
+let zonesNow = { bodies: [], exclusions: [] }, volumesNow = { waters: [], airs: [] };   // the whole of the last build, for the CPU readers
 const clock = uniform(0), waterCount = uniform(0,'int'), airCount = uniform(0,'int');
 // fog slots: 0 is the world water level's (an empty box unless the camera is under it), 1..MAX_WATER the volumes'
 const SLOTS = MAX_WATER + 1;
@@ -29,7 +30,9 @@ const maxs = uniformArray(Array.from({length:SLOTS},()=>new THREE.Vector4()));
 const absorption = uniformArray(Array.from({length:SLOTS},()=>new THREE.Vector4()));
 const scatter = uniformArray(Array.from({length:SLOTS},()=>new THREE.Vector4()));
 const dryInverse = uniformArray(Array.from({length:MAX_AIR},()=>new THREE.Matrix4()));
-const dryExtent = uniformArray(Array.from({length:MAX_AIR},()=>new THREE.Vector4()));
+const dryExtent = uniformArray(Array.from({length:MAX_AIR},()=>new THREE.Vector4()));   // xyz half size, w the slots it clears (zone.js fogSlots)
+// does a pocket's mask (dryExtent.w) clear fog slot s? (bit s; floats stay portable TSL)
+const clears = (mask, s) => mask.div(exp2(float(s))).floor().mod(2).greaterThan(0.5);
 // Portable TSL (not raw WGSL): the same shader must compile on the WebGL backend too — VR on a headset
 // without WebGPU-XR forces WebGL (backend_choice.js), and a WGSL-only pass would not build there.
 // Segment a→b clipped to the box lo..hi, as [t0, t1] along the segment; t1 <= t0 means a miss.
@@ -57,6 +60,7 @@ const fogFn = Fn(([color, a, b]) => {
     If(wet.y.lessThanEqual(wet.x), () => { Continue(); });
     const count = int(0).toVar();
     Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
+      If(clears(dryExtent.element(j).w, w).not(), () => { Continue(); });   // only the bodies this pocket keeps out (the combine law)
       const m = dryInverse.element(j), e = dryExtent.element(j).xyz;
       const v = rayBox(m.mul(vec4(a, 1)).xyz, m.mul(vec4(b, 1)).xyz, e.negate(), e);
       spans.element(count).assign(vec2(max(wet.x, v.x), min(wet.y, v.y))); count.addAssign(1);
@@ -122,6 +126,8 @@ export function environmentSettings() {
 }
 export function movementBounds() { const env=environmentSettings(); return env?.bounds ?? (env || waters.length ? {} : null); }
 export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],waters,airs,clock.value); }
+/** @world's `level` at p, or null in a pocket that keeps it out (zone.js worldLevelAt: mediumOf) */
+export function levelAt(p, level) { return worldLevelAt(Array.isArray(p)?p:[p.x,p.y,p.z],zonesNow,level,{volumes:volumesNow}); }
 export function waterTime() { return clock.value; }
 let rebuilds = 0;
 export function waterDebug() { return { waters:waters.length, air:airs.length, enabled:installed, time:clock.value, rebuilds, slots:waterCount.value, under:underLevelNow, background:backgroundOn, dryPocket:dryIdx.value }; }
@@ -223,7 +229,7 @@ function placeUnderBackground(lvl) {
 const NO_WATER = [1e7, 1e7, 1e7];
 function cameraDryBox() {
   camera.getWorldPosition(_cam);
-  for (let i = 0; i < airs.length; i++) { const a = airs[i], q = a.toLocal([_cam.x, _cam.y, _cam.z]); if (Math.abs(q[0]) <= a.size[0] / 2 && Math.abs(q[1]) <= a.size[1] / 2 && Math.abs(q[2]) <= a.size[2] / 2) return i; }
+  for (let i = 0; i < airs.length; i++) { if (!(airMasks[i] & 1)) continue; const a = airs[i], q = a.toLocal([_cam.x, _cam.y, _cam.z]); if (Math.abs(q[0]) <= a.size[0] / 2 && Math.abs(q[1]) <= a.size[1] / 2 && Math.abs(q[2]) <= a.size[2] / 2) return i; }
   return -1;
 }   // an unreachable point: a segment never meets it (rayBox misses)
 /** The camera-dependent half of the optics: the level's fog slot, the under-water background and sky, and the
@@ -249,14 +255,15 @@ export function updateWater() {
   clock.value=(serverNow()%3600000)/1000;
   const rebuild=dirty;dirty=false;
   if(rebuild){rebuilds++;clearSurfaces();volumeIds.clear();if(particles){scene.remove(particles);particles.geometry.dispose();particles.material.dispose();particles=null;}}
-  waters.length=0;airs.length=0;
+  waters.length=0;airs.length=0;airMasks.length=0;
   if(rebuild){fold=foldOfView(state.st);for(const [id,e] of entries())if(e.environment)volumeIds.add(id);}
   const zones=zonesOf(fold,{poseOf:id=>poseFor(fold,id)});
   if(rebuild)for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);
-  const vol=waterVolumes(zones);
+  const vol=waterVolumes(zones);zonesNow=zones;volumesNow=vol;
+  const fog=fogSlots(vol);   // the kept bodies and pockets, and which slots each pocket clears (the combine law)
   if(vol.waters.length>MAX_WATER)warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);
   // the highest-priority bodies are kept (the list runs lowest first)
-  for(const w of vol.waters.slice(-MAX_WATER)) {
+  for(const w of fog.waters) {
     const i=waters.length;waters.push(w);
     const slot=i+1;   // fog slot 0 is the level's; volumes follow it (higher = priority)
     mins.array[slot].set(w.center[0]-w.size[0]/2,w.bottom,w.center[2]-w.size[2]/2,0);
@@ -266,12 +273,12 @@ export function updateWater() {
     else if(surfaces[i]){surfaces[i].position.set(w.center[0],w.top,w.center[2]);surfaces[i].userData.centre?.value.set(w.center[0],w.center[2]);}
   }
   if(vol.airs.length>MAX_AIR)warn(`Water renderer supports ${MAX_AIR} dry volumes; extra volumes are inactive`);
-  // the GPU fog keeps every pocket out of every body (as mediumAt does for a pocket without bodies or priority)
-  for(const a of vol.airs.slice(-MAX_AIR)) {
+  // a pocket clears only the slots its mask names (fogSlots: excludes(), mediumAt's rule)
+  fog.airs.forEach((a,i)=>{
     const inv=new THREE.Matrix4().compose(new THREE.Vector3(...a.center),new THREE.Quaternion().fromArray(a.q).normalize(),new THREE.Vector3(1,1,1)).invert();
-    const i=airs.length;dryInverse.array[i].copy(inv);dryExtent.array[i].set(a.size[0]/2,a.size[1]/2,a.size[2]/2,0);
-    airs.push(a);
-  }
+    const mask=fog.masks[i];dryInverse.array[i].copy(inv);dryExtent.array[i].set(a.size[0]/2,a.size[1]/2,a.size[2]/2,mask);
+    airs.push(a);airMasks.push(mask);
+  });
   airCount.value=airs.length;
   updateWaterView();   // the camera-dependent half, now (main.js runs it again after this frame's movement)
   if(rebuild){const env=environmentSettings();setEnvironmentFloor(Number.isFinite(env?.floor)?env.floor:null);updateEnvironmentSky(env);makeParticles(env?.particles);}
@@ -288,20 +295,21 @@ export const dryAt = Fn(([p]) => {
   const dry = float(0).toVar();
   Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
     const q = dryInverse.element(j).mul(vec4(p, 1)).xyz;
-    If(all(q.abs().lessThanEqual(dryExtent.element(j).xyz)), () => { dry.assign(1); Break(); });
+    If(clears(dryExtent.element(j).w, 0).and(all(q.abs().lessThanEqual(dryExtent.element(j).xyz))), () => { dry.assign(1); Break(); });
   });
   return dry;
 });
-// 0 inside any dry box, 1 inside a water volume, else 0 (portable TSL, as the fog)
+// 1 inside a water slot no pocket there keeps out (zone.js fogSlots' masks), else 0 (portable TSL, as the fog)
 const particleAlpha = Fn(([p]) => {
-  const alpha = float(0).toVar(), dry = bool(false).toVar();
-  Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
-    const q = dryInverse.element(j).mul(vec4(p, 1)).xyz;
-    If(all(q.abs().lessThanEqual(dryExtent.element(j).xyz)), () => { dry.assign(true); Break(); });
-  });
-  If(dry.not(), () => {
-    Loop({ start: int(0), end: waterCount, type: 'int', name: 'w' }, ({ w }) => {
-      If(all(p.greaterThanEqual(mins.element(w).xyz)).and(all(p.lessThanEqual(maxs.element(w).xyz))), () => { alpha.assign(1); Break(); });
+  const alpha = float(0).toVar();
+  Loop({ start: int(0), end: waterCount, type: 'int', name: 'w' }, ({ w }) => {
+    If(all(p.greaterThanEqual(mins.element(w).xyz)).and(all(p.lessThanEqual(maxs.element(w).xyz))), () => {
+      const dry = bool(false).toVar();
+      Loop({ start: int(0), end: airCount, type: 'int', name: 'j' }, ({ j }) => {
+        const q = dryInverse.element(j).mul(vec4(p, 1)).xyz;
+        If(clears(dryExtent.element(j).w, w).and(all(q.abs().lessThanEqual(dryExtent.element(j).xyz))), () => { dry.assign(true); Break(); });
+      });
+      If(dry.not(), () => { alpha.assign(1); Break(); });
     });
   });
   return alpha;
