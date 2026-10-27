@@ -2135,13 +2135,21 @@
    "color": "int",
    "opacity": "number",
    "kind": "string",
-   "flow": "array"
+   "flow": "array",
+   "waves": "array",
+   "attenuationColor": "vec3",
+   "attenuationDistance": "number",
+   "scatterColor": "vec3",
+   "density": "number",
+   "drag": "number"
   },
   "enums": {
    "kind": [
     "still",
     "river",
-    "ocean"
+    "ocean",
+    "lake",
+    "pool"
    ]
   },
   "ranges": {
@@ -2156,29 +2164,159 @@
    "opacity": {
     "min": 0.1,
     "max": 1
+   },
+   "waves": {
+    "maxItems": 8
+   },
+   "attenuationColor": {
+    "min": 0,
+    "max": 1
+   },
+   "attenuationDistance": {
+    "gt": 0,
+    "max": 10000
+   },
+   "scatterColor": {
+    "min": 0,
+    "max": 1
+   },
+   "density": {
+    "gt": 0,
+    "max": 20000
+   },
+   "drag": {
+    "min": 0,
+    "max": 100
    }
   },
-  "required": [
-   "level"
-  ],
   "absentMeans": {
    "color": "0x1d5a6e",
    "opacity": "0.82",
    "kind": "decided from the ground it fills (shared/waterkind.js)",
-   "flow": "still: no current"
+   "flow": "still: no current",
+   "level": "on @world never (it is required there); on a thing, its zone's top",
+   "waves": "a flat surface",
+   "attenuationColor": "the reader's own look for its kind (a level by kind; a body σ [0.16, 0.055, 0.025] per metre: shared/water.js waterParams)",
+   "attenuationDistance": "the reader's own look for its kind, as attenuationColor",
+   "scatterColor": "the reader's own look (a level by kind and daylight; a body [0.015, 0.12, 0.18]: shared/water.js waterParams)",
+   "density": "1000 kg/m³ (fresh water)",
+   "drag": "the mover's own swim law (shared/mover.js)"
   },
   "docs": {
-   "level": "the water's surface height, metres (world y)",
+   "level": "its surface height, metres, in its entity's frame (the world's on @world; on a thing, absent: its zone's top)",
    "color": "its colour, 0xRRGGBB (sRGB)",
    "opacity": "0.1..1",
-   "kind": "still | river | ocean",
-   "flow": "a current [x, z], metres a second"
+   "kind": "still | river | ocean | lake | pool",
+   "flow": "a current, metres a second: [x, z] on @world; on a thing [x, z] or [x, y, z], in its own frame",
+   "waves": "up to 8 waves summed on the surface, each {amplitude (m, 0..5), wavelength (m, ≥ 0.1), direction [x, z], phase? (rad)}",
+   "attenuationColor": "the colour white light becomes after attenuationDistance of water, linear [r, g, b] 0..1 (KHR_materials_volume; absorption σ = −ln(c) / d per metre)",
+   "attenuationDistance": "the distance, metres, at which light has become attenuationColor (KHR_materials_volume)",
+   "scatterColor": "the colour the water scatters back, linear [r, g, b] 0..1 (Unity HDRP scatteringColor)",
+   "density": "how dense the water is, kg/m³ (what a body floats against)",
+   "drag": "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction)"
   },
   "units": {
    "level": "m",
-   "flow": "m/s"
+   "flow": "m/s",
+   "attenuationDistance": "m",
+   "density": "kg/m³",
+   "drag": "1/s"
+  }
+ },
+ "zone": {
+  "status": "trial",
+  "fields": {
+   "shape": "string",
+   "size": "vec3",
+   "radius": "number",
+   "height": "number",
+   "priority": "int",
+   "blend": "number",
+   "weight": "number",
+   "global": "bool"
   },
-  "on": "world"
+  "enums": {
+   "shape": [
+    "box",
+    "sphere",
+    "capsule",
+    "cylinder"
+   ]
+  },
+  "ranges": {
+   "size": {
+    "gt": 0,
+    "max": 10000
+   },
+   "radius": {
+    "gt": 0,
+    "max": 10000
+   },
+   "height": {
+    "gt": 0,
+    "max": 10000
+   },
+   "priority": {
+    "min": -1000000,
+    "max": 1000000
+   },
+   "blend": {
+    "min": 0,
+    "max": 1000
+   },
+   "weight": {
+    "min": 0,
+    "max": 1
+   }
+  },
+  "required": [
+   "shape"
+  ],
+  "absentMeans": {
+   "shape": "never absent: a zone names its shape",
+   "size": "not a box (a box needs its size)",
+   "radius": "not a sphere, capsule or cylinder (each needs a radius)",
+   "height": "not a capsule or cylinder (each needs a height)",
+   "priority": "0",
+   "blend": "0: a hard edge",
+   "weight": "1: full strength",
+   "global": "false: the zone is its shape"
+  },
+  "docs": {
+   "shape": "box, sphere, capsule or cylinder (OMI_physics_shape's), centred on the thing's origin in its own frame; a capsule or cylinder stands along its y",
+   "size": "a box's full size [x, y, z], metres, before the thing's scale",
+   "radius": "a sphere's, capsule's or cylinder's radius, metres",
+   "height": "a capsule's or cylinder's full height along its y, metres (a capsule's includes its caps)",
+   "priority": "which of two overlapping zones' effects wins: the higher (Godot Area3D); a tie goes to the later id",
+   "blend": "how far outside its shape a look effect fades out, metres (Unity Volume blend distance); look only, never the medium",
+   "weight": "how strongly a look effect applies, 0..1 (Unity Volume weight); look only, never the medium",
+   "global": "true: everywhere in the world, its shape unused (Unity Volume global, Unreal unbound)"
+  },
+  "units": {
+   "size": "m",
+   "radius": "m",
+   "height": "m",
+   "blend": "m"
+  },
+  "on": "thing"
+ },
+ "water-exclusion": {
+  "status": "trial",
+  "fields": {
+   "bodies": "refs"
+  },
+  "ranges": {
+   "bodies": {
+    "maxItems": 16
+   }
+  },
+  "absentMeans": {
+   "bodies": "every water body its zone overlaps, @world's level included"
+  },
+  "docs": {
+   "bodies": "the water bodies (things with water, or @world) it keeps out; it keeps out only those at or below its zone's priority, @world's level always"
+  },
+  "on": "thing"
  },
  "terrain-grid": {
   "status": "reserved",
@@ -2348,9 +2486,6 @@
   "status": "reserved"
  },
  "camera": {
-  "status": "reserved"
- },
- "zone": {
   "status": "reserved"
  },
  "video": {

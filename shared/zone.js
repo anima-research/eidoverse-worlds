@@ -1,0 +1,95 @@
+// shared/zone.js — a world's water bodies and dry pockets in world space (zone + water / water-exclusion: componentspec.js),
+// and the waters/airs shared/water.js reads (mediumAt, inBox, waterPath, swimStep). Pure.
+import { worldPose, offChain } from "./protocol/simlayer.js";
+import { qRotate, qConj } from "./rot.js";
+import { waterParams, mediumAt, waveHeight, inBox, excludes } from "./water.js";
+
+const fin = Number.isFinite;
+const v3 = (x) => Array.isArray(x) && x.length === 3 && x.every(fin);
+const cmp = (a, b) => a.priority - b.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/** {bodies, exclusions} in the order they apply (priority ascending, then id: the last one a point is in wins, mediumAt's rule).
+ *  A body is {id, global, priority, water, center, size, q, toLocal, top, bottom}; @world's level is the one global body
+ *  ({id: '@world', global: true, priority: -Infinity, water, top}). `poseOf(id)` → {pos, q, scale} in world space (a renderer
+ *  passes its live one); absent, the fold's (simlayer worldPose). A switched-off thing, or one under one, holds nothing. */
+export function zonesOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
+  const bodies = [], exclusions = [];
+  for (const id of Object.keys(st?.entities ?? {})) {
+    const c = st.entities[id]?.c ?? {};
+    if (id === "@world") { if (c.water && fin(c.water.level)) bodies.push({ id, global: true, priority: -Infinity, water: c.water, top: c.water.level }); continue; }
+    const wet = c.water && typeof c.water === "object", dry = c["water-exclusion"] && typeof c["water-exclusion"] === "object";
+    if (!(wet || dry) || c.zone?.shape !== "box" || c.zone.global === true || !v3(c.zone.size) || offChain(st, id)) continue;
+    const pose = poseOf(id); if (!pose) continue;
+    const scale = v3(pose.scale) ? pose.scale.map(Math.abs) : [1, 1, 1], q = pose.q ?? [0, 0, 0, 1], center = [...pose.pos];
+    const size = c.zone.size.map((x, i) => Math.abs(x) * scale[i]);
+    const toLocal = (p) => qRotate(qConj(q), [p[0] - center[0], p[1] - center[1], p[2] - center[2]]);
+    const priority = Number.isInteger(c.zone.priority) ? c.zone.priority : 0;
+    if (wet) {   // a body stays level: its box is world-axis-aligned (its rotation turns only its centre), its surface the level or its top
+      const zoneTop = center[1] + size[1] / 2, bottom = center[1] - size[1] / 2;
+      const top = fin(c.water.level) ? Math.max(bottom, Math.min(zoneTop, center[1] + c.water.level * scale[1])) : zoneTop;
+      bodies.push({ id, global: false, priority, water: c.water, center, size, q, toLocal, top, bottom });
+    } else {
+      const ids = c["water-exclusion"].bodies;
+      exclusions.push({ id, priority, center, size, q, toLocal, bodies: Array.isArray(ids) ? [...ids] : null });
+    }
+  }
+  return { bodies: bodies.sort(cmp), exclusions: exclusions.sort(cmp) };
+}
+
+/** KHR_materials_volume's attenuation as the per-metre absorption σ shared/water.js reads: σ = −ln(c) / d (absent → undefined). */
+export function absorptionOf(w) {
+  if (w?.attenuationColor === undefined && w?.attenuationDistance === undefined) return undefined;
+  const c = v3(w.attenuationColor) ? w.attenuationColor : [1, 1, 1], d = fin(w.attenuationDistance) && w.attenuationDistance > 0 ? w.attenuationDistance : Infinity;
+  return c.map((x) => -Math.log(Math.max(1e-6, Math.min(1, x))) / d);
+}
+
+/** The waters and airs shared/water.js reads, from zonesOf: the bodies' (globals left to the level's own readers) as waterParams
+ *  plus {id, priority, top, bottom, q, color, opacity, kind, flow, density, drag}; the exclusions as boxes with toLocal, priority and bodies. */
+export function waterVolumes({ bodies = [], exclusions = [] } = {}) {
+  const waters = bodies.filter((b) => !b.global).map((b) => {
+    const w = b.water, h = b.top - b.bottom;
+    const p = waterParams({ center: [b.center[0], b.bottom + h / 2, b.center[2]], size: [b.size[0], h, b.size[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor });
+    return { ...p, id: b.id, priority: b.priority, top: b.top, bottom: b.bottom, q: b.q, color: w.color, opacity: w.opacity, kind: w.kind, flow: w.flow, density: fin(w.density) ? w.density : 1000, drag: w.drag };
+  });
+  const airs = exclusions.map((x) => ({ id: x.id, priority: x.priority, bodies: x.bodies, center: x.center, size: x.size, q: x.q, toLocal: x.toLocal }));
+  return { waters, airs };
+}
+
+const AT_WORLD = { id: "@world", priority: -Infinity };
+const worldFlow = (f, q) => (!Array.isArray(f) || !f.every(fin) ? null : f.length === 2 ? (q ? qRotate(q, [f[0], 0, f[1]]) : [f[0], 0, f[1]]) : f.length === 3 ? (q ? qRotate(q, f) : [...f]) : null);
+/** The one reader of the combine law (the highest-priority body containing p decides, @world's level lowest of all; a pocket
+ *  beats every body at or below its priority, @world's included): {medium: "water" | "air", level, flow, body, priority} at p.
+ *  level is the surface's world y there (its waves at `time`), flow world-frame m/s; in air, all three are null. */
+export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } = {}) {
+  const w = mediumAt(p, volumes.waters, volumes.airs, time);
+  if (w) return { medium: "water", level: waveHeight(w, p[0], p[2], time), flow: worldFlow(w.flow, w.q), body: w.id, priority: w.priority };
+  const g = zones.bodies.find((b) => b.global);
+  if (g && p[1] <= g.top && !volumes.airs.some((a) => inBox(p, a) && excludes(a, AT_WORLD))) return { medium: "water", level: g.top, flow: worldFlow(g.water.flow, null), body: g.id, priority: g.priority };
+  return { medium: "air", level: null, flow: null, body: null, priority: null };
+}
+
+// the components and change kinds a rebuild of the bodies reads (client/lib/watervolumes.js; state.js's events)
+const READS = new Set(["zone", "water", "water-exclusion", "disabled", "environment"]);
+/** Does a world change touch what zonesOf read? `entities`: the view's (state.st.entities); `owners`: the ids that held a body,
+ *  an exclusion or an environment at the last build (a removed one still counts). */
+export function zoneChangeTouches(ev, entities, owners) {
+  if (ev?.type === "hydrated" || ev?.type === "reset") return true;
+  if (ev?.type === "world") return ev.key === "water";
+  if (ev?.type !== "change") return false;
+  const { what, comp: name } = ev; if (what === "comp" && !READS.has(name)) return false;
+  const id = ev.id; if (owners.has(id)) return true;
+  const c = entities?.[id]; if (c && (c.zone || c.water || c["water-exclusion"] || c.environment)) return true;
+  for (const v of owners) for (let p = entities?.[v]?.parent?.to, n = 0; p && n < 33; p = entities?.[p]?.parent?.to, n++) if (p === id) return true;   // a carrier above one
+  return false;
+}
+
+/** The view (view.js viewState) as the fold shape zonesOf reads: each record's transform, parent and components, and @world's water. */
+export function foldOfView(view) {
+  const entities = {};
+  for (const [id, r] of Object.entries(view?.entities ?? {})) {
+    const { pos, q, scale, scale3, yaw, parent, born, ...rest } = r;
+    entities[id] = { c: { ...rest, transform: { pos: pos ?? [0, 0, 0], q: q ?? [0, 0, 0, 1], scale: scale3 ?? (fin(scale) ? [scale, scale, scale] : [1, 1, 1]) }, ...(parent?.to ? { parent: { to: parent.to } } : {}) } };
+  }
+  if (view?.water) entities["@world"] = { c: { water: view.water } };
+  return { entities };
+}

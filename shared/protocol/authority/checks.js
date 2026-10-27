@@ -152,7 +152,19 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   // the first protocol's particles bag (preset, origin, count…): its fields left the registry (shape audit 10-16), so say today's
   // spelling in particlesCheck's own words before the schema calls them unknown keys
   if (baseOf(comp) === "particles" && obj && !carry && LEGACY_FIELDS.some((k) => k in v)) refuse("shape", `${at}: ${instanceProblem(v, null)}`, `PROTOCOL §4 (effects are documents): {effect: '${ESSENTIAL_NAMES[0]}'} or an uploaded effect's address; schema {component: 'particles'} lists the Essentials and their params`);
-  if (comp === "water" && obj && v.flow !== undefined && !(Array.isArray(v.flow) && v.flow.length === 2 && v.flow.every(isNum) && v.flow.every((x) => Math.abs(x) <= 100))) refuse("shape", `${at}.flow is a current [x, z] in metres a second, each within ±100`, COMPONENTS.water.help);
+  // water: @world's level, or a thing's body whose extent is its zone (zoneRules, below)
+  if (comp === "water" && obj && id === "@world" && v.level === undefined) refuse("schema", `${at} needs level`, COMPONENTS.water.help);
+  if (comp === "water" && obj && v.flow !== undefined && !(Array.isArray(v.flow) && (v.flow.length === 2 || (v.flow.length === 3 && id !== "@world")) && v.flow.every(isNum) && v.flow.every((x) => Math.abs(x) <= 100)))
+    refuse("shape", id === "@world" ? `${at}.flow is a current [x, z] in metres a second, each within ±100` : `${at}.flow is a current [x, z] or [x, y, z] in metres a second (its own frame), each within ±100`, COMPONENTS.water.help);
+  if (comp === "water" && obj && Array.isArray(v.waves)) v.waves.forEach((w, i) => { const ok = w && typeof w === "object" && !Array.isArray(w) && Object.keys(w).every((k) => ["amplitude", "wavelength", "direction", "phase"].includes(k))
+      && isNum(w.amplitude) && w.amplitude >= 0 && w.amplitude <= 5 && isNum(w.wavelength) && w.wavelength >= 0.1 && w.wavelength <= 1e4
+      && Array.isArray(w.direction) && w.direction.length === 2 && w.direction.every(isNum) && Math.hypot(...w.direction) > 0 && (w.phase === undefined || isNum(w.phase));
+    if (!ok) refuse("shape", `${at}.waves[${i}] is {amplitude (m, 0..5), wavelength (m, 0.1..10000), direction [x, z] (not zero), phase? (rad)}`, "e.g. waves: [{amplitude: 0.3, wavelength: 12, direction: [1, 0]}]"); });
+  // a zone's geometry is its shape's own fields, as OMI_physics_shape's (componentspec zone)
+  if (comp === "zone" && obj && typeof v.shape === "string") { const need = { box: ["size"], sphere: ["radius"], capsule: ["radius", "height"], cylinder: ["radius", "height"] }[v.shape];
+    const geo = ["size", "radius", "height"], fix = "e.g. zone {shape: 'box', size: [4, 2, 4]}, {shape: 'sphere', radius: 3} or {shape: 'cylinder', radius: 2, height: 5}";
+    for (const k of geo) if (need && v[k] !== undefined && !need.includes(k)) refuse("shape", `${at}: a ${v.shape} takes ${need.join(" and ")}, not ${k}`, fix);
+    if (need && v.global !== true) for (const k of need) if (v[k] === undefined) refuse("schema", `${at}: a ${v.shape} needs ${k}`, fix); }
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
   // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
@@ -402,5 +414,19 @@ function restCheck(w, cap, after) {
     if (!lost && (!b || !b.resting || sf.launched[id]?.seq !== cap.launch)) refuse("not-at-rest", `the engine doesn't have ${id} at rest from launch ${cap.launch}`, "");
     if (JSON.stringify(worldPose(after, id).pos) !== JSON.stringify(b.p)) refuse("not-the-engine's", `${id} would rest at ${JSON.stringify(worldPose(after, id).pos)}; the engine has it at ${JSON.stringify(b.p)}`, "");
     if (b.q && JSON.stringify(worldPose(after, id).q) !== JSON.stringify(b.q)) refuse("not-the-engine's", `${id} would rest turned ${JSON.stringify(worldPose(after, id).q)}; the engine has it at ${JSON.stringify(b.q)}`, ""); }
+}
+// a water body or exclusion takes its extent from a zone on the same thing, judged on the state the write leaves (componentspec zone)
+const ZONED = ["water", "water-exclusion"];
+// world-wide water is @world's alone (provisional, owner reviewing): this one rule, removable on its own
+const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
+  && { code: "shape", reason: `${id} has water on a global zone: world-wide water goes on @world`, fix: "world-wide water goes on @world: set {id:'@world', component:'water', value: {level, …}}" };
+export function zoneRules(s, ids) {
+  for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
+    const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
+    if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
+    if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+    const g = globalWater(id, c); if (g) return g;
+    if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` }; }
+  return null;
 }
 export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

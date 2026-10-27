@@ -20,7 +20,7 @@ import { whoWords } from "../roles.js";
 import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponsorOf } from "./scripts.js";
 import { vacateWhy, vacatesFor } from "./occupants.js";
 import { capacityCheck } from "./capacity.js";
-import { restCheck, valueCheck } from "./checks.js";
+import { restCheck, valueCheck, zoneRules } from "./checks.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
@@ -169,6 +169,7 @@ function admit(w, st, who, ops) {
   for (const op of norm) if (op.verb === "set") valueCheck(s, op, { carry: CTX.forking || !!who.lifting, now: w.now() }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
   { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   if (!(CTX.forking || who.lifting)) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
+  if (!(CTX.forking || who.lifting)) { const bad = zoneRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
   rolesCheck(st, s, norm);
   for (const op of norm) if (op.verb === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
   if (!CTX.forking) for (const op of norm) if (op.verb === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)

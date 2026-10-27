@@ -140,7 +140,7 @@ tryRow('MS', () => {
   check('LK1 lock true is taken and stored as true (recut B2: its strength is its setter\'s rank, read at check time)', k.ok && W.state().entities.box.c.lock === true, [k.refused, W.state().entities.box.c.lock]);
   check('LK2 lock is on things only', COMPONENTS.lock.on === 'thing');
   check('FA1 hidden, disabled, clickthrough, openable say false reads as absent', ['hidden', 'disabled', 'clickthrough'].every((n) => /false reads (the same )?as absent/i.test(COMPONENTS[n].help)) && /false reads (the same )?as absent/i.test(COMPONENTS.openable.docs.open + COMPONENTS.openable.docs.locked));
-  const RES = ['material', 'anim-clip', 'anim-states', 'camera', 'zone', 'video', 'spring-joint', 'link', 'tags'];
+  const RES = ['material', 'anim-clip', 'anim-states', 'camera', 'video', 'spring-joint', 'link', 'tags'];
   check('RN1 the held names are registered reserved', RES.every((n) => statusOf(n) === 'reserved'), RES.map((n) => [n, statusOf(n)]));
   check('RN2 …and a write of one is refused as reserved', RES.every((n) => code(W.call('set', { id: 'box', component: n, value: {} })) === 'reserved'));
 });

@@ -31,13 +31,15 @@ export function inBox(p, box) {
   const q = box.toLocal ? box.toLocal(p) : p.map((v, i) => v - box.center[i]);
   return q.every((v, i) => Math.abs(v) <= box.size[i] / 2);
 }
+// does dry box b keep water w out? An air with no bodies or priority (an upstream box) keeps every water out (shared/zone.js)
+export const excludes = (b, w) => (!Array.isArray(b.bodies) || b.bodies.includes(w.id)) && !(w.priority > b.priority);
 export function mediumAt(p, waters, airs, time = 0) {
-  if (airs.some(b => inBox(p, b))) return null;
-  // Last authored volume wins where volumes overlap; deterministic ordering by id in adapter.
+  const dry = airs.filter(b => inBox(p, b));
+  // Last volume wins where volumes overlap; the adapter orders them (shared/zone.js: priority, then id).
   for (let i = waters.length - 1; i >= 0; --i) {
     const w = waters[i];
     if (Math.abs(p[0] - w.center[0]) <= w.size[0] / 2 && Math.abs(p[2] - w.center[2]) <= w.size[2] / 2 &&
-        p[1] >= w.bottom && p[1] <= waveHeight(w, p[0], p[2], time)) return w;
+        p[1] >= w.bottom && p[1] <= waveHeight(w, p[0], p[2], time) && !dry.some(b => excludes(b, w))) return w;
   }
   return null;
 }
@@ -64,7 +66,7 @@ export function unionLength(intervals) {
 export function waterPath(a, b, water, airs = []) {
   const wet = boxInterval(a,b,water);
   if (!wet) return 0;
-  const dry = airs.map(box => boxInterval(a,b,box)).filter(Boolean)
+  const dry = airs.filter(box => excludes(box, water)).map(box => boxInterval(a,b,box)).filter(Boolean)
     .map(([lo,hi]) => [Math.max(lo,wet[0]), Math.min(hi,wet[1])]).filter(([lo,hi]) => hi>lo);
   return Math.max(0,wet[1]-wet[0]-unionLength(dry)) * Math.hypot(...b.map((v,i) => v-a[i]));
 }

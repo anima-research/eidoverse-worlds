@@ -268,7 +268,8 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
   `collider {shape}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
-  `openable`, `physics`, `grabbable`, `particles`, `script:<name>`,
+  `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, `zone`, `water` (a body),
+  `water-exclusion`,
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -292,6 +293,20 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   level. A write of `terrain.water` is refused with where it went; a stored one
   is moved by the maintenance command's repair (below; a load never writes), and
   the readers read it until then.
+- **A water body is a thing.** `water` on a thing (the same fields, `level` in
+  its own frame, absent = its zone's top; `flow` may be `[x, y, z]`) fills its
+  sibling `zone {shape, size, priority?, blend?, weight?, global?}` (trial; after
+  OMI_physics_shape, Godot Area3D and Unity Volume; water reads a box zone for
+  now). `water-exclusion {bodies?}` on a thing with a zone is a dry pocket (after
+  Unreal's Water Body Exclusion Volume). Water on a thing needs a sibling zone
+  {shape, size}; world-wide water goes on `@world` (a global zone with water is
+  refused). The combine law: the highest-priority body containing a point decides
+  the medium, `@world`'s level lowest of all, a tie by entity id (the later
+  wins); a pocket keeps out every body at or below its priority, `@world`'s level
+  included; `blend` and `weight` are look only; a body inherits nothing from
+  `@world`'s water. shared/zone.js (`zonesOf`, `mediumOf`) is the one reader:
+  `{medium, level, flow, body, priority}` at a point. glTF has no water: the
+  medium does not survive export.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
