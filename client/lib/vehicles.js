@@ -22,13 +22,13 @@ function end(release=true,exit=false){
 }
 bus.on('key',e=>{
   if(e.code!=='KeyE'||e.repeat||CONFIG.spectate||photoMode)return;
-  if(pilot){end(true,true);flashHint('left helm');return;}
+  if(pilot){e.worldHandled=true;end(true,true);flashHint('left helm');return;}
   if(pending||e.worldHandled)return;
   for(const [id,specs] of comps){const o=entities.get(id),v=specs.vehicle;
     if(!o||!Array.isArray(v?.helm))continue;
     o.updateWorldMatrix(true,false);local.fromArray(v.helm).applyMatrix4(o.matrixWorld);
     if(local.distanceTo(myState.pos)>2.5)continue;
-    pending=id;sendLease('claim',id);flashHint('requesting helm');break;
+    pending=id;e.worldHandled=true;sendLease('claim',id);flashHint('requesting helm');break;
   }
 });
 bus.on('lease',m=>{
