@@ -225,6 +225,11 @@ function coreCheck(snapState, newA, content) {
 function declaredGround(snap) {
   const isO = (v) => !!v && typeof v === "object" && !Array.isArray(v); const hx = (x) => (typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x) ? parseInt(x.slice(1), 16) : x);
   const out = { terrain: snap.terrain ?? null, grass: snap.grass ?? null, water: null };
+  // main's environment {floor} (#248) is the world's ground: with no terrain of its own the world stands on a flat one at
+  // that height (DESIGN: one ground); the first host by id, clamped as a height is (±1e4 m)
+  if (out.terrain == null) { const ids = Object.keys(snap.entities ?? {}).sort();
+    const f = ids.map((id) => snap.entities[id]?.comp?.environment?.floor).find((v) => Number.isFinite(v));
+    if (f !== undefined) out.terrain = { kind: "flat", height: Math.min(1e4, Math.max(-1e4, f)) }; }
   if (isO(out.terrain)) { let t = { ...out.terrain };
     if (Array.isArray(t.layers)) t.layers = t.layers.map((l) => (isO(l) ? { ...l, color: hx(l.color) } : l));
     if (t.kind === undefined || t.kind === "noise") t = { kind: "noise", seed: 1, size: 80, amplitude: 3, octaves: 4, frequency: 2.5, flatRadius: 0, flatHeight: 0, ...t };

@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import { ENGINE, scratch } from "../protocol/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
@@ -113,4 +114,11 @@ for (const t of [0, 7.3]) for (let i = 0; i < 4000; i++) {
   if (ours !== theirs) diff.push({ p, t, ours, theirs });
 }
 C("G6", `${n} seeded points around the habitat, the submarine and the waves (t 0 and 7.3 s): mediumOf and main's mediumAt agree on every one`, diff.length === 0 && wet > 1000 && pocketed > 500, { count: diff.length, first: diff.slice(0, 3), wet, pocketed });
+// G7: the same world as upstream main itself saved it (tools/protocol/fixtures/water-old-v1: main's server, the manifest's verbs,
+// its own snapshot.json) agrees with the old engine under the translator's last check, the one an upgrade must pass
+{ const fx = path.join(ENGINE, "tools/protocol/fixtures/water-old-v1"), dir = fs.mkdtempSync(path.join(os.tmpdir(), "water-old-"));
+  fs.cpSync(fx, path.join(dir, "water-old"), { recursive: true });
+  const o = Bun.spawnSync(["bun", path.join(ENGINE, "tools/protocol/import-v1/snapshot-oracle.ts")], { cwd: ENGINE, env: { ...process.env, ORACLE_WORLDS: dir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const out = o.stdout.toString() + o.stderr.toString(), line = out.split("\n").find((l) => /water-old/.test(l) && /(FAIL|agree|OK|ok)/.test(l)) ?? "";
+  C("G7", "main's own saved water world (log + snapshot.json) translates with no unexplained difference from the old engine", /-- water-old\b[^\n]*— (ok|agrees|0 unexplained)/i.test(out) || (o.exitCode === 0 && !/FAIL water-old/.test(out)), { exit: o.exitCode, line, tail: out.split("\n").filter((l) => /DIFF|FAIL/.test(l)).slice(0, 4) }); }
 console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
