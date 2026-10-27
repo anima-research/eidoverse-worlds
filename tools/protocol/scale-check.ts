@@ -580,7 +580,10 @@ async function sameAsBase() {
   if (diff >= 0) { if (process.env.G3_DUMP) { fs.writeFileSync(process.env.G3_DUMP + ".here.json", noA11y(a[diff])); fs.writeFileSync(process.env.G3_DUMP + ".base.json", noA11y(b[diff])); } return { same: false, replies: a.length, at: diff, here: noA11y(a[diff]).slice(0, 300), base: noA11y(b[diff]).slice(0, 300) }; }
   return { same: diff < 0 && a.length === b.length, replies: a.length, ...(diff >= 0 ? { at: diff, here: JSON.stringify(a[diff]).slice(0, 300), base: JSON.stringify(b[diff]).slice(0, 300) } : {}) };
 }
-if (argv.includes("--scenario")) { console.log(JSON.stringify(scenario())); process.exit(0); }
+if (argv.includes("--scenario")) {
+  // G3 compares answers, not host speed: lift the clock backstop (the base has none), keep the deterministic work count
+  const SP = await imp1("shared/protocol/authority/spatial.js").catch(() => null); if (SP?.WORK_BUDGET) SP.WORK_BUDGET.ms = Infinity;
+  console.log(JSON.stringify(scenario())); process.exit(0); }
 
 // ---------------- run ----------------
 let pass = 0, fail = 0;
