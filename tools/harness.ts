@@ -16,12 +16,14 @@ export function readSequencerLog(scratch: string): string {
     try { return readFileSync(join(scratch, file), "utf8"); } catch { return ""; }
   }).join("\n");
 }
+// a random start in a 2,000-port window, so suites run side by side don't all probe the same first port (probe, release, bind is a race)
 export function freePort(from: number, tries = 40): number {
-  for (let p = from; p < from + tries; p++) {
+  const start = from + Math.floor(Math.random() * 2000);
+  for (let p = start; p < start + tries; p++) {
     try { const s = Bun.serve({ port: p, hostname: "127.0.0.1", fetch: () => new Response("") }); s.stop(true); return p; }
     catch { /* occupied */ }
   }
-  throw new Error(`no free port in ${from}..${from + tries}`);
+  throw new Error(`no free port in ${start}..${start + tries}`);
 }
 
 /** Found worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005
