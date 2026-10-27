@@ -16,8 +16,8 @@
 //        still answers, teaching where it went
 //   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
-//   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, world_verb, snapshot); renumbered from a
-//        second AT7 (claims r10 O4)
+//   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, snapshot); world_verb and main's old verbs
+//        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -343,7 +343,16 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
   ok(sq.isError && /library \{query/.test(T(sq)), "AT9 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
-  ok(!wv.isError && /is now called act/.test(T(wv)), "AT9 world_verb {verb, args} runs act", T(wv).slice(0, 160));
+  ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
+  // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)
+  const { VERBSPEC } = await import("../../shared/protocol/verbspec.js");
+  for (const v of ["force", "mount", "dismount", "spawn", "remove", "light", "comp", "motion", "behavior", "asset", "terrain", "grass", "epoch", "grant"]) {
+    const r = await handleTool(ctx as any, "act", { verb: v, args: {} }); let j = null; try { j = JSON.parse(T(r)); } catch {}
+    const names = (j?.refused?.fix ?? "").match(/\b[a-z-]+(?= \{)/g) ?? [];
+    ok(r.isError && j?.refused?.code === "removed" && !j?.refused?.didYouMean && names.length > 0 && names.every((n) => VERBSPEC[n] || HANDLERS[n]),
+      `AT9 act {verb: "${v}"} is refused as removed, naming only calls that exist (no did-you-mean)`, j?.refused ?? T(r).slice(0, 200)); }
+  const hp = await handleTool(ctx as any, "act", { verb: "help", args: { verb: "comp" } }); const hj = JSON.parse(T(hp));
+  ok(/removed/.test(hj?.refused?.reason ?? "") && /set \{/.test(hj?.refused?.fix ?? ""), "AT9 help {verb: comp} says it was removed and what does it now", hj);
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
   ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT9 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
 

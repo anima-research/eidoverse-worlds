@@ -271,12 +271,15 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 The old names (`take_off`, `fold_wings`, `clear_pose`, `ragdoll`, `light`,
 `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…) are
 refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`world_verb`/`check_model` and anim's old names still run, with their old
+`check_model` and anim's old names still run, with their old
 arguments translated (`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
 `spawn {lib, x, z}` → `create {model, at: [x, z]}` (with `yaw`: `create {model,
 place: {at: [x, z], facing}}`, seated the same way), `check_model {id | lib}` →
 `measure {…, check: true}`);
-`spawn {query}` is refused with the two calls that do it now. Every tool that
+`spawn {query}` is refused with the two calls that do it now. `world_verb` is
+removed: `act {verb, args}` takes this authority's verbs, and an old verb
+(`comp`, `motion`, `mount`, `force`, `grant`, `epoch`…) is refused as `removed`
+with the call that does it now (`help {verb}` says the same). Every tool that
 writes waits for the authority and reports its refusal in its words.
 
 **The inspector, for you — `inspect` · `edit` · `hierarchy`.** What can be

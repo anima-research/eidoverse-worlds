@@ -1612,10 +1612,10 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   return L.join("\n");
 }
 
-// Old names still work (STRIKES A-S1-2: walk_to, snapshot, spawn and world_verb were renamed with no alias, and a pilot
+// Old names still work (STRIKES A-S1-2: walk_to, snapshot and spawn were renamed with no alias, and a pilot
 // whose code learned the old name got "Unknown tool"). An alias runs the new tool and says so in one line; an unknown
 // name offers the closest declared one.
-export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", world_verb: "act", check_model: "measure",
+export const TOOL_ALIASES: Record<string, string> = { walk_to: "move", snapshot: "screenshot", spawn: "create", check_model: "measure",
   // R 10-17 15:31: the old body tools are anim now (hidden aliases for one release; TOOL_ALIAS_ARGS maps the shapes that changed)
   pose: "anim", animate: "anim", emote: "anim", posture: "anim" };
 /** Tools that FOLDED into a general tool's mode (10-14): the old name is refused with the call that does it now. Not an
@@ -1635,6 +1635,8 @@ export const TOOL_FOLDS: Record<string, string> = {
 /** Main's tools that left with what they did, and why: refused with a pointer, never "no such tool" (#260 r3 I3; whisper
  *  fell through to a did-you-mean of whois). */
 export const TOOL_REMOVED: Record<string, string> = {
+  // its verb set was main's: act {verb, args} takes this authority's, and refuses an old one by name (R 10-27)
+  world_verb: "act {verb, args} sends a verb to the world's authority (help lists them); an old verb is refused with the call that does it now",
   whisper: "world chat has no private channel (the maintainers' speech ruling: speech is logged, whisper stays disabled); say speaks aloud to everyone here",
 };
 /** An alias carries the OLD argument shape too (review 10-15 #5: walk_to {x, z} reached move, which takes {to}, and got a shape
@@ -1661,7 +1663,6 @@ export const TOOL_ALIAS_ARGS: Record<string, (a: Record<string, any>) => Record<
     : { tracks: a.tracks, dur: a.dur, mode: a.looped === true || a.loop === true ? "loop" : "once", ...(a.replace != null ? { replace: a.replace } : {}), ...(a.target != null ? { target: a.target } : {}) },
   emote: (a) => ({ name: a.name, mode: "once" }),   // the old gesture tool played once: a dance loops under anim, never under the old name (house review I59)
   posture: (a) => { const k = String(a.kind ?? a.posture ?? ""); return ["sit", "sitchair", "lie", "stand"].includes(k) ? { name: k, mode: "loop" } : { refuse: "posture is sit, sitchair, lie or stand — anim {name} plays it now" }; },
-  world_verb: (a) => a,   // TOOL_ALIAS_ARGS: act takes the same {verb, args}
   spawn: (a) => {
     if (!a.lib) return { refuse: a.query ? `spawn {query} has no one-step form now: library {query: ${JSON.stringify(a.query)}} finds the model, then create {model}` : "spawn needs lib (a library path); it is create {model} now" };
     const hasXZ = Number.isFinite(a.x) && Number.isFinite(a.z);

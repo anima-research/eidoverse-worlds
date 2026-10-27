@@ -290,7 +290,7 @@ try {
     /^measure: the world server didn't answer \(.+\), so nothing was measured; try again in a moment$/.test(geomGone), geomGone);
 
   console.log("\nACT (main's WORLD_VERB)");
-  // world_verb is act here, and a verb's arguments are the world's authority's to check
+  // world_verb is removed (act takes the verbs; R 10-27), and a verb's arguments are the world's authority's to check
   // (shared/protocol/verbspec.js validate, its refusals pinned in spec/refusal-codes.json): main's
   // door-side raw-shape refusals (mcpl/shape.ts rawShapeError) and its closed verb list
   // (server/rights.ts VERB_NEEDS) left with the v1 log, so their checks have nothing here to read.

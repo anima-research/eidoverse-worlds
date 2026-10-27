@@ -6,7 +6,7 @@
 import { grabOf, describeGrab } from "../../grab.js";
 import { isEntityId, PURGED } from "../fold.js";
 import { COMPONENTS, mapRefs } from "../componentspec.js";
-import { verbHelp, VERBSPEC } from "../verbspec.js";
+import { verbHelp, VERBSPEC, REMOVED_VERBS } from "../verbspec.js";
 import { graphemes } from "../../text.js";
 import { saysOf } from "../../says.js";
 import { readOut } from "../../a11y.js";
@@ -269,6 +269,7 @@ const sayOf = (st, c) => { const lines = saysOf(c, { nameOf: (x) => (st.entities
 
 const READ_VERBS = {
   help(w, actor, a) {
+    if (a?.verb && Object.hasOwn(REMOVED_VERBS, a.verb)) return { ok: false, refused: { code: "no-detail", reason: `'${a.verb}' was removed: ${REMOVED_VERBS[a.verb].why}`, fix: REMOVED_VERBS[a.verb].fix } };
     if (a?.verb) return verbHelp(a.verb) ? { ok: true, ...verbHelp(a.verb) } : { ok: false, refused: { code: "no-detail", reason: `no detailed help for '${a.verb}' yet`, fix: `detailed: ${Object.keys(VERBSPEC).join(", ")}` } };
     const st = w.exists ? w.state() : null; const role = st ? roleOf(st, actor) : null; const eff = st ? effective(st, actor) : null;
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role, ...(eff ? { rank: eff.rank, permissions: eff.permissions } : {}) },

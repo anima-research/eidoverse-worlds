@@ -142,6 +142,23 @@ export const RESERVED_VERBS = Object.freeze({
 export const REMOVED_VERBS = Object.freeze({
   whisper: { why: "speech in a world is public and arrival-only (R 10-18): everyone present hears a say, the world's log keeps it, and only the world's admins read it back. Direct messages will live at the identity level (client and profile), not in world chat",
     fix: "say it to everyone here (say {text, to} addresses one person in public), or reach them outside the world" },
+  // the old verb set's names this authority doesn't take, each with the call that does it now (R 10-27; the old set: AGENTS.md)
+  ...Object.fromEntries(Object.entries({
+    force: ["it pushed bodies out from a point; a body is shoved one at a time now, by its consent", 'body {to, kind: "shove"} knocks one body over (their consent decides); punt {id, v} sends a dynamic thing into flight'],
+    mount: ["riding is a socket now", "attach {to, socket?} (the agent's tool; a person sits) puts your body on a socket; a thing rides another with set {id, component: \"parent\", value: {to}}"],
+    dismount: ["riding is a socket now", "detach {} (the agent's tool) gets your body off; delete {id, component: \"parent\"} lets a riding thing go where it stands"],
+    spawn: ["things are created now", "create {model, at?} (the authority mints the id; components: {label} names it)"],
+    remove: ["things are deleted now", "delete {id}"],
+    light: ["a light is a component now", "create {components: {light: {color, intensity, range}}} makes one; set {id, component: \"light\", value} changes one"],
+    comp: ["components are set now", "set {id, component: <type>, value: <data>}; delete {id, component: <type>} for data: null"],
+    motion: ["motion is a component now", "set {id, component: \"motion\", value: {type, …}}"],
+    behavior: ["scripts are components now", "upload {text} stores the source; set {id, component: \"script:<name>\", value: {src, …}} binds it; delete {id, component: \"script:<name>\"} unbinds it"],
+    asset: ["the world's assets are a component now", "set {id: \"@world\", component: \"assets:<name>\", value: {name, path}}"],
+    terrain: ["the terrain is a component now", "set {id: \"@world\", component: \"terrain\", value: {…}} (owner); sculpt {on, brush, path} for a stroke"],
+    grass: ["grass is a component now", "set {id: \"@world\", component: \"grass\", value: {…}}; delete {id: \"@world\", component: \"grass\"} mows it"],
+    epoch: ["physics is a component now", "set {id: \"@world\", component: \"physics-engine\", value: {engine, tickMs?}} (owner) enters it; delete {id: \"@world\", component: \"physics-engine\"} leaves it"],
+    grant: ["roles are components now", "set {id: \"@world\", component: \"roles:<identity>\", value: {role}}; delete {id: \"@world\", component: \"roles:<identity>\"} revokes"],
+  }).map(([v, [why, fix]]) => [v, { why: `the old verb set had it; ${why}`, fix }])),
 });
 // the sky and weather verbs take the sky component's own fields (componentspec), its old spellings (the fold translates
 // them: forecast.js skySpelling) and weather's keepSky

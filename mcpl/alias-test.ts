@@ -31,10 +31,14 @@ ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb", x: 1, z: 2 })) === JSON.
 ok(JSON.stringify(TOOL_ALIAS_ARGS.spawn({ lib: "a.glb" })) === JSON.stringify({ model: "a.glb" }), "spawn {lib} alone → create {model} (2 m in front, as before)");
 { const t = (TOOL_ALIAS_ARGS.spawn({ query: "lamp" }) as any).refuse;
   ok(/library \{query/.test(t) && /then create \{model\}/.test(t), "spawn {query} refuses and teaches library {query} then create", t); }
-ok(TOOL_ALIAS_ARGS.snapshot({ view: "third" }).view === "third" && TOOL_ALIAS_ARGS.world_verb({ verb: "say", args: { text: "hi" } }).verb === "say", "snapshot and world_verb keep their shapes");
+ok(TOOL_ALIAS_ARGS.snapshot({ view: "third" }).view === "third", "snapshot keeps its shape");
 // through the dispatcher: each alias runs its new tool with the translated words, and says so
-import { handleTool, HANDLERS, TOOL_FOLDS } from "./tools.ts";
+import { handleTool, HANDLERS, TOOL_FOLDS, TOOL_REMOVED } from "./tools.ts";
 const ctx: any = { agent: {} };
+// world_verb is removed, not an alias (R 10-27): it named main's closed verb set, 14 of which the authority doesn't have
+{ let ran = false; const real = HANDLERS.act; HANDLERS.act = (async () => { ran = true; return { content: [] }; }) as any;
+  const out: any = await handleTool(ctx, "world_verb", { verb: "comp", args: { id: "x", type: "sockets", data: {} } }); HANDLERS.act = real; const t = out.content?.[0]?.text ?? "";
+  ok(!TOOL_ALIASES.world_verb && out.isError && !ran && /world_verb was removed/.test(t) && /act \{verb, args\}/.test(t) && !/did you mean/.test(t), "world_verb is refused as removed, naming act, and runs nothing", t); }
 for (const [old, now] of Object.entries(TOOL_ALIASES)) {
   const real = HANDLERS[now]; let got: any = null;
   HANDLERS[now] = (async (_ag: any, a: any) => { got = a; return { content: [{ type: "text", text: "ran" }] }; }) as any;
@@ -50,6 +54,6 @@ for (const [old, now] of Object.entries(TOOL_ALIASES)) {
 // every tool main served is served, aliased or folded, but the two this branch removes outright (no tools here: door-is-error-test)
 // (main's v1 verb tool and the action bar's old tool are aliases, so the alias loop above already drives them)
 const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity pose clear_pose reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans".split(" ");
-const lost = MAIN_TOOLS.filter((n) => !HANDLERS[n] && !TOOL_ALIASES[n] && !TOOL_FOLDS[n]);
-ok(lost.length === 0, "every tool main served is served, aliased or folded", lost);
+const lost = [...MAIN_TOOLS, "world_verb"].filter((n) => !HANDLERS[n] && !TOOL_ALIASES[n] && !TOOL_FOLDS[n] && !TOOL_REMOVED[n]);
+ok(lost.length === 0, "every tool main served is served, aliased, folded or refused as removed", lost);
 console.log(`alias-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);
