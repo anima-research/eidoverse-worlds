@@ -117,10 +117,12 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@20";
+export const TRANSLATOR = "eidoverse/translate-v1@21";
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
  *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
 export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(name ?? "")); return m ? Number(m[1]) : NaN; };
+// @21 (R 10-27): a pendulum with no maxAmp is written maxAmp 1.1, the old server's push cap (shaperepair OLD_READINGS), so a
+// translated swing swings as it did when pushed. Output differs from @20 only on such a pendulum.
 // @19 (house 6340433633): an old name already in the hashed form h--<61 hex> is escaped like any other name, never kept as
 // that id (old logs never held one): a long name and a raw name equal to its hashed form were one thing id (people were
 // already two: the directory keys them by name). Also since @18: a motion whose amplitude was null is carried as amp 0, as
@@ -198,7 +200,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@20";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@21";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key

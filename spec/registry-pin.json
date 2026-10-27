@@ -490,13 +490,13 @@
    "type"
   ],
   "absentMeans": {
-   "period": "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s",
-   "damp": "0: it swings forever",
+   "period": "pendulum: 3.5 s (an old value's reading; a swing written today carries the default, 2.4 s); spin and orbit: their degPerSec; oscillate: 4 s",
+   "damp": "0: it swings forever (an old value's reading; the default is 0.08)",
    "amp": "pendulum 0 (still); oscillate 0.3 m",
    "axis": "pendulum [1, 0, 0]; spin and oscillate [0, 1, 0]",
    "pivot": "a part turns about its own origin; a whole thing (which never holds one) about its pivot component, else its origin [0, 0, 0]",
    "phase": "0",
-   "maxAmp": "0.9 rad",
+   "maxAmp": "1.1 rad (an old value's reading, the first protocol's push cap; the default is 0.9 rad)",
    "degPerSec": "spin 36°/s, orbit 12°/s (when no period either)",
    "radius": "3 m",
    "center": "where it stands",

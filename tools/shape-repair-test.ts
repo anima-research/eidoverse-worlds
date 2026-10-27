@@ -151,6 +151,20 @@ await tryRow('RP8', () => {
   check('RP8 …and its log is marked (a translated world never runs the load\'s repair)', shapesMarked(t.out), t.out?.slice(0, 2));
 });
 
+// ===================================================================== R 10-27: a translated swing swings as it did
+await tryRow('RP19', () => {
+  const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
+    { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'swing', lib: 'crate', pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: 'ann', verb: 'motion', args: { id: 'swing', type: 'pendulum', axis: [1, 0, 0], amp: 0.3 } }];
+  const m = translate(old).final.translated.swing?.motion;
+  check('RP19 a translated swing that never said period, damp or maxAmp carries the old reader\'s 3.5 s, 0 and 1.1 (the old push cap)', m?.period === 3.5 && m?.damp === 0 && m?.maxAmp === 1.1, m);
+  const kept = repairComps({ motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0.1, maxAmp: 0.5 } }).c.motion;
+  check('RP19 …and one that said them keeps its own', kept.period === 2 && kept.damp === 0.1 && kept.maxAmp === 0.5, kept);
+  const W = scratchWorld('repair'); W.call('create', { id: 'seat', model: 'crate', components: { transform: TF } });
+  W.call('set', { id: 'seat', component: 'motion', value: { type: 'pendulum', amp: 0.2 } }); const nu = W.state().entities.seat?.c.motion;
+  check('RP19 …while a swing set today takes today\'s defaults (2.4 s, 0.08, 0.9)', nu?.period === 2.4 && nu?.damp === 0.08 && nu?.maxAmp === 0.9, nu);
+});
+
 // ===================================================================== R 10-16: no empty stations by default
 await tryRow('RP9', () => {
   const W = scratchWorld('repair');

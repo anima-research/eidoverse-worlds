@@ -453,7 +453,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   of the name, shared/protocol/names.js: the name itself when it is a tag,
   else a sanitized form with 8 hex of its sha256), a keyed motion without
   `node` → its key's tag as `node`, `amplitude` → `amp`, letter axes →
-  vectors, the old pendulum readings written down (period 3.5 s, damp 0, a
+  vectors, the old pendulum readings written down (period 3.5 s, damp 0, maxAmp 1.1, a
   whole pendulum's `[0, 2, 0]` swing point as its `pivot`), a motion's
   `pivot` → the `pivot` component; `collider` exact → mesh; `physics` with no
   kind → dynamic, `material` → `surface`, layers/mask/ccd dropped; `light`
@@ -467,7 +467,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@20`, §14) writes its
+  its name). The translator (`translate-v1@21`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,

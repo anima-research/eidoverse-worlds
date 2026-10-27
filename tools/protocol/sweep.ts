@@ -129,7 +129,7 @@ function oldNorm(st: any, phys: any = null) {
       const { rpm, ...r } = m; n.comp[k] = r.degPerSec !== undefined || typeof rpm !== "number" ? r : { ...r, degPerSec: rpm * 6 }; }
     // declared (translate-v1@12, the shape audit's physics-motion family), written independently of shared/protocol/shaperepair.js:
     // a bare motion naming a part is motion:<part> (a keyed one already there wins); amplitude is amp; a letter axis its
-    // vector; a pendulum with no period or damp read 3.5 s and 0; a whole motion's pivot is the thing's pivot; a whole
+    // vector; a pendulum with no period, damp or maxAmp read 3.5 s, 0 and 1.1 (R 10-27: the old push cap); a whole motion's pivot is the thing's pivot; a whole
     // pendulum with no pivot swung about [0, 2, 0]; collider exact is mesh
     if (n.comp) { const C = (n.comp = { ...n.comp }), isB = (v: any) => !!v && typeof v === "object" && !Array.isArray(v), AX: any = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };
       // (review r7 F1) a node's name is data: a keyed motion carries node (its tag, when it was the name), and a bare one naming
@@ -141,7 +141,7 @@ function oldNorm(st: any, phys: any = null) {
       for (const k of Object.keys(C)) if ((k === "motion" || k.startsWith("motion:")) && isB(C[k])) { const m = { ...C[k] };
         if ("amplitude" in m) { if (m.amp === undefined && typeof m.amplitude === "number") m.amp = m.amplitude; delete m.amplitude; }
         if (typeof m.axis === "string" && AX[m.axis.toLowerCase()]) m.axis = AX[m.axis.toLowerCase()];
-        if (m.type === "pendulum") { if (m.period === undefined) m.period = 3.5; if (m.damp === undefined) m.damp = 0; }
+        if (m.type === "pendulum") { if (m.period === undefined) m.period = 3.5; if (m.damp === undefined) m.damp = 0; if (m.maxAmp === undefined) m.maxAmp = 1.1; }
         if (m.type === "bob") m.type = "oscillate";   // declared (translate-v1@14 DROPPED motion.type), written independently of names.js
         if (c(m) !== c(C[k])) C[k] = m; }
       if (isB(C.motion) && "pivot" in C.motion) { const { pivot, ...r } = C.motion; C.motion = r; if (!isB(C.pivot) && Array.isArray(pivot) && pivot.length === 3 && pivot.every(Number.isFinite)) C.pivot = { pos: pivot }; }

@@ -10,6 +10,7 @@ import { COMPONENTS, PENDULUM, unitTransform } from "../componentspec.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
+import { OLD_READINGS } from "../shaperepair.js";
 import { delOp, isE, lockedC, setOp } from "./storage.js";
 import { aabb, ancestors, qrot, worldT } from "./math.js";
 import { implicitOpens, isSocketC, socketsOf, toggleOf } from "./sockets.js";
@@ -130,7 +131,7 @@ function buildUse(ctx, a) {
     const L = Math.max(0.2, Math.hypot(pv[0] * sc[0], pv[1] * sc[1], pv[2] * sc[2]));
     const dw = a.args?.impulse == null && typeof h.angular === "number" ? h.angular : along / L;
     const th = a0 * Math.cos(ph), vel = -a0 * w0 * Math.sin(ph) + dw;
-    const amp = Math.min(mo.maxAmp ?? 0.9, Math.hypot(th, vel / w0)), phase = Math.atan2(-(vel / w0), th);
+    const amp = Math.min(mo.maxAmp ?? OLD_READINGS.pendulumMaxAmp, Math.hypot(th, vel / w0)), phase = Math.atan2(-(vel / w0), th);
     reactionCap(ctx, a.id, "motion", action);
     ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), phase: r3(phase), t0: now })];
   }

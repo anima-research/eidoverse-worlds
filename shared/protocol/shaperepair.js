@@ -9,7 +9,7 @@
 //   motion   a bare motion naming a `part` is that node's motion: motion:<partSlot(part)> {node: part} (a motion already on
 //            that node wins); a keyed motion with no node gets its key's tag (the node's name, before the node was data);
 //            amplitude → amp (amp wins); a letter axis (x, y, z, -x, -y, -z) → its vector;
-//            a pendulum with no period read 3.5 s and with no damp 0 (motioneval.js): written down;
+//            a pendulum with no period read 3.5 s, with no damp 0 (motioneval.js), with no maxAmp 1.1 (the old push): written down;
 //            a whole motion's `pivot` field → the thing's pivot component (when it has none);
 //            a whole PENDULUM with no pivot component swung about [0, 2, 0] (motioneval.js, before 10-16): that point is
 //            written as its pivot component, because a whole thing now turns about its origin when it has none.
@@ -42,7 +42,8 @@ const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 export const OLD_LIGHT_DECAY = 1.7;
 export const AXIS_VECTORS = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] });
 /** The pendulum readings that lived only in the reader (client/lib/motioneval.js, before 10-16). */
-export const OLD_READINGS = Object.freeze({ pendulumPeriod: 3.5, pendulumDamp: 0, wholePendulumPivot: Object.freeze([0, 2, 0]) });
+// maxAmp 1.1: the old server's push cap (its reactions.ts pendulumImpulse), so a translated swing swings as it did (R 10-27)
+export const OLD_READINGS = Object.freeze({ pendulumPeriod: 3.5, pendulumDamp: 0, pendulumMaxAmp: 1.1, wholePendulumPivot: Object.freeze([0, 2, 0]) });
 const isMotionKey = (k) => k === "motion" || k.startsWith("motion:");
 
 /** One motion value in today's spelling (or the same object when nothing changes). */
@@ -56,6 +57,7 @@ export function repairMotion(m) {
   if (out.type === "pendulum") {
     if (out.period === undefined) { edit(); out.period = OLD_READINGS.pendulumPeriod; }
     if (out.damp === undefined) { edit(); out.damp = OLD_READINGS.pendulumDamp; }
+    if (out.maxAmp === undefined) { edit(); out.maxAmp = OLD_READINGS.pendulumMaxAmp; }
   }
   return out;
 }
