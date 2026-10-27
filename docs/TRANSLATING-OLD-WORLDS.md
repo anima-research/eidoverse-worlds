@@ -111,4 +111,3 @@ aside, then copy the backup back under the world's name without its
 
 `rollback <world>` is still the first way back (it undoes the swap byte for
 byte); the backup is for when that can't run.
-
