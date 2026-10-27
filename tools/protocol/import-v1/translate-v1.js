@@ -268,19 +268,62 @@ export const DROPPED = {
   "a mounted thing's own pos/yaw/q": "v1 keeps a riding thing's pre-mount pose, unused until a dismount; v4's transform IS the pose it rides at (local to its parent: v1's offset, or its socket's pos, and q/yaw). The parent's offset/yaw/q are that transform, not a second copy (L2)",
 };
 // DEFERRED (review of PR #260, Mica, item 7): features main's merges gave v1 worlds that THIS protocol does not carry yet.
-// Each is a component the old renderer read (tools/water/README.md: the water/air/vehicle/traversal/collision table,
-// server/render-scene.ts PASS_THROUGH). The translator never carries one of these quietly: a log that uses one is REFUSED
-// at `translate`, naming the feature and where it was used (deferredFeatures below), and the dry-run report lists them, so
-// the owner decides with the loss in front of them. `water` is registered in v4 as the WORLD's water level (componentspec:
-// water on @world {level,…}); a `water` on anything else, or one shaped as a volume, is the deferred water volume.
+// Each is a component the old renderer read (tools/water/README.md, server/render-scene.ts PASS_THROUGH). The translator
+// never carries one of these quietly: a log that uses one is REFUSED at `translate`, naming the feature and where it was
+// used (deferredFeatures below), and the dry-run report lists them, so the owner decides with the loss in front of them.
+// Main's water volume and air boxes are carried (VOLUMES below), except on @world, which has no frame of its own to hold them.
 export const DEFERRED = {
-  water:     { feature: "water volume", since: "main #248 (Unreal native client) / #254", shape: "water {center, size, absorption?, scatter?, speed?, waves?} on an entity" },
-  air:       { feature: "air box (dry interior)", since: "main #248", shape: "air {boxes: [{center, size, q?}]}" },
   traversal: { feature: "climb route", since: "main #248", shape: "traversal {routes: [{name, path, radius, speed}]}" },
   vehicle:   { feature: "vehicle", since: "main #248", shape: "vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}" },
   collision: { feature: "collision on/off toggle", since: "main #248", shape: "collision {enabled: false}" },
 };
 const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
+const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
+// main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
+export const VOLUMES = {
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre" },
+  air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform" },
+};
+export const AIR_PRIORITY = 1;
+export const waterChildId = (host) => `water-${sha256(`eido-water\0${host}`).slice(0, 26)}`;
+export const airChildId = (host, i) => `air-${i}-${sha256(`eido-air\0${host}\0${i}`).slice(0, 26)}`;
+const vec3 = (v, d) => (Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) ? [...v] : [...d]);
+const ID_POSE = (pos, q = [0, 0, 0, 1]) => ({ pos, q, scale: [1, 1, 1] });
+/** main's water {center, size, absorption?, scatter?, …} → {center, zone, water} (sizes as main's waterParams reads them) */
+export function waterOfOld(d) {
+  const { center, size, absorption, scatter, ...rest } = d;
+  const water = { ...rest };
+  if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
+  if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
+  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water };
+}
+/** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
+ *  things under it. `c` is the thing's components so far (its model, light). */
+export function volumePartsOf(host, comp, c) {
+  const own = {}, children = [];
+  const w = comp?.water;
+  if (w && typeof w === "object" && !Array.isArray(w)) {
+    const m = waterOfOld(w);
+    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water });
+    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water }]);
+  }
+  const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
+  boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
+    children.push([airChildId(host, i), { transform: ID_POSE(vec3(b.center, [0, 0, 0]), qNorm(b.q) ?? [0, 0, 0, 1]), parent: { to: host }, label: `dry box ${i + 1}`,
+      zone: { shape: "box", size: vec3(b.size, [1, 1, 1]).map((x) => Math.max(0.001, Math.min(1e4, Math.abs(x)))), priority: AIR_PRIORITY }, "water-exclusion": {} }]); });
+  return { own, children };
+}
+/** The water volumes and air boxes a v1 state holds, as the report lists them: [{component, feature, id (as written), into (ids)}] */
+export function volumeMappings(st) {
+  const out = [];
+  for (const [id, e] of Object.entries(st?.entities ?? {})) for (const k of ["water", "air"]) {
+    if (e?.comp?.[k] == null) continue;
+    const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
+    const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
+    out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)] });
+  }
+  return out;
+}
 /** Every use in a v1 log of a feature v4 doesn't carry yet that still stands at its end: [{component, feature, id, seq,
  *  actor, ts}], in log order. A `comp` that removes one (data null), or a `remove` of its thing, ends the uses before it,
  *  so removing it on the old server (the refusal's remedy) clears the refusal. Empty for every old world on Burrow and every
@@ -291,12 +334,13 @@ export function deferredFeatures(oldEntries) {
     if (e?.verb === "remove" && e.args?.id != null) { const pre = `${String(e.args.id)}\0`; for (const key of [...standing.keys()]) if (key.startsWith(pre)) standing.delete(key); return; }
     if (e?.verb !== "comp" || typeof e.args?.type !== "string") return;
     const t = e.args.type, d = e.args.data;
-    if (!Object.hasOwn(DEFERRED, t)) return;
+    const onWorld = e.args.id === "@world" && Object.hasOwn(ON_WORLD, t);
+    if (!Object.hasOwn(DEFERRED, t) && !onWorld) return;
     const key = `${String(e.args.id)}\0${t}`;
     if (d == null) { standing.delete(key); return; }
-    if (t === "water" && e.args.id === "@world" && !(d && typeof d === "object" && VOLUME_FIELDS.some((f) => f in d))) { standing.delete(key); return; }   // the world's water level: carried
+    if (t === "water" && onWorld && !(d && typeof d === "object" && VOLUME_FIELDS.some((f) => f in d))) { standing.delete(key); return; }   // the world's water level: carried
     const uses = standing.get(key) ?? []; standing.set(key, uses);
-    uses.push({ component: t, feature: DEFERRED[t].feature, id: String(e.args.id), seq: Number.isInteger(e.seq) ? e.seq : k, actor: String(e.actor ?? "?"), ...(Number.isInteger(e.ts) ? { ts: e.ts } : {}), at: k });
+    uses.push({ component: t, feature: (onWorld ? ON_WORLD : DEFERRED)[t].feature, id: String(e.args.id), seq: Number.isInteger(e.seq) ? e.seq : k, actor: String(e.actor ?? "?"), ...(Number.isInteger(e.ts) ? { ts: e.ts } : {}), at: k });
   });
   return [...standing.values()].flat().sort((x, y) => x.at - y.at).map(({ at: _a, ...u }) => u);
 }
@@ -306,7 +350,7 @@ export function deferredRefusal(uses, world = "this world") {
   const kinds = [...new Set(uses.map((u) => u.feature))];
   return `can't translate ${world}: it uses ${uses.length} thing(s) this protocol does not carry yet — ${kinds.join(", ")} — and translating would drop them silently. `
     + `Nothing was written. Where:\n` + uses.map((u) => `  seq ${u.seq}: ${u.feature} (\`${u.component}\` component) on "${u.id}", set by ${u.actor}${u.ts ? ` at ${new Date(u.ts).toISOString()}` : ""}`).join("\n")
-    + `\nThese came from main's merges (${[...new Set(uses.map((u) => DEFERRED[u.component].since))].join("; ")}) and are deferred in this protocol. Either wait for the protocol to carry them, or remove them from the old world first (the old server's \`comp\` with data null) and translate again.`;
+    + `\nThese came from main's merges (${[...new Set(uses.map((u) => (DEFERRED[u.component] ?? ON_WORLD[u.component]).since))].join("; ")}) and are deferred in this protocol. Either wait for the protocol to carry them, or remove them from the old world first (the old server's \`comp\` with data null) and translate again.`;
 }
 
 // v1's mount, read the way the renderer realizes it (shared/hierarchy.js localOf, written independently here): a
@@ -419,9 +463,11 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (e.lib !== undefined) { c.model = e.lib; const h = content && typeof e.lib === "string" ? hashOf(content(e.lib)) : null; if (h) c["model-hash"] = h; }
     if (e.kind === "light") c.light = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => e[k] !== undefined).map((k) => [k, e[k]]));
     const emitters = [];   // v1 particles:<name> (upstream #256): each becomes a child thing (@15)
+    const volumes = {};    // main #248's water volume / air boxes (VOLUMES)
     for (const [k, v] of Object.entries(e.comp ?? {})) if (k !== "guard") {
       if (accountNamed(k) && isAccount(v)) continue;   // a component whose name has an account's, holding one (@19)
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
+      if ((k === "water" || k === "air") && v != null) { volumes[k] = v; continue; }   // main #248's: zone things (VOLUMES)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
       c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : v; }
@@ -435,7 +481,9 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (["pos", "yaw", "q", "scale", "lib", "kind", "color", "intensity", "range", "keep", "day", "comp", "parent", "placer"].includes(k) || ENTITY_SKIP.has(k)) continue;
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
+    const vol = volumePartsOf(enc(id), volumes, c); Object.assign(c, vol.own);
     out[enc(id)] = shapeRepaired(c);
+    for (const [cid, cc] of vol.children) out[cid] = shapeRepaired(cc);
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: newParticles(seeded) });
@@ -686,6 +734,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
+  const mapped = volumeMappings(v1); if (mapped.length) stats.mapped = mapped;   // main's water volumes and air boxes, carried (VOLUMES)
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
   return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

@@ -1,3 +1,6 @@
+// The imported #248 scene in a real browser (Chrome + WebGPU, WATER_PREVIEW_URL): its dry checks read the pockets through
+// watervolumes (zone + water-exclusion, shared/zone.js). Not runnable yet: it needs the scene imported (import.ts --apply)
+// and traversal (client/lib/traversal.js and the routes it reads), which wait for climb (water port step 3).
 import {chromium} from 'playwright';
 import {strict as assert} from 'node:assert';
 const browser=await chromium.launch({headless:true,channel:'chrome',args:['--enable-unsafe-webgpu','--use-angle=metal']});

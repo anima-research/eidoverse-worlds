@@ -136,6 +136,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     ...(r.stats.modelsHashed !== undefined ? { models: { hashed: r.stats.modelsHashed, unhashed: r.stats.modelsUnhashed } } : {}),
     dropped: DROPPED,            // what every translation drops or renames BY DESIGN (the translator's own table)
     deferred,                    // uses of features v4 doesn't carry yet: any → refused
+    ...(r.stats.mapped ? { mapped: r.stats.mapped } : {}),   // main's water volumes and air boxes, each as the things it became (translate-v1 VOLUMES)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
   };
   return { report, hash: sha256(JSON.stringify(report)) };

@@ -306,7 +306,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   included; `blend` and `weight` are look only; a body inherits nothing from
   `@world`'s water. shared/zone.js (`zonesOf`, `mediumOf`) is the one reader:
   `{medium, level, flow, body, priority}` at a point. glTF has no water: the
-  medium does not survive export.
+  medium does not survive export. For now `water` and `water-exclusion` read
+  a box zone only: a sphere, capsule or cylinder zone under either is refused
+  with that fix (a zone of any shape is taken alone).
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
@@ -1373,9 +1375,14 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   `imported:<name>`; a person's grant this protocol has no rung for (v1's `spectator` or `none`) rides as
   `imported-roles:<id>`. Nothing of a world is dropped quietly: what a translation drops or renames by design is listed
   by the translator, and the old log is kept beside the new one, never written.
-- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume,
-  an air box, a climb route, a vehicle or a collision toggle (`water`/`air`/`traversal`/`vehicle`/`collision` on an
-  entity; `water` on `@world` is the world's water level and is carried). No approval overrides the refusal. Carried
+- **Main's water volume and air boxes are carried** as zone things (§4's water body): a `water {center, size, …}` fills
+  a box `zone` on its own thing (no model or light, centred on it) or on a child at its centre, absorption σ as
+  `attenuationColor` e^−σ over `attenuationDistance` 1 m, scatter as `scatterColor`, other fields in `imported:water`;
+  each `air` box is a child `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform.
+  The report lists each under `mapped` with the things it became.
+- **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a climb route,
+  a vehicle or a collision toggle (`traversal`/`vehicle`/`collision` on an entity), or a water volume or air box on
+  `@world` (`water` on `@world` without one is the world's water level and is carried). No approval overrides the refusal. Carried
   inert as `imported:<name>` they would change the world in a way that matters: a pool nobody can swim in, a ladder nobody
   can climb, a car nobody can drive, a wall the old world let people through. A translated world would look whole and
   play broken, so the translation waits until this protocol carries each feature, rather than translating a world that

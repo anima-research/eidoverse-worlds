@@ -56,10 +56,11 @@
 //   IP25 a rollback that would lose history (the server wrote to world.jsonl since) refuses unless --discard-changes; a
 //        directory with no manifest refuses with that reason
 //   —— item 7: truthful refusals ——
-//   IP26 a world using features this protocol doesn't carry yet (a water volume, air boxes, a climb route, a vehicle, a collision
+//   IP26 a world using features this protocol doesn't carry yet (a climb route, a vehicle, a collision
 //        toggle) is REFUSED, naming each feature and where it was used (seq, entity, actor); the dry run lists them under
 //        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
-//        level (water on @world) is not a volume and does not refuse (control)
+//        level (water on @world) is not a volume and does not refuse (control); main's water volume and air box on the same
+//        world translate (listed under `mapped`, absent from the refusal)
 //   IP27 a client that doesn't fold the log: a native (Unreal) session is told the Unreal client hasn't been ported to this protocol
 //        yet; anyone else is told to reload or update (the wire carries the latter; the native text is the pure switch)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
@@ -335,18 +336,19 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   const d = oldWorld("sunk", { extra: uses }); fs.rmSync(path.join(d, "snapshot.json")); const fp = fingerprint(d); const dirBefore = fs.readFileSync(dirf, "utf8");
   const dr = tool(["translate", "sunk", "--dry-run", "--no-founder-key"]); let rep: any = null; try { rep = JSON.parse(dr.out.slice(dr.out.indexOf("{"), dr.out.lastIndexOf("}") + 1)); } catch {}
   const h = /^report-hash ([0-9a-f]{64})$/m.exec(dr.out)?.[1];
-  const want = [["water volume", "table_1", 6, "Ann"], ["air box (dry interior)", "table_1", 7, "Ann"], ["climb route", "cup_1", 8, "Bob"], ["vehicle", "cup_1", 9, "Bob"], ["collision on/off toggle", "table_1", 10, "Ann"]];
-  ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string",
-    "IP26 the dry run lists the five deferred uses (feature, entity, seq, actor) — and not the world's water level — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred });
+  const want = [["climb route", "cup_1", 8, "Bob"], ["vehicle", "cup_1", 9, "Bob"], ["collision on/off toggle", "table_1", 10, "Ann"]];
+  ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string"
+    && same(rep.mapped?.map((m: any) => [m.feature, m.id, m.into.length]), [["water volume", "table_1", 1], ["air box (dry interior)", "table_1", 1]]),
+    "IP26 the dry run lists the three deferred uses (feature, entity, seq, actor) — not the world's water level, nor the water volume and air box it carries (listed as mapped) — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred, mapped: rep?.mapped });
   const text = rep?.refused ?? "";
-  ok(/can't translate "sunk": it uses 5 thing\(s\) this protocol does not carry yet/.test(text) && /water volume, air box \(dry interior\), climb route, vehicle, collision on\/off toggle/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
+  ok(/can't translate "sunk": it uses 3 thing\(s\) this protocol does not carry yet/.test(text) && /climb route, vehicle, collision on\/off toggle/.test(text) && !/water volume|air box/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
     && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in this protocol/.test(text) && /remove them from the old world first/.test(text),
     "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
   const forced = tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));
-  const named = oldWorld("sunk-src", { extra: uses.slice(0, 1) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
-  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /water volume/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
+  const named = oldWorld("sunk-src", { extra: uses.slice(2, 3) }); const two = tool(["translate", "sunk-src", "sunk-new", "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(["sunk-src", "sunk-new"])]);
+  ok(two.code !== 0 && /can't translate "sunk-new"|can't translate "sunk-src"/.test(two.out) && /climb route/.test(two.out) && !fs.existsSync(path.join(W, "sunk-new")) && same(fingerprint(named), fingerprint(named)),
     "IP26 the two-name form refuses the same way, and makes no new directory", two.out.slice(-300)); }
 
 // ================= IP1: in place, the happy path (continued) =================

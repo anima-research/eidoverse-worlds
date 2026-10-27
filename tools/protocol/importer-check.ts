@@ -215,15 +215,57 @@ row("IM-I7", () => {
 
 // ---- IM-I15: the deferred refusal's remedy works ----
 row("IM-I15", () => {
-  const vol = { center: [0, 0, 0], size: [4, 2, 4] };
-  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: vol } }];
-  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: null } }]);
+  const route = { routes: [{ name: "ladder", path: [[0, 0, 0], [0, 3, 0]], radius: 0.5, speed: 1 }] };
+  const set = [BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: route } }];
+  const L1 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: null } }]);
   const L2 = seqd([...set, { actor: "Ann", verb: "remove", args: { id: "pool" } }]);
   const L3 = seqd(set);
-  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: vol } }]);
+  const L4 = seqd([...set, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: null } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "traversal", data: route } }]);
   const d = [L1, L2, L3, L4].map((L) => TV1.deferredFeatures(L));
   ok(d[0].length === 0 && d[1].length === 0 && d[2].length === 1 && d[2][0].seq === 2 && d[3].length === 1 && d[3][0].seq === 4,
-    "IM-I15 a water volume removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
+    "IM-I15 a climb route removed later (comp null, or its thing removed) no longer refuses; one still standing does, naming the use that stands", d.map((x) => x.map((u) => u.seq)));
+});
+
+// ---- IM-W: main #248's water volume and air boxes translate (zone + water / water-exclusion); traversal, vehicle, collision still refuse ----
+row("IM-W1", () => {
+  const water = { center: [0, -2, 0], size: [10, 4, 10], absorption: [0.1, 0.036, 0.018], scatter: [0.014, 0.11, 0.17], speed: 2.4, waves: [{ amplitude: 0.3, wavelength: 12, direction: [1, 0], phase: 0 }] };
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "pool", lib: "p.glb", pos: [5, 0, 0], yaw: 0.5 } }, { actor: "Ann", verb: "comp", args: { id: "pool", type: "water", data: water } },
+    { actor: "Ann", verb: "spawn", args: { id: "pond", pos: [20, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "pond", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4] } } }]);
+  const r = TV1.translate(L), T = r.final.translated, kid = T[TV1.waterChildId("pool")];
+  const sigma = kid?.water?.attenuationColor?.map((c: number) => -Math.log(c) / kid.water.attenuationDistance);
+  ok(TV1.deferredFeatures(L).length === 0 && r.stats.divergences === 0 && !T.pool.water && !T.pool.zone && kid?.parent?.to === "pool" && JSON.stringify(kid.transform.pos) === "[0,-2,0]"
+    && JSON.stringify(kid.zone) === JSON.stringify({ shape: "box", size: [10, 4, 10] }) && sigma?.every((x: number, i: number) => Math.abs(x - water.absorption[i]) < 1e-15) && JSON.stringify(kid.water.scatterColor) === JSON.stringify(water.scatter)
+    && JSON.stringify(kid.water.waves) === JSON.stringify(water.waves) && kid["imported:water"]?.speed === 2.4 && JSON.stringify(T.pond.zone) === JSON.stringify({ shape: "box", size: [4, 2, 4] }) && !!T.pond.water,
+    "IM-W1 a water volume on a thing with a model becomes a child at its centre with zone {box, size} + water (σ as attenuationColor e^−σ over 1 m, scatter as scatterColor, waves as they were, speed in imported:water); on a bare thing at its origin, the thing itself", { pool: T.pool, kid, pond: T.pond, mapped: r.stats.mapped });
+});
+row("IM-W2", () => {
+  const q = [0, Math.sin(0.3), 0, Math.cos(0.3)];
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "sub", lib: "s.glb", pos: [0, -10, 0] } },
+    { actor: "Ann", verb: "comp", args: { id: "sub", type: "air", data: { boxes: [{ center: [0, 0, -2], size: [2, 2, 4] }, { center: [0, 1, 3], size: [1, 1, 1], q }] } } }]);
+  const r = TV1.translate(L), T = r.final.translated, a0 = T[TV1.airChildId("sub", 0)], a1 = T[TV1.airChildId("sub", 1)];
+  ok(TV1.deferredFeatures(L).length === 0 && r.stats.divergences === 0 && !("air" in T.sub) && !Object.keys(T.sub).some((k) => /air/.test(k))
+    && a0?.parent?.to === "sub" && JSON.stringify(a0.zone) === JSON.stringify({ shape: "box", size: [2, 2, 4], priority: TV1.AIR_PRIORITY }) && JSON.stringify(a0["water-exclusion"]) === "{}" && JSON.stringify(a0.transform.pos) === "[0,0,-2]"
+    && a1 && a1.transform.q.every((x: number, i: number) => Math.abs(x - q[i]) < 1e-12) && TV1.AIR_PRIORITY === 1
+    && JSON.stringify(r.stats.mapped?.map((m: any) => [m.component, m.id, m.into.length])) === JSON.stringify([["air", "sub", 2]]),
+    "IM-W2 an air {boxes} becomes one child per box: zone {box, size, priority 1 (above the bodies)} + water-exclusion {}, its centre and q its transform; the report's mapped lists them", { sub: T.sub, a0, a1, mapped: r.stats.mapped });
+});
+row("IM-W3", () => {
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "boat", lib: "b.glb", pos: [0, 0, 0] } },
+    { actor: "Ann", verb: "comp", args: { id: "boat", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4] } } }, { actor: "Ann", verb: "comp", args: { id: "boat", type: "air", data: { boxes: [{ center: [0, 0, 0], size: [1, 1, 1] }] } } },
+    { actor: "Ann", verb: "comp", args: { id: "boat", type: "traversal", data: { routes: [] } } }, { actor: "Ann", verb: "comp", args: { id: "boat", type: "vehicle", data: { helm: [0, 0, 0] } } },
+    { actor: "Ann", verb: "comp", args: { id: "boat", type: "collision", data: { enabled: false } } }]);
+  const got = TV1.deferredFeatures(L).map((u: any) => u.component);
+  ok(JSON.stringify(got) === JSON.stringify(["traversal", "vehicle", "collision"]) && !("water" in TV1.DEFERRED) && !("air" in TV1.DEFERRED),
+    "IM-W3 water and air are no longer deferred; traversal, vehicle and collision still refuse the translation", got);
+});
+const ZN = await import("../../shared/zone.js");
+row("IM-W4", () => {
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "tank", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "tank", type: "water", data: { center: [0, -5, 0], size: [20, 10, 20] } } },
+    { actor: "Ann", verb: "spawn", args: { id: "room", lib: "r.glb", pos: [0, -5, 0], yaw: Math.PI / 2 } }, { actor: "Ann", verb: "comp", args: { id: "room", type: "air", data: { boxes: [{ center: [0, 0, 2], size: [2, 2, 2] }] } } }]);
+  const T = TV1.translate(L).final.translated, st = { entities: Object.fromEntries(Object.entries(T).map(([id, c]) => [id, { c }])) }, z = ZN.zonesOf(st);
+  const at = (p: number[]) => ZN.mediumOf(p, z).body;
+  const o = { open: at([5, -5, 5]), room: at([2, -5, 0]), unturned: at([0, -5, 2]), above: at([5, 1, 5]) };   // the room's yaw turns its box's centre +z → +x
+  ok(o.open === TV1.waterChildId("tank") && o.room === null && o.unturned === TV1.waterChildId("tank") && o.above === null, "IM-W4 the translated world's medium (shared/zone.js mediumOf): open water wet, the air box dry where its thing's yaw puts it, above the surface dry", o);
 });
 
 // ---- IM-I36, IM-I37, IM-I13, IM-I3: values read as v1 read them ----
