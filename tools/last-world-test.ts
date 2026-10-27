@@ -5,12 +5,14 @@
 // A bare link (a bookmark, the login's return to '/') used to mean the commons
 // whatever world you had been in. Now base.js pickWorld chooses ?world=, else the
 // world this browser was last IN as a person, else the commons; net.js onSnapshot
-// writes that memory at the door's yes; and a door that refuses a remembered world
-// forgets it, and (when the memory, not the link, brought the page there and it
-// never got in) takes the person to the commons. Pinned here: the choice itself;
-// that index.html's early-socket copy of it agrees, extracted from the served HTML
-// rather than copied; and the real net.js writing and forgetting, a fresh process
-// per page load with only the DOM-touching UI modules stubbed.
+// writes that memory at the door's yes (not for a world nobody has built in: a typo
+// founds one); and a door that refuses a remembered world forgets it, and (when the
+// memory, not the link, brought the page there and it never got in) takes the person
+// to the commons. Pinned here: the choice itself; that index.html's early-socket copy
+// of it agrees, and that its boot tripwire keys on the world chosen, both extracted
+// from the served HTML rather than copied; and the real net.js writing and
+// forgetting, a fresh process per page load with only the DOM-touching UI modules
+// stubbed.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -91,9 +93,48 @@ if (m) for (const [q, stored] of CASES) {
   check("…and stashes it for net.js to compare", (g.__ewEarlySocket as { sent?: { world?: string } })?.sent?.world === "garden");
 }
 
+// ---- the boot tripwire keys on the world the page opens ------------------------------
+// Lite/full is decided per world (a phone can hold an empty world but not the commons).
+// Run the early-socket script, then the decideLite script, on one globalThis.
+console.log("boot tripwire keys");
+const lite = html.match(/<script>\s*\n\s*\/\/ decideLite[\s\S]*?<\/script>/);
+check("found the decideLite script", !!lite);
+const tripKeys = (q: string, stored: string | null) => {
+  const mem = new Map<string, string>(stored === null ? [] : [["ew-world", stored]]);
+  const g: Record<string, unknown> = {
+    navigator: { deviceMemory: 8, gpu: {} },
+    location: { search: q, protocol: "http:", host: "x" },
+    localStorage: { getItem: (k: string) => mem.get(k) ?? null, setItem() {}, removeItem() {} },
+    addEventListener() {},
+    document: { documentElement: { classList: { toggle() {} } }, head: { appendChild() {} }, createElement: () => ({}) },
+    console: { log() {} },
+  };
+  g.globalThis = g;
+  const run = (src: string) => new Function("globalThis", "navigator", "location", "localStorage", "document", "console", "URLSearchParams", "addEventListener",
+    src.replace(/^<script>/, "").replace(/<\/script>$/, ""))(g, g.navigator, g.location, g.localStorage, g.document, g.console, URLSearchParams, g.addEventListener);
+  run(m![0]); run(lite![0]);
+  const p = new URLSearchParams(q);
+  return [(g.__ewTripKey as (p: URLSearchParams) => string)(p), (g.__ewRetryKey as (p: URLSearchParams) => string)(p)];
+};
+if (m && lite) {
+  for (const [q, stored, key] of [
+    ["", null, "default"],                 // the commons by default keeps its old key
+    ["", "garden", "garden"],              // a remembered world keys on that world…
+    ["?world=garden", null, "garden"],     // …the same key its link has
+    ["?world=lab", "garden", "lab"],
+    ["?spectate", "garden", "default"],
+  ] as const) {
+    const [trip, retry] = tripKeys(q, stored);
+    check(`"${q}" with ${JSON.stringify(stored)} remembered keys the tripwire on ${key}`,
+      trip === `ew-boot-attempt:${key}` && retry === `ew-boot-retried:${key}`, `${trip} / ${retry}`);
+  }
+}
+
 // ---- net.js: written at the door's yes, forgotten at its no -----------------------------
 console.log("net.js");
-type Step = "snapshot" | "connect" | { close: number } | "timers";
+// "snapshot": the door's yes into a world with something built in it; "fresh": into one
+// nobody has built in (what a mistyped name founds); "spawn": someone builds, live.
+type Step = "snapshot" | "fresh" | "spawn" | "connect" | { close: number } | "timers";
 type Out = { world: string; stored: string | null; reloads: number; toasts: string[] };
 function pageLoad(search: string, stored: string | null, steps: Step[]): Out {
   const L = join(ROOT, "client/lib") + "/";
@@ -120,7 +161,9 @@ function pageLoad(search: string, stored: string | null, steps: Step[]): Out {
     net.wireNet({ toast: (m) => toasts.push(m) });
     net.net.ws = { send() {}, readyState: 1 };
     for (const s of ${JSON.stringify(steps)}) {
-      if (s === "snapshot") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: {} });
+      if (s === "snapshot") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: { entities: { tree: { lib: "tree", pos: [0, 0, 0] } } } });
+      else if (s === "fresh") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: {} });
+      else if (s === "spawn") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "spawn", args: { id: "box1", lib: "box" } } });
       else if (s === "connect") await net.connect();
       else if (s === "timers") timers.splice(0).forEach((f) => f());
       else sockets[sockets.length - 1].onclose({ code: s.close });
@@ -145,6 +188,14 @@ function pageLoad(search: string, stored: string | null, steps: Step[]): Out {
   const rend = pageLoad("?renderer&world=lab", "garden", ["snapshot"]);
   check("a renderer in lab leaves the memory at garden", rend.stored === "garden", JSON.stringify(rend));
 
+  // a mistyped ?world= founds an empty world and is let in; it must not become home
+  const typo = pageLoad("?world=gardn", "garden", ["fresh"]);
+  check("let into an empty world (?world=gardn): the memory stays at garden", typo.stored === "garden", JSON.stringify(typo));
+  const typoFirst = pageLoad("?world=gardn", null, ["fresh"]);
+  check("…and a browser with no memory remembers nothing", typoFirst.stored === null, JSON.stringify(typoFirst));
+  const newPlace = pageLoad("?world=atelier", "garden", ["fresh", "spawn"]);
+  check("a new world is remembered the moment something is built in it", newPlace.stored === "atelier", JSON.stringify(newPlace));
+
   // the door says no
   const shut = pageLoad("", "garden", ["connect", { close: 4010 }, "timers"]);
   check("a remembered world that refuses us (4010) is forgotten", shut.stored === null, JSON.stringify(shut));
@@ -162,6 +213,10 @@ function pageLoad(search: string, stored: string | null, steps: Step[]): Out {
   const midway = pageLoad("", "garden", ["connect", "snapshot", { close: 4010 }, "timers"]);
   check("access ending mid-visit forgets garden but does not yank the page away",
     midway.stored === null && midway.reloads === 0, JSON.stringify(midway));
+  for (const q of ["?spectate&world=garden", "?renderer&world=garden"]) for (const code of [4010, 4006]) {
+    const watch = pageLoad(q, "garden", ["connect", { close: code }, "timers"]);
+    check(`${q} refused (${code}) leaves the person's garden alone`, watch.stored === "garden" && watch.reloads === 0, JSON.stringify(watch));
+  }
   const blip = pageLoad("", "garden", ["connect", { close: 1006 }, "timers"]);
   check("an ordinary disconnect forgets nothing", blip.stored === "garden" && blip.reloads === 0, JSON.stringify(blip));
 }

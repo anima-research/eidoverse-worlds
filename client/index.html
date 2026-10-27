@@ -1823,8 +1823,12 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // browser. One global flag would answer "this device cannot" when the truth is
     // "this device cannot hold THAT world", and would strand a phone in lite on worlds
     // it handles comfortably.
-    const tripKey = (params) => `ew-boot-attempt:${params.get('world') || 'default'}`;
-    const retryKey = (params) => `ew-boot-retried:${params.get('world') || 'default'}`;   // a desktop's one retry (rule 2)
+    // The world is the one the page actually opens (early-socket script: ?world=, else
+    // the remembered world), so a bare link that opens a remembered world keys on that
+    // world, not on the commons. 'default' stays the commons' key, as before.
+    const keyWorld = (params) => params.get('world') || (globalThis.__ewWorld?.remembered ? globalThis.__ewWorld.world : 'default');
+    const tripKey = (params) => `ew-boot-attempt:${keyWorld(params)}`;
+    const retryKey = (params) => `ew-boot-retried:${keyWorld(params)}`;   // a desktop's one retry (rule 2)
     globalThis.__ewRetryKey = retryKey;   // boot.js and litechoice.js clear it with the trip key
     globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
 

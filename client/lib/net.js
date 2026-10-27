@@ -6,7 +6,7 @@ import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY } from './base.js'
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadow } from './state.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -340,6 +340,24 @@ export function rejoin() {
 
 let intentionalClose = false;
 let everJoined = false;   // has this page been let in at all (a snapshot arrived)
+let worldSaved = false;   // has this join remembered its world yet (rememberWorld)
+
+/** Has anyone made anything here: a thing, ground, grass or sky. A join to a name
+ *  nobody has used FOUNDS that world (server.ts admitJoin), so a mistyped ?world=
+ *  is let in to an empty one; main.js warns about it on arrival. An empty world is
+ *  not remembered: a bare link must not keep leading to a typo. */
+export const builtIn = (st) => !!st && (Object.keys(st.entities ?? {}).length > 0
+  || st.terrain != null || st.grass != null || st.sky != null);
+
+/** The world a person is IN: where a bare link brings this browser next time
+ *  (base.js pickWorld). Called at the door's yes and on each live entry until it
+ *  sticks, so a refused ?world= is never remembered and a new world is, the moment
+ *  someone builds in it. Watchers and renderers write nothing. */
+function rememberWorld() {
+  if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
+  worldSaved = true;
+  try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+}
 
 /** A world's door refused us (4010 not open to you, 4006 removed). If it is the
  *  world a bare link would bring this browser back to, forget it: the memory
@@ -349,6 +367,7 @@ let everJoined = false;   // has this page been let in at all (a snapshot arrive
  *  place they did not name is no way to arrive. One reload at most: the
  *  memory is gone, so the next load is the link's or the commons. */
 function forgetRefusedWorld() {
+  if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
   try { if (localStorage.getItem(LAST_WORLD_KEY) === CONFIG.world) localStorage.removeItem(LAST_WORLD_KEY); } catch { /* storage blocked */ }
   if (!CONFIG.worldRemembered || everJoined) return false;
   toast(`you can't go back into "${CONFIG.world}" — taking you to the commons`, 'warn', 8000);
@@ -756,6 +775,7 @@ async function handle(msg, at) {
       // the realizers are active this IS the delivery: the fold event
       // drives state realization, and 'live-entry' carries the causes.
       shadowFold(msg.entry);
+      if (!worldSaved) rememberWorld();   // a new world, the moment something is built in it
       if (hydrating) pendingLive.push(msg.entry);
       else if ((msg.entry.seq ?? -1) > lastSeq) {
         lastSeq = msg.entry.seq;
@@ -873,14 +893,9 @@ async function onSnapshot(msg) {
   markPhase('connect', 1);
   net.joined = true;
   everJoined = true;
+  worldSaved = false;   // every join remembers afresh (after the shadow adopts the snapshot, below)
   net.status = 'live';
   net.myId = msg.you;
-  // the world a person is IN: where a bare link brings this browser next time
-  // (base.js pickWorld). Written here, at the door's yes, so a refused or
-  // mistyped ?world= is never remembered; watchers and renderers write nothing.
-  if (!CONFIG.spectate && !CONFIG.renderer) {
-    try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
-  }
   net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
@@ -959,6 +974,7 @@ async function onSnapshot(msg) {
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);
+  rememberWorld();   // the door said yes, and the shadow now holds what is here
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.
