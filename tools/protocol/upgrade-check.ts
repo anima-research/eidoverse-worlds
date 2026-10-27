@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { isWorldDir } from "../../server/livehost.ts";
 
@@ -81,7 +81,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
 
 // ================= UB6-8: names and paths the CLI must not take (review finding 4) =================
 const elsewhere = path.join(root, "elsewhere"); fs.mkdirSync(elsewhere, { recursive: true });
-function linkedWorld(name: string) { const real = oldWorld(name); const to = path.join(elsewhere, name); fs.renameSync(real, to); fs.symlinkSync(to, real); return to; }
+function linkedWorld(name: string) { const real = oldWorld(name); const to = path.join(elsewhere, name); fs.renameSync(real, to); linkInto(to, real); return to; }
 { const d = oldWorld("-x"), before = tree(d); const r = tool(["translate", "-x", "--dry-run", "--no-founder-key"]);
   ok(r.code !== 0 && !/report-hash/.test(r.out) && same(tree(d), before), "UB6 a world named \"-x\" (it would read as a flag) is refused by the CLI, nothing written", { code: r.code, out: r.out.slice(-300) }); }
 { const to = linkedWorld("linked"), before = tree(to); const r = tool(["translate", "linked", "--dry-run", "--no-founder-key"]);
