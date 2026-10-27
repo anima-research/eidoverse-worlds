@@ -958,8 +958,8 @@ async function logOut() {
   // net.js bounces a browser that USED to be signed in straight back through the login (silent while Discord still
   // authorizes) — forget that, or logging out would log you back in
   try { localStorage.removeItem('ew-authed'); } catch { /* private mode */ }
-  // and where they have been: the reload must leave the world the confirm said it would, and a shared
-  // browser's next visitor must not land in (or be told the name of) the last person's world
+  // and where they have been: a shared browser's next visitor must not land in (or be told the name of) the last
+  // person's world. A world a MEMORY chose is left by the reload below; one the link names (?world=) is not
   forgetRememberedWorlds();
   location.reload();
 }

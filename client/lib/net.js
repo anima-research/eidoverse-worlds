@@ -1,7 +1,7 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds } from './base.js';
+import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds, isWorldName } from './base.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -395,10 +395,21 @@ function forgetRefusedWorld() {
   if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
   forgetWorld(CONFIG.world);
   if (!CONFIG.worldRemembered || everJoined) return false;
-  const next = pickWorld(CONFIG.params, ...rememberedWorlds()).world;
-  toast(`you can't go back into "${CONFIG.world}" — taking you to ${next === 'commons' ? 'the commons' : `"${next}"`}`, 'warn', 8000);
+  toast(`you can't go back into "${CONFIG.world}" — taking you to ${whereNext()}`, 'warn', 8000);
   setTimeout(() => location.reload(), 3000);
   return true;
+}
+/** Where a reload of this page leads now (after any forgetting), for the words. */
+function whereNext() {
+  const next = pickWorld(CONFIG.params, ...rememberedWorlds()).world;
+  return next === 'commons' ? 'the commons' : `"${next}"`;
+}
+/** The tail of a refusal toast that leaves the page where it is. A reload of a page
+ *  a memory brought here no longer comes back here (the memory is forgotten), so
+ *  the words say where it does go, and how to come back on purpose. */
+function reloadHint(plain) {
+  if (!CONFIG.worldRemembered || CONFIG.spectate || CONFIG.renderer) return plain;
+  return `a reload now takes you to ${whereNext()} — ?world=${CONFIG.world} comes back here`;
 }
 
 // archipelago-home session (home-node.md §7): the server may know who we are
@@ -534,7 +545,7 @@ function wireSocket(ws) {
       net.status = 'rejected';
       bus.emit('net', net);
       if (forgetRefusedWorld()) return;
-      toast('you were removed from this world — reload if you believe you may return', 'warn', 60000);
+      toast(`you were removed from this world — ${reloadHint('reload if you believe you may return')}`, 'warn', 60000);
       return;
     }
     // 4010 = this world is not open to you: refused at the door (members
@@ -546,7 +557,7 @@ function wireSocket(ws) {
       net.status = 'rejected';
       bus.emit('net', net);
       if (forgetRefusedWorld()) return;
-      toast(`you're not in "${CONFIG.world}" — reload if your access changes`, 'warn', 60000);
+      toast(`you're not in "${CONFIG.world}" — ${reloadHint('reload if your access changes')}`, 'warn', 60000);
       return;
     }
     // 4005 = the world name itself is malformed (a mangled link). No retry —
@@ -813,7 +824,7 @@ async function handle(msg, at) {
     case 'renderer-travel':
       // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
       // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
-      if (CONFIG.renderer && CONFIG.roam && typeof msg.world === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.world) && msg.world !== CONFIG.world) {
+      if (CONFIG.renderer && CONFIG.roam && isWorldName(msg.world) && msg.world !== CONFIG.world) {
         CONFIG.world = msg.world; rejoin();
       }
       return;

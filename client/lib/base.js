@@ -48,7 +48,9 @@ export const bus = {
 // in agreement).
 export const LAST_WORLD_KEY = 'ew-world';      // localStorage: the browser's last world
 export const TAB_WORLD_KEY = 'ew-world-tab';   // sessionStorage: this tab's
-const isWorldName = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+/** A name a world can have — the client's copy of server.ts admitJoin's rule
+ *  (index.html's early-socket script carries its own: it runs before modules). */
+export const isWorldName = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
 export function pickWorld(params, last, tab = null) {
   const asked = params.get('world');
   if (asked) return { world: asked, remembered: false };
@@ -62,6 +64,18 @@ export function rememberedWorlds() {
   const read = (s, k) => { try { return s?.getItem(k) ?? null; } catch { return null; } };
   return [read(globalThis.localStorage, LAST_WORLD_KEY), read(globalThis.sessionStorage, TAB_WORLD_KEY)];
 }
+/** What arriving in an empty world says (main.js, on 'hydrated'), by how the page
+ *  got here: the link named it (a non-empty ?world=, as pickWorld reads it); a
+ *  memory chose it (the last world this person was in, found empty now and so
+ *  forgotten: net.js forgetEmptyWorld); or the commons by default. */
+export function emptyWorldNotice({ world, params, worldRemembered }) {
+  if (params.get('world')) return `"${world}" is empty — nothing has ever been built here.`;
+  if (worldRemembered && world !== 'commons') {
+    return `"${world}", the last world you were in, is empty now. Add ?world=<name> to the link to go somewhere else (?world=commons for the commons).`;
+  }
+  return `you are in "${world}", which is empty. Add ?world=<name> to the link to go somewhere else.`;
+}
+
 /** Forget where this person has been (ui.js logOut): the memory is the person's,
  *  and the browser may be the next person's. */
 export function forgetRememberedWorlds() {

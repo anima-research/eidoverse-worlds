@@ -57,6 +57,28 @@ for (const [q, last, tab, world, remembered] of CASES) {
     got.world === world && got.remembered === remembered, JSON.stringify(got));
 }
 
+{
+  const { isWorldName } = await import("../client/lib/base.js");
+  check("isWorldName: the server's rule (letters, digits, _ -, 1–64)",
+    isWorldName("garden") && isWorldName("Roam-lobby_1") && isWorldName("x".repeat(64))
+      && !isWorldName("") && !isWorldName("x".repeat(65)) && !isWorldName("../etc") && !isWorldName("a b") && !isWorldName(null));
+}
+
+// ---- what arriving in an empty world says ------------------------------------------------
+console.log("emptyWorldNotice");
+{
+  const { emptyWorldNotice } = await import("../client/lib/base.js");
+  const say = (q: string, world: string, worldRemembered: boolean) => emptyWorldNotice({ world, params: P(q), worldRemembered });
+  check("named by the link: nothing has ever been built here", say("?world=gardn", "gardn", false).includes("nothing has ever been built"));
+  check("a memory chose it: says so, and how to reach the commons",
+    say("", "garden", true).includes("the last world you were in") && say("", "garden", true).includes("?world=commons"));
+  check("an empty ?world= names nothing: the memory's words, as pickWorld reads it",
+    say("?world=", "garden", true).includes("the last world you were in"));
+  check("the commons, remembered and empty, is not told to go to the commons",
+    !say("", "commons", true).includes("?world=commons") && say("", "commons", true).includes("which is empty"));
+  check("the commons by default: the plain words", say("", "commons", false).includes(`you are in "commons", which is empty`));
+}
+
 // ---- index.html's copy agrees ---------------------------------------------------------
 // The early socket joins before any module loads, so it cannot import pickWorld; it
 // makes the same choice inline and publishes __ewWorld, which base.js CONFIG takes. Run
@@ -278,7 +300,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
 
   const linked = pageLoad("?world=garden", "garden", ["connect", { close: 4010 }, "timers"]);
   check("the LINK's world refusing us is forgotten too, but the page stays and says so",
-    linked.stored === null && linked.reloads === 0 && linked.toasts.some((t) => t.includes("not in")), JSON.stringify(linked));
+    linked.stored === null && linked.reloads === 0 && linked.toasts.some((t) => t.includes("not in") && t.includes("reload if your access changes")), JSON.stringify(linked));
   const other = pageLoad("?world=lab", "garden", ["connect", { close: 4010 }, "timers"]);
   check("a refusal elsewhere leaves the memory of garden alone", other.stored === "garden" && other.reloads === 0, JSON.stringify(other));
 
@@ -293,6 +315,12 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   const midway = pageLoad("", "garden", ["connect", "snapshot", { close: 4010 }, "timers"]);
   check("access ending mid-visit forgets garden but does not yank the page away",
     midway.stored === null && midway.reloads === 0, JSON.stringify(midway));
+  check("…and says a reload now goes to the commons, and how to come back, not 'reload if your access changes'",
+    midway.toasts.some((t) => t.includes("a reload now takes you to the commons") && t.includes("?world=garden"))
+      && !midway.toasts.some((t) => t.includes("reload if your access changes")), JSON.stringify(midway));
+  const kicked = pageLoad("", "garden", ["connect", "snapshot", { set: ["ew-world", "lab"] }, { close: 4006 }, "timers"], "garden");
+  check("removed mid-visit from this tab's garden, after another tab joined lab: a reload now goes to lab, and says so",
+    kicked.reloads === 0 && kicked.toasts.some((t) => t.includes('a reload now takes you to "lab"')), JSON.stringify(kicked));
   for (const q of ["?spectate&world=garden", "?renderer&world=garden"]) for (const code of [4010, 4006]) {
     const watch = pageLoad(q, "garden", ["connect", { close: code }, "timers"], "garden");
     check(`${q} refused (${code}) leaves the person's garden alone`, watch.stored === "garden" && watch.tab === "garden" && watch.reloads === 0, JSON.stringify(watch));
@@ -317,8 +345,17 @@ console.log("log out");
   // ui.js is the DOM shell and does not import headless; read logOut from source instead
   const ui = readFileSync(join(ROOT, "client/lib/ui.js"), "utf8");
   const logOut = ui.match(/async function logOut\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
-  check("ui.js logOut forgets the remembered worlds before it reloads",
-    /forgetRememberedWorlds\(\);[\s\S]*location\.reload\(\)/.test(logOut), logOut.slice(0, 200));
+  // a statement of its own at the function's top level (two-space indent, not in a comment or a branch), before the reload
+  check("ui.js logOut forgets the remembered worlds, unconditionally, before it reloads",
+    /\n  forgetRememberedWorlds\(\);[\s\S]*\n  location\.reload\(\);/.test(logOut), logOut.slice(0, 300));
+  // and what that buys: the next bare load, in this tab or a new one, is the commons
+  lm.set("ew-world", "garden"); sm.set("ew-world-tab", "garden");
+  g.localStorage = st(lm); g.sessionStorage = st(sm);
+  const { rememberedWorlds } = await import("../client/lib/base.js");
+  forgetRememberedWorlds();
+  const after = pickWorld(P(""), ...rememberedWorlds());
+  [g.localStorage, g.sessionStorage] = was;
+  check("after logging out, a bare link opens the commons", after.world === "commons" && !after.remembered, JSON.stringify(after));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
