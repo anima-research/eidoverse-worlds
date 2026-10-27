@@ -3,7 +3,7 @@
 //   C1  a credential proven on one join never carries to a second join on the same socket
 //   C2  an aid1 credential is an agent only if its kind says agent; an enrolment's listed aid1 subject is that agent;
 //       C2f (10-18 L11) a reserved name is matched folded ("Wre n", "wren." are Wren) and refused without the enrolment's proof
-//   C3  WORLD_ADMIN naming a bare display name refuses to boot
+//   C3  SERVER_OPERATORS (or legacy WORLD_ADMIN) naming a bare display name refuses to boot; C3m the legacy var merges, warned once
 //   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
 //   H3  a world name nobody founded is refused, and nothing appears on disk
 //   H4  a guest is never given the world's default role; a door ban removes the person now; a guest's ban names the
@@ -52,7 +52,7 @@ const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
 fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"), HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"), HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
   let port = 9310; for (; port < 9400; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
@@ -81,10 +81,22 @@ async function sock(port, headers = undefined) {
 }
 const you = (j) => j.snapshot?.cut?.you;
 
-// ---- C3: a bare name in WORLD_ADMIN refuses to boot (accounts only) ----
-{ const s = await start({ WORLD_ADMIN: "Marigold" });
-  const err = fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "";
-  ok(s.dead && /isn't an account|aren't accounts/.test(err), "C3 WORLD_ADMIN=<a display name> refuses to boot, saying why", err.slice(-300));
+// ---- C3: a bare name in SERVER_OPERATORS (or the legacy WORLD_ADMIN) refuses to boot (accounts only) ----
+const bootErr = (s) => (fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "") + (fs.existsSync(s.log) ? fs.readFileSync(s.log, "utf8") : "");
+const namesBoth = (err) => /SERVER_OPERATORS/.test(err) && /WORLD_ADMIN/.test(err) && /SERVER_OPERATORS=human:discord:/.test(err);
+for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [v]: "Marigold" }); const err = bootErr(s);
+  ok(s.dead && /isn't an account|aren't accounts/.test(err) && namesBoth(err),
+    `C3 ${v}=<a display name> refuses to boot, naming both variables and the exact form to write`, err.slice(-400));
+  try { s.proc.kill(); } catch {} }
+// C3m (R 10-27): SERVER_OPERATORS is the variable; WORLD_ADMIN is still read for one release, merged in, with one deprecation line
+{ const ops = (e) => { const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`],
+    { cwd: ENGINE, env: env(e) }); return { set: r.stdout.toString().trim().split("\n").pop(), err: r.stderr.toString() + r.stdout.toString() }; };
+  const a = ops({ SERVER_OPERATORS: "human:test:a" }), b = ops({ SERVER_OPERATORS: "human:test:a, human:test:b", WORLD_ADMIN: "human:test:c" });
+  ok(a.set === JSON.stringify(["human:test:a"]) && !/deprecat/i.test(a.err), "C3m SERVER_OPERATORS alone names the operators, with no deprecation line", a);
+  ok(b.set === JSON.stringify(["human:test:a", "human:test:b", "human:test:c"]), "C3m a legacy WORLD_ADMIN is merged with SERVER_OPERATORS", b);
+  const s = await start({ WORLD_ADMIN: "human:test:c" }); const log = bootErr(s);
+  const warns = log.split("\n").filter((l) => /WORLD_ADMIN/.test(l) && /deprecat/i.test(l));
+  ok(!s.dead && warns.length === 1 && /SERVER_OPERATORS/.test(warns[0]), "C3m a server booted with WORLD_ADMIN logs one deprecation warning naming SERVER_OPERATORS", { dead: s.dead, warns });
   try { s.proc.kill(); } catch {} }
 
 ok(tool(["found", "garden", "--owner", "Ann"]).code === 0 && tool(["found", "orchard", "--owner", "Ann"]).code === 0, "(setup) found two worlds, Ann owns both");
