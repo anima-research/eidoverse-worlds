@@ -1,7 +1,7 @@
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
-import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY } from './base.js';
+import { CONFIG, report, bus, nameFromJoinAck, LAST_WORLD_KEY, TAB_WORLD_KEY, pickWorld, rememberedWorlds } from './base.js';
 // The world as data (TEL0S_NOTES §11.2): every snapshot and live entry
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
@@ -357,20 +357,25 @@ function rememberWorld() {
   if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
   worldSaved = true;
   try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+  try { sessionStorage.setItem(TAB_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
 }
 
-/** A world's door refused us (4010 not open to you, 4006 removed). If it is the
- *  world a bare link would bring this browser back to, forget it: the memory
- *  (base.js pickWorld) must not keep leading to a closed door. And when the
- *  memory, not the link, brought this page here and we never got in, go to the
- *  commons now — the person did not ask for this world, and a refusal for a
- *  place they did not name is no way to arrive. One reload at most: the
- *  memory is gone, so the next load is the link's or the commons. */
+/** A world's door refused us (4010 not open to you, 4006 removed). Wherever it
+ *  is what a bare link would bring us back to (this tab's memory or the
+ *  browser's), forget it: the memory (base.js pickWorld) must not keep leading
+ *  to a closed door. And when a memory, not the link, brought this page here and
+ *  we never got in, go where a bare link now leads — the person did not ask for
+ *  this world, and a refusal for a place they did not name is no way to arrive.
+ *  Every refusal removes the memory that led to it, so this ends: in a world
+ *  that lets us in, or in the commons. */
 function forgetRefusedWorld() {
   if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
-  try { if (localStorage.getItem(LAST_WORLD_KEY) === CONFIG.world) localStorage.removeItem(LAST_WORLD_KEY); } catch { /* storage blocked */ }
+  for (const [s, k] of [[globalThis.localStorage, LAST_WORLD_KEY], [globalThis.sessionStorage, TAB_WORLD_KEY]]) {
+    try { if (s?.getItem(k) === CONFIG.world) s.removeItem(k); } catch { /* storage blocked */ }
+  }
   if (!CONFIG.worldRemembered || everJoined) return false;
-  toast(`you can't go back into "${CONFIG.world}" — taking you to the commons`, 'warn', 8000);
+  const next = pickWorld(CONFIG.params, ...rememberedWorlds()).world;
+  toast(`you can't go back into "${CONFIG.world}" — taking you to ${next === 'commons' ? 'the commons' : `"${next}"`}`, 'warn', 8000);
   setTimeout(() => location.reload(), 3000);
   return true;
 }

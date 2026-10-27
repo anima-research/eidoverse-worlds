@@ -34,29 +34,38 @@ export const bus = {
 // "who am I" from query params. Both are guarded: headless hosts have neither,
 // and get the defaults.
 
-// Which world: the link's ?world= if it names one; otherwise the world this
-// browser was last IN as a person (written at the join ack, net.js
-// onSnapshot), so a bare link (a bookmark, the login's return to '/') goes
-// back where you were; the commons only for a browser that has been nowhere.
+// Which world: the link's ?world= if it names one; otherwise the world THIS
+// TAB was last in (sessionStorage, so a reload keeps the tab where it was
+// whatever other tabs have joined since); otherwise the world this browser
+// was last IN as a person (localStorage), so a bare link (a bookmark, the
+// login's return to '/') goes back where you were; the commons only for a
+// browser that has been nowhere. Both are written by net.js rememberWorld.
 // Spectators, renderers and the thumbnail minter ignore the memory: a link
 // points them, and a renderer must never inherit a person's last stop.
 // index.html's early-socket script makes this same choice before any module
 // loads and publishes it as __ewWorld, which CONFIG takes when present, so
 // the page has one answer (tools/last-world-test.ts holds the two copies
 // in agreement).
-export const LAST_WORLD_KEY = 'ew-world';
-export function pickWorld(params, stored) {
+export const LAST_WORLD_KEY = 'ew-world';      // localStorage: the browser's last world
+export const TAB_WORLD_KEY = 'ew-world-tab';   // sessionStorage: this tab's
+const isWorldName = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+export function pickWorld(params, last, tab = null) {
   const asked = params.get('world');
   if (asked) return { world: asked, remembered: false };
   const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
-  if (person && typeof stored === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(stored)) return { world: stored, remembered: true };
+  if (person && isWorldName(tab)) return { world: tab, remembered: true };
+  if (person && isWorldName(last)) return { world: last, remembered: true };
   return { world: 'commons', remembered: false };
+}
+/** The two memories as pickWorld takes them; storage that throws reads as none. */
+export function rememberedWorlds() {
+  const read = (s, k) => { try { return s?.getItem(k) ?? null; } catch { return null; } };
+  return [read(globalThis.localStorage, LAST_WORLD_KEY), read(globalThis.sessionStorage, TAB_WORLD_KEY)];
 }
 
 const params = new URLSearchParams(globalThis.location?.search ?? '');
 const store = globalThis.localStorage ?? null;
-const picked = globalThis.__ewWorld
-  ?? pickWorld(params, (() => { try { return store?.getItem(LAST_WORLD_KEY); } catch { return null; } })());
+const picked = globalThis.__ewWorld ?? pickWorld(params, ...rememberedWorlds());
 export const CONFIG = {
   params,
   world: picked.world,

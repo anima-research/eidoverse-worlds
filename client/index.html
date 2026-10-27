@@ -1732,15 +1732,18 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     } catch (e) { /* a bare name is fine */ }
     globalThis.__ewWantAvatar = wantAvatar;
     // The world, chosen once for the page the same way (base.js pickWorld, whose comment
-    // says why): ?world=, else the last world this browser was in as a person, else the
+    // says why): ?world=, else this tab's last world, else this browser's, else the
     // commons. base.js CONFIG takes this answer, so the join below and net.js's agree.
     {
       const asked = params.get('world');
       const person = !(params.has('spectate') || params.has('renderer') || params.has('mintthumbs'));
-      let stored = null;
-      try { stored = localStorage.getItem('ew-world'); } catch (e) { /* storage blocked */ }
+      const ok = (w) => typeof w === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(w);
+      let last = null, tab = null;
+      try { last = localStorage.getItem('ew-world'); } catch (e) { /* storage blocked */ }
+      try { tab = sessionStorage.getItem('ew-world-tab'); } catch (e) { /* storage blocked */ }
       globalThis.__ewWorld = asked ? { world: asked, remembered: false }
-        : person && typeof stored === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(stored) ? { world: stored, remembered: true }
+        : person && ok(tab) ? { world: tab, remembered: true }
+        : person && ok(last) ? { world: last, remembered: true }
         : { world: 'commons', remembered: false };
     }
 
@@ -1823,10 +1826,14 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // browser. One global flag would answer "this device cannot" when the truth is
     // "this device cannot hold THAT world", and would strand a phone in lite on worlds
     // it handles comfortably.
-    // The world is the one the page actually opens (early-socket script: ?world=, else
-    // the remembered world), so a bare link that opens a remembered world keys on that
-    // world, not on the commons. 'default' stays the commons' key, as before.
-    const keyWorld = (params) => params.get('world') || (globalThis.__ewWorld?.remembered ? globalThis.__ewWorld.world : 'default');
+    // Keyed on the world the page actually opens (the early-socket script's choice:
+    // ?world=, else a remembered world), so a crash in a world is found by the next
+    // load of that world however the link was spelled. The commons is always
+    // 'default', the key its bare link has always had, so its evidence carries over.
+    const keyWorld = (params) => {
+      const w = globalThis.__ewWorld?.world || params.get('world') || 'commons';
+      return w === 'commons' ? 'default' : w;
+    };
     const tripKey = (params) => `ew-boot-attempt:${keyWorld(params)}`;
     const retryKey = (params) => `ew-boot-retried:${keyWorld(params)}`;   // a desktop's one retry (rule 2)
     globalThis.__ewRetryKey = retryKey;   // boot.js and litechoice.js clear it with the trip key
