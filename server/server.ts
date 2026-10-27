@@ -27,6 +27,8 @@ import { summarizeGlb } from "./geometry.ts";
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
 import { oldWorldAt, bootNotice, noFoldRefusal } from "./oldworlds.ts";
+import { oldFormatRefused, provenAccount } from "./upgrade.ts";
+import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
@@ -298,6 +300,7 @@ try {
 // Old-format worlds are not served, and the operator is TOLD (they were skipped in silence above): one block per world with
 // the translator's command, this WORLDS_DIR filled in (server/oldworlds.ts).
 try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } catch (err) { console.error("[boot] old-world notice failed", err); }
+{ const bad = backupsDirProblem(WORLDS_DIR); if (bad) console.log(`[boot] ${bad}. Upgrades of old-format worlds refuse until it is moved.`); }
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
@@ -384,7 +387,9 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       // who converts it; the command line is the operator's, in the boot notice. A directory holding no old log at all
       // (an empty one) is no world: it is refused as one.
       const old = oldWorldAt(WORLDS_DIR, wname);
-      ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here` }));
+      // …with the structured reason beside the words: who may upgrade it, and the doc (server/upgrade.ts; docs/WIRE.md 4005)
+      ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here`,
+        ...(old ? { refused: oldFormatRefused(old.kind, old.visitor, isOperator(provenAccount(c, msg))) } : {}) }));
       c.ws.close?.(4005, old ? "old-format world" : "no such world");
       return null;
     }

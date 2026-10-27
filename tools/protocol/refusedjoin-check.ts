@@ -19,21 +19,28 @@
 //      gets in by itself once there is room (review r3 F6)
 //   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
+//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Review upgrade
+//   W11 the operator's splash: Review upgrade → the report → Back up and upgrade → the backup and the rollback command
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { OLD_FORMAT_SPLASH } from "../../shared/oldformat.js";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
+import { tryUntil } from "./wait.ts";
 
 process.env.AGENT_BODY_ENGINE = "verlet";
 // any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
 const V1 = process.env.V1_LOG ?? path.resolve(import.meta.dir, "../../spec/fixtures/01-build/log.jsonl");
-const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1" },
+// W10/W11: a signed-in operator (WORLD_ADMIN) and its session, beside the guest the other rows are
+const OP_SID = "e".repeat(64), SESS = path.join(fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "refusedjoin-sess-")), "sessions.json");
+fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", WORLD_ADMIN: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
   prepare: (scratch) => {
-    const d = path.join(scratch, "worlds", "old-x"); fs.mkdirSync(d, { recursive: true });
-    // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line)
+    // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line); old-y is W11's to upgrade
     const lines = fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean);
-    fs.writeFileSync(path.join(d, "log.jsonl"), lines.join("\n") + "\n");
+    for (const n of ["old-x", "old-y"]) { const d = path.join(scratch, "worlds", n); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, "log.jsonl"), lines.join("\n") + "\n"); }
   },
 });
 const { check: check0, tally } = mkCheck();
@@ -152,6 +159,35 @@ try {
     const t9 = Date.now(); while (Date.now() - t9 < 20000 && !ag9.joined) await sleep(250);
     check("W9 ...and once a seat frees it gets in by itself", ag9.joined === true, { waited: Date.now() - t9, closed: ag9.closed });
     try { ag9.close(); } catch { /* gone */ }
+  }
+  // W10: an old-format world's splash for someone who can't upgrade it: the headline, the server's words, the doc, no button
+  {
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=T10&earlysock=0` });
+    const probe = `(() => { const s = document.getElementById('splash'); const a = s?.querySelector('a.sp-up-doc');
+      return { head: s?.querySelector('.sp-phase')?.textContent, doc: a ? a.getAttribute('href') : null, review: !!s?.querySelector('.sp-up-review') }; })()`;
+    const st: any = await tryUntil("the old-format splash shows its doc link", async () => { const v = await evalJson(probe).catch(() => null); return v?.doc ? v : null; }, { ms: 20000, step: 250 });
+    const doc = st?.doc ? await fetch(new URL(st.doc, BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 200) })).catch((e) => ({ err: String(e) })) : null;
+    check("W10 old-x as a guest: the splash says the world was saved by an older Eidoverse and needs a one-time upgrade, links the doc (served), and offers no Review upgrade",
+      st?.head === OLD_FORMAT_SPLASH && st.doc === "/docs/TRANSLATING-OLD-WORLDS.md" && doc?.status === 200 && /Translating a first-protocol world/.test(doc.text) && st.review === false, { st, doc });
+  }
+  // W11: the operator's splash: Review upgrade → the report → Back up and upgrade (the only action) → the backup and the rollback command
+  {
+    await cdp.send("Network.enable", {});
+    await cdp.send("Network.setCookie", { name: "ew_sess", value: OP_SID, url: BASE });
+    await cdp.send("Page.navigate", { url: `${BASE}/?world=old-y&name=Opal&earlysock=0` });
+    const shows = (js: string, ms = 30000) => tryUntil(`the page shows ${js.slice(0, 60)}`, () => evalJson(js).catch(() => null), { ms, step: 250 });
+    const btn = await shows(`(() => { const b = document.querySelector('#splash .sp-up-review'); if (!b) return null; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { text: b.textContent, top: top === b }; })()`);
+    await evalJson(`(document.querySelector('#splash .sp-up-review')?.click(), true)`).catch(() => null);
+    const rep = await shows(`(() => { const r = document.querySelector('#splash .sp-up-report'); if (!r) return null; return { text: r.innerText, buttons: [...document.querySelectorAll('#splash .sp-up-area button')].map((b) => b.textContent) }; })()`, 60000);
+    check("W11 old-y as the operator: Review upgrade (on top) shows the report — carried, mapped, unmapped, dropped, refused, each counted, and its hash — and Back up and upgrade is the only action",
+      btn?.text === "Review upgrade" && btn.top && /Carried \(\d+\)/.test(rep?.text ?? "") && /Mapped \(\d+\)/.test(rep.text) && /Unmapped[^\n]*\(\d+\)/.test(rep.text) && /Dropped by design \(\d+\)/.test(rep.text) && /Refused \(0\)/.test(rep.text)
+      && /report [0-9a-f]{64}/.test(rep.text) && JSON.stringify(rep.buttons) === JSON.stringify(["Back up and upgrade"]), { btn, rep: rep && { ...rep, text: rep.text.slice(0, 300) } });
+    await evalJson(`(document.querySelector('#splash .sp-up-go')?.click(), true)`).catch(() => null);
+    const done = await shows(`(() => { const d = document.querySelector('#splash .sp-up-done'); return d ? { backup: d.querySelector('.sp-up-backup')?.textContent, rollback: d.querySelector('.sp-up-rollback')?.textContent, enter: !!d.querySelector('.sp-up-enter') } : null; })()`, 120000);
+    const onDisk = done?.backup ? fs.existsSync(path.join(done.backup, "SHA256SUMS")) && fs.existsSync(path.join(done.backup, "log.jsonl")) : false;
+    check("W11 …Back up and upgrade: the result names the verified backup (on disk, with SHA256SUMS) and the rollback command, and old-y is a world now",
+      onDisk && /^\S*backups\/old-y-\d{8}T\d{6}Z$/.test(done.backup.split(path.sep).join("/")) && /world\.ts rollback old-y/.test(done.rollback ?? "") && done.enter && fs.existsSync(path.join(SCRATCH, "worlds", "old-y", "world.jsonl")), done);
+    await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
   }
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[refusedjoin-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);

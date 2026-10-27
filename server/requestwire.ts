@@ -25,6 +25,7 @@ import { METER_SCALE, readMeter, authorityTime } from "./readmeter.ts";
 import { isOperator } from "./operators.ts";
 import { capture, recheck, type ReqCap } from "./reqcap.ts";
 import { isOwner } from "../shared/protocol/roles.js";
+import { UPGRADE_MESSAGES } from "./upgrade.ts";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: (w: World, target: Client, why: string, until?: number | null) => void; sweep?: (w: World) => void };
 type Any = any;
@@ -114,6 +115,7 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?:
 const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
 const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
 export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
+  ...UPGRADE_MESSAGES,   // world-upgrade-review, world-upgrade: the operator opens a world saved in an older format (server/upgrade.ts)
   "request": ({ c, ws, expel, sweep }, msg) => {
     // {verb, args}: one request to the world's authority
     const w = c.world; if (!w) return;

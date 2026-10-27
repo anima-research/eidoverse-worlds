@@ -1357,6 +1357,11 @@ const ROUTES: Route[] = [
       serveFrom(ROOT, "AGENTS.md", false, req),
   },
   {
+    // the old-format splash links here (shared/oldformat.js OLD_FORMAT_DOC): the doc has to be reachable from the world itself
+    match: (u) => u.pathname === "/docs/TRANSLATING-OLD-WORLDS.md",
+    handler: ({ req }) => serveFrom(ROOT, "docs/TRANSLATING-OLD-WORLDS.md", false, req),
+  },
+  {
     match: (u) => u.pathname === "/" || u.pathname === "/index.html",
     handler: () => serveFrom(join(ROOT, "client"), "index.html"),
   },

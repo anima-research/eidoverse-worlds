@@ -353,6 +353,21 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 #splash.refused .sp-status { justify-content: center; margin-top: 0; }
 #splash.refused .sp-phase { color: var(--fg); text-align: center; text-wrap: balance; }
 #splash.refused .sp-phase::after { content: none; }
+/* an old-format world's splash (client/lib/upgradeview.js): the server's words, the doc, the operator's Review upgrade */
+.sp-upgrade { width: min(640px, 90vw); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.sp-up-words { margin: 0; color: var(--dim); text-wrap: balance; }
+.sp-up-doc { color: var(--brand); }
+.sp-up-area { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.sp-up-btn { cursor: pointer; font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--brand) 60%, transparent); background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--fg); }
+.sp-up-btn:disabled { cursor: progress; opacity: .7; }
+.sp-up-report { width: 100%; max-height: 46vh; overflow: auto; text-align: left; font-size: 12px; padding: 8px 12px; box-sizing: border-box; border-radius: 6px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.sp-up-h { font-weight: 600; margin-top: 6px; }
+.sp-up-report ul { margin: 2px 0 4px; padding-left: 18px; }
+.sp-up-none, .sp-up-note, .sp-up-hash { color: var(--dim); }
+.sp-up-hash { font-family: monospace; word-break: break-all; margin-top: 6px; }
+.sp-up-err { margin: 0; color: var(--warn, #e8a060); }
+.sp-up-done { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sp-up-done code { font-size: 12px; word-break: break-all; user-select: all; }
 .sp-skip:hover { color: var(--fg); background: none; }
 @media (prefers-reduced-motion: reduce) { .sp-bar-fill { transition: none; } }
 

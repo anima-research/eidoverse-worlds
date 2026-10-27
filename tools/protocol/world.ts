@@ -42,6 +42,8 @@ import { digest, keyOk } from "../../shared/protocol/fold.js";
 import { maintain } from "../../shared/protocol/authority.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../../server/repairfiles.ts";
+import { backupWorld, type Backup } from "../../server/backups.ts";
+import { shellWord } from "../../server/oldworlds.ts";
 
 const [cmd, ...rest] = process.argv.slice(2);
 const flag = (k: string) => { const i = rest.indexOf(`--${k}`); return i >= 0 ? rest[i + 1] : undefined; };
@@ -112,6 +114,7 @@ function dryRun(D: string, name: string) {
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
   console.log(`report-hash ${hash}`);
+  if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
   console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
 }
@@ -160,6 +163,10 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     if (w.error || (!w.skipped && !w.agree)) fail(`the translation doesn't agree with the old engine's own snapshot.json (snapshot-oracle: ${w.error ?? `${w.unexplained} unexplained difference(s)`}):\n${out.split("\n").filter((l) => /DIFF|FAIL|missing|extra/.test(l)).slice(0, 30).join("\n")}`);
     oracleSaid = w.skipped ? `snapshot.json NOT compared: ${w.skipped}` : `snapshot.json agrees: the translation folds to the old engine's own state (${w.entities[1]} entities, ${w.seats} seat(s); snapshot-oracle)`;
   }
+  // 1b. the whole old directory, copied and verified before anything moves (server/backups.ts; never written again)
+  let backup: Backup;
+  try { backup = backupWorld(WORLDS_DIR, name, process.env.WORLD_TS_CORRUPT_BACKUP ? { afterCopy: (b) => fs.appendFileSync(path.join(b, "log.jsonl"), "x") } : {}); }   // tests only: a copy that doesn't verify (upgrade-check UB2)
+  catch (x) { fail(`refused: ${(x as Error).message}`); throw 0; }
   // 2. translate into a temporary sibling (a name the server never serves: it isn't a world name); the importer's own
   //    checks (0 divergences, projection equality, strict read-back) run before it writes anything
   const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
@@ -183,7 +190,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   // what the old world's directory held before the swap (r14 M3, 10-18): anything else found there at rollback time — a
   // world.mod.jsonl the server made at its first ban, a repair-backups/ — is the server's, made since: history with nowhere to go
   const present = fs.readdirSync(D);
-  fs.writeFileSync(path.join(T, MANIFEST), JSON.stringify({ v: 2, world: name, at: Date.now(), translator: TRANSLATOR, report: approval.report, approval, present,
+  fs.writeFileSync(path.join(T, MANIFEST), JSON.stringify({ v: 2, world: name, at: Date.now(), translator: TRANSLATOR, report: approval.report, approval, present, backup: backup!.dir,
     source: r!.source, renamed: steps.slice(1).map(([a, b]) => [path.basename(a), path.basename(b)]), made: Object.fromEntries([...made, MANIFEST].map((f) => [f, f === MANIFEST ? null : sha(path.join(T, f))])),
     identities: r!.planned, eido: r!.addressed,
     note: "written by tools/protocol/world.ts translate (in place); read by `rollback <world>`, which puts the renamed files back, removes the made ones and forgets the identities. The content-address index (OPT_DIR/eido-index.json) is a cache of library bytes, not world state: a rollback leaves it." }, null, 1));
@@ -216,6 +223,8 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     + `${fs.existsSync(path.join(D, ORIGINAL.snapshot)) ? `, and the old snapshot as ${ORIGINAL.snapshot}` : ""}; ${r!.poses} remembered place(s) carried over by identity`);
   console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in world.jsonl as the system's translation-approved act. `
     + `${MANIFEST} records what the swap did; \`rollback ${name}\` undoes it.`);
+  console.log(`backup: ${backup!.dir} (${backup!.files} file(s), ${backup!.bytes} bytes, each verified against its SHA256SUMS before anything moved; nothing writes to it again, and rollback leaves it)`);
+  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
 }
 
 /** `rollback <world>`: undo an in-place translation from its manifest. The kept originals go back under their names

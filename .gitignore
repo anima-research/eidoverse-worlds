@@ -14,6 +14,7 @@ deploy/IDENTITY.md
 # runtime world data (logs are chat history; poses/snapshots are live state)
 worlds/
 worlds-dev/
+backups/
 
 # the asset library is fetched at runtime (EIDOVERSE_DIR), not vendored
 assets/

@@ -99,6 +99,8 @@ export const ROOT = resolve(import.meta.dir, "..");
 // permanent). Default keeps the production path unchanged.
 export const WORLDS_DIR = resolve(process.env.WORLDS_DIR ?? join(ROOT, "worlds"));
 // The eidoverse-video checkout = the asset library (models, VRMs, animations).
+// Where a world's verified copy goes before an in-place upgrade (server/backups.ts): beside WORLDS_DIR, never inside it.
+export const BACKUPS_DIR = resolve(process.env.BACKUPS_DIR || join(WORLDS_DIR, "..", "backups"));
 export const LIBRARY_DIR = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
 // Same doctrine as WORLDS_DIR: a dev or test instance points this elsewhere so it can never write derived
 // variants or markers into the live store (a harness once did — review of #172).

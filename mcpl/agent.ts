@@ -122,6 +122,7 @@ import { colliderFor } from "../client/lib/bodyscale.js";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
 import { handleOf, resolveThing } from "../shared/thingref.js";
+import { oldFormatWords } from "../shared/oldformat.js";
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
 /** The body's clock: one stride of shared/mover.js (the one walker: the client's and the authority's too) per tick. */
@@ -1050,7 +1051,9 @@ export class WorldAgent {
               // final (4005 "full" is not: onclose dials again); onclose answers this connect() with these words. The
               // world's own words, as the cause inside whatever sentence carries this (travel's, for one) (#247)
               const said = String(msg.error ?? "").trim().replace(/\.+$/, "");
-              const words = said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason";
+              const base = said ? `the world refused the join: ${said}` : "the world refused the join without giving a reason";
+              // an old-format world: who may upgrade it, and the doc, in words (shared/oldformat.js; docs/WIRE.md 4005)
+              const words = msg.refused?.code === "old-format" ? `${base}. ${oldFormatWords(msg.refused, this.world)}` : base;
               if (typeof msg.until === "number") { clearTimeout(timeout); reject(new Error(words)); }
               else this.joinRefused = words;
             } else {

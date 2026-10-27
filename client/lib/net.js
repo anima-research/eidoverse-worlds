@@ -23,6 +23,8 @@ import { serverNow, localNow, noteRoundTrip, clockRtt, noteServerFloor, onClockD
 import { presence } from './presence.js';
 import { logChat, noteTyping, noteHistoryContext, resyncChatAfter } from './chat.js';
 import { markPhase, refuseBoot, waitBoot } from './boot.js';
+import { showOldFormat } from './upgradeview.js';
+import { OLD_FORMAT_SPLASH } from '../../shared/oldformat.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
 // locally; edit mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
@@ -666,7 +668,7 @@ export async function connect() {
       net.status = 'connecting';
       bus.emit('net', net);
       net.ws = early.ws;
-      joinRefusal = null;
+      joinRefusal = null; joinRefused = null;
       // Drain what raced ahead of us IN ORDER while the boot script's own
       // buffering handler still catches anything arriving mid-drain; the
       // rewire below is synchronous with the final empty check, so no
@@ -698,14 +700,14 @@ export async function connect() {
       net.status = 'connecting';
       for (const raw of early.buffered) {
         let msg; try { msg = JSON.parse(raw); } catch { continue; }
-        if (msg?.type === 'error') noteRefusal(msg.error);
+        if (msg?.type === 'error') noteRefusal(msg.error, msg.refused);
       }
       onSocketClosed(early.closeInfo);
       return;
     }
     try { early.ws.close(); } catch { /* already dead */ }
   }
-  joinRefusal = null;
+  joinRefusal = null; joinRefused = null;
   net.status = 'connecting';
   bus.emit('net', net);
   net.ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
@@ -729,8 +731,8 @@ function wireSocket(ws) {
 
 /** What the server said when it refused this join: the `error` that arrives before the snapshot is the refusal's own
  *  words, and the close (4005 …) that follows shows THEM rather than a guess from the code. Reset per connection. */
-let joinRefusal = null;
-function noteRefusal(text) { if (!net.joined && text) joinRefusal = String(text); }
+let joinRefusal = null, joinRefused = null;   // …and its structured reason, where the wire carries one (old-format: docs/WIRE.md 4005)
+function noteRefusal(text, refused) { if (!net.joined && text) { joinRefusal = String(text); joinRefused = refused && typeof refused === 'object' ? refused : null; } }
 
 /** A refused join, shown where the person is looking: the splash stays (or comes back) with the server's sentence on
  *  it (boot.js refuseBoot) — never a toast under the splash over an empty world. */
@@ -802,6 +804,11 @@ function onSocketClosed(ev) {
     net.status = 'retrying';
     bus.emit('net', net);
     setTimeout(connect, redial.next(REDIAL.full));
+    return;
+  }
+  if (ev.code === 4005 && joinRefused?.code === 'old-format') {   // the splash says it, links the doc, and offers the operator the upgrade
+    showRefusal(OLD_FORMAT_SPLASH);
+    showOldFormat(document.getElementById('splash'), joinRefused, joinRefusal, CONFIG.world);
     return;
   }
   if (ev.code === 4005) {
@@ -1160,7 +1167,7 @@ async function handle(msg, at) {
       // the world tells us it has no voice relay only when we try to use one —
       // remember it, so the mic glyph can say WHY it stays off (R, 09-04)
       if (/no voice relay/i.test(String(msg.error ?? ''))) window.__voiceRelayAbsent = true;
-      noteRefusal(msg.error);   // before the snapshot, an error is the join's refusal: its close shows these words
+      noteRefusal(msg.error, msg.refused);   // before the snapshot, an error is the join's refusal: its close shows these words
       // Server-side refusals are the user's problem to see, not the console's.
       toast(msg.error, 'warn');
       // ...and any module holding an optimistic preview needs to hear it: a

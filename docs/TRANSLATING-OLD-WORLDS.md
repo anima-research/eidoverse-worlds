@@ -63,3 +63,52 @@ unknowingly. Each old entry appears in the new log as an `act` with verb
 `imported` (`body {verb, args, from}`) or as a `say`, followed by the change it
 produced; fields with no component in this protocol ride along as `imported:<name>`. A
 translated world is an ordinary world from then on.
+
+## Upgrading from the browser
+
+Opening an old-format world shows a splash: "This world was saved by an
+older Eidoverse. It needs a one-time upgrade before anyone can enter.", the
+server's own sentence, and a link to this page. The join is still refused
+(close 4005); its `error` carries `refused {code: "old-format", doc,
+upgrade: "operator", operator}`, so agents read the same thing in words.
+
+Only the server's **operator** may upgrade a world: a signed-in account
+listed in `WORLD_ADMIN` (a session, or an agent's credential; never a
+typed name). Not the old world's owner: an old log names its owner, and
+nothing can yet bind an account or key to that name, so a name match would
+let anyone who signs up as that name take the world. Everyone else is told
+to ask the server's operator, and sees no report (it names people).
+
+The operator's splash has a **Review upgrade** button. It shows the dry-run
+report (what carries, what is mapped, what has no home and is kept as
+`imported:<name>`, what is dropped by design, what is refused) and its
+hash. **Back up and upgrade** is the only action: the server runs this
+page's CLI itself (`world.ts translate <world> --no-founder-key --approved
+<that hash> --operator-only-no-owner`), so the browser path and the command
+line are one path. A report that changed since it was reviewed is refused.
+The result screen says where the backup is and how to roll back. The world
+opens on the next join; nobody needs to restart the server.
+
+## Backups
+
+Every in-place translation, from the CLI or the browser, first copies the
+whole old world directory to `BACKUPS_DIR/<world>-<UTC yyyymmddThhmmssZ>/`
+with a `SHA256SUMS` file, then re-reads every copy and checks its hash
+against the original. Any copy error or mismatch refuses the translation
+before anything moves. `BACKUPS_DIR` defaults to `backups/` beside the
+worlds directory; it may never be inside it (every directory there is
+served as a world). The translation's output and `translation.json` name
+the backup. Nothing writes to a backup afterwards, and `rollback` never
+touches it.
+
+To restore one by hand (stop the server first): check it with
+`cd <backup> && sha256sum -c SHA256SUMS`, move the world's directory
+aside, then copy the backup back under the world's name without its
+`SHA256SUMS`:
+
+    mv worlds/<world> worlds-aside-<world>
+    cp -a backups/<world>-<stamp> worlds/<world> && rm worlds/<world>/SHA256SUMS
+
+`rollback <world>` is still the first way back (it undoes the swap byte for
+byte); the backup is for when that can't run.
+
