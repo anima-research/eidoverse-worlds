@@ -359,11 +359,26 @@ export const builtIn = (st) => !!st && (Object.keys(st.entities ?? {}).length > 
  *  the browser's last world back from the tab the person moved on to. */
 function rememberWorld() {
   if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
+  if (loggedOutElsewhere()) return;   // the person this page was signed in as has left this browser
   worldSaved = true;
   try { sessionStorage.setItem(TAB_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
   if (browserSaved) return;
   browserSaved = true;
   try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
+}
+
+/** This page entered signed in, and since then someone logged this browser out (ui.js
+ *  logOut, in any tab, clears ew-authed). Where that person has been is no longer this
+ *  browser's to remember: a tab still open must not write it back for the next visitor. */
+function loggedOutElsewhere() {
+  try { return !!CONFIG.authed && localStorage.getItem('ew-authed') !== '1'; } catch { return false; }
+}
+/** This browser was signed in, and this page is not: identity did not come through
+ *  (/whoami or /authcfg failed, a bounce already spent this minute). A refusal then may
+ *  be about WHO we are, not where, and must not cost the person their memory of the
+ *  world: a reload with identity back would get in. */
+function identityMissing() {
+  try { return !CONFIG.authed && localStorage.getItem('ew-authed') === '1'; } catch { return false; }
 }
 
 /** Forget a world from both memories (this tab's and the browser's) wherever it is the one held. */
@@ -393,6 +408,7 @@ function forgetEmptyWorld() {
  *  that lets us in, or in the commons. */
 function forgetRefusedWorld() {
   if (CONFIG.spectate || CONFIG.renderer) return false;   // their refusals are theirs: the memory is a person's
+  if (identityMissing()) return false;   // maybe refused for who we are: keep the memory, say the old words
   forgetWorld(CONFIG.world);
   if (!CONFIG.worldRemembered || everJoined) return false;
   toast(`you can't go back into "${CONFIG.world}" — taking you to ${whereNext()}`, 'warn', 8000);
@@ -408,7 +424,7 @@ function whereNext() {
  *  a memory brought here no longer comes back here (the memory is forgotten), so
  *  the words say where it does go, and how to come back on purpose. */
 function reloadHint(plain) {
-  if (!CONFIG.worldRemembered || CONFIG.spectate || CONFIG.renderer) return plain;
+  if (!CONFIG.worldRemembered || CONFIG.spectate || CONFIG.renderer || identityMissing()) return plain;
   return `a reload now takes you to ${whereNext()} — ?world=${CONFIG.world} comes back here`;
 }
 

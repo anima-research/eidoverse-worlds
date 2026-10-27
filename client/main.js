@@ -47,12 +47,12 @@ import { snapshot, setSnapReadiness } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
-  setPoseOverride, sendPuppet, sendAnim,
+  setPoseOverride, sendPuppet, sendAnim, builtIn,
 } from './lib/net.js';
 import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
-import { setRightsSink } from './lib/state.js';
+import { setRightsSink, state as worldState } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
@@ -538,7 +538,9 @@ bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState
 // and it is the worst possible first impression because everything is working
 // exactly as designed.
 bus.on('hydrated', () => {
-  if (entities.size > 0) return;
+  // the same test net.js uses to keep or forget the remembered world (builtIn: a
+  // thing, ground, grass or sky), so the notice and the memory agree on "empty"
+  if (entities.size > 0 || builtIn(worldState.st)) return;
   logChat('*', emptyWorldNotice(CONFIG));   // which words depend on how the page got here (base.js)
   logChat('*', 'press B to start building, or ? for the controls.');
   toast(`"${CONFIG.world}" is an empty world — press B to build in it`, 'warn', 14000);

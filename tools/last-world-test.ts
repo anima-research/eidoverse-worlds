@@ -64,6 +64,29 @@ for (const [q, last, tab, world, remembered] of CASES) {
       && !isWorldName("") && !isWorldName("x".repeat(65)) && !isWorldName("../etc") && !isWorldName("a b") && !isWorldName(null));
 }
 
+// ---- what counts as built -----------------------------------------------------------------
+// net.js builtIn decides what is remembered and forgotten, and main.js's empty-world
+// notice asks it too. Imported in a child process: net.js pulls UI modules that need stubs.
+console.log("builtIn");
+{
+  const L = join(ROOT, "client/lib") + "/";
+  const r = Bun.spawnSync(["bun", "-e", `
+    const { mock } = await import("bun:test");
+    const L = ${JSON.stringify(L)};
+    mock.module(L + "presence.js", () => ({ presence: {} }));
+    mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
+    mock.module(L + "boot.js", () => ({ markPhase() {} }));
+    const { builtIn } = await import(L + "net.js");
+    console.log(JSON.stringify([{}, { entities: {} }, { entities: { a: {} } }, { terrain: { seed: 1 } }, { grass: { density: 1 } }, { sky: { hours: 8 } }, null].map(builtIn)));`],
+    { stdout: "pipe", stderr: "pipe" });
+  const got = r.stdout.toString().trim().split("\n").pop();
+  check("builtIn: nothing / no entities / an entity / ground / grass / sky / no state",
+    got === JSON.stringify([false, false, true, true, true, true, false]), got ?? r.stderr.toString().slice(0, 300));
+  const main = readFileSync(join(ROOT, "client/main.js"), "utf8");
+  check("main.js's empty-world notice asks builtIn, as the memory does",
+    /bus\.on\('hydrated', \(\) => \{[\s\S]{0,400}?builtIn\(worldState\.st\)\) return;\s*\n\s*logChat\('\*', emptyWorldNotice\(CONFIG\)\)/.test(main));
+}
+
 // ---- what arriving in an empty world says ------------------------------------------------
 console.log("emptyWorldNotice");
 {
@@ -173,7 +196,8 @@ console.log("net.js");
 // nobody has built in (what a mistyped name founds); "spawn": someone builds, live.
 // {early: w}: the inline boot script's socket, which already sent a join to world w, for connect() to adopt
 // only if that is byte-for-byte the join net.js would send. {set: [k, v]}: another tab writes localStorage.
-type Step = "snapshot" | "fresh" | "spawn" | "say" | "connect" | "timers"
+// "ground": the door's yes into a world with ground and nothing placed. "authed": this page entered signed in.
+type Step = "snapshot" | "fresh" | "ground" | "spawn" | "say" | "connect" | "timers" | "authed"
   | { close: number } | { early: string } | { set: [string, string] };
 type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number };
 function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null,
@@ -206,6 +230,8 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     for (const s of ${JSON.stringify(steps)}) {
       if (s === "snapshot") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: { entities: { tree: { lib: "tree", pos: [0, 0, 0] } } } });
       else if (s === "fresh") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: {} });
+      else if (s === "ground") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: { terrain: { seed: 7, size: 200 } } });
+      else if (s === "authed") CONFIG.authed = true;
       else if (s === "spawn") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "spawn", args: { id: "box1", lib: "box" } } });
       else if (s === "say") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "say", args: { text: "hello?" } } });
       else if (s.early) {
@@ -252,6 +278,10 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   check("a remembered world found empty (reset, wiped) is forgotten from tab and browser",
     wiped.stored === null && wiped.tab === null, JSON.stringify(wiped));
   check("…but the page stays in it: the person may be about to build", wiped.world === "garden" && wiped.reloads === 0, JSON.stringify(wiped));
+  const ground = pageLoad("?world=meadow", "garden", ["ground"]);
+  check("a world with ground and nothing placed counts as built: remembered", ground.stored === "meadow", JSON.stringify(ground));
+  const keptGround = pageLoad("", "meadow", ["ground"], "meadow");
+  check("…and a remembered one like it is not forgotten as empty", keptGround.stored === "meadow" && keptGround.tab === "meadow", JSON.stringify(keptGround));
   const rebuilt = pageLoad("", "garden", ["fresh", "spawn"]);
   check("…and building there remembers it again", rebuilt.stored === "garden", JSON.stringify(rebuilt));
   const linkedEmpty = pageLoad("?world=garden", "garden", ["fresh"]);
@@ -325,6 +355,20 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     const watch = pageLoad(q, "garden", ["connect", { close: code }, "timers"], "garden");
     check(`${q} refused (${code}) leaves the person's garden alone`, watch.stored === "garden" && watch.tab === "garden" && watch.reloads === 0, JSON.stringify(watch));
   }
+  // identity did not come through on a browser that was signed in: the refusal may be about who, not where
+  const noId = pageLoad("", "garden", [{ set: ["ew-authed", "1"] }, "connect", { close: 4010 }, "timers"], "garden");
+  check("a browser that was signed in, refused while its identity failed to load: memory kept, page stays",
+    noId.stored === "garden" && noId.tab === "garden" && noId.reloads === 0, JSON.stringify(noId));
+  check("…with the plain words (a reload with identity back may get in)",
+    noId.toasts.some((t) => t.includes("reload if your access changes")), JSON.stringify(noId));
+
+  // logged out in another tab: this still-open tab must not write the person's world back
+  const after = pageLoad("?world=atelier", null, ["authed", "fresh", "spawn"]);
+  check("a signed-in page, its browser logged out since (no ew-authed), building in a new world remembers nothing",
+    after.stored === null && after.tab === null, JSON.stringify(after));
+  const still = pageLoad("?world=atelier", null, ["authed", { set: ["ew-authed", "1"] }, "fresh", "spawn"]);
+  check("(control) still signed in: the same page remembers atelier", still.stored === "atelier", JSON.stringify(still));
+
   const blip = pageLoad("", "garden", ["connect", { close: 1006 }, "timers"]);
   check("an ordinary disconnect forgets nothing", blip.stored === "garden" && blip.reloads === 0, JSON.stringify(blip));
 }
