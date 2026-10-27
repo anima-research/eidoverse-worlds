@@ -561,7 +561,7 @@ export const COMPONENTS = {
   // a dry pocket carved out of water bodies, after Unreal's Water Body Exclusion Volume
   "water-exclusion": { on: "thing", fields: { bodies: "refs" }, ranges: { bodies: { maxItems: 16 } },
                absentMeans: { bodies: "every water body its zone overlaps, @world's level included" },
-               docs: { bodies: "the water bodies (things with water, or @world) it keeps out; it keeps out only those at or below its zone's priority, @world's level always" },
+               docs: { bodies: "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)" },
                help: "a dry pocket on a thing with a zone {shape: 'box', size}: inside it there is no water from the bodies it names (bodies? [ids]; absent: every body it overlaps) whose zone's priority is at or below its own" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },

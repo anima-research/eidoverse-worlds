@@ -297,4 +297,8 @@ await C("Z13", "a turning carrier turns its body: a 10 × 2 × 2 body on a raft 
   const turned = s.call("set", { id: "raft", component: "transform", value: tf([0, 0, 0], YAW90) });
   const o = { turned: show(turned), ...longZ(Z.waterVolumes(Z.zonesOf(s.st())), "hold") }; return [turned.ok && isLongZ(o), o]; });
 
+await C("Z14", "the doc says what the code does: water-exclusion.docs.bodies never says @world's level is kept out 'always' (a named list without @world leaves the level wet: Z4w, Z11)", async () => {
+  const CS = await import(TREE + "shared/protocol/componentspec.js"); const doc = CS.COMPONENTS["water-exclusion"].docs.bodies;
+  return [!/always/.test(doc) && /only those named/.test(doc) && /@world/.test(doc), doc]; });
+
 console.log(`[zone-water-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
