@@ -33,6 +33,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["attenuation as σ", "zone.js", "return c.map((x) => -Math.log(Math.max(1e-6, Math.min(1, x))) / d);", "return c.map((x) => 1 - x);", ["Z8"]],
   ["the fog's mask is the law", "zone.js", "(excludes(a, w) ? m | (1 << i) : m)", "(m | (1 << i))", ["Z10"]],
   ["the level asks the pockets", "zone.js", "return m.medium === \"air\" ? null : level;", "return level;", ["Z11"]],
+  ["a body world-axis-aligned (mediumAt)", "water.js", "const l = w.toLocal ? w.toLocal(p) : p.map", "const l = p.map", ["Z12", "Z13"]],
+  ["a body world-axis-aligned (waterPath)", "zone.js", "return { ...p, toLocal, id: b.id,", "return { ...p, id: b.id,", ["Z12", "Z13"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// the components and change kinds", "//  the components and change kinds", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -278,5 +280,21 @@ await C("ZM", "math-test on zone-built bodies: wet/dry boundaries, a pocket, pat
   ok("a wave crest", Math.abs(W.waveHeight(wavy, 0, 0, 0) - 0.4) < 1e-10);
   ok("the body's box spans its zone", water.top === 0 && water.bottom === -20);
   return [!bad.length, bad]; });
+
+// a body is tested in its own frame, as a pocket is (review finding 2)
+const YAW90 = [0, Math.SQRT1_2, 0, Math.SQRT1_2];
+const longZ = (v: any, id: string) => { const w = v.waters.find((x: any) => x.id === id);
+  return { alongZ: W.mediumAt([0, -1, 4], v.waters, v.airs)?.id ?? null, alongX: W.mediumAt([4, -1, 0], v.waters, v.airs)?.id ?? null,
+    pathZ: w && W.waterPath([0, -1, -10], [0, -1, 10], w, v.airs), pathX: w && W.waterPath([-10, -1, 0], [10, -1, 0], w, v.airs), box: w && Z.waterBox?.(w), heading: w && Z.headingOf?.(w.q) }; };
+const isLongZ = (o: any) => Math.abs(o.heading - Math.PI / 2) < 1e-9 && o.alongZ !== null && o.alongX === null && Math.abs(o.pathZ - 10) < 1e-9 && Math.abs(o.pathX - 2) < 1e-9
+  && o.box && [[-1, -2, -5], [1, 0, 5]].every((want, k) => want.every((x, i) => Math.abs((k ? o.box.max : o.box.min)[i] - x) < 1e-9));
+await C("Z12", "a yawed 10 × 2 × 2 body is wet along its own long axis and dry across it (mediumAt, waterPath), and the fog's box (waterBox) is its world box", () => {
+  const s = session(); s.call("create", { id: "trough", components: { transform: tf([0, -1, 0], YAW90), zone: box([10, 2, 2]), water: {} } });
+  const o = longZ(Z.waterVolumes(Z.zonesOf(s.st())), "trough"); return [isLongZ(o), o]; });
+await C("Z13", "a turning carrier turns its body: a 10 × 2 × 2 body on a raft yawed a quarter turn lies along the world's z", () => {
+  const s = session(); s.call("create", { id: "raft", components: { transform: tf([0, 0, 0]) } });
+  s.call("create", { id: "hold", components: { transform: tf([0, -1, 0]), parent: { to: "raft" }, zone: box([10, 2, 2]), water: {} } });
+  const turned = s.call("set", { id: "raft", component: "transform", value: tf([0, 0, 0], YAW90) });
+  const o = { turned: show(turned), ...longZ(Z.waterVolumes(Z.zonesOf(s.st())), "hold") }; return [turned.ok && isLongZ(o), o]; });
 
 console.log(`[zone-water-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

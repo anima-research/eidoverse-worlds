@@ -4,7 +4,7 @@ import { THREE, TSL, scene, camera, sun } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, mediumAt } from '../../shared/water.js';
-import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches } from '../../shared/zone.js';
+import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches, waterBox, headingOf } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
@@ -144,6 +144,7 @@ function makeSurface(w) {
     const x=positions.getX(i)/(w.size[0]/2),z=positions.getZ(i)/(w.size[2]/2);
     positions.setXYZ(i,Math.sign(x)*Math.pow(Math.abs(x),2)*(w.size[0]/2),0,Math.sign(z)*Math.pow(Math.abs(z),2)*(w.size[2]/2));
   }
+  geo.rotateY(headingOf(w.q));   // its own frame, baked at the rebuild a carrier's turn triggers (zoneChangeTouches)
   const p=TSL.positionLocal;
   // the owner's LIVE centre (a uniform, refreshed per frame): the waves stay in world space as the pool moves,
   // matching waveHeight — what swimmers float on — instead of the centre it had when the mesh was built
@@ -261,8 +262,9 @@ export function updateWater() {
   for(const w of fog.waters) {
     const i=waters.length;waters.push(w);
     const slot=i+1;   // fog slot 0 is the level's; volumes follow it (higher = priority)
-    mins.array[slot].set(w.center[0]-w.size[0]/2,w.bottom,w.center[2]-w.size[2]/2,0);
-    maxs.array[slot].set(w.center[0]+w.size[0]/2,w.top,w.center[2]+w.size[2]/2,0);
+    const bx=waterBox(w);   // the fog approximates a turned body by its world AABB; the CPU law (mediumAt, waterPath) is exact
+    mins.array[slot].set(bx.min[0],w.bottom,bx.min[2],0);
+    maxs.array[slot].set(bx.max[0],w.top,bx.max[2],0);
     absorption.array[slot].set(...w.absorption,0);scatter.array[slot].set(...w.scatter,0);
     if(rebuild)makeSurface(w);
     else if(surfaces[i]){surfaces[i].position.set(w.center[0],w.top,w.center[2]);surfaces[i].userData.centre?.value.set(w.center[0],w.center[2]);}

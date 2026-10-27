@@ -24,7 +24,7 @@ export function zonesOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
     const size = c.zone.size.map((x, i) => Math.abs(x) * scale[i]);
     const toLocal = (p) => qRotate(qConj(q), [p[0] - center[0], p[1] - center[1], p[2] - center[2]]);
     const priority = Number.isInteger(c.zone.priority) ? c.zone.priority : 0;
-    if (wet) {   // a body stays level: its box is world-axis-aligned (its rotation turns only its centre), its surface the level or its top
+    if (wet) {   // a body's box is in its own frame (toLocal, as a pocket's); its surface stays level: the level or its top
       const zoneTop = center[1] + size[1] / 2, bottom = center[1] - size[1] / 2;
       const top = fin(c.water.level) ? Math.max(bottom, Math.min(zoneTop, center[1] + c.water.level * scale[1])) : zoneTop;
       bodies.push({ id, global: false, priority, water: c.water, center, size, q, toLocal, top, bottom });
@@ -44,16 +44,26 @@ export function absorptionOf(w) {
 }
 
 /** The waters and airs shared/water.js reads, from zonesOf: the bodies' (globals left to the level's own readers) as waterParams
- *  plus {id, priority, top, bottom, q, color, opacity, kind, flow, density, drag}; the exclusions as boxes with toLocal, priority and bodies. */
+ *  plus {toLocal, id, priority, top, bottom, q, color, opacity, kind, flow, density, drag}; the exclusions as boxes with toLocal, priority and bodies. */
 export function waterVolumes({ bodies = [], exclusions = [] } = {}) {
   const waters = bodies.filter((b) => !b.global).map((b) => {
     const w = b.water, h = b.top - b.bottom;
     const p = waterParams({ center: [b.center[0], b.bottom + h / 2, b.center[2]], size: [b.size[0], h, b.size[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor });
-    return { ...p, id: b.id, priority: b.priority, top: b.top, bottom: b.bottom, q: b.q, color: w.color, opacity: w.opacity, kind: w.kind, flow: w.flow, density: fin(w.density) ? w.density : 1000, drag: w.drag };
+    const c = p.center, qi = qConj(b.q ?? [0, 0, 0, 1]), toLocal = (x) => qRotate(qi, [x[0] - c[0], x[1] - c[1], x[2] - c[2]]);
+    return { ...p, toLocal, id: b.id, priority: b.priority, top: b.top, bottom: b.bottom, q: b.q, color: w.color, opacity: w.opacity, kind: w.kind, flow: w.flow, density: fin(w.density) ? w.density : 1000, drag: w.drag };
   });
   const airs = exclusions.map((x) => ({ id: x.id, priority: x.priority, bodies: x.bodies, center: x.center, size: x.size, q: x.q, toLocal: x.toLocal }));
   return { waters, airs };
 }
+
+/** A water's world AABB (its oriented box's corners, surface at its top): what the GPU fog's slots approximate it by. */
+export function waterBox(w) {
+  const q = w.q ?? [0, 0, 0, 1], h = [0, 1, 2].map((i) => [0, 1, 2].reduce((a, j) => a + Math.abs(qRotate(q, [0, 1, 2].map((k) => (k === j ? 1 : 0)))[i]) * w.size[j] / 2, 0));
+  return { min: w.center.map((v, i) => v - h[i]), max: w.center.map((v, i) => v + h[i]) };
+}
+
+/** A water's heading (rad about +Y): the surface mesh turns by it (client/lib/watervolumes.js), its waves stay in world space. */
+export const headingOf = (q) => { const x = qRotate(q ?? [0, 0, 0, 1], [1, 0, 0]); return Math.atan2(-x[2], x[0]); };
 
 const AT_WORLD = { id: "@world", priority: -Infinity };
 const worldFlow = (f, q) => (!Array.isArray(f) || !f.every(fin) ? null : f.length === 2 ? (q ? qRotate(q, [f[0], 0, f[1]]) : [f[0], 0, f[1]]) : f.length === 3 ? (q ? qRotate(q, f) : [...f]) : null);

@@ -38,7 +38,8 @@ export function mediumAt(p, waters, airs, time = 0) {
   // Last volume wins where volumes overlap; the adapter orders them (shared/zone.js: priority, then id).
   for (let i = waters.length - 1; i >= 0; --i) {
     const w = waters[i];
-    if (Math.abs(p[0] - w.center[0]) <= w.size[0] / 2 && Math.abs(p[2] - w.center[2]) <= w.size[2] / 2 &&
+    const l = w.toLocal ? w.toLocal(p) : p.map((v, i) => v - w.center[i]);   // its own frame, as a pocket's (shared/zone.js)
+    if (Math.abs(l[0]) <= w.size[0] / 2 && Math.abs(l[2]) <= w.size[2] / 2 &&
         p[1] >= w.bottom && p[1] <= waveHeight(w, p[0], p[2], time) && !dry.some(b => excludes(b, w))) return w;
   }
   return null;
