@@ -959,9 +959,9 @@ async function logOut() {
   // authorizes) — forget that, or logging out would log you back in
   try { localStorage.removeItem('ew-authed'); } catch { /* private mode */ }
   // and where they have been: a shared browser's next visitor must not land in (or be told the name of) the last
-  // person's world. A world a MEMORY chose is left by the reload below; one the link names (?world=) is not
+  // person's world. The bare path, not a reload: a reload keeps ?world=, rejoins that world, and remembers it again
   forgetRememberedWorlds();
-  location.reload();
+  location.replace(location.pathname);
 }
 function topItems() {
   const rights = !!menuSrc.buildRights?.();

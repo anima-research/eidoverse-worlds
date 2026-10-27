@@ -149,6 +149,21 @@ if (m) for (const [q, last, tab] of CASES) {
   check("the early socket joins the remembered world", join?.world === "garden", JSON.stringify(join));
   check("…and stashes it for net.js to compare", (g.__ewEarlySocket as { sent?: { world?: string } })?.sent?.world === "garden");
 }
+// …and viewers never open one: spectators, renderers and the thumbnail minter take net.js's own path
+if (m) for (const q of ["?spectate", "?renderer", "?renderer&roam", "?mintthumbs"]) {
+  const mem = new Map([["ew-world", "garden"], ["ew-name-set", "1"], ["ew-name", "helen"]]);
+  let opened = 0;
+  class WS { constructor() { opened++; } send() {} close() {} }
+  const g: Record<string, unknown> = {
+    location: { search: q, protocol: "http:", host: "x" },
+    localStorage: { getItem: (k: string) => mem.get(k) ?? null, setItem() {}, removeItem() {} },
+    sessionStorage: storeOf([]), WebSocket: WS, crypto,
+  };
+  g.globalThis = g;
+  new Function("globalThis", "location", "localStorage", "sessionStorage", "URLSearchParams", "WebSocket", m[0].replace(/^<script>/, "").replace(/<\/script>$/, ""))
+    (g, g.location, g.localStorage, g.sessionStorage, URLSearchParams, WS);
+  check(`${q}: no early socket`, opened === 0 && !g.__ewEarlySocket, `opened ${opened}`);
+}
 
 // ---- the boot tripwire keys on the world the page opens ------------------------------
 // Lite/full is decided per world (a phone can hold an empty world but not the commons).
@@ -199,7 +214,7 @@ console.log("net.js");
 // "ground": the door's yes into a world with ground and nothing placed. "authed": this page entered signed in.
 type Step = "snapshot" | "fresh" | "ground" | "spawn" | "say" | "connect" | "timers" | "authed"
   | { close: number } | { early: string } | { set: [string, string] };
-type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number };
+type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number; authedReads: number };
 function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null,
                   inline: { world: string; remembered: boolean } | null = null): Out {
   const L = join(ROOT, "client/lib") + "/";
@@ -208,7 +223,8 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     const mem = new Map([["ew-name", "helen"]${stored === null ? "" : `, ["ew-world", ${JSON.stringify(stored)}]`}]);
     let reloads = 0;
     globalThis.location = { search: ${JSON.stringify(search)}, host: "x", pathname: "/", protocol: "http:", reload: () => { reloads++; } };
-    globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
+    let authedReads = 0;
+    globalThis.localStorage = { getItem: (k) => { if (k === "ew-authed") authedReads++; return mem.get(k) ?? null; }, setItem: (k, v) => mem.set(k, String(v)), removeItem: (k) => mem.delete(k) };
     const smem = new Map(${tab === null ? "" : `[["ew-world-tab", ${JSON.stringify(tab)}]]`});
     globalThis.sessionStorage = { getItem: (k) => smem.get(k) ?? null, setItem: (k, v) => smem.set(k, String(v)), removeItem: (k) => smem.delete(k) };
     globalThis.fetch = async () => ({ ok: false, json: async () => null });
@@ -243,10 +259,10 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
       else if (s === "timers") timers.splice(0).forEach((f) => f());
       else sockets[sockets.length - 1].onclose({ code: s.close });
     }
-    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length }));`;
+    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length, authedReads }));`;
   const r = Bun.spawnSync(["bun", "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(r.stdout.toString().trim().split("\n").pop()!) as Out; }
-  catch { return { world: `ERROR ${r.stderr.toString().slice(0, 400)}`, stored: null, tab: null, reloads: 0, toasts: [], sockets: 0 }; }
+  catch { return { world: `ERROR ${r.stderr.toString().slice(0, 400)}`, stored: null, tab: null, reloads: 0, toasts: [], sockets: 0, authedReads: 0 }; }
 }
 {
   const first = pageLoad("?world=garden", null, ["snapshot"]);
@@ -366,6 +382,12 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
   const after = pageLoad("?world=atelier", null, ["authed", "fresh", "spawn"]);
   check("a signed-in page, its browser logged out since (no ew-authed), building in a new world remembers nothing",
     after.stored === null && after.tab === null, JSON.stringify(after));
+  const busy = pageLoad("?world=atelier", null, ["authed", "snapshot", "spawn", "spawn", "spawn", "spawn"]);
+  check("…and it decides that once per join: later live entries do not ask again",
+    busy.stored === null && busy.authedReads === 1, JSON.stringify(busy));
+  const keyed = pageLoad("?key=door1", "garden", [{ set: ["ew-authed", "1"] }, "connect", { close: 4010 }, "timers"], "garden");
+  check("a door-key visitor on a browser once signed in: a refused remembered world is still forgotten (the key is its identity)",
+    keyed.stored === null && keyed.tab === null && keyed.reloads === 1, JSON.stringify(keyed));
   const still = pageLoad("?world=atelier", null, ["authed", { set: ["ew-authed", "1"] }, "fresh", "spawn"]);
   check("(control) still signed in: the same page remembers atelier", still.stored === "atelier", JSON.stringify(still));
 
@@ -390,8 +412,10 @@ console.log("log out");
   const ui = readFileSync(join(ROOT, "client/lib/ui.js"), "utf8");
   const logOut = ui.match(/async function logOut\(\) \{[\s\S]*?\n\}/)?.[0] ?? "";
   // a statement of its own at the function's top level (two-space indent, not in a comment or a branch), before the reload
-  check("ui.js logOut forgets the remembered worlds, unconditionally, before it reloads",
-    /\n  forgetRememberedWorlds\(\);[\s\S]*\n  location\.reload\(\);/.test(logOut), logOut.slice(0, 300));
+  check("ui.js logOut forgets the remembered worlds, unconditionally, then goes to the bare path",
+    /\n  forgetRememberedWorlds\(\);[\s\S]*\n  location\.replace\(location\.pathname\);/.test(logOut), logOut.slice(0, 300));
+  // a reload keeps ?world=, which would rejoin the logged-out person's world and remember it again
+  check("…not a reload, which would keep ?world= and remember it again", !/location\.reload\(/.test(logOut), logOut.slice(-200));
   // and what that buys: the next bare load, in this tab or a new one, is the commons
   lm.set("ew-world", "garden"); sm.set("ew-world-tab", "garden");
   g.localStorage = st(lm); g.sessionStorage = st(sm);

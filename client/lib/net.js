@@ -347,8 +347,11 @@ let browserSaved = false;   // has this PAGE written the browser's last world (o
  *  nobody has used FOUNDS that world (server.ts admitJoin), so a mistyped ?world=
  *  is let in to an empty one; main.js warns about it on arrival. An empty world is
  *  not remembered: a bare link must not keep leading to a typo. */
-export const builtIn = (st) => !!st && (Object.keys(st.entities ?? {}).length > 0
-  || st.terrain != null || st.grass != null || st.sky != null);
+export const builtIn = (st) => {
+  if (!st) return false;
+  for (const _ in st.entities ?? {}) return true;   // one is enough: no key list built over a big world
+  return st.terrain != null || st.grass != null || st.sky != null;
+};
 
 /** The world a person is IN: where a bare link brings this browser next time
  *  (base.js pickWorld). Called at the door's yes and on each live entry until it
@@ -359,8 +362,8 @@ export const builtIn = (st) => !!st && (Object.keys(st.entities ?? {}).length > 
  *  the browser's last world back from the tab the person moved on to. */
 function rememberWorld() {
   if (worldSaved || CONFIG.spectate || CONFIG.renderer || !builtIn(shadow.st)) return;
+  worldSaved = true;   // decided for this join either way, so live entries stop asking
   if (loggedOutElsewhere()) return;   // the person this page was signed in as has left this browser
-  worldSaved = true;
   try { sessionStorage.setItem(TAB_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
   if (browserSaved) return;
   browserSaved = true;
@@ -378,7 +381,8 @@ function loggedOutElsewhere() {
  *  be about WHO we are, not where, and must not cost the person their memory of the
  *  world: a reload with identity back would get in. */
 function identityMissing() {
-  try { return !CONFIG.authed && localStorage.getItem('ew-authed') === '1'; } catch { return false; }
+  if (CONFIG.authed || CONFIG.token) return false;   // a door key is an identity of its own, never bounced to the login
+  try { return localStorage.getItem('ew-authed') === '1'; } catch { return false; }
 }
 
 /** Forget a world from both memories (this tab's and the browser's) wherever it is the one held. */
