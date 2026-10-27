@@ -14,6 +14,7 @@ import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
+import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
@@ -345,6 +346,7 @@ function start() {
     // the join completes.
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
+  initObjectLabels();
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
   // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
@@ -630,6 +632,7 @@ registerSystem('send-pose', (dt, t, now) => sendPose(now));
 registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
+registerSystem('object-labels', () => tickObjectLabels()); // after motion and camera
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)

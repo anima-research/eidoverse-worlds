@@ -44,3 +44,9 @@ export function makeSection(title, onOpen, { id = '' } = {}) {
   sections.set(id, api);
   return api;
 }
+// objectlabels.js
+export const raySegment = () => null;
+export const structureGroup = () => null;
+export const renderer = { domElement: {} };
+export const onWorldChange = () => () => {};
+export const state = { st: { entities: {}, assets: [] } };

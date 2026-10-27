@@ -642,7 +642,9 @@ export function raySegment(origin, dir, far, ignoreId = null) {
         if (id === ignoreId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || e.camGhost || e.mask || !e.box || !inScope(e)) continue;
+        // a structure's synthetic entries name their entity in structOwner:
+        // ignoring an entity ignores its own walls and floors too
+        if (!e || (ignoreId != null && e.structOwner === ignoreId) || e.camGhost || e.mask || !e.box || !inScope(e)) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const yaw = o.rotation?.y ?? 0;
