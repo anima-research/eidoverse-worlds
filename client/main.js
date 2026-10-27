@@ -14,7 +14,7 @@ import { say } from './lib/net.js';
 import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
-import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
+import { CONFIG, bus, report, tee, colorFor, emptyWorldNotice } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, ANIM_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality, hideSkyForWater } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, anyBuildsPending, avatarMounts, roleOf, worldHasOwner, bagOf, bags, seatSocket, socketsOn, currentTerrainArgs, terrainEditBase, noteTerrainSent, terrainPending } from './lib/world.js';
@@ -53,7 +53,7 @@ import { setWaveClock } from './lib/water.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   replica, net, connect, initIdentity, loginUrl, wireNet, sendRequest, sendPose, sendTyping,
-  setPoseOverride, sendPuppet, sendAnim,
+  setPoseOverride, sendPuppet, sendAnim, builtIn,
 } from './lib/net.js';
 import { poseCommands } from './lib/posecommands.js';
 import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
@@ -61,6 +61,7 @@ import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build
 const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : isOwner(net.myRights));
 import { initPalette } from './lib/catalog.js';
 import { initConjure } from './lib/generate.js';
+import { state as worldState } from './lib/state.js';
 import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
@@ -574,11 +575,10 @@ bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState
 // and it is the worst possible first impression because everything is working
 // exactly as designed.
 bus.on('hydrated', () => {
-  if (entities.size > 0) return;
-  const named = CONFIG.params.has('world');
-  logChat('*', named
-    ? `"${CONFIG.world}" is empty — nothing has ever been built here.`
-    : `you are in "${CONFIG.world}", which is empty. Add ?world=<name> to the link to go somewhere else.`);
+  // the same test net.js uses to keep or forget the remembered world (builtIn: a
+  // thing, ground, grass or sky), so the notice and the memory agree on "empty"
+  if (entities.size > 0 || builtIn(worldState.st)) return;
+  logChat('*', emptyWorldNotice(CONFIG));   // which words depend on how the page got here (base.js)
   logChat('*', 'press B to start building, or ? for the controls.');
   toast(`"${CONFIG.world}" is an empty world — press B to build in it`, 'warn', 14000);
 });

@@ -58,6 +58,7 @@ export const colorFor = () => '#888';
 export const reports = [];
 export function report(context, err) { reports.push([String(context), err]); }
 export function setErrorSink() {}
+export function forgetRememberedWorlds() {}
 export function setName() {}
 export function setToken() {}
 export function tee() {}

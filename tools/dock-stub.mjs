@@ -14,6 +14,7 @@ export const tee = () => {};
 export const setName = () => {};
 export const setToken = () => {};
 export const setErrorSink = () => {};
+export const forgetRememberedWorlds = () => {};
 export const colorFor = () => '#8fb572';
 export const assignColors = () => {};
 

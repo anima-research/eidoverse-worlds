@@ -2,8 +2,8 @@
 //
 // PR #145's review (antra, 2026-08-26): "The two product decisions exist only
 // as source assertions, not executable transport receipts." The decisions:
-// approach is `chat:addressed` + `mentioned:true`; depart is `chat:ambient`,
-// lacks `mentioned`. They lived in net-server.ts's onPing closure, which a
+// approach is `chat:addressed` + `mentioned:true`; depart is `chat:ambient`
+// + `chat:system`, lacks `mentioned`. They lived in net-server.ts's onPing closure, which a
 // test cannot import (the module listens at load). The mapping is now the
 // pure ping-wire.ts, consumed by both servers and held to account here —
 // alongside the pending_pings line rendering, and the disconnect rule:
@@ -38,6 +38,7 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
   check("approach carries its event tag", d.tags.includes(EIDO.approach));
   check("approach is mentioned:true (the shim two hosts still route on)", d.mentioned === true);
   check("approach is NOT ambient — addressed wins", !d.tags.includes(CHAT.ambient), JSON.stringify(d.tags));
+  check("approach is NOT a system notice — it is directed at you", !d.tags.includes(CHAT.system), JSON.stringify(d.tags));
   check("approach wording", d.text === "* digi walked up to you", d.text);
 }
 
@@ -47,10 +48,12 @@ const P = (kind: any, text?: string) => ({ ts: 1, kind, who: "digi", ...(text !=
   check("depart carries its event tag", d.tags.includes(EIDO.depart));
   check("depart is NOT addressed — being left is not being addressed", !d.tags.includes(CHAT.addressed), JSON.stringify(d.tags));
   check("depart never sets mentioned", d.mentioned === undefined);
+  check("depart is chat:system — nobody spoke, so it must not steer the agent's speech", d.tags.includes(CHAT.system), JSON.stringify(d.tags));
   check("depart renders the agent's own who-moved text", d.text === "* digi walked away", d.text);
   const n = pingDelivery(P("depart", "is no longer nearby"), null)!;
   check("...including the actor-neutral sentence, verbatim", n.text === "* digi is no longer nearby", n.text);
 }
+
 
 {
   const r = pingDelivery(P("reach", "reaches toward your shoulder_l (right hand)"), null)!;

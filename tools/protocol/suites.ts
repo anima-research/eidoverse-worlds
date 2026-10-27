@@ -171,6 +171,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["eidosim-v1", "import-v1/eidosim-v1-test.ts", 1], // the first eidosim's covenant tests, on the copy the importer keeps (house #260, importer I8)
   ["render-scene-import", "../render-scene-import-test.ts", 1], // #260 I464: server/render-scene.ts links (nothing serves it), and particles project through resolveParticles
   ["channelbox", "../channelbox-test.ts", 1], // #260 I242: the channel box through the real door; the rotate order is the viewer's (PROTOCOL §9.1), never sent
+  ["last-world", "../last-world-test.ts", 1], // #281 (main, merged 10-27): a bare link goes back to the last world you were in; the real net.js writes it at the door's yes and forgets a refused or empty world
+  ["event-wire", "../event-wire-test.ts", 1], // MCPL RFC-001 rev 3 (main, merged 10-27): a world event's tags follow its kind facet; a notice is chat:system, speech never
   ["client-tools", "../run-client.ts --import-only --skip-suites", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 

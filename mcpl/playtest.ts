@@ -220,6 +220,9 @@ check("replay carries eidoverse:catchup + the ORIGINAL addressing",
   JSON.stringify(replayed?.tags));
 const summary = again.feed.find((f) => f.text.includes("While you were away"));
 check("the replay summary is catchup-tagged, not bare", !!summary?.tags?.includes("eidoverse:catchup"), JSON.stringify(summary?.tags));
+check("the replay summary is a chat:system notice; the replayed mention is not",
+  !!summary?.tags?.includes("chat:system") && !replayed?.tags?.includes("chat:system"),
+  `${JSON.stringify(summary?.tags)} / ${JSON.stringify(replayed?.tags)}`);
 // a catchup-defer rule (tagsAny: ["eidoverse:catchup"]) can now match every
 // replayed frame — and must NOT match live traffic:
 {
