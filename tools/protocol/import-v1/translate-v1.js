@@ -18,7 +18,7 @@ import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed } from "../../../shared/particle_effects.js";
-import { repairComps, repairWorld, SHAPES_VERSION } from "../../../shared/protocol/shaperepair.js";
+import { repairComps, repairWorld, renameFields, SHAPES_VERSION } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -117,7 +117,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@21";
+export const TRANSLATOR = "eidoverse/translate-v1@22";
+// @22 (R 10-27): main's sound look is description (shaperepair renameFields, as the load renames a stored one), where @21 left
+// it in imported:sound. Output differs from @21 on any log with a described sound. Both names.
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
  *  of version digits: `@(1[4-9])` quietly stopped matching at @20 and broke four suites (10-22). */
 export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(name ?? "")); return m ? Number(m[1]) : NaN; };
@@ -264,6 +266,7 @@ export const DROPPED = {
   "an entry keyed by an account in a value, and a component an account names and fills": "an entry keyed by an account in a value, or a component whose name has an account's (`ownerSub`) and whose whole value is one, is person data (PROTOCOL §9.2): in the state it is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it, each dropped without an identity mapper. A role or ban kept by its account isn't a value: it is kept, keyed by its person's id (with a mapper) or by its account, encoded (without one)",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
   "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
+  "sound.look": "renamed description (@21, R 10-27): the same words under today's name",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
@@ -577,7 +580,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if ((k === "traversal" || k === "collision" || k === "environment" || k === "vehicle") && v != null) { carried[k] = v; continue; }   // main #248's (CARRIED)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
-      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : v; }
+      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : k === "sound" ? renameFields("sound", v).value : v; }
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape

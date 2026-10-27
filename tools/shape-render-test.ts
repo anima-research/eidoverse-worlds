@@ -237,6 +237,15 @@ await tryRow('DS', async () => {
   check('DS6 alt leaves the editors (descriptors, editschema, components, the client\'s panels)', !/['"]alt['"]|\.alt\b|\balt:|ALT_/.test(src), (src.match(/.{0,40}(['"]alt['"]|\.alt\b|\balt:|ALT_).{0,40}/g) ?? []).slice(0, 5));
 });
 
+// ===================================================================== the translator: main's media in today's shapes (R 10-27; audit B1, B2)
+await tryRow('TR', async () => {
+  const spawn = (id: string, lib: string) => ({ verb: 'spawn', args: { id, lib, pos: [0, 0, 0] } });
+  const comp = (id: string, type: string, data: any) => ({ verb: 'comp', args: { id, type, data } });
+  const t = translate(v1(spawn('radio', 'props/radio.glb'), comp('radio', 'sound', { src: 'eidoverse/assets/a.ogg', look: 'rain on the awning' })));
+  const r = t.final.translated.radio;
+  check('TR1 (B1) main\'s sound look is description, not lost to imported:sound', r?.sound?.description === 'rain on the awning' && !('imported:sound' in (r ?? {})) && !t.stats.divergences, [r, t.stats.divergences]);
+});
+
 // ===================================================================== captions: the current cue only
 await tryRow('CA', () => {
   const C = COMPONENTS.captions;
