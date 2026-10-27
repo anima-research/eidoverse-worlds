@@ -40,6 +40,7 @@ const EXEMPT: [string, RegExp, string][] = [
   ["shared/protocol/authority", /activate\(w, id, name, \{ on: `changed:/, "a reaction's activation record names the OP's component (PROTOCOL §3), not a record's bag"],
   ["shared/sim.js", /sim\.boxes\[/, "the first eidosim's box table, keyed by library path (retires with it)"],
   ["server/render-scene.ts", /./, "upstream #248's projection of the first protocol's fold for the native (Unreal) client, kept unwired: that client can't join a world here until it folds this protocol's log (docs/NATIVE-WORLD-RENDERING.md); it is ported to view records then, not before"],
+  ["shared/zone.js", /ev\.comp === "light"/, "a world-change event names the OP's component (the realizer's event, PROTOCOL §3), not a record's bag"],
   ["client/lib/water.js", /\bA\.comp\[/, "the water analysis's connected-component labels (shared/waterkind.js analyzeWater), an array, not a record's bag"],
 ];
 const offences: string[] = [];

@@ -45,9 +45,9 @@ C("G3c", "each of main's three routes is a climb child of its host: main's path 
     return a && JSON.stringify(a.components.climb) === JSON.stringify({ points: m.path, reach: m.radius, speed: m.speed }) && a.components.label === m.name; })
   && JSON.stringify(creates.find((a) => a.id === "$water-scenery")?.components.collider) === JSON.stringify({ enabled: false }), climbs);
 const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "environment").args.data, setOf = (k) => ops.find((o) => o.verb === "set" && o.args.id === "@world" && o.args.component === k)?.args.value;
-C("G3e", "main's environment: @world.spawn and bounds as main's, @world.sky.gradient, a hidden floor, a directional sun and a dust child; ambient and the particles' count and range (clamped) listed as unmapped",
+C("G3e", "main's environment: @world.spawn and bounds as main's, @world.sky.gradient, @world.terrain flat at main's floor (no floor thing), a directional sun and a dust child; ambient and the particles' count and range (clamped) listed as unmapped",
   JSON.stringify(setOf("spawn")) === JSON.stringify({ pos: envMain.spawn }) && JSON.stringify(setOf("bounds")) === JSON.stringify(envMain.bounds) && !!setOf("sky")?.gradient
-  && creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box") && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => a.components.particles?.effect === "dust" && a.components.parent?.to === "$water-terrain")
+  && JSON.stringify(setOf("terrain")) === JSON.stringify({ kind: "flat", height: envMain.floor }) && !creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box") && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => a.components.particles?.effect === "dust" && a.components.parent?.to === "$water-terrain")
   && JSON.stringify(dry.unmapped) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count, particles.range"], as: "water-terrain imported:environment" }]), { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
 
 // the batch through a real authority (a scratch world): placeholders minted, every op taken
@@ -69,6 +69,12 @@ const st = w.state(), id = (name) => r.ids?.[`$${name}`];
 C("G4", "a real authority takes the whole batch: every create and set, its placeholders minted, each pocket and the body under its minted host",
   r.ok && Object.keys(r.ids ?? {}).length === creates.length && st.entities[id(bodies[0].id.slice(1))]?.c.parent?.to === id("water-terrain") && by("water-submarine").every((a) => st.entities[id(a.id.slice(1))]?.c.parent?.to === id("water-submarine")),
   { refused: r.refused, ids: Object.keys(r.ids ?? {}).length });
+{ const SPX = await import(ENGINE + "shared/protocol/authority/spatial.js"), G = SPX.groundOf(st), down: any[] = [];
+  const tp = call("move", { to: [300, -240, -300], teleport: true }); for (let y = -243.5; y > -260; y -= 3.5) down.push(call("move", { to: [300, y, -300] }));
+  down.push(call("move", { to: [300, -260, -300] })); const under = SPX.supportBelow(w.state(), 300, -300, -250);
+  C("G4f", "the floor is the ground: a swimmer descends far below y 0 toward main's floor and stands on it at its height (groundOf and supportBelow at -260, the authority's walk taking every step down)",
+    G.height(300, -300) === envMain.floor && G.height(-29, 89) === envMain.floor && tp.ok && down.every((x) => x.ok) && under.id === "ground" && under.y === envMain.floor && w.presence.bodies.olive?.at?.[1] === envMain.floor,
+    { G: G.height(300, -300), tp: tp.refused, down: down.filter((x) => !x.ok).map((x) => x.refused), under, at: w.presence.bodies.olive?.at }); }
 
 // main's reading of the same records (its client's watervolumes: entity matrix × comp centre; air box = matrix × (centre, q))
 const ref = path.join(root, "main-water.js"); const g = spawnSync("git", ["-C", ENGINE, "show", `${MAIN}:shared/water.js`], { encoding: "utf8" });

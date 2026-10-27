@@ -43,7 +43,7 @@ export const REFUSAL_CODES = Object.freeze({
   "shape":          { meaning: "the request or value isn't the right shape", when: "a wrong type, a missing part, a bad name, a bad placeholder, anything the shape rules refuse" },
   "unknown-arg":    { meaning: "the verb has no such argument", when: "an argument VERBSPEC doesn't list for the verb" },
   "missing-arg":    { meaning: "the verb needs that argument", when: "a required VERBSPEC argument left out" },
-  "doesnt-apply":   { meaning: "that argument doesn't go with the mode you chose", when: "a place argument whose modes exclude the chosen one" },
+  "doesnt-apply":   { meaning: "that argument doesn't go with the mode you chose", when: "a place argument whose modes exclude the chosen one; a below-bounds respawn for a body the authority last knew above @world.bounds.min.y (or nowhere), or one seated" },
   "schema":         { meaning: "a component value the registry doesn't take", when: "an unknown field, an unregistered bare name, a value outside the component's schema" },
   "bounds":         { meaning: "a number past what this server allows", when: "a value above a server limit (counts, sizes, rates)" },
   "too-big":        { meaning: "too large to write", when: "a value over 64 KiB, a log line over 1 MiB or 64 deep, a script source or batch over its cap" },
@@ -102,7 +102,7 @@ export const REFUSAL_CODES = Object.freeze({
   "in-the-way":     { meaning: "someone is where it would go", when: "a shove or push that would slide a thing into a body" },
   // ---- bodies, hands and physics ----
   "solid":          { meaning: "a body doesn't fit there", when: "an arrival or step into something solid" },
-  "spawn":          { meaning: "arrivals are limited to the spawn", when: "an arrival or teleport outside @world.spawn's radius" },
+  "spawn":          { meaning: "arrivals are limited to the world's arrival places", when: "an arrival, teleport or below-bounds respawn outside every arrival place's radius (@world.spawn and the spawn-point things)" },
   "out-of-bounds":  { meaning: "outside this world", when: "a move or position past @world.bounds" },
   "too-fast":       { meaning: "faster than a body (or a throw) may go", when: "a step past the speed track, a throw or shove over its cap" },
   "out-of-reach":   { meaning: "too far away", when: "a hand or body act beyond its reach" },

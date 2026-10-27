@@ -148,6 +148,9 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
   // a held kind (componentspec reservedKinds: terrain's raster, shape audit 10-16) is refused as reserved, in its own words
+  // a flat ground is its height alone (componentspec terrain kind flat): a noise number, a feature or a heightmap has no reader there
+  if (comp === "terrain" && obj && v.kind === "flat") { const extra = Object.keys(v).filter((k) => k !== "kind" && k !== "height" && v[k] != null);
+    if (extra.length) refuse("shape", `${at} is flat: {kind: 'flat', height} takes no ${extra.join(", ")}`, "terrain {kind: 'flat', height: <m>}; shaped ground is kind noise (features, heightmap)"); }
   if (comp === "terrain" && obj && !carry && Object.hasOwn(COMPONENTS.terrain.reservedKinds, v.kind)) refuse("reserved", `${at}.kind '${v.kind}' is reserved: ${COMPONENTS.terrain.reservedKinds[v.kind]}`, "terrain {kind: 'noise', seed, size, amplitude, …}; an image as the base is heightmap {grid, min, max}", { status: "reserved" });
   // the first protocol's particles bag (preset, origin, count…): its fields left the registry (shape audit 10-16), so say today's
   // spelling in particlesCheck's own words before the schema calls them unknown keys

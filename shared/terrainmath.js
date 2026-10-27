@@ -38,8 +38,12 @@ import { shapeParams, shapeHeight } from './terrainshape.js';
 /** Normalize terrain-verb args to the canonical parameter set, with the
  *  TOOLKIT's own defaults — the sim must assume exactly what the mesh
  *  builder assumes. @param {Record<string, unknown>} a */
+/** A flat ground's height (terrain {kind: 'flat', height}), else null: the readers that build no mesh for it ask this. */
+export const flatHeightOf = (a) => (a?.kind === 'flat' ? (typeof a.height === 'number' && Number.isFinite(a.height) ? a.height : 0) : null);
+
 export function terrainParams(a) {
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  if (a?.kind === 'flat') return { flat: num(a.height, 0), size: 200 };   // level ground (componentspec terrain kind flat); size: the no-terrain projection's
   const shape = shapeParams(a);
   return {
     ...(shape ? { shape } : {}),
@@ -58,6 +62,7 @@ export function terrainParams(a) {
  *  @param {ReturnType<typeof terrainParams>} P
  *  @returns {(x: number, z: number) => number} */
 export function makeHeightField(P) {
+  if (typeof P.flat === 'number') { const h = P.flat; return () => h; }
   // mulberry32 — integer ops only, bit-exact on every engine
   let s = (P.seed | 0) || 1;
   const rand = () => {

@@ -24,7 +24,8 @@ import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
 import { reindexCollider } from './colliders.js';
-import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
+import { setTerrain, setGrass, clearGrass, heightAt, setFlatGround } from './terrain.js';
+import { flatHeightOf } from '../../shared/terrainmath.js';
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady } from '../../shared/terrainshape.js';
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
@@ -178,13 +179,15 @@ let lastGrassArgs = null;
 export function applyTerrainState(args) {
   // no terrain: the stage floor returns, with the world's water on it when it has some (environment.js groundArgs
   // {stageFloor, water}; house review I8) and without the old ground's water when it doesn't
-  if (!args || args.stageFloor === true) {
+  // …and a flat terrain is that floor at its height (componentspec terrain kind flat)
+  const flat = flatHeightOf(args);
+  if (!args || args.stageFloor === true || flat !== null) {
     const key = args ? JSON.stringify(args) : null;
-    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); }
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); } setFlatGround(flat ?? 0);
       try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
     return;
   }
-  stageFloor = false;
+  stageFloor = false; setFlatGround(0);
   const key = JSON.stringify(args);
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;

@@ -330,12 +330,15 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   asked for; a visitor may arrive at any of them. A body below
   `@world.bounds.min.y` has fallen out (Unreal's KillZ): its own client sends it
   back with `move {teleport: true, reason: 'below-bounds'}`, an act on the
-  record even as an arrival; a seated or climbing body is exempt.
+  record; the authority takes it only when it last knew the body below
+  `bounds.min.y` (one step's slack, `TRACK.cap`); a seated or climbing body
+  is exempt.
 - **The look**: `@world.sky.gradient {top, horizon, bottom?}` (linear colours;
   OMI_environment_sky, absent bottom = horizon) paints the sky; `rate: 0`
   already pins its clock. A `light {kind: 'directional'}` thing is a sun
   (KHR_lights_punctual), shining along its −Z; the first by id lights the
-  world. A floor is geometry (a hidden thing), never a world value.
+  world. A floor is the ground: `@world.terrain {kind: 'flat', height}` (m),
+  level everywhere and nothing else; absent terrain is flat at y 0.
 - **Anyone else's components carry a namespace**, `<namespace>/<name>`: a
   domain they control or a handle (`example.org/heart`, `mica/heart`), so two
   honest clients can't both invent `light`. The mark is the `/` itself: the
@@ -729,7 +732,8 @@ copy that was updated and is published again keeps its parts' keys.
   the haul-out line), and a ground ledge over a step is refused as solid
   (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
   alias seat a model's bottom on the highest ground under its footprint. A
-  world with no `terrain` is flat at y 0 and dry. A heightmap world whose
+  world with no `terrain` is flat at y 0 and dry; `terrain {kind: 'flat',
+  height}` is flat at its height. A heightmap world whose
   grid isn't on the server yet has no ground to judge on, and the authority
   never stands anything on a guessed height: what needs the ground is refused
   `ground-loading` with words (ground-seated placement, `create {at}` and
@@ -1410,7 +1414,8 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
 - **Main's climb routes, collision toggle and environment are carried**: each `traversal` route is a child thing with
   `climb {points: path, reach: radius, speed}` and `label: name` (main's clamps); `collision {enabled: false}` is
   `collider {enabled: false}`; `environment`'s `spawn` is `@world.spawn` (a later one a `spawn-point` thing), `bounds`
-  `@world.bounds`, `floor` a hidden `mesh` box whose top is the floor, `sky` `@world.sky.gradient` (sRGB to linear) and
+  `@world.bounds`, `floor` `@world.terrain {kind: 'flat', height: floor}` (a world with a terrain keeps it, and the floor
+  is listed under `unmapped` as the conflict), `sky` `@world.sky.gradient` (sRGB to linear) and
   a directional `light` thing (main's sun, defaults included), `particles` a `particles {effect: 'dust'}` child. What has
   no home (the sky's `ambient`, a value an effect clamps, an unknown key) rides `imported:<component>` on its thing and
   is listed under the report's `unmapped`.

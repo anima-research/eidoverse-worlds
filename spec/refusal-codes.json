@@ -123,7 +123,7 @@
   },
   "doesnt-apply": {
    "meaning": "that argument doesn't go with the mode you chose",
-   "when": "a place argument whose modes exclude the chosen one"
+   "when": "a place argument whose modes exclude the chosen one; a below-bounds respawn for a body the authority last knew above @world.bounds.min.y (or nowhere), or one seated"
   },
   "schema": {
    "meaning": "a component value the registry doesn't take",
@@ -350,8 +350,8 @@
    "when": "an arrival or step into something solid"
   },
   "spawn": {
-   "meaning": "arrivals are limited to the spawn",
-   "when": "an arrival or teleport outside @world.spawn's radius"
+   "meaning": "arrivals are limited to the world's arrival places",
+   "when": "an arrival, teleport or below-bounds respawn outside every arrival place's radius (@world.spawn and the spawn-point things)"
   },
   "out-of-bounds": {
    "meaning": "outside this world",

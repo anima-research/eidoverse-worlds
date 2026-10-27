@@ -25,7 +25,7 @@ e^−σ over 1 m; `speed` rides in `imported:water`); `air {boxes}` → one chil
 `zone {box, size, priority: 1}` + `water-exclusion {}`, its centre and `q` its transform.
 Each `traversal` route is a child with `climb {points, reach, speed}` and its name as
 `label`; `collision {enabled: false}` is `collider {enabled: false}`; `environment` goes
-to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, a hidden floor thing, a
+to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, `@world.terrain {kind: 'flat', height}` (the floor), a
 directional sun thing and a dust `particles` child, and what has no home (the sky's
 `ambient`, the particles' clamped count and range) rides `imported:environment`, listed
 under `unmapped`. The `vehicle` is not carried yet: `import.ts` lists it and leaves it

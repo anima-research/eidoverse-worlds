@@ -14,6 +14,7 @@ import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-s
 import { mentionRegexFor } from "./mention.ts";
 import { mergePose } from "../shared/humanoid.js";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, shapeReady, waterParams } from "../shared/terrainshape.js";
+import { flatHeightOf } from "../shared/terrainmath.js";
 import { foldOffset } from "../shared/clockoffset.js";
 import { bodyHeightFor } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
@@ -2034,7 +2035,8 @@ export class WorldAgent {
     }
     if (rev !== this.terrainRev) return;   // a newer terrain arrived while this one's grid was in flight
     this.pendingTerrain = null;
-    const t = (globalThis as any).makeTerrain({ ...args, layers: [] });
+    const flat = flatHeightOf(args);   // a flat terrain is level ground at its height: no mesh to build
+    const t = flat !== null ? { heightAt: () => flat } : (globalThis as any).makeTerrain({ ...args, layers: [] });
     this.terrain = shape ? { heightAt: shapedHeightAt(t.heightAt, args) } : t;
     this.navTerrainRev++;       // only committed ground invalidates a route grid
     this.water = waterParams(args);

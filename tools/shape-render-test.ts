@@ -254,11 +254,11 @@ await tryRow('SK', async () => {
 
 // ===================================================================== terrain: the sim's defaults, raster reserved, layer colours ints, water split out
 await tryRow('TE', async () => {
-  const T = COMPONENTS.terrain; const sim = terrainParams({});
-  check('TE1 terrain\'s defaults are the sim\'s law (shared/terrainmath.js)', T.defaults?.seed === sim.seed && T.defaults?.size === sim.size && T.defaults?.amplitude === sim.amplitude && T.defaults?.octaves === sim.octaves && T.defaults?.frequency === sim.frequency && T.defaults?.flatRadius === sim.flatRadius && T.defaults?.flatHeight === sim.flatHeight, [T.defaults, sim]);
+  const T = COMPONENTS.terrain; const sim = terrainParams({}); const ND = { ...T.defaults, ...(T.when ?? []).find((r) => r.if?.kind === 'noise')?.set };
+  check('TE1 terrain\'s noise defaults are the sim\'s law (shared/terrainmath.js)', ND.kind === 'noise' && ND.seed === sim.seed && ND.size === sim.size && ND.amplitude === sim.amplitude && ND.octaves === sim.octaves && ND.frequency === sim.frequency && ND.flatRadius === sim.flatRadius && ND.flatHeight === sim.flatHeight, [ND, sim]);
   const CJ = read('shared/components.js'); const tr = CJ.slice(CJ.indexOf("name: 'Terrain'"), CJ.indexOf("name: 'Grass'"));
   check('TE2 the inspector\'s Terrain reads its defaults from the registry (no seed 7 / size 160 / amplitude 0 / flatRadius 16 of its own)', !/seed: \{ default: 7 \}/.test(tr) && !/size: \{ default: 160 \}/.test(tr) && !/amplitude: \{ default: 0 \}/.test(tr), tr.slice(0, 300));
-  check('TE3 kind raster is reserved; water is not a terrain field; layers hold int colours', !('water' in T.fields) && !('blob' in T.fields) && JSON.stringify(T.enums?.kind) === '["noise"]' && /raster/.test(JSON.stringify(T.reservedKinds ?? T.reservedFields ?? {})), [Object.keys(T.fields), T.enums]);
+  check('TE3 kind raster is reserved; water is not a terrain field; layers hold int colours', !('water' in T.fields) && !('blob' in T.fields) && JSON.stringify(T.enums?.kind) === '["noise","flat"]' && /raster/.test(JSON.stringify(T.reservedKinds ?? T.reservedFields ?? {})), [Object.keys(T.fields), T.enums]);
   const W = scratchWorld('w2r-terrain');
   let r = W.call('set', { id: '@world', component: 'terrain', value: { kind: 'raster', blob: 'x', w: 2, h: 2 } });
   check('TE4 a raster terrain is refused as reserved', code(r) === 'reserved', r.refused);

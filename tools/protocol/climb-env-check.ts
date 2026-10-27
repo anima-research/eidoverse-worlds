@@ -27,7 +27,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["spawn yaw unread", "spawn.js", "yaw: Number.isFinite(sp.yaw) ? sp.yaw : 0,", "yaw: 0,", ["K8"]],
   ["visitors may arrive only at @world.spawn", "spawn.js", "return !all.length || all.some(", "return !all.length || all.slice(0, 1).some(", ["K8"]],
   ["riding bodies fall out too", "spawn.js", "return !riding && !!B", "return !!B", ["K9"]],
-  ["a fall isn't on the record as an arrival", "protocol/authority/bodyverbs.js", "const act = me || fell ?", "const act = me ?", ["K9"]],
+  ["the fall is the client's word", "protocol/authority/bodyverbs.js", "if (fell && B && !(me && me.at[1] < B.min[1] + TRACK.cap))", "if (false)", ["K13"]],
+  ["a fall loses its reason on the record", "protocol/authority/bodyverbs.js", "...(fell ? { reason: FELL } : {})", "", ["K9"]],
+  ["a flat terrain is noise to the height law", "terrainmath.js", "if (typeof P.flat === 'number') { const h = P.flat; return () => h; }", "", ["K12"]],
+  ["a flat terrain takes noise fields", "protocol/authority/checks.js", "if (extra.length) refuse(", "if (false) refuse(", ["K12"]],
   ["the gradient's bottom isn't the horizon", "zone.js", "bottom: rgb(g.bottom) ? [...g.bottom] : [...g.horizon]", "bottom: rgb(g.bottom) ? [...g.bottom] : [0, 0, 0]", ["K10"]],
   ["CONTROL (no-op: must stay green)", "climb.js", "// shared/climb.js — a climb route", "//  shared/climb.js — a climb route", []],
 ];
@@ -173,7 +176,7 @@ await C("K8", "arrivals: @world.spawn's yaw read; with spawn-points, @world.spaw
   return [def?.id === "@world" && def.yaw === 1.25 && red?.id === "red-gate" && Math.abs(red.yaw - -0.5) < 1e-9 && atRed.ok && atNone.refused?.code === "spawn" && first?.id === "blue-gate" && Math.abs(first.yaw - 2) < 1e-9,
     { def, red, atRed: show(atRed), atNone: show(atNone), first }]; });
 
-await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason, even as an arrival; elsewhere, without bounds, or without teleport, refused", () => {
+await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason; elsewhere, without bounds, or without teleport, refused", () => {
   if (SP.__missing) return [false, SP.__missing];
   const s = session();
   s.call("delete", { id: "@world", component: "bounds" });   // the lab's world comes bounded
@@ -181,10 +184,12 @@ await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or c
   s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
   s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
   const st = s.st(), fell = SP.belowWorld(st, [0, -11, 0]), riding = SP.belowWorld(st, [0, -11, 0], { riding: true }), above = SP.belowWorld(st, [0, -9, 0]);
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -20 } });   // ground below the bounds: a body can stand where it has fallen
+  s.call("move", { to: [0, 0, 8] }, "vic"); for (const y of [-3.5, -7, -10.5]) s.call("move", { to: [0, y, 8] }, "vic");
+  const away = s.call("move", { to: [30, 0, 30], teleport: true, reason: "below-bounds" }, "vic");
   const before = s.log().length;
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
   const acts = s.log().slice(before).filter((e: any) => e.kind === "act" && e.verb === "move");
-  const away = s.call("move", { to: [30, 0, 30], teleport: true, reason: "below-bounds" }, "vic");
   const bare = s.call("move", { to: [0, 0, 8], reason: "below-bounds" }, "vic");
   return [fell && !riding && !above && back.ok && acts.length === 1 && acts[0].body?.request?.reason === "below-bounds" && acts[0].body?.request?.teleport === true
     && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
@@ -207,5 +212,28 @@ await C("K11", "a pose's climb {host, progress} rides the wire as sent (rounded 
   if (PC.__missing || CL.__missing) return [false, PC.__missing ?? CL.__missing];
   const ok = PC.sanePose({ p: [0, 1, 0], climb: { host: "ladder", progress: 1.23456 } }), bad = PC.sanePose({ p: [0, 1, 0], climb: { host: "", progress: -1 } }), nan = PC.sanePose({ p: [0, 1, 0], climb: { host: "x", progress: "far" } });
   return [JSON.stringify(ok?.climb) === JSON.stringify({ host: "ladder", progress: 1.235 }) && bad && !("climb" in bad) && nan && !("climb" in nan), { ok, bad, nan }]; });
+
+await C("K12", "floor = terrain: @world.terrain {kind: 'flat', height} is the ground (groundOf, supportBelow, the walker's floor) at its height, below 0 too; noise fields, features or a heightmap on it are refused; no terrain stands at 0", () => {
+  const TM = imp("shared/terrainmath.js"), SPx = import(TREE + "shared/protocol/authority/spatial.js");
+  return Promise.all([TM, SPx]).then(([tm, sp]) => {
+    const s = session();
+    const none = sp.groundOf(s.st()).height(3, 4);
+    const good = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -260 } });
+    const st = s.st(), t = st.entities["@world"].c.terrain, G = sp.groundOf(st), under = sp.supportBelow(st, 300, -300, -200);
+    const law = tm.makeHeightField?.(tm.terrainParams?.(t));
+    const feat = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: 0, features: [{ type: "hill", x: 0, z: 0, radius: 4, height: 2 }] } });
+    const noisy = s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: 0, amplitude: 3 } });
+    return [none === 0 && good.ok && JSON.stringify(t) === JSON.stringify({ kind: "flat", height: -260 }) && G.height(300, -300) === -260 && G.height(-9, 77) === -260 && under.id === "ground" && under.y === -260
+      && law?.(12, -40) === -260 && !feat.ok && !noisy.ok, { none, good: show(good), t, G: G.height(300, -300), under, law: law?.(12, -40), feat: show(feat), noisy: show(noisy) }]; }); });
+
+await C("K13", "KillZ is the authority's to judge: a below-bounds respawn from a body whose last known position is above @world.bounds.min.y (beyond a step's slack) is refused, saying so; an unplaced body has no position to have fallen from", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -20 } });
+  const fresh = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
+  s.call("move", { to: [0, 0, 8] }, "vic"); s.call("move", { to: [0, -3, 8] }, "vic");
+  const above = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
+  return [fresh.refused?.code === "doesnt-apply" && above.refused?.code === "doesnt-apply" && /above|isn't below/.test(above.refused?.reason ?? ""), { fresh: show(fresh), above: show(above) }]; });
 
 console.log(`[climb-env-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

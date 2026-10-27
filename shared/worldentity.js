@@ -25,7 +25,7 @@ import { WEATHERS, CLOUDS, hoursAt, ratedHoursAt, effectiveSky } from './forecas
 import { terrainArgs, grassArgs, groundChoice, paletteDefaults } from './grounddefs.js';
 import { fieldAt, parseEntry, limitsOf } from './editschema.js';
 import { TRUSTED } from './drafts.js';
-import { COMPONENTS as SPEC } from './protocol/componentspec.js';
+import { COMPONENTS as SPEC, materialize } from './protocol/componentspec.js';
 
 export const WORLD_ID = '@world';
 export const isWorldId = (id) => id === WORLD_ID;
@@ -216,8 +216,8 @@ export function worldSchema(st, live = {}) {
   const t = isBag(terrain) ? terrain : null;
   const lc = Array.isArray(t?.layers) ? t.layers[0]?.color : null; const layerColor = Number.isInteger(lc) ? lc : colorInt(lc);   // an int (shape audit 10-16), or an older hex string
   // hard limits and units are the registry's (componentspec terrain / grass, through limitsOf); the slider's soft ends are this card's
-  const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k), TD = SPEC.terrain.defaults;
-  const terrainFields = t ? [
+  const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k), TD = materialize('terrain', { kind: 'noise' }).value;
+  const terrainFields = t?.kind === 'flat' ? [{ t: 'info', label: 'flat ground', value: `level at ${t.height ?? 0} m` }] : t ? [
     // an absent number is the sim's (componentspec terrain defaults = shared/terrainmath.js), never this card's own
     { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
     { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...ro },

@@ -2148,21 +2148,40 @@
    "segments": "int",
    "layers": "array",
    "features": "array",
-   "heightmap": "object"
+   "heightmap": "object",
+   "height": "number"
   },
   "defaults": {
-   "kind": "noise",
-   "seed": 1,
-   "size": 80,
-   "amplitude": 3,
-   "octaves": 4,
-   "frequency": 2.5,
-   "flatRadius": 0,
-   "flatHeight": 0
+   "kind": "noise"
   },
+  "when": [
+   {
+    "if": {
+     "kind": "noise"
+    },
+    "set": {
+     "seed": 1,
+     "size": 80,
+     "amplitude": 3,
+     "octaves": 4,
+     "frequency": 2.5,
+     "flatRadius": 0,
+     "flatHeight": 0
+    }
+   },
+   {
+    "if": {
+     "kind": "flat"
+    },
+    "set": {
+     "height": 0
+    }
+   }
+  ],
   "enums": {
    "kind": [
-    "noise"
+    "noise",
+    "flat"
    ]
   },
   "ranges": {
@@ -2195,9 +2214,14 @@
    },
    "layers": {
     "maxItems": 8
+   },
+   "height": {
+    "min": -10000,
+    "max": 10000
    }
   },
   "absentMeans": {
+   "height": "on a flat ground 0 m (written at write); a noise ground has none",
    "features": "no placed shapes: the base alone is the ground",
    "heightmap": "no image: the noise is the base",
    "segments": "the renderer's own mesh resolution (a drawing choice, not part of the height law)",
@@ -2205,7 +2229,8 @@
    "law": "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
   },
   "docs": {
-   "kind": "the base's kind: noise (a raster kind is reserved)",
+   "kind": "the base's kind: noise, or flat (level ground at height; a raster kind is reserved)",
+   "height": "a flat ground's height, metres (kind flat only)",
    "seed": "the noise seed",
    "size": "the ground's size, metres",
    "amplitude": "its relief: how high the ground rises, metres",
@@ -2222,7 +2247,8 @@
    "size": "m",
    "amplitude": "m",
    "flatRadius": "m",
-   "flatHeight": "m"
+   "flatHeight": "m",
+   "height": "m"
   },
   "on": "world",
   "reservedKinds": [

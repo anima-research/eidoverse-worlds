@@ -17,7 +17,8 @@
 //   IM-I7   lines of the old log that don't parse are counted, in the report and in the result
 //   IM-I15  a deferred feature removed on the old server (comp null, or the thing removed) no longer refuses
 //   IM-C1/2 main #248's collision toggle → collider.enabled; its climb routes → climb children (the rest imported, listed)
-//   IM-E1   main #248's environment → @world.spawn/bounds/sky.gradient + floor, sun and particles things; the rest imported, listed
+//   IM-E1   main #248's environment → @world.spawn/bounds/sky.gradient/terrain (flat at the floor) + sun and particles things; the rest imported, listed
+//   IM-E2   a floor where the world already has a terrain: the terrain kept, the floor listed as the conflict
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
 //   IM-I37  a seat's yaw is read as the renderer read it (coerced); a yaw that can't turn is carried
 //   IM-I13  a caption deed is a place in its screen's captioners; a stale or timed one stays carried
@@ -286,22 +287,29 @@ row("IM-E1", () => {
   const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "land", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "land", type: "environment", data: env } },
     { actor: "Ann", verb: "spawn", args: { id: "zz", lib: "t.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "zz", type: "environment", data: { spawn: [1, 2, 3] } } }]);
   const r = TV1.translate(L), T = r.final.translated, W = T["@world"];
-  const floor = T[TV1.envChildId("land", "floor")], sun = T[TV1.envChildId("land", "sun")], fx = T[TV1.envChildId("land", "particles")], sp2 = T[TV1.envChildId("zz", "spawn")];
+  const floorKid = T[TV1.envChildId("land", "floor")], sun = T[TV1.envChildId("land", "sun")], fx = T[TV1.envChildId("land", "particles")], sp2 = T[TV1.envChildId("zz", "spawn")];
   const lin = (h: number) => [16, 8, 0].map((k) => { const x = ((h >> k) & 255) / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; });
   const near = (a: number[], b: number[]) => a?.length === b.length && a.every((x, i) => Math.abs(x - b[i]) < 1e-5);
-  const top = floor ? floor.transform.pos[1] + floor.mesh.size[1] * floor.transform.scale[1] : NaN;
   const toward = sun ? (() => { const [x, y, z, w] = sun.transform.q; return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]; })() : [];
   const d = Math.hypot(0.4, 0.8, 0.2);
   ok(r.stats.divergences === 0 && JSON.stringify(W.spawn) === JSON.stringify({ pos: [-29, -25, 89] }) && JSON.stringify(W.bounds) === JSON.stringify(env.bounds)
     && near(W.sky?.gradient?.top, lin(0x338ac1)) && near(W.sky?.gradient?.horizon, lin(0xbedce6)) && W.sky.gradient.bottom === undefined
-    && floor?.hidden === true && floor.mesh?.shape === "box" && Math.abs(top - -260) < 1e-9 && floor.transform.scale[0] * 200 === 1600 && !floor.parent
+    && JSON.stringify(W.terrain) === JSON.stringify({ kind: "flat", height: -260 }) && floorKid === undefined && !Object.values(T).some((c: any) => c?.label === "floor")
     && sun?.light?.kind === "directional" && sun.light.color === 0xfff4df && sun.light.intensity === 3 && near(toward, [0.4 / d, 0.8 / d, 0.2 / d])
     && fx?.parent?.to === "land" && JSON.stringify(fx.particles) === JSON.stringify({ effect: "dust", params: { count: 600, size: 0.018, area: 8 } })
     && sp2?.["spawn-point"] && JSON.stringify(sp2.transform.pos) === "[1,2,3]" && !("environment" in T.land) && !Object.keys(T.land).some((k) => /^[^:]*\/environment/.test(k))
     && JSON.stringify(T.land["imported:environment"]) === JSON.stringify({ sky: { ambient: 1.5 }, particles: { count: 1400, range: 16, color: "#aec8b4" }, fogDensity: 0.2 })
     && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "environment")?.fields) === JSON.stringify(["sky.ambient", "particles.count, particles.range, particles.color", "fogDensity"]),
-    "IM-E1 environment: spawn → @world.spawn (a second one a spawn-point thing), bounds → @world.bounds, floor → a hidden mesh box whose top is the floor, as wide as the bounds, sky → @world.sky.gradient (linear) + a directional sun thing (main's defaults), particles → a dust child; ambient, clamped particle values and unknown keys ride imported:environment, each listed in the report",
-    { W: { spawn: W.spawn, bounds: W.bounds, sky: W.sky }, floor, sun, fx, sp2, land: T.land, unmapped: r.stats.unmapped });
+    "IM-E1 environment: spawn → @world.spawn (a second one a spawn-point thing), bounds → @world.bounds, floor → @world.terrain {kind: 'flat', height: floor} (no floor thing), sky → @world.sky.gradient (linear) + a directional sun thing (main's defaults), particles → a dust child; ambient, clamped particle values and unknown keys ride imported:environment, each listed in the report",
+    { W: { spawn: W.spawn, bounds: W.bounds, sky: W.sky, terrain: W.terrain }, floorKid, sun, fx, sp2, land: T.land, unmapped: r.stats.unmapped });
+});
+row("IM-E2", () => {
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "terrain", args: { seed: 7, amplitude: 2 } }, { actor: "Ann", verb: "spawn", args: { id: "land", lib: "t.glb", pos: [0, 0, 0] } },
+    { actor: "Ann", verb: "comp", args: { id: "land", type: "environment", data: { floor: -40 } } }]);
+  const r = TV1.translate(L), T = r.final.translated, W = T["@world"];
+  ok(W.terrain?.seed === 7 && W.terrain.kind !== "flat" && T.land?.["imported:environment"]?.floor === -40
+    && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "environment")?.fields) === JSON.stringify(["floor (the world already has a terrain)"]),
+    "IM-E2 a floor in a world that already has a terrain: the terrain is kept, the floor rides imported:environment and the report lists the conflict under unmapped", { terrain: W.terrain, land: T.land, unmapped: r.stats.unmapped });
 });
 const ZN = await import("../../shared/zone.js");
 row("IM-W4", () => {

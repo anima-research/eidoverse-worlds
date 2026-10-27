@@ -280,7 +280,7 @@ export const DEFERRED = {
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
-  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds, floor → a hidden mesh box thing, sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
+  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds, floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const envChildId = (host, part) => `${part}-${sha256(`eido-environment\0${host}\0${part}`).slice(0, 26)}`;
@@ -303,8 +303,8 @@ const hexInt = (c, d) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? p
 // the rotation taking +Z to unit d (the sun stands along its light's +Z: it shines along its -Z)
 function qZTo(d) { const n = Math.hypot(...d); if (!(n > 0)) return [0, 0, 0, 1]; const [x, y, z] = d.map((v) => v / n);
   if (z < -1 + 1e-9) return [0, 1, 0, 0]; const w = 1 + z, q = [-y, x, 0, w], m = Math.hypot(...q); return q.map((v) => +(v / m).toFixed(9)); }
-/** main's environment {floor, spawn, bounds, sky, particles, …} on `host` → {world: {spawn?, bounds?, sky?}, things, left (no home:
- *  imported:environment), fields (what went where, for the report)}. `has`: what @world already holds (spawn, bounds). Main's own
+/** main's environment {floor, spawn, bounds, sky, particles, …} on `host` → {world: {spawn?, bounds?, sky?, terrain?}, things, left (no home:
+ *  imported:environment), fields (what went where, for the report)}. `has`: what @world already holds (spawn, bounds, terrain). Main's own
  *  readings (watervolumes.js) are the defaults: a sky lights a sun at [0.4, 0.8, 0.2], #fff4df, 3. */
 export function environmentPartsOf(host, env, has = {}) {
   const world = {}, things = [], left = {}, fields = [];
@@ -315,9 +315,9 @@ export function environmentPartsOf(host, env, has = {}) {
   if (v3(spawn) && !has.spawn) { world.spawn = { pos: [...spawn] }; fields.push(["spawn", "@world.spawn"]); }
   else if (v3(spawn)) { const id = envChildId(host, "spawn"); things.push([id, { transform: ID_POSE([...spawn]), label: "arrival", "spawn-point": {} }]); fields.push(["spawn", id]); }
   else if (spawn !== undefined) { left.spawn = spawn; fields.push(["spawn", null]); }
-  if (Number.isFinite(floor)) { const id = envChildId(host, "floor"), lo = B ? B.min : [-1000, 0, -1000], hi = B ? B.max : [1000, 0, 1000], w = [hi[0] - lo[0], hi[2] - lo[2]];
-    things.push([id, { transform: { pos: [(lo[0] + hi[0]) / 2, floor - 1, (lo[2] + hi[2]) / 2], q: [0, 0, 0, 1], scale: [Math.min(1e3, w[0] / 200), 1, Math.min(1e3, w[1] / 200)] }, mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, label: "floor" }]); fields.push(["floor", id]); }
-  else if (floor !== undefined) { left.floor = floor; fields.push(["floor", null]); }
+  // the floor is the ground: a flat terrain at its height; a world that already has a terrain keeps it, the floor listed as the conflict
+  if (Number.isFinite(floor) && !has.terrain) { world.terrain = { kind: "flat", height: Math.min(1e4, Math.max(-1e4, floor)) }; fields.push(["floor", "@world.terrain"]); }
+  else if (floor !== undefined) { left.floor = floor; fields.push([Number.isFinite(floor) ? "floor (the world already has a terrain)" : "floor", null]); }
   if (sky && typeof sky === "object" && !Array.isArray(sky)) { const { horizon, zenith, sunColor, sunIntensity, sunDirection, ...skyRest } = sky;
     world.sky = { gradient: { top: srgbLin(zenith, 0x3686b8), horizon: srgbLin(horizon, 0xb8d4e0) } }; fields.push(["sky.horizon, sky.zenith", "@world.sky.gradient"]);
     const id = envChildId(host, "sun"), dir = v3(sunDirection) && Math.hypot(...sunDirection) > 0 ? sunDirection : [0.4, 0.8, 0.2];
@@ -338,9 +338,9 @@ export function environmentPartsOf(host, env, has = {}) {
 /** Every environment in a v1 state, in id order, as project() places it: [{id (as written), host, parts}]. The first one's spawn
  *  and bounds go to @world; a later one's spawn is a spawn-point and its bounds ride imported:environment. */
 export function environmentPlan(st) {
-  const out = [], has = {};
+  const out = [], has = { terrain: st?.terrain != null };
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const env = st.entities[id]?.comp?.environment; if (env == null) continue;
-    const parts = environmentPartsOf(enc(id), env, { ...has }); if (parts.world.spawn) has.spawn = true; if (parts.world.bounds) has.bounds = true;
+    const parts = environmentPartsOf(enc(id), env, { ...has }); if (parts.world.spawn) has.spawn = true; if (parts.world.bounds) has.bounds = true; if (parts.world.terrain) has.terrain = true;
     out.push({ id, host: enc(id), parts }); }
   return out;
 }
@@ -632,7 +632,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   for (const [k, v] of Object.entries(st)) if (!known.has(k) && v != null) w[keyed("imported", k)] = v;
   // main #248's environment: its world fields, its things, and what has no home on its host (environmentPlan)
   for (const { host, parts } of environmentPlan(st)) {
-    if (parts.world.spawn) w.spawn = parts.world.spawn; if (parts.world.bounds) w.bounds = parts.world.bounds;
+    if (parts.world.spawn) w.spawn = parts.world.spawn; if (parts.world.bounds) w.bounds = parts.world.bounds; if (parts.world.terrain) w.terrain = parts.world.terrain;
     if (parts.world.sky) w.sky = { ...(w.sky && typeof w.sky === "object" ? w.sky : {}), ...parts.world.sky };
     for (const [cid, cc] of parts.things) out[cid] = shapeRepaired(cc);
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }

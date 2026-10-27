@@ -59,6 +59,9 @@ const EMBODIED_VERBS = {
     const fell = a.reason !== undefined;
     if (fell && (a.reason !== FELL || a.teleport !== true)) refuse("shape", `move's reason is '${FELL}', with teleport: true (a body that fell below the world's bounds, sent back to an arrival place)`, `move {to: <a spawn>, teleport: true, reason: '${FELL}'}`);
     if (fell && !B) refuse("out-of-bounds", "this world has no bounds to fall out of", "teleport without a reason");
+    // the authority judges the fall from where it last knew the body (one step's slack: the most a body moves between its moves)
+    if (fell && B && !(me && me.at[1] < B.min[1] + TRACK.cap)) refuse("doesnt-apply", me ? `your body was last at y ${r3(me.at[1])}, which isn't below this world's floor of bounds (y ${B.min[1]}): it hasn't fallen out` : "your body isn't in the world yet: it has nowhere to have fallen from",
+      "arrive or teleport without a reason; below-bounds is for a body that fell under @world.bounds.min.y");
     if (fell && occupantOf(w, st, actor)) refuse("doesnt-apply", "a seated body rides its seat: it doesn't fall out of the world", "stand up first");
     if (fell && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
@@ -72,7 +75,7 @@ const EMBODIED_VERBS = {
       // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
-      const act = me || fell ? w.append(actOf(w, actor, "move", { teleport: true, ...(fell ? { reason: FELL } : {}) })) : undefined;   // a fall is on the record even as an arrival
+      const act = me ? w.append(actOf(w, actor, "move", { teleport: true, ...(fell ? { reason: FELL } : {}) })) : undefined;   // a fall is on the record with its reason
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftOccupied(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }

@@ -35,7 +35,7 @@
 // A particle Essential's name and a grass preset's name are stored as written (R 10-17): nothing rewrites them to an address.
 import { grassAtWrite } from "./assetref.js";
 import { eidoHex } from "../eido.js";
-import { COMPONENTS } from "./componentspec.js";
+import { COMPONENTS, materialize } from "./componentspec.js";
 import { partSlot, motionType } from "./names.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
@@ -141,7 +141,7 @@ export function repairWorld(c0) {
   if (bag(c.sky)) { const sky = withSkyDefaults(repairSky(c.sky)); if (JSON.stringify(sky) !== JSON.stringify(c.sky)) put("sky", sky); }   // the old readers' readings of absence ARE the registry's defaults (hours 12, azimuth 180° = π, …)
   if (bag(c.terrain)) { let t = c.terrain; const edit = () => (t === c.terrain ? (t = { ...c.terrain }) : t);
     if (Array.isArray(t.layers) && t.layers.some((l) => bag(l) && typeof l.color === "string" && HEXC.test(l.color))) { edit(); t.layers = t.layers.map((l) => (bag(l) ? { ...l, color: hexInt(l.color) } : l)); }
-    if (t.kind === undefined || t.kind === "noise") for (const [k, v] of Object.entries(COMPONENTS.terrain.defaults)) if (t[k] === undefined) { edit(); t[k] = v; }
+    if (t.kind === undefined || t.kind === "noise") for (const [k, v] of Object.entries(materialize("terrain", { kind: "noise" }).value)) if (t[k] === undefined) { edit(); t[k] = v; }
     if ("water" in t) { edit(); const w = t.water; delete t.water;
       if (bag(w) && !bag(c.water)) put("water", Object.fromEntries(Object.entries(w).map(([k, v]) => [k, k === "color" ? hexInt(v) : v]))); }
     if (t !== c.terrain) put("terrain", t); }
