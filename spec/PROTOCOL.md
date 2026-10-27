@@ -329,9 +329,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   on the seat only; one helm per hull, on a hull with drive). Taking the helm (`use … drive`; `station.who` and the lock
   gate it) leases the hull to its occupant (Roblox network ownership): their client steps it kinematically and sends
   `drive {id, pos, q}` (presence, relayed only from the helm); the authority checks each step against the spec (with
-  slack) and the hull's own collider against what's solid, answering a refusal with the pose that stands. Only the last
-  accepted pose is written, as the system's act `drive-commit {id, driver, why}`: on getting up, every 5 s, and when the
-  steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). A passenger can't take a held helm.
+  slack) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
+  answering a refusal with the pose that stands. Only the last accepted pose is written, as the system's act
+  `drive-commit {id, driver, carried, why}` (`carried`: the passengers' ids): on getting up, every 5 s, when a passenger
+  gets up (`alight`) and when the steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). Sitting
+  is consent to ride (Roblox VehicleSeat, VRChat stations): a passenger may get up or leave at any time, never blocked by
+  the hull's motion. A passenger can't take a held helm.
 - **Arrivals and falling out** (shared/spawn.js): `@world.spawn` gains `yaw`;
   `spawn-point {title?, team?, group?}` on a thing is another arrival place
   (OMI_spawn_point), facing its rotation. The arrival taken: `@world.spawn` when

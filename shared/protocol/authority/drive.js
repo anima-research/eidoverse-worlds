@@ -58,14 +58,17 @@ function liveLease(w, st, host) {
   endLease(w, st, host, "exit"); return null;
 }
 
-/** Commit the lease's last accepted pose (when it differs from the log's) as the system's act `drive-commit {id, driver, why}`. */
+/** Who rides `host` besides its driver: the bodies seated on its family's sockets (sitting is consent to ride: Roblox VehicleSeat). */
+const carriedBy = (w, st, host, driver) => { const fam = familyOf(st, host);
+  return Object.keys(w.presence.occupants ?? {}).filter((who) => who !== driver && fam.has(occupantOf(w, st, who)?.to)).sort(); };
+/** Commit the lease's last accepted pose (when it differs from the log's) as the system's act `drive-commit {id, driver, carried, why}`. */
 function commitLease(w, st, host, why) {
   const L = leases(w)[host], e = st.entities[host]; if (!L || !e) return false;
   L.committed = paceOf(w);
   const t = { ...(e.c.transform ?? {}), pos: L.pose.pos.map(r3), q: qr3(L.pose.q) };
   if (JSON.stringify(t.pos) === JSON.stringify(e.c.transform?.pos) && JSON.stringify(t.q) === JSON.stringify(e.c.transform?.q)) return false;
   const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: [host], comps: ["transform"] } }, [setOp(host, "transform", t)]);
-  changeEntry(w, plan, w.append(actEntry(w, "system", "drive-commit", { id: host, driver: L.by, why })));
+  changeEntry(w, plan, w.append(actEntry(w, "system", "drive-commit", { id: host, driver: L.by, carried: carriedBy(w, st, host, L.by), why })));
   return true;
 }
 /** End the lease: commit, then free the helm (its driver let go); passengers keep their seats. */
@@ -75,8 +78,14 @@ function endLease(w, st, host, why, free = true) {
     delete leases(w)[host]; w.presenceDirty = true;
     const helm = helmOf(st, host); if (free && helm && occupantOf(w, st, L.by)?.to === helm) clearOccupant(w, L.by); }
 }
-/** The driver `who` stood up or left: their lease ends and commits; the caller lets them off the seat (bodyverbs' stand-up, leave). */
-export function endDrivesBy(w, st, who) { for (const [host, L] of Object.entries(leases(w))) if (L.by === who) endLease(w, st, host, "exit", false); }
+/** `who` stood up or left: a driver's lease ends and commits; a passenger's hull commits (why alight), so their step off is
+ *  measured from the seat where it is now (drive-check D12). The caller lets them off the seat (bodyverbs' stand-up, leave). */
+export function endDrivesBy(w, st, who) {
+  const seat = occupantOf(w, st, who)?.to;
+  for (const [host, L] of Object.entries(leases(w))) {
+    if (L.by === who) endLease(w, st, host, "exit", false);
+    else if (seat && familyOf(st, host).has(seat)) { commitLease(w, st, host, "alight"); st = w.state(); } }
+}
 
 /** The beat (server: the physics heartbeat): a lease whose stream stopped ends; a held one commits every LEASE.commitMs. */
 export function drives(w) {

@@ -27,6 +27,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no periodic commit on the beat", "protocol/authority/drive.js", "else if (now - L.committed >= LEASE.commitMs) commitLease(", "else if (false) commitLease(", ["D8"]],
   ["only the end pose is tested", "protocol/authority/drive.js", "Math.max(1, Math.ceil(sweep / small))", "1", ["D10"]],
   ["what it was in never blocks", "protocol/authority/drive.js", "if (!prev.has(k) || d > prev.get(k) + 1e-4) return k;", "if (!prev.has(k)) return k;", ["D11"]],
+  ["commits carry no one", "protocol/authority/drive.js", "carried: carriedBy(w, st, host, L.by),", "carried: [],", ["D12"]],
+  ["a passenger's stand-up commits nothing", "protocol/authority/drive.js", "else if (seat && familyOf(st, host).has(seat))", "else if (false)", ["D12"]],
   ["a locked hull drives", "protocol/authority/drive.js", "if (lock) refuse(", "if (false) refuse(", ["D9"]],
   ["two helms taken", "protocol/authority/sockets.js", "if (helms.length > 1) return", "if (false) return", ["D1"]],
   ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
@@ -191,5 +193,19 @@ await C("D11", "a hull already inside a slab may only move out: a step deeper is
   const deeper = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic");
   const out = s.call("drive", { id: "hull", pos: [0, 1, -1], q: [0, 0, 0, 1] }, "vic");
   return [deeper.refused?.code === "solid" && deeper.refused.blocker === "slab" && out.ok, { deeper: show(deeper), out: show(out)}]; });
+
+await C("D12", "sitting is consent to ride, on the record: every drive-commit names its driver and the passengers it carried (body.carried); a passenger's own stand-up mid-drive is taken (the hull commits first, why alight, so the step is measured from the seat where it is), as is their leave", () => {
+  const s = session(); s.board("vic"); s.board("pat", "sit");
+  for (const z of [3, 6, 9]) s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic");
+  s.sweep(1000); s.sweep(3000); const lost = commits(s).at(-1)?.body;
+  const t = session(); t.board("vic"); t.board("pat", "sit");
+  for (const z of [3, 6]) t.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic");
+  const up = t.call("move", { to: [1.8, 1.5, 4.5] }, "pat"), alight = commits(t).at(-1)?.body;
+  t.call("drive", { id: "hull", pos: [0, 1, 9], q: [0, 0, 0, 1] }, "vic"); t.call("move", { to: [1.8, 1.5, 9] }, "vic"); const exit = commits(t).at(-1)?.body;
+  const u = session(); u.board("vic"); u.board("pat", "sit");
+  for (const z of [3, 6]) u.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic");
+  const gone = u.call("leave", {}, "pat");
+  return [lost?.driver === "vic" && JSON.stringify(lost?.carried) === '["pat"]' && up.ok && alight?.why === "alight" && JSON.stringify(alight?.carried) === '["pat"]'
+    && exit?.why === "exit" && JSON.stringify(exit?.carried) === "[]" && gone.ok, { lost, up: show(up), alight, exit, gone: show(gone) }]; });
 
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
