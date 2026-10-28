@@ -5,7 +5,7 @@ import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writer
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, directoryFor, isMinted } from "../../server/directory.ts";
+import { directoryAt, directoryFor, isMinted, accountTag } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../../server/livehost.ts";
@@ -43,8 +43,9 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const first = again.spectatorName(long, "human:discord:555", max), firstFree = free(first);
   again.resolve({ sub: "human:discord:666", name: first });   // another account now wears that first candidate
   const second = again.spectatorName(long, "human:discord:555", max), own = again.spectatorName("Zed", "human:discord:555", max);
-  ok(firstFree && free(second) && second !== first && own === "Zed" && first.endsWith("-d555") && second.endsWith("-d5552"),
-    "D12 a spectator's name is the typed one unless another account wears it; otherwise a name that keeps its account's tag (-d555), fits the limit and no other account wears", { first, second, own }); }
+  const tag = accountTag("human:discord:555");
+  ok(firstFree && free(second) && second !== first && own === "Zed" && first.endsWith(`-${tag}`) && second.endsWith(`-${tag}2`) && !/555/.test(tag),
+    "D12 a spectator's name is the typed one unless another account wears it; otherwise a name that keeps its account's tag (a hash: none of the account's digits), fits the limit and no other account wears", { first, second, own, tag }); }
 
 // ---- I: the authority with directory ids (R2: a role is held by an id, never by a name) ----
 { let T = 1800000000000; const d = directoryAt(file);

@@ -30,6 +30,8 @@ export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
 /** The account shapes above; a stored account outside them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
+/** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
+export const accountTag = (sub: string) => crypto.createHash("sha256").update(`eidoverse-name-tag:${sub}`).digest("hex").slice(0, 4);
 
 /** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
  *  server-wide ids). */
@@ -114,11 +116,11 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     claimedName(name: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
     claimedByOther,
     /** The name a spectator's account takes on first sight: the typed name, unless another account wears it; then the
-     *  typed name with a tag from the account (`-` and its last four letters or digits), the name cut so the tag always
+     *  typed name with the account's tag (`-` and accountTag), the name cut so the tag always
      *  fits in `max`, and a number after the tag until no other account wears the result (review of #260, server I42). */
     spectatorName(name: string, sub: string, max: number): string {
       if (!claimedByOther(name, sub)) return name;
-      const tag = sub.replace(/[^a-z0-9]/gi, "").slice(-4) || "2";
+      const tag = accountTag(sub);
       for (let k = 1; ; k++) { const suffix = k === 1 ? tag : `${tag}${k}`; const n = `${name.slice(0, Math.max(0, max - suffix.length - 1))}-${suffix}`;
         if (!claimedByOther(n, sub)) return n; }
     },

@@ -335,8 +335,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
   await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });   // the spectator's record is written
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
-  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith("-cher") && seen.toLowerCase() !== LONG.toLowerCase(),
-    "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (-cher), within the limit, never the other account's name",
+  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
+    "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
     { joins: [jb.errors, jw.errors], theirs, seen });
   body.close(); watch.close(); op.close(); try { s.proc.kill(); } catch {} await sleep(300); fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
