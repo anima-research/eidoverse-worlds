@@ -184,30 +184,21 @@ ban → world ban → operator → credential narrowing → the ladder.
 
 ## UX
 
-**World › 🔒 access** (`client/lib/accesspanel.js`), a tab in the world
-panel:
+**World Settings › People & roles › Who may come in** (`client/lib/rolespanels.js` paintAccess; its listed part is
+`client/lib/accesspanel.js`). On this protocol the panel reads `@world`'s access, default-role and roles:* from the
+page's own fold and edits them with ordinary `set`/`delete` requests; the authority judges each one (R 10-27):
 
-- **The door:** four buttons (open · visitors · watch only · members only),
-  the current one marked. Closing while unlisted people are present asks
-  twice and says how many will have to leave.
-- **Listed by name:** each member with role, "agent" / "here now" / time left,
-  a role select, a time select (no end · 1 hour · 1 day · 1 week; picking one
-  restarts it from now) and ✕ to remove. A by-name-only member in a closed
-  world is flagged with what to do.
-- **Add someone:** a search of identities that have signed in (owner-only,
-  `access-directory`). A pick is added *by subject*, so it binds to exactly
-  that person. If no match is found, "add by name" (for agents) explains that
-  a person needs to sign in once. Role and time apply to the add.
-- **Here now, not listed:** a button per verified person present, plus "add
-  all", so an owner can keep everyone before closing. A typed-name joiner's
-  button is disabled with the reason.
-- **Non-owners** see the door, their own standing and time left, and the
-  member list, with no controls.
-- Data comes from the server (`access-state`), re-asked after every grant
-  entry and presence change and repainted every 30 s for countdowns.
-  Refusals show inline and as toasts.
-- Driven end to end by `tools/access-panel-probe.mjs` (real browser,
-  18 checks).
+- **The door:** the four doors (open · public · watch only · invite-only) and the fields under them. Closing while
+  unlisted people are present asks first and says how many will have to leave.
+- **Listed here:** each `roles:<id>` grant with its role, "here now", time left and "you"; for whoever may change it
+  (an owner, or grantRoles over someone ranked below with a role below theirs) a role select, an end select (no end ·
+  1 hour · 1 day · 1 week, from now) and ✕.
+- **Add someone:** a name is looked up only among the people this world has seen (`whois`); anyone else is added by
+  their exact identity (u-…, which each person sees on this panel). No search of everyone who has signed in. Role and
+  time apply to the add.
+- **Here now, not listed:** a button per person present.
+- **Everyone else** sees the same facts with no controls. A refusal shows inline in the authority's words, and as a toast.
+- Driven end to end by `tools/protocol/access-panel-probe.ts` (the `access-panel` browser suite).
 
 **Browser chat** (owner-gated by the server):
 ```

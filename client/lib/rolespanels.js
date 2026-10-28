@@ -10,7 +10,7 @@
 //              place a role above another; holders under it; + Role; delete a held role by moving its people (one batch).
 //              Narrow (a phone, or the panel squeezed): one role at a time.
 //     Access   who can come in, what arrivals and guests are, how many at once; a warning when the default role holds
-//              moderation powers or generate.
+//              moderation powers or generate; then who is listed, and adding someone (accesspanel.js).
 //     World    capacity (entities, guests' entities together, largest avatar), physics on/off (R 10-14 14:13:
 //              "not being able to edit these things would annoy people"). Opening it writes NOTHING: the effective value
 //              (what is written, else this server's default as schema reports it) is shown grey; an edit sends ONLY the
@@ -23,6 +23,7 @@ import { net, sendRequest, replica, identities } from './net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, setDockEntry, toast } from './ui.js';
 import * as R from '../../shared/protocol/roles.js';
 import { DOORS, doorOf, doorWrites, leftWords, listedIn } from '../../shared/protocol/access.js';
+import { paintListed } from './accesspanel.js';
 import { serverNow, serverUntil } from './serverclock.js';   // straight from the clock: via remotes.js this closes an import cycle and the re-export is unbound at load
 import { COMPONENTS, resolveVersioned, rangeWords, outOfRange } from '../../shared/protocol/componentspec.js';
 import { SIM_ID } from '../../shared/sim.js';
@@ -244,6 +245,7 @@ function paintAccess(body) {
       else if (k === 'watch') { if (x.value) v.watch = x.value; else delete v.watch; }
       else { v[k] = x.value; if (k === 'join' && x.value !== 'listed') delete v.watch; }
       act('set', { id: '@world', component: 'access', value: v }, 'access').then(() => paintAccess(body)); } }; });
+  const listed = document.createElement('div'); listed.className = 'ap-listed'; body.append(listed); paintListed(listed);   // who is listed, and adding someone (accesspanel.js)
 }
 // World: the owner's dials over @world components that already exist (capacity, physics-engine).
 // The ONE hard rule: write only on an explicit edit, never on open, and only the field that changed: capacity is a policy

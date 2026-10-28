@@ -1149,11 +1149,6 @@ async function handle(msg, at) {
       bus.emit('roster');
       break;
 
-    case 'access-state':        // the world panel's 🔒 access tab (accesspanel.js)
-    case 'access-directory':
-      bus.emit(msg.type, msg);
-      break;
-
     case 'notice':
       // The world telling YOU something that is not a refusal — today, that
       // your access here ends soon. Toast (it matters now) and chat (so it is
