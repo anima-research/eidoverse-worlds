@@ -5,17 +5,18 @@ import { TRACK, tokensAfter } from "../../mover.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
-import { REACH, HAND_Y, MAX_HELD, KICK } from "../physconst.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BLAST } from "../physconst.js";
+import { blastArgs, falloff } from "../../blast.js";
 import { r3, noNeg0 } from "../round.js";
 import { unitTransform } from "../componentspec.js";
 import { UP } from "./ctx.js";
-import { refuse, said } from "./refuse.js";
+import { Refusal, refuse, said } from "./refuse.js";
 import { delOp, lockedC, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
 import { admits, lastSetterOf, lockStrength, may, roleOf } from "./rights.js";
 import { whoWords } from "../roles.js";
-import { BODY_VERBS, forgetReaches } from "./bodyconsent.js";
+import { BODY_VERBS, bodyGate, forgetReaches } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
@@ -313,10 +314,11 @@ const EMBODIED_VERBS = {
   // dynamic, physics.who, its locks and its ancestors', and nobody's hand. A thing in flight is caught and re-launched (logged).
   // `contact: true` is a moving body's push (shoveGate); `shove: true` is its old spelling, taken at the door and recorded
   // as `contact` (R 10-17 14:34: one word, `shove`, stays for knocking a BODY over). Both at once is no request.
-  punt(w, actor, a) {
+  // blast: {from, act} when a blast punts it (force, below): the line starts at the blast, no body or reach, one act for all
+  punt(w, actor, a, blast = null) {
     if (a.shove !== undefined) { if (a.contact !== undefined) refuse("shape", "contact, or its old spelling shove: not both", "send contact: true");
       a = { ...a, contact: a.shove }; delete a.shove; }
-    const me = body(w, actor); const st = w.state(); const e = st.entities[a.id];
+    const me = blast ? { at: blast.from } : body(w, actor); const st = w.state(); const e = st.entities[a.id];
     if (!e) refuse("not-found", `no '${a.id}'`, "look lists what's here", { didYouMean: guess(a.id, Object.keys(st.entities)) });
     notAThing(st, a.id, "punted"); offRefuse(st, a.id, "punted");
     const spec = flyingWorld(st);
@@ -332,7 +334,7 @@ const EMBODIED_VERBS = {
     const t = worldT(st, a.id); const here = flying ? b.p : t.pos;
     const dx = here[0] - me.at[0], dz = here[2] - me.at[2], dh = Math.hypot(dx, dz), dy = here[1] - me.at[1];
     if (a.contact !== undefined) shoveGate(w, st, me, a, flying, actor);
-    else if (dh > KICK.reach || dy < KICK.below || dy > KICK.above) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from where you stand${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
+    else if (!blast && (dh > KICK.reach || dy < KICK.below || dy > KICK.above)) refuse("out-of-reach", `${a.id} is ${r3(dh)} m from where you stand${dy > KICK.above ? `, ${r3(dy)} m up` : ""}; a punt reaches ${KICK.reach} m`, `move {to: [${r3(here[0] - (dh > 1e-6 ? dx / dh : 0) * 0.5)}, ${me.at[1]}, ${r3(here[2] - (dh > 1e-6 ? dz / dh : 1) * 0.5)}]} first`);
     let v;
     if (a.v !== undefined) { if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "punt's v is [x, y, z] in m/s", "e.g. v: [0, 2, 4]"); v = a.v.slice(); }
     else { const p = a.power ?? 4; if (!Number.isFinite(p) || p <= 0) refuse("shape", "power is a speed in m/s, above 0", "e.g. power: 4 (a hop), 10 (hard)");
@@ -343,10 +345,43 @@ const EMBODIED_VERBS = {
     // is the engine's (L6: no write may touch it in flight), so for a volley the gates above are the whole check.
     if (!flying) admit(w, st, { actor, cap: { kind: "handle", via: "punt", ids: [a.id], comps: ["transform", "parent"] } }, [...(e.c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: t.pos.map(r3), q: t.q, scale: t.scale })]);
     else rateCheck(w, actor);
-    const act = w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
+    const act = blast ? blast.act() : w.append(actOf(w, actor, "punt", a, { ...(flying ? { volley: true } : {}) }));
     if (flying) w.append({ kind: "sim", actor, cause: act, verb: "catch", body: { id: a.id } });
     const seq = w.append({ kind: "sim", actor, cause: act, verb: "launch", body: { id: a.id, p: here.map(noNeg0), yaw: flying && !b.q ? noNeg0(b.yaw) : qYaw(flying ? b.q : t.q), ...(ENGINES[sf.spec.engine]?.rotates ? { q: (flying ? b.q : t.q).slice(), ...(flying ? { w: b.w.slice() } : {}) } : {}), v: v.map(noNeg0), handled: [actor] } });
     return { ok: true, seq, act, flying: a.id, from: here.map(r3), v: v.map(r3), ...(flying ? { volley: true } : {}), ...(notes.length ? { notes } : {}), next: "wait (or any request) logs where it comes to rest" };
+  },
+  // a blast (R 10-28, /boom): each body in radius is shoved through its own consent (bodyGate, as the body verb), each loose
+  // thing gets the punt's radial launch from the centre (its own gates); one act. Builders and up. Falloff: shared/blast.js
+  force(w, actor, a) {
+    if (!Array.isArray(a.at) || a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "force needs at: [x, y, z]", `force {at: [x, y, z], radius?: ${BLAST.radius.min}–${BLAST.radius.max} m (${BLAST.radius.dflt}), power?: ${BLAST.power.min}–${BLAST.power.max} m/s (${BLAST.power.dflt})}`);
+    const st = w.state();
+    if (!admits(st, actor, "builder")) refuse("rights", `only ${whoWords("builder")} may set off a blast; you are ${roleOf(st, actor)}`, "ask a builder to, or the owner for a builder's role");
+    const { radius, power } = blastArgs(a.radius, a.power);
+    if (radius === null || power === null) refuse("shape", "radius and power are numbers", `radius ${BLAST.radius.min}–${BLAST.radius.max} m, power ${BLAST.power.min}–${BLAST.power.max} m/s`);
+    const notes = [["radius", radius], ["power", power]].filter(([k, v]) => a[k] !== undefined && a[k] !== v).map(([k, v]) => ({ field: k, sent: a[k], kept: v, why: `held to ${BLAST[k].min}–${BLAST[k].max}` }));
+    rateCheck(w, actor);
+    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, "force", a, { radius, power })));
+    // loose things: nearest first, at most BLAST.things; a refusal (held, locked, rights, occupied…) leaves that one be
+    const punted = [], skipped = [], sf = w.sim();
+    if (st.entities["@world"]?.c["physics-engine"]) {
+      const near = [];
+      for (const id of Object.keys(st.entities)) { if (st.entities[id].c.physics?.kind !== "dynamic") continue;
+        const b = sf.launched[id] ? sf.sim?.bodies[id] : null; const p = b && !b.resting ? b.p : worldT(st, id)?.pos;
+        const f = p && falloff(a.at, p, radius, power); if (f && f.mag >= BLAST.min) near.push([id, f]); }
+      near.sort((x, y) => x[1].d - y[1].d);
+      for (const [id, f] of near.slice(0, BLAST.things)) {
+        try { const r = EMBODIED_VERBS.punt(w, actor, { id, power: f.mag }, { from: a.at, act: actOnce }); punted.push({ id, v: r.v }); }
+        catch (x) { if (!(x instanceof Refusal)) throw x; skipped.push({ id, code: x.code }); } }
+    } else notes.push({ why: "this world runs no physics: things stay put" });
+    // bodies: presence, so only counted (who was shoved is theirs, never the log's)
+    const bodies = { shoved: 0, asked: 0, refused: 0 };
+    for (const [who, b] of Object.entries(w.presence.bodies)) {
+      const f = falloff(a.at, b.at, radius, power); if (!f || f.mag < BLAST.min) continue;
+      const m = Math.min(BLAST.body, f.mag);
+      const g = bodyGate(w, actor, who, "shove", { spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
+      if (!g.ok) bodies.refused++; else if (g.asked) bodies.asked++; else { g.deliver(); bodies.shoved++; } }
+    actOnce();
+    return { ok: true, act, at: a.at, radius, power, bodies, punted, ...(skipped.length ? { skipped } : {}), ...(notes.length ? { notes } : {}) };
   },
   // a holder who leaves: what they held is dropped (into the sim if there is one), attributed to them (orphans, 18a)
   leave(w, actor) {

@@ -705,7 +705,9 @@ copy that was updated and is published again keeps its parts' keys.
   track), recording who and when, never where from or to, and never what kind
   of client someone uses. Picking something up, putting it down, letting it
   go, throwing and punting are acts that record the request about the thing
-  and who handled it, never the body's position or hand: a put's change
+  and who handled it, never the body's position or hand (a blast, `force
+  {at, radius, power}`, records its request; the bodies it knocks over are
+  presence, never in the log; each thing it punts is a launch it caused): a put's change
   carries where the thing went, and a launch's `sim` entry where it left and
   how fast, which the engine needs. A release with velocity is a launch.
   Continuous contact from a body or a held thing gives no unlogged impulse

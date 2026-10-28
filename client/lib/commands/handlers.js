@@ -10,8 +10,8 @@
 
 import { CONFIG, bus, report } from '../base.js';
 import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
-import { CUSTOM_ID, isOwner } from '../../../shared/protocol/roles.js';
-import { DOORS, doorOf, doorWrites, durationMs, leftWords } from '../../../shared/protocol/access.js';
+import { CUSTOM_ID, isOwner, effectiveOf } from '../../../shared/protocol/roles.js';
+import { DOORS, doorOf, doorWrites, durationMs, leftWords, notADoor } from '../../../shared/protocol/access.js';
 import { actorName as actorLabel } from '../../../shared/protocol/names.js';
 /** This world's @world components, from this client's own fold (roles, access, the default role). */
 const worldComponents = () => replica.st?.entities?.['@world']?.c ?? {};
@@ -88,7 +88,9 @@ export async function lookupPerson(name) {
   const r = await sendRequest('whois', { name: id ?? name });
   return r?.ok ? r.people ?? [] : null;
 }
-const personLine = (p) => `${p.name}: ${p.role}${p.guest ? ' (a guest)' : ''}${typeof p.declares === 'string' ? ` (declares ${p.declares})` : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
+// +gen / +fly (SWEEP-3 N6): the generate and fly permissions someone holds here, as /grant writes them
+const extras = (has) => [['generate', '+gen'], ['fly', '+fly']].filter(([k]) => has(k)).map(([, w]) => ` ${w}`).join('');
+const personLine = (p) => `${p.name}: ${p.role}${extras((k) => effectiveOf(worldComponents(), p.id, { anon: !!p.guest }).can[k])}${p.guest ? ' (a guest)' : ''}${typeof p.declares === 'string' ? ` (declares ${p.declares})` : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
 /** One identity for a typed name, or a chat line saying why not (nobody / several). */
 async function onePerson(name, what) {
   const id = identityOf(name); if (id) return id;
@@ -107,7 +109,7 @@ register('role', (arg) => {
     const r = net.myRights;
     if (!r) return logChat('*', 'not in a world yet');
     if (!worldHasOwner()) return logChat('*', `you: ${r.role} — this world has no owner, so nobody builds here until someone owns it`);
-    return logChat('*', `you: ${r.role}${!r.permissions?.includes('build') ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
+    return logChat('*', `you: ${r.role}${extras((k) => !!r.permissions?.includes(k))}${!r.permissions?.includes('build') ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
   }
   lookupPerson(who).then((ppl) => {
     if (ppl === null) return logChat('*', `couldn't look up ${who} just now — try again`);
@@ -141,9 +143,10 @@ register('grant', (arg) => {
   if (id === '*') {
     if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * inhabitant');
     if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access invite-only|watch closes a world instead');
-    if (!role) return logChat('*', 'usage: /grant * <role> (exceptions like +fly go to one person)');
-    // merge: the default role also carries the world's guest opt-in (guests) and gen, which /grant * must not wipe
-    send({ verb: 'set', args: { id: '@world', component: 'default-role', value: { role }, merge: true } }, { what: `make everyone ${role}`, record: false });
+    // merge: the default role also carries the world's guest opt-in (guests); ±gen/±fly join its can (SWEEP-3 N5: roles.js effectiveOf)
+    const dr = worldComponents()['default-role'];
+    const value = { ...(role ? { role } : {}), ...(can ? { can: { ...(dr?.can && typeof dr.can === 'object' ? dr.can : {}), ...can } } : {}) };
+    send({ verb: 'set', args: { id: '@world', component: 'default-role', value, merge: true } }, { what: role ? `make everyone ${role}` : `change what everyone may do (${Object.entries(can).map(([k, v]) => `${v ? '+' : '-'}${k === 'generate' ? 'gen' : k}`).join(' ')})`, record: false });
     return;
   }
   // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
@@ -181,7 +184,7 @@ register('access', (arg) => {
   if (!a) return showMembers();
   const door = { 'invite-only': 'invite-only', invite: 'invite-only', private: 'invite-only', closed: 'invite-only', listed: 'invite-only', watch: 'watch', spectators: 'watch',
                  public: 'public', inhabitants: 'public', open: 'open', builders: 'open' }[a];
-  if (!door) return logChat('*', 'usage: /access invite-only|watch|public|open — or /access to see who can come in');
+  if (!door) return logChat('*', notADoor(a, worldComponents()));
   const ws = doorWrites(door, worldComponents());
   const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
   send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}`, record: false });
@@ -300,6 +303,14 @@ function moderateGlobal(cmd, arg) {
 register('gban', (arg) => moderateGlobal('gban', arg));
 register('gunban', (arg) => moderateGlobal('gunban', arg));
 register('gbans', () => sendMod('global-bans'));
+
+// /boom [power] [radius] (/blast) — a blast at my feet (R 10-28): the authority shoves each body by its own consent and punts each
+// loose thing; builders and up. shared/protocol/authority/bodyverbs.js force
+register('boom', async (arg) => {
+  const nums = (arg || '').trim().split(/\s+/).map(Number).filter(Number.isFinite);
+  const r = await send({ verb: 'force', args: { at: [myState.pos.x, myState.pos.y, myState.pos.z], ...(nums[0] ? { power: nums[0] } : {}), ...(nums[1] ? { radius: nums[1] } : {}) } }, { what: 'a blast', record: false });
+  if (r?.ok) logChat('*', `boom — ${r.punted?.length ?? 0} thing${r.punted?.length === 1 ? '' : 's'} sent flying, ${r.bodies?.shoved ?? 0} ${r.bodies?.shoved === 1 ? 'body' : 'bodies'} knocked over (${r.radius} m, ${r.power} m/s)`);
+});
 
 register('push', (arg) => {
   // /push [name] [power] — a REQUEST to the target's client, which owns the

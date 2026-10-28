@@ -162,8 +162,8 @@ puts the mesh 1.95m away on a slope where the ground is somewhere else;
 on commons's hills the cluster sat up to 29cm inside the hillside at
 every landing. The sim applier now shows the visual center standing on
 ITS ground (`simworld.js`, the terrain difference between the two
-footprints — presentation only; `tools/sim-ground-smoke.ts` holds the
-proof). Two residues only the asset fix removes: a body RELEASED to the
+footprints — presentation only; that smoke test, `tools/sim-ground-smoke.ts`,
+went with the old sim applier). Two residues only the asset fix removes: a body RELEASED to the
 fold (a body coming to rest) is realized at the authored origin
 height again, and the static terrain re-seat (world.js) still seats by
 the origin — both sink the cluster by the same slope difference.

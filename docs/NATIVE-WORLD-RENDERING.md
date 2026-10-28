@@ -93,8 +93,8 @@ are procedural approximations, not downloaded browser animation clips.
 Puppet and bodydrag requests are not accepted automatically; native ragdolls,
 mount/seating, force reactions and full streamed body-pose parity remain future work.
 
-Additional scratch checks: `tools/native-environment-control.ts`,
-`tools/native-interactions-fixture.ts`, and `tools/leasetest.ts`.
+Additional scratch checks: `tools/native-environment-control.ts` and
+`tools/native-interactions-fixture.ts` (`tools/leasetest.ts` went with leases).
 
 ## Component data (water, air, environment, vehicles)
 

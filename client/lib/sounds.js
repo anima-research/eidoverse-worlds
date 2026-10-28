@@ -41,8 +41,8 @@
 //      (1-t)² taper over the last 5% to exactly 0), applied on the sound's own gain node in the tick. The panner only
 //      places it (HRTF direction, rolloff 0): Web Audio's `inverse` model clamps at maxDistance instead, and a 12 m
 //      radio was heard at −21 dB everywhere past 12 m.
-//   7. At most VOICES (8) world sounds are heard at once, the loudest by what each would be heard at; the rest are
-//      paused (their playhead is found again on the shared clock when they come back). A wall of stacked loops is 8.
+//   7. At most VOICES (32; R 10-28, was 8) world sounds are heard at once, the loudest by what each would be heard at; the rest are
+//      paused (their playhead is found again on the shared clock when they come back). A wall of stacked loops is 32.
 //   8. A limiter (DynamicsCompressor, −6 dB, 20:1, 3 ms) sits between the world bus and the speakers: a clipped upload
 //      can't go past full scale.
 //   9. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
@@ -64,11 +64,11 @@ import { playWhenAllowed } from './audiounlock.js';
 import { volumeFor } from './voiceconsent.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { normalizeSound, gainAt, TAPER_START, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_STORE } from '../../shared/sound.js';
+import { normalizeSound, gainAt, TAPER_START, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_STORE, SOUND_MAX_RADIUS } from '../../shared/sound.js';
 import { mediaTier, clientMayFetch, mediaUrl } from '../../shared/mediasrc.js';
 import { allowUntrusted, isMineMuted, toggleMineMuted, RIGHTS_WARNING } from './mediaprefs.js';
 
-export const VOICES = 8;
+export const VOICES = 32;
 // id → { sound, el, srcNode?, gain?, panner?, plain?, capped, want, done? }
 const playing = new Map();
 export const _playing = playing;   // probes
@@ -257,7 +257,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         <textarea data-se="description" maxlength="${SOUND_DESCRIPTION_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.description ?? '')}</textarea></label>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <label style="display:flex;gap:4px;align-items:center">volume <input data-se="volume" type="range" min="0" max="1" step="0.05" value="${vol}"></label>
-        <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="100" step="1" value="${rad}" style="width:4em"> m (silent beyond)</label>
+        <label style="display:flex;gap:4px;align-items:center">radius <input data-se="radius" type="number" min="1" max="${SOUND_MAX_RADIUS}" step="1" value="${rad}" style="width:4em"> m (silent beyond)</label>
         <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input data-se="loop" type="checkbox"${cur?.loop === false ? '' : ' checked'}> loop</label>
       </div>
       <div style="display:flex;gap:6px">

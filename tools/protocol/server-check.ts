@@ -361,6 +361,17 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const first = Number(/#(\d+)/.exec(T(wh))?.[1]);
   const whb = await HANDLERS.world_history(oz, { limit: 2, before: first }, {} as any, "world_history");
   ok(T(whb).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => Number(/#(\d+)/.exec(l)[1]) < first) && /more before #/.test(T(whb)), "CM6 before pages back (it was ignored)", T(whb));
+  // SWEEP-3 G2: kinds picks entry kinds (change lines too), a window takes before and after together, the page is 50 by default
+  const seqs = (t: string) => t.split("\n").filter((l) => /^#\d+/.test(l)).map((l) => Number(/#(\d+)/.exec(l)[1]));
+  const whk = await HANDLERS.world_history(oz, { kinds: ["change"], limit: 5 }, {} as any, "world_history");
+  ok(!whk.isError && seqs(T(whk)).length > 0 && T(whk).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => /: change /.test(l)), "CM6g world_history {kinds: ['change']} shows what acts wrote", T(whk).slice(0, 400));
+  const whw = await HANDLERS.world_history(oz, { after: first - 6, before: first, limit: 50 }, {} as any, "world_history");
+  ok(!whw.isError && seqs(T(whw)).length > 0 && seqs(T(whw)).every((n) => n > first - 6 && n < first), "CM6g before and after together read the window between them", T(whw).slice(0, 400));
+  const whd = await HANDLERS.world_history(oz, {}, {} as any, "world_history");
+  ok(seqs(T(whd)).length > 30 || !/more before/.test(T(whd)), "CM6g a page is 50 by default (more than 30 rows, or the whole log)", `${seqs(T(whd)).length} rows`);
+  // SWEEP-3 G1a: body_state still says posture (main's name for the clip), beside bodyMode and clip
+  const bst = JSON.parse(T(await HANDLERS.body_state(oz, {}, {} as any, "body_state")));
+  ok("posture" in bst && bst.posture === bst.clip && "bodyMode" in bst, "CM6p body_state carries posture, a twin of clip", JSON.stringify({ posture: bst.posture, clip: bst.clip, bodyMode: bst.bodyMode }));
   ok(typeof historyLine === "function" && historyLine({ seq: 9, ts: 0, actor: "ann", kind: "act", verb: "imported", body: { verb: "comp", args: { id: "x", type: "label", data: "old" }, from: 4 } }) === `#9 ann: comp {"id":"x","type":"label","data":"old"} (imported from the old log, #4)`, "CM6 an imported entry prints the verb and args it was written with, not `legacy {}`");
   // CM7 look speaks door terms: no world_verb, no comp {…}, no dismount
   ok((await ann.req("create", { id: "bell", model: "test/cup.glb", components: { reactions: { ring: { kind: "set", component: "label", value: "rung" } }, lock: true }, place: { at: [3, 3] } })).ok, "CM7 (Ann makes a bell that rings, locked)");

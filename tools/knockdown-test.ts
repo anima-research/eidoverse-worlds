@@ -80,8 +80,7 @@ const h = await human("shover");
 await sleep(400);
 
 // 1. a shove along +x: the REAL tumble — sim pose, displaced along the lean, lying
-// (v1's radial blast, the `force` verb, went with protocol v1: a push is a puppet ragdoll lean, or the door's body
-//  shove under the target's consent)
+// (a push is a puppet ragdoll lean, or the door's body shove under the target's consent; a blast's shove is 2b's)
 await h.near(ag);
 const before = { x: ag.pos.x, z: ag.pos.z };
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
@@ -97,6 +96,14 @@ check("...and the agent PERCEIVED it", events.some((t) => t.includes("knocks you
 // 2. walking stands it up clean — no zombie-walk slump
 await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000);
 check("walking sheds the slump", ag.clip !== "ragdoll" && ag.heldPose == null, `clip=${ag.clip}`);
+
+// 2b. (R 10-28) a shove the AUTHORITY delivered — a blast (force) or an ask's yes — arrives in the body inbox, not as a puppet:
+// it floors the agent along its lean the same way
+{ const b = { x: ag.pos.x, z: ag.pos.z };
+  ag.bodyInbox([{ type: "body", from: "shover", kind: "shove", cls: "shove", consent: "standing", spec: { lean: [-3, 0, 0] } }]);
+  await tryUntil("the inbox shove floors the agent along -x", () => ag.clip === "ragdoll" && ag.pos.x < b.x - 0.2, { ms: 2500 });
+  check("a shove from the body inbox (a blast's) knocks the agent down along its lean", ag.clip === "ragdoll" && ag.pos.x < b.x - 0.2, `clip=${ag.clip} Δx=${(ag.pos.x - b.x).toFixed(2)}`);
+  await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000); }
 
 // 3. directed shove over the puppet wire: the tumble travels along the lean
 await h.near(ag);

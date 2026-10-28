@@ -580,6 +580,9 @@ export class WorldAgent {
         text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${a.cls ?? KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
       else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
       // what the authority did: it let the act reach this body, and recorded it
+      else if (m.type === "body" && m.kind === "shove") {   // a shove the authority delivered (a blast's, or an ask's yes): applied as the relay's is
+        const lean = Array.isArray(m.spec?.lean) && m.spec.lean.length === 3 && m.spec.lean.every(Number.isFinite) ? m.spec.lean : null;
+        const by = this.nameOfActor(String(m.from ?? "")) ?? String(m.from ?? "someone"); this.knockDown(by, lean, `(${by} knocks you over)`); }
       else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);

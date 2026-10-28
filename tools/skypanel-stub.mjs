@@ -43,3 +43,6 @@ export const getGrassApplied = () => ({ field: false, status: 'applied', strokes
 export const MODEL_QUALITY = ['auto', 'full', 'eco'];
 export const modelQuality = { quality: 'auto' };
 export const dialModelQuality = () => '';
+export const SKY_QUALITY = ['balanced', 'high'];
+export const skyQuality = () => S.quality ?? 'balanced';
+export const setSkyQuality = (q) => { S.quality = q; };

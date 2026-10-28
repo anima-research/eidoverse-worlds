@@ -44,7 +44,7 @@ try {
 
   await legacyVerb(a, "spawn", { id: "tower", lib: up.path, pos: [0, a.heightAt(0, 0), 0], yaw: 0 });
   await tryUntil("the agent holds the tower", () => a.entities.get(sceneId(a, "tower")), { ms: 2000, step: 50 });
-  const said = await tool("check_model", { id: "tower" });
+  const said = await tool("measure", { check: true,  id: "tower" });
   check("check_model reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
     /\[tower\].*walk-in; 2 floors/.test(said) && /No problems found/.test(said) && /Suggested places/.test(said)
     // the header names it as people do (its label); the act to paste names it by the id the authority minted (R 10-17: never
@@ -63,17 +63,17 @@ try {
   await legacyVerb(a, "spawn", { id: "big", lib: slim.path, pos: [80, a.heightAt(80, 0), 0], yaw: 0, scale: 1.6 });
   await legacyVerb(a, "spawn", { id: "forced", lib: up.path, pos: [60, a.heightAt(60, 0), 0], yaw: 0, collide: "box" });
   await tryUntil("the agent holds the small, big and forced things", () => a.entities.get(sceneId(a, "small")) && a.entities.get(sceneId(a, "big")) && a.entities.get(sceneId(a, "forced")), { ms: 2000, step: 50 });
-  const plain = await tool("check_model", { lib: wide.path });
+  const plain = await tool("measure", { check: true,  lib: wide.path });
   check("(the 0.45m-doored hall at its own size: no problems)", /No problems found/.test(plain), plain.slice(0, 300));
-  const saidSmall = await tool("check_model", { id: "small" });
+  const saidSmall = await tool("measure", { check: true,  id: "small" });
   check("check_model on that hall placed at 0.6× checks it at 0.6×: its doorway is now narrower than a body",
     /\[small\] .* at scale 0.6: walk-in/.test(saidSmall) && /narrower than a body/.test(saidSmall) && !/No problems found/.test(saidSmall), saidSmall.slice(0, 500));
-  const slimPlain = await tool("check_model", { lib: slim.path });
+  const slimPlain = await tool("measure", { check: true,  lib: slim.path });
   check("(the 0.25m-doored hall at its own size: too narrow)", /narrower than a body/.test(slimPlain), slimPlain.slice(0, 300));
-  const saidBig = await tool("check_model", { id: "big" });
+  const saidBig = await tool("measure", { check: true,  id: "big" });
   check("...and the 0.25m-doored hall placed at 1.6× gets in: no narrow passage, every floor reachable",
     /at scale 1.6: walk-in/.test(saidBig) && !/narrower than a body/.test(saidBig) && /No problems found/.test(saidBig), saidBig.slice(0, 500));
-  const viaLib = await tool("check_model", { lib: wide.path, scale: 0.6 });
+  const viaLib = await tool("measure", { check: true,  lib: wide.path, scale: 0.6 });
   check("check_model {lib, scale} is the same check before placing", /at scale 0.6/.test(viaLib) && /narrower than a body/.test(viaLib), viaLib.slice(0, 300));
   const r6 = await (await fetch(`${h.BASE}${up.check}&scale=1.5`)).json() as any;
   const r1 = await (await fetch(`${h.BASE}${up.check}`)).json() as any;
@@ -81,9 +81,9 @@ try {
   check("GET /check?scale= reports in world metres, its suggested places back in the model's own frame",
     r6.scale === 1.5 && r6.levels.some((l: any) => Math.abs(l.y - 0.45) < 0.05) && r6.levels.some((l: any) => Math.abs(l.y - 4.95) < 0.05) && !!room(r6) && Math.abs(room(r6).min[0] - room(r1).min[0]) < 0.2,
     JSON.stringify({ levels: r6.levels, room15: room(r6), room1: room(r1) }).slice(0, 300));
-  const saidForced = await tool("check_model", { id: "forced" });
+  const saidForced = await tool("measure", { check: true,  id: "forced" });
   check("...and on one spawned collide: \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collide: "box"/.test(saidForced), saidForced.slice(0, 300));
-  const saidBad = await tool("check_model", { lib: bad.path });
+  const saidBad = await tool("measure", { check: true,  lib: bad.path });
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
   // review r3 F1: the door is public, so new work is rate-limited per address (a cached answer never is)
   {

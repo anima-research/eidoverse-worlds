@@ -110,6 +110,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {contact: true}'s own gate (a body against it, at a walk's speed, away from the body, at rest)
   ["shove-walker", "../shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved
+  ["force", "force-check.ts", 1],
+  ["physconst", "../physconst-test.ts", 1], // one binding for reach and hand numbers (the authority's, the client's); R 10-28: the punt's reach is KICK's alone       // R 10-28 item 4: force {at, radius, power} (/boom): bodies through their consent, loose things through the punt
   ["agentshove", "agentshove-check.ts", 1], // …an agent's walk shoves too, through the same punt (a real WorldAgent on a real server)
   ["hands", "hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
   ["reset", "reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
@@ -136,7 +138,11 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["modhole", "modhole-check.ts", 1],   // security pass 3: nothing a world sends runs as code in a visitor's browser; EW.mods.put/run need your hand
   ["xss-probe", "xss-probe.ts", 1],     // security pass 3 H1 in headless Chromium: a hostile display name is text everywhere; the page's CSP refuses inline script and lets the client run
   ["pretrans", "pretrans-check.ts", 1], // review 10-07 "protocol shape": the edges the Commons translation makes permanent (names, defaults, ids, refs, governance, models, privacy)
-  ["soundclock", "soundclock-check.ts", 1], // a sound's shared playhead is on the server's clock (serverNow), never Date.now
+  ["soundclock", "soundclock-check.ts", 1],
+  ["sound", "../sound-test.ts", 1],     // the sound component's meaning and look() line; R 10-28 item 18: 200 m, still silent at radius
+  ["sound-editor", "../sound-guard-test.ts", 1], // the sound editor block; R 10-28 item 18: 32 world sounds at once, the radius field to 200 m
+  ["skypanel", "../skypanel-state-test.ts", 1], // the sky panel's state lines; R 10-28: every shared select commits what it shows (the world select saved nothing)
+  ["physics-off", "../physics-off-test.ts", 1], // R 10-28 item 33: the per-client object-physics switch: off, no flights folded or drawn, committed poses // a sound's shared playhead is on the server's clock (serverNow), never Date.now
   ["eidomodel", "eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
   ["colour-picker", "../colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click (R 10-12), in headless Chromium (one browser, guarded)

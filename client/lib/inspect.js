@@ -25,7 +25,7 @@ import { materialsOf } from './matoverride.js';
 import { isMineMuted, allowUntrusted } from './mediaprefs.js';
 import { rotOrderFor, setRotOrder } from './viewprefs.js';
 import { entities } from './world.js';
-import { boxOf, previewMesh } from './realize/models.js';
+import { boxOf, previewMesh, previewLight } from './realize/models.js';
 import { state } from './state.js';
 import { net, sendDrag, replica } from './net.js';
 import { trustedOf } from '../../shared/drafts.js';
@@ -55,6 +55,11 @@ registerHandler('mesh', (id, _obj, k, value, opts) => {
   const cur = { ...(recordFor(id)?.mesh ?? {}) }; const n = Number(value);
   if (k === 'shape') cur.shape = String(value); else if (/^size\.[xyz]$/.test(k) && Number.isFinite(n)) { cur.size = [...(Array.isArray(cur.size) ? cur.size : [1, 1, 1])]; cur.size['xyz'.indexOf(k.slice(5))] = n; } else return false;
   return previewMesh(id, cur);
+});
+// a light card's brightness / range slider shows on the light while dragged (SWEEP-3 N4); the release commits through editOps
+registerHandler('light', (id, _obj, k, value, opts) => {
+  if (!opts?.live || (k !== 'intensity' && k !== 'range')) return false; const n = Number(value);
+  return Number.isFinite(n) && previewLight(id, { [k]: n });
 });
 export function registerEditor(fn) { htmlEditors.push(fn); }
 /** editpanels installs the undo stack and the light coalescer at init —

@@ -180,8 +180,8 @@ const cases: Case[] = [
       return { p: code(p), d: code(d), up: code(up), launches: launches(s) }; },
     good: (o) => o.p === "shape" && o.d === "shape" && o.up === "shape" && o.launches === 0 },
   { id: "S10", what: "a long crate is shoved from its end though its origin is past a kick's reach (measured to the box)", run(s) { cast(s);
-      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" }, transform: { pos: [6, 0, 0], scale: [5, 1, 1] } } });
-      s.call("vic", "move", { to: [7.85, 0, 0] });
+      s.call("olive", "create", { id: "big", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant", mass: 1080 }, transform: { pos: [6, 0, 0], scale: [8, 1, 1] } } });
+      s.call("vic", "move", { to: [8.75, 0, 0] });
       const k = s.call("vic", "punt", { id: "big", power: 2 }); const r = s.call("vic", "punt", { id: "big", v: [-0.4, 0.1, 0], contact: true });
       return { kick: code(k), r: show(r) }; },
     good: (o) => o.kick === "out-of-reach" && o.r === "ok" },

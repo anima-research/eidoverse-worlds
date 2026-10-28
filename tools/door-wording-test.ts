@@ -3,7 +3,7 @@
 // Run: bun tools/door-wording-test.ts
 //
 // Main's test (#270, nissa-seru), carried into the revised protocol (#260). Where this
-// protocol renamed or folded a tool (tools.ts TOOL_ALIASES, TOOL_FOLDS), the
+// protocol renamed or folded a tool (tools.ts TOOL_RENAMED, TOOL_FOLDS), the
 // check calls the tool that does it now and reads its words; where a refusal
 // moved from the door to the world's authority (place's unknown id, a raw
 // verb's shape, the closed verb list), the check is gone and the note says
@@ -147,13 +147,10 @@ try {
   const tracks = { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0, -0.7, 0.7] }] };
   check("anim's tracks without dur say what was sent",
     /^animate needs dur, the length in seconds and more than 0, so nothing played; you sent nothing$/.test(said(await call("anim", { tracks }))));
-  // spawn is create {model} here (TOOL_ALIAS_ARGS), and a query is library's: the alias says so, and runs nothing.
-  const noLib = said(await call("spawn", {}));
-  check("spawn with no lib says it's create {model} now, and nothing ran",
-    noLib === "(spawn is now called create; nothing ran)\nspawn needs lib (a library path); it is create {model} now", noLib);
-  const missed = said(await call("spawn", { query: "zzz" }));
-  check("spawn with a query says library finds the model, then create places it",
-    missed === `(spawn is now called create; nothing ran)\nspawn {query} has no one-step form now: library {query: "zzz"} finds the model, then create {model}`, missed);
+  // spawn is an old name (R 10-28): it runs nothing, and names create
+  const noLib = said(await call("spawn", { query: "zzz" }));
+  check("spawn says it is create now, and nothing ran",
+    noLib === "spawn is now called create: call create (its arguments are in your tool list; they may differ from spawn's) — nothing ran", noLib);
   // place's id is the world's authority's to resolve here (namedThings passes an unknown name on, for the
   // authority's own not-found words, spec/refusal-codes.json), so main's two door-side place refusals have no door here.
   const noBody = said(await call("set_avatar", { avatar: "zed" }));
