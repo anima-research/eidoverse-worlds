@@ -14,6 +14,7 @@
 //   CS  a collision's tag on a display name carries nothing of the account, and is the same each time
 //   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
 //   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
+//   AC  one agent credential is one account at the ws join, httpCaller, provenAccount; /auth refuses it (accounts review 10-28)
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
 //       with a disambiguator (pass 3 H2), and doesn't get the first one's remembered pose; the real one does
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
@@ -436,7 +437,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   a.close(); b.close(); }
 
 // ---- AU: POST /auth makes a session for a person only (accounts review 10-28): an agent's kind, a sub outside human:, or
-// a login without worlds:join|spectate is refused. ----
+// a login without worlds:join|spectate is refused. AC: one agent credential is one account at every door ----
 const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { method: "POST", body: JSON.stringify({ token }) })
   .then(async (r) => ({ status: r.status, cookie: !!r.headers.get("set-cookie"), body: await r.json().catch(() => ({})) }));
 { const agent = await postAuth(srv.port, mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" }));
@@ -448,6 +449,25 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   const watch = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:42", scopes: ["worlds:spectate"] }));
   const join = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:43" }));
   ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]); }
+{ const quill = mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" });
+  const wrenAid1 = mint({ kind: "agent", sub: "agent:wren@home.test", name: "Wren" });
+  const q = await sock(srv.port); const jq = await q.join("garden", "x", { agentToken: quill });
+  // the HTTP door and the operator's door, in-process against the same directory, for each credential
+  const code = `const { httpCaller } = await import("./server/access.ts"); const { provenAccount } = await import("./server/upgrade.ts");
+    const out = {}; for (const k of ["Q", "W", "E"]) { const t = process.env["CRED_" + k];
+      const h = httpCaller(new Request("http://x/", { headers: { authorization: "Bearer " + t } }));
+      out[k] = { http: h?.account ?? null, actor: h?.actorId ?? null, proven: provenAccount({}, { agentToken: t }) }; }
+    console.log(JSON.stringify(out));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ CRED_Q: quill, CRED_W: wrenAid1, CRED_E: "tok-wren" }) });
+  let doors = {}; try { doors = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
+  const Q = doors.Q ?? {}, Wd = doors.W ?? {}, E = doors.E ?? {};
+  ok(!!jq.snapshot && Q.http === "aid1:id.test:agent:quill@home.test" && Q.proven === Q.http && Q.actor === you(jq),
+    "AC1 an aid1 agent credential is one account at the ws join, httpCaller and provenAccount", { Q, you: you(jq), err: r.stderr.toString().slice(-300) });
+  ok(Wd.http === "agent:token:wren" && Wd.proven === Wd.http && E.http === Wd.http && E.proven === Wd.http,
+    "AC2 an enrolled agent is one account whether it brings its bearer or its listed aid1 subject, at every door", { Wd, E });
+  const viaAuth = await postAuth(srv.port, quill);
+  ok(viaAuth.status === 403 && !viaAuth.cookie, "AC3 …and /auth makes no second account from that same credential (refused)", viaAuth);
+  q.close(); }
 
 // ---- SA: stored accounts are checked at boot (accounts review 10-28): one outside ^(human|agent:token|aid1|local): is
 // refused and said (count and names), and stays on disk; a session's sub must be human:… to be anyone ----
