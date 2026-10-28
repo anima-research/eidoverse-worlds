@@ -58,6 +58,13 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
 }
 ```
 
+## World-level scripts
+
+A script on `@world` is world-level: with `on: ["use"]` it hears every logged use in the world (a visitor's, a
+reaction's, a script's `world.use`), after the thing's own reaction, with `id` naming the thing. It never hears a dry
+or refused use, a seat (presence), or its own `world.use`. Installing on `@world` is the owner's (every `@world` key
+but the look, roles, blueprints and assets is), and its scope still bounds what it writes.
+
 ## Whose rights
 
 - A script acts with its **sponsor's** rights, checked **now**, at every activation, and never beyond its scope. The
@@ -110,7 +117,7 @@ always the right one to keep.)
 
 Events (`e`): every event has `on`.
 - `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent); used while held (a `grabbable`'s use
-  button), also `held: true`, `hand` and `phase` (`"down"` or `"up"`);
+  button), also `held: true`, `hand` and `phase` (`"down"` or `"up"`). A world-level script also gets `id` (the thing used);
 - `grab`: `by`, `id` (the thing), `hand`, `grip?`, `seq?` (the grab's act, when the sim had to be told). A grab is
   presence: like `enter`, when the grab itself isn't logged its activation's cause is the entry that made the script's
   sponsor, and the act records no identity (no `trigger`, no `event.by`; the script still hears `by` live). A grab with

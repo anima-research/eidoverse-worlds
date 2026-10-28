@@ -60,6 +60,7 @@ function buildUse(ctx, a) {
   const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
   if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });
   const action = a.action ?? mine[0] ?? offers[0];   // none you may do: the first, so the refusal says why
+  ctx.action = action;
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
@@ -244,11 +245,26 @@ const USE_VERBS = {
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true, requester: actor }) };
       rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", sent, { runs: key, ...(held ? { held, action: probe.action } : {}) }));
-      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
+      const script = activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }), world = worldHears(w, a.id, probe.action, actor, act, a.args, held, probe.script);
+      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script, ...(world.length ? { world } : {}) };
     }
-    return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
+    let action = a.action;
+    const r = commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); action = ctx.action; if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
+    if (!r.ok || r.dry || r.act === undefined) return r;
+    const world = worldHears(w, a.id, action, actor, r.act, a.args, held, null);
+    return world.length ? { ...r, world } : r;
   },
 };
+// A script on @world that lists `use` is world-level (docs/SCRIPTS.md): it hears every logged use after the thing's own
+// reaction, never its own use nor the @world script that use just ran. `ran`: the script name the use ran on @world
+function worldHears(w, id, action, by, act, args, held, ran) {
+  const wc = w.state().entities["@world"]?.c ?? {}, out = [];
+  for (const [k, v] of Object.entries(wc)) { const name = k.slice(7);
+    if (!k.startsWith("script:") || !v || typeof v !== "object" || Array.isArray(v) || v === PURGED || !(Array.isArray(v.on) && v.on.includes("use"))) continue;
+    if (by === "script:@world" || (id === "@world" && name === ran)) continue;
+    out.push(activate(w, "@world", name, { on: "use", id, action, ...(args !== undefined ? { args } : {}), ...(held ?? {}), by, seq: act, cause: act })); }
+  return out;
+}
 // A script's world.use (docs/SCRIPTS.md): the target's own gate as a visitor's use, asked with the sponsor's rights; the
 // use is its own act (actor the script, cause the script's act), so a cascade's depth and the audit follow it
 function scriptUse(w, sid, sponsor, cause, u) {
@@ -259,9 +275,11 @@ function scriptUse(w, sid, sponsor, cause, u) {
     if (probe.script) { const key = `script:${probe.script}`; const v = w.state().entities[u.id].c[key];
       if (!v || typeof v !== "object") refuse("no-handler", `${u.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here");
       const act = w.append({ ...actOf(w, actor, "use", req, { runs: key, sponsor }), cause });
-      return { ...out, status: "ran", act, script: activate(w, u.id, probe.script, { on: "use", action: probe.action, ...(u.args !== undefined ? { args: u.args } : {}), by: actor, seq: act, cause: act }) }; }
-    const r = commit(w, actor, "use", req, (ctx) => { ctx.asker = sponsor; ctx.cause = cause; const ops = buildUse(ctx, req); ctx.actExtra = { ...(ctx.actExtra ?? {}), sponsor }; return ops; });
-    return { ...out, status: "ran", act: r.act };
+      const script = activate(w, u.id, probe.script, { on: "use", action: probe.action, ...(u.args !== undefined ? { args: u.args } : {}), by: actor, seq: act, cause: act });
+      worldHears(w, u.id, probe.action, actor, act, u.args, null, probe.script); return { ...out, status: "ran", act, script }; }
+    let action = u.action;
+    const r = commit(w, actor, "use", req, (ctx) => { ctx.asker = sponsor; ctx.cause = cause; const ops = buildUse(ctx, req); action = ctx.action; ctx.actExtra = { ...(ctx.actExtra ?? {}), sponsor }; return ops; });
+    worldHears(w, u.id, action, actor, r.act, u.args, null, null); return { ...out, status: "ran", act: r.act };
   } catch (e) { if (!(e instanceof Refusal)) throw e; return { ...out, status: "refused", code: e.code, why: e.reason }; }
 }
 export { USE_VERBS, actionsOf, offersFor, pivotOf, reactionCap, scriptUse, toggleOf };

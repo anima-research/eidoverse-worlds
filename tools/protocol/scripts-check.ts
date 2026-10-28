@@ -116,6 +116,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
   ["the auditor compares world.use calls", "scriptaudit.js", "if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) {", "if (false) {", ["W1"]],
   ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"act\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"act\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
+  ["a script on @world hears every use (world-level)", "authority/use.js", "out.push(activate(w, \"@world\", name,", "out.push(void (w, \"@world\", name,", ["WL1"]],
+  ["a script on @world is the owner's to install", "authority/gate.js", "if (base === \"roles\") return \"grant\";\n  return \"owner\";", "if (base === \"roles\") return \"grant\";\n  return base === \"script\" ? \"thing\" : \"owner\";", ["WL2"]],
   ["CONTROL (no-op: must stay green)", "authority/scripts.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -953,6 +955,25 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { acts: L.filter((e: any) => isScriptActor(e.actor) && e.verb === "script").length, uses: L.filter((e: any) => isScriptActor(e.actor) && e.verb === "use").length,
         pa: comp(s, "pa", "t/n"), pb: comp(s, "pb", "t/n"), audit: A ? `${A.reran}/${A.acts} max ${A.maxDepth} ${A.flags.map((f: any) => f.check).join(",")}` : null, ninth: Object.values(s.w().presence.scripts ?? {}).flatMap((x: any) => x.console).find((l: any) => l.code === "depth")?.why ?? null }; },
     good: (o) => o.acts === 8 && o.uses === 8 && o.pa?.n === 4 && o.pb?.n === 4 && o.pa?.by === "script:pb" && o.pb?.by === "script:pa" && o.audit === "8/8 max 8 " && /depth 9 > 8/.test(o.ninth ?? "") },
+  { id: "WL1", what: "world-level: a script on @world with on: [use] hears every logged use in the world (a reaction's, a script's, a script's world.use), with id and action; never a dry or refused one; its acts name the use as cause and trigger, as a thing's do, and the auditor re-runs them", run(s) { cast(s);
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] });
+      const tally = install(s, "olive", "@world", "tally", onUse(`const t = world.get("self", "t/uses") ?? { n: 0, seen: [] }; world.set("self", "t/uses", { n: t.n + 1, seen: [...t.seen, e.id + "." + e.action + " by " + e.by] });`), { scope: { ids: "self", comps: ["t/uses"] }, on: ["use"] }).r;
+      const g = s.call("vic", "use", { id: "gate", action: "open" }); const n1 = comp(s, "@world", "t/uses")?.n ?? 0;
+      s.call("vic", "use", { id: "gate", action: "open", dry: true }); s.call("vic", "use", { id: "gate", action: "nope" });
+      useSteady(s, "vic", { id: "lever", action: "pull" });
+      const L = s.entries(); const acts = L.filter((e: any) => e.actor === "script:@world" && e.verb === "script");
+      const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
+      return { tally: show(tally), n1, t: comp(s, "@world", "t/uses"), causes: acts.map((e: any) => [L[e.cause]?.verb, L[e.cause]?.actor, e.body?.trigger?.actor, e.body?.trigger?.seq === e.cause]), gate: g.ok, audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
+    good: (o) => o.tally === "ok" && o.gate && o.n1 === 1 && o.t?.n === 3 && JSON.stringify(o.t?.seen) === JSON.stringify(["gate.open by vic", "gate.open by script:lever", "lever.pull by vic"])
+      && JSON.stringify(o.causes) === JSON.stringify([["use", "vic", "vic", true], ["use", "script:lever", "script:lever", true], ["use", "vic", "vic", true]]) && o.audit === "4/4 " },
+  { id: "WL2", what: "world-level stays the owner's: a builder can't install a script on @world; a script on a thing with on: [use] still hears only its own thing's uses", run(s) { cast(s);
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] });
+      const bob = install(s, "bob", "@world", "tally", onUse(`world.say("used");`), { scope: { ids: "self", comps: [], say: true }, on: ["use"] }).r;   // no comps: the key's own gate
+      s.call("bob", "create", { id: "post", model: "crate", place: { at: [4, 0] } });
+      install(s, "bob", "post", "ear", onUse(`world.set("self", "t/heard", e.action);`), { scope: { ids: "self", comps: ["t/heard"] }, on: ["use"] });
+      s.call("vic", "use", { id: "gate", action: "open" });
+      return { bob: code(bob), stored: !!comp(s, "@world", "script:tally"), heard: comp(s, "post", "t/heard") ?? null }; },
+    good: (o) => o.bob === "rights" && !o.stored && o.heard === null },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
