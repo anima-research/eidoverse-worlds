@@ -178,20 +178,35 @@ export function settle(w, { maxTicks = 8 } = {}) {
 // the sim cut exactly as a joiner gets it (simCutOf), with the cut's engine and digest beside it. A host that carries the
 // engine opens the world from the last valid checkpoint and feeds only the entries after it; any other reader folds past
 // an unknown sim verb unchanged. The fold itself is never checkpointed: it is cheap and always exact from genesis.
+// A host may also bound the tail its boot replays (w.simCheckpointEvery, server policy: config SIM_CHECKPOINT_EVERY): one is
+// written once that many entries follow the last checkpoint (or a purge, which voids every earlier one) and something the sim
+// folds (a change or a sim intent) is among them; a tail of acts and says alone changes nothing a cut holds, so none is written.
 const CHECKPOINT_QUIET_MS = 20000;
-function checkpointSim(w) {
+function checkpointSim(w, { every = w.simCheckpointEvery ?? 0 } = {}) {
   if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
   // incremental (second review S2-3: a whole-log scan every beat until the first checkpoint): what's been counted stays counted
-  const E = w.entries; const k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity });
-  for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object" || e.kind !== "sim") continue;
-    if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; } else if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } }
-  if (!k.launches || w.now() - k.newest < CHECKPOINT_QUIET_MS) return;
+  const E = w.entries; const k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity, base: -1, moved: false });
+  for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object") continue;
+    if (e.kind === "purge") { k.base = -1; k.moved = true; continue; }   // a boot replays from genesis after a purge (livehost)
+    if (e.kind === "change") { k.moved = true; continue; }
+    if (e.kind !== "sim") continue;
+    if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; k.base = s; k.moved = false; }
+    else if (e.verb !== "digest") { k.moved = true; if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } } }
+  const afterLaunch = k.launches > 0 && w.now() - k.newest >= CHECKPOINT_QUIET_MS;
+  const longTail = every > 0 && k.moved && E.length - 1 - k.base >= every;
+  if (!afterLaunch && !longTail) return;
   const sf = w.sim(); if (!sf.sim || sf.foreign || Object.keys(livePoses(sf)).length || sf.rested.length || (w.unsettled?.length ?? 0)) return;
   // the cut rides as a JSON string: the blob store canonicalises objects (sorted keys), and the engine's object order is the
-  // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim
-  const cut = simCutOf(sf, E);
+  // law's (statics and bodies tie by insertion order), so a re-keyed cut would be a different sim. Its clock and tick ride in
+  // the entry (null in the blob, in place): at rest they are all that time moves, so an unchanged engine is the same blob
+  const cut = simCutOf(sf, E); cut.clock = null; cut.sim.tick = null;
   const state = w.putBlob({ cutJson: JSON.stringify(cut) });
   w.append({ kind: "sim", actor: "sim", verb: "checkpoint", body: { at: E.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
+}
+/** A checkpoint now if the tail is at least `every` (a host's clean shutdown). Returns how many entries it wrote (0 or 1). */
+export function checkpointNow(w, { every = 1 } = {}) {
+  if (!w.exists || w.state().status !== "ok" || !holdsCustody(w)) return 0;
+  return withAuthority(w, () => { const n0 = w.entries.length; CTX.work = { left: Infinity, until: Infinity, k: 0 }; checkpointSim(w, { every: Math.max(1, every) }); return w.entries.length - n0; });
 }
 export function tick(w) {
   // without the world's key nothing a script writes can be logged (storage's append refuses), so, as settle() and

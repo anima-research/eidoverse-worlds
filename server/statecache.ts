@@ -42,9 +42,9 @@ export const stateDigest = (encoded: Any) => sha256(jcs(encoded));
 /** Only a fold every line of which the strict reader took is cached: then its tail resumes exactly as the whole fold reads it. */
 const clean = (st: Any) => st?.status === "ok" && !st.diagnostics.some(([, c]: Any) => String(c).startsWith("malformed") || c === "world-mismatch");
 
-/** Write the cache for `st`, the fold of every entry in `entries`. False (nothing written) when it can't stand in for one. */
-export function writeCache(dir: string, entries: Any[], st: Any): boolean {
-  const at = entries.length - 1, e = entries[at];
+/** Write the cache for `st`, the fold of entries[0..at] (default: all of them). False (nothing written) when it can't stand in for one. */
+export function writeCache(dir: string, entries: Any[], st: Any, at = entries.length - 1): boolean {
+  const e = entries[at];
   if (at < 1 || !clean(st) || !isE(e) || typeof e.head !== "string") return false;   // an unsigned log has no head to check at boot
   const body = { format: FORMAT, foldKey: foldKey(), coversIndex: at, coversHead: e.head, state: encodeState(st) };
   replaceDurable(path.join(dir, CACHE_FILE), JSON.stringify(body));

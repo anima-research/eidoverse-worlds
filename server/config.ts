@@ -133,6 +133,11 @@ mkdirSync(WORLDS_DIR, { recursive: true });
 /** The fold cache (server/statecache.ts) is rewritten every this many entries; 0 = off. Server policy: resuming 1000 entries
  *  costs ~4 ms at boot (fold ≈ 4.3 µs/entry measured), and a rewrite every 1000 is noise on the write path. */
 export const STATE_CACHE_EVERY = Number(process.env.STATE_CACHE_EVERY ?? 1000);
+/** A physics world writes a sim checkpoint once this many entries follow its last one (authority checkpointSim), so a boot
+ *  replays at most this many into the engine; 0 = only after launches, as before. Server policy, measured on the gym-derived
+ *  205k log (10-28): a checkpoint costs ~10 ms (cut + fsynced ~50 KB blob + its line), replay 1.2 µs/entry for label sets and
+ *  56 µs for transform sets, so 1000 bounds a boot's engine tail at ~60 ms for ~10 µs/entry of writing. */
+export const SIM_CHECKPOINT_EVERY = Number(process.env.SIM_CHECKPOINT_EVERY ?? 1000);
 /** Authored verbs allowed per client per 4s. A griefer gets silence; a person
  *  arranging furniture must not. Configurable because a build session and a
  *  show night want different answers. */

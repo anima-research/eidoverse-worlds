@@ -46,7 +46,8 @@ export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time 
   /** id → account|anon|imported (the directory; the authority reads only "anon"); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/protocol/sandbox.js; null = none) */ scripts?: Any;
   /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[];
-  /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null };
+  /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null;
+  /** a sim checkpoint once `every` entries follow the last one (authority checkpointSim; server policy SIM_CHECKPOINT_EVERY); none: only after launches */ simCheckpoint?: { every: number } };
 
 /** An in-place translation's in-progress marker, like git's index.lock (tools/protocol/world.ts translateInPlace; R 10-27). */
 export const SWAP_MARKER = "translation.lock";
@@ -110,6 +111,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
       const b = e.body ?? {}; if (b.at !== s - 1 || typeof b.state !== "string") { w.log?.(`checkpoint at ${s} malformed; skipped`); continue; }
       let blob: Any; try { blob = getBlob(b.state); } catch (err) { console.warn(`[world:${name}] checkpoint ${s}: ${(err as Error).message}; skipped`); continue; }
       let cut: Any = null; try { cut = typeof blob?.cutJson === "string" ? JSON.parse(blob.cutJson) : null; } catch { cut = null; }
+      if (cut?.clock === null && cut.sim?.tick === null) { cut.clock = b.clock; cut.sim.tick = b.tick; }   // a blob shared by checkpoints: the time is the entry's (checkpointSim)
       if (!cut?.spec || !carried(cut.spec) || !cut.sim || digestOf(cut.sim) !== b.sim) { console.warn(`[world:${name}] checkpoint ${s}: ${!cut ? "no cut in the blob" : !carried(cut.spec) ? `engine ${cut.spec?.engine}@${cut.spec?.build} not carried` : "digest mismatch"}; skipped`); continue; }
       return { seq: s, cut }; }
     return null;
@@ -129,6 +131,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
   for (let s = 0; s < entries.length; s++) { index(s, entries[s]); if (st.status === "ok" && isE(entries[s]) && !bad.has(s) && (!ckpt || s > ckpt.seq)) sim.feed(s); }
   w.bootedFrom = ckpt ? ckpt.seq : null;
+  if (opts.simCheckpoint?.every) w.simCheckpointEvery = opts.simCheckpoint.every;
 
   // a world that holds scripts starts its sandbox processes now, so its first activation doesn't wait for one
   if (st.status === "ok" && Object.values(st.entities ?? {}).some((e: Any) => Object.keys(e.c).some((k) => k.startsWith("script:")))) w.scripts?.warm?.();
@@ -140,6 +143,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const resim = () => { const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
     sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries) });
     if (st.status === "ok") for (let s = 0; s < entries.length; s++) if (isE(entries[s]) && !bad.has(s)) sim.feed(s); };
+  let atCk: { seq: number; st: Any } | null = null;   // the fold at the last sim checkpoint written here (saveCache)
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {
     const seq = baseAppend(e, token); const x = entries[seq];
@@ -152,14 +156,20 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     // (the sim fold reads a purged physical value as no body); a checkpoint can't stand in, since it may hold the purged bytes
     if (x.kind === "purge") resim();
     else if (st.status === "ok") sim.feed(seq);
+    if (x.kind === "purge") atCk = null;
+    else if (x.kind === "sim" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
     if (cache) { if (x.kind === "purge") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
-      if (seq - cachedAt >= cache.every) saveCache(); }
+      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }
     opts.onAppend?.(seq, x);
     return seq;
   };
-  /** write the fold cache if it is behind the log (a clean shutdown; every `every` entries). Never throws: it is only a cache */
+  /** write the fold cache if it is behind the log (a clean shutdown; every `every` entries; a sim checkpoint). It covers the last
+   *  sim checkpoint when that is under `every` behind the head, so a boot's cut takes its state from the resume, never a second
+   *  fold from genesis. Never throws: it is only a cache */
   const saveCache = () => { if (!cache || entries.length - 1 <= cachedAt) return;
-    try { if (writeCache(dir, entries, st)) cachedAt = entries.length - 1; } catch (x) { console.warn(`[world:${name}] fold cache not written: ${(x as Error).message}`); } };
+    const near = atCk && entries.length - 1 - atCk.seq < cache.every; if (near && cachedAt === atCk!.seq) return;   // already covers it
+    const [at, s] = near ? [atCk!.seq, atCk!.st] : [entries.length - 1, st];
+    try { if (writeCache(dir, entries, s, at)) cachedAt = at; } catch (x) { console.warn(`[world:${name}] fold cache not written: ${(x as Error).message}`); } };
   w.saveCache = saveCache;
   w.bootedFromCache = resumed ? hit!.coversIndex : null;
   // the background re-derive: a Worker folds and chains the covered lines from genesis; a disagreement is a bug, never an outage
@@ -167,7 +177,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     const agrees = !r.error && r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1;
     if (agrees) return true;
     console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.error ?? (r.head !== hit.coversHead ? "chain head" : "state")}): discarded it and refolded from the log; please report this`);
-    dropCache(dir); cachedAt = -1;
+    dropCache(dir); cachedAt = -1; atCk = null;
     st = fold(entries); resim(); cache?.onRefold?.();
     return false;
   }).catch((x: Any) => { console.error(`[world:${name}] the fold cache's re-derive failed: ${x?.message ?? x}`); return null; });
