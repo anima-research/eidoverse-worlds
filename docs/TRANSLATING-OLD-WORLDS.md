@@ -43,7 +43,7 @@ no frame to hold one (`water` on `@world` without one is the world's water
 level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
-**What a translation keeps of main's meaning** (translate-v1@24, R 10-28; the
+**What a translation keeps of main's meaning** (translate-v1@25, R 10-28; the
 report lists each one):
 
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
@@ -69,8 +69,8 @@ report lists each one):
   them and listed (`adjusted`), so the world's next edit isn't refused.
 - *Carried, with their fate said:* vehicle `minY`/`maxY` (invisible hull-only
   walls once collision layers exist), `probes` (retired: the authority's hull
-  sweep), water `speed` (a physics-area speed factor once that exists), sky
-  `audio` (the weather's own sounds, once the sky takes it again).
+  sweep), water `speed` (a physics-area speed factor once that exists).
+- *Sky audio* (the weather's own sounds) is `@world.sky.audio`, as main's.
 
 A report reviewed under an earlier translator is never approvable: each
 version translates differently, so its hash differs, and the refusal says so.

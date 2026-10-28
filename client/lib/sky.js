@@ -563,7 +563,9 @@ async function primeFor(world, wantAudio) {
     if (p.includes('/celestial/')) return world !== 'earth';
     return true;
   });
-  await primeFiles([...MODULES, ...wanted, ...particles.map((f) => f.path)]);
+  const missing = await primeFiles([...MODULES, ...wanted, ...particles.map((f) => f.path)]) ?? [];
+  // the weather sounds are the asset library's (assets/sky/audio/), not the engine's: a server without them plays none
+  return wantAudio && wanted.some((p) => p.includes('/audio/') && !missing.includes(p)) && !missing.includes('eidoverse/weather_audio.js');
 }
 
 // Single-flight. Replaying a log no longer AWAITS each sky verb (waiting for
@@ -996,7 +998,7 @@ async function buildSky(a, world, wantAudio) {
     // itself provides what the wait was for — the sky is no longer
     // competing with boot-critical work, it IS boot work.)
     phase('teardown');
-    await primeFor(world, wantAudio);
+    const audio = await primeFor(world, wantAudio);
     phase('prime');
     await loadEidoModule('sky_worlds.js');
     phase('module');
@@ -1019,7 +1021,7 @@ async function buildSky(a, world, wantAudio) {
       clouds: cloudQuality === 'off' ? 'clear' : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus'),
       weather: WEATHERS.includes(w0) ? w0 : 'clear',
       sun, hemi,
-      audio: wantAudio,
+      audio,
       // the rain's splashes ring out on the ground under them — terrain, water, nothing past the edge —
       // not on the library's default flat y=0 (a library older than this option ignores it)
       groundHeightAt: rainSurfaceAt,

@@ -17,7 +17,7 @@
 //   physics  no kind read as the old materialized default, dynamic; material → surface (renamed); layers, mask, ccd
 //            (cut, never read) are dropped.
 // …and the render-media-env family (render-media-env.md §3, §4, §13–§15), the same callers:
-//   light      no decay fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2); day → daytime
+//   light      no decay fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2), and no intensity as 16; day → daytime
 //              (true dim, false full); shadows (read by nothing) dropped
 //   model      (R 10-17, v2) a content address eido:sha256/<hex> (translate-v1@8–@11 wrote them) → the library path this
 //              host's index names for it, with the address's hash beside it as model-hash sha256:<hex>; only with a resolver
@@ -40,6 +40,8 @@ import { partSlot, motionType } from "./names.js";
 const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** The light rig's falloff before a light said its own (client/lib/lightrig.js, three.js decay). */
 export const OLD_LIGHT_DECAY = 1.7;
+/** …and its intensity when a light wrote none (lightrig.js requestLight; the registry's default is 25.93 since 10-28). */
+export const OLD_LIGHT_INTENSITY = 16;
 export const AXIS_VECTORS = Object.freeze({ x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] });
 /** The pendulum readings that lived only in the reader (client/lib/motioneval.js, before 10-16). */
 // maxAmp 1.1: the old server's push cap (its reactions.ts pendulumImpulse), so a translated swing swings as it did (R 10-27)
@@ -94,7 +96,7 @@ export function repairComps(c0, { pathOf = null } = {}) {
     for (const k of ["layers", "mask", "ccd"]) if (k in p) { edit(); delete p[k]; }
     if (p !== c.physics) put("physics", p); }
   if (bag(c.light)) { let L = c.light; const edit = () => (L === c.light ? (L = { ...c.light }) : L);
-    if (L.decay === undefined) { edit(); L.decay = OLD_LIGHT_DECAY; }
+    if (L.decay === undefined) { edit(); L.decay = OLD_LIGHT_DECAY; if (L.intensity === undefined) L.intensity = OLD_LIGHT_INTENSITY; }
     if ("day" in L) { edit(); if (L.daytime === undefined && typeof L.day === "boolean") L.daytime = L.day ? "dim" : "full"; delete L.day; }
     if (L.daytime === undefined) { edit(); L.daytime = "dim"; }
     if ("shadows" in L) { edit(); delete L.shadows; }

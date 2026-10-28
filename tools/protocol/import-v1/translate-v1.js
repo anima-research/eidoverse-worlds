@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@24";
+export const TRANSLATOR = "eidoverse/translate-v1@25";
+// @25 (R 10-28): main's sky.audio is @world.sky.audio (the sky takes it again), where @24 carried it as imported:sky.
 // @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
 // description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
@@ -211,7 +212,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@24";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@25";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -450,13 +451,11 @@ export const FATES = {
   "vehicle.maxY": "carried for now; once collision layers exist (collider {blocks}) it becomes an invisible wall above the vehicle that only its hull meets",
   "vehicle.probes": "retired: the authority's hull sweep (authority/drive.js) does what the probes did; carried only as the record",
   "water.speed": "carried for now; once physics-area exists it becomes a speed factor on the water's zone (physics-area {kind: speed}), against the body's own swim speed",
-  "sky.audio": "the sky's own weather sounds (rain, thunder: main's makeSky audio switch), carried; the client still reads it, so it plays again once the sky component takes `audio`",
 };
 /** What of them has no home here, carried as imported:<component> on its thing: [{component, id, fields, as}] */
 export function unmappedOf(st) {
   const out = [];
   for (const { id, host, parts } of environmentPlan(st)) { const f = parts.fields.filter(([, to]) => to === null).map(([k]) => k); if (f.length) out.push({ component: "environment", id, fields: f, as: `${host} imported:environment` }); }
-  if (st?.sky && typeof st.sky === "object" && st.sky.audio !== undefined) out.push({ component: "sky", id: "@world", fields: ["audio"], as: "@world imported:sky", ...fatesOf("sky", ["audio"]) });
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
     if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle`, ...fatesOf("vehicle", f) }); }
@@ -771,6 +770,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // name inside a value. Dropped; the log says who set the sky (History, inspect's touched).
   if (w.sky && typeof w.sky === "object") { const { seq, by, ...sky } = w.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
+    if ("audio" in sky) sky.audio = Boolean(sky.audio);   // @25: main's switch, as makeSky read it (sky.js Boolean(a.audio))
     w.sky = sky; }
   for (const a of st.assets ?? []) w[keyed("assets", typeof a === "string" ? a : a.path ?? JSON.stringify(a))] = typeof a === "string" ? {} : a;
   // research roles §translation: v1's `fly` and `gen` grants are the fly and generate switches, can.fly / can.generate

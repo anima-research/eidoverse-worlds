@@ -483,12 +483,13 @@ export function lightOf(ent) {
   if (src.kind !== undefined && !COMPONENTS.light.enums.kind.includes(src.kind)) return null;
   // an unknown daytime drops only daytime (PROTOCOL §9.2): it reads at its meaning of absence; kind says what the light IS, so an unknown kind is no light
   const daytime = COMPONENTS.light.enums.daytime.includes(src.daytime) ? src.daytime : undefined;
+  const decay = finite(src.decay) && src.decay >= 0 && src.decay <= 4 ? src.decay : undefined;   // unread: an older value (the rig's 1.7 and 16)
   return {
     color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
-    intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : LIGHT_DEFAULTS.intensity,
+    intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : decay === undefined ? 16 : LIGHT_DEFAULTS.intensity,   // shaperepair OLD_LIGHT_INTENSITY
     range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
     important: src.important === true,
-    decay: finite(src.decay) && src.decay >= 0 && src.decay <= 4 ? src.decay : 1.7,
+    decay: decay ?? 1.7,
     daytime: daytime ?? (src.day === false ? 'full' : 'dim'),
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
     // a point light is the default and says nothing more; a spot adds its kind and cone

@@ -117,12 +117,14 @@ function fakeSystem() {
   };
   return sys;
 }
+// LIB: what the asset library lists under eidoverse/assets/sky and what fails to prime (the weather sounds live there, not in the engine)
+const LIB = { sky: [], missing: [] };
 mock.module(lib('assets.js'), () => ({
-  primeFiles: async () => {}, listLibrary: async () => [], fetchBytes: async () => new Uint8Array(),
+  primeFiles: async (paths) => paths.filter((p) => LIB.missing.includes(p)), listLibrary: async (dir) => (dir.endsWith('/sky') ? LIB.sky.map((path) => ({ path })) : []), fetchBytes: async () => new Uint8Array(),
   async loadEidoModule() {
     globalThis.makeSkySystem = (args) => fakeSystem(args);   // through sky.js's setter, as sky_system's eval assigns it
-    globalThis.makeSky = async () => {
-      BAKE.builds++;
+    globalThis.makeSky = async (o = {}) => {
+      BAKE.builds++; BAKE.audio = o.audio;
       const sys = await globalThis.makeSkySystem({ opts: {} });
       return { _internals: { sky: sys }, bakeEnv: (o) => sys.bakeEnv(o), enableReflections() {}, update() {},
         transitionTo() {}, setWeather() {}, setTime() {}, setColors() {}, setClouds() {}, dispose() {} };
@@ -320,6 +322,23 @@ try {
       sky.getCloudQuality() === 'high' && BAKE.builds === b1 + 1 && worldLine >= 1 && !sky.skyHeld(),
       { q: sky.getCloudQuality(), builds: BAKE.builds - b1, worldLine });
     sky.SKY_WORLDS.pop();
+  }
+
+  // ---- 4. sky.audio: the library's weather sounds when this server has them, silent (never an error) otherwise ------------
+  {
+    if (renderer.xr.isPresenting) leave();
+    sky.SKY_WORLDS.push('mars');                                // a world switch is a fresh build, which is when audio is read (case 3 left mars)
+    const build = async (world, audio) => { const b = BAKE.builds; await sky.applySky({ ...ARGS, world, audio, ts: ++T }); await settle(); return BAKE.builds === b + 1; };
+    const none = await build('earth', true), aNone = BAKE.audio;
+    LIB.sky = ['eidoverse/assets/sky/audio/rain_desert_loop.ogg'];
+    const has = await build('mars', true), aHas = BAKE.audio;
+    const off = await build('earth', false), aOff = BAKE.audio;
+    LIB.missing = ['eidoverse/weather_audio.js'];
+    const noMod = await build('mars', true), aNoMod = BAKE.audio;
+    LIB.sky = []; LIB.missing = []; await build('earth', false); sky.SKY_WORLDS.pop();
+    check('sky.audio true on a server without the weather sounds: built silent (audio false), no error', none && aNone === false, { none, aNone });
+    check('…with them in the library: the sky is built with its sounds; audio false stays silent; without weather_audio.js silent again',
+      has && aHas === true && off && aOff === false && noMod && aNoMod === false, { has, aHas, off, aOff, noMod, aNoMod });
   }
 
   check('no reported errors', reports.length === 0, reports.slice(0, 3));

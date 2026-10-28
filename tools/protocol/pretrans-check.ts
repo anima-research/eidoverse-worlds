@@ -646,7 +646,7 @@ await C("D1", "a spot light's cone is written into it (angle π/4, inner 0); a p
   const W = world(); for (const id of ["a", "b"]) if (!W.call("create", { id, components: { label: id } }).ok) throw new Error("create");   // bare things: a light never shares a thing with a model (one place per thing, 10-11)
   const ra = W.call("set", { id: "a", component: "light", value: { kind: "spot" } }), rb = W.call("set", { id: "b", component: "light", value: { kind: "point" } });
   const a = stored(W, "a", "light"), b = stored(W, "b", "light");
-  return [ra.ok && rb.ok && a.angle === Math.PI / 4 && a.inner === 0 && !("angle" in b) && a.important === false && a.daytime === "dim" && a.decay === 2 && b.intensity === 16, [a, b]]; });   // day → daytime, +decay (shape audit 10-16)
+  return [ra.ok && rb.ok && a.angle === Math.PI / 4 && a.inner === 0 && !("angle" in b) && a.important === false && a.daytime === "dim" && a.decay === 2 && b.intensity === 25.93, [a, b]]; });   // day → daytime, +decay (shape audit 10-16)
 await C("D2", "an openable's turn is written (angle π/2, axis [0,1,0], time 1, locked false); a sliding one gets no turn", () => {
   const W = world(); mk(W, "d"); mk(W, "s");
   W.call("set", { id: "d", component: "openable", value: { open: false } }); W.call("set", { id: "s", component: "openable", value: { open: false, slide: [1, 0, 0] } });

@@ -18,6 +18,7 @@
 
 import { svg as iconSvg } from './icons.js';
 import * as OP from '../../shared/protocol/requests.js';
+import { LIGHT_DEFAULTS } from '../../shared/components.js';
 import { THREE, scene, camera, canvas } from './core.js';
 import { bus, report } from './base.js';
 import { loadGLB, libLabels, modelName } from './assets.js';
@@ -544,7 +545,7 @@ function commitSpawn() {
   else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = ghostMeshSize(shape, ghost.scale);
     sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
   else if (pictureOf(ghost.lib)) sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { picture: { src: pictureOf(ghost.lib), width: +ghost.scale.toFixed(3) }, label: 'picture' } })], { what: 'hang a picture', expect: false });
-  else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
+  else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { ...LIGHT_DEFAULTS } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot
   // select what was inserted). A blueprint copy selects its root: the first thing the authority names that rides nothing

@@ -2,9 +2,10 @@
 //   R22a-e  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-d  name-only global bans: bound to main's one account at boot, else kept pending, listed, never enforced, liftable
-//   F50     the report says what becomes of vehicle minY/maxY/probes, water speed and sky audio
-//   V5      the translator is @24, and a report reviewed under @23 is refused, naming the earlier translator
-//   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity
+//   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
+//   V5      the translator is @25, and a report reviewed under @24 is refused, naming the earlier translator
+//   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
+//           sky audio onto @world.sky.audio (SA); a light with no intensity brightened once, landing on the registry default (LD)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/translate-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -15,6 +16,7 @@ import { reportV1World } from "./import-v1/world.ts";
 import * as PE from "../../shared/particle_effects.js";
 import * as R from "../../shared/protocol/roles.js";
 import { sha256 } from "../../shared/protocol/hash.js";
+import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 900)}` : ""}`); } };
@@ -124,19 +126,19 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
     ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed: 2.4 } }], ["olga", "sky", { world: "earth", audio: true }]]);
   const v = r.stats.unmapped?.find((x) => x.component === "vehicle"), w = r.stats.unmapped?.find((x) => x.component === "water"), s = r.stats.unmapped?.find((x) => x.component === "sky");
   ok(/invisible wall below/.test(v?.becomes?.minY) && /invisible wall above/.test(v?.becomes?.maxY) && /retired: the authority's hull sweep/.test(v?.becomes?.probes)
-    && /physics-area/.test(w?.becomes?.speed) && /weather sounds/.test(s?.becomes?.audio ?? ""),
-    "F50 the report says, in words, what becomes of vehicle minY/maxY/probes, water speed and sky audio", { v, w, s }); });
+    && /physics-area/.test(w?.becomes?.speed) && s === undefined && !("sky.audio" in TV1.FATES),
+    "F50 the report says, in words, what becomes of vehicle minY/maxY/probes and water speed; sky audio is mapped, not carried (@25)", { v, w, s }); });
 
 // ================= V5: the version, and a stale review refused =================
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@23" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@24" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 24 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 24 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@24/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @24; a report reviewed under @23 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 25 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 25 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@25/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @25; a report reviewed under @24 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);
@@ -168,6 +170,13 @@ row("S3-RP", () => { const root = scratch("translate-rp"), d = path.join(root, "
 row("S3-LP", () => { const { r, E } = tr([OWNER, ["olga", "light", { id: "l", intensity: 16, range: 10 }], ["olga", "light", { id: "k", intensity: 4, range: 2 }]]);
   ok(E.l.light.decay === 2 && E.l.light.intensity === +(16 * 5 ** 0.3).toPrecision(4) && E.k.light.intensity === 4 && r.stats.adjusted?.some((x) => x.id === "l" && x.field === "intensity" && /half its range/.test(x.why)),
     "S3-LP a translated light falls off at decay 2 and is brightened once to main's brightness at half its range (× (range/2)^0.3), listed", { l: E.l.light, k: E.k.light }); });
+
+row("S3-SA", () => { const { r, W } = tr([OWNER, ["olga", "sky", { world: "earth", audio: true }]]), b = tr([OWNER, ["olga", "sky", { world: "earth", audio: 1 }]]).W;
+  ok(W.sky?.audio === true && b.sky?.audio === true && W["imported:sky"] === undefined && !r.stats.unmapped?.some((x) => x.component === "sky") && COMPONENTS.sky.fields.audio === "bool",
+    "S3-SA main's sky.audio (rain and thunder) is @world.sky.audio, as makeSky read it (Boolean); nothing carried", { sky: W.sky, b: b.sky, imp: W["imported:sky"] }); });
+row("S3-LD", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "lamp", lib: "x.glb" }], ["olga", "comp", { id: "lamp", type: "light", data: { color: 0xffd9a0 } }]]);
+  ok(E.lamp.light?.decay === 2 && E.lamp.light.intensity === COMPONENTS.light.defaults.intensity && E.lamp.light.intensity === TV1.parityIntensity(16, 10),
+    "S3-LD a main light with no intensity is main's 16 brightened once (never the registry default brightened again): a new default light's intensity", { l: E.lamp.light, d: COMPONENTS.light.defaults.intensity }); });
 
 console.log(`[translate-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

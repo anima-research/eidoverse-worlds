@@ -57,6 +57,11 @@ await tryRow('LI', async () => {
   const R = repairComps({ light: { kind: 'point', color: 1, intensity: 16, range: 10, shadows: false, important: false, day: false } }).c;
   check('LI9 repair: a stored light keeps its look (decay 1.7), day → daytime, shadows dropped', JSON.stringify(R.light) === JSON.stringify({ kind: 'point', color: 1, intensity: 16, range: 10, important: false, decay: 1.7, daytime: 'full' }), R.light);
   check('LI9 …a second run finds nothing', repairComps(R).set.length === 0, '');
+  const Ld = L.defaults.intensity, at5 = (I: number, d: number) => I / 5 ** d;
+  check('LI11 a new default light (decay 2) is as bright as main\'s default (16 cd, decay 1.7) at half the default range, 5 m: 16 × 5^0.3; every new-light path writes it', Ld === +(16 * (L.defaults.range / 2) ** 0.3).toPrecision(4) && Math.abs(at5(Ld, 2) / at5(16, 1.7) - 1) < 1e-3
+    && lightOf({ light: { decay: 2 } })?.intensity === Ld && !/intensity: 16/.test(read('client/lib/build.js')), [Ld, at5(Ld, 2), at5(16, 1.7)]);
+  const Ro = repairComps({ light: { color: 1 } }).c.light, Rn = repairComps({ light: { color: 1, decay: 2, daytime: 'dim' } });
+  check('LI12 an older light (no decay) wrote no intensity and read 16: lightOf reads it so, and the repair writes 16 beside decay 1.7; a light with its decay is left at the default', lightOf({ light: {} })?.intensity === 16 && Ro?.intensity === 16 && Ro?.decay === 1.7 && Rn.set.length === 0, [lightOf({ light: {} }), Ro, Rn.set]);
   const t = translate(v1({ verb: 'light', args: { id: 'l1', pos: [0, 2, 0], color: '#ffeedd', intensity: 8, range: 6, day: false } }));
   const tl = t.final.translated.l1?.light;
   check('LI10 translate-v1 writes a v1 light at decay 2, brightened to main\'s at half its range (@24, R 10-28), daytime', tl?.decay === 2 && tl?.intensity === +(8 * 3 ** 0.3).toPrecision(4) && tl?.daytime === 'full' && !('day' in (tl ?? {})) && !t.stats.divergences, [tl, t.stats.divergences]);
@@ -289,8 +294,8 @@ await tryRow('CA', () => {
 // ===================================================================== sky: 19 → 14, radians, stamped fields refused, defaults in the registry
 await tryRow('SK', async () => {
   const K = COMPONENTS.sky;
-  const want = ['hours', 'rate', 'ts', 'tz', 'clouds', 'weather', 'weatherK', 'transition', 'azimuth', 'fog', 'exposure', 'ambient', 'forecast', 'override', 'gradient'];   // gradient: OMI_environment_sky (step 3a)
-  check('SK1 sky has 15 fields (gradient joined; clock, dormantRated, sun, fill, world cut; weatherSeconds → transition)', keys(K.fields) === keys(Object.fromEntries(want.map((k) => [k, 1]))), Object.keys(K.fields));
+  const want = ['hours', 'rate', 'ts', 'tz', 'clouds', 'weather', 'weatherK', 'transition', 'azimuth', 'fog', 'exposure', 'ambient', 'forecast', 'override', 'gradient', 'system', 'colors', 'audio'];   // gradient: OMI_environment_sky (step 3a); system, colors, audio: main's (10-28)
+  check('SK1 sky has 18 fields (gradient, system, colors, audio joined; clock, dormantRated, sun, fill, world cut; weatherSeconds → transition)', keys(K.fields) === keys(Object.fromEntries(want.map((k) => [k, 1]))), Object.keys(K.fields));
   check('SK1 …azimuth in radians (default π), defaults and enums in the registry, units written', K.units?.azimuth === 'rad' && K.defaults?.azimuth === Math.PI && K.defaults?.hours === 12 && K.defaults?.clouds === 'cumulus' && K.enums?.weather?.includes('storm') && K.enums?.clouds?.includes('cirrus') && K.units?.ts === 'ms' && K.units?.transition === 's', [K.units, K.defaults]);
   const W = scratchWorld('w2r-sky');
   let r = W.call('set', { id: '@world', component: 'sky', value: { hours: 9, ts: 5 } });
@@ -310,6 +315,10 @@ await tryRow('SK', async () => {
   check('SK6 repair: clock real + dormantRated → tz with hours/rate/ts the parked clock; azimuth ×π/180; weatherSeconds → transition; forecast dwell/transition; sun, fill, world dropped', R && R.tz === 'America/Los_Angeles' && R.hours === 7 && R.rate === 2 && R.ts === 100 && Math.abs(R.azimuth - Math.PI / 2) < 1e-12 && R.transition === 20 && keys(R.forecast) === keys({ seed: 2, states: ['rain'], dwell: [600, 900], transition: 40, epoch: 9 }) && JSON.stringify(R.forecast.dwell) === '[600,900]' && R.forecast.transition === 40 && ['clock', 'dormantRated', 'sun', 'fill', 'world', 'weatherSeconds'].every((k) => !(k in R)), R);
   const R2 = repairWorld({ sky: { tz: 'Europe/Paris', hours: 4, ts: 1 } }).c.sky;
   check('SK6 …a tz with no clock is today\'s spelling: kept (it governs; no stored sky held the pre-#65 tz-without-clock)', R2 && R2.tz === 'Europe/Paris' && R2.hours === 4, R2);
+  const Wa = scratchWorld('w2r-sky-audio'); const sa = () => Wa.state().entities['@world'].c.sky;
+  const a1 = Wa.call('set', { id: '@world', component: 'sky', value: { hours: 9, audio: true } }), a1v = sa()?.audio, a2 = Wa.call('sky', { audio: false }), a3 = Wa.call('set', { id: '@world', component: 'sky', value: { hours: 9, audio: 'yes' } });
+  check('SK7 sky.audio (main\'s weather sounds) is a bool: set and the sky act store it, a non-bool is refused, absent means off, and the client reads it', a1.ok && a1v === true && a2.ok && sa()?.audio === false && code(a3) === 'shape'
+    && K.fields.audio === 'bool' && /off/.test(K.absentMeans?.audio ?? '') && !!K.docs?.audio && /Boolean\(a\.audio\)/.test(read('client/lib/sky.js')), [a1.refused, a1v, a2.refused, sa(), a3.refused]);
 });
 
 // ===================================================================== terrain: the sim's defaults, raster reserved, layer colours ints, water split out
