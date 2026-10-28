@@ -43,7 +43,7 @@ for (const src of [
 ]) check(`encoded/odd source refused: ${JSON.stringify(src)}`, allowedPictureSrc(src) === false);
 check("the canonical library path of an allowed source is itself", new URL(`/library/${GOOD}`, "http://library.invalid").pathname === `/library/${GOOD}`);
 
-// shape audit 10-16 (render-media-env §5): part and flip are cut (a material override, the reserved material's): a picture is a quad of its own
+// shape audit 10-16 (render-media-env §5): part and flip are cut (an image on a node is the material component's): a picture is a quad of its own
 const n0 = normalizePicture({ src: GOOD, description: "a print of the hearth at dusk", lit: "self" });
 check("a well-formed bag normalizes", n0.ok && n0.picture.src === GOOD && !("part" in n0.picture) && n0.picture.lit === "self" && !("flip" in n0.picture), JSON.stringify(n0));
 check("…with no notes", n0.ok && n0.notes.length === 0, JSON.stringify(n0.ok && n0.notes));

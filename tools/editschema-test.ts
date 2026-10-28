@@ -229,7 +229,7 @@ console.log("\npicture + sound: schema groups, validated before any op:");
   const url = editOps(crate, "c", { "picture.src": "http://evil.example.org/x.png" }, { parts });
   check("an http link is refused with the rule, and nothing is sent", !url.ops.length && /https/.test(url.errors[0] ?? ""), JSON.stringify(url.errors));
   check("an https link is taken (who sees it is each viewer's: shared/mediasrc.js)", val(editOps(crate, "c", { "picture.src": "https://i.imgur.com/x.png" }, { parts }), "picture")?.src === "https://i.imgur.com/x.png");
-  // shape audit 10-16 (render-media-env §5): part and flip are cut (texturing a node is the reserved material's)
+  // shape audit 10-16 (render-media-env §5): part and flip are cut (an image on a node is the material component's)
   const model = editOps(crate, "c", { "picture.src": PNG, "picture.part": "frame", "picture.description": "a red square" });
   check("a picture's part is no field any more: it is an error, and never written", /picture\.part: no such field/.test(model.errors.join(" ")) && val(model, "picture")?.part === undefined, JSON.stringify(model));
   const hung = { ...crate, picture: { src: PNG, lit: "scene" } };

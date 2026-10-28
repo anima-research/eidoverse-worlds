@@ -327,15 +327,24 @@ export const COMPONENTS = {
                 help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), description? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
   // an image on a thing (shared/picture.js; batch 2): a framed quad of its own (width m, height from the image's aspect,
   // facing +Z on its origin). src as sound's, for images. Shape audit 10-16 (render-media-env §5): texturing one node of a
-  // model (part, flip) is a material override, the reserved `material`'s, not a picture of its own: both are cut (0 stored)
+  // model (part, flip) is the `material` component's, not a picture of its own: both are cut (0 stored)
   picture:    { on: "thing", fields: { src: "string", width: "number", description: "string", lit: "string" },
                 defaults: { lit: "scene", width: 1 }, required: ["src"], enums: { lit: ["scene", "self"] },
-                dropped: { part: "texturing a node of a model is a material override: the reserved material component's (a picture is a quad of its own)", flip: "a part's upside-down UVs are the reserved material's, with part" },
+                dropped: { part: "an image on a node of a model is the material component's (a picture is a quad of its own)", flip: "a node's image is the material component's, with its node" },
                 ranges: { width: { gt: 0, max: 20 }, src: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
                 units: { width: "m" }, absentMeans: { description: "no description: a reader gets the file name" },
                 docs: { src: "the image: store/images/…, eidoverse/assets/…, or an https link", width: "the quad's width, metres; its height follows the image", description: "what it shows, in words: for people who can't see it and for agents",
                   lit: "scene (takes the scene's light) | self (a screen, unlit)" },
-                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), width? m (the quad's, facing +Z on its origin; its height follows the image), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. To texture a node of its model: the material component (reserved)" },
+                help: "an image on this thing: {src (store/images/…, eidoverse/assets/…, or an https link: see sound), width? m (the quad's, facing +Z on its origin; its height follows the image), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. To put an image on a node of its model: the material component" },
+  // an image on a NAMED node of its model (R 10-27; shared/material.js): glTF's baseColorTexture on that node's material,
+  // Godot's surface_material_override. The host wears a clone and restores the original on removal (client/lib/materialcomp.js)
+  material:   { on: "thing", fields: { node: "string", texture: "string", description: "string", lit: "string" },
+                defaults: { lit: "scene" }, required: ["node", "texture"], enums: { lit: ["scene", "self"] },
+                ranges: { node: { maxLen: 64 }, texture: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
+                absentMeans: { description: "no description: a reader gets the file name" },
+                docs: { node: "the node of its model the image goes on, its name as the file spells it (measure lists them)", texture: "the image: store/images/…, eidoverse/assets/…, or an https link (as a picture's src)",
+                  description: "what it shows, in words: for people who can't see it and for agents", lit: "scene (takes the scene's light) | self (a screen, unlit)" },
+                help: "an image on one node of this thing's model (a screen, a canvas, a poster frame): {node (its name, as the model file spells it: measure lists them), texture (store/images/…, eidoverse/assets/…, or an https link: see picture), description? (what it shows, in words: for people who can't see it and for agents), lit?: scene|self (self = a screen, unlit)}. The node's own material comes back when it is removed. A standalone image is a picture" },
   // why a thing is here (batch 2; R: {title, text, marks?}): a museum label's title and text. Who wrote it is a view over
   // the log (History), never stored. The world's own blurb is @world.about
   story:      { on: "thing", fields: { title: "string", text: "string", marks: "refs" }, required: ["title", "text"],
@@ -621,7 +630,6 @@ export const COMPONENTS = {
 // alpha means to give a settled shape. No fields: each says what it is held for. `joint` (the skeleton node) and
 // `physics-joint` (the constraint) are registered above, with physics.
 for (const [name, what] of Object.entries({
-  material: "appearance: a surface's look (glTF material, KHR extensions). The physical surface a thing names is physics.surface",
   "anim-pose": "a pose: one frame, only the bones it names (R 10-17 15:09; a station's or a grabbable's anim may name one)",
   "anim-clip": "an animation clip (more than one key) and its playhead; when it has a shape, its own mode (once | loop | hold) and the bodyMode it asks for are fields of it (R 10-17: the agent's anim reads both)",
   "anim-states": "an animation state machine (states, transitions, params driving clips)",

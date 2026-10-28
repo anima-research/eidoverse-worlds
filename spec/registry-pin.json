@@ -1222,6 +1222,49 @@
   },
   "on": "thing"
  },
+ "material": {
+  "status": "trial",
+  "fields": {
+   "node": "string",
+   "texture": "string",
+   "description": "string",
+   "lit": "string"
+  },
+  "defaults": {
+   "lit": "scene"
+  },
+  "enums": {
+   "lit": [
+    "scene",
+    "self"
+   ]
+  },
+  "ranges": {
+   "node": {
+    "maxLen": 64
+   },
+   "texture": {
+    "maxLen": 2048
+   },
+   "description": {
+    "maxLen": 200
+   }
+  },
+  "required": [
+   "node",
+   "texture"
+  ],
+  "absentMeans": {
+   "description": "no description: a reader gets the file name"
+  },
+  "docs": {
+   "node": "the node of its model the image goes on, its name as the file spells it (measure lists them)",
+   "texture": "the image: store/images/…, eidoverse/assets/…, or an https link (as a picture's src)",
+   "description": "what it shows, in words: for people who can't see it and for agents",
+   "lit": "scene (takes the scene's light) | self (a screen, unlit)"
+  },
+  "on": "thing"
+ },
  "story": {
   "status": "trial",
   "fields": {
@@ -2656,9 +2699,6 @@
    "cpu": "ms of authority time per sponsor per minute"
   },
   "on": "world"
- },
- "material": {
-  "status": "reserved"
  },
  "anim-pose": {
   "status": "reserved"

@@ -1,29 +1,13 @@
-// pictures — the browser host for the `picture` component.
+// pictures — the browser host for the `picture` component: a standalone image, a quad of its own (shared/picture.js says
+// what a bag means). An image on a named node of a model is the material component's host (materialcomp.js; R 10-27).
 //
-// Owns the THREE-bound half: loading the image off the library route, finding
-// the named part on the owning entity, swapping that part's material for a
-// clone carrying the image, and putting the original back when the picture
-// comes down. The split mirrors emitters.js:
-//
-//   shared/picture.js — what a `picture` bag MEANS (shared with the mcpl agent)
-//   this file         — hosting
-//
-// Two rules that are easy to get wrong and are therefore stated:
-//
-//   1. NEVER mutate the part's material. glTF materials are shared across
-//      primitives and across instances of the same model; painting one
-//      screen by writing `map` on its material paints every screen in the
-//      world. The host clones, textures the clone, and restores the original
-//      on removal — the clone is ours to dispose, the original never was.
-//   2. NEVER dispose the texture. loadImageTexture caches by bytes and pins
-//      the texture for the session (assets.js §16.2.B: `dispose` is a no-op
-//      on cached textures); the cache owns it, the picture borrows it. Same
-//      ownership rule as emitter sprites.
+// NEVER dispose the texture: loadImageTexture caches by bytes and pins the texture for the session (assets.js §16.2.B:
+// `dispose` is a no-op on cached textures); the cache owns it, the picture borrows it. Same rule as emitter sprites.
 
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
-import { entities, findPart, bags, bagOf } from './world.js';
+import { entities, bags, bagOf } from './world.js';
 import { CONFIG } from './base.js';
 import { registerEditor, registerHandler, commitEdit } from './inspect.js';
 import { namedParts } from './parts.js';
@@ -33,7 +17,7 @@ import { clientMayFetch } from '../../shared/mediasrc.js';
 import { allowUntrusted, RIGHTS_WARNING } from './mediaprefs.js';
 
 // Batch 2 (R 10-07):
-//   3. No part = a QUAD of its own (Godot Sprite3D, a Resonite image import): `width` metres wide, its height from the
+//   3. A QUAD of its own (Godot Sprite3D, a Resonite image import): `width` metres wide, its height from the
 //      image's aspect, standing on the thing's origin and facing its front (+Z), readable from behind too (a second
 //      plane turned π, so the back isn't mirrored). Until the image is decoded, a 1:1 plate at 30% stands in, so the
 //      editor's gizmo has something to grab. Cutout transparency (alphaTest 0.5: no sorting, fine in VR). Its world
@@ -74,7 +58,7 @@ function holdExtent(root, g, picture, aspect) {
   if (big > QUAD_MAX_EXTENT) g.scale.setScalar(QUAD_MAX_EXTENT / big);
 }
 
-// id → { picture, part, original, material } for every picture currently hung
+// id → { picture, quad, root, aspect } for every picture currently hung
 const hung = new Map();
 // id → revision of the CURRENT intent for that id. Every change of intent —
 // a new bag, a removal, a malformed bag, the entity leaving or being
@@ -87,36 +71,24 @@ const hung = new Map();
 const revision = new Map();
 const bump = (id) => { const r = (revision.get(id) ?? 0) + 1; revision.set(id, r); return r; };
 const current = (id, r) => revision.get(id) === r;
-// id → picture whose entity (or part) is not in the scene yet — replay usually
+// id → picture whose entity is not in the scene yet — replay usually
 // delivers the comp before the GLB has landed; the bag is folded and look()
 // is right the whole time, the texture just waits for something to land on.
 const pending = new Map();
 
-// `quad`: the picture's own plane. A PlaneGeometry's UVs are WebGL's (v up), so a quad wants the browser flip; a modelled
-// part's are glTF's (no flip). `flip` inverts either. Decided at decode: a store texture is a shared ImageBitmap (its
-// flipY is a no-op after upload), a link's is this picture's own canvas.
-async function pictureTexture(picture, quad = false) {
-  const flipY = quad ? picture.flip !== true : picture.flip === true;
-  if (/^https:/i.test(picture.src)) { const t = await linkTexture(picture.src); t.flipY = flipY; t.needsUpdate = true; return t; }
-  await primeFiles([picture.src]);
-  const bytes = globalThis.Deno.readFileSync(picture.src);
-  // glTF UVs are authored in glTF convention (no vertical flip); the shim's
-  // default bakes the browser flip for procedurally-mapped surfaces. A picture
-  // on a modelled part wants the glTF convention, so flipY:false — `flip` is
-  // the author's escape hatch for a part whose UVs were exported the other
-  // way, which the by-eye check tells you in one glance.
-  return globalThis.loadImageTexture(bytes, { srgb: true, flipY });
+/** An image's texture, by the media rule (shared/mediasrc.js): a link decoded here, a library file through the asset
+ *  cache. flipY: a PlaneGeometry's UVs are WebGL's (v up: true); a modelled node's are glTF's (false). */
+export async function imageTexture(src, flipY) {
+  if (/^https:/i.test(src)) { const t = await linkTexture(src); t.flipY = flipY; t.needsUpdate = true; return t; }
+  await primeFiles([src]);
+  return globalThis.loadImageTexture(globalThis.Deno.readFileSync(src), { srgb: true, flipY });
 }
 
 function takeDown(id) {
   const h = hung.get(id);
   if (!h) return;
   hung.delete(id);
-  if (h.quad) { h.quad.parent?.remove(h.quad); h.quad.userData.dispose?.(); return; }
-  // The part may have been re-realized (promote/demote) since we hung on it;
-  // only restore if our clone is still what it wears.
-  if (h.part.material === h.material) h.part.material = h.original;
-  h.material.dispose();     // ours; the texture is not (see rule 2)
+  h.quad.parent?.remove(h.quad); h.quad.userData.dispose?.();
 }
 
 async function hang(id, picture, rev) {
@@ -130,59 +102,21 @@ async function hang(id, picture, rev) {
   if (!root) return;
   const mayFetch = clientMayFetch(picture.src, 'image', allowUntrusted());
   if (!mayFetch) blocked.set(id, 'untrusted'); else blocked.delete(id);
-  if (!picture.part) {
-    // a quad of its own: the plate first (something to grab), the image when (if) it arrives
-    takeDown(id);
-    const plate = quadOf(picture, 1, null); root.add(plate); holdExtent(root, plate, picture, 1);
-    hung.set(id, { picture, quad: plate, root, aspect: null });
-    pending.delete(id);
-    if (!mayFetch) return;   // an untrusted link without this viewer's opt-in: never fetched
-    let tex;
-    try { tex = await pictureTexture(picture, true); }
-    catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
-    if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
-    const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;
-    takeDown(id);
-    const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
-    hung.set(id, { picture, quad: q, root, aspect });
-    return;
-  }
-  if (!mayFetch) { pending.delete(id); return; }
-  const part = findPart(root, picture.part);
-  if (!part || !part.material) {
-    // Legible, once: the comp folds and reads correctly in text tier; there is
-    // just no such part on this model to hang it on. `measure {id}` lists them.
-    console.warn(`[pictures] ${id}: part "${picture.part}" not found on the model — nothing hung`);
-    pending.delete(id);
-    return;
-  }
-  let tex;
-  try { tex = await pictureTexture(picture); }
-  catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — nothing hung`, e); return; }
-  // The load is done; is the intent it served still the intent? Anything
-  // that changed it while we waited bumped the revision, and a stale load
-  // installs nothing — not on the part, not on a re-realized subtree.
-  if (!current(id, rev)) return;
-  if (entities.get(id) !== root) return;   // entity re-realized mid-load (belt and braces)
-  // Replace (same id, new bag): the old clone goes first so `original` is
-  // always the model's own material, never a previous picture's clone.
+  // the plate first (something to grab), the image when (if) it arrives
   takeDown(id);
-  const original = part.material;
-  const material = original.clone();
-  material.map = tex;
-  // A picture's colours are the picture's: an authored base colour would tint
-  // it. White base, and for a self-lit picture the image also drives emissive
-  // so it reads in the dark the way a screen does.
-  if (material.color) material.color.set(0xffffff);
-  if (picture.lit === 'self' && 'emissive' in material) {
-    material.emissive.set(0xffffff);
-    material.emissiveMap = tex;
-    material.emissiveIntensity = 1;
-  }
-  material.needsUpdate = true;
-  part.material = material;
-  hung.set(id, { picture, part, original, material });
+  const plate = quadOf(picture, 1, null); root.add(plate); holdExtent(root, plate, picture, 1);
+  hung.set(id, { picture, quad: plate, root, aspect: null });
   pending.delete(id);
+  if (!mayFetch) return;   // an untrusted link without this viewer's opt-in: never fetched
+  let tex;
+  try { tex = await imageTexture(picture.src, true); }
+  catch (e) { console.warn(`[pictures] ${id}: ${picture.src} could not be loaded — the plate stays empty`, e); return; }
+  // a stale load installs nothing: the intent it served moved while it loaded (a new bag, a removal, a re-realize)
+  if (!current(id, rev) || entities.get(id) !== root || hung.get(id)?.quad !== plate) return;
+  const img = tex.image; const aspect = img?.width > 0 ? img.height / img.width : 1;   // its height follows the image
+  takeDown(id);
+  const q = quadOf(picture, aspect, tex); root.add(q); holdExtent(root, q, picture, aspect);
+  hung.set(id, { picture, quad: q, root, aspect });
 }
 
 function applyFrom(id, data) {
@@ -206,15 +140,14 @@ bus.on('comp', ({ id, type, data }) => {
 
 bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove' || kind === 'demote') {
-    // the subtree left the scene with our clone on it; forget the handle
-    // (restoring a material on a detached mesh is harmless but pointless).
+    // the subtree left the scene with our quad on it; forget the handle.
     // A load in flight for the departed subtree must not install: bump.
     // DEMOTE keeps the bag pending so the promote re-hangs it (the entity
     // and its comp still exist in the fold); REMOVE clears it — the entity
     // is gone, and a later spawn of the same id starts from its own comps.
     bump(id);
     const h = hung.get(id);
-    if (h) { hung.delete(id); if (h.quad) h.quad.userData.dispose?.(); else h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
+    if (h) { hung.delete(id); h.quad.userData.dispose?.(); if (kind === 'demote') pending.set(id, h.picture); }
     // the editor's status line is about THIS entity; a later spawn under the
     // same id is another one and opens with no line (Mica, #191 round 2)
     if (kind === 'remove') { pending.delete(id); notes.delete(id); }
@@ -224,8 +157,8 @@ bus.on('entity', ({ id, kind }) => {
     // is issued under a fresh revision.
     const rev = bump(id);
     const h = hung.get(id);
-    if (h) { hung.delete(id); if (h.quad) h.quad.userData.dispose?.(); else h.material.dispose(); pending.set(id, h.picture); }
-    // Whatever is pending — a bag that never had a part to land on, or one
+    if (h) { hung.delete(id); h.quad.userData.dispose?.(); pending.set(id, h.picture); }
+    // Whatever is pending — a bag whose entity wasn't here yet, or one
     // whose load was bumped stale by this very re-realization — is hung
     // again under the fresh revision.
     if (pending.has(id)) void hang(id, pending.get(id), rev);
@@ -413,8 +346,7 @@ registerHandler('comp', (id, _obj, k, _v, opts) => {
   uploadThenFace(id); return true;
 });
 // Add Component › Picture on a MODEL hangs it on the model's front face, as its own child (facemedia.js; review 10-07
-// S4: a picture with no part drew at the origin, inside the crate). On an empty it is that thing's own quad, as before;
-// a part is still picked in the card's `where`.
+// S4: a quad on the model's origin drew inside the crate). On an empty it is that thing's own quad, as before.
 async function uploadThenFace(id) {
   const fm = await import('./facemedia.js');
   if (!fm.frontOf(id)) return uploadThenSet(id, 'picture.src');

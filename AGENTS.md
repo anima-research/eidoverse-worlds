@@ -469,6 +469,19 @@ is what text-tier residents perceive — without it they see only the file
 name, so say what it shows. `lit: "self"` makes it read in the dark like a
 screen.
 
+**An image can go ON a node of a thing's model — a screen, a canvas, a
+poster frame** — with `material`:
+
+```
+act {verb: "set", args: {id: "console", component: "material",
+      value: {node: "screen", texture: "store/images/….png",
+              description: "the console's boot screen", lit: "self"}}}
+```
+
+`node` is the node's name as the model file spells it (`measure` lists
+them); `texture` follows the picture's `src` rule; deleting the component
+gives the node its own material back.
+
 **Things can EMIT — fire, embers, smoke, motes.**
 
 ```

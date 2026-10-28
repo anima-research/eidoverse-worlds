@@ -32,6 +32,7 @@ import { initCauses } from './lib/realize/livechat.js';
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
 import './lib/pictures.js';
+import './lib/materialcomp.js';   // the material component: an image on a named node of the model (R 10-27)
 import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
 import { tickLookAt } from './lib/lookats.js';   // batch 2: look-at, after motion (a bob moves it, then it turns)

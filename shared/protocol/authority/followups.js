@@ -165,13 +165,14 @@ function stampShapes(ctx, ops) {
 // another file) or the request named no t0, the authority sets t0 = now and says so: a reaction, a script, an agent and the
 // editor all start it in step, and no client invents its own clock (as motion.t0). A pause keeps t0; a resume restarts.
 // And a link's reach is said once, when it's written: who will hear or see it (shared/mediasrc.js).
+const MEDIA = { sound: ["src", "audio"], picture: ["src", "image"], material: ["texture", "image"] };   // component → [its source field, kind]
 function stampMedia(ctx, ops) {
-  if (!ops.some((o) => o.verb === "set" && (o.comp === "sound" || o.comp === "picture"))) return ops;
+  if (!ops.some((o) => o.verb === "set" && Object.hasOwn(MEDIA, o.comp))) return ops;
   return ops.map((o) => {
-    if (o.verb !== "set" || !(o.comp === "sound" || o.comp === "picture") || !o.value || typeof o.value !== "object" || Array.isArray(o.value)) return o;
-    const v = o.value; const prev = ctx.st.entities[o.id]?.c[o.comp];
-    if (typeof v.src === "string" && /^https:/i.test(v.src) && (!prev || prev.src !== v.src)) { const t = mediaTier(v.src, o.comp === "picture" ? "image" : "audio");
-      if (t.tier === "host" || t.tier === "link") ctx.notes.push({ id: o.id, component: o.comp, field: "src", reach: t.tier === "host" ? "everyone" : "opted-in", why: tierWords(t, o.comp === "picture" ? "image" : "audio") }); }
+    if (o.verb !== "set" || !Object.hasOwn(MEDIA, o.comp) || !o.value || typeof o.value !== "object" || Array.isArray(o.value)) return o;
+    const v = o.value; const prev = ctx.st.entities[o.id]?.c[o.comp]; const [f, kind] = MEDIA[o.comp];
+    if (typeof v[f] === "string" && /^https:/i.test(v[f]) && (!prev || prev[f] !== v[f])) { const t = mediaTier(v[f], kind);
+      if (t.tier === "host" || t.tier === "link") ctx.notes.push({ id: o.id, component: o.comp, field: f, reach: t.tier === "host" ? "everyone" : "opted-in", why: tierWords(t, kind) }); }
     if (o.comp !== "sound" || v.playing === false) return o;
     const p = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : null;
     if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;

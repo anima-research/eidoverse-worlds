@@ -202,6 +202,7 @@ function mediaCheck(s, id, comp, v, at, obj) {
   // public host. Who may FETCH a link is each viewer's browser's question (clientMayFetch); the authority refuses what nobody may
   if ((comp === "picture" || comp === "sound") && obj && v.src !== undefined) { const t = mediaTier(v.src, comp === "picture" ? "image" : "audio");
     if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }
+  if (comp === "material" && obj && v.texture !== undefined) { const t = mediaTier(v.texture, "image"); if (t.tier === "bad") refuse("shape", `${at}.texture: ${t.why}`, t.fix); }
   if (comp === "sound" && obj && isNum(v.near) && isNum(v.radius) && v.near > v.radius) refuse("bounds", `${at}.near (${v.near}) is past radius (${v.radius})`, "near is where it's at full volume; radius is where it goes silent");
   if (comp === "story" && obj && Array.isArray(v.marks)) { const seen = new Set();
     for (const m of v.marks) { if (typeof m !== "string") refuse("shape", `${at}.marks holds thing ids (strings)`, "");
@@ -291,8 +292,8 @@ const DROPPED_FIX = {
   "physics.ccd": "eidosim sweeps every body; leave it out",
   "parent.order": "leave it out: siblings have no stored order",
   "light.shadows": "leave it out: no light here casts its own shadows yet (important claims a light slot)",
-  "picture.part": "a picture is a quad of its own; texturing a node of a model is the material component's (reserved: not written yet)",
-  "picture.flip": "a part's upside-down UVs are the material component's (reserved), with part",
+  "picture.part": "a picture is a quad of its own; an image on a node of a model is set {id, component: 'material', value: {node, texture}}",
+  "picture.flip": "an image on a node of a model is set {id, component: 'material', value: {node, texture}}",
   "terrain.water": "set {id: '@world', component: 'water', value: {level, color?, opacity?, kind?, flow?}}",
   "sky.clock": "a tz present is the wall clock: {tz: 'Europe/Paris'} (the sky act still takes clock: 'real')",
   "sky.weatherSeconds": "transition (seconds) is the one spelling",

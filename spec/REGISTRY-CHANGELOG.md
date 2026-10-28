@@ -335,3 +335,8 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-27: description (R 10-27): picture.alt and sound.alt are description; a stored alt (or the look before it) is renamed once by the load (shaperepair RENAMED_FIELDS), no live read alias
   - sound.alt: type string → gone
   - picture.alt: type string → gone
+- 2026-10-27: material (R 10-27): the held name gets its minimal shape {node, texture, description?, lit?}, trial: an image on a named node of a model (glTF baseColorTexture; Godot surface_material_override); a standalone image is picture
+  - material: status reserved → trial
+  - material.node: added after material was first registered, with no meaning of absence (absentMeans.node: what an older value without it means)
+  - material.texture: added after material was first registered, with no meaning of absence (absentMeans.texture: what an older value without it means)
+  - material.lit: added after material was first registered, with no meaning of absence (absentMeans.lit: what an older value without it means)

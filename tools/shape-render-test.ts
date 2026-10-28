@@ -210,8 +210,8 @@ await tryRow('PI', () => {
   check('PI1 picture is {src, width, description, lit}', keys(P.fields) === keys({ src: 1, width: 1, description: 1, lit: 1 }) && !('flip' in (P.defaults ?? {})), [Object.keys(P.fields), P.defaults]);
   const W = scratchWorld('w2r-picture').seed({ frame: { model: 'crate', pos: [0, 0, 0] } });
   const r = W.call('set', { id: 'frame', component: 'picture', value: { src: 'store/images/0123456789abcdef.png', part: 'canvas' } });
-  check('PI2 part (and flip) are refused, saying texturing a model\'s node is the reserved material\'s', code(r) === 'schema' && /material/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
-  check('PI2 …material is reserved', statusOf('material') === 'reserved');
+  check('PI2 part (and flip) are refused, saying an image on a model\'s node is material\'s', code(r) === 'schema' && /material/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
+  check('PI2 …material is a trial component now (R 10-27), and the fix names it', statusOf('material') === 'trial' && /material.*\{node, texture\}/.test(`${r.refused?.reason} ${r.refused?.fix}`) && !/reserved/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
 });
 
 // ===================================================================== description: the describing text on a picture and a sound (R 10-27)
@@ -235,6 +235,22 @@ await tryRow('DS', async () => {
   check('DS5 …renameOps writes only what needs it', ops.length === 1 && ops[0].id === 'f' && ops[0].value.description === 'a print', ops);
   const src = ['shared/protocol/descriptors.js', 'shared/editschema.js', 'shared/components.js', 'client/lib/pictures.js', 'client/lib/sounds.js'].map(read).join('\n');
   check('DS6 alt leaves the editors (descriptors, editschema, components, the client\'s panels)', !/['"]alt['"]|\.alt\b|\balt:|ALT_/.test(src), (src.match(/.{0,40}(['"]alt['"]|\.alt\b|\balt:|ALT_).{0,40}/g) ?? []).slice(0, 5));
+});
+
+// ===================================================================== material: an image on a named node of a model (R 10-27)
+await tryRow('MA', async () => {
+  const M = COMPONENTS.material;
+  check('MA1 material: trial, on thing, {node, texture, description?, lit?}, node and texture required, lit scene | self', statusOf('material') === 'trial' && M.on === 'thing' && keys(M.fields) === keys({ node: 1, texture: 1, description: 1, lit: 1 }) && keys(M.required) === keys({ 0: 1, 1: 1 }) && M.required.includes('node') && M.required.includes('texture') && JSON.stringify(M.enums?.lit) === '["scene","self"]' && M.ranges?.description?.maxLen === 200, [M.status, M.fields, M.required]);
+  const W = scratchWorld('ma-door').seed({ tv: { model: 'crate', pos: [0, 0, 0] } });
+  const r1 = W.call('set', { id: 'tv', component: 'material', value: { node: 'screen', texture: 'store/images/0123456789abcdef.png', description: 'static', lit: 'self' } });
+  check('MA2 the door takes a material on a node', r1.ok && W.state().entities.tv.c.material?.node === 'screen' && W.state().entities.tv.c.material?.description === 'static', r1.refused);
+  const r2 = W.call('set', { id: 'tv', component: 'material', value: { node: 'screen', texture: 'http://example.com/x.png' } });
+  const r3 = W.call('set', { id: 'tv', component: 'material', value: { texture: 'store/images/0123456789abcdef.png' } });
+  check('MA2 …refuses a texture nobody may fetch (the picture rule) and a missing node', code(r2) === 'shape' && /texture/.test(r2.refused?.reason ?? '') && code(r3) !== 'ok', [r2.refused, r3.refused]);
+  const Ma = await import('../shared/material.js'), { saysOf } = await import('../shared/says.js');
+  check('MA3 look reads it: what the author said, on which node', Ma.describeMaterial({ node: 'screen', texture: 'store/images/a.png', description: 'static' }) === 'an image on its screen: «static»' && saysOf({ material: { node: 'screen', texture: 'store/images/a.png' } }).includes('an image on its screen (a.png)'), saysOf({ material: { node: 'screen', texture: 'store/images/a.png' } }));
+  const host = read('client/lib/materialcomp.js');
+  check('MA4 the client wears it: imported by main, a prepared clone per mesh of the node, the original put back on removal', /import '\.\/lib\/materialcomp\.js'/.test(read('client/main.js')) && /original\.clone\(\)/.test(host) && /prepareMaterial\(clone/.test(host) && /mesh\.material = original/.test(host) && /findPart\(root, m\.node\)/.test(host), '');
 });
 
 // ===================================================================== the translator: main's media in today's shapes (R 10-27; audit B1, B2)

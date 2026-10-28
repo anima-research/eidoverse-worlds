@@ -32,7 +32,7 @@ definition in `shared/protocol/componentspec.js`; `schema` returns it, and the I
   names (code `reserved`; the definition's `instead` says what to use meanwhile). Today: `physics-joint` (the
   constraint between two bodies; renamed from `joint` 10-16, nothing stored it), `joint` (a skeleton node: Maya, glTF,
   VRM; for avatar entity trees), `surface` (with physics' reserved fields), `schemas`, `terrain-grid`, `terrain-tile`, `terrain-paint`; `sockets` (the old map: lift-only, the door turns a write of it into
-  socket children); and the names R held for shapes not settled yet (shape audit 10-16): `material`, `anim-pose` (one frame; R 10-17), `anim-clip`,
+  socket children); and the names R held for shapes not settled yet (shape audit 10-16; `material` got its shape R 10-27): `anim-pose` (one frame; R 10-17), `anim-clip`,
   `anim-states`, `camera`, `video`, `spring-joint`, `link`, `tags`; and `body-owner`, `edit-grant`, `avatar-deny`
   (the avatar guard rails' names, PROTOCOL §7a).
 - **reserved inside a trial component**: a field or a kind can be held the same way, refused with code `reserved` while

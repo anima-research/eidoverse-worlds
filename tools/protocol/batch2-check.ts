@@ -173,8 +173,8 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       return { r: code(s.call("olive", "set", { id: "lamp", component: "look", value: { target: "lamp" } })) }; },
     good: (o) => o.r === "schema" },
-  // shape audit 10-16 (render-media-env §5): a picture is a quad of its own; texturing a model's part is the reserved material's
-  { id: "K2", what: "a store picture and a store sound keep working (today's shapes, minus the renamed look); a picture's part is refused (the reserved material's)", run(s) { cast(s);
+  // shape audit 10-16 (render-media-env §5): a picture is a quad of its own; an image on a model's node is the material component's
+  { id: "K2", what: "a store picture and a store sound keep working (today's shapes, minus the renamed look); a picture's part is refused (the material component's)", run(s) { cast(s);
       s.call("olive", "create", { id: "tv", model: "crate", place: { at: [0, 0] } });
       return { p: show(s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG } })), part: code(s.call("olive", "set", { id: "tv", component: "picture", value: { src: IMG, part: "screen" } })), s: show(s.call("olive", "set", { id: "tv", component: "sound", value: { src: AUD, volume: 0.5 } })) }; },
     good: (o) => o.p === "ok" && o.part === "schema" && o.s === "ok" },
