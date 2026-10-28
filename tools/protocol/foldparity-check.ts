@@ -146,7 +146,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   ok(await b.cacheChecked === true, "FP1 the background re-derive agrees with the state, the chain and the views"); }
 
 // ---- FP2 ----
-{ const dir = path.join(W, "chat"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 900, "chat"); w.saveCache(); grow(w, 30, "chat");
+{ const dir = path.join(W, "chat"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 900, "chat"); w.saveCache(); T += 700; request(w, "ash", "say", { text: "the first line after the cache" }); grow(w, 30, "chat");
   await equivalent("a built world (things, chat, roles, undos)", dir); }
 { const dir = path.join(W, "phys"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir);
   const call = (verb, args = {}) => { T += 100; return request(w, "rowan", verb, args); };
