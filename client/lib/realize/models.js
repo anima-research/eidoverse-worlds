@@ -45,6 +45,9 @@ export { PORTED };
  *  it has handled. gen guards a load completion against acting for a
  *  reservation that was retired and re-created while its bytes flew. */
 const tracked = new Map();
+/** Has this entity's model failed to load (and is waiting out its back-off)?
+ *  A thing that failed won't be solid soon — arrivalhold.js stops waiting on it. */
+export const modelLoadFailed = (id) => Boolean(tracked.get(id)?.failedAt);
 let nextGen = 1;
 
 const _v = new THREE.Vector3();

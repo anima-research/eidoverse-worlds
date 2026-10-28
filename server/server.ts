@@ -171,7 +171,17 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
   // client replayed a voice state its new session never had (review 09-30 S2)
   const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
-  if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
+  if (still.clip === "ragdoll") {
+    still.clip = "idle"; delete still.pose;
+    // A lying body's root lies BELOW the floor it lies on (it follows the
+    // hips a hips-height lower). Remembered standing, it must stand on that
+    // floor — the one the client measured (presence `floor`, getup.js) —
+    // not at its root, inside a stair landing or under an upper floor.
+    const p = still.p as number[] | undefined;
+    if (typeof still.floor === "number" && Number.isFinite(still.floor) && Array.isArray(p) && p.length === 3)
+      still.p = [p[0], still.floor, p[2]];
+  }
+  delete still.floor;
   return still;
 }
 // The log's rememberPose settles through this SAME function — one rule for
