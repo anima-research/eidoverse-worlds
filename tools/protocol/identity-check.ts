@@ -10,6 +10,7 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
+//   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
 //       with a disambiguator (pass 3 H2), and doesn't get the first one's remembered pose; the real one does
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
@@ -430,6 +431,20 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   const b = await sock(S2.port); const jb = await b.join("orchard", "x", { agentToken: "tok-rowan" });
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the authority", [you(ja), you(jb)]);
   a.close(); b.close(); }
+
+// ---- AU: POST /auth makes a session for a person only (accounts review 10-28): an agent's kind, a sub outside human:, or
+// a login without worlds:join|spectate is refused. ----
+const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { method: "POST", body: JSON.stringify({ token }) })
+  .then(async (r) => ({ status: r.status, cookie: !!r.headers.get("set-cookie"), body: await r.json().catch(() => ({})) }));
+{ const agent = await postAuth(srv.port, mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" }));
+  ok(agent.status === 403 && !agent.cookie && /agent/.test(agent.body.error ?? "") && /join/.test(agent.body.error ?? ""), "AU1 /auth refuses an agent's credential, pointing it at the join door", agent);
+  const noScope = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:41", scopes: ["worlds:upload"] }));
+  ok(noScope.status === 403 && !noScope.cookie && /worlds:join/.test(noScope.body.error ?? ""), "AU2 /auth refuses a login with neither worlds:join nor worlds:spectate (httpCaller's rule)", noScope);
+  const notHuman = await postAuth(srv.port, mint({ kind: "human", sub: "agent:token:rowan" }));
+  ok(notHuman.status === 403 && !notHuman.cookie, "AU3 /auth refuses a person whose sub isn't human:… (it would be an enrolled agent's account)", notHuman);
+  const watch = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:42", scopes: ["worlds:spectate"] }));
+  const join = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:43" }));
+  ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]); }
 
 // ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
 // name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper
