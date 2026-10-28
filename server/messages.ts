@@ -26,7 +26,7 @@ import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
-import { snapshots } from "./snapshots.ts";
+import { screenshots } from "./screenshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
@@ -415,10 +415,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/snapshots.ts,
+  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,
   // the broker: roaming renderers, PNG validation, the generation check)
-  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
-  "capture-result": ({ c }, msg) => { snapshots.receive(c, msg); },
+  "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
+  "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
     // anyone present — the moderator's record is public in its outline (who,

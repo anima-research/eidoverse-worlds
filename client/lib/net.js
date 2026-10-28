@@ -1055,7 +1055,7 @@ async function handle(msg, at) {
     case 'reply': onReply(msg); break;
 
     case 'renderer-travel':
-      // a roaming renderer is wanted elsewhere (server/snapshots.ts summon): go there — the same in-page re-join a
+      // a roaming renderer is wanted elsewhere (server/screenshots.ts summon): go there — the same in-page re-join a
       // person's travel uses. Only a roaming renderer obeys; anyone else ignores it.
       if (CONFIG.renderer && CONFIG.roam && isWorldName(msg.world) && msg.world !== CONFIG.world) {
         CONFIG.world = msg.world; rejoin();

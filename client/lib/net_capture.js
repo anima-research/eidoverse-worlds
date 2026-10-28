@@ -21,7 +21,7 @@ const _snapBox = new THREE.Box3();
 // the counts, never a partial image. A settled renderer passes straight through.
 //
 // "In time" is the server's to say: each snap carries `wait`, how long the asker will still wait for this frame less
-// a margin for the capture and the send (server/snapshots.ts dispatch). The renderer used to stop at a fixed 20 s
+// a margin for the capture and the send (server/screenshots.ts dispatch). The renderer used to stop at a fixed 20 s
 // while the server would wait 40 s, so a world that finished loading at 22 s became a failed first snapshot
 // (2026-10-24). SETTLE_MS is only for a server that sends no `wait`.
 const SETTLE_MS = 20_000, MAX_SETTLE_MS = 240_000, STEADY_CHECKS = 4, CHECK_MS = 250;

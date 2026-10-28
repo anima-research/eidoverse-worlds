@@ -39,7 +39,7 @@ import { directoryFor, foldName, accountTag } from "./directory.ts";
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingCaptures for the renderer's capture-result replies.
 import { route, avatarRoster } from "./routes.ts";
-import { snapshots } from "./snapshots.ts";
+import { screenshots } from "./screenshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -188,7 +188,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
-      snapshots.retire(t);
+      screenshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -201,7 +201,7 @@ function expel(w: World, target: Client, why: string, until?: number | null, cod
   // `code`: 4006 removed by moderation; 4010 (access.ts ACCESS_CLOSE) this world is no longer open to you — neither is redialled
   try { target.ws.send(JSON.stringify({ type: "error", error: why, ...(until ? { until } : {}) })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
-  snapshots.retire(target);
+  screenshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
@@ -305,15 +305,15 @@ try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } 
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
-snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
+screenshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
-snapshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
-snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
-snapshots.setSweepGrace(SNAP_SWEEP_GRACE_MS);   // config.ts SNAP_SWEEP_GRACE_SEC
-// Keep agents' worlds served (snapshots.ts sweep): a parked roamer goes to any world with an agent in it and no
-// renderer, so its first snapshot finds the world loaded. On a timer, as the backstop for everything that leaves a
+screenshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
+screenshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
+screenshots.setSweepGrace(SNAP_SWEEP_GRACE_MS);   // config.ts SNAP_SWEEP_GRACE_SEC
+// Keep agents' worlds served (screenshots.ts sweep): a parked roamer goes to any world with an agent in it and no
+// renderer, so its first screenshot finds the world loaded. On a timer, as the backstop for everything that leaves a
 // world unserved; a roamer joining also runs it at once (below).
-setInterval(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, SNAP_SWEEP_EVERY_MS);   // config.ts SNAP_SWEEP_EVERY_SEC
+setInterval(() => { try { screenshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, SNAP_SWEEP_EVERY_MS);   // config.ts SNAP_SWEEP_EVERY_SEC
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -485,7 +485,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // re-derived on every join, like the rest of identity: the renderers' own
     // credential, presented WITH the renderer flag on this very join
     c.trustedRenderer = c.renderer && Boolean(RENDERER_TOKEN) && String(msg.token ?? "") === RENDERER_TOKEN;
-    snapshots.configure(c, msg.capture);
+    screenshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // ---- who this join is: an ACCOUNT, proven by this join's credential (C1/C2) ----
     //   a verified session → its sub ("human:discord:…");
@@ -693,7 +693,7 @@ function installJoin(c: Client, w: World) {
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
-          snapshots.retire(other);
+          screenshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -718,15 +718,15 @@ function installJoin(c: Client, w: World) {
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
-    snapshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
+    screenshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
     // a body arriving with an agent's enrolment (its credential, never a declaration: §6a) where no renderer serves: send a
-    // roaming renderer now, so its first snapshot finds the world loaded (server/snapshots.ts prewarm; a no-op when one
+    // roaming renderer now, so its first screenshot finds the world loaded (server/screenshots.ts prewarm; a no-op when one
     // already serves or none roams)
-    if (c.tokenVerified && !c.spectator) snapshots.prewarm(w);
+    if (c.tokenVerified && !c.spectator) screenshots.prewarm(w);
     // …and a roaming renderer joining (its watchdog restarts it into its lobby, after a deploy or every few hours)
     // is sent straight back to an agent's world that has none, rather than waiting for the timer above. A second
     // later, so its own join has settled before it is asked to travel.
-    if (c.roam) setTimeout(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
+    if (c.roam) setTimeout(() => { try { screenshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
     // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
     // the lab found a listener bound to a dead voice leg until page
     // reload. This event is the no-reload path: "retire the old peer,
@@ -893,7 +893,7 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
-        snapshots.retire(c);
+        screenshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -992,7 +992,7 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
-            snapshots.retire(c);
+            screenshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {

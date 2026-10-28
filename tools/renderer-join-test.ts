@@ -3,7 +3,7 @@
 //   bun tools/renderer-join-test.ts
 //
 // The server takes a join's `renderer` flag at its word: it sends that client snapshots, and if the
-// join also says `roam`, sends it into worlds that have no renderer (server/snapshots.ts summon). A
+// join also says `roam`, sends it into worlds that have no renderer (server/screenshots.ts summon). A
 // lite page with ?renderer used to send both flags. A roaming one was sent into a world and
 // answered every snapshot there "this client has no renderer", and because the world then had a
 // renderer, no working one was ever sent (2026-10-24). net.js sendJoin now claims the role only when a

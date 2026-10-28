@@ -67,8 +67,8 @@ export type Client = {
                        // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
                        // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
   renderer?: boolean;  // an invisible browser renderer (legacy): donates rendering for its world
-  roam?: boolean;      // a renderer the snapshot broker may send to any world that has none (snapshots.ts)
-  capture?: import("./snapshots.ts").CaptureCapability; // opt-in embodied/native donor
+  roam?: boolean;      // a renderer the screenshot broker may send to any world that has none (screenshots.ts)
+  capture?: import("./screenshots.ts").CaptureCapability; // opt-in embodied/native donor
   account?: string | null; // the account this connection PROVED at its first join (fixed for the socket's life); null = anonymous
   addr?: string | null; // the connection's address, hashed at upgrade (a guest's ban names it)
   anonymous?: boolean; // no account: a guest (a member unless the world raises guests; named as one)

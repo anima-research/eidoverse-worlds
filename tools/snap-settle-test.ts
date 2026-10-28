@@ -5,7 +5,7 @@
 // net_capture.js settle() waits for a just-arrived renderer's world to finish loading before it captures (no partial
 // worlds). It used to stop at a fixed 20 s while the server would wait 40 s for a summoned roamer, so a world that
 // finished loading at 22 s became a failed first snapshot (2026-10-24). Each snap now carries `wait` from the server
-// (server/snapshots.ts dispatch), and settle uses it.
+// (server/screenshots.ts dispatch), and settle uses it.
 //
 // The real net_capture.js, in a fresh process per case, with its browser-only imports (core.js, remotes.js, fp_view.js,
 // capture.js, world.js) stubbed and the readiness probe scripted: the world becomes ready after `readyAt` ms.

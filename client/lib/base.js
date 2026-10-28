@@ -95,7 +95,7 @@ export const CONFIG = {
   worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
-  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  // a roaming renderer: the server may send it to any world a screenshot is asked of (server/screenshots.ts)
   roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.

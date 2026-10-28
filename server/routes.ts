@@ -40,7 +40,7 @@ import { summarizeGlb } from "./geometry.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
 import { worlds, getWorld, type World } from "./world.ts";
-import { snapshots } from "./snapshots.ts";
+import { screenshots } from "./screenshots.ts";
 import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
@@ -97,13 +97,13 @@ export type Srv = {
   timeout?(req: Request, seconds: number): void;
 };
 
-// ---- snapshots: the world serves views of itself ---------------------------
+// ---- screenshots: the world serves views of itself -------------------------
 // GET /snap?world=W&follow=ID[&view=first|third|selfie][&at=<thing>][&renderer=auto|unreal|browser][&budget=ms]
 // [&dist=&height=&pitch=] (optional framing, shared/snapframe.js) → the sequencer
 // asks a renderer client (an opt-in Unreal player or legacy browser spectator,
 // dialed OUT like any client) to jump its camera to ID's head (or frame the
 // placed thing `at`) and return one frame: a `capture` request answered by
-// `capture-result` (server/snapshots.ts, the broker; roaming renderers come to
+// `capture-result` (server/screenshots.ts, the broker; roaming renderers come to
 // a world none serves). Clients never know rendering exists as a separate
 // thing — it's just the world's API.
 
@@ -711,7 +711,7 @@ const ROUTES: Route[] = [
       // keeps to although the per-request call accepts more; config.ts keeps
       // SNAP_TIMEOUT_SEC low enough (225) that the cap never cuts the broker's
       // longest wait.
-      srv.timeout?.(req, Math.min(255, Math.ceil(snapshots.maxWaitMs / 1000) + 5));
+      srv.timeout?.(req, Math.min(255, Math.ceil(screenshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w || !visibleTo(doorFor(w.name), httpCaller(req))) return new Response("unknown world", { status: 404 });
@@ -722,9 +722,9 @@ const ROUTES: Route[] = [
       // keeps it longer. Out of range or absent: the broker's own deadline.
       const budget = Number(q.get("budget"));
       const callerBudget = Number.isFinite(budget) && budget >= 1_000 && budget <= 600_000 ? budget : undefined;
-      // req.signal aborts when the asker goes away: a waiting ask then leaves the queue unserved (snapshots.ts)
-      const r = await snapshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame, at, callerBudget, req.signal);
-      // Retry-After only on a failure asking again soon can fix (snapshots.ts retryAfter): the MCPL tool asks again
+      // req.signal aborts when the asker goes away: a waiting ask then leaves the queue unserved (screenshots.ts)
+      const r = await screenshots.request(w, follow, q.get("view") ?? "first", q.get("renderer") ?? "auto", frame, at, callerBudget, req.signal);
+      // Retry-After only on a failure asking again soon can fix (screenshots.ts retryAfter): the MCPL tool asks again
       // exactly when it is there
       if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store",
         ...(r.retryAfter ? { "retry-after": String(r.retryAfter) } : {}) } });

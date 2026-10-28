@@ -97,8 +97,8 @@ player viewport.
 ## Validation / deployment
 
 ```sh
-bun test ./tools/snapshots-test.ts          # the broker: queue, deadlines, retryable failures, roamers, the sweep
-bun tools/snapshots-wire-test.ts            # the real route and sockets, a throwaway sequencer
+bun test ./tools/screenshots-test.ts          # the broker: queue, deadlines, retryable failures, roamers, the sweep
+bun tools/screenshots-wire-test.ts            # the real route and sockets, a throwaway sequencer
 bun tools/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
 bun tools/snap-timeout-test.ts              # SNAP_TIMEOUT_SEC against the HTTP and broker timeouts
 bun tools/door-wording-test.ts              # the MCPL snapshot tool: its words and its retries
@@ -150,16 +150,16 @@ recheck was interrupted when the editor was closed again externally. It is left
 closed, and the scratch sequencer is stopped. Saved QA images:
 `/Users/olena/unrealtest/eidoverse/capture-qa.cj0VmE/`.
 
-## Roaming renderers: snapshots in any world
+## Roaming renderers: screenshots in any world
 
 A renderer is normally pinned to one world, so an agent building alone in its own world had no one to render it
 (503). A **roaming** renderer serves whatever world needs it:
 
 - Start one with the watchdog's `ROAM=1` (URL flag `&roam`; name `mac-gpu-roam-<WORLD>`). It joins `WORLD` first and
   is free to move.
-- **On demand:** a snapshot asked of a world no renderer serves sends an idle roamer there (`renderer-travel`, an
-  in-page re-join), waits for it to arrive (up to 25 s), and dispatches the snapshot to it. It stays until another
-  world needs it, so follow-up snapshots are fast. One summons per world at a time; a roamer mid-shot is not taken.
+- **On demand:** a screenshot asked of a world no renderer serves sends an idle roamer there (`renderer-travel`, an
+  in-page re-join), waits for it to arrive (up to 25 s), and dispatches the screenshot to it. It stays until another
+  world needs it, so follow-up screenshots are fast. One summons per world at a time; a roamer mid-shot is not taken.
   An `unreal`-only request is never sent a roamer (roamers are browser renderers).
 - **Pre-warm:** when an agent's body joins a world no renderer serves, a roamer is sent at once, so the world is
   loaded by the time the agent asks.
@@ -175,12 +175,12 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   loading or standing in, steady for a second. It waits as long as the server says it may: each `capture` carries
   `wait`, the frame's window less a 2 s margin: up to 38 s for a roamer that arrived within the last 40 s (sent by
   this request, a pre-warm or a sweep), less if the request's 55 s deadline has less left; otherwise the frame
-  window (`SNAP_TIMEOUT_SEC`) less the margin, 10 s by default, pinned renderers included. If the world is still not realized by then, the snapshot fails with the counts
+  window (`SNAP_TIMEOUT_SEC`) less the margin, 10 s by default, pinned renderers included. If the world is still not realized by then, the screenshot fails with the counts
   (`the renderer is still loading this world — 3 models still loading (12 in); try again in a few seconds`), as a
   retryable 503 — never a half-loaded frame. A settled renderer captures at once. (The renderer used to give up at
-  a fixed 20 s while the server would wait 40, which failed first snapshots of worlds that took a little longer.)
+  a fixed 20 s while the server would wait 40, which failed first screenshots of worlds that took a little longer.)
 - Refusals stay explicit: no roamer free → 503 naming the world; a renderer still loading → its own words.
 
-`tools/roaming-renderer-check.ts http://host:port` exercises it end to end (pre-warm, a snapshot asked the instant
+`tools/roaming-renderer-check.ts http://host:port` exercises it end to end (pre-warm, a screenshot asked the instant
 the agent arrives, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
-its lobby being swept back before the next snapshot). `GRACE_MS=0` asks at once.
+its lobby being swept back before the next screenshot). `GRACE_MS=0` asks at once.

@@ -279,7 +279,7 @@ export const snapCallBudgetMs = () => {
 };
 // A FIRST CALL SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24). The world server marks the refusals that pass in
 // seconds with Retry-After: the renderer still loading the world, renderers busy, a frame that did not come in time, a
-// renderer gone mid-shot (server/snapshots.ts retryAfter). The tool asks again exactly then, after that many seconds,
+// renderer gone mid-shot (server/screenshots.ts retryAfter). The tool asks again exactly then, after that many seconds,
 // within one budget, and tells the server what is left of it (?budget=), so no try outlasts the call. A refusal without
 // Retry-After (no renderer and no roamer to send, members-only, an Unreal-only ask with none serving, a bad argument)
 // is answered at once. A world server that cannot be reached, or a proxy in front answering 502 for it with its own
@@ -338,11 +338,11 @@ async function screenshotOnce(ag: ToolAgent, view: string, at: string | undefine
     if (r.status === 401 || r.status === 403) return { kind: "final", result: fail(`screenshot: no picture was taken; ${keyRefused(r.status)}`) };
     if (!r.ok) {
       // The server's text in parentheses, where its own quoted names can't
-      // nest in ours; the remedy is the status's (server/snapshots.ts).
+      // nest in ours; the remedy is the status's (server/screenshots.ts).
       const said = (await r.text()).slice(0, 200).replace(/\s+/g, " ").trim();
       const remedy = r.status === 429 ? "try again in a few seconds"
         // an Unreal-only request summons no roaming renderer, and "auto" can pick the same Unreal
-        // renderer again; "browser" takes a browser renderer, or summons one (server/snapshots.ts)
+        // renderer again; "browser" takes a browser renderer, or summons one (server/screenshots.ts)
         : r.status === 503 && renderer === "unreal" ? `try again in a while, or ask for renderer "browser"`
         : r.status === 404 ? "calling again works only once what it says has changed"
         : r.status < 500 ? "calling again with the same arguments won't change that"

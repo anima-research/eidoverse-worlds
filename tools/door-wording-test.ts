@@ -60,7 +60,7 @@ const world = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(req) {
   if (u.pathname === "/avatars") return Response.json(roster);
   if (u.pathname === "/library-models") return Response.json([]);
   if (u.pathname === "/snap") {
-    // The broker's answers (server/snapshots.ts), in its order: the renderer asked for, then the
+    // The broker's answers (server/screenshots.ts), in its order: the renderer asked for, then the
     // body followed. The body's name also picks how the world's renderers answer; any other name
     // finds none of the kind asked for serving.
     const renderer = u.searchParams.get("renderer"), follow = u.searchParams.get("follow");

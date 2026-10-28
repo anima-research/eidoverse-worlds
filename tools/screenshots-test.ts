@@ -1,13 +1,13 @@
 // (ported 10-17: the broker speaks `capture` here, and an agent is a body with an agent's enrolment, tokenVerified — never a declaration)
 import { test, expect } from "bun:test";
-import { createSnapshotBroker, captureCapability, pngFromDataURL } from "../server/snapshots.ts";
+import { createScreenshotBroker, captureCapability, pngFromDataURL } from "../server/screenshots.ts";
 import type { World, Client } from "../server/world.ts";
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
   // these renderers have long been serving the world: no arrival window for having just joined (that rule's own tests
   // are below, "a renderer that joined moments ago…")
-  const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 100, arrivalTimeoutMs: 0, ...options });
+  const broker = createScreenshotBroker({ cooldownMs: 0, timeoutMs: 100, arrivalTimeoutMs: 0, ...options });
   // a world has a folded state; an open one (no owner) lets every renderer in (server/access.ts)
   const world = { name: "test", clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World;
   const make = (id: string, opts = {}) => {
@@ -83,7 +83,7 @@ test("transport send exception never escapes broker", async () => {
 // ---- roaming renderers ----
 function roamSetup(opts = {}) {
   const all = new Set<Client>();
-  const broker = createSnapshotBroker({ cooldownMs: 0, timeoutMs: 200, arrivalTimeoutMs: 400, travelMs: 400, pollMs: 10, allClients: () => all, ...opts });
+  const broker = createScreenshotBroker({ cooldownMs: 0, timeoutMs: 200, arrivalTimeoutMs: 400, travelMs: 400, pollMs: 10, allClients: () => all, ...opts });
   const worldOf = (name: string) => ({ name, clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World);
   const join = (world: World, id: string, extra = {}) => {
     const messages: any[] = [];
@@ -93,7 +93,7 @@ function roamSetup(opts = {}) {
   const leave = (c: Client) => { c.world?.clients.delete(c); all.delete(c); c.world = null; };
   return { broker, worldOf, join, leave, all };
 }
-test("an agent alone in a world gets a roaming renderer sent there, and its snapshot", async () => {
+test("an agent alone in a world gets a roaming renderer sent there, and its screenshot", async () => {
   const { broker, worldOf, join, leave } = roamSetup();
   const lobby = worldOf("commons"), build = worldOf("my-build");
   const roamer = join(lobby, "renderer-mac-gpu-roam-commons", { renderer: true, roam: true, spectator: true });
@@ -149,7 +149,7 @@ test("prewarm: an agent arriving where no renderer serves sends one roamer, once
 test("rotation: a parked roamer goes before one an agent is using; pre-warm never takes a world's roamer from it", async () => {
   const { broker, worldOf, join, leave } = roamSetup();
   const busyWorld = worldOf("busy"), parked = worldOf("parked"), fresh = worldOf("fresh"), fresh2 = worldOf("fresh2");
-  // a roamer an agent is actively using (it asked a snapshot just now) — and one parked where nobody is
+  // a roamer an agent is actively using (it asked a screenshot just now) — and one parked where nobody is
   const inUse = join(busyWorld, "roam-a", { renderer: true, roam: true, spectator: true });
   join(busyWorld, "agentBusy", { tokenVerified: true });
   const shot = broker.request(busyWorld, "agentBusy");
@@ -162,7 +162,7 @@ test("rotation: a parked roamer goes before one an agent is using; pre-warm neve
   // with only the in-use roamer left: a pre-warm does NOT take it…
   leave(free.c); join(fresh2, "agentFresh2", { tokenVerified: true }); broker.prewarm(fresh2);
   expect(inUse.messages.some((m) => m.type === "renderer-travel")).toBe(false);
-  // …but a snapshot actually asked does (never refused while a roamer exists)
+  // …but a screenshot actually asked does (never refused while a roamer exists)
   await Bun.sleep(450);   // the unanswered pre-warm summons for fresh expires
   void broker.request(fresh2, "agentFresh2"); await Bun.sleep(30);
   expect(inUse.messages.at(-1)).toEqual({ type: "renderer-travel", world: "fresh2" });
@@ -175,7 +175,7 @@ test("maxWaitMs: a roamer's journey, then the larger of its arrival window and t
   expect(broker.maxWaitMs).toBe(400 + 900);
 });
 test("at SNAP_TIMEOUT_SEC's cap, GET /snap's per-request timeout still covers the broker's longest wait", () => {
-  const broker = createSnapshotBroker();   // the server's defaults: a 25 s journey, a 40 s arrival window
+  const broker = createScreenshotBroker();   // the server's defaults: a 25 s journey, a 40 s arrival window
   broker.setFrameTimeout(225_000);         // config.ts's largest accepted window
   // routes.ts sets min(255, ceil(maxWaitMs / 1000) + 5) seconds: at the cap, the 255 must not bind
   expect(Math.ceil(broker.maxWaitMs / 1000) + 5).toBeLessThanOrEqual(255);
@@ -236,7 +236,7 @@ test("a reply for a snap dispatched to another renderer is a drop like any other
   expect(await result).toMatchObject({ ok: true });
 });
 
-// ---- a first snapshot comes back with a picture (2026-10-24) ----
+// ---- a first screenshot comes back with a picture (2026-10-24) ----
 test("a busy renderer is waited for: two asks at once both come back with a picture", async () => {
   const { broker, world, donor } = setup({ pollMs: 5, queueMs: 2000, timeoutMs: 1000 });
   const first = broker.request(world, "agent"), second = broker.request(world, "agent");
@@ -461,7 +461,7 @@ test("a roamer that never arrives is backed off itself, so the next sweep sends 
   time = 16_500; await Bun.sleep(40);
   expect(lines.some((l) => /roam-broken.*sent nowhere for 30s/.test(l))).toBe(true);   // and failing again doubles it
 });
-test("…an asked snapshot still takes a backed-off roamer when it is the only one, and arriving clears its back-off", async () => {
+test("…an asked screenshot still takes a backed-off roamer when it is the only one, and arriving clears its back-off", async () => {
   let time = 0;
   const { broker, worldOf, join } = roamSetup({ now: () => time, sweepAfterMs: 0, travelMs: 400, pollMs: 10, timeoutMs: 200 });
   const lobby = worldOf("lobby"), w = worldOf("w"), v = worldOf("v");
@@ -471,7 +471,7 @@ test("…an asked snapshot still takes a backed-off roamer when it is the only o
   broker.sweep(); time = 500; await Bun.sleep(40);                  // a failed journey to w: backed off
   join(v, "agentV", { tokenVerified: true });
   broker.prewarm(v); expect(roamer.messages.length).toBe(1);        // pre-warm skips it
-  const asked = broker.request(v, "agentV"); await Bun.sleep(20);   // an asked snapshot takes it: no other roamer can go
+  const asked = broker.request(v, "agentV"); await Bun.sleep(20);   // an asked screenshot takes it: no other roamer can go
   expect(roamer.messages.at(-1)).toEqual({ type: "renderer-travel", world: "v" });
   travel(v); await Bun.sleep(40);                                    // it arrives (in v, which it was sent to)
   const snap = roamer.messages.find((m) => m.type === "capture"); broker.receive(roamer.c, { id: snap.id, dataUrl: png });

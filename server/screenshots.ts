@@ -11,7 +11,7 @@ export function captureCapability(value: unknown): CaptureCapability | undefined
     ? { version: 1, engine: "unreal", scene: v.scene } : undefined;
 }
 // `retryAfter` (seconds) marks a failure that asking again soon can fix: the renderer still loading, busy, slow,
-// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL snapshot tool asks again only when it is there,
+// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `snapshot` tool asks again only when it is there,
 // so a refusal that will not change in seconds (no renderer and no roamer to send, members-only) is answered at once.
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
   | { ok: false; err: string; status: number; retryAfter?: number };
@@ -46,19 +46,19 @@ export function pngFromDataURL(value: unknown): Buffer | null {
   return null;
 }
 
-// ROAMING RENDERERS: a renderer that joined with `roam` serves no world in particular. When a snapshot is asked of
+// ROAMING RENDERERS: a renderer that joined with `roam` serves no world in particular. When a screenshot is asked of
 // a world no renderer is serving (an agent building alone in its own world — the common case), the broker sends an
-// idle roamer there (`renderer-travel`), waits for it to arrive, and dispatches the snapshot to it. It stays until
+// idle roamer there (`renderer-travel`), waits for it to arrive, and dispatches the screenshot to it. It stays until
 // another world needs it, so an agent iterating on a build gets fast follow-up shots. `allClients` lists every
 // connected client (the server passes its registry; tests pass their own).
 //
-// A FIRST SNAPSHOT SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24: "failing on first try is bad"). Three things
+// A FIRST SCREENSHOT SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24: "failing on first try is bad"). Three things
 // below serve that. Every request has ONE deadline (`budgetMs`, under a Connectome host's 60 s per-call deadline), and
 // a roamer's journey, a wait for a busy renderer and the frame all come out of it. A busy renderer is waited for, not
 // refused. The renderer is told how long it may spend loading the world (the snap's `wait`), so it does not give up
-// while the asker would still wait. And worlds an agent is in are kept served (sweep), so the first snapshot there
+// while the asker would still wait. And worlds an agent is in are kept served (sweep), so the first screenshot there
 // rarely needs a roamer to travel and load at all.
-export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
+export function createScreenshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, maxPending = 16, now = Date.now,
   travelMs = 25_000, arrivalTimeoutMs = 40_000, pollMs = 200, recentMs = 5 * 60_000,
   queueMs = 20_000, maxQueued = 16, maxQueuedTotal = 64, budgetMs = 55_000, settleMarginMs = 2_000, pinnedGraceMs = 120_000, sweepAfterMs = 30_000,
   sweepBackoffMs = 15_000, sweepBackoffMaxMs = 10 * 60_000,
@@ -68,7 +68,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   admits = (() => true) as (world: World, c: Client) => boolean,
   log = (line: string) => console.log(line), dropLogMs = 10_000 } = {}) {
   const pending = new Map<string, Pending>();
-  // A failed snapshot used to leave no server-side trace: a frame arriving after the timeout, or from a client that
+  // A failed screenshot used to leave no server-side trace: a frame arriving after the timeout, or from a client that
   // was not the renderer asked, looked the same as no reply at all. Every failure after dispatch (the timeout, a failed
   // send, a participant leaving, the renderer's refusal, an invalid image) logs one [snap] line, and so does a reply
   // the broker drops, within the bound below.
@@ -93,7 +93,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   const sent = new WeakMap<Client, { at: number; to: string }>();   // roamer → where it was last sent, and when
   const pinnedSeen = new Map<string, number>();   // world name → when a renderer of its own (not a roamer) was last seen there
   // A roamer that was sent somewhere and never arrived (a frozen page, a client that claims to roam and ignores travel)
-  // is backed off: sweeps and pre-warms skip it, and an asked snapshot takes it only when no other roamer can go.
+  // is backed off: sweeps and pre-warms skip it, and an asked screenshot takes it only when no other roamer can go.
   // It clears the moment the roamer arrives anywhere.
   const roamerFailed = new WeakMap<Client, { until: number; count: number }>();
   const backedOff = (c: Client) => (roamerFailed.get(c)?.until ?? -Infinity) > now();
@@ -118,7 +118,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
   const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
   /** The longest a request can wait: a roamer's journey, then its first frame. */
   const maxWait = () => travelMs + Math.max(arrivalTimeoutMs, timeoutMs);
-  const asked = new Map<string, number>();   // world name → when a snapshot was last asked there (roamer rotation)
+  const asked = new Map<string, number>();   // world name → when a screenshot was last asked there (roamer rotation)
   const active = (c: Client, w: World) => c.world === w && w.clients.has(c) && !c.superseded
     && (c.ws.readyState == null || c.ws.readyState === 1);
   function retire(c: Client, leaving = true) {
@@ -164,7 +164,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
         : arrived
         ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs), at, deadline, signal)
         : { ok: false as const, err: doorOf(world) === "invite-only"
-            ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no snapshot can be taken there now`
+            ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no screenshot can be taken there now`
             : `${noRenderer(world, "auto")}, and no roaming renderer could come`, status: 503 });
     }
     return dispatch(world, follow, view, engine, frame, target, timeoutMs, at, deadline, signal);
@@ -173,7 +173,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     && eligible(c, engine))
     .sort((a, b) => Number(!!b.capture) - Number(!!a.capture));
   /** How much a roamer's current world still needs it: 0 — no agent there (parked, free); 1 — agents there, but none
-   *  has asked for a snapshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. An agent
+   *  has asked for a screenshot recently; 2 — in use. Rotation takes the least needed, then the longest idle. An agent
    *  here is a body that joined with an agent's enrolment (tokenVerified: its credential, never a declaration, §6a). */
   const need = (c: Client) => {
     const w = c.world!;
@@ -184,8 +184,8 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     return now() - (asked.get(w.name) ?? -Infinity) >= recentMs ? 1 : 2;
   };
   /** Send a roaming renderer to `world` and wait for it to join there. One summons per world at a time; a roamer busy
-   *  with a snapshot, or on its way somewhere, is not taken. A roamer a world is actively using is taken only for a
-   *  snapshot actually asked (never for a pre-warm), and only when no freer one exists. A sweep takes only a PARKED
+   *  with a screenshot, or on its way somewhere, is not taken. A roamer a world is actively using is taken only for a
+   *  screenshot actually asked (never for a pre-warm), and only when no freer one exists. A sweep takes only a PARKED
    *  roamer (no agent where it is), so keeping worlds served never takes a roamer from another world. */
   function summon(world: World, mode: "ask" | "prewarm" | "sweep"): Promise<boolean> { return startSummon(world, mode).arrived; }
   /** summon(), saying which roamer it sent (none: one was already on its way, or none could go). */
@@ -340,17 +340,17 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     p.finish(png ? { ok: true, png, engine: p.engine, scene: p.scene }
       : { ok: false, err: "renderer could not supply a valid image", status: 502 });
   }
-  /** PRE-WARM: a body that can ask for snapshots (an agent) arrived in `world`. If no renderer serves it, send a roamer
-   *  now, so the world is loaded by the time the first snapshot is asked. Fire-and-forget; idempotent per world. */
+  /** PRE-WARM: a body that can ask for screenshots (an agent) arrived in `world`. If no renderer serves it, send a roamer
+   *  now, so the world is loaded by the time the first screenshot is asked. Fire-and-forget; idempotent per world. */
   function prewarm(world: World) {
     if (!candidatesIn(world, "auto").length) void summon(world, "prewarm");
   }
   /** SWEEP: every world with an agent in it and no renderer gets a PARKED roamer (one with no agent where it is), so
-   *  the first snapshot there finds the world loaded. Pre-warm covers an agent arriving. The sweep covers everything
+   *  the first screenshot there finds the world loaded. Pre-warm covers an agent arriving. The sweep covers everything
    *  else that leaves an agent's world unserved: a roamer's watchdog restarting it into its lobby (every few hours,
    *  and on every client deploy), a renderer leaving, an agent that arrived while every roamer was busy. The server
    *  runs it when a roamer joins and on a timer. Parked roamers only, so it never takes a roamer a world is using;
-   *  with more such worlds than roamers, the rest wait for a snapshot to be asked. */
+   *  with more such worlds than roamers, the rest wait for a screenshot to be asked. */
   function sweep() {
     const worlds = new Set<World>();
     for (const c of allClients()) {
@@ -361,7 +361,7 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
     // Just after a start, renderers are still reconnecting (a roamer rejoins the world it was in): give them that.
     if (now() - startedAt < sweepAfterMs) return;
     // A world whose own renderer was here moments ago is only waiting for it to restart (the commons renderer does,
-    // every few hours): a roamer sent there would load the whole world for nothing. A snapshot asked meanwhile is
+    // every few hours): a roamer sent there would load the whole world for nothing. A screenshot asked meanwhile is
     // still served on demand.
     for (const w of worlds) {
       if (candidatesIn(w, "auto").length) continue;
@@ -391,4 +391,4 @@ export function createSnapshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, ma
      *  timeout from this. A request's own deadline is never later than this. */
     get maxWaitMs() { return maxWait(); } };
 }
-export const snapshots = createSnapshotBroker();
+export const screenshots = createScreenshotBroker();

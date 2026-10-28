@@ -16,7 +16,7 @@ export const HOST = process.env.HOST ?? "0.0.0.0";
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 // The RENDERERS' own credential (docs/DESIGN-world-access.md). A renderer is the
-// vision of the agents in a world — snapshots are how they see — so a renderer
+// vision of the agents in a world — screenshots are how they see — so a renderer
 // presenting this may WATCH any world, members-only ones included (invisible,
 // never authoring, as every renderer). Distinct from JOIN_TOKEN on purpose: the
 // door key rides invite links, and "renderer" is a flag any client can set, so
@@ -67,7 +67,7 @@ export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usabl
 // estimate above: measured 259MB for a 5.4MB store GLB (x48). The KTX2/LOD
 // arms were not measured separately and are assumed the same order.
 export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
-// How long the snapshot broker (snapshots.ts) waits for a renderer's frame
+// How long the screenshot broker (screenshots.ts) waits for a renderer's frame
 // before GET /snap answers 504. 12s suits a GPU renderer; a software-rendered
 // one (SwiftShader, --disable-gpu) running a full world can need 10-20s per
 // frame, and loses most races at 12. A summoned roamer first travels (up to
@@ -77,7 +77,7 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // longest wait (5s), capped at 255s, the largest idleTimeout Bun.serve
 // accepts. So the most this window can be is 225 (255, less the 25s journey
 // and the 5s): a larger value is refused like any other invalid one, and 12 is
-// used with a warning. Each request also has one deadline (snapshots.ts
+// used with a warning. Each request also has one deadline (screenshots.ts
 // budgetMs, 55 s by default, or the caller's ?budget=), which the journey, any
 // wait and the frame all come out of. The deadline stretches past 55 s for a
 // longer window, so a frame from a renderer that is free and already there gets
@@ -87,8 +87,8 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // above the 255s cap. nginx's 60s default would cut a /snap once
 // SNAP_TIMEOUT_SEC is past about 56 s.
 export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
-// How long after a start the snapshot broker waits before it sweeps parked roamers to agents' worlds
-// (snapshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.
+// How long after a start the screenshot broker waits before it sweeps parked roamers to agents' worlds
+// (screenshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.
 // Tests set 0.
 export const SNAP_SWEEP_GRACE_MS = envNumber("SNAP_SWEEP_GRACE_SEC", 30, (n) => n >= 0 && n <= 600) * 1000;
 // How often the broker sweeps besides a roamer joining (the backstop for anything else that leaves a world unserved).
