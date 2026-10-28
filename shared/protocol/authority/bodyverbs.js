@@ -16,7 +16,7 @@ import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
 import { admits, lastSetterOf, lockStrength, may, roleOf } from "./rights.js";
 import { whoWords } from "../roles.js";
-import { BODY_VERBS, bodyGate, forgetReaches } from "./bodyconsent.js";
+import { BODY_VERBS, bodyGate, forgetReaches, noteBlastRefusals } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
@@ -374,12 +374,13 @@ const EMBODIED_VERBS = {
         catch (x) { if (!(x instanceof Refusal)) throw x; skipped.push({ id, code: x.code }); } }
     } else notes.push({ why: "this world runs no physics: things stay put" });
     // bodies: presence, so only counted (who was shoved is theirs, never the log's)
-    const bodies = { shoved: 0, refused: 0 };
+    const bodies = { shoved: 0, refused: 0 }, denied = [];
     for (const [who, b] of Object.entries(w.presence.bodies)) {
       const f = falloff(a.at, b.at, radius, power); if (!f || f.mag < BLAST.min) continue;
       const m = Math.min(BLAST.body, f.mag);
-      const g = bodyGate(w, actor, who, "shove", { spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
-      if (!g.ok) bodies.refused++; else { g.deliver(); bodies.shoved++; } }
+      const g = bodyGate(w, actor, who, "shove", { uncounted: true, spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
+      if (!g.ok) { bodies.refused++; if (g.code === "consent") denied.push(who); } else { g.deliver(); bodies.shoved++; } }
+    if (denied.length) noteBlastRefusals(w, actor, denied, "shove");   // one attempt toward the cool-down, however many refused
     actOnce();
     return { ok: true, act, at: a.at, radius, power, bodies, punted, ...(skipped.length ? { skipped } : {}), ...(notes.length ? { notes } : {}) };
   },

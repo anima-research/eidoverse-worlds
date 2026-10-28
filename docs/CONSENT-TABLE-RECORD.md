@@ -19,7 +19,7 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 | Silence | a body with no table gets `normal`; an ask unanswered in **20 s** is no | trial · lead (20 s) |
 | After a no | the same asker, you, and that class: no new ask for **10 min**, doubling with each no (10, 20, 40…) | trial · lead |
 | A yes to an ask | covers one touch, held at most **10 min**; letting go, either leaving, or your cell moving off allow ends it sooner | trial · lead |
-| Repeated refusals | 5 refusals of one class from 3 different people within 5 min: a 10-min world-wide cool-down for that class, written to the moderator log as an automatic act. Never a ban | trial · lead (research 10-13) |
+| Repeated refusals | 5 refusals of one class from 3 different people within 5 min: a 10-min world-wide cool-down for that class, written to the moderator log as an automatic act. Never a ban. A blast (force, /boom) counts once, however many bodies refuse it (R 10-28) | trial · lead (research 10-13) |
 | Intimate points | `chest_front`, `waist_l`, `waist_r`, `hip_l`, `hip_r`; every other contact point is `touch` | trial · lead |
 | Delegates | a list apart from friends; may close your table (pause, deny), never open it; only you add or remove one | decided · author (10-17 split) |
 | Unfriend | ends the mutual tier at once, on both bodies | trial · lead |
