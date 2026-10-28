@@ -117,6 +117,18 @@ const readOn = (pg, who, self) => pg.evaluate(({ who, self }) => {
 }, { who, self });
 /** Wait until a remote's body is drawn on a page (VRMs load after the splash). */
 const drawn = (pg, ids, ms = 120000) => pg.waitForFunction((ids) => ids.every((id) => !!globalThis.EW.remotes.get(id)?.avatar?.vrm), ids, { timeout: ms }).then(() => true, () => false);
+/** The reading a shove starts from. A sit or lie must be DRAWN lowered on this screen before the shove, or the row
+ *  never tests the case #282 is about (the clip's hips under a limp remote): the posture clip loads and arrives on
+ *  its own time, so this waits for it, up to `ms`, and hands back whatever it last read (the verdict judges it). */
+const before = async (pg, who, self, kind, ms = 60000) => {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const r = await readOn(pg, who, self);
+    const was = r?.drawnHips && r?.drawnRoot ? r.drawnHips[1] - r.drawnRoot[1] : null;
+    if (!(kind in LOWERED) || (was != null && was < LOWERED[kind]) || Date.now() > deadline) return r;
+    await sleep(500);
+  }
+};
 
 // the watcher, standing at the origin, with its camera pinned: every render of the main camera is aimed where
 // globalThis.__shot says (the follow camera would otherwise frame its own body)
@@ -166,14 +178,14 @@ for (const kind of LATE ? [] : ['idle', 'sit', 'lie']) {
   const name = `bot-${kind}`;
   n++;
   const s0 = await agentSpawn(name, 2 + n * 3, -3, kind);
-  await drawn(pg, [name], 30000);
+  await drawn(pg, [name], 60000);
   await sleep(2000);
-  const before = await readOn(pg, name, false);
+  const b0 = await before(pg, name, false, kind);
   await shoot(`${n}-agent-from-${kind}-before`, s0.p);
   shove(name);
   await sleep(7000);
   const s1 = await agentState(name);
-  report({ who: name, from: kind, published: +s1.p[1].toFixed(3), before, after: await readOn(pg, name, false), note: s0.walk });
+  report({ who: name, from: kind, published: +s1.p[1].toFixed(3), before: b0, after: await readOn(pg, name, false), note: s0.walk });
   await shoot(`${n}-agent-from-${kind}-fallen`, s1.p);
 }
 
@@ -186,9 +198,9 @@ for (const kind of process.env.ONLY_AGENT || LATE ? [] : ['stand', 'sit', 'lie']
   const ap = await bootPage(name, -4 - n * 3, -3);
   await ap.evaluate(() => globalThis.EW.setPushable(true));
   if (kind !== 'stand') await ap.evaluate(async (k) => { const c = await import('/lib/controller.js'); c.setPosture(k); }, kind);
-  await drawn(pg, [name], 30000);
-  await sleep(3000);
-  const ownBefore = await readOn(ap, name, true), remoteBefore = await readOn(pg, name, false);
+  await drawn(pg, [name], 60000);
+  await sleep(2000);
+  const ownBefore = await before(ap, name, true, kind), remoteBefore = await before(pg, name, false, kind);
   shove(name);
   await sleep(7000);
   const own = await readOn(ap, name, true);
