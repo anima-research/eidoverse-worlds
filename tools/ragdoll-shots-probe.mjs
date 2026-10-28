@@ -3,9 +3,9 @@
 // A real client (the watcher) watches a headless AGENT (claude.vrm, tools/ragdoll-shots-agent.ts) fall over from
 // stand / sit / lie, then a second browser person (the actor) do the same; for the actor's lie, a third browser
 // joins late. Each row reads the DRAWN root and hips (the renderer's numbers, not body_state's). The run fails if
-// any fallen body's hips are drawn under the ground or floating over it, or if a row it set out to measure was
-// never drawn. `--shots <dir>` also saves side/above screenshots. LATE=1 instead has the agents fall before the
-// watcher's page exists.
+// any fallen body's hips are drawn under the ground or floating over it, if a row it set out to measure was never
+// drawn, if a body wasn't limp when it was read, or if a sit or lie wasn't drawn before its shove. `--shots <dir>`
+// also saves side/above screenshots. LATE=1 instead has the agents fall before the watcher's page exists.
 //
 // Run under NODE: Playwright's pipe transport hangs under Bun on Windows. The agent half and the world server
 // run under Bun (BUN_EXE / BUN_PATH, default `bun` on PATH).
@@ -29,6 +29,7 @@ process.env.BUN_PATH ||= BUN;   // probe-harness spawns the world server with it
 // (+0.82). A fall from standing can still be settling when it is read (seen at +0.45–0.55), so the bound over
 // sits between the two.
 const UNDER = -0.02, OVER = 0.7;
+const LOWERED = { sit: 0.6, lie: 0.3 };
 
 const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
 const wsUrl = `${world.origin.replace(/^http/, 'ws')}/ws`;
@@ -111,7 +112,8 @@ const readOn = (pg, who, self) => pg.evaluate(({ who, self }) => {
   const hips = hipsNode ? hipsNode.getWorldPosition(new EW.THREE.Vector3()).toArray() : null;
   const r = av.root.position;
   const f = (a) => a?.map((x) => +x.toFixed(3));
-  return { drawnRoot: f(r.toArray()), drawnHips: f(hips), ground: +EW.groundAt(r.x, r.z).toFixed(3) };
+  const clip = self ? EW.myState?.clip : EW.remotes.get(who)?.lastClip;
+  return { drawnRoot: f(r.toArray()), drawnHips: f(hips), ground: +EW.groundAt(r.x, r.z).toFixed(3), clip };
 }, { who, self });
 /** Wait until a remote's body is drawn on a page (VRMs load after the splash). */
 const drawn = (pg, ids, ms = 120000) => pg.waitForFunction((ids) => ids.every((id) => !!globalThis.EW.remotes.get(id)?.avatar?.vrm), ids, { timeout: ms }).then(() => true, () => false);
@@ -154,7 +156,7 @@ if (LATE) {
   await drawn(pg, ['late-idle', 'late-sit', 'late-lie']);
   for (const kind of ['idle', 'sit', 'lie']) {
     const st = await agentState(`late-${kind}`);
-    report({ who: 'agent, watcher joined LATE', from: kind, published: +st.p[1].toFixed(3), before: null, after: await readOn(pg, `late-${kind}`, false) });
+    report({ who: 'agent, watcher joined LATE', from: kind, published: +st.p[1].toFixed(3), late: true, before: null, after: await readOn(pg, `late-${kind}`, false) });
     await shoot(`late-${kind}`, st.p);
   }
 }
@@ -207,20 +209,26 @@ for (const kind of process.env.ONLY_AGENT || LATE ? [] : ['stand', 'sit', 'lie']
     if (!r) return `no record for ${id}`;
     return `record for ${id}: avatarPath=${r.avatarPath ?? '?'} avatar=${r.avatar ? (r.avatar.vrm ? 'vrm' : 'no vrm') : 'none'} capsuleFor=${r.capsuleFor ?? '-'} loading=${!!r.loading} frames=${r.buf?.length ?? 0}`;
   }, name);
-  report({ who: 'actor, seen by LATE joiner', from: kind, before: null, after: await readOn(lp, name, false), note: why });
-  report({ who: 'agent bot-lie, LATE joiner', from: 'lie', before: null, after: await readOn(lp, 'bot-lie', false) });
+  report({ who: 'actor, seen by LATE joiner', from: kind, late: true, before: null, after: await readOn(lp, name, false), note: why });
+  report({ who: 'agent bot-lie, LATE joiner', from: 'lie', late: true, before: null, after: await readOn(lp, 'bot-lie', false) });
   await lp.context().close();
 }
 
 // ---- the verdict. A row that was never drawn is a failure to measure, not a pass.
-let bad = 0;
+const failed = new Set();
 for (const r of rows) {
   const h = r.after?.drawnHips?.[1], g = r.after?.ground;
   const d = h != null && g != null ? h - g : null;
-  if (d == null) { bad++; console.log(`  ✗  ${r.who} from ${r.from}: never drawn, so not measured`); }
-  else if (d < UNDER) { bad++; console.log(`  ✗  ${r.who} from ${r.from}: hips drawn ${(-d).toFixed(3)} m under the ground`); }
-  else if (d > OVER) { bad++; console.log(`  ✗  ${r.who} from ${r.from}: hips drawn ${d.toFixed(3)} m over the ground`); }
+  if (d == null) { failed.add(r); console.log(`  ✗  ${r.who} from ${r.from}: never drawn, so not measured`); }
+  else if (d < UNDER) { failed.add(r); console.log(`  ✗  ${r.who} from ${r.from}: hips drawn ${(-d).toFixed(3)} m under the ground`); }
+  else if (d > OVER) { failed.add(r); console.log(`  ✗  ${r.who} from ${r.from}: hips drawn ${d.toFixed(3)} m over the ground`); }
+  if (d != null && r.after.clip !== 'ragdoll') { failed.add(r); console.log(`  ✗  ${r.who} from ${r.from}: not limp when read (clip ${r.after.clip})`); }
+  const was = r.before?.drawnHips && r.before?.drawnRoot ? r.before.drawnHips[1] - r.before.drawnRoot[1] : null;
+  if (r.from in LOWERED && !r.late && !(was != null && was < LOWERED[r.from])) {
+    failed.add(r); console.log(`  ✗  ${r.who} from ${r.from}: the ${r.from} wasn't drawn before the shove (hips ${was == null ? 'unmeasured' : `${was.toFixed(3)} m`} over the root)`);
+  }
 }
+const bad = failed.size;
 console.log(bad ? `\n${bad} of ${rows.length} rows failed` : `\nall ${rows.length} fallen bodies are drawn on the ground`);
 await teardown();
 process.exit(bad ? 1 : 0);
