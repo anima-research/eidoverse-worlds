@@ -68,6 +68,10 @@ let currentWorld = null;
 
 export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
+// the cloud march's tier is THIS viewer's (SWEEP-3 S1: main's sky.quality was world data): balanced, or high; read at the next build
+export const SKY_QUALITY = ['balanced', 'high'];
+export const skyQuality = () => { try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
+export function setSkyQuality(q) { try { localStorage.setItem('ew-sky-quality', q === 'high' ? 'high' : 'balanced'); } catch { /* this session only */ } }
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
@@ -964,7 +968,7 @@ async function buildSky(a, world, wantAudio) {
     // for the tier Skye already provides for this (3 cloud passes instead of
     // the full march) unless a world explicitly asks for the good one.
     const envKnobs = (globalThis.__ewEnv ??= {});
-    envKnobs.TIER = a.quality === 'high' ? undefined : 'balanced';
+    envKnobs.TIER = skyQuality() === 'high' ? undefined : 'balanced';
     // GPU caches OFF by default.
     //
     // sky_system's light cache writes through T3.textureStore, and three's
@@ -982,7 +986,7 @@ async function buildSky(a, world, wantAudio) {
     // cache alone (sky_system.js:1060), so that is the only thing to give up.
     envKnobs.CACHE = undefined;
     envKnobs.DCACHE = undefined;
-    envKnobs.LCACHE = a.quality === 'high' ? undefined : '0';
+    envKnobs.LCACHE = skyQuality() === 'high' ? undefined : '0';
 
     // (An `await whenBooted()` lived here — a bandwidth yield so the sky's
     // assets wouldn't race the body's through one pipe. It had to go: during

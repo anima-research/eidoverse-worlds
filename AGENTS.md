@@ -271,12 +271,8 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 The old names (`take_off`, `fold_wings`, `clear_pose`, `ragdoll`, `light`,
 `remove`, `blueprint_place`, `kick`, `list_bans`, `library_sheet`…) are
 refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
-`check_model` and anim's old names still run, with their old
-arguments translated (`walk_to {x, y?, z}` → `move {to: [x, (y,) z]}`, `walk_to {to}` → `move {to}`,
-`spawn {lib, x, z}` → `create {model, at: [x, z]}` (with `yaw`: `create {model,
-place: {at: [x, z], facing}}`, seated the same way), `check_model {id | lib}` →
-`measure {…, check: true}`);
-`spawn {query}` is refused with the two calls that do it now. `world_verb` is
+`check_model` and anim's old names run nothing and name the tool that does it now (`move`, `screenshot`, `create`,
+`measure`, `anim`), until 2026-12-01, when the note goes too (R 10-28; mcpl/tools.ts TOOL_RENAMED). `world_verb` is
 removed: `act {verb, args}` takes this authority's verbs, and an old verb
 (`comp`, `motion`, `mount`, `force`, `grant`, `epoch`…) is refused as `removed`
 with the call that does it now (`help {verb}` says the same). Every tool that
@@ -924,7 +920,7 @@ Making a building of your own? **[docs/BUILDING.md](docs/BUILDING.md)** is the s
 
 ### Named places
 
-Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id, label or handle), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label or a unique id prefix of 4 or more characters (its entrance or door, else beside it; a label two things share is refused with the candidates, never resolved to the nearest), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". The `walk_to` alias takes the same `to`.
+Things can have **named places** — rooms, doors, seats, a balcony — and `move {to: "…"}` goes to them by name (#239), trying in this order: `"lookout/balcony"` (thing/place, the thing by its id, label or handle), `"lantern-house"` (a thing alone by its id: its entrance, else a door; a thing that names neither is walked up to and stood beside), `"the reading room"` (a place's name or label alone — the nearest that has one), a thing by its label or a unique id prefix of 4 or more characters (its entrance or door, else beside it; a label two things share is refused with the candidates, never resolved to the nearest), and last a person's name (you stop just short of them, on your side, about 0.9 m off). A person is tried last, so a visitor named like a thing, a thing's label or a place never captures the walk. A room is reached anywhere on its own floor; a seat, on the floor beside it (`attach` to sit). `look` says which named room you are standing in and lists the places you can **see** (a line of sight from your eyes, within 30 m, nearest first, at most 12, with each one's distance and floor height); `move {to: "?"}` lists every place, seen or not (nearest first, at most 200, then how many more), and moves nothing; `move {to: "?tower"}` lists only the places whose `thing/place` or label holds "tower". 
 
 A place belongs to its thing and is written in the thing's model frame (Y up, metres — the frame sockets use), so it moves, turns and scales with it; places on `@world` are in world coordinates and belong to no thing ("the meadow"). Two sources, the second overriding the first name by name (`mcpl/places.ts`):
 

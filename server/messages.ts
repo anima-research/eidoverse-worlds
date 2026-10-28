@@ -312,7 +312,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     // the say must exist, be recent, and be THIS identity's
-    // recentSays, not entries[]: v1's fold() emptied entries every few
+    // recentSays, not entries[]: the first protocol's fold() emptied entries every few
     // hundred appends, and a receipt for a folded-out say must still land
     // (review finding 3). Misses answer with an error frame — every
     // other refusal in this handler does, and a leg whose receipt was

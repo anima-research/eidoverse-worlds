@@ -111,10 +111,16 @@ for (const [f, imp, lits] of NO) {
   const P = await import("../shared/protocol/physconst.js"), R = await import("../shared/protocol/round.js");
   ok(P.REACH === 1.5 && P.HAND_Y === 1.1 && P.MAX_HELD === 2 && P.USE_REACH === 2.5, "B physconst values", P);
   ok(P.BODY_REACH === P.REACH + 0.5 && P.SHOVE_REACH === 2.5 && P.BODY_RANGE.shove === 3, "B shove reach is three layers (authority 2.0 < client 2.5 < server cap 3.0), each named", P);
-  ok(P.KICK.reach === 1.6 && P.KICK.below === -0.5 && P.KICK.above === 2.0 && P.KICK.lift === 0.9, "B KICK", P.KICK);
+  ok(P.KICK.reach === 2.5 && P.KICK.below === -0.5 && P.KICK.above === 2.0 && P.KICK.lift === 0.9, "B KICK", P.KICK);
   ok(Object.is(R.r3(1.0005), 1.001) && Object.is(R.r3(-0), -0) && Object.is(R.noNeg0(-0), 0) && Object.is(R.noNeg0(-1), -1) && R.r2(1.234) === 1.23, "B round.js helpers", R);
   ok(bytes(R.unNegZero({ a: [-0, { b: -0 }], c: -0 })) === bytes({ a: [0, { b: 0 }], c: 0 }), "B unNegZero scrubs nested", R.unNegZero({ a: [-0] }));
 }
+
+// R 10-28: a punt's reach lives in KICK alone: no runtime file, help or agent description writes a punt / kick distance of its own
+{ const walk = (d: string): string[] => fs.readdirSync(path.join(ENGINE, d), { withFileTypes: true }).flatMap((e) => e.name === "node_modules" || e.name === "vendor" ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : /\.(m?js|ts|json)$/.test(e.name) && !/-test\.|-check\./.test(e.name) ? [path.join(d, e.name)] : []);
+  const hits = ["client", "shared", "mcpl", "server", "defs/ui"].flatMap(walk).filter((f) => f !== path.join("shared", "protocol", "physconst.js"))
+    .flatMap((f) => src(f).split("\n").map((l, i) => [f, i + 1, l] as const)).filter(([, , l]) => /\b(punt|kick)/i.test(l) && /\b(1\.6|2\.5|3\.3)\s*(m\b|metres|meters)|(KICK_REACH|PUNT_REACH)\s*=\s*[\d.]/.test(l));
+  ok(hits.length === 0, "B a punt's reach is KICK.reach only: no other file states a punt distance", hits.map(([f, n, l]) => `${f}:${n} ${l.trim().slice(0, 120)}`)); }
 
 console.log(`physconst-test: ${passes} ok, ${fails} FAIL`);
 process.exit(fails ? 1 : 0);

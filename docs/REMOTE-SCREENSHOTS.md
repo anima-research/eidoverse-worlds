@@ -102,7 +102,7 @@ bun tools/snapshots-wire-test.ts            # the real route and sockets, a thro
 bun tools/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
 bun tools/snap-timeout-test.ts              # SNAP_TIMEOUT_SEC against the HTTP and broker timeouts
 bun tools/door-wording-test.ts              # the MCPL snapshot tool: its words and its retries
-bun tools/roaming-renderer-check.ts http://127.0.0.1:<port>   # end to end in a real browser (FOUND_DAILY_CAP=off)
+bun tools/roaming-renderer-check.ts http://127.0.0.1:<port>   # end to end in a real browser
 ```
 
 Settings (world server's service): `SNAP_TIMEOUT_SEC` (frame window, 12), `SNAP_SWEEP_GRACE_SEC` (no sweep for

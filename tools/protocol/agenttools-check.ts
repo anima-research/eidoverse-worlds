@@ -44,7 +44,7 @@ async function writeBoxGlb(file, [sx, sy, sz]) {
 }
 
 // ---- AT4 needs no server: the table itself ----
-const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
+const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = await import("../../mcpl/tools.ts");
 { const listed = [...toolList({ travel: true }), ...toolList({ travel: false })];
   const HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"];
   const bad = listed.filter((t) => typeof t.title !== "string" || !t.title.trim() || !t.annotations || HINTS.some((h) => typeof t.annotations[h] !== "boolean"));
@@ -71,7 +71,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     "clear_pose", "clear_reach", "posture", "ragdoll", "library_sheet", "library_preview", "list_library", "light", "remove", "blueprint_place", "kick", "ban", "unban", "list_bans"];
   ok(names.length <= 32 && names.length >= 28, `AT6 the table is ~30 tools (${names.length})`, names);
   ok(!folded.some((n) => names.includes(n)), "AT6 none of the folded names is a tool of its own", folded.filter((n) => names.includes(n)));
-  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !Object.keys(TOOL_ALIASES).filter((n) => TOOL_ALIASES[n] === "anim").some((n) => names.includes(n)) && Object.values(TOOL_ALIASES).filter((v) => v === "anim").length === 4, "AT6 the general tools they folded into exist (anim: R 10-17 15:31; the four old body tools are hidden aliases of it)");
+  ok(["move", "act", "anim", "reach", "library", "set_avatar", "create", "edit", "body_state"].every((n) => names.includes(n)) && !Object.keys(TOOL_RENAMED).some((n) => names.includes(n)) && Object.values(TOOL_RENAMED).filter((v) => v.to === "anim").length === 4, "AT6 the general tools they folded into exist (anim: R 10-17 15:31; the four old body tools are taught as it, R 10-28)");
   ok(/mode/.test(desc.move) && /fly/.test(desc.move) && /altitude/.test(desc.move) && /name/.test(desc.move), "AT6 move documents mode: \"fly\" (altitude) and to: <a name>", desc.move.slice(0, 300));
   ok(/land/.test(desc.act) && /kick/.test(desc.act) && /\bbans\b/.test(desc.act) && /delete/.test(desc.act), "AT6 act documents land, kick/ban/unban/bans and delete", desc.act.slice(0, 200));
   ok(/wings-folded/.test(desc.anim) && /stop/.test(desc.anim) && /mode/.test(desc.anim) && /joints/.test(desc.anim) && /tracks/.test(desc.anim), "AT6 anim documents names (wings-folded), mode, joints, tracks and stop");
@@ -79,7 +79,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
   ok(/query/.test(desc.library) && /preview/.test(desc.library) && /sheet|page/.test(desc.library), "AT6 library documents query, preview and the sheet");
   ok(/light/.test(desc.create) && /\bat\b/.test(desc.create), "AT6 create documents a light and at");
   const { resolveTool, handleTool } = await import("../../mcpl/tools.ts");
-  ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to")?.name === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat), the old renames still alias");
+  ok(resolveTool("set_avatar")?.name === "set_avatar" && resolveTool("wear") === null && resolveTool("walk_to") === null && TOOL_RENAMED.walk_to?.to === "move", "AT6 set_avatar keeps its name (R: unambiguous; wear could mean a hat); the old renames are taught, not run (R 10-28)");
   ok(/ragdoll: true/.test(desc.anim) && !/limp: true/.test(desc.anim) && !/shove \{target/.test(desc.anim) && /shove \{target/.test(desc.act), "AT6 anim documents ragdoll (one vocabulary with the browser: a body going limp); the push's form (shove {target…}) is act's alone");
   ok(resolveTool("take_off") === null && resolveTool("kick") === null, "AT6 a folded tool does not resolve to a handler (it folded, it was not renamed)");
   const gone = await handleTool({ agent: null } as any, "take_off", {});
@@ -250,8 +250,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // the body cluster
   const sit = await call("anim", { name: "sit" });
   ok(!sit.isError && /"playing":"sit","mode":"loop"/.test(T(sit)) && ag.clip === "sit", "AT6d anim {name: \"sit\"} sits, looped (its own mode)", [T(sit), ag.clip]);
-  const stand = await call("pose", { posture: "stand" });
-  ok(!stand.isError && /pose is now called anim/.test(T(stand)) && /"playing":"stand"/.test(T(stand)) && ag.clip === "idle", "AT6d …the old pose {posture: \"stand\"} answers as anim {name: \"stand\"}", [T(stand), ag.clip]);
+  const old = await call("pose", { posture: "stand" });
+  ok(old.isError && /pose is now called anim/.test(T(old)) && /nothing ran/.test(T(old)) && ag.clip === "sit", "AT6d …the old pose {posture: \"stand\"} runs nothing and teaches anim (R 10-28)", [T(old), ag.clip]);
+  const stand = await call("anim", { name: "stand" });
+  ok(!stand.isError && /"playing":"stand"/.test(T(stand)) && ag.clip === "idle", "AT6d …anim {name: \"stand\"} stands", [T(stand), ag.clip]);
   const posed = await call("anim", { joints: { head: [0, 0.2, 0, 0.98] }, hold: true });
   const cleared = await call("anim", { stop: true });
   ok(!posed.isError && /"playing":"live","mode":"hold"/.test(T(posed)) && !cleared.isError && ag.heldPose == null, "AT6e anim {joints} holds a live frame; anim {stop: true} releases it (clear_pose folded)", [T(posed).slice(0, 120), T(cleared), ag.heldPose]);
@@ -263,9 +265,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const k2 = vic.msgs.length; const theirs = await call("anim", { ragdoll: true, target: "Vic" });
   await tryUntil("Vic is asked to go limp", () => vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), { ms: 3000 });
   ok(!theirs.isError && vic.msgs.slice(k2).some((m) => m.type === "puppet" && m.ragdoll === true), "AT6q anim {ragdoll: true, target} asks THEIR body to go limp (an undirected ragdoll, not a shove)", [T(theirs), vic.msgs.slice(k2).map((m) => m.type)]);
-  const wings = await call("pose", { wings: "fold" });
+  const wings = await call("anim", { name: "wings-folded" });
   // this body's bones aren't known here, so nothing folds: the door answers that as failed, in the fold's words
-  ok(wings.isError && /wings unchanged/.test(T(wings)) && /pose is now called anim/.test(T(wings)), "AT6f the old pose {wings: \"fold\"} answers as anim {name: \"wings-folded\"} (this body: nothing folded, failed, in the fold's words)", T(wings));
+  ok(wings.isError && /wings unchanged/.test(T(wings)), "AT6f anim {name: \"wings-folded\"} (this body: nothing folded, failed, in the fold's words)", T(wings));
   const letgo = await call("reach", { release: true });
   ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
   // the library
@@ -313,20 +315,26 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   await tryUntil("the post is unlocked and shown in the agent's fold", () => !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, { ms: 2000 });
   ok(!un.isError && !ag.foldRecord(ID.post)?.lock && !ag.foldRecord(ID.post)?.hidden, "AT5 …and what it teaches works (by its label too)", T(un)); }
 
-// ---- AT9: an alias runs the new tool with the OLD argument shape (review 10-15 #5: walk_to {x, z} was a shape error) ----
+// ---- AT9: the old names run nothing and teach the new (R 10-28); create's at / place shapes the old spawn used still land ----
 { const { handleTool } = await import("../../mcpl/tools.ts");
   const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
   const x0 = ag.pos.x, z0 = ag.pos.z;
-  const w = await handleTool(ctx as any, "walk_to", { x: x0 + 1.5, z: z0, tolerance: 0.2 });
-  ok(!w.isError && /is now called move/.test(T(w)) && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT9 walk_to {x, z, tolerance} walks the body (move {to}), and says the new name", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
+  const w0 = await handleTool(ctx as any, "walk_to", { x: x0 + 1.5, z: z0, tolerance: 0.2 });
+  ok(w0.isError && /walk_to is now called move/.test(T(w0)) && /nothing ran/.test(T(w0)) && Math.abs(ag.pos.x - x0) < 0.05, "AT9 walk_to runs nothing and teaches move (R 10-28)", { text: T(w0).slice(0, 160), x: ag.pos.x, x0 });
+  const w = await handleTool(ctx as any, "move", { to: [x0 + 1.5, z0], tolerance: 0.2 });
+  ok(!w.isError && Math.abs(ag.pos.x - (x0 + 1.5)) < 0.25, "AT9 move {to: [x, z], tolerance} walks the body", { text: T(w).slice(0, 160), x: ag.pos.x, x0 });
   const n0 = ag.entities.size;
-  const sp = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" });
+  // what the old spawn {lib, x, y?, z, yaw?, id} became (its alias's translation, kept here as the shapes create takes)
+  const oldSpawn = (a: any) => { const id = a.id !== undefined ? { components: { label: String(a.id) } } : {};
+    if (Number.isFinite(a.yaw) && !Number.isFinite(a.y)) return { model: a.lib, ...id, place: { at: [a.x, a.z], facing: [a.x + Math.sin(a.yaw), a.z + Math.cos(a.yaw)] } };
+    return { model: a.lib, ...id, at: a.yaw !== undefined ? { pos: [a.x, a.y, a.z], yaw: a.yaw } : Number.isFinite(a.y) ? [a.x, a.y, a.z] : [a.x, a.z] }; };
+  const sp = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", x: x0 + 3, z: z0 + 3, id: "alias-cup" }));
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
   await tryUntil("the agent knows alias-cup", () => named("alias-cup"), { ms: 3000, step: 50 });
   ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 spawn {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", T(sp).slice(0, 200));
   // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
   // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
-  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "spawn", { lib: "test/cup.glb", ...args, id }); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
+  const spAt = async (args, id) => { const r = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", ...args, id })); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
   ok(!xz.r.isError && near(xz.rec?.pos, x0 - 3, z0 + 3), "AT9 spawn {lib, x, z} lands at x, z (not the origin)", [T(xz.r).slice(0, 200), xz.rec?.pos]);
@@ -341,7 +349,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
     && Array.isArray(ywOn.rec?.q) && ywOn.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3),
     "AT9 spawn {lib, x, z, yaw} over the wall sits on its top, like spawn without a yaw, facing yaw (review r2 F8)", [T(ywOn.r).slice(0, 200), ywOn.rec?.pos, ywOn.rec?.q, noYaw.rec?.pos]);
   const sq = await handleTool(ctx as any, "spawn", { query: "cup" });
-  ok(sq.isError && /library \{query/.test(T(sq)), "AT9 spawn {query} is refused with the two calls that do it now", T(sq).slice(0, 200));
+  ok(sq.isError && /spawn is now called create/.test(T(sq)) && /nothing ran/.test(T(sq)), "AT9 spawn runs nothing and teaches create (R 10-28)", T(sq).slice(0, 200));
   const wv = await handleTool(ctx as any, "world_verb", { verb: "say", args: { text: "alias says" } });
   ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
   // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)
@@ -354,7 +362,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const hp = await handleTool(ctx as any, "act", { verb: "help", args: { verb: "comp" } }); const hj = JSON.parse(T(hp));
   ok(/removed/.test(hj?.refused?.reason ?? "") && /set \{/.test(hj?.refused?.fix ?? ""), "AT9 help {verb: comp} says it was removed and what does it now", hj);
   const sn = await handleTool(ctx as any, "snapshot", { view: "third" });
-  ok(/is now called screenshot/.test(T(sn)) && !/\bto\b.*required|shape/i.test(T(sn)), "AT9 snapshot {view} reaches screenshot with its own shape (no spectator here is fine; a shape error is not)", T(sn).slice(0, 160)); }
+  ok(sn.isError && /snapshot is now called screenshot/.test(T(sn)) && /nothing ran/.test(T(sn)), "AT9 snapshot runs nothing and teaches screenshot (R 10-28)", T(sn).slice(0, 160)); }
 
 // ---- AT8 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });

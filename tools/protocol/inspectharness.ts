@@ -46,7 +46,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
       // the realizer (three.js, the GPU paths) is not under test: inspect.js asks it only for a model's box
       b.onResolve({ filter: /^\.\/realize\/models\.js$/ }, (a) => (fwd(a.importer).endsWith("/client/lib/inspect.js") ? { path: "realize-models", namespace: "inspect-harness" } : undefined));
       b.onLoad({ filter: /.*/, namespace: "inspect-harness" }, (a) => {
-        if (a.path === "realize-models") return { contents: "export const boxOf = () => null; export const previewMesh = () => false;", loader: "js" };
+        if (a.path === "realize-models") return { contents: "export const boxOf = () => null; export const previewMesh = () => false; export const previewLight = (...a) => globalThis.__previewLight?.(...a) ?? false;", loader: "js" };
         const m = a.path.match(/(world|state|net|panels|ui|confirmcenter|xrask|core|emitters|matoverride)/)[1];
         // every name client/lib imports from these modules exists (no-ops where the edit path never calls them)
         const noop = (names) => names.map((n) => `export const ${n} = () => {};`).join(" ");

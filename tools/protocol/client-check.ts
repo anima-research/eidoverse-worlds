@@ -884,7 +884,7 @@ try {
     { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
       check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
-      check("CP8 the command bar lists nothing that sends nothing here (/boom); +gen/+fly are per-person can.generate/.fly (handlers.js /grant)", !/^boom /m.test(listed) && /\+gen/.test(listed), listed); }
+      check("CP8 the command bar lists /boom (R 10-28: force restored); +gen/+fly are per-person can.generate/.fly (handlers.js /grant)", /^boom /m.test(listed) && /\+gen/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
     { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'inhabitant', guests: 'inhabitant' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
       await sleep(1200);   // CP7's flood is the say budget; this is an act

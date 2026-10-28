@@ -1136,11 +1136,11 @@
    },
    "near": {
     "gt": 0,
-    "max": 100
+    "max": 200
    },
    "radius": {
     "min": 1,
-    "max": 100
+    "max": 200
    },
    "src": {
     "maxLen": 2048
@@ -1517,7 +1517,9 @@
    "ambient": "number",
    "forecast": "object",
    "override": "object",
-   "gradient": "object"
+   "gradient": "object",
+   "system": "string",
+   "colors": "object"
   },
   "defaults": {
    "hours": 12,
@@ -1544,6 +1546,10 @@
     "storm",
     "cyclone",
     "darkstorm"
+   ],
+   "system": [
+    "eidoverse",
+    "skymesh"
    ]
   },
   "ranges": {
@@ -1588,6 +1594,8 @@
    "forecast": "no forecast: the authored weather holds",
    "override": "no manual weather inside the current forecast segment",
    "gradient": "the renderer's own sky (its day, clouds and weather)",
+   "system": "eidoverse: the detailed sky",
+   "colors": "the sky's own colours",
    "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
   "docs": {
@@ -1605,7 +1613,9 @@
    "ambient": "× this renderer's ambient curve",
    "forecast": "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}",
    "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)",
-   "gradient": "a painted sky in place of the day's: {top, horizon, bottom?}, each a linear [r, g, b] 0..1 (OMI_environment_sky gradient; absent bottom = horizon). rate: 0 already pins the clock"
+   "gradient": "a painted sky in place of the day's: {top, horizon, bottom?}, each a linear [r, g, b] 0..1 (OMI_environment_sky gradient; absent bottom = horizon). rate: 0 already pins the clock",
+   "system": "eidoverse (the detailed sky) | skymesh (the basic sky, for weak GPUs)",
+   "colors": "tints {star? (or sun), cloud?, sky?, fog?, shield?}, each [r, g, b] 0..1 (SWEEP-3 S1, main's)"
   },
   "units": {
    "hours": "h",

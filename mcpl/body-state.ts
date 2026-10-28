@@ -262,7 +262,8 @@ export class BodyStateReader {
         summary: `${who}: ${f.status}; ${valid ? `${readBodyMode(p) ?? "body-mode unknown"}${p!.clip ? ` (playing ${p!.clip})` : ""}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
-        bodyMode: readBodyMode(p), clip: p?.clip ?? null, wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
+        bodyMode: readBodyMode(p), clip: p?.clip ?? null, posture: p?.clip ?? null,   // posture: main's name for clip, a deprecated twin (SWEEP-3 G1a)
+        wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
         // Published bones with nothing the stand-in can use: they cost

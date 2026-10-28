@@ -55,6 +55,8 @@ const URL_ = h.BASE.replace("http", "ws") + "/ws";
 const a: any = new WorldAgent({ name: "inhabitant", world: "places", url: URL_ });
 const friend: any = new WorldAgent({ name: "friend", world: "places", url: URL_ });
 const ctx = { agent: a, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
+// what walk_to {x, y?, z, to?} meant, as move's words (the old name runs nothing now, R 10-28)
+const walkWords = (a: any) => ({ to: a.to !== undefined ? a.to : a.y != null ? [a.x, a.y, a.z] : [a.x, a.z], ...(a.run !== undefined ? { run: a.run } : {}), ...(a.tolerance !== undefined ? { tolerance: a.tolerance } : {}) });
 const tool = async (name: string, args: Record<string, any>) => {
   const r: any = await handleTool(ctx as any, name, args);
   return (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
@@ -86,19 +88,19 @@ try {
   const all = await tool("move", { to: "?" });
   check("move {to: \"?\"} lists every named place, seen or not, and moves nothing",
     /tower\/upstairs "the upper room"/.test(all) && /tower\/hall "the hall"/.test(all) && /tower\/front_door/.test(all) && near(a.pos.z, 7, 0.05), all);
-  check("...the walk_to alias's to: \"?\" too", /tower\/upstairs/.test(await tool("walk_to", { to: "?" })));
+  check("...move's to: \"?\" too (walk_to's words)", /tower\/upstairs/.test(await tool("move", walkWords({ to: "?" }))));
 
-  let r = await tool("walk_to", { to: "tower", run: true });
+  let r = await tool("move", walkWords({ to: "tower", run: true }));
   check("walk_to a thing goes to its entrance", /arrived at tower\/entrance/.test(r) && near(a.pos.z, 5, 0.6), `${r} ${at()}`);
-  r = await tool("walk_to", { to: "tower/upstairs", run: true });
+  r = await tool("move", walkWords({ to: "tower/upstairs", run: true }));
   check("walk_to thing/room reaches the room, on its own floor — up the stair",
     /arrived at tower\/upstairs/.test(r) && near(a.pos.y, gy + UPPER) && a.pos.x < 1.55, `${r} ${at()}`);
   const look1 = await tool("look", {});
   check("...and look says which room the body is in", /You are in the upper room \(tower\/upstairs\)/.test(look1),
     look1.split("\n").find((l) => l.startsWith("You are in")) ?? "(no 'You are in' line)");
-  r = await tool("walk_to", { to: "the hall", run: true });
+  r = await tool("move", walkWords({ to: "the hall", run: true }));
   check("a place's label alone works (the nearest thing that has it)", /arrived at tower\/hall/.test(r) && near(a.pos.y, gy + FLOOR) && Math.abs(a.pos.x) < 3, `${r} ${at()}`);
-  r = await tool("walk_to", { to: "front door", run: true });
+  r = await tool("move", walkWords({ to: "front door", run: true }));
   check("doors are places too", /arrived at tower\/front_door/.test(r) && near(a.pos.z, 2.9, 0.7), `${r} ${at()}`);
 
   // move {to: [x, y, z]}: y picks the floor (#236; owner 22:40), and a y no floor matches says which it chose
@@ -112,30 +114,30 @@ try {
   check("move [x, 10, z] arrives on the nearest floor and the reply names it", near(a.pos.y, gy + UPPER) && /no floor at .* you're on the floor at/.test(r), `${r} ${at()}`);
   r = await tool("move", { to: [-1.5, gy - 5, -1.5], run: true });
   check("move [x, under every floor, z] arrives on the nearest floor there, and says so", near(a.pos.y, gy + FLOOR) && /no floor at .* you're on the floor at/.test(r), `${r} ${at()}`);
-  r = await tool("walk_to", { x: -1.5, y: gy + UPPER, z: -1.2, run: true });
-  check("walk_to {x, y, z} through the alias: y picks the floor the same way", /arrived/.test(r) && near(a.pos.y, gy + UPPER), `${r} ${at()}`);
+  r = await tool("move", walkWords({ x: -1.5, y: gy + UPPER, z: -1.2, run: true }));
+  check("move {to: [x, y, z]} (walk_to's {x, y, z}): y picks the floor the same way", /arrived/.test(r) && near(a.pos.y, gy + UPPER), `${r} ${at()}`);
   r = await tool("move", { to: "tower/hall", run: true });
-  check("move {to: \"thing/place\"} directly (the walk_to rows above run through the alias)", /arrived at tower\/hall/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
+  check("move {to: \"thing/place\"} directly (the rows above send walk_to's words)", /arrived at tower\/hall/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
 
   // naming a spot after the building exists — standing on the stair landing
-  await tool("walk_to", { x: 2.2, z: -2.3, y: gy + UPPER, run: true });
+  await tool("move", walkWords({ x: 2.2, z: -2.3, y: gy + UPPER, run: true }));
   r = await tool("name_place", { name: "landing", label: "the top of the stair" });
   check("name_place names the spot where the body stands, on the thing it is in", /named this spot "landing" on \[tower\]/.test(r), r);
   await sleep(300);
   check("...as an entry in that thing's places component, in its own frame",
     Array.isArray(a.entities.get(sceneId(a, "tower"))?.places?.landing?.at) && near(a.entities.get(sceneId(a, "tower")).places.landing.at[1], UPPER, 0.06),
     JSON.stringify(a.entities.get(sceneId(a, "tower"))?.places));   // "tower" is its label: the authority minted its id (R 10-17)
-  await tool("walk_to", { to: "entrance", run: true });
-  r = await tool("walk_to", { to: "the top of the stair", run: true });
+  await tool("move", walkWords({ to: "entrance", run: true }));
+  r = await tool("move", walkWords({ to: "the top of the stair", run: true }));
   check("...and walk_to reaches it by its label, from outside, up the stair", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + UPPER) && near(a.pos.x, 2.2, 0.15), `${r} ${at()}`);
 
   // a raw comp edit: re-point the name, retire a model place
   const cur = { ...a.entities.get(sceneId(a, "tower")).places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: cur });
   await sleep(400);
-  r = await tool("walk_to", { to: "tower/landing", run: true });
+  r = await tool("move", walkWords({ to: "tower/landing", run: true }));
   check("a builder can re-point a name with a plain comp — the walk follows", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + FLOOR) && near(a.pos.x, -2, 0.2), `${r} ${at()}`);
-  r = await tool("walk_to", { to: "tower/upstairs" });
+  r = await tool("move", walkWords({ to: "tower/upstairs" }));
   check("a place the model declared can be retired (null)", /has no place called "upstairs"/.test(r), r);
   r = await tool("name_place", { name: "upstairs", remove: true, on: "tower" });
   check("name_place remove on a model place keeps it hidden", /retired "upstairs"/.test(r) && a.entities.get(sceneId(a, "tower")).places.upstairs === null, r);
@@ -146,14 +148,14 @@ try {
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get(sceneId(a, "tower")).places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
   await tryUntil("the stool's support is registered", () => a.supportIds?.get("stool"), { ms: 2000, step: 50 });
   await a.supportReady(); await sleep(400);
-  await tool("walk_to", { to: "tower/entrance", run: true });
-  r = await tool("walk_to", { to: "tower/by_stool", run: true });
+  await tool("move", walkWords({ to: "tower/entrance", run: true }));
+  r = await tool("move", walkWords({ to: "tower/by_stool", run: true }));
   check("a named spot on the floor is reached on the floor, not on the footstool beside it",
     /arrived at tower\/by_stool/.test(r) && near(a.pos.y, gy + FLOOR), `${r} ${at()}`);
 
   // a person
   await friend.walkTo(-1.5, -1.5, true);
-  r = await tool("walk_to", { to: "friend", run: true });
+  r = await tool("move", walkWords({ to: "friend", run: true }));
   const d = Math.hypot(a.pos.x - friend.pos.x, a.pos.z - friend.pos.z);
   check("walk_to a person stops short of them, beside them", /arrived at friend/.test(r) && d > 0.5 && d < 1.3, `${r} — ${d.toFixed(2)}m apart`);
 
@@ -165,7 +167,7 @@ try {
       await squatter.walkTo(-15, -15, true);
       await tryUntil("a visitor named Tower is here", () => [...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"), { ms: 2000, step: 50 });
       check("(a visitor named \"Tower\" is here)", [...a.people.keys()].some((k: string) => k.toLowerCase() === "tower"), [...a.people.keys()].join(","));
-      r = await tool("walk_to", { to: "tower", run: true });
+      r = await tool("move", walkWords({ to: "tower", run: true }));
       check("move {to: \"tower\"} goes to the tower's entrance, not to the person called Tower", /arrived at tower\/entrance/.test(r), `${r} ${at()}`);
     } finally { try { squatter.close(); } catch { /* gone */ } }
   }
@@ -185,15 +187,15 @@ try {
   }
 
   // the nearest of two
-  await tool("walk_to", { x: 30, z: 7, run: true });
-  r = await tool("walk_to", { to: "the hall", run: true });
+  await tool("move", walkWords({ x: 30, z: 7, run: true }));
+  r = await tool("move", walkWords({ to: "the hall", run: true }));
   check("with two things offering the same place, the nearest is taken", /arrived at Belfry\/hall/.test(r) && a.pos.x > 25, `${r} ${at()}`);
 
   // moved things take their places with them
   await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
   await tryUntil("tower2 has moved to z = -20", () => a.entities.get(sceneId(a, "tower2"))?.pos?.[2] === -20, { ms: 2000, step: 50 });
   await a.supportReady(); await sleep(400);
-  r = await tool("walk_to", { to: "Belfry/entrance", run: true });   // tower2 is labelled Belfry since the C1 rows
+  r = await tool("move", walkWords({ to: "Belfry/entrance", run: true }));   // tower2 is labelled Belfry since the C1 rows
   // entrance [0,0,5] in the model frame, turned a quarter and moved to (30, -20)
   const want = P.toWorld({ id: "tower2", pos: [30, 0, -20], yaw: Math.PI / 2 }, [0, 0, 5]);
   check("a thing that is moved and turned takes its places with it", /arrived at Belfry\/entrance/.test(r) && Math.hypot(a.pos.x - want[0], a.pos.z - want[2]) < 0.6, `${r} ${at()} want (${want[0].toFixed(2)}, ${want[2].toFixed(2)})`);
@@ -215,10 +217,10 @@ try {
   await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0] } } });
   await tryUntil("the rug's and perch's supports are registered", () => a.supportIds?.get("rug") && a.supportIds?.get("perch"), { ms: 3000, step: 50 });
   await a.supportReady(); await sleep(400);
-  r = await tool("walk_to", { to: "the long room", run: true });
+  r = await tool("move", walkWords({ to: "the long room", run: true }));
   check("a room whose middle is furnished is reached at its clear floor, toward an end",
     /arrived at rug\/long_room/.test(r) && near(a.pos.y, ry + 0.05) && Math.abs(a.pos.x - 50) > 1.5 && Math.abs(a.pos.x - 50) < 6, `${r} ${at()}`);
-  r = await tool("walk_to", { to: "rug/loft" });
+  r = await tool("move", walkWords({ to: "rug/loft" }));
   check("a room whose floor is not there is refused — not the floor beneath it", /nowhere to stand anywhere in it on its floor.*no floor there/.test(r) && !/arrived/.test(r), r);
   // retired (shape audit 10-16): "a seat on a thing scaled 4× is reached on the floor beside it" read the place's kind:
   // 'seat'. A component place has no kind now (a seat is a station on a socket; the agent sits by attach), so the stool's
@@ -314,7 +316,7 @@ try {
     }
   }
 
-  r = await tool("walk_to", { to: "the moon" });
+  r = await tool("move", walkWords({ to: "the moon" }));
   check("an unknown name is refused, listing the names that exist", /nothing here is called "the moon" — named places: .*tower\/hall/.test(r), r);
 } finally {
   try { a.close(); friend.close(); } catch { /* gone */ }

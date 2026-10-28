@@ -491,7 +491,9 @@ if (M) {
   }
 
   // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the spawn alias seat a model's BOTTOM on the heightfield
-  const { TOOL_ALIAS_ARGS } = await import(ENGINE + "mcpl/tools.ts");
+  // the old spawn {lib, x, z, yaw?, id}'s words as create takes them (the alias went, R 10-28; agenttools-check AT9 holds the same)
+  const TOOL_ALIAS_ARGS = { spawn: (a: any) => { const id = a.id !== undefined ? { components: { label: String(a.id) } } : {};
+    return Number.isFinite(a.yaw) ? { model: a.lib, ...id, place: { at: [a.x, a.z], facing: [a.x + Math.sin(a.yaw), a.z + Math.cos(a.yaw)] } } : { model: a.lib, ...id, at: [a.x, a.z] }; } };
   call("flat", "olive", "create-world", { title: "flat" });
   const bottom = (world, id) => { const e = openWorld(root, world).state().entities[id]; return e?.c.transform?.pos?.[1]; };   // a crate's origin is its bottom
   // every crate its own spot (a second one at the same x, z would land on the first: GP5): the hilltop, its sides, its foot

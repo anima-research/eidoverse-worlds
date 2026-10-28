@@ -486,8 +486,9 @@ export function inspectSchema(ent, id, live = {}) {
     const src = c.light; const L = (k, over) => rowOf('Light', k, src, over);
     const fields = [
       L('color', { label: 'color' }),
-      L('intensity', { label: 'brightness', softMax: Math.max(64, src.intensity ?? 16) }),
-      L('range', { label: 'range', softMax: Math.max(40, src.range ?? 10) }),
+      // sliders that preview while dragged (SWEEP-3 N4, main's lights.js): inspect.js's light handler; the write path stays num's
+      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0 }),
+      L('range', { label: 'range', t: 'range', min: 1, max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
       L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)' }),
       L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
@@ -1589,7 +1590,7 @@ export function describeSchema(schema, { verbsHint = true } = {}) {
     for (const f of g.fields) {
       if (f.t === 'btn' || f.t === 'list' || (f.t === 'json' && f.commit)) continue;
       if (f.t === 'info') { if (f.value) L.push(`  ${f.label ? `${f.label}: ` : ''}${f.value}`); continue; }
-      const val = f.t === 'num' ? (f.deg ? `${Math.round(f.value * R2D)}°` : `${+(+f.value).toFixed(f.dp ?? 2)}${f.unit ? ' ' + f.unit : ''}`)
+      const val = f.t === 'num' || f.t === 'range' ? (f.deg ? `${Math.round(f.value * R2D)}°` : `${+(+f.value).toFixed(f.dp ?? 2)}${f.unit ? ' ' + f.unit : ''}`)
         : f.t === 'color' ? '0x' + (f.value ?? 0).toString(16).padStart(6, '0')
         : f.t === 'enum' ? `${f.value}  [${f.options.map((o) => o.v).join('|')}]`
         : f.t === 'check' ? (f.value ? 'yes' : 'no')

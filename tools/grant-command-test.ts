@@ -85,5 +85,15 @@ check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?
   await cmd(resolveCommand('blast')?.name ?? 'blast', '');   // chat.js resolves the typed word, then dispatches
   check('/blast is /boom, with the authority\'s defaults', sent.length === 1 && sent[0].verb === 'force' && JSON.stringify(sent[0].args) === JSON.stringify({ at: [0, 0, 0] }), JSON.stringify(sent)); }
 
+// SWEEP-3 N5: /grant * ±gen / ±fly write default-role.can (merged over what it holds, the role kept); N6: /role shows +gen / +fly
+{ world.c = { 'default-role': { role: 'builder', can: { fly: true } } };
+  let g = await run('* +gen');
+  check('/grant * +gen merges generate into default-role.can, keeping fly and the role', g?.args?.component === 'default-role' && g.args.merge === true && g.args.value?.can?.generate === true && g.args.value.can.fly === true && !('role' in g.args.value), JSON.stringify(g?.args));
+  g = await run('* inhabitant -fly');
+  check('/grant * <role> -fly sets both', g?.args?.value?.role === 'inhabitant' && g.args.value.can?.fly === false, JSON.stringify(g?.args));
+  const net: any = modules['net.js'].net; net.myRights = { role: 'builder', permissions: ['build', 'generate', 'fly'] };
+  messages.length = 0; dispatch('role', ''); await settle();
+  check('/role shows +gen and +fly', messages.some((m) => /^you: builder \+gen \+fly/.test(m)), JSON.stringify(messages)); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

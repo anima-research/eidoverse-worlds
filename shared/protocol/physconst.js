@@ -4,7 +4,7 @@ export const REACH = 1.5;      // m from the hand: arm plus a step (grab, put, d
 export const BODY_MASS = 70;   // kg: every body's presumptive mass, as REACH is its presumptive reach (R 10-12: one, until bodies are simulated whole)
 export const HAND_Y = 1.1;     // where a held thing sits above the feet; reach is measured from there
 export const MAX_HELD = 2;     // things in two hands at once
-export const KICK = Object.freeze({ reach: 1.6, below: -0.5, above: 2.0, lift: 0.9 });   // a punt, from the body's origin
+export const KICK = Object.freeze({ reach: 2.5, below: -0.5, above: 2.0, lift: 0.9 });   // a punt, from the body's origin (R 10-28: 2.5 m, main's; the one copy)
 // a contact push: a punt {contact: true} that a moving body sends when it moves into a loose thing (shared/shove.js). The authority
 // admits one only from a body standing against the thing: its feet within `reach` of the thing's oriented box (a body's
 // radius at the largest size, plus the track's lag), the thing not beneath the body (`beneath`) nor over the head

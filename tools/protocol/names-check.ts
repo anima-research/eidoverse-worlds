@@ -100,7 +100,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no stopped when replaced", "mcpl/agent.ts", "    this.animEnded(\"replaced\", (b) => b.kind === a.kind);", "", ["M4", "L1"]],
   ["a move isn't noticed", "mcpl/agent.ts", "    this.watchAnim();\n", "", ["M4"]],
   ["stopped isn't said", "mcpl/agent.ts", "this.inbox.push({ ts, kind: \"act\", who: this.name, text }); this.onEvent?.({ ts, kind: \"act\", who: this.name, text });", "", ["M4"]],
-  ["posture isn't an alias", "mcpl/tools.ts", `  pose: "anim", animate: "anim", ${EM}: "anim", posture: "anim" };`, `  pose: "anim", animate: "anim", ${EM}: "anim" };`, ["M5"]],
+  ["posture isn't taught", "mcpl/tools.ts", `  pose: "anim", animate: "anim", ${EM}: "anim", posture: "anim" }).map(`, `  pose: "anim", animate: "anim", ${EM}: "anim" }).map(`, ["M5"]],
   ["a held frame of tracks is the first key", "mcpl/tools.ts", "const pick = at == null ? ks.at(-1) : ks.filter((k) => k.t <= at).at(-1) ?? ks[0];", "const pick = ks[0];", ["M6"]],
   ["once replaces what is held", "mcpl/tools.ts", "    if (mode === \"once\") { ag.playOnce(n);", "    if (mode === \"once\") { ag.animEnded(\"replaced\"); ag.playOnce(n);", ["L1"]],
   ["the result hides where it came from", "mcpl/tools.ts", "...(from ? { from } : {})", "", ["L2"]],
@@ -491,12 +491,11 @@ const cases: Case[] = [
       const told = ag.inbox?.filter((m: any) => /^stopped \{/.test(m.text ?? "")).length ?? 0;
       return { why: why(), told }; },
     good: (o) => JSON.stringify(o.why) === '["sit:replaced","dance:moved","lie:stopped","live:knocked over"]' && o.told === 4 },
-  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are hidden aliases of anim (not advertised; each maps its old shape): pose {bones} → joints, pose {clear} → stop, pose {posture} / posture {kind} → a looped name, pose {wings: fold} → wings-folded, animate {tracks, loop} → mode loop; the old gesture tool's {name} plays ONCE, as that tool did (an alias keeps the old tool's meaning for its release: house review I59, our answer 10-19; a built-in like dance loops under anim, never under the old name)", async run() {
-      const T: any = await import(TREE + "mcpl/tools.ts"); const A = T.TOOL_ALIAS_ARGS ?? {};
-      return { listed: ["pose", "animate", EM, "posture"].filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
-        to: ["pose", "animate", EM, "posture"].map((n) => T.resolveTool(n)?.name ?? null), pass: JSON.stringify(A[EM]?.({ name: "dance" }) ?? null) === '{"name":"dance","mode":"once"}',
-        m: [A.pose?.({ bones: { head: [0, 0, 0, 1] } }), A.pose?.({ clear: true }), A.pose?.({ posture: "sit" }), A.posture?.({ kind: "lie" }), A.pose?.({ wings: "fold" }), A.animate?.({ tracks: {}, dur: 1, loop: true })].map((x) => JSON.stringify(x ?? null)) }; },
-    good: (o) => !o.listed.length && o.anim && o.to.every((n: string) => n === "anim") && o.pass && JSON.stringify(o.m) === JSON.stringify(['{"joints":{"head":[0,0,0,1]}}', '{"stop":true}', '{"name":"sit","mode":"loop"}', '{"name":"lie","mode":"loop"}', '{"name":"wings-folded"}', '{"tracks":{},"dur":1,"mode":"loop"}']) },
+  { id: "M5", what: "…pose, animate, posture and the action bar's old tool are not tools now (R 10-28): none is advertised or resolves; each is taught as anim (TOOL_RENAMED) and runs nothing", async run() {
+      const T: any = await import(TREE + "mcpl/tools.ts"); const olds = ["pose", "animate", EM, "posture"];
+      return { listed: olds.filter((n) => T.TOOLS.some((t: any) => t.name === n)), anim: T.TOOLS.some((t: any) => t.name === "anim"),
+        resolves: olds.filter((n) => T.resolveTool(n) !== null), taught: olds.map((n) => T.TOOL_RENAMED?.[n]?.to ?? null) }; },
+    good: (o) => !o.listed.length && o.anim && !o.resolves.length && o.taught.every((n: string) => n === "anim") },
   { id: "M6", what: "…live tracks in mode hold freeze on one frame: `at` picks it (the last key at or before), default the last key", async run() {
       const { ag, call } = await animAgent(); const tr = { head: [{ t: 0, q: [0, 0, 0, 1] }, { t: 0.5, q: [0, 0.1, 0, 0.995] }, { t: 1, q: [0, 0.2, 0, 0.98] }] };
       const a = played(await call("anim", { tracks: tr, dur: 1, mode: "hold", at: 0.6 })); const f1 = JSON.stringify(ag.heldPose?.head ?? null);
@@ -607,7 +606,7 @@ const cases: Case[] = [
         key: /actionbar: loadSidecar\("animations\/_actionbar\.json", validateActionBar\)/.test(defs), v: typeof AD.validateActionBar === "function" && AD.validateActionBar({ wave: { clip: "raise" } }).length === 0,
         slash: /\{ name: 'anim', help: '\/anim <name>/.test(reg) }; },
     good: (o) => o.now && !o.olds.length && o.key && o.v && o.slash },
-  { id: "E3", what: "…the word appears nowhere but the hidden tool alias's entries (TOOL_ALIASES, and its args in TOOL_ALIAS_ARGS) and the old key's read (shared/onceanim.js) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
+  { id: "E3", what: "…the word appears nowhere but the old tool name's education entry (TOOL_RENAMED) and the old key's read (shared/onceanim.js) and the action bar's old id for carrying saved storage (client/lib/ui.js ACTIONBAR_OLD_ID): every file of the tree (spec/history, the frozen v1 record, aside), file names too; and both of those still work", async run() {
       const re = new RegExp(`(?<![rd])${EM}`, "i"); const hits: string[] = []; const SKIP = new Set(["node_modules", ".git", "worlds", "store", "history"]);
       const walk = (rel: string) => { let ents: any[] = []; try { ents = fs.readdirSync(TREE + rel, { withFileTypes: true }); } catch { return; }
         for (const e of ents) { const r = rel ? `${rel}/${e.name}` : e.name; if (SKIP.has(e.name)) continue;
@@ -617,15 +616,14 @@ const cases: Case[] = [
           if (st.size > 4e6 || /\.(png|jpe?g|glb|vrm|vrma|wasm|ico|webp|gz|zip|mp3|ogg|wav)$/i.test(e.name)) continue;
           const lines = fs.readFileSync(TREE + r, "utf8").split("\n"); lines.forEach((l: string, i: number) => { if (re.test(l)) hits.push(`${r}:${i + 1}: ${l.trim().slice(0, 120)}`); }); } };
       walk("");
-      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \};$/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h)
+      const allowed = (h: string) => /^mcpl\/tools\.ts:\d+: pose: "anim", animate: "anim", \w+: "anim", posture: "anim" \}\)\.map\(/.test(h) || /^shared\/onceanim\.js:\d+: const OLD_KEY = '\w+';$/.test(h)
         || /^client\/lib\/ui\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
-        || /^mcpl\/tools\.ts:\d+: \w+: \(a\) => \(\{ name: a\.name, mode: "once" \}\),   \/\/ the old gesture tool played once/.test(h)
         // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
         || /^client\/lib\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
         || /^tools\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
-      return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool?.(EM)?.name ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
-    good: (o) => o.nStray === 0 && o.kept >= 4 && o.alias === "anim" && o.read === "wave" },
+      return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.TOOL_RENAMED?.[EM]?.to ?? null, read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
+    good: (o) => o.nStray === 0 && o.kept >= 3 && o.alias === "anim" && o.read === "wave" },
   // ---------------- OS: oscillate (R 10-17 21:40) ----------------
   { id: "OS1", what: "(R 21:40) the registry: motion.type is pendulum | spin | orbit | oscillate | path (no bob); oscillate's per-type defaults and units; the editor's card is Oscillate (descriptors, the component list, MOTION_TYPES)", async run() {
       const M = CS.COMPONENTS.motion; const DS: any = await import(TREE + "shared/protocol/descriptors.js"); const CO: any = await import(TREE + "shared/components.js"); const ES: any = await import(TREE + "shared/editschema.js");

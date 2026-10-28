@@ -24,4 +24,10 @@ check("the stored value carries no seq/by (the log does)", stored && stored.fore
 check("the replica names the entry that wrote the sky: its seq and who", Number.isInteger(got.sky?.seq) && typeof got.sky?.by === "string" && got.sky.by.length > 0, got.sky);
 const eff = effectiveSky(stored, Date.now());
 check("the forecast is live from that value (so the stamp is what names it)", eff.source === "forecast", eff.source);
+// SWEEP-3 S1: the sky stores its system (the basic sky for weak GPUs) and its colours again; an unknown system is refused
+{ const sk = W.send({ verb: "sky", args: { system: "skymesh", colors: { cloud: [1, 0.72, 0.55], star: [1, 0.8, 0.6] } } });
+  const c = W.state().entities["@world"]?.c.sky;
+  check("sky {system: 'skymesh', colors} is stored", sk?.ok === true && c?.system === "skymesh" && JSON.stringify(c?.colors?.cloud) === "[1,0.72,0.55]", { sk, c });
+  const bad = W.send({ verb: "sky", args: { system: "ringworld" } });
+  check("…and a system that isn't one is refused", bad?.ok === false, bad); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

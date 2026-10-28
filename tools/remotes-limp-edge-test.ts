@@ -25,7 +25,7 @@ const heldStill = <T>(fn: () => T): T => {
 async function drawnBetween(id: string, a: Record<string, unknown>, b: Record<string, unknown>) {
   const r = await remotesMod.ensureRemote(id, null);
   const avatar: any = { root: new stubs.THREE.Object3D(), pitch: 0, posed: undefined,
-    update() {}, setLimp() {}, setClip() {}, setPose(p: unknown) { this.posed = p; }, clearPose() { this.posed = null; }, playEmote() {} };
+    update() {}, setLimp() {}, setClip() {}, setPose(p: unknown) { this.posed = p; }, clearPose() { this.posed = null; } };
   r.avatar = avatar;
   return heldStill(() => {
     const at = remotesMod.serverNow() - 110;   // v4: bodies are drawn interpDelay (110 ms with no lateness) behind serverNow (remotes.js)
