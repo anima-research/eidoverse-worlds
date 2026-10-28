@@ -184,9 +184,10 @@ ok(["fl-src", "fl-rate", "fl-one"].every((n) => tool(["found", n, "--owner", "Fa
   fay.close(); fr.close(); P.proc.kill(); }
 { const Q = await start({ FORK_GAP_SEC: "1", FORK_PER_HOUR: "2" });
   const fay = await sock(Q.port); await fay.join("fl-one", "Fay");
-  const f1 = await fay.raw({ type: "world-fork", to: "fl-cap1" }, "world-forked", 8000), early = await fay.raw({ type: "world-fork", to: "fl-early" }, "world-forked", 8000);
-  await sleep(1200); const f2 = await fay.raw({ type: "world-fork", to: "fl-cap2" }, "world-forked", 8000);
-  await sleep(1200); const f3 = await fay.raw({ type: "world-fork", to: "fl-cap3" }, "world-forked", 8000);
+  const gapPast = (t) => tryUntil("the server's 1 s fork gap has passed", () => Date.now() - t > 1200, { ms: 3000, step: 50 });
+  const f1 = await fay.raw({ type: "world-fork", to: "fl-cap1" }, "world-forked", 8000), t1 = Date.now(), early = await fay.raw({ type: "world-fork", to: "fl-early" }, "world-forked", 8000);
+  await gapPast(t1); const f2 = await fay.raw({ type: "world-fork", to: "fl-cap2" }, "world-forked", 8000), t2 = Date.now();
+  await gapPast(t2); const f3 = await fay.raw({ type: "world-fork", to: "fl-cap3" }, "world-forked", 8000);
   ok(f1?.type === "world-forked" && early?.type === "error" && /one copy every 1 s/.test(early.error) && f2?.type === "world-forked", "FL3 FORK_GAP_SEC=1: a copy straight after is refused, one a second later happens", [f1, early, f2].map((m) => m?.error ?? m?.type));
   ok(f3?.type === "error" && /2 times in the last hour \(this server allows 2\)/.test(f3.error) && !fs.existsSync(path.join(W, "fl-cap3")),
     "FL4 FORK_PER_HOUR=2: a third copy within the hour is refused, and nothing is written", f3);
