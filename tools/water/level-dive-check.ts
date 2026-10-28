@@ -1,71 +1,84 @@
 // Diving in the world's water LEVEL (lakes, rivers, the sea), as a player in a real browser.
-//   WATER_PREVIEW_URL=http://127.0.0.1:<port>/?world=<fresh>&name=diver bun tools/water/level-dive-check.ts
-// A terrain with a deep lake is built (the ground from this repo's height law, or ENGINE_LIB=<dir> for upstream's
-// real modules); the body is put afloat in the lake; holding C dives it under (the 3D swim takes over from the float),
-// and letting go brings it back up to the surface, where the float takes it again.
-import { chromium } from 'playwright';
-import { strict as assert } from 'node:assert';
-import { readFileSync, existsSync } from 'node:fs';
-const base = process.env.WATER_PREVIEW_URL ?? 'http://127.0.0.1:19347/?world=level-dive&name=diver';
+//   bun tools/water/level-dive-check.ts   (its own scratch server and world; ENGINE_LIB=<dir> serves upstream's real modules)
+// A terrain with a deep lake is built (the ground from this repo's height law); the body is put afloat in the lake;
+// holding C dives it under (the 3D swim takes over from the float), looking down with W held dives too (R 10-28), and
+// letting go brings it back up to the surface, where the float takes it again.
+import { readFileSync, existsSync } from "node:fs";
+import { scratchBench, mkCheck } from "../harness.ts";
+import { until, pause } from "../protocol/wait.ts";
+
+const WORLD = "level-dive";
 const engine = process.env.ENGINE_LIB;
-const mac = process.platform === 'darwin';   // the installed Chrome and Metal are a Mac's; elsewhere Playwright's own Chromium
-const browser = await chromium.launch({ headless: true, ...(mac ? { channel: 'chrome' } : {}), args: ['--enable-unsafe-webgpu', ...(mac ? ['--use-angle=metal'] : [])] });
+const bench = await scratchBench("level-dive", { worlds: [WORLD] });
+const { cdp, evalJson, BASE } = bench;
+const { check, tally } = mkCheck();
+const errors: string[] = [];
+bench.cws.addEventListener("message", (ev) => {
+  const m = JSON.parse(String(ev.data));
+  if (m.method === "Runtime.exceptionThrown") errors.push(String(m.params?.exceptionDetails?.exception?.description ?? m.params?.exceptionDetails?.text).slice(0, 300));
+  if (m.method === "Fetch.requestPaused") {   // the terrain module: this repo's height law, or upstream's real one
+    const f = engine ? `${engine}/${new URL(m.params.request.url).pathname.split("/").pop()}` : "";
+    const body = engine ? (existsSync(f) ? readFileSync(f, "utf8") : null) : "// stand-in";
+    if (body == null) cdp.send("Fetch.continueRequest", { requestId: m.params.requestId });
+    else cdp.send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200, responseHeaders: [{ name: "content-type", value: "text/javascript" }], body: Buffer.from(body).toString("base64") });
+  }
+});
+await cdp.send("Fetch.enable", { patterns: [{ urlPattern: engine ? "*/library/eidoverse/*.js" : "*/library/eidoverse/terrain.js" }] });
+const C = "(await import('/lib/controller.js'))";
+const js = (body: string) => evalJson(`(async () => { ${body} })()`);
+const y = () => js(`return +${C}.myState.pos.y.toFixed(2);`);
+const diving = () => js(`return ${C}.isLevelDiving();`);
+const key = (op: "add" | "delete", k: string) => js(`${C}.keys.${op}(${JSON.stringify(k)}); return true;`);
+const put = (yy: number) => js(`${C}.myState.pos.set(0, ${yy}, 30); return true;`);
 try {
-  const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
-  const errors: string[] = []; page.on('pageerror', (e) => errors.push(String(e)));
-  if (engine) await page.route('**/library/eidoverse/*.js', (route) => {
-    const f = `${engine}/${new URL(route.request().url()).pathname.split('/').pop()}`;
-    return existsSync(f) ? route.fulfill({ status: 200, contentType: 'text/javascript', body: readFileSync(f, 'utf8') }) : route.continue();
-  });
-  else await page.route('**/library/eidoverse/terrain.js', (route) => route.fulfill({ status: 200, contentType: 'text/javascript', body: '// stand-in' }));
-  await page.goto(base);
-  await page.waitForFunction(() => !!globalThis.__waterDebug);
-  const r = await page.evaluate(async (realEngine: boolean) => {
-    const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
-    const { THREE } = await import('/lib/core.js'), tm = await import('/shared/terrainmath.js');
-    if (!realEngine) (globalThis as any).makeTerrain = (args: any) => {
+  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&name=diver` });
+  await until("the water debug hook", () => evalJson("!!globalThis.__waterDebug").catch(() => false), { ms: 60000 });
+  await js(`const { THREE } = await import('/lib/core.js'), tm = await import('/shared/terrainmath.js');
+    globalThis.makeTerrain = (args) => {
       const p = tm.terrainParams(args), h = tm.makeHeightField(p), geo = new THREE.PlaneGeometry(p.size, p.size, 96, 96).rotateX(-Math.PI / 2);
       const pos = geo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, h(pos.getX(i), pos.getZ(i)));
       geo.computeVertexNormals(); return { mesh: new THREE.Mesh(geo, new THREE.MeshStandardNodeMaterial({ color: 0x7a8a5a })), heightAt: h };
-    };
-    const st = await import('/lib/state.js'); for (let i = 0; i < 200 && !st.state.hydrated; i++) await sleep(50);
-    const { applyTerrainState } = await import('/lib/world.js'), lw = await import('/lib/water.js'), c = await import('/lib/controller.js');
-    applyTerrainState({ seed: 7, size: 120, amplitude: 0, features: [{ type: 'hill', x: 0, z: 30, radius: 18, height: -8 }], water: { level: 0 } });
-    for (let i = 0; i < 300 && lw.waterLevel() !== 0; i++) await sleep(50);
-    // falling over the lake with C held, before the body has ever floated: no swim starts in mid-air (review #254)
-    c.myState.pos.set(0, 8, 30); c.keys.add('KeyC'); await sleep(200);
-    const fallingWithC = { diving: c.isLevelDiving(), y: +c.myState.pos.y.toFixed(2) }; c.keys.delete('KeyC'); await sleep(2500);
-    // afloat at the lake's centre (after the fall's dunk has bobbed back up: the float owns the body meanwhile)
-    for (let i = 0; i < 160 && Math.abs(c.myState.pos.y + 1.1) > 0.25; i++) await sleep(50);
-    c.myState.pos.set(0, -1.1, 30); await sleep(1500);
-    const y = () => +c.myState.pos.y.toFixed(2);
-    const out: any = { fallingWithC, floating: { y: y(), diving: c.isLevelDiving() } };
-    // the clip while afloat must hold steady (tread idle, swim moving) — not flip frame to frame
-    const clips = async (ms: number) => { const seen: string[] = []; const t0 = performance.now();
-      while (performance.now() - t0 < ms) { seen.push(c.myState.clip); await new Promise((r) => requestAnimationFrame(() => r(null))); }
-      let flips = 0; for (let i = 1; i < seen.length; i++) if (seen[i] !== seen[i - 1]) flips++; return { flips, clips: [...new Set(seen)] }; };
-    out.idleClips = await clips(1500);
-    c.keys.add('KeyW'); await sleep(400); out.swimClips = await clips(1500); c.keys.delete('KeyW'); await sleep(800);
-    c.myState.pos.set(0, -1.1, 30); await sleep(1200);
-    c.keys.add('KeyC'); await sleep(1500);
-    out.diving = { y: y(), diving: c.isLevelDiving(), mode: c.myState.locomotion?.mode ?? null, medium: c.myState.locomotion?.medium ?? null };
-    c.keys.delete('KeyC'); c.keys.add('Space'); await sleep(3500); c.keys.delete('Space'); await sleep(1500);
-    out.surfaced = { y: y(), diving: c.isLevelDiving(), clip: c.myState.clip };
-    // look down and push forward: a desk dives the way a headset does, no dive key (R 10-28: "Minecraft rules")
-    c.myState.pos.set(0, -1.1, 30); await sleep(1200); c.setCamPitch(1.1); c.keys.add('KeyW'); await sleep(1500);
-    out.lookDive = { y: y(), diving: c.isLevelDiving() }; c.keys.delete('KeyW'); c.setCamPitch(0.32);
-    return out;
-  }, !!engine);
-  console.log(JSON.stringify(r));
-  assert.equal(r.floating.diving, false, 'afloat at the surface is not diving');
-  assert.equal(r.fallingWithC.diving, false, 'falling over the water with C held does not start a swim in the air');
-  assert.equal(r.diving.diving, true, 'holding C in deep level water dives');
-  assert.ok(r.diving.y < r.floating.y - 1, `the body goes down while diving (${r.floating.y} → ${r.diving.y})`);
-  assert.equal(r.diving.medium, 'water');
-  assert.equal(r.surfaced.diving, false, 'back at the surface the float takes the body again');
-  assert.ok(r.lookDive.diving === true && r.lookDive.y < r.floating.y - 1, `looking down with W held dives, no key (${JSON.stringify(r.lookDive)})`);
-  assert.ok(Math.abs(r.surfaced.y - r.floating.y) < 0.6, `it surfaces at the floating depth (${r.surfaced.y} vs ${r.floating.y})`);
-  assert.ok(r.idleClips.flips <= 1 && r.swimClips.flips <= 1, `the floating clip holds steady (idle ${JSON.stringify(r.idleClips)}, swimming ${JSON.stringify(r.swimClips)})`);
-  assert.deepEqual(errors, [], 'no page errors');
-  console.log('PASS: dive under the level with C, the 3D swim takes the body; back up, the float takes it again');
-} finally { await browser.close(); }
+    }; return true;`);
+  await until("the world hydrated", () => js("return (await import('/lib/state.js')).state.hydrated;"), { ms: 15000 });
+  await js("(await import('/lib/world.js')).applyTerrainState({ seed: 7, size: 120, amplitude: 0, features: [{ type: 'hill', x: 0, z: 30, radius: 18, height: -8 }], water: { level: 0 } }); return true;");
+  await until("the lake's level is 0", () => js("return (await import('/lib/water.js')).waterLevel() === 0;"), { ms: 15000 });
+
+  // falling over the lake with C held, before the body has ever floated: no swim starts in mid-air (review #254)
+  await put(8); await key("add", "KeyC"); await pause("C held through the start of the fall", 200);
+  const fallingWithC = { diving: await diving(), y: await y() }; await key("delete", "KeyC");
+  // afloat after the fall's dunk: near the float line AND at rest (falling through -1.1 on the way down isn't afloat)
+  await until("afloat after the fall's dunk", async () => { const a = await y(); await pause("two reads apart", 300); const b = await y();
+    return Math.abs(b + 1.1) <= 0.25 && Math.abs(b - a) < 0.05; }, { ms: 15000 });
+  await put(-1.1); await pause("the float settles", 1500);
+  const floating = { y: await y(), diving: await diving() };
+  // the clip while afloat holds steady (tread idle, swim moving), not flipping frame to frame: sampled every frame for 1.5 s
+  const clips = () => js(`const c = ${C}, seen = [], t0 = performance.now();
+    while (performance.now() - t0 < 1500) { seen.push(c.myState.clip); await new Promise((r) => requestAnimationFrame(r)); }
+    let flips = 0; for (let i = 1; i < seen.length; i++) if (seen[i] !== seen[i - 1]) flips++; return { flips, frames: seen.length, clips: [...new Set(seen)] };`);
+  const idleClips = await clips();
+  await key("add", "KeyW"); await pause("W held: swimming at the surface", 400); const swimClips = await clips(); await key("delete", "KeyW");
+  await put(-1.1); await pause("the float settles", 1200);
+  await key("add", "KeyC"); await pause("C held: the dive", 1500);
+  const dive = await js(`const c = ${C}; return { y: +c.myState.pos.y.toFixed(2), diving: c.isLevelDiving(), medium: c.myState.locomotion?.medium ?? null };`);
+  await key("delete", "KeyC"); await key("add", "Space"); await pause("Space held: rising", 3500); await key("delete", "Space");
+  await until("back at the surface", async () => !(await diving()) && Math.abs((await y()) - floating.y) < 0.6, { ms: 8000 }).catch(() => {});
+  const surfaced = { y: await y(), diving: await diving() };
+  // look down and push forward: a desk dives the way a headset does, no dive key (R 10-28: "Minecraft rules")
+  await put(-1.1); await pause("the float settles", 1200);
+  await js(`${C}.setCamPitch(1.1); return true;`); await key("add", "KeyW"); await pause("W held, looking down", 1500);
+  const lookDive = { y: await y(), diving: await diving() };
+  await key("delete", "KeyW"); await js(`${C}.setCamPitch(0.32); return true;`);
+
+  check("LD1 afloat at the surface is not diving", floating.diving === false, JSON.stringify(floating));
+  check("LD2 falling over the water with C held does not start a swim in the air", fallingWithC.diving === false, JSON.stringify(fallingWithC));
+  check("LD3 holding C in deep level water dives a metre and more under, in the water medium", dive.diving === true && dive.y < floating.y - 1 && dive.medium === "water", JSON.stringify({ floating, dive }));
+  check("LD4 back at the surface the float takes the body again, at the floating depth", surfaced.diving === false && Math.abs(surfaced.y - floating.y) < 0.6, JSON.stringify({ floating, surfaced }));
+  check("LD5 looking down with W held dives, no key (R 10-28)", lookDive.diving === true && lookDive.y < floating.y - 1, JSON.stringify({ floating, lookDive }));
+  check("LD6 the floating clip holds steady, idle and swimming (at most one change in 1.5 s)", idleClips.flips <= 1 && swimClips.flips <= 1 && idleClips.frames > 10, JSON.stringify({ idleClips, swimClips }));
+  // headless Chrome has no working GPU: WebGPU's error scopes complain on every boot (colour-picker-bench, same filter)
+  const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
+  check("LD7 no page errors (beyond headless GPU noise)", real.length === 0, JSON.stringify(real.slice(0, 4)));
+} catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
+console.log(`[level-dive-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
+await bench.cleanup(tally.failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);
