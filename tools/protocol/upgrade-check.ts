@@ -5,8 +5,8 @@
 //   UB3  translation.json names the backup's path
 //   UB4  rollback leaves the backup exactly as it was
 //   UB5  a BACKUPS_DIR inside WORLDS_DIR is refused (the server lists every directory there as a world)
-//   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator", operator}: false for a visitor, true for an operator's session
-//   US2  world-upgrade-review / world-upgrade from someone who isn't an operator: refused, "ask the server's operator", nothing written
+//   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may}: false for a visitor, true for an operator's session
+//   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused, "an operator or the world's owner", nothing written
 //   US3  world-upgrade-review → the dry-run report and its hash (the CLI's), nothing written
 //   US4  world-upgrade with a stale hash is refused (both hashes), nothing written
 //   US5  world-upgrade with the reviewed hash: a verified backup, the CLI's translation bound to it, the world joinable at once; the result names the backup and the hash
@@ -14,7 +14,10 @@
 //   US7  an agent (mcpl/agent.ts) refused at an old-format world says, in words, who can upgrade it and where the doc is
 //   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
 //   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
-//   US9  a world no owner would be bound in: the review and the upgrade both carry `warning` naming that, and the upgrade still runs
+//   US9  an ownerless world: the operator who upgrades it is its owner (claim); the result says "You're now this world's owner", no warning
+//   US10 its owner bound by main's records (the grant's sub) may upgrade it: the join says may, owner "bound"; the review and upgrade run, the log says how
+//   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log
+//   US12 a signed-in account of another name may not: the join says may false, the review is refused, nothing written
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
@@ -95,13 +98,14 @@ function linkedWorld(name: string) { const real = oldWorld(name); const to = pat
 // ================= US: the join refusal and the operator's upgrade, on a real server =================
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64);
+const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64);
 const sf = path.join(root, "sessions.json");
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP2]: { sub: "human:test:op2", name: "Otto", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
-  [ANN]: { sub: "human:test:ann", name: "Ann", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  [ANN]: { sub: "human:test:ann", name: "Ann", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [BO]: { sub: "human:test:bo", name: "Robert", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
@@ -128,13 +132,13 @@ async function ask(sid: string | null, type: string, body: any, ms = 60_000) {
 }
 const attic = oldWorld("attic"); const atticBefore = tree(attic);
 { const v = await joinOld(VIS, "attic"), a = await joinOld(null, "attic"), o = await joinOld(OP, "attic");
-  const want = (r: any, op: boolean) => r.closed?.code === 4005 && r.err?.refused?.code === "old-format" && r.err.refused.doc === "docs/TRANSLATING-OLD-WORLDS.md" && r.err.refused.upgrade === "operator" && r.err.refused.operator === op && typeof r.err.error === "string" && r.err.error.length > 10;
-  ok(want(v, false) && want(a, false) && want(o, true), "US1 an old-format world's join: close 4005 as before, and the error carries refused {code: 'old-format', doc, upgrade: 'operator', operator} — false for a signed-in visitor and a guest, true for the operator's session", { v, a, o });
+  const want = (r: any, op: boolean) => r.closed?.code === 4005 && r.err?.refused?.code === "old-format" && r.err.refused.doc === "docs/TRANSLATING-OLD-WORLDS.md" && r.err.refused.upgrade === "operator-or-owner" && r.err.refused.operator === op && r.err.refused.may === op && r.err.refused.owner === undefined && typeof r.err.error === "string" && r.err.error.length > 10;
+  ok(want(v, false) && want(a, false) && want(o, true), "US1 an old-format world's join: close 4005 as before, and the error carries refused {code: 'old-format', doc, upgrade: 'operator-or-owner', operator, may} — false for a signed-in visitor (not its owner) and a guest, true for the operator's session", { v, a, o });
 }
 { const r1 = await ask(VIS, "world-upgrade-review", { world: "attic" }), r2 = await ask(null, "world-upgrade", { world: "attic", approved: "0".repeat(64) });
-  ok(r1.ok === false && r1.refused?.code === "rights" && /ask the server's operator/.test(r1.refused.reason + " " + (r1.refused.fix ?? "")) && !r1.report && r2.ok === false && r2.refused?.code === "rights"
+  ok(r1.ok === false && r1.refused?.code === "rights" && /operator .*or the world's owner/.test(r1.refused.reason) && /ask the server's operator or the world's owner/.test(r1.refused.fix ?? "") && !r1.report && r2.ok === false && r2.refused?.code === "rights" && /not signed in/.test(r2.refused.reason)
     && same(tree(attic), atticBefore) && backupsOf("attic").length === 0,
-    "US2 world-upgrade-review / world-upgrade from someone who isn't the operator (a signed-in visitor, a guest): refused, 'ask the server's operator', no report, nothing written", { r1, r2 });
+    "US2 world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner (a signed-in visitor, a guest): refused, 'an operator or the world's owner' (the guest: not signed in), no report, nothing written", { r1, r2 });
 }
 let reviewed = "";
 { const r = await ask(OP, "world-upgrade-review", { world: "attic" }); reviewed = r.hash ?? "";
@@ -161,8 +165,27 @@ let reviewed = "";
 { const d = path.join(W, "barn"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", verb: "say", args: { text: "nobody owns this" } }) + "\n");
   const r = await ask(OP2, "world-upgrade-review", { world: "barn" }), u = r.ok ? await ask(OP2, "world-upgrade", { world: "barn", approved: r.hash }, 120_000) : null;
-  ok(r.ok && /"barn" has no owner at all/.test(r.warning ?? "") && r.warning === r.report?.ownerWarning && u?.ok === true && /has no owner at all/.test(u.warning ?? "") && isWorldDir(d) && /WARNING barn/.test(fs.readFileSync(slog, "utf8")),
-    "US9 a world no owner would be bound in: the review and the upgrade carry `warning` naming that (and the server's log), and the upgrade still runs", { r: r.warning ?? r.refused, u: u?.warning ?? u?.refused }); }
+  const s = await sock(OP2); s.send({ type: "join", world: "barn", id: "Otto", avatar: "", replica: true });
+  await tryUntil("Otto's join to barn is answered", () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
+  ok(r.ok && /whoever performs this upgrade becomes its owner/.test(r.report?.claim ?? "") && r.warning === undefined && u?.ok === true && u.claimed === true && u.owned === "You're now this world's owner." && u.warning === undefined
+    && isWorldDir(d) && /barn: upgraded by human:test:op2 as operator .*it had no owner: human:test:op2 claimed it/.test(fs.readFileSync(slog, "utf8")) && s.msgs.find((x) => x.type === "snapshot")?.yourRights?.role === "owner",
+    "US9 an ownerless world: the operator who upgrades it is its owner — the review's report says so, the result says \"You're now this world's owner\", no warning, the log says who claimed it, and they join as owner", { r: r.report?.claim ?? r.refused, u, role: s.msgs.find((x) => x.type === "snapshot")?.yourRights }); }
+// ================= US10-12: the world's owner may upgrade it (R 10-28) =================
+const ownedWorld = (name: string, grant: any) => { const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: grant }, { actor: grant.id, verb: "say", args: { text: "mine" } }].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n"); return d; };
+const byOwner = async (sid: string, world: string) => { const j = await joinOld(sid, world), r = await ask(sid, "world-upgrade-review", { world }), u = r.ok ? await ask(sid, "world-upgrade", { world, approved: r.hash }, 120_000) : null; return { j: j.err?.refused, r, u }; };
+{ const d = ownedWorld("byre", { id: "Bo", role: "owner", sub: "human:test:bo" }); const x = await byOwner(BO, "byre");
+  ok(x.j?.may === true && x.j.operator === false && x.j.owner === "bound" && x.r.ok && x.r.owner?.recognised === "bound" && x.u?.ok === true && x.u.owner?.recognised === "bound" && x.u.claimed === undefined && isWorldDir(d)
+    && /byre: upgraded by human:test:bo as owner \(bound\)/.test(fs.readFileSync(slog, "utf8")),
+    "US10 its owner bound by main's records (the grant's sub; another name now): the join says may, owner 'bound'; the review and the upgrade run and say so; the log says 'as owner (bound)'", { j: x.j, r: x.r.owner ?? x.r.refused, u: x.u?.owner ?? x.u?.refused }); }
+{ const d = ownedWorld("nook", { id: "Ann", role: "owner" }), before = tree(d);
+  const v = await joinOld(VIS, "nook"), vr = await ask(VIS, "world-upgrade-review", { world: "nook" });
+  ok(v.err?.refused?.may === false && v.err.refused.owner === undefined && vr.ok === false && vr.refused?.code === "rights" && !vr.report && same(tree(d), before) && backupsOf("nook").length === 0,
+    "US12 a signed-in account of another name (Vee) at Ann's world: the join says may false, the review is refused (rights), nothing written", { j: v.err?.refused, vr: vr.refused ?? vr.ok });
+  const x = await byOwner(ANN, "nook");
+  ok(x.j?.may === true && x.j.owner === "name" && x.r.ok && x.r.owner?.recognised === "name" && x.r.owner.name === "Ann" && x.u?.ok === true && x.u.owner?.recognised === "name" && isWorldDir(d)
+    && /nook: upgraded by human:test:ann as owner \(name\)/.test(fs.readFileSync(slog, "utf8")),
+    "US11 an owner main recorded no account for (Ann, by name) may upgrade it by the signed-in name: owner 'name' (provisional) in the join, the replies and the log", { j: x.j, r: x.r.owner ?? x.r.refused, u: x.u?.owner ?? x.u?.refused }); }
 { oldWorld("cellar"); const RATE_N = 6, seen: any[] = [];   // server/upgrade.ts RATE_N; a fresh account, so no other row spent its slots
   let last: any = null; for (let k = 0; k <= RATE_N; k++) { last = await ask(OP3, "world-upgrade-review", { world: "cellar" }); seen.push(last.ok ? "ok" : last.refused?.code); }
   ok(seen.slice(0, RATE_N).every((x) => x === "ok") && seen[RATE_N] === "rate" && new RegExp(`at most ${RATE_N} `).test(last.refused?.reason ?? ""),
@@ -172,7 +195,7 @@ let reviewed = "";
   const { WorldAgent } = await import("../../mcpl/agent.ts");
   const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });
   let said = ""; try { await ag.connect(); } catch (x) { said = String(x?.message ?? x); } try { ag.close(); } catch {}
-  ok(/operator/.test(said) && /TRANSLATING-OLD-WORLDS\.md/.test(said) && /upgrade/.test(said) && /older/.test(said), "US7 an agent refused at an old-format world is told in words: saved by an older Eidoverse, a one-time upgrade only the server's operator can run, and where the doc is", said);
+  ok(/operator or the world's owner/.test(said) && /TRANSLATING-OLD-WORLDS\.md/.test(said) && /upgrade/.test(said) && /older/.test(said), "US7 an agent refused at an old-format world is told in words: saved by an older Eidoverse, a one-time upgrade only the server's operator or the world's owner can run, and where the doc is", said);
 }
 // ================= UD: the main-era upgrade section, its commands run as the doc writes them =================
 { const doc = fs.readFileSync(path.join(ENGINE, "docs/TRANSLATING-OLD-WORLDS.md"), "utf8");

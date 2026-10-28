@@ -429,7 +429,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const old = { snapshot: { state: v1Translated(v1st) } }, neu = await client(srv.port, "oldtown-new", "Ann", REPLICA);
   const oldv1 = await client(srv.port, "oldtown", "Ann");
   await tryUntil("the old world's joiner is closed", () => oldv1.ws.readyState === 3, { ms: 2000, step: 50 });
-  const OLD_SAY = `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost — the world's log is kept as it was.`;
+  const OLD_SAY = `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server or the world's owner. Nothing is lost — the world's log is kept as it was.`;
   ok(!oldv1.snapshot && oldv1.of("error").some((m) => m.error === OLD_SAY) && oldv1.ws.readyState === 3, "S6 the server doesn't serve the old world itself: the visitor is told, in plain words, that it needs a one-time conversion and nothing is lost (owner 10-15)", oldv1.msgs.map((m) => m.type === "error" ? m.error : m.type));
   ok(oldv1.of("error").every((m) => !/\bbun\b|tools\/|world\.ts/.test(m.error)), "S6 …with no command line a visitor can't run", oldv1.of("error").map((m) => m.error)); oldv1.close();
   { const { WorldAgent } = await import("../../mcpl/agent.ts");   // an agent is told the same, as its join's error (not a join timeout)

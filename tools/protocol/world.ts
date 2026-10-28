@@ -32,7 +32,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { translateV1World, reportV1World, approvalProblem, makeApproval, ownerWarning, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, approvalProblem, makeApproval, ownerWarning, ownerRecognised, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -73,8 +73,11 @@ const TEMP_ONLY = new Set([SOURCE, IDENTITIES]);
 const MANIFEST = "translation.json";
 const APPROVAL_TEXT = "approval";
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
+// --claim: an ownerless world's upgrader becomes its owner (R 10-28); who, from the environment (server/upgrade.ts), never argv
+const CLAIM = rest.includes("--claim") ? { account: process.env.EIDO_UPGRADER_ACCOUNT ?? "", name: process.env.EIDO_UPGRADER_NAME ?? "" } : undefined;
+if (CLAIM && !CLAIM.account) die("--claim needs EIDO_UPGRADER_ACCOUNT (the account that becomes the owner of a world that has none). Nothing was changed.");
 /** The dry-run report of an old world as it stands now, hashed (import-v1/world.ts reportV1World). */
-const reportNow = (D: string, name: string) => reportV1World(D, { name, content: hostContent });
+const reportNow = (D: string, name: string) => reportV1World(D, { name, content: hostContent, claim: !!CLAIM });
 /** The approval of THIS translation, or a refusal (PROTOCOL §14; review of PR #260, Mica, item 6; rereview blocker 1).
  *  Bound to the dry-run report's hash: the report is recomputed from the old log as it stands and must hash to what was approved
  *  (else it changed since it was read: refused, both hashes named). No owner can sign (NO_FOUNDER: nothing can yet bind a key to
@@ -144,6 +147,7 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
   // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
   // world's owners can be told what changed (and which entities to look at).
   sayPeople(r.people);
+  if (r.claimed) console.log(`claimed: "${dest}" had no owner; ${r.claimed.name} (${r.claimed.account}:…), who upgraded it, is now its owner`);
   { const w = ownerWarning(dest, r.people); if (w) console.log(`WARNING: ${w}`); }
   if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded entities in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
     + `Now a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
@@ -185,7 +189,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   //    checks (0 divergences, projection equality, strict read-back) run before it writes anything
   const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
   let r: ReturnType<typeof translateV1World>;
-  try { r = translateV1World(D, T, { name, deferIdentities: true, approval }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
+  try { r = translateV1World(D, T, { name, deferIdentities: true, approval, claim: CLAIM }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
   { const why = unapproved(r.source, approvedSource); if (why) fail(why, T); }
   if (fs.existsSync(path.join(T, "blobs")) && fs.existsSync(path.join(D, "blobs"))) fail(`can't translate "${name}" in place: blobs/ already exists in ${D}, where the translation would put its derived particle effects.`, T);
   // 3. the result, opened as the server opens it: a world, folding to the importer's digest
@@ -243,7 +247,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in world.jsonl as the system's translation-approved act. `
     + `${MANIFEST} records what the swap did; \`rollback ${name}\` undoes it.`);
   console.log(`backup: ${backup!.dir} (${backup!.files} file(s), ${backup!.bytes} bytes, each verified against its SHA256SUMS before anything moved; nothing writes to it again, and rollback leaves it)`);
-  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, people: r!.people, ownerWarning: ownerWarning(name, r!.people), rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
+  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, people: r!.people, ownerWarning: ownerWarning(name, r!.people), ...(r!.claimed ? { claimed: { name: r!.claimed.name, account: r!.claimed.account } } : {}), rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
 }
 
 /** `rollback <world>`: undo an in-place translation from its manifest. The kept originals go back under their names
@@ -401,7 +405,7 @@ if (cmd === "found") {
     // the importer refuses a log whose report isn't the approved one, and puts back what it wrote (house importer I25, I35):
     // say so in this tool's own words, never as a stack trace
     let r: ReturnType<typeof translateV1World>;
-    try { r = translateV1World(srcDir, destDir, { approval, deferIdentities: true }); }
+    try { r = translateV1World(srcDir, destDir, { approval, deferIdentities: true, claim: CLAIM }); }
     catch (x) { if (!had && fs.existsSync(destDir) && !fs.readdirSync(destDir).length) fs.rmSync(destDir, { recursive: true, force: true });
       die(`the translation failed: ${(x as Error).message}\nNothing was changed: "${src}" is as it was, and no identity was added.`); }
     { const why = unapproved(r.source, approvedSource);
@@ -413,6 +417,12 @@ if (cmd === "found") {
     console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in ${dest}/world.jsonl as the system's translation-approved act`);
     console.log(`the old log was read, not written: ${before.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs}; ${r.poses} remembered place(s) carried over by identity`);
   }
+} else if (cmd === "owner-of") {
+  // server/upgrade.ts: is EIDO_UPGRADER_ACCOUNT (named EIDO_UPGRADER_NAME) an owner of this old world? Prints no account
+  const name = AFTER_DD[0] ?? rest[0]; if (!name || !NAME.test(name)) die("usage: owner-of [--] <old world>   (EIDO_UPGRADER_ACCOUNT, EIDO_UPGRADER_NAME)");
+  const D = path.join(WORLDS_DIR, name);
+  if (fs.lstatSync(D, { throwIfNoEntry: false })?.isSymbolicLink() || !fs.existsSync(path.join(D, "log.jsonl"))) die(`"${name}" holds no old log here`);
+  console.log(`owner-json ${JSON.stringify(ownerRecognised(D, process.env.EIDO_UPGRADER_ACCOUNT || null, process.env.EIDO_UPGRADER_NAME || null))}`);
 } else if (cmd === "rollback") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: rollback <world> [--discard-changes]");
   rollback(name);

@@ -64,7 +64,7 @@ function freeName(dir: string, name: string): string {
 
 export function visitorText(name: string, kind: OldWorldKind): string {
   return kind === "translatable"
-    ? `"${name}" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost — the world's log is kept as it was.`
+    ? `"${name}" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server or the world's owner. Nothing is lost — the world's log is kept as it was.`
     : `"${name}" was saved while this version of Eidoverse was still settling its names, and whoever runs this server needs to convert it again before it can open. Nothing is lost — the world's saved log is kept as it was.`;
 }
 

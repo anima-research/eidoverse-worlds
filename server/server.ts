@@ -28,7 +28,7 @@ import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wir
 import { isWorldSaved } from "./worldlog.ts";
 import { oldWorldAt, bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
 import { isSwapUnfinished } from "./livehost.ts";
-import { oldFormatRefused, provenAccount } from "./upgrade.ts";
+import { oldFormatRefused, provenWho, ownerOf } from "./upgrade.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
@@ -394,9 +394,13 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       // (an empty one) is no world: it is refused as one.
       const old = oldWorldAt(WORLDS_DIR, wname);
       // …with the structured reason beside the words: who may upgrade it, and the doc (server/upgrade.ts; docs/WIRE.md 4005)
-      ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here`,
-        ...(old ? { refused: oldFormatRefused(old.kind, old.visitor, isOperator(provenAccount(c, msg))) } : {}) }));
-      c.ws.close?.(4005, old ? "old-format world" : "no such world");
+      const who = provenWho(c, msg), operator = isOperator(who?.account ?? null);
+      const refuse = (owner: "bound" | "name" | null) => { ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here`,
+        ...(old ? { refused: oldFormatRefused(old.kind, old.visitor, operator, owner) } : {}) }));
+        c.ws.close?.(4005, old ? "old-format world" : "no such world"); };
+      // a signed-in non-operator may be its owner: world.ts owner-of answers (cached), then the refusal goes
+      if (old?.kind === "translatable" && who && !operator) void ownerOf(wname, who).then((o) => refuse(o?.recognised ?? null), () => refuse(null));
+      else refuse(null);
       return null;
     }
     if (!worldExists(wname)) {

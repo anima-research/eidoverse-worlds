@@ -1,4 +1,4 @@
-// client/lib/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (operator only)
+// client/lib/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (an operator or its owner)
 // Upgrade world… → the dry-run report → Back up and upgrade → where the backup is. The server runs the CLI (server/upgrade.ts).
 import { OLD_FORMAT_DOC } from '../../shared/oldformat.js';
 
@@ -38,6 +38,7 @@ export function reportView(report, hash) {
   box.append(section('Unmapped, kept as imported', (R.unmapped ?? []).map((u) => `${u.component} on ${u.id}: ${(u.fields ?? []).join(', ')} (${u.as})`)));
   box.append(section('Dropped by design', Object.entries(R.dropped ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)));
   box.append(section('People with a role', (R.people ?? []).map((p) => p.account ? `${p.role} ${p.name}: bound to their account (${p.account}, from ${p.from})` : `${p.role} ${p.name}: no account yet (${p.why}); bind with ${p.bind}`)));
+  if (R.claim) box.append(el('p', 'sp-up-claim', 'This world has no owner: you will become its owner when you upgrade it.'));
   if (R.ownerWarning) box.append(el('p', 'sp-up-err sp-up-owners', `Warning: ${R.ownerWarning}`));
   box.append(section('Refused', R.refused ? [R.refused] : []));
   if (R.trial) box.append(el('div', 'sp-up-note', R.trial));
@@ -52,13 +53,14 @@ export function showOldFormat(root, refused, world) {
   const box = el('div', 'sp-upgrade');
   const doc = el('a', 'sp-up-doc', 'How upgrading works'); doc.href = `/${refused?.doc ?? OLD_FORMAT_DOC}`; doc.target = '_blank'; doc.rel = 'noopener';
   const area = el('div', 'sp-up-area'); box.append(area, doc);   // the action first; "how" is for when it's unclear (R 10-28)
-  if (refused?.operator && refused.upgrade === 'operator') {
+  if (refused?.may) {   // an operator, or its owner (refused.owner: 'bound' by main's records, 'name' provisionally)
     const review = el('button', 'sp-up-btn sp-up-review', 'Upgrade world…'); area.append(review);
     review.onclick = async () => {
       review.disabled = true; review.textContent = 'reading the old world…';
       const r = await ask('world-upgrade-review', { world });
       area.textContent = '';
       if (!r.ok) { area.append(el('p', 'sp-up-err', `Couldn't review the upgrade: ${refusedWords(r)}`)); return; }
+      if (r.owner) area.append(el('p', 'sp-up-note', r.owner.recognised === 'name' ? `You're recognised as its owner ${r.owner.name} by your name (provisional, until durable accounts).` : `You're its owner ${r.owner.name}, by the account main recorded.`));
       area.append(reportView(r.report, r.hash));
       if (r.report?.refused) { area.append(el('p', 'sp-up-err', 'This world can\'t be upgraded yet (see Refused).')); return; }
       const go = el('button', 'sp-up-btn sp-up-go', 'Back up and upgrade'); area.append(go);
@@ -76,7 +78,7 @@ export function showOldFormat(root, refused, world) {
         const more = el('details', 'sp-up-more'); more.append(el('summary', null, 'Backup and undo'),
           el('p', null, 'A verified copy of the old world was saved on the server, at:'), el('pre', 'sp-up-backup', u.backup),
           el('p', null, 'To undo: stop the server, then run this in a terminal on the server machine, from the folder the server runs in:'), el('pre', 'sp-up-rollback', u.rollback));
-        done.append(enter, ...(u.warning ? [el('p', 'sp-up-err sp-up-owners', `Warning: ${u.warning}`)] : []), more);
+        done.append(enter, ...(u.claimed ? [el('p', 'sp-up-owned', u.owned ?? "You're now this world's owner.")] : []), ...(u.warning ? [el('p', 'sp-up-err sp-up-owners', `Warning: ${u.warning}`)] : []), more);
         area.append(done);
       };
     };
