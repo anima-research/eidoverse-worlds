@@ -431,7 +431,14 @@ comp {id: "hearth", type: "particles", data: null}      # put it out
 ```
 
 `preset` is one of `fire · sparks · embers · smoke · dust · snow · magic ·
-stars · muzzle`. `origin` is ENTITY-RELATIVE metres (bounded to ±8): the
+stars · muzzle`. `part: "wax"` optionally attaches the emitter to a rendered GLB node by name.
+With `part`, `origin` is in that node's LOCAL frame, so it rides nested part
+motion. Missing parts fall back to the entity frame and report a
+`particles-lint` advisory; the component still folds. `part` names a node of
+the entity's OWN model (never mounted cargo's), is checked against the nodes
+a renderer draws, and each named emitter (`particles:<name>`, below) takes its
+own. Without `part`,
+`origin` is ENTITY-RELATIVE metres (bounded to ±8): the
 emitter hangs off the thing that owns it and rides every `place`, `mount` and
 `motion` that thing does. `seed` makes the spawn deterministic — omit it and
 one is derived from the entity id, which is just as persistent and just as
@@ -458,7 +465,8 @@ each bounded, each defaulting to the preset's own value:
 | `scale` | the emitter's OWN frame — every length above, plus `size` and `area` | 0.01 … 20 |
 
 Lengths are in the emitter's frame: metres at `scale: 1`, multiplied by
-`scale` and by the entity's own scale (the emitter is its child). So `scale`
+`scale` and by the entity's own scale (the emitter is its child) — or, with
+`part`, by that part's world scale. So `scale`
 is how a fire tuned at hearth size sits on a candle wick without re-tuning a
 number — and how a model built at real size keeps a candle-sized flame:
 

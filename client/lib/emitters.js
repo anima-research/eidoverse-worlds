@@ -83,6 +83,25 @@ export const emitterCount = () => handles.size;
 
 // ---- build -----------------------------------------------------------------
 
+/** Named node inside THIS entity's own model. Cargo mounted on the carrier is
+ *  a child Object3D carrying its own entityId, and a plain traverse would
+ *  happily anchor the carrier's emitter to cargo's node — so subtrees owned by
+ *  another entity (or another emitter) are not descended into. */
+function ownedPart(root, id, name) {
+  let found = null;
+  const walk = (o) => {
+    for (const c of o.children) {
+      if (found) return;
+      const owner = c.userData?.entityId;
+      if (owner != null && owner !== id) continue;
+      if (c.name === name && !c.userData?.emitterOf) { found = c; return; }
+      walk(c);
+    }
+  };
+  walk(root);
+  return found;
+}
+
 async function build(emitter, { id, key = 'particles' }) {
   const parent = entities.get(id);
   // `null` is a spawn reservation whose GLB is still downloading, and an
@@ -121,18 +140,22 @@ async function build(emitter, { id, key = 'particles' }) {
   ownHook(sys.update);           // ours, so no diffing subsystem may claim it
 
   return adoptSystem(sys, autos(), () => {
-    // Entity-relative, not world-origin: the emitter is a CHILD of the thing
-    // that owns it, so it rides every place/mount/motion that thing does. The
-    // authored origin is a local offset in the entity's own frame.
+    // A part-relative origin is in the named node's local frame. Parenting
+    // composes the entire animated hierarchy, including entity mounts/motion.
+    // Missing parts keep the emitter visible in the entity frame; the server
+    // records the advisory and this client reports its own realization.
+    const part = emitter.part ? ownedPart(parent, id, emitter.part) : null;
+    if (emitter.part && !part) console.warn(`[emitters] ${id}: part "${emitter.part}" unavailable — using the entity frame`);
     sys.mesh.position.set(emitter.origin[0], emitter.origin[1], emitter.origin[2]);
     // `scale` is the emitter's OWN frame. The builder computes every sprite in
     // the mesh's local space (spawn offset + velocity·age + gravity + sway,
     // then a camera-facing quad of `size`), so scaling the mesh scales all of
-    // it together and nothing else — the origin stays an entity-frame offset,
+    // it together and nothing else — the origin stays an offset in the frame
+    // it hangs from (entity, or part when one is named),
     // timing is untouched, and the entity's own scale still composes on top.
     // It is what lets a fire tuned at hearth size burn on a wick.
     sys.mesh.scale.setScalar(emitter.scale ?? 1);
-    parent.add(sys.mesh);
+    (part ?? parent).add(sys.mesh);
     sys.mesh.userData.emitterOf = id;
     sys.mesh.userData.emitterKey = key;
     // The world owns this, not the sky: an async sky build that happens to
