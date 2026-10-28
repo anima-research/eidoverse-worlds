@@ -176,7 +176,8 @@ try {
     await cdp.send("Network.setCookie", { name: "ew_sess", value: OP_SID, url: BASE });
     await cdp.send("Page.navigate", { url: `${BASE}/?world=old-y&name=Opal&earlysock=0` });
     const shows = (js: string, ms = 30000) => tryUntil(`the page shows ${js.slice(0, 60)}`, () => evalJson(js).catch(() => null), { ms, step: 250 });
-    const btn = await shows(`(() => { const b = document.querySelector('#splash .sp-up-review'); if (!b) return null; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { text: b.textContent, top: top === b }; })()`);
+    const btn = await shows(`(() => { const b = document.querySelector('#splash .sp-up-review'); if (!b) return null; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); const doc = document.querySelector('#splash a.sp-up-doc'); return { text: b.textContent, top: top === b, first: !!doc && !!(b.compareDocumentPosition(doc) & Node.DOCUMENT_POSITION_FOLLOWING) }; })()`);
+    check("W11b the operator's Upgrade world… comes before the How upgrading works link (R 10-28)", btn?.first === true, btn);
     await evalJson(`(document.querySelector('#splash .sp-up-review')?.click(), true)`).catch(() => null);
     const rep = await shows(`(() => { const r = document.querySelector('#splash .sp-up-report'); if (!r) return null; return { text: r.innerText, buttons: [...document.querySelectorAll('#splash .sp-up-area button')].map((b) => b.textContent) }; })()`, 60000);
     check("W11 old-y as the operator: Upgrade world… (on top) shows the report — carried, mapped, unmapped, dropped, refused, each counted, and its hash — and Back up and upgrade is the only action",

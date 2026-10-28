@@ -49,8 +49,7 @@ export function showOldFormat(root, refused, world) {
   root.querySelector('.sp-upgrade')?.remove();
   const box = el('div', 'sp-upgrade');
   const doc = el('a', 'sp-up-doc', 'How upgrading works'); doc.href = `/${refused?.doc ?? OLD_FORMAT_DOC}`; doc.target = '_blank'; doc.rel = 'noopener';
-  box.append(doc);
-  const area = el('div', 'sp-up-area'); box.append(area);
+  const area = el('div', 'sp-up-area'); box.append(area, doc);   // the action first; "how" is for when it's unclear (R 10-28)
   if (refused?.operator && refused.upgrade === 'operator') {
     const review = el('button', 'sp-up-btn sp-up-review', 'Upgrade world…'); area.append(review);
     review.onclick = async () => {
