@@ -851,7 +851,7 @@
      "kind": "dynamic"
     },
     "set": {
-     "who": "inhabitant"
+     "who": "member"
     }
    }
   ],
@@ -937,7 +937,7 @@
   },
   "defaults": {
    "enabled": true,
-   "who": "inhabitant",
+   "who": "member",
    "steal": true,
    "range": 1.5,
    "priority": 0,
@@ -985,7 +985,7 @@
   },
   "absentMeans": {
    "enabled": "true: it can be picked up",
-   "who": "inhabitant",
+   "who": "member",
    "steal": "true",
    "range": "1.5 m",
    "priority": "0",
@@ -1009,7 +1009,7 @@
    "use": "what the use button fires while it is held: a reactions action, or {down, up}",
    "prompt": "the hover text (≤ 40)",
    "enabled": "off: nobody can pick it up for now (a loose ball can still be punted)",
-   "who": "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own",
+   "who": "who may pick it up: a role id (this rank or above): member (anyone), builder, owner or this world's own",
    "steal": "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
    "range": "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand",
    "priority": "when several things are in reach the highest wins: the key, not the table it sits on",
@@ -1939,20 +1939,20 @@
    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
   },
   "docs": {
-   "role": "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines",
+   "role": "the role this person holds: a built-in (member, builder, moderator, owner) or one the world defines",
    "can": "{<permission>: true|false}: exceptions on top of the role, for this person",
    "note": "a note on the grant (≤ 80)",
    "until": "when the grant ends, epoch ms; never on owner"
   },
   "vocab": {
    "rank": {
-    "inhabitant": 0,
+    "member": 0,
     "builder": 100,
     "moderator": 200,
     "owner": 255
    },
    "builtin": [
-    "inhabitant",
+    "member",
     "builder",
     "moderator",
     "owner"

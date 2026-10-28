@@ -88,7 +88,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const W = () => openWorld(root, name);
   call("olive", "create-world", { title: "locks" });
   call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
-  call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
+  call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
   call("olive", "set", { id: "@world", component: "roles:bea", value: { role: "builder" } });   // recut B2: the locker is a builder, so a builder's lock is what bob acts through
   call("olive", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
   ok(call("bob", "create", { id: "cup", model: "crate", place: { on: "tbl" } }).ok, "P0 a crate on the table");
@@ -229,7 +229,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const lc = callAt("levels");
     const LW = () => openWorld(root, "levels").state();
     lc("olive", "create-world", { title: "levels" });
-    for (const [who, role] of [["mo", "moderator"], ["bob", "builder"], ["ben", "builder"], ["vic", "inhabitant"]]) lc("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+    for (const [who, role] of [["mo", "moderator"], ["bob", "builder"], ["ben", "builder"], ["vic", "member"]]) lc("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
     lc("olive", "create", { id: "stage", model: "table", place: { at: [0, 3] } });
     lc("olive", "create", { id: "mic", model: "ball", place: { on: "stage" } });
     lc("bob", "create", { id: "crate1", model: "crate", place: { at: [4, 3] } });
@@ -382,8 +382,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   };
   call("rowan", "create-world", { title: "live" }); same("founded");
   call("rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
-  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
-  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } }); same("built");
+  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
+  call("rowan", "set", { id: "@world", component: "roles:vic", value: { role: "member" } }); same("built");
   call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
   { const th = call("rowan", "throw", { id: "ball", v: [0, 2, 3] }); ok(th.ok, "L throw accepted", th.refused ?? th); }
@@ -555,7 +555,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "E1 (setup) vic's use of bob's evolve installs bob's tag handler");
   const useSeq = [...w.entries].reverse().find((e) => e?.kind === "act" && e.verb === "use" && e.actor === "vic")?.seq;
   now += 100; w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: useSeq }] } });
-  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } }).ok, "E1 (setup) bob is made an inhabitant");
+  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "member" } }).ok, "E1 (setup) bob is made a member");
   const r = call("vic", "use", { id: "box", action: "tag" });
   ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
     "E1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
@@ -993,7 +993,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("chair", "particles", { effect: "fire", params: { texture: "../../etc/x.png" } }).refused?.code === "shape", "T1e a texture outside the particle library is refused"); }
 // CP (Commons parity audit (old world → new), 10-06): use with no action, the whole log's history paged and filtered, the spoken trio
 { const R = callAt("cp");
-  R("ann", "create-world", { title: "cp" }); R("ann", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });   // vic plays, can't build (R 10-21: newcomers build in a new world)
+  R("ann", "create-world", { title: "cp" }); R("ann", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });   // vic plays, can't build (R 10-21: newcomers build in a new world)
   R("ann", "create", { id: "rock", model: "crate" });
   const u0 = R("ann", "use", { id: "rock" });
   ok(u0.refused?.code === "no-action" && !/undefined/.test(JSON.stringify(u0)) && /nothing to use/.test(u0.refused.reason), "CP1 use with no action on a thing that offers nothing says so (not \"doesn't 'undefined'\")", u0);
@@ -1048,16 +1048,16 @@ const w0 = () => openWorld(root, "tier0");
 // the bag by shared/captions.js's rules; nobody forges the bag with a plain set ----
 { const cw = callAt("captions");
   cw("ann", "create-world", { title: "captions" }); cw("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
-  cw("ann", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });   // vic plays (R 10-21: a new world's newcomers build)
+  cw("ann", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });   // vic plays (R 10-21: a new world's newcomers build)
   cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
   const sess = "2026-10-07T00:00:00.000Z-abc123";
   const line = (n, extra = {}) => ({ id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}`, ...extra });
   const v1r = cw("vic", "caption", line(1));
-  ok(code(v1r) === "rights", "CA1 an inhabitant who isn't one of the screen's captioners can't caption it", v1r.refused);
+  ok(code(v1r) === "rights", "CA1 a member who isn't one of the screen's captioners can't caption it", v1r.refused);
   ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CA2 whoever may edit the screen names its captioners");
   const c1 = cw("vic", "caption", line(1, { title: "the talk" }));
   const bag = () => openWorld(root, "captions").state().entities.screen.c.captions;
-  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (an inhabitant) writes a line", [c1.refused, bag()]);
+  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a member) writes a line", [c1.refused, bag()]);
   const dup = cw("vic", "caption", line(1));
   ok(code(dup) === "caption" && bag().n === 1, "CA4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
   ok(cw("vic", "caption", line(2)).ok && bag().line?.text !== undefined && bag().n === 2 && !("window" in bag()), "CA5 the next n is the screen's line now (each line logged once: shape audit 10-16)");
@@ -1226,7 +1226,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   // (before the last sockets edit, which stays the latest act: the one the undo below takes back)
   const home = { pos: [0.1, 0, 0], q: [0, 0, 0, 1], parent: { to: "tbl", socket: "perch" } }; const wid = r.out[1].world; const n = r.out.length - 2;
   const last = r.out.splice(n, 2); last[1] = { ...last[1], cause: last[1].cause + 2 };
-  r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "inhabitant", home } }] }, ts: last[0].ts }, ...last);
+  r.out.push({ world: wid, kind: "act", actor: "ann", verb: "set", body: { request: { id: "coin", component: "home", value: home } }, ts: last[0].ts }, { world: wid, kind: "change", actor: "ann", cause: n, verb: "batch", body: { ops: [{ verb: "set", id: "coin", comp: "home", value: home }, { verb: "set", id: "coin", comp: "grabbable", value: { who: "member", home } }] }, ts: last[0].ts }, ...last);
   fs.writeFileSync(root + "worlds/tr-lift.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const tc = (verb, args) => { clock.advance(100); return request(openWorld(root, "tr-lift"), "ann", verb, args); };
   const homeAt = (st, h) => worldT({ entities: { ...st.entities, x: { c: { parent: { to: h.parent.to }, transform: { pos: h.pos, q: h.q } } } } }, "x").pos;
@@ -1505,7 +1505,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const call = callAt(name);
   const c = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
   call("olive", "create-world", { title: "consent" });
-  call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
+  call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
   const bare = call("olive", "set", { id: "@world", component: "training-consent", value: { allow: true } });
   const own = call("vic", "set", { id: "@world", component: "training-consent:vic", value: { allow: true } });
   const ownerKeyed = call("olive", "set", { id: "@world", component: "training-consent:olive", value: { allow: true } });
@@ -1560,7 +1560,7 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const call = callAt(name);
   const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };
   call("olive", "create-world", { title: "altered" }); call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
-  call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
+  call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
   // strip the roles: value to a commit, with no purge: as a copy of the log changed by hand would hold it
   const lines = fs.readFileSync(file, "utf8").split("\n"); const k = lines.findLastIndex((l) => l.includes('"roles:bob"') && l.includes('"kind":"change"'));
   const e = JSON.parse(lines[k]); const { value, salt, ...rest } = e.body; e.body = { ...rest, commit: "0".repeat(64) }; lines[k] = JSON.stringify(e); fs.writeFileSync(file, lines.join("\n"));
@@ -1594,13 +1594,13 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const opr = (actor, verb, args = {}) => { clock.advance(100); return operatorRepair(openWorld(root, name), actor, verb, args); };
   const wc = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
   call("olive", "create-world", { title: "orphaned" });
-  call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
+  call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
   call("olive", "ban", { who: "opal", reason: "a mistake" });
   call("olive", "set", { id: "@world", component: "access", value: { join: "listed" } });
   // the operator as an ordinary asker: banned here, so refused; and as a visitor they could not grant ownership anyway
   const plain = call("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   const plainUnban = call("opal", "unban", { who: "opal" });
-  ok(code(plain) === "banned" && code(plainUnban) === "banned" && wc()["roles:bob"]?.role === "inhabitant", "OP1 (control) the operator's ordinary requests are the world's to judge: banned here, refused", [plain.refused, plainUnban.refused]);
+  ok(code(plain) === "banned" && code(plainUnban) === "banned" && wc()["roles:bob"]?.role === "member", "OP1 (control) the operator's ordinary requests are the world's to judge: banned here, refused", [plain.refused, plainUnban.refused]);
   const grant = opr("opal", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
   const lift = opr("opal", "unban", { who: "opal" });
   const door = opr("opal", "set", { id: "@world", component: "access", value: { join: "anyone" } });

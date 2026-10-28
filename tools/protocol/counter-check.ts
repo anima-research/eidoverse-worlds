@@ -76,7 +76,7 @@ const USE = (W: any, id: string, action: string, actor: string) => { Bun.sleepSy
 
 console.log("\ncounter button — the twelve checks (PR #208 review)");
 const W = scratchLive();                                       // olive founds it: the owner
-for (const [who, role] of [["bld-a", "builder"], ["bld-b", "builder"], ["vis", "inhabitant"]]) W.call("set", { id: "@world", component: `roles:${who}`, value: { role } });
+for (const [who, role] of [["bld-a", "builder"], ["bld-b", "builder"], ["vis", "member"]]) W.call("set", { id: "@world", component: `roles:${who}`, value: { role } });
 // builders here own only what they made (roles.js: the built-in builder holds editOthers; the owner narrows it): C9's "separate authority"
 if (!red("C9")) { const rd = W.call("set", { id: "@world", component: "role-defs", value: { builder: { can: { editOthers: false } } } }); if (!rd.ok) throw new Error(`role-defs: ${J(rd.refused)}`); }
 
@@ -100,7 +100,7 @@ let H = "";
   const b = W.call("publish", { from: "counter", name: "Counter" }, "bld-a"); H = hashOf(b);
   check("C1 publish by a builder succeeds and names a sha256: hash; by a visitor is refused (rights)",
     b.ok && /^sha256:[0-9a-f]{64}$/.test(H) && !!W.c("@world")[`blueprints:${H.slice(7)}`] && v.ok === false && v.refused?.code === "rights", J({ builder: code(b), hash: H, visitor: code(v), why: v.refused?.reason }));
-  if (red("C1")) W.call("set", { id: "@world", component: "roles:vis", value: { role: "inhabitant" } });
+  if (red("C1")) W.call("set", { id: "@world", component: "roles:vis", value: { role: "member" } });
 }
 
 // ---- C2 one world grants it, another cannot use it ----

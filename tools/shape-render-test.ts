@@ -151,7 +151,7 @@ await tryRow('AD', async () => {
     const LL = () => readLog(fs.readFileSync(dir + 'world.jsonl'));
     lc('rowan', 'create-world', { title: 'fly' });
     lc('rowan', 'set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } });
-    lc('rowan', 'create', { id: 'cuball', model: CA, components: { physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
+    lc('rowan', 'create', { id: 'cuball', model: CA, components: { physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [0, 0, 0], scale: 0.3 } } });
     lc('rowan', 'move', { to: [0, 0, -0.5] });
     const rep = makeReplica(); rep.adopt(JSON.parse(JSON.stringify({ ...clientCutOf(lw), you: 'vic' })));
     const from = LL().length; const pr = lc('rowan', 'punt', { id: 'cuball', power: 6 }); rep.ingest(LL().slice(from), from);

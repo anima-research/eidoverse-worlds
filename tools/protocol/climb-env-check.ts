@@ -81,7 +81,7 @@ function session() {
   const call = (verb: string, args: any = {}, actor = "olive") => { clock.advance(1000);
     try { return D.request(Wd(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   call("create-world", { title: name });
-  call("set", { id: "@world", component: "roles:vic", value: { role: "inhabitant" } });
+  call("set", { id: "@world", component: "roles:vic", value: { role: "member" } });
   return { call, st: () => Wd().state(), log: () => Wd().entries };
 }
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 160)} | fix: ${String(r?.refused?.fix).slice(0, 140)}`);

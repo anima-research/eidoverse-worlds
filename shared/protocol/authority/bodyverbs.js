@@ -111,7 +111,7 @@ const EMBODIED_VERBS = {
     const g = grabOf(e.c);
     if (!g) refuse("not-grabbable", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'grabbable', value: {}} (anyone may; {who: 'builder'} for builders only)`);
     if (!g.enabled) refuse("not-grabbable", `${a.id} can't be picked up now (its grabbable.enabled is false)`, "a builder can turn it back on: set {id, component: 'grabbable', value: {…, enabled: true}}");
-    const need = g.who; const role = roleOf(st, actor); if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'inhabitant'`);
+    const need = g.who; const role = roleOf(st, actor); if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may pick up ${a.id}`, `ask someone who can, or ask the owner to set ${g.source}.who: 'member'`);
     if (held && !g.steal && !R.isOwner(role)) refuse("held", `${said(held.by)} is holding ${a.id}, and it can't be taken from a hand (grabbable.steal is false)`, "wait till they let go (an owner may take it)");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, unlockFix(w, st, k), { lock: k });
     occupiedRefuse(w, st, a.id, actor, "picked up");
@@ -324,7 +324,7 @@ const EMBODIED_VERBS = {
     const spec = flyingWorld(st);
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can punt`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
-    const need = ph.who ?? DEFAULT_WHO; if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may punt ${a.id}`, "ask the owner to set physics.who: 'inhabitant'");
+    const need = ph.who ?? DEFAULT_WHO; if (!admits(st, actor, need)) refuse("rights", `only ${whoWords(need)} may punt ${a.id}`, "ask the owner to set physics.who: 'member'");
     for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be punted`, unlockFix(w, st, k), { lock: k });
     const held = w.presence.holds[a.id]; if (held) refuse("held", `${said(held.by)} is holding ${a.id}`, "grab it to take it (the latest grab wins), or wait till they let go");
     occupiedRefuse(w, st, a.id, actor, "punted");

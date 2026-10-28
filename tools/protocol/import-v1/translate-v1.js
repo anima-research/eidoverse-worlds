@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@25";
+export const TRANSLATOR = "eidoverse/translate-v1@26";
+// @26 (R 10-28): the base rung is written member, the word @17–@25 used is gone (no alias). Output differs from @25 wherever a rung is named.
 // @25 (R 10-28): main's sky.audio is @world.sky.audio (the sky takes it again), where @24 carried it as imported:sky.
 // @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
@@ -161,9 +162,9 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // seat's yaw are read as the renderer coerced them, and what can't be read is carried (I36, I37); an earlier epoch's rest tick
 // never dates a later epoch's rest (I14). Output differs from @17 on any log with captions, a caption deed, a non-numeric rpm
 // or seat yaw, a physics epoch replaced after a rest, and on every approved translation. Both names.
-// @17 (R 10-21): the base rung is inhabitant (v1's visitor is written inhabitant), and there's no rung below it: a person's v1
+// @17 (R 10-21; the word is @26's): the base rung is member (v1's visitor is written member), and there's no rung below it: a person's v1
 // spectator or none grant is CARRIED as imported-roles:<id> (never dropped, R10), with no roles:<id>, so they hold the
-// world's newcomer role (absent default-role: inhabitant). The door's own words (`*` none/spectator) still become access.
+// world's newcomer role (absent default-role: member). The door's own words (`*` none/spectator) still become access.
 // @16 (review of #260): no account subject is written wherever it sits. A property named `sub` or ending in
 // `Sub` whose string has an account's shape is one, at any depth (withoutAccounts, below): in an imported act's args it
 // becomes the person's id when a mapper is given and is dropped when none is; in a value it is always dropped. Any other
@@ -212,7 +213,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@25";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@26";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -265,7 +266,7 @@ export const DROPPED = {
   "mounts": "bodies sitting: presence in v4, never history (00:50 ruling 1); their old entries survive as acts",
   "recentChat / chatTotal": "the chat window: a reader of `say` entries does this in v4, not world state",
   "placer": "who placed it: a view over the log in v4 (L2: no stored derived values); the old value survives in the old entry",
-  "roles.<person> spectator / none": "there is no rung below inhabitant (@17, R 10-21): the grant is carried as @world imported-roles:<id> as it was, and the person holds the world's newcomer role; v1's visitor is written inhabitant",
+  "roles.<person> spectator / none": "there is no rung below member (@17, R 10-21): the grant is carried as @world imported-roles:<id> as it was, and the person holds the world's newcomer role; v1's visitor is written member",
   "roles['*']": "becomes @world `default-role` (the declared role for anyone not named); '*' is not an identity (§2.3); a `*` of none / spectator (upstream world access) becomes @world `access` {join: listed (, watch: anyone)}",
   "comp.guard": "merged into `lock` (PROTOCOL-v4 §5, R 19:58): a truthy guard becomes lock {rank: 'builder'} (@12; was true), which binds everyone (the placer too) and any builder may lift; the guard's authorship protection is dropped by design. stats.guards counts the things this happened to, so the world's owners can be told",
   "roles.<person>.caption": "a v1 caption deed (to caption one thing while it is the incarnation the deed was granted for) becomes the person's place in that thing's captioners {ids}; a deed on a timed grant, or for a thing replaced or gone, stays carried in imported:roles:<id> (captioners has no end)",
@@ -686,8 +687,8 @@ function toSpec(id, c, adjust) {
 // main's world with no owner was open: everyone builder + gen, its '*' unread (shared/rightsfold.js rightsIn, at ccd5c53f)
 const OPEN_CAN = Object.freeze({ ...Object.fromEntries(Object.entries(BUILTIN.builder.can).filter(([, x]) => x)), generate: true });
 /** main's effective rights as this protocol's @world components (R 10-28, item 22): {world, report}. Owned: newcomers and
- *  guests hold main's '*' (builder when none). Ownerless: roles.js caps everyone at inhabitant, so inhabitant's role-defs
- *  carry builder's permissions and generate; rank stays inhabitant (report.notes says what that leaves out). */
+ *  guests hold main's '*' (builder when none). Ownerless: roles.js caps everyone at member, so member's role-defs
+ *  carry builder's permissions and generate; rank stays member (report.notes says what that leaves out). */
 export function mainRights(st) {
   const roles = st?.roles ?? {}, owned = Object.entries(roles).some(([k, r]) => k !== "*" && r?.role === "owner");
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
@@ -695,16 +696,16 @@ export function mainRights(st) {
     return Object.keys(can).length ? { ...rest, can } : rest; };
   const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
   const world = {}, notes = [], star = roles["*"];
-  if (owned && DOOR_OF[star?.role]) { world.access = { ...DOOR_OF[star.role] }; const { role: _r, until: _u, ...rest } = toCan(star); if (Object.keys(rest).length) world["default-role"] = { role: "inhabitant", ...rest }; }
-  else { const { until: _u, ...dr } = toCan(star && typeof star === "object" && !DOOR_OF[star.role] ? star : { role: "builder" }) ?? {}; const role = dr.role === "visitor" ? "inhabitant" : dr.role;
+  if (owned && DOOR_OF[star?.role]) { world.access = { ...DOOR_OF[star.role] }; const { role: _r, until: _u, ...rest } = toCan(star); if (Object.keys(rest).length) world["default-role"] = { role: "member", ...rest }; }
+  else { const { until: _u, ...dr } = toCan(star && typeof star === "object" && !DOOR_OF[star.role] ? star : { role: "builder" }) ?? {}; const role = dr.role === "visitor" ? "member" : dr.role;
     world["default-role"] = { ...dr, role, ...(role && role !== "owner" ? { guests: role } : {}) };
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
-  if (!owned) { world["role-defs"] = { inhabitant: { can: { ...OPEN_CAN } } };
-    notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at inhabitant (roles.js roleIdOf), so inhabitant's permissions here are builder's and generate. "
-      + "Rank stays inhabitant: a lock (builder strength) and a who: builder gate refuse everyone until the world has an owner (operator-repair set)");
+  if (!owned) { world["role-defs"] = { member: { can: { ...OPEN_CAN } } };
+    notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at member (roles.js roleIdOf), so member's permissions here are builder's and generate. "
+      + "Rank stays member: a lock (builder strength) and a who: builder gate refuse everyone until the world has an owner (operator-repair set)");
     if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`); }
   const dr = world["default-role"];
-  return { world, report: { owned, newcomers: dr?.role ?? "inhabitant", guests: world.access ? "listed only" : dr?.guests ?? "inhabitant", ...(world["role-defs"] ? { inhabitantCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };
+  return { world, report: { owned, newcomers: dr?.role ?? "member", guests: world.access ? "listed only" : dr?.guests ?? "member", ...(world["role-defs"] ? { memberCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };
 }
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null, col = null) {
   const effects = col?.effects, adjust = (id, component, field, was, now, why) => col?.adjusted?.set(`${id}\0${component}\0${field}`, { id, component, field, was: brief(was), now: brief(now), why });
@@ -793,8 +794,8 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (screen && (screen.captioners === undefined || Array.isArray(screen.captioners?.ids))) {
         const ids = screen.captioners?.ids ?? []; screen.captioners = { ids: ids.includes(id) ? ids : [...ids, id] };
         const { caption: _c, ...rest } = r; r = rest; }
-      if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below inhabitant (@17): carried, not granted
-      else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "inhabitant" } : r; }
+      if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below member (@17): carried, not granted
+      else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "member" } : r; }
   }
   // the v1 fold lowercased a ban's key. Its `by` is who banned, the act's actor as v1 kept it: a name stays as it was, and
   // one that is itself an account is that person's id, as their acts' actor is (dropped without a mapper)

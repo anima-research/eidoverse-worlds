@@ -334,7 +334,7 @@ try {
 
   // ---- V: a visitor (who can't lift locks) gets the refusal, no buttons ----
   { const r0 = await evalJson(`__refused.length`);
-    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'inhabitant', rank: 0, permissions: [] };
+    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'member', rank: 0, permissions: [] };
       const t = (await import('/lib/editwrites.js')).compsOf('${crate}').transform;
       globalThis.__vis = (await import('/lib/editwrites.js')).send({ verb: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
       return true; })()`);
@@ -342,7 +342,7 @@ try {
     const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
     check("V1 a visitor's move of a locked thing: the refusal, in a person's words (the agents' beside them), and no dialog", refusedV && !dialogV && /^Couldn't move/.test(await evalJson(`__refused.at(-1).text`)) && (await evalJson(`__refused.at(-1).agentText`))?.startsWith(`move ${crate} refused by the authority (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
     if (dialogV) await dlgClick("Cancel");
-    await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'inhabitant', rank: 0, permissions: [] }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
+    await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'member', rank: 0, permissions: [] }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V2 …and its Hierarchy lock icons can't be clicked", await waitFor(`${lockBtn(crate)}?.disabled === true`), await evalJson(`${lockBtn(crate)}?.outerHTML ?? null`));
     await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
     check("V3 an owner's are clickable again", await waitFor(`${lockBtn(crate)}?.disabled === false`)); }
@@ -886,10 +886,10 @@ try {
       const listed = await evalJson(`import('/lib/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
       check("CP8 the command bar lists /boom (R 10-28: force restored); +gen/+fly are per-person can.generate/.fly (handlers.js /grant)", /^boom /m.test(listed) && /\+gen/.test(listed), listed); }
     // CP9 /grant * builder keeps the world's guest opt-in (a whole-value set wiped it)
-    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'inhabitant', guests: 'inhabitant' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
+    { await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'default-role', value: { role: 'member', guests: 'member' } })).ok;`);   // R 10-21: a new world starts at builder, so /grant * builder must change something
       await sleep(1200);   // CP7's flood is the say budget; this is an act
       await type("/grant * builder");
-      check("CP9 /grant * builder sets the default role and keeps guests: 'inhabitant'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "inhabitant" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
+      check("CP9 /grant * builder sets the default role and keeps guests: 'member'", await waitDisk(() => { const d = disk().entities["@world"]?.c["default-role"]; return d?.role === "builder" && d?.guests === "member" && myActs().at(-1)?.e.body?.request?.merge === true; }), disk().entities["@world"]?.c["default-role"]); }
     // CA1 World Settings › Access: the account-age field writes access.minAccountDays, and emptying it removes the key (R 10-07)
     { await page(`const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__acc'; document.body.append(b); m._test.paintAccess(b); return true;`);
       const field = `document.querySelector('#__acc [data-k=minAccountDays]')`;
@@ -908,7 +908,7 @@ try {
       // the world has written no capacity: what the panel shows is this server's defaults (schema's, asked once)
       const fresh = !disk().entities["@world"]?.c.capacity;
       // CW1 a visitor sees no dials; the owner sees them with the world's values
-      await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'inhabitant', permissions: [] }; return true;`);
+      await page(`const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'member', permissions: [] }; return true;`);
       await paint(); await waitFor(`${W}?.textContent.includes('Entities in this world 10,000')`, 4000);
       const vis = await evalJson(`({ inputs: ${W}.querySelectorAll('input').length, ro: !!${W}.querySelector('.rp-ro'), entities: ${W}.textContent.includes('Entities in this world 10,000'), guests: ${W}.textContent.includes("Guests' entities, together 500"), avatar: ${W}.textContent.includes('Largest avatar (entities) 2,000') })`);
       await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; return true;`);
@@ -963,8 +963,8 @@ try {
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.can?.pauseScripts === true);
       await page(`const m = await import('/lib/rolespanels.js'); document.getElementById('__rk')?.remove(); const b = document.createElement('div'); b.id = '__rk'; document.body.append(b); m._test.paintRoles(b); return true;`);
       await sleep(800);
-      const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'inhabitant'; s.onchange(); return true; })()`);
-      const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "inhabitant");
+      const picked = await evalJson(`(() => { const s = [...document.querySelectorAll('#__rk select.rp-change')].find((x) => x.dataset.who === '${BOB}'); if (!s) return 'no-select'; s.value = 'member'; s.onchange(); return true; })()`);
+      const moved = await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "member");
       const after = disk().entities["@world"]?.c[`roles:${BOB}`];
       check("RK1 Roles › picking a role from the panel keeps the person's `can` exceptions (merge when the entry exists)", grant && picked === true && moved && after?.can?.pauseScripts === true, { picked, after });
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`);   // restore for the rows below

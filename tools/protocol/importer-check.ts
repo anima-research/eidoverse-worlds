@@ -129,7 +129,7 @@ row("IM-I6b", () => {
   const a = run([G("Ann", "owner", "human:discord:111"), G("ann.", "visitor")]);
   const ids = Object.keys(a.c).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6));
   const ann = ids.find((i) => a.nameOf(i) === "Ann"), dot = ids.find((i) => a.nameOf(i) === "ann.");
-  ok(a.r.identities === 2 && ann && dot && a.roleOf(ann) === "owner" && a.roleOf(dot) === "inhabitant", "IM-I6b Ann (owner, an account) and a later grant to 'ann.' are two people: Ann stays owner", { n: a.r.identities, roles: ids.map((i) => [a.nameOf(i), a.roleOf(i)]) });
+  ok(a.r.identities === 2 && ann && dot && a.roleOf(ann) === "owner" && a.roleOf(dot) === "member", "IM-I6b Ann (owner, an account) and a later grant to 'ann.' are two people: Ann stays owner", { n: a.r.identities, roles: ids.map((i) => [a.nameOf(i), a.roleOf(i)]) });
   const b = run([G("Ann", "owner", "human:discord:111"), S("Ann", "p1"), S("ann_", "p2"), S("A.N.N", "p3")]);
   ok(b.r.identities === 3 && new Set([b.actor("p1"), b.actor("p2"), b.actor("p3")]).size === 3 && b.subsOf(b.actor("p1")!).includes("human:discord:111") && !b.subsOf(b.actor("p2")!).length,
     "IM-I6b acts by 'ann_' and 'A.N.N' are not Ann's: three names, three people", { n: b.r.identities, p: [b.actor("p1"), b.actor("p2"), b.actor("p3")] });

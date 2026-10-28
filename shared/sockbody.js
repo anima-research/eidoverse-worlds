@@ -33,7 +33,7 @@
 //     leaveBy  'jump'           jump | menu | script  (absent: moving, jumping or getting up all leave; script: only the
 //                               world, or the occupant's always-on escape — a held X, a second get-up, detach {escape})
 //     fromSeat true             you may move here from another seat without standing up
-//     who      'builder'        inhabitant | builder | owner
+//     who      'builder'        member | builder | owner
 //   }
 //
 // Pure: no DOM, no three, no clock. The authority validates with checkSockets; the browser, the door and the agent process read with bodyOf.
@@ -338,7 +338,7 @@ function checkBody(b, at) {
   }
   if (b.leaveBy !== undefined && !LEAVE_BY.includes(b.leaveBy)) return bad('shape', `${at}.leaveBy is ${LEAVE_BY.join(', ')} (leave it out: moving, jumping or getting up all leave)`);
   if (b.fromSeat !== undefined && typeof b.fromSeat !== 'boolean') return bad('shape', `${at}.fromSeat is true or false`);
-  if (b.who !== undefined && !isWho(b.who)) return bad('shape', `${at}.who is a role (inhabitant, builder, owner or this world's own), {permission: '<name>'} or {roles: [...]}`);
+  if (b.who !== undefined && !isWho(b.who)) return bad('shape', `${at}.who is a role (member, builder, owner or this world's own), {permission: '<name>'} or {roles: [...]}`);
   return null;
 }
 

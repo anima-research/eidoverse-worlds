@@ -36,9 +36,9 @@ function playground(name) {
   fresh(name);
   call(name, "rowan", "create-world", { title: name });
   call(name, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
-  call(name, "rowan", "set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });   // kit and friends are inhabitants here (R 10-21: a new world's newcomers build)
+  call(name, "rowan", "set", { id: "@world", component: "default-role", value: { role: "member" } });   // kit and friends are members here (R 10-21: a new world's newcomers build)
   call(name, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 4] } });
-  call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(name, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(name, "rowan", "create", { id: "crate-1", model: "crate", components: { physics: { kind: "dynamic", who: "builder" } }, place: { at: [2, 0] } });
   call(name, "rowan", "move", { to: [0, 0, -0.5] });
   return name;
@@ -129,7 +129,7 @@ function playground(name) {
   }
   if (RIGID) { // review of 49d4fb0d #6: a thing with a shape and no model has no collider in a rotating engine: refused, not silent
     const W6 = playground("pc-d6");
-    const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "inhabitant", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
+    const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "member", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
     const p6 = c6.ok ? call(W6, "rowan", "punt", { id: "ghost", power: 2 }) : null;   // punt first: a held thing is refused as "held"
     const g6 = c6.ok ? call(W6, "rowan", "grab", { id: "ghost" }) : null, t6 = g6?.ok ? call(W6, "rowan", "throw", { id: "ghost", v: [0, 2, 1] }) : null;
     ok(!c6.ok || ((!t6 || t6.refused?.code === "no-shape") && (!p6 || p6.refused?.code === "no-shape")),
@@ -138,7 +138,7 @@ function playground(name) {
   { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
     // is never taken, Covenant III); under eidosim it flies as a sphere: thrown, it rolls, and rests turned on the ground
     const W7 = playground("pc-d7");
-    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
     const ph7 = fold(log(W7)).entities.rb?.c.physics?.shape;
     ok(c7.ok && JSON.stringify(ph7) === JSON.stringify({ type: "sphere", radius: 0.11, pos: [0, 0.11, 0] }), "D7 collider sphere: the authority stamps a sphere fitted to the ball's box", { shape: ph7, refused: c7.refused });
     const box7 = call(W7, "rowan", "set", { id: "rb", component: "collider", value: { shape: "box" } }), back7 = fold(log(W7)).entities.rb?.c.physics?.shape;
@@ -149,7 +149,7 @@ function playground(name) {
     // parent (a table at x 10) must lose it there, as an ordinary rest does, or the parent's offset is applied twice (x 10 → 20)
     const W9 = playground("pc-d9");
     const c9 = call(W9, "rowan", "create", { id: "pad", model: "table", place: { at: [10, 0] } });
-    const b9 = call(W9, "rowan", "create", { id: "kid", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" }, parent: { to: "pad" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+    const b9 = call(W9, "rowan", "create", { id: "kid", model: "ball", components: { physics: { kind: "dynamic", who: "member" }, parent: { to: "pad" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
     const m9 = call(W9, "rowan", "move", { to: [10, 0, -0.5], teleport: true }); if (!m9.ok) console.log("D9 move", JSON.stringify(m9.refused));
     const x0 = worldT(fold(log(W9)), "kid").pos[0];
     const g9 = call(W9, "rowan", "grab", { id: "kid" }), t9 = call(W9, "rowan", "throw", { id: "kid", v: [0, 6, 0] });
@@ -160,7 +160,7 @@ function playground(name) {
   }
   if (RIGID) {
     const W7 = playground("pc-d7r");
-    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+    const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
     const g7 = call(W7, "rowan", "grab", { id: "rb" }), t7 = call(W7, "rowan", "throw", { id: "rb", v: [0, 1, 3] });
     ok(c7.ok && g7.ok && t7.ok, "D7 setup: a ball stamped as a sphere is made, picked up and thrown", { c: c7.refused, g: g7.refused, t: t7.refused });
     call(W7, "rowan", "wait", {}, 15000);
@@ -174,8 +174,8 @@ function playground(name) {
   if (RIGID) { // stage 2: a thrown crate knocks a resting dynamic crate; both rests are logged under the throw, a carrier agrees,
     // and a locked crate and the (static) table don't move
     const W8 = playground("pc-d8");
-    call(W8, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 2.2] } });
-    call(W8, "rowan", "create", { id: "fix", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" }, lock: true }, place: { at: [1.4, 2.2] } });
+    call(W8, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 2.2] } });
+    call(W8, "rowan", "create", { id: "fix", model: "crate", components: { physics: { kind: "dynamic", who: "member" }, lock: true }, place: { at: [1.4, 2.2] } });
     const before = fold(log(W8)).entities; const tgt0 = before.tgt.c.transform.pos, fix0 = before.fix.c.transform.pos, tab0 = before["table-1"].c.transform.pos;
     call(W8, "rowan", "move", { to: [2, 0, -0.5] }); const g8 = call(W8, "rowan", "grab", { id: "crate-1" });
     call(W8, "rowan", "move", { to: [0, 0, 0.4] });
@@ -215,13 +215,13 @@ function playground(name) {
   const act = log(W).at(-2); ok(act.kind === "act" && act.verb === "put" && act.body.handled?.includes("rowan"), "E the act records who handled it", act.body);
 }
 
-// F — rights per component: an inhabitant may pick up the ball (physics.who) but not the crate.
+// F — rights per component: a member may pick up the ball (physics.who) but not the crate.
 {
   const W = playground("pc-f");
   call(W, "rowan", "set", { id: "@world", component: "roles:rowan", value: { role: "owner" } });
   call(W, "kit", "move", { to: [0, 0, 0.5] }); call(W, "kit", "move", { to: [1.8, 0, 0.5] });
   const c = call(W, "kit", "grab", { id: "crate-1" });
-  ok(!c.ok && c.refused.code === "rights", "F an inhabitant can't pick up a builder-only crate", c.refused);
+  ok(!c.ok && c.refused.code === "rights", "F a member can't pick up a builder-only crate", c.refused);
   call(W, "kit", "move", { to: [0, 0, 0.5] }); const b = call(W, "kit", "grab", { id: "ball" });
   ok(b.ok, "F a visitor may pick up the ball", b);
   const t = call(W, "kit", "throw", { id: "ball", v: [1, 2, 0] }); ok(t.ok, "F and throw it", t);
@@ -229,7 +229,7 @@ function playground(name) {
   const r = rests(log(W)).at(-1);
   ok(r && r.handled.includes("kit"), "F the rest result is attributed to who handled it (its launch says so)", r);
   const set = call(W, "kit", "set", { id: "ball", component: "transform", value: { pos: [0, 0, 0] } });
-  ok(!set.ok && set.refused.code === "rights", "F …but an inhabitant still can't author its transform directly", set.refused);
+  ok(!set.ok && set.refused.code === "rights", "F …but a member still can't author its transform directly", set.refused);
 }
 
 // G — a catch: grabbing a flying thing goes through the log; no rest result follows.
@@ -531,7 +531,7 @@ function playground(name) {
 
 // review of #260: a thing already in a hand when physics starts stays in the hand, out of the engine's world, on replay too
 { const W = fresh("held-at-start"); call(W, "rowan", "create-world", { title: W });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "rowan", "move", { to: [0, 0, -0.5] }); const g = call(W, "rowan", "grab", { id: "ball" });
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const v = view(W);
@@ -540,7 +540,7 @@ function playground(name) {
   const put = call(W, "rowan", "put", { id: "ball", pos: [0, 0, 0.5] }); const v2 = view(W);
   ok(put.ok && !v2.lifted.has("ball") && !!(v2.sim?.bodies.ball || v2.sim?.statics?.ball), "U5 …and put down, it's back in the engine's world", { put: put.ok, lifted: [...v2.lifted] }); }
 { const W = fresh("held-by-other"); call(W, "rowan", "create-world", { title: W });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   const lift = log(W).find((e: any) => e?.kind === "sim" && e.verb === "lift" && e.body?.id === "ball");
@@ -553,7 +553,7 @@ function playground(name) {
   ok(held && b.ok && !!w.presence.holds && !w.presence.holds.ball && !v.lifted.has("ball") && !!v.sim && !!(v.sim.bodies.ball || v.sim.statics?.ball),
     "U5d a write that changes the engine's epoch and moves a held thing lets go of it in the engine too, as the authority's hold does", { held, b: b.ok ?? b.refused, hold: !!w.presence.holds?.ball, lifted: [...v.lifted], body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
 { const W = fresh("held-at-batch-start"); call(W, "rowan", "create-world", { title: W });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   // two engine sets in one batch, by someone who isn't holding it: one lift, naming the holder
   const on = call(W, "rowan", "batch", { ops: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 16 } } }, { verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } }] });
@@ -562,14 +562,14 @@ function playground(name) {
     "U5c an engine started inside a batch, twice over, logs one lift for a thing in a hand, naming its holder, so the thing stays out of the engine's world", { g: g.ok, on: on.ok ?? on.refused, lifts: lifts.map((e: any) => e.actor), lifted: [...v.lifted], sim: !!v.sim, body: !!v.sim?.bodies.ball, st: !!v.sim?.statics?.ball }); }
 // U5e: a dry run of that start says what it would lift, and logs nothing
 { const W = fresh("held-dry"); call(W, "rowan", "create-world", { title: W });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" }); const n = log(W).length;
   const on = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG, dry: true });
   ok(g.ok && on.ok && on.dry && JSON.stringify(on.lifts) === '["ball"]' && log(W).length === n, "U5e a dry run of an engine's start names what it would lift out of a hand, and logs nothing", { g: g.ok ?? g.refused, on, logged: log(W).length - n }); }
 // U5f: a batch that starts the engine and moves a held thing takes it out of the hand, so it logs no lift for it: the thing
 // is seated in the new engine's world where the edit put it. Its dry run says the same: the release, and no lift
 { const W = fresh("held-moved-at-start"); call(W, "rowan", "create-world", { title: W });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = call(W, "sam", "grab", { id: "ball" });
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
@@ -582,7 +582,7 @@ function playground(name) {
     "U5f …and its dry run says the thing leaves the hand, and names no lift for it", { lifts: dry.lifts, notes: dry.notes }); }
 // U5g: with two things in hand, a batch that starts the engine and moves one lifts the other alone (dry and live)
 { const W = fresh("held-two-at-start"); call(W, "rowan", "create-world", { title: W });
-  for (const [id, x] of [["ball", 0], ["cup", 0.4]] as const) call(W, "rowan", "create", { id, model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [x, 0] } });
+  for (const [id, x] of [["ball", 0], ["cup", 0.4]] as const) call(W, "rowan", "create", { id, model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [x, 0] } });
   call(W, "sam", "move", { to: [0, 0, -0.5] }); const g = [call(W, "sam", "grab", { id: "ball" }), call(W, "sam", "grab", { id: "cup" })];
   const ops = [{ verb: "set", args: { id: "@world", component: "physics-engine", value: ENG } },
     { verb: "set", args: { id: "ball", component: "transform", value: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }];
@@ -660,7 +660,7 @@ function playground(name) {
 // review of #260: a rest batch whose transform op a purge names by index replays as unknown, as the strict fold reads it
 { const W = fresh("purge-rest-op"); call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG });
   call(W, "rowan", "create", { id: "table-1", model: "table", place: { at: [0, 1] } });
-  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { on: "table-1" } });
+  call(W, "rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { on: "table-1" } });
   call(W, "rowan", "move", { to: [0, 0, 0.3] }); call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0.3, 2, -2] }); call(W, "rowan", "wait", {}, 6000);
   const L = log(W); const last = L[L.length - 1];
   const rest = L.findIndex((e: any) => e?.kind === "change" && e.verb === "batch" && typeof e.cause === "number" && L[e.cause]?.kind === "sim" && L[e.cause].verb === "launch");
@@ -878,7 +878,7 @@ function playground(name) {
 { const W = playground("shape-unmeasured");
   const w = openWorld(root, W); const before = w.state().entities["crate-1"]?.c.physics?.shape;
   const cat = w.catalogue; w.catalogue = { get: (n: string) => (n === "crate" ? undefined : cat?.get?.(n)), list: (q: string) => cat?.list?.(q) ?? [] };
-  const m = request(w, "rowan", "set", { id: "crate-1", component: "physics", value: { who: "inhabitant" }, merge: true });   // the merge the review traced
+  const m = request(w, "rowan", "set", { id: "crate-1", component: "physics", value: { who: "member" }, merge: true });   // the merge the review traced
   const keptM = w.state().entities["crate-1"]?.c.physics?.shape;
   const r = request(w, "rowan", "set", { id: "crate-1", component: "physics", value: { kind: "dynamic", who: "builder" } });   // a whole value, without shape
   const kept = w.state().entities["crate-1"]?.c.physics?.shape; w.catalogue = cat;
@@ -890,7 +890,7 @@ function playground(name) {
 if (RIGID) { const W = playground("rr-group");
   call(W, "rowan", "set", { id: "@world", component: "bounds", value: { min: [-20, 0, -20], max: [20, 30, 3] } });
   call(W, "rowan", "set", { id: "crate-1", component: "home", value: { pos: [3, 0, -1], q: [0, 0, 0, 1] } });
-  call(W, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 2.2] } });
+  call(W, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 2.2] } });
   call(W, "rowan", "move", { to: [2, 0, -0.5] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "move", { to: [0, 0, 0.4] });
   const t = call(W, "rowan", "throw", { id: "crate-1", v: [0, 1.5, 5] }); call(W, "rowan", "wait", {}, 20000); const r = call(W, "rowan", "wait", {});
   const R = rests(log(W)), rt = R.find((x) => x.id === "tgt"), rc = R.find((x) => x.id === "crate-1");

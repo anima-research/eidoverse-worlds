@@ -128,7 +128,7 @@ try {
   check("WB0 the edge is drawn: a fence at exactly this world's bounds", Array.isArray(fence) && fence[0]?.[0] === edge && fence[1]?.[0] === 60, fenceAll);
   const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
     const why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); await new Promise((z) => setTimeout(z, 800));
-    const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [c.myState.pos.x + 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
+    const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [c.myState.pos.x + 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
     await new Promise((z) => setTimeout(z, 1500)); const g = await t.physicsApi.grab('wbcrate'); await new Promise((z) => setTimeout(z, 800));
     const p = await t.physicsApi.put('wbcrate');
     return { why, x: +c.myState.pos.x.toFixed(3), made: !!mk?.ok, grab: g?.ok ?? g?.refused?.code ?? null, put: p?.ok ? true : (p?.refused?.reason ?? p?.why ?? JSON.stringify(p)?.slice(0, 200) ?? null) };`);
@@ -267,7 +267,7 @@ try {
   await sleep(800);
   // 1 m ahead of me along the camera's heading, so it is in reach AND in view
   const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h, c.myState.pos.z + d.z / h];`);
-  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'cuball', model: '${CRATE}', components: { label: 'Clicker', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.3 } } });`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'cuball', model: '${CRATE}', components: { label: 'Clicker', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate I may pick up, within reach", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('cuball'))`, 'cuball');
   await sleep(600);
@@ -346,7 +346,7 @@ try {
   // ---- HT: a held thing turns with me (R, 10-10 evening: "they don't rotate with the avatar, they're always oriented the same direction") ----
   await stage("HT", async () => {
   const here = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return [c.myState.pos.x + d.x / h * 0.7, c.myState.pos.z + d.z / h * 0.7];`);
-  const htMade = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'htcrate', model: '${CRATE}', components: { label: 'Turn crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.25 } } });`);
+  const htMade = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'htcrate', model: '${CRATE}', components: { label: 'Turn crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${here[0]}, 0, ${here[1]}], scale: 0.25 } } });`);
   check("(setup) a crate 0.7 m in front of me", htMade?.ok, htMade);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('htcrate'))`, 'htcrate'); await sleep(1200);
   const r = await page(`const t = await import('/lib/thingphysics.js'), c = await import('/lib/controller.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;
@@ -525,7 +525,7 @@ try {
   check("WG1 a grab that is refused says why in the status bar, in the attention colour, and again the very next time (no 5 s hush), with no chat line", b1.attn && !b1.gone && /Anchor/.test(b1.text) && b2.attn && /Anchor/.test(b2.text) && (await evalJson(`document.querySelectorAll('.chat-log .line').length`)) === lines0, { b1, b2 });
   // something to pick up 5 m ahead of me, where the camera looks; a real click on it
   const far = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1; return { at: [c.myState.pos.x + d.x / h * 5, c.myState.pos.z + d.z / h * 5], me: [c.myState.pos.x, c.myState.pos.z] };`);
-  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'wgcrate', model: '${CRATE}', components: { label: 'Far crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [${far.at[0]}, 0, ${far.at[1]}], scale: 0.3 } } });`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'wgcrate', model: '${CRATE}', components: { label: 'Far crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${far.at[0]}, 0, ${far.at[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate 5 m ahead, out of reach", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('wgcrate'))`, 'wgcrate'); await sleep(800);
   const cl = await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('wgcrate'); o.updateWorldMatrix(true, true);
@@ -594,7 +594,7 @@ try {
   await page(`const c = await import('/lib/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 12; c.myState.pos.z += 14; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(1500);
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z, c.myState.yaw])`);
-  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'acbox', model: '${CRATE}', components: { label: 'Aimed', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.3 } } });`);
+  const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'acbox', model: '${CRATE}', components: { label: 'Aimed', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.3 } } });`);
   check("(setup) a small crate beside me", made?.ok, made);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('acbox'))`, 'acbox'); await sleep(800);
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
@@ -638,7 +638,7 @@ try {
   await page(`const m = await import('/lib/net.js'); const st = m.replica.st; if (!st?.entities?.['@world']?.c?.['physics-engine']) await m.sendRequest('set', { id: '@world', component: 'physics-engine', value: { engine: 'eidosim@1.0.0' } }); return true;`); await sleep(600);
   const pm = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   // one crate per arm (a thrown one lands out of reach); a gentle throw straight ahead at 2 m/s
-  const mk = async (id: string) => { const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: 'Predicted', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'inhabitant' }, transform: { pos: [${pm[0] + 0.7}, 0, ${pm[1] + 0.3}], scale: 0.3 } } });`);
+  const mk = async (id: string) => { const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: 'Predicted', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [${pm[0] + 0.7}, 0, ${pm[1] + 0.3}], scale: 0.3 } } });`);
     check(`(setup) a crate for the throw (${id})`, made?.ok, made); await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('${id}'))`, '${id}'); await sleep(800); };
   // one throw, sampled every frame for 1.2 s: when the drawn crate first leaves the hand (> 5 cm), and the largest one-frame move
   const arm = async (predictOn: boolean, id: string) => { await mk(id); return page(`const t = await import('/lib/thingphysics.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE;

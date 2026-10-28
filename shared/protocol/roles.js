@@ -4,15 +4,15 @@
 // of its own, no clock, no imports: a browser and bun import the same file.
 //
 // THE SANCTIONED SOCIETY. A world's people stand on one ranked ladder, and the ladder is MEMBERSHIP only:
-//   inhabitant 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
-// (R 10-21: the base rung is `inhabitant`: you belong here and may make it home, without building it. It was `visitor`,
+//   member 0 · builder 100 · moderator 200 · owner 255, and an owner's custom roles at any free rank in between.
+// (R 10-21, named member R 10-28: the base rung is `member`: you belong here, without building it. It was `visitor`,
 // renamed because visitor sat too close to `guest`, which is the conventional word for a person without an account, and
 // the two are different axes: guest says whether we know you across visits, a role says what you may do. A guest holds
 // a role like anyone else, and a world may give guests any role it gives newcomers (default-role.guests).)
 // "Below you" is a total order on it (ranks are unique), and every rank comparison compares two members.
 // Outside the ladder sit explicit UNRANKED states, never rungs: Banned (not in the world at all; the moderator log
 // holds it: reason, by, until), and the timed ones (muted, kicked). A state is never compared as a rank, and a rank can't
-// express a state: that is why banned is not "rank -5". There is no rung below inhabitant (`none` is gone, R 10-21: a ban or
+// express a state: that is why banned is not "rank -5". There is no rung below member (`none` is gone, R 10-21: a ban or
 // a mute does that job), so no gate can meet a sub-floor role.
 
 // ---------------- the five defaults R hasn't ruled on yet (one value each: flip it here) ----------------
@@ -31,7 +31,7 @@ export const MOD_BAN_MAX_DAYS = 30;
 export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute lasts at most 7 days
 export const REASON_MAX = 500;
 
-export const RANK = Object.freeze({ inhabitant: 0, builder: 100, moderator: 200, owner: 255 });
+export const RANK = Object.freeze({ member: 0, builder: 100, moderator: 200, owner: 255 });
 /** What an id the world doesn't define stands at: below every rung, so it is never "more". Not a role. */
 export const BELOW = -1;
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
@@ -39,9 +39,9 @@ export const BELOW = -1;
 // that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
 /** The words for a lock's strength: who may lift it (display only). */
 export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
-export const BUILTIN_IDS = Object.freeze(["inhabitant", "builder", "moderator", "owner"]);
+export const BUILTIN_IDS = Object.freeze(["member", "builder", "moderator", "owner"]);
 /** A built-in's old name, never an alias: a role written with it is refused, naming the new one (R 10-27). */
-export const RENAMED_ROLES = Object.freeze({ visitor: "inhabitant" });
+export const RENAMED_ROLES = Object.freeze({ visitor: "member" });
 /** The refusal's words for an unknown role id that is an old name (or ""): a world's own role of that id is just its role. */
 export const renamedRole = (wc, id) => (typeof id === "string" && Object.hasOwn(RENAMED_ROLES, id) && !roleDef(wc, id) ? `; '${id}' is called ${RENAMED_ROLES[id]} now` : "");
 
@@ -67,8 +67,8 @@ export const PERMISSION_NAMES = Object.freeze(LIST.map(([k]) => k));
 /** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
 /** Owner-only powers go through this one test (recut B1): a grant value or effective rights whose role is the built-in owner. */
 export const OWNER = "owner";
-/** The base rung (R 10-21: inhabitant), through one test like owner: "anyone here" for a who, the badge that isn't shown. */
-export const BASE = "inhabitant";
+/** The base rung (R 10-21: member), through one test like owner: "anyone here" for a who, the badge that isn't shown. */
+export const BASE = "member";
 export const isBase = (x) => (typeof x === "string" ? x : x?.role) === BASE;
 export const isOwner = (x) => (typeof x === "string" ? x : x?.role) === OWNER;   // a role string, a grant or effective rights
 export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
@@ -76,10 +76,10 @@ export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"])
 export const WARN_POWERS = Object.freeze(["mute", "kick", "ban"]);
 
 const on = (...ks) => Object.freeze(Object.fromEntries(PERMISSION_NAMES.map((k) => [k, ks.includes(k)])));
-// The built-in roles. Their rank is fixed; an owner may edit inhabitant's, builder's and moderator's permissions (role-defs);
+// The built-in roles. Their rank is fixed; an owner may edit member's, builder's and moderator's permissions (role-defs);
 // the owner column is locked: every permission, always (fly per OWNERS_FLY).
 export const BUILTIN = Object.freeze({
-  inhabitant: Object.freeze({ name: "Inhabitant", rank: RANK.inhabitant, can: on() }),
+  member: Object.freeze({ name: "Member", rank: RANK.member, can: on() }),
   builder:   Object.freeze({ name: "Builder",   rank: RANK.builder,   can: on("build", "editOthers", "scripts") }),
   moderator: Object.freeze({ name: "Moderator", rank: RANK.moderator, can: on("build", "editOthers", "scripts", "pauseScripts", "mute", "kick", "ban", "grantRoles") }),
   owner:     Object.freeze({ name: "Owner",     rank: RANK.owner,     can: Object.freeze(Object.fromEntries(PERMISSION_NAMES.map((k) => [k, k === "fly" ? OWNERS_FLY : true]))) }),
@@ -150,24 +150,24 @@ export function brokenNeed(can) {
 }
 
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
- *  role, else inhabitant. A role the world doesn't define reads as inhabitant. A world with no owner caps everyone at inhabitant
+ *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member
  *  (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
-  if (!wc) return "inhabitant";
+  if (!wc) return "member";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
-  const base = roleDef(wc, dr?.role) ? dr.role : "inhabitant";
+  const base = roleDef(wc, dr?.role) ? dr.role : "member";
   let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
-  if (typeof r !== "string" || !roleDef(wc, r)) r = "inhabitant";
+  if (typeof r !== "string" || !roleDef(wc, r)) r = "member";
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
-  return !hasOwner && rankOfRole(wc, r) > RANK.inhabitant ? "inhabitant" : r;
+  return !hasOwner && rankOfRole(wc, r) > RANK.member ? "member" : r;
 }
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
- *  never above the default role; else inhabitant (R 10-21: guests start as inhabitants even where newcomers build). */
+ *  never above the default role; else member (R 10-21: guests start as members even where newcomers build). */
 export function guestRoleOf(wc) {
   const dr = isObj(wc?.["default-role"]) ? wc["default-role"] : null; const g = dr?.guests;
-  const base = roleDef(wc, dr?.role) ? dr.role : "inhabitant";
+  const base = roleDef(wc, dr?.role) ? dr.role : "member";
   const above = (r) => GUESTS_AT_MOST_DEFAULT && rankOfRole(wc, r) > rankOfRole(wc, base);
-  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g) || above(g)) return "inhabitant";
+  if (typeof g !== "string" || g === "owner" || !roleDef(wc, g) || above(g)) return "member";
   return g;
 }
 
@@ -177,7 +177,7 @@ export function guestRoleOf(wc) {
  *  permission whatever `can` says (their column is locked); `can.fly: true` may still give an owner flight when OWNERS_FLY
  *  is off. */
 export function effectiveOf(wc, id, opts = {}) {
-  const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "inhabitant");
+  const role = roleIdOf(wc, id, opts); const def = roleDef(wc, role) ?? roleDef(wc, "member");
   let can = { ...def.can };
   const entry = isObj(wc?.[`roles:${id}`]) ? wc[`roles:${id}`] : null;
   if (role === OWNER) { if (entry?.can?.fly === true) can.fly = true; }
@@ -206,7 +206,7 @@ export function checkRoleDefs(v, prev, held = () => 0) {
     if (d.note !== undefined && !(typeof d.note === "string" && d.note.length <= 120)) return bad("shape", `role-defs.${id}.note is up to 120 characters`);
     if (Object.hasOwn(BUILTIN, id)) { if (d.rank !== undefined && d.rank !== BUILTIN[id].rank) return bad("rank", `${id}'s rank is fixed at ${BUILTIN[id].rank}`, "make a custom role to stand somewhere else"); }
     else {
-      if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad("rank", `role-defs.${id}.rank must be a whole number 1–254 (inhabitant is 0, owner 255)`, "place it between two roles: e.g. 150 sits between builder (100) and moderator (200)");
+      if (!Number.isInteger(d.rank) || d.rank < 1 || d.rank > 254) return bad("rank", `role-defs.${id}.rank must be a whole number 1–254 (member is 0, owner 255)`, "place it between two roles: e.g. 150 sits between builder (100) and moderator (200)");
       if ([RANK.builder, RANK.moderator].includes(d.rank)) return bad("rank", `rank ${d.rank} is ${d.rank === RANK.builder ? "builder" : "moderator"}'s; two roles never share a rank`, "pick a free number");
     }
     const r = Object.hasOwn(BUILTIN, id) ? BUILTIN[id].rank : d.rank;
@@ -270,7 +270,7 @@ const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.t
 export function grantableRoles(wc, me) {
   return rolesOf(wc).filter((r) => isOwner(me) ? true : r.rank < me.rank && PERMISSION_NAMES.every((k) => !r.can[k] || (me.permissions ?? []).includes(k)));
 }
-/** The badge a person's row shows (research §UI): none for an inhabitant (the list doesn't shout), "guest" for someone
+/** The badge a person's row shows (research §UI): none for a member (the list doesn't shout), "guest" for someone
  *  without an account (whatever role guests get), else the role's name. {text, tone: 'owner'|'mod'|'role'|'guest'}. */
 export function badgeOf(p) {
   if (!p) return null;

@@ -97,12 +97,12 @@ const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
 const launchesOf = (s: any) => s.entries().filter((e: any) => e.kind === "sim" && e.verb === "launch");
 const shovesIn = (s: any, who: string) => (s.call(who, "inbox").messages ?? []).filter((m: any) => m.type === "body" && m.kind === "shove");
-// owner olive, builder bob, inhabitant vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
+// owner olive, builder bob, member vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
 function cast(s: any, { physics = true } = {}) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"], ["ida", "inhabitant"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "member"], ["ida", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
   if (physics) s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" } });
-  s.call("olive", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+  s.call("olive", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
 }
 
 type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => boolean };
@@ -112,7 +112,7 @@ const cases: Case[] = [
       const acts = s.entries().slice(n0).filter((e: any) => e.kind === "act"); const l = launchesOf(s)[0];
       return { r: show(r), punted: r.punted, acts: acts.map((e: any) => e.body?.verb ?? e.verb), act: r.act, cause: l?.cause, v: l?.body?.v }; },
     good: (o) => o.r === "ok" && o.punted?.length === 1 && o.acts.length === 1 && o.cause === o.act && o.v?.[0] > 1 && o.v?.[1] > 0.5 && Math.abs(o.v?.[2]) < 1e-6 },
-  { id: "F2", what: "an inhabitant's blast is refused rights, and nothing flies", run(s) { cast(s);
+  { id: "F2", what: "a member's blast is refused rights, and nothing flies", run(s) { cast(s);
       const r = s.call("vic", "force", { at: [-1, 0, 0] }); return { r: code(r), launches: launchesOf(s).length }; },
     good: (o) => o.r === "rights" && o.launches === 0 },
   { id: "F3", what: "force needs at: [x, y, z] (missing, or two numbers, is refused, never a crash)", run(s) { cast(s);
@@ -123,15 +123,15 @@ const cases: Case[] = [
       return { r: show(r), radius: r.radius, power: r.power, notes: (r.notes ?? []).map((n: any) => n.field), lo: [lo.radius, lo.power] }; },
     good: (o) => o.r === "ok" && o.radius === 30 && o.power === 12 && o.notes.includes("radius") && o.notes.includes("power") && o.lo[0] === 0.5 && o.lo[1] === 0.2 },
   { id: "F5", what: "linear falloff to the rim: a crate 3 m out (past a kick's reach) goes slower than one 1 m out, as power × (1 − d/r); one past the rim stays", run(s) { cast(s);
-      s.call("olive", "create", { id: "far", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [2, 0] } });
-      s.call("olive", "create", { id: "out", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [5, 0] } });
+      s.call("olive", "create", { id: "far", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [2, 0] } });
+      s.call("olive", "create", { id: "out", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [5, 0] } });
       const r = s.call("bob", "force", { at: [-1, 0, 0], radius: 4, power: 4 });
       const sp = (id: string) => { const p = (r.punted ?? []).find((x: any) => x.id === id); return p ? Math.hypot(...p.v) : null; };
       return { r: show(r), near: sp("crate"), far: sp("far"), out: sp("out") }; },
     good: (o) => o.r === "ok" && Math.abs(o.near - 3) < 0.01 && Math.abs(o.far - 1) < 0.01 && o.out === null },
   { id: "F6", what: "the punt's own gates: a locked crate and one in a hand are left be (named in skipped), the rest still fly", run(s) { cast(s);
-      s.call("olive", "create", { id: "lk", model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" }, lock: true }, place: { at: [0, 1.5] } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, -1.5] } });
+      s.call("olive", "create", { id: "lk", model: "crate", components: { physics: { kind: "dynamic", who: "member" }, lock: true }, place: { at: [0, 1.5] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, -1.5] } });
       s.call("vic", "move", { to: [0.5, 0, -1.5] }); const g = s.call("vic", "grab", { id: "ball" });
       const r = s.call("bob", "force", { at: [-1, 0, 0] });
       return { g: show(g), r: show(r), punted: (r.punted ?? []).map((x: any) => x.id), skipped: r.skipped ?? [] }; },

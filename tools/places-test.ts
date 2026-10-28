@@ -48,11 +48,11 @@ console.log("a model's own places survive the server's compressed copy:");
     `${JSON.stringify(viaOpt)?.slice(0, 120)} (${src.length} → ${opt.length} bytes)`);
 }
 
-const h = await scratchSequencer("places", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["places"], owner: "inhabitant", portFrom: 9500 });
+const h = await scratchSequencer("places", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["places"], owner: "member", portFrom: 9500 });
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const { handleTool } = await import("../mcpl/tools.ts");
 const URL_ = h.BASE.replace("http", "ws") + "/ws";
-const a: any = new WorldAgent({ name: "inhabitant", world: "places", url: URL_ });
+const a: any = new WorldAgent({ name: "member", world: "places", url: URL_ });
 const friend: any = new WorldAgent({ name: "friend", world: "places", url: URL_ });
 const ctx = { agent: a, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
 // what walk_to {x, y?, z, to?} meant, as move's words (the old name runs nothing now, R 10-28)

@@ -679,7 +679,7 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
         !resolveFlight(withRights({ role: 'owner', gen: true, fly: false }),
                        { identity: 'm', avatar: av }).enabled);
   check('an explicit world grant DOES -- and only then',
-        resolveFlight(withRights({ role: 'inhabitant', gen: false, fly: true }),
+        resolveFlight(withRights({ role: 'member', gen: false, fly: true }),
                       { identity: 'm', avatar: av }).enabled);
   // Permission is necessary, not sufficient: a granted identity in a body that
   // cannot fly is still refused, and for the OTHER reason.

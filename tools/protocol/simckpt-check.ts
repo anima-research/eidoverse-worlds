@@ -45,7 +45,7 @@ function world(name, n = 6, every = N, extra = {}) {
   const call = (verb, args = {}, step = 100) => { T += step; return request(w, "rowan", verb, args); };
   call("create-world", { title: name });
   call("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: TICK } });
-  for (let i = 0; i < n; i++) call("create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [i * 2, 3] } });
+  for (let i = 0; i < n; i++) call("create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [i * 2, 3] } });
   const beat = (ms = TICK) => { T += ms; return settle(w); };
   for (let k = 0; k < 400 && Object.values(w.simPeek().sim?.bodies ?? {}).some((b) => !b.resting); k++) beat();
   return { dir, w, call, beat };

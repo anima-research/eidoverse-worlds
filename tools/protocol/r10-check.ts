@@ -137,7 +137,7 @@ const section = (md: string, head: RegExp) => { const i = md.search(head); if (i
 
 // builder bob's lever whose reset names only x; the deleter deletes x (the handler goes, a follow-up delete) and undoes it
 function leverUndo(s: any, who: string) {
-  s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "inhabitant" });
+  s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
   s.call("bob", "create", { id: "x", model: "crate", place: { at: [6, 0] } });
   const c = s.call("bob", "create", { id: "lever", model: "crate", components: { reactions: { go: { kind: "reset", targets: ["x"] } } }, place: { at: [0, 0] } });
   s.call("bob", "set", { id: "x", component: "transform", value: { pos: [7, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
@@ -151,7 +151,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   // ---------------- S: a sit is within reach ----------------
   { id: "S1", what: "(holes M1, p3) a world with a spawn at [-18,0,0]: visitor vic, refused a teleport to olive's chair at [17,0], is refused `use sit` from 35 m too (out-of-reach), stays tracked at the spawn, and his step to the chair is too-fast; only refusals logged. Within reach the sit is fine", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [-18, 0, 0] } });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [17, 0] } });
       s.call("olive", "create", { id: "stool", model: "chair", components: SEAT(), place: { at: [-15, 0] } });
@@ -165,7 +165,7 @@ const cases: Case[] = [
       return { tp: show(tp), sit: show(sit), m1: show(m1), at, logged, near: show(near), seat: s.w().presence.occupants?.vic ?? null }; },
     good: (o) => /^refused spawn/.test(o.tp) && /^refused out-of-reach/.test(o.sit) && /^refused too-fast/.test(o.m1) && JSON.stringify(o.at) === "[-18,0,0]" && o.logged.every((x: string) => / refused$/.test(x)) && o.near === "ok" && o.seat?.near === true },
   { id: "S2", what: "(holes M1 b) a seat not boarded within reach (no `near`: a presence file from before r10, or a body not tracked when it sat) never re-anchors the track: the step off is measured from where the body was", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant", bob: "builder" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member", bob: "builder" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [20, 0] } });
       s.call("vic", "move", { to: [0, 0, 0] });
       s.w().presence.occupants = { vic: { to: Object.keys(s.w().state().entities).find((k) => s.w().state().entities[k].c.parent?.to === "chair"), since: s.entries().length } };
@@ -177,7 +177,7 @@ const cases: Case[] = [
       return { m: show(m), mv: show(mv), at: s.w().presence.bodies.vic?.at, msgAt: msg?.at ?? null, told: !!msg }; },
     good: (o) => /^refused too-fast/.test(o.m) && o.mv === "ok" && JSON.stringify(o.at) === "[0,0,0]" && o.msgAt === null && o.told },
   { id: "S3", what: "(holes L5) the first step off a seat is the stand-up: under a metre from the seat clears it (not only past 1 m)", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const was = seated(s, "vic"); const step = s.call("vic", "move", { to: [4.5, 0, -0.6] });
@@ -200,11 +200,11 @@ const cases: Case[] = [
         { kind: "act", actor: "olive", verb: "delete", body: {} }, { ...mk([{ verb: "delete", id: "x" }, { verb: "delete", id: "d", comp: "script:a" }], "olive", [1]), cause: 3 },
         { kind: "act", actor: "olive", verb: "undo", body: {} }, { ...mk([{ verb: "create", id: "x" }, { verb: "set", id: "d", comp: "script:a", value: { src: "s" } }], "olive", [1]), cause: 5 }];
       o.sponsor = AU.sponsorAt(H, "d", "script:a", H.length - 1)?.rights ?? null; o.hCreator = AU.creatorAt(H, "d", "script:a", H.length - 1)?.rights ?? null;
-      roles(s, { bob: "inhabitant" }); o.demoted = show(s.call("vic", "use", { id: "lever", action: "go" }));
+      roles(s, { bob: "member" }); o.demoted = show(s.call("vic", "use", { id: "lever", action: "go" }));
       return o; },
     good: (o) => o.un === "ok" && o.creator === "bob" && o.setter?.by === "bob" && o.setter?.deleted === false && o.at === "bob" && o.sponsor === "bob" && o.hCreator === "bob" && /set up by bob/.test(o.demoted) },
   { id: "H3", what: "…but a key's new life isn't merged with its old: after the follow-up delete, builder wes writes lever.reactions anew; its creator and author are wes", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", wes: "builder", vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", wes: "builder", vic: "member" });
       s.call("bob", "create", { id: "x", model: "crate", place: { at: [6, 0] } });
       s.call("bob", "create", { id: "lever", model: "crate", components: { reactions: { go: { kind: "reset", targets: ["x"] } } }, place: { at: [0, 0] } });
       s.call("olive", "delete", { id: "x" });
@@ -281,7 +281,7 @@ const cases: Case[] = [
     good: (o) => o.v === "ok" && o.d === "ok" && Math.abs(o.y) < 1e-6 && JSON.stringify(o.fu) === '["set vase.transform"]' && o.lock === true && o.creator === "olive" },
   // ---------------- U: vacated ----------------
   { id: "U1", what: "(holes L6) olive removes the seat vic sits on: vic gets `vacated {socket, at}` in his inbox (as for an edit), and his track restarts at the seat", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       const sock = s.w().presence.occupants?.vic?.to;
@@ -295,7 +295,7 @@ const cases: Case[] = [
         browser: /dismountMe\('script', vacatedAt\(u\)\)/.test(src) && /if \(at\) off\.set\(at\[0\], at\[1\], at\[2\]\)/.test(src), agent: /vacatedAt\(m\)/.test(agent) }; },
     good: (o) => JSON.stringify(o.good) === "[1,2,3]" && o.bad === null && o.none === null && o.short === null && o.browser && o.agent },
   { id: "U3", what: "(claims O3) vic rides olive's carousel (set up before he sat); a thing its other handler named is deleted (a follow-up clear on the carousel's reactions); the carousel's turn still carries him", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "create", { id: "x", model: "crate", place: { at: [9, 0] }, components: { home: { pos: [9, 0, 0] } } });
       s.call("olive", "create", { id: "carousel", model: "chair", components: { ...SEAT(), reactions: { turn: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 30 } }, sweep: { kind: "reset", targets: ["x"] } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "carousel", action: "sit" });

@@ -741,7 +741,7 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     check("the closed world is not on the outsider's map", !/^- keep/m.test(fmap), fmap);
     const whoText = txt(await owner.request("tools/call", { name: "whois", arguments: { name: "free" } }));
     const freeId = (whoText.match(/u-[a-z2-7]{20}/) ?? [])[0];
-    const granted = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: `roles:${freeId}`, value: { role: "inhabitant" } } } });
+    const granted = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: `roles:${freeId}`, value: { role: "member" } } } });
     check("the owner lets it in from inside the world (roles:<its identity>, found by whois)", !!freeId && !granted.result?.isError, `${whoText.slice(0, 200)} / ${txt(granted).slice(0, 300)}`);
     const inNow = txt(await free.request("tools/call", { name: "travel", arguments: { world: "keep" } }));
     check("…and now it travels in", /Arrived in "keep"/.test(inNow), inNow);

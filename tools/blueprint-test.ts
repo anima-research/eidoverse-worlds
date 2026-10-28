@@ -207,7 +207,7 @@ const near = (a: number[], b: number[], e = 2e-3) => a.length === b.length && a.
 const lampWorld = () => {
   const W = scratchWorld('blueprint');
   W.call('set', { id: '@world', component: 'roles:bld', value: { role: 'builder' } });
-  W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'inhabitant' } });
+  W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'member' } });
   // a lamp: a model with a label, and a bulb child (an Empty with its own light) 1.2 m up. One place per thing
   // (authority.js:1213, R 10-11): a model and a light never share an entity, so the LIGHT lives on the bulb —
   // which is the shape the rule prescribes, and what the door will accept. The record FORMAT can still express

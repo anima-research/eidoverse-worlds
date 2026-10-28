@@ -254,10 +254,10 @@ try {
   // --- refusals
   const bad = await alice.req("obliterate", { everything: true });
   check("an unknown verb is refused, to the asker, by name", bad.ok === false && bad.reply?.refused?.code === "unknown-verb", JSON.stringify(bad.reply));
-  // a world founded since R 10-21 makes newcomers builders; the owner sets them back to inhabitants (strangers read, builders
+  // a world founded since R 10-21 makes newcomers builders; the owner sets them back to members (strangers read, builders
   // build) so a visitor's create has something to refuse (#260 house I442)
-  const dr = await alice.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });
-  check("the owner makes newcomers inhabitants", dr.ok === true, JSON.stringify(dr.reply));
+  const dr = await alice.req("set", { id: "@world", component: "default-role", value: { role: "member" } });
+  check("the owner makes newcomers members", dr.ok === true, JSON.stringify(dr.reply));
   const nR = quiet();
   const bobSees = await bob.req("create", { id: "bobs", components: { transform: { pos: [0, 0, 0] } } });
   check("a visitor's create is refused (the door's roles: strangers read, builders build)", bobSees.ok === false && bobSees.reply?.refused?.code === "rights", JSON.stringify(bobSees.reply));

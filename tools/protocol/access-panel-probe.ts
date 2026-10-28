@@ -87,8 +87,8 @@ try {
   check("AP3b …and her row is listed, with the time left", await waitFor(`/left/.test(${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}]')?.textContent ?? '')`, 6000), await panelText());
 
   // AP4 a role change from the row keeps the end; ✕ takes the grant away
-  await pick(`.ap-row[data-who="${carol.id}"] select.ap-role`, "inhabitant");
-  const moved = await waitDisk(() => wc()[`roles:${carol.id}`]?.role === "inhabitant");
+  await pick(`.ap-row[data-who="${carol.id}"] select.ap-role`, "member");
+  const moved = await waitDisk(() => wc()[`roles:${carol.id}`]?.role === "member");
   check("AP4 the row's role select changes her role and keeps the grant's end (merge)", moved && wc()[`roles:${carol.id}`]?.until === until, wc()[`roles:${carol.id}`]);
   await waitFor(`!!${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}] button.ap-rm')`, 6000);
   await click(`.ap-row[data-who="${carol.id}"] button.ap-rm`);

@@ -754,7 +754,7 @@ function rightsFor(w: World, c: Client) {
   const op = isOperator(c.account);
   const wc = (w.log.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
   const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && isOwner(v));
-  if (!c.actorId) return { role: "inhabitant", roleName: "Inhabitant", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
+  if (!c.actorId) return { role: "member", roleName: "Member", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
   const e = w.log.rightsOf(c.actorId); const m = w.log.mutedHere(c.actorId);
   return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,
     ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };

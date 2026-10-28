@@ -352,3 +352,11 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - light.intensity: its meaning "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise" → "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise. Default 25.93: main's default light's brightness at 5 m"
 - 2026-10-28: normative: kick is conventional (R 10-28): it removes someone now and they may come straight back, so no kick is ever in force and the kicked refusal is gone
   - refusal kicked: gone (old logs may hold it)
+- 2026-10-28: the base rung is member (R 10-28: "let's do member"); its earlier word existed only on this PR, so it is gone with no alias and no migration. grabbable.who and physics.who default to member; translate-v1@26 writes it
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"inhabitant"}}
+  - grabbable.who: default "inhabitant" → "member"
+  - grabbable.who: its meaning of absence "inhabitant" → "member"
+  - grabbable.who: its meaning "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own" → "who may pick it up: a role id (this rank or above): member (anyone), builder, owner or this world's own"
+  - roles.role: its meaning "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines" → "the role this person holds: a built-in (member, builder, moderator, owner) or one the world defines"
+  - roles.rank: vocabulary {"inhabitant":0,"builder":100,"moderator":200,"owner":255} → {"member":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["inhabitant","builder","moderator","owner"] → ["member","builder","moderator","owner"]

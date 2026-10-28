@@ -36,14 +36,14 @@ row("R22b", () => { const { r, W } = tr([OWNER, ["olga", "grant", { id: "*", gen
   ok(r.stats.divergences === 0 && n.role === "builder" && n.can.generate && g.role === "builder" && !g.can.generate && r.stats.rights.notes.some((x) => /guests .*generate/.test(x)),
     "R22b '*' +gen: newcomers build and generate; guests build, and the report says generate can't reach them", { n: n.can, g: g.can, notes: r.stats.rights.notes }); });
 row("R22c", () => { const { W } = tr([OWNER, ["olga", "grant", { id: "*", role: "visitor" }]]); const n = eff(W, "newcomer"), g = eff(W, "guest", true);
-  ok(n.role === "inhabitant" && !n.can.build && g.role === "inhabitant", "R22c '*' visitor: newcomers and guests are inhabitants (no building), as main", { n, g }); });
+  ok(n.role === "member" && !n.can.build && g.role === "member", "R22c '*' visitor: newcomers and guests are members (no building), as main", { n, g }); });
 row("R22d", () => { const { W } = tr([OWNER, ["olga", "grant", { id: "*", role: "none" }]]);
   ok(W.access?.join === "listed" && W["role-defs"] === undefined, "R22d an owned world's '*' none still closes it (access listed)", { access: W.access }); });
 row("R22e", () => { const { r, W } = tr([["ann", "spawn", { id: "c", lib: "x.glb" }], ["world", "grant", { id: "*", role: "none" }]]);
   const a = eff(W, "ann"), g = eff(W, "guest", true);
-  ok(r.stats.divergences === 0 && a.role === "inhabitant" && a.can.build && a.can.editOthers && a.can.generate && !a.can.fly && g.can.build && g.can.generate && W.access === undefined
-    && r.stats.rights.owned === false && r.stats.rights.notes.some((x) => /Rank stays inhabitant/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)),
-    "R22e an ownerless world: everyone, guests too, builds and generates (inhabitant's role-defs, under roles.js's cap), never flies; its '*' none is unread, as main; the report names the rank it can't give", { a: a.can, g: g.can, access: W.access, notes: r.stats.rights.notes }); });
+  ok(r.stats.divergences === 0 && a.role === "member" && a.can.build && a.can.editOthers && a.can.generate && !a.can.fly && g.can.build && g.can.generate && W.access === undefined
+    && r.stats.rights.owned === false && r.stats.rights.notes.some((x) => /Rank stays member/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)),
+    "R22e an ownerless world: everyone, guests too, builds and generates (member's role-defs, under roles.js's cap), never flies; its '*' none is unread, as main; the report names the rank it can't give", { a: a.can, g: g.can, access: W.access, notes: r.stats.rights.notes }); });
 row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind === "change");
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });
@@ -133,12 +133,12 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@24" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@25" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 25 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 25 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@25/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @25; a report reviewed under @24 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 26 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 26 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@26/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @26; a report reviewed under @25 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);

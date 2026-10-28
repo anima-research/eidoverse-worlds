@@ -223,7 +223,7 @@ console.log("\n━━ reconnect roster seed: the snapshot prunes through the fun
   const torn: string[] = [];
   stubs.bus.on("participant-teardown", (id: string) => torn.push(id));
   const disposedBefore = stubs.disposeCount;
-  await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "inhabitant" },
+  await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "member" },
     present: [{ id: "stays", avatar: "vrms/stays.vrm" }], state: null, entries: [], throughSeq: 0 });
   await settle();
   check("the absent id is torn down THROUGH the funnel", torn.includes("ghost"),

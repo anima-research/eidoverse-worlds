@@ -120,12 +120,12 @@ const inboxOf = (s: any, who: string) => JSON.stringify(s.w().presence.inbox?.[w
 
 // the q6 world: builder bob's lever with a set and a reset handler on olive's things; bob demoted
 function lever(s: any) {
-  s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "inhabitant" });
+  s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
   s.call("olive", "create", { id: "x", model: "crate", place: { at: [6, 0] } });
   s.call("olive", "create", { id: "statue", model: "crate", place: { at: [9, 0] }, components: { home: { pos: [20, 0, 0] } } });
   const c = s.call("bob", "create", { id: "lever", model: "crate", components: { reactions: {
     lit: { kind: "set", component: "t/lit", value: { on: true } }, go: { kind: "reset", targets: ["statue", "x"] } } }, place: { at: [0, 0] } });
-  roles(s, { bob: "inhabitant" }); s.call("vic", "move", { to: [0, 0, -1] });
+  roles(s, { bob: "member" }); s.call("vic", "move", { to: [0, 0, -1] });
   return c;
 }
 
@@ -148,12 +148,12 @@ const cases: Case[] = [
       return { d: show(d), verb: ch?.verb, fu, marked: fu.map((k: number) => `${ops[k]?.id}.${ops[k]?.comp}`), own: ops.filter((_: any, k: number) => !fu.includes(k)).map((o: any) => `${o.verb} ${o.id}`), g: show(g) }; },
     good: (o) => o.d === "ok" && o.verb === "batch" && JSON.stringify(o.marked) === '["lever.reactions"]' && o.own.includes("delete x") && /set up by bob/.test(o.g) },
   { id: "H3", what: "the other way: owner olive's door {open: toggle, sweep: reset [builder vic's ball, her statue]}; vic deletes his ball, then is demoted; the door's handlers stay olive's (a visitor still opens it), inspect says the clear was a follow-up", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder", wes: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "builder", wes: "member" });
       const b = s.call("vic", "create", { id: "ball", model: "crate", place: { at: [5, 0] } });
       s.call("olive", "create", { id: "statue", model: "crate", place: { at: [9, 0] } });
       const k = s.call("olive", "create", { id: "door", model: "crate", components: { openable: { open: false }, reactions: {
         open: { kind: "toggle", component: "openable", field: "open" }, sweep: { kind: "reset", targets: ["ball", "statue"] } } }, place: { at: [0, 0] } });
-      const d = s.call("vic", "delete", { id: "ball" }); roles(s, { vic: "inhabitant" });
+      const d = s.call("vic", "delete", { id: "ball" }); roles(s, { vic: "member" });
       s.call("wes", "move", { to: [0, 0, -1] }); const u = s.call("wes", "use", { id: "door", action: "open" });
       const t = s.call("olive", "inspect", { id: "door" })?.touched?.reactions;
       return { b: show(b), k: show(k), d: show(d), u: show(u), open: comp(s, "door", "openable")?.open, author: lastUse(s)?.body?.capability?.author, t }; },
@@ -182,7 +182,7 @@ const cases: Case[] = [
     good: (o) => o.none === "ok" && o.good === "ok" && ["empty", "desc", "dup", "out", "neg", "frac", "str"].every((k) => o[k] === "batch-followups") && JSON.stringify(o.set) === "[1,2]" },
   // ---------------- M: the seat's own motion, as it was when you sat ----------------
   { id: "M1", what: "(q1) vic sits on olive's chair; builder bob adds a `fly` reaction to it, then uses it: it flies, and vic is unseated (told), not carried", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "chair", action: "sit" });
       const add = s.call("bob", "set", { id: "chair", component: "reactions", value: { fly: { kind: "set", component: "transform", value: { pos: [4, 40, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
@@ -191,7 +191,7 @@ const cases: Case[] = [
       return { sit: show(sit), add: show(add), after, go: show(go), pos: comp(s, "chair", "transform")?.pos, seated: seated(s, "vic"), note: JSON.stringify(go.notes ?? []).includes("vacated"), inbox: inboxOf(s, "vic").includes("vacated") }; },
     good: (o) => o.sit === "ok" && o.add === "ok" && o.after && o.go === "ok" && o.pos?.[1] === 40 && !o.seated && o.note && o.inbox },
   { id: "M2", what: "…the motion variant: a `spin` handler added after the sit, used: vic unseated; and a motion set up BEFORE the sit (the carousel) still carries", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "inhabitant", wes: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member", wes: "member" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       s.call("bob", "set", { id: "chair", component: "reactions", value: { spin: { kind: "set", component: "motion", value: { type: "spin", axis: [0, 1, 0], speed: 500 } } } });
@@ -245,7 +245,7 @@ const cases: Case[] = [
     good: (o) => o.mine === true && o.other === false && o.none === false && o.noSeat === false },
   // ---------------- T: the track after a seat ----------------
   { id: "T1", what: "(scars M2) a world with a spawn: visitor vic rides olive's ferry 15 m (a motion set up before he sat), then steps off it: the step is measured from the seat, not refused too-fast from where he boarded", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { vic: "member" });
       s.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [4, 0, -0.6] } });
       s.call("olive", "create", { id: "ferry", model: "chair", components: { ...SEAT(), reactions: { cross: { kind: "set", component: "transform", value: { pos: [4, 0, 15], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); const sit = s.call("vic", "use", { id: "ferry", action: "sit" });
@@ -255,7 +255,7 @@ const cases: Case[] = [
       return { sit: show(sit), go: show(go), rode, step: show(step), seated: seated(s, "vic") }; },
     good: (o) => o.sit === "ok" && o.go === "ok" && o.rode && o.step === "ok" && !o.seated },
   { id: "T2", what: "…and an unseat lets them go at the seat, told where (`at`): bob moves the chair vic sits on 20 m; vic's track is the seat's old pose and his next step from there is fine", run(s) {
-      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "inhabitant" });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { bob: "builder", vic: "member" });
       s.call("olive", "create", { id: "chair", model: "chair", components: SEAT(), place: { at: [4, 0] } });
       s.call("vic", "move", { to: [4, 0, -0.6] }); s.call("vic", "use", { id: "chair", action: "sit" });
       const mv = s.call("bob", "set", { id: "chair", component: "transform", value: { pos: [24, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
@@ -275,8 +275,8 @@ const cases: Case[] = [
     good: (o) => o.marked === false && o.founding === true },
   { id: "L3", what: "(claims O2) an unlogged grab's activation records no identity (no trigger, no event.by; the script still hears `by`)", run(s) {
       const WHO = "u-vicvicvicvicvicvicvi";
-      s.call("olive", "create-world", { title: s.name }); roles(s, { [WHO]: "inhabitant" });
-      s.call("olive", "create", { id: "cup", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("olive", "create-world", { title: s.name }); roles(s, { [WHO]: "member" });
+      s.call("olive", "create", { id: "cup", model: "crate", components: { grabbable: { who: "member" } }, place: { at: [0, 0] } });
       const u = s.call("olive", "upload", { text: 'world.on("grab", (e) => { world.set("self", "t/g", { heard: typeof e.by === "string" && e.by.length > 0 }); });' });
       const ins = s.call("olive", "set", { id: "cup", component: "script:watch", value: { src: u.src, scope: { ids: "self", comps: ["t/g"] }, on: ["grab"] } });
       s.call(WHO, "move", { to: [0, 0, 0.6] }); const g = s.call(WHO, "grab", { id: "cup" });

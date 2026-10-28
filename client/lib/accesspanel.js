@@ -15,7 +15,7 @@ const ID = /^u-[a-z2-7]{20}$/;
 const SPANS = [['', 'no end'], ['3600000', '1 hour'], ['86400000', '1 day'], ['604800000', '1 week']];
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'inhabitant', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
+const me = () => { const r = net.myRights ?? {}; return { id: net.you, role: r.role ?? 'member', rank: r.rank ?? 0, permissions: r.permissions ?? [] }; };
 const isOwner = () => R.isOwner(me());
 const mayGrant = () => isOwner() || me().permissions.includes('grantRoles');
 const rankOfId = (id) => R.effectiveOf(wc(), id).rank;
@@ -71,7 +71,7 @@ export function paintListed(b) {
   const here = new Set(identities.values());
   for (const r of rows) if (!here.has(r.id)) learnName(r.id);
   const opts = roleOptions();
-  if (!opts.some((r) => r.id === ui.role)) ui.role = (opts.find((r) => r.id === 'inhabitant') ?? opts[0])?.id ?? null;
+  if (!opts.some((r) => r.id === ui.role)) ui.role = (opts.find((r) => r.id === 'member') ?? opts[0])?.id ?? null;
   const sel = (cls, options, v) => `<select class="${cls}">${options.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   const row = (r) => {
     const bits = [r.role, here.has(r.id) ? 'here now' : null, Number.isSafeInteger(r.until) ? leftWords(r.until, now) : null, r.id === net.you ? 'you' : null].filter(Boolean);

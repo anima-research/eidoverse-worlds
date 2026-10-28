@@ -106,7 +106,7 @@ const T0 = (pos: number[], yaw = 0) => ({ pos, q: [0, Math.sin(yaw / 2), 0, Math
 function cast(s: any) {
   s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-200, 0, -200], max: [200, 50, 200] } });
-  for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"], ["ann", "inhabitant"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["vic", "member"], ["ann", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 // a 4 × 4 room (cells 0..3), a door in its south wall (the edge z = 4, x 1..2) and a window in its east wall (x = 4, z 1..2),
 // made by the editor's own planner (shared/structure_edit.js), as the Room / Door / Window tools make one
@@ -146,7 +146,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       s.call("olive", "create", { id: "home", model: PLACEHOLDER, components: { transform: T0([10, 0, 10]), structure: house() } });
       const floorTop = 0.1;   // GRID_DEFAULTS.slabT: the floor's top
       const r: any = {};
-      r.book = s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([12, floorTop, 12]), grabbable: { who: "inhabitant" } } });
+      r.book = s.call("olive", "create", { id: "mug", model: "book", components: { transform: T0([12, floorTop, 12]), grabbable: { who: "member" } } });
       r.bookWarn = (s.call("olive", "lint", { id: "mug" }).warnings ?? []).map((x: any) => `${x.kind}:${x.with ?? x.into ?? x.above ?? ""}`);
       r.placed = s.call("bob", "create", { id: "crate-2", model: "crate", place: { at: [12.5, 12.5] } });
       r.placedY = s.w().state().entities["crate-2"]?.c.transform?.pos?.[1];

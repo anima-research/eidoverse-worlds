@@ -223,7 +223,7 @@ const ZERO = "sha256:" + "0".repeat(64);
 // owner olive (the founder), builders bob and ann, visitor vic
 function cast(s: any, extra: [string, string][] = []) {
   s.call("olive", "create-world", { title: s.name });
-  for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "inhabitant"], ...extra]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
+  for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "member"], ...extra]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
 function install(s: any, who: string, id: string, name: string, text: string, value: any) {
   const u = s.call(who, "upload", { text }); const src = u.src ?? ZERO;
@@ -285,13 +285,13 @@ const cases: Case[] = [
       const { r } = install(s, "bob", "kiosk", "promo", onUse(`world.set("@world", "roles:bob", { role: "owner" });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
       return { install: r, stored: !!comp(s, "kiosk", "script:promo") }; },
     good: (o) => code(o.install) === "rights" && /roles:\*/.test(o.install.refused.reason) && !o.stored },
-  { id: "B2", what: "41 #2 demotion: the sponsor is demoted; the next use's write is refused, the inhabitant's use still logs, the status says dormant and why", run(s) { cast(s);
+  { id: "B2", what: "41 #2 demotion: the sponsor is demoted; the next use's write is refused, the member's use still logs, the status says dormant and why", run(s) { cast(s);
       const { u } = bell(s, "bob"); const first = useSteady(s, "vic", { id: "bell1", action: "ring" });
-      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } }); let n0 = s.entries().length;
+      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } }); let n0 = s.entries().length;
       let after: any; for (let a = 0; a <= UNAVAILABLE_RETRIES; a++) { n0 = s.entries().length; after = s.call("vic", "use", { id: "bell1", action: "ring" }); if (after?.script?.code !== "unavailable") break; warmUp(); }   // what the last use logged
       const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { u: show(u), first: st(s, first), after: st(s, after), newKinds: kinds(s.entries().slice(n0)), status: sv?.status, why: sv?.why }; },
-    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(inhabitant now.*bell1\.t\/bell/.test(o.why) },
+    good: (o) => o.first === "ran" && o.after === "refused rights" && JSON.stringify(o.newKinds) === '{"act":1}' && o.status === "dormant" && /sponsor bob \(member now.*bell1\.t\/bell/.test(o.why) },
   { id: "B3", what: "41 #3 confused deputy: an OWNER uses a script installed by bob (owner then, builder now) that writes roles:mal; the trigger adds no rights", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "owner" } });
       s.call("bob", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });
@@ -306,7 +306,7 @@ const cases: Case[] = [
   { id: "BA", what: "upstream #258 in our terms: an OWNER's script can't change who may come in (@world.access, default-role) or time a grant; an ordinary grant by it still lands", run(s) { cast(s);
       s.call("olive", "create", { id: "kiosk", model: "crate", place: { at: [0, 0] } });
       install(s, "olive", "kiosk", "close", onUse(`world.set("@world", "access", { join: "listed" });`), { scope: { ids: ["@world"], comps: ["access"] }, on: ["use"] });
-      install(s, "olive", "kiosk", "timed", onUse(`world.set("@world", "roles:mal", { role: "inhabitant", until: 9e15 });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
+      install(s, "olive", "kiosk", "timed", onUse(`world.set("@world", "roles:mal", { role: "member", until: 9e15 });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
       install(s, "olive", "kiosk", "grant", onUse(`world.set("@world", "roles:mal", { role: "builder" });`), { scope: { ids: ["@world"], comps: ["roles:*"] }, on: ["use"] });
       s.call("olive", "set", { id: "kiosk", component: "reactions", value: { close: { kind: "script", script: "close" }, timed: { kind: "script", script: "timed" }, grant: { kind: "script", script: "grant" } } });
       const close = s.call("vic", "use", { id: "kiosk", action: "close" }), timed = s.call("vic", "use", { id: "kiosk", action: "timed" });
@@ -452,7 +452,7 @@ const cases: Case[] = [
     good: (o) => o.r === "refused locked" && o.pos === "[0,0,0]" },
   { id: "B10", what: "41 #12 in flight: a lever's script writes the transform of a ball the engine is carrying", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("bob", "create", { id: "lever", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "lever", "yank", onUse(`world.set("ball", "transform", { pos: [5, 0, 5], q: [0, 0, 0, 1], scale: [1, 1, 1] });`), { scope: { ids: ["ball"], comps: ["transform"] }, on: ["use"] });
       s.call("bob", "set", { id: "lever", component: "reactions", value: { yank: { kind: "script", script: "yank" } } });
@@ -461,7 +461,7 @@ const cases: Case[] = [
       return { setup: [show(mv), show(gr), show(th)], r: st(s, r), ball: JSON.stringify(comp(s, "ball", "transform")?.pos) }; },
     good: (o) => o.setup.every((x: string) => x === "ok") && o.r === "refused in-flight" && o.ball !== "[5,0,5]" },
   { id: "B14", what: "41 #18 + recovery: a dormant script is adopted by an owner (explicit, logged); two racing owners: one wins by base; a builder can't", run(s) { cast(s, [["ann", "owner"], ["dan", "builder"]]);
-      bell(s, "bob"); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
+      bell(s, "bob"); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const dormant = s.call("olive", "scripts", {}).scripts?.[0]?.status; const base = s.call("olive", "inspect", { id: "bell1" }).versions?.["script:bell"];
       const dan = s.call("dan", "adopt", { id: "bell1", script: "bell" }), olive = s.call("olive", "adopt", { id: "bell1", script: "bell", base }), ann = s.call("ann", "adopt", { id: "bell1", script: "bell", base });
       const sv = s.call("olive", "scripts", {}).scripts?.[0]; const ring = s.call("vic", "use", { id: "bell1", action: "ring" });
@@ -495,12 +495,12 @@ const cases: Case[] = [
   { id: "B18", what: "sponsor = the latest write that changes more than `paused` (§5 Two views; R on F4): an owner who EDITS bob's script (its knobs) answers for it; bob is demoted; it runs on olive's rights", run(s) { cast(s);
       bell(s, "bob"); const v = comp(s, "bell1", "script:bell");
       s.call("olive", "set", { id: "bell1", component: "script:bell", value: { ...v, knobs: { tone: "low" } } });
-      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
+      s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const r = s.call("vic", "use", { id: "bell1", action: "ring" }); const sv = s.call("olive", "scripts", {}).scripts?.[0];
       return { r: st(s, r), sponsor: sv?.sponsor, status: sv?.status }; },
     good: (o) => o.r === "ran" && o.sponsor === "olive" && o.status === "active" },
   { id: "PA1", what: "R on F4: pausing adopts nothing. bob's script, bob demoted (dormant); an owner pauses and resumes it: the sponsor stays bob, it stays dormant, and the status says who paused it and when (from the log, never stored)", run(s) { cast(s);
-      bell(s, "bob"); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "inhabitant" } });
+      bell(s, "bob"); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "member" } });
       const p = s.call("olive", "set", { id: "bell1", component: "script:bell", value: { paused: true }, merge: true });
       const paused = s.call("olive", "scripts", {}).scripts?.[0]; const use1 = s.call("vic", "use", { id: "bell1", action: "ring" });
       const value = comp(s, "bell1", "script:bell");
@@ -942,7 +942,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { r: st(s, r), why: r.script?.why, open: comp(s, "gate", "openable")?.open, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
     good: (o) => o.r === "refused scope" && /gate/.test(o.why ?? "") && o.open === false && o.scripted === 0 },
   { id: "W3", what: "world.use meets the target's gate with the SPONSOR's rights: a builder-only gate a visitor can't open opens through bob's lever; an owner-only one refuses it (on the script's console), and stays shut", run(s) { cast(s);
-      s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });   // so a script actor's own default role can't pass for its sponsor's
+      s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "member" } });   // so a script actor's own default role can't pass for its sponsor's
       gateAndLever(s, { ids: ["self", "gate"], comps: [] }, "builder");
       const direct = s.call("vic", "use", { id: "gate", action: "open" });
       const r = useSteady(s, "vic", { id: "lever", action: "pull" }); const open1 = comp(s, "gate", "openable")?.open;
@@ -1031,7 +1031,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
     good: (o) => o.asleep === 0 && JSON.stringify(o.evs) === '["ran","ran","ran"]' && o.woke >= 3590 && o.woke <= 3610 && o.n === 2 },
   { id: "E5", what: "re-entrancy: a host callback inside an activation sends a nested request; the outer request's queues come back after it, so the second script still hears the outer entry (enter() restores the whole per-call state)", opts: { scripts: HOSTCB },
     run(s) { cast(s); HOSTCB.w = s.w(); HOSTCB.nested = null;
-      s.call("bob", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("bob", "create", { id: "lamp", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "ball", "hear", "// host callback\n", { scope: { ids: "self", comps: ["t/released"] }, on: ["release"] });
       install(s, "bob", "ball", "glow", "// host callback\n", { scope: { ids: "self", comps: ["t/moved"] }, on: ["changed:transform"] });
@@ -1041,7 +1041,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
   { id: "E6", what: "the beat reaches scripts: a rest the heartbeat logs (settle, no request) fires changed:transform (second review 10-11 S2-2)", run(s) { cast(s);
       if (!D.settle) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("bob", "create", { id: "mat", model: "crate", place: { at: [3, 0] } });
       install(s, "bob", "mat", "land", `world.on("changed:transform", (e) => world.set("self", "t/landed", { id: e.id, by: e.by }));\n`, { scope: { ids: ["self", "ball"], comps: ["t/landed"] }, on: ["changed:transform"] });
       const mv = s.call("vic", "move", { to: [0, 0, 0.3] }), gr = s.call("vic", "grab", { id: "ball" }), th = s.call("vic", "throw", { id: "ball", v: [0, 6, 0] });
@@ -1238,14 +1238,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { u: show(u), q, len: q ? Math.hypot(...q) : null }; },
     good: (o) => o.u === "ok" && Math.abs(o.len - 1) < 1e-12 && Math.abs(o.q[2] - Math.SQRT1_2) < 1e-12 },
   { id: "UQ3", what: "a put with a scaled q stores the unit rotation", run(s) { cast(s);
-      s.call("bob", "create", { id: "cup", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "cup", model: "crate", components: { grabbable: { who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "cup" });
       const p = s.call("vic", "put", { id: "cup", q: [0, 0.5, 0, 0.5] }); const q = comp(s, "cup", "transform")?.q;
       return { p: show(p), q, len: q ? Math.hypot(...q) : null }; },
     good: (o) => o.p === "ok" && Math.abs(o.len - 1) < 1e-12 && Math.abs(o.q[1] - Math.SQRT1_2) < 1e-12 },
   { id: "UQ4", what: "a return home and a reaction's reset, from a home whose q is only near a rotation, store the unit rotation", run(s) { cast(s);
       const hq = [0, 0.7072, 0, 0.7072];   // within the home check's 1e-3 of unit, not on it
-      s.call("bob", "create", { id: "key", model: "crate", components: { grabbable: { who: "inhabitant", returnAfter: 5 } }, place: { at: [0, 0] } });
+      s.call("bob", "create", { id: "key", model: "crate", components: { grabbable: { who: "member", returnAfter: 5 } }, place: { at: [0, 0] } });
       s.call("bob", "set", { id: "key", component: "home", value: { pos: [0, 0, 0], q: hq } });   // set outright, as a builder may
       s.call("bob", "create", { id: "box", model: "crate", components: { home: { pos: [3, 0, 0], q: hq } }, place: { at: [3, 0] } });
       s.call("bob", "set", { id: "box", component: "transform", value: { pos: [4, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] } });

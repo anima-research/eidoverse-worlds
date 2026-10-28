@@ -84,7 +84,7 @@ function session({ hull = HULL, seats = true }: any = {}) {
   const call = (verb: string, args: any = {}, actor = "olive", ms = 1000) => { clock.advance(ms);
     try { return D.request(Wd(), actor, verb, args); } catch (e) { return { crashed: `${e?.constructor?.name}: ${e?.message}`.slice(0, 200) }; } };
   call("create-world", { title: name });
-  for (const who of ["vic", "pat"]) call("set", { id: "@world", component: `roles:${who}`, value: { role: "inhabitant" } });
+  for (const who of ["vic", "pat"]) call("set", { id: "@world", component: `roles:${who}`, value: { role: "member" } });
   if (hull) call("create", { id: "hull", components: hull });
   if (seats) { call("create", { id: "helm", components: helm() });
     call("create", { id: "back", components: { transform: tf([0, 0.5, -1.5]), parent: { to: "hull" }, socket: { name: "back" }, station: { action: "sit" } } }); }
@@ -174,7 +174,7 @@ await C("D8", "a held lease commits every few seconds (why periodic): a long dri
   return [c.length >= 1 && c.every((e: any) => e.body?.why === "periodic") && posOf(s)[2] > 0 && c2.length === 1 && c2[0].body?.why === "periodic" && JSON.stringify(posOf(t)) === "[0,1,1.5]",
     { commits: c.map((e: any) => e.body), pos: posOf(s), c2: c2.map((e: any) => e.body), pos2: posOf(t) }]; });
 
-await C("D9", "the lock and station.who gate who may drive: a locked hull's steps are refused locked; a helm for builders refuses an inhabitant's use", () => {
+await C("D9", "the lock and station.who gate who may drive: a locked hull's steps are refused locked; a helm for builders refuses a member's use", () => {
   const s = session(); s.board("vic"); s.call("set", { id: "hull", component: "lock", value: true });
   const locked = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic");
   const t = session({ seats: false }); t.call("create", { id: "helm", components: helm("hull", { who: "builder" }) });

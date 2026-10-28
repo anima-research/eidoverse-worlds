@@ -49,9 +49,9 @@ report lists each one):
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
   none was written, guests included; a world with no owner let everyone build
   and generate. The translation writes that out: `default-role` with
-  `guests` the same role, and for an ownerless world the inhabitant role's
+  `guests` the same role, and for an ownerless world the member role's
   permissions (`role-defs`) set to the builder's plus generate, since this
-  protocol caps an ownerless world at inhabitant. Rank stays inhabitant there:
+  protocol caps an ownerless world at member. Rank stays member there:
   a lock and a `who: builder` gate refuse everyone until the world has an
   owner (operator-repair set). The report's `rights` says which, and its notes
   what can't be said (generate for guests). Worlds founded new keep this

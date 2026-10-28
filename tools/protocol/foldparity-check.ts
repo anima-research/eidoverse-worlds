@@ -162,7 +162,7 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
 { const dir = path.join(W, "phys"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir);
   const call = (verb, args = {}) => { T += 100; return request(w, "rowan", verb, args); };
   call("create-world", { title: "phys" }); call("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0", tickMs: 33 } });
-  for (let i = 0; i < 6; i++) call("create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [i * 2, 3] } });
+  for (let i = 0; i < 6; i++) call("create", { id: `cr-${i}`, model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [i * 2, 3] } });
   for (let k = 0; k < 400; k++) { T += 33; settle(w); }
   for (let i = 0; i < 500; i++) { call("set", { id: `cr-${i % 6}`, component: "label", value: `l ${i}` }); if (i % 3 === 0) { const p = w.state().entities[`cr-${i % 6}`].c.transform.pos; call("set", { id: `cr-${i % 6}`, component: "transform", value: { pos: [p[0] + 0.01, p[1], p[2]], q: [0, 0, 0, 1], scale: 1 } }); } T += 33; settle(w); }
   T += 100; checkpointNow(w); w.saveCache(); for (let i = 0; i < 9; i++) { call("set", { id: "cr-1", component: "label", value: `tail ${i}` }); T += 33; settle(w); }

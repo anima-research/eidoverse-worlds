@@ -117,7 +117,7 @@ const idSeen = (name: string) => ann.msgs.find((m: any) => m.type === "arrive" &
 await tryUntil("Ann sees Bob and Vic arrive", () => idSeen("Bob") && idSeen("Vic"), { ms: 2000 });
 const BOB = idSeen("Bob"), VIC = idSeen("Vic");
 ok(BOB && BOB === bob.snapshot?.cut?.you && VIC === vic.snapshot?.cut?.you, "S1 an arrival carries the person's identity, the same one they're told", [BOB, VIC]);
-for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "inhabitant"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
+for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "member"]]) ok((await ann.req("set", { id: "@world", component: `roles:${id}`, value: { role } })).ok, `S1 Ann makes ${who} a ${role}`);
 // SB: a door ban (moderator log, by id) also closes the authority at JOIN — it only refused requests, so a banned person
 // could still walk in, be seen and look around (old-vs-new review 10-06 #1: two sources of truth for bans)
 { const mal = await client(srv.port, "garden", "Mal", REPLICA); await sleep(150);
@@ -127,8 +127,8 @@ for (const [who, id, role] of [["Bob", BOB, "builder"], ["Vic", VIC, "inhabitant
   ok(!again.snapshot && again.of("error").some((m) => /banned/.test(m.error)), "SB2 a door-banned person can't join (no snapshot, told why)", again.msgs.map((m) => m.type));
   again.close(); }
 const spec = await client(srv.port, "garden", "Watcher", { spectate: true, ...REPLICA });
-await tryUntil("Bob and Vic are told their roles", () => bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "inhabitant", { ms: 2000 });
-ok(bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "inhabitant", "S1 roles set through the authority reach each client's rights", [bob.of("your-rights").at(-1), vic.of("your-rights").at(-1)]);
+await tryUntil("Bob and Vic are told their roles", () => bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "member", { ms: 2000 });
+ok(bob.of("your-rights").at(-1)?.rights?.role === "builder" && vic.of("your-rights").at(-1)?.rights?.role === "member", "S1 roles set through the authority reach each client's rights", [bob.of("your-rights").at(-1), vic.of("your-rights").at(-1)]);
 
 const t1 = await ann.req("create", { id: "tbl", model: "test/table.glb", place: { at: [0, 3] } });
 ok(t1.ok, "S2 create a measured model", t1);
@@ -236,7 +236,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const lk = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   ok(/box: drive \(.*lets you go when the world does \(detach \{escape: true\} gets you up anyway\)/.test(lk) && /throne: sit \([^·]*owners only/.test(lk), "S5e look says what each seat does (box holds you; the throne is owners only)", lk.split("\n").filter((l) => /carriage|throne:|box:|rumble:/.test(l)));
   // grabbable (slice 5): look says what a hand may do with a thing, the authority's own reading (shared/grab.js describeGrab)
-  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "inhabitant", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
+  ok((await ann.req("create", { id: "lantern", model: "test/cup.glb", place: { at: [9, 7] }, components: { grabbable: { who: "member", use: { down: "light" }, release: "return", prompt: "Take the lantern" } } })).ok, "S5g (Ann makes a lantern anyone may carry)");
   await tryUntil("the agent sees the lantern is grabbable", () => ag.entities.get(IDS.of("lantern"))?.grabbable, { ms: 2000, step: 50 });
   const lk2 = (await HANDLERS.look(ag, {}, {} as any, "look")).content[0].text;
   const lh = ag.handle(IDS.of("lantern"));   // look reads a thing by its handle (R 10-17)
@@ -334,7 +334,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await tryUntil("Vic is told of the ban", () => vic.of("moderated").length > nb2, { ms: 3000, step: 50 });
   ok(vic.of("moderated").at(-1)?.text === "Oz banned Zed from this world", "CM4 …bystanders were told", vic.of("moderated").slice(nb2));
   const wi = HANDLERS.whois ? await HANDLERS.whois(oz, { name: "zed" }, {} as any, "whois") : { isError: true, content: [{ type: "text", text: "(no whois tool)" }] };
-  ok(!wi.isError && new RegExp(`${ZED}: inhabitant here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
+  ok(!wi.isError && new RegExp(`${ZED}: member here, not here, BANNED`).test(T(wi)), "CM4 the agent's whois tool reads it back", T(wi));
   const kk = await HANDLERS.act(oz, { verb: "kick", args: { who: "Zed" } }, {} as any, "act");
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
   const ub = await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act");
@@ -475,9 +475,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second world");
   const a = await client(srv.port, "meadow", "Ann", { replica: true });
   ok(a.snapshot?.cut?.state?.["@world"] && Number.isInteger(a.snapshot.cut.head) && Array.isArray(a.snapshot.cut.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.cut ?? {}));
-  await a.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });   // meadow's newcomers play (R 10-21: a new world's build)
+  await a.req("set", { id: "@world", component: "default-role", value: { role: "member" } });   // meadow's newcomers play (R 10-21: a new world's build)
   const bv = await client(srv.port, "meadow", "Bob", { replica: true }); // Bob folds the log too: nobody reads the projection
-  ok(bv.snapshot?.yourRights?.role === "inhabitant", "S8 Bob arrives an inhabitant", bv.snapshot?.yourRights);
+  ok(bv.snapshot?.yourRights?.role === "member", "S8 Bob arrives a member", bv.snapshot?.yourRights);
   const r1 = await a.req("create", { id: "box", model: "test/table.glb", place: { at: [1, 1] } });
   ok((await a.req("set", { id: "@world", component: `roles:${bv.snapshot?.cut?.you}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder");
   await tryUntil("Bob is told he is a builder", () => bv.of("your-rights").at(-1)?.rights?.role === "builder", { ms: 2000 });
@@ -503,7 +503,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", REPLICA); await sleep(100);
   ok((await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "SP Ann turns physics on");
-  ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
+  ok((await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 1] } })).ok, "SP a cup anyone may carry");
   const b = await client(srv.port, "pitch", "Bob", REPLICA); await sleep(150); const B = b.snapshot?.cut?.you;
   ok((await b.req("move", { to: [0, 0, 0.5] })).ok && (await b.req("grab", { id: "ball" })).ok, "SP Bob arrives and picks it up");
   await tryUntil("Ann is told Bob holds the ball", () => a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.by === B, { ms: 2000 });
@@ -616,8 +616,8 @@ srv.proc.kill();
   const srvA = await startServer(ENGINE, W4, OPT, "sk");
   const a = await client(srvA.port, "crash", "Ann", REPLICA); await sleep(100);
   await a.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
-  await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "inhabitant" } }, place: { at: [0, 1] } });
-  await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "inhabitant", release: "return" } }, place: { at: [0.4, 1] } });
+  await a.req("create", { id: "ball", model: "test/cup.glb", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 1] } });
+  await a.req("create", { id: "torch", model: "test/cup.glb", components: { physics: { kind: "dynamic" }, grabbable: { who: "member", release: "return" } }, place: { at: [0.4, 1] } });
   const b = await client(srvA.port, "crash", "Bob", REPLICA); await sleep(150);
   await b.req("move", { to: [0, 0, 0.5] }); const g1 = await b.req("grab", { id: "ball" }); const g2 = await b.req("grab", { id: "torch" });
   ok(g1.ok && g2.ok, "SK Bob holds the ball and the torch", [g1.refused, g2.refused]);

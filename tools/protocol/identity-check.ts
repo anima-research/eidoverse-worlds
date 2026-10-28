@@ -169,12 +169,12 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(jo.snapshot?.yourRights?.role === "owner", "(H setup) Rowan owns meadow", jo.snapshot?.yourRights);
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } })).ok, "(H setup) meadow's default role: builder");
   const g = await sock(S3.port); const jg = await g.join("meadow", "drifter");
-  ok(jg.snapshot?.yourRights?.role === "inhabitant" && (await g.req("create", { id: "box1", model: "crate" })).refused?.code === "rights", "H4 a guest is never given the default role: an inhabitant, and refused a build", jg.snapshot?.yourRights);
+  ok(jg.snapshot?.yourRights?.role === "member" && (await g.req("create", { id: "box1", model: "crate" })).refused?.code === "rights", "H4 a guest is never given the default role: a member, and refused a build", jg.snapshot?.yourRights);
   const wren = await sock(S3.port); const jw = await wren.join("meadow", "Wren", { agentToken: "tok-wren" });
   ok(jw.snapshot?.yourRights?.role === "builder", "H4 …while a proven account does get it (builder)", jw.snapshot?.yourRights);
   // …unless the world's owner opts guests in (R 10-06: whether strangers without an account may build is the world's
   // choice; the Commons does). Explicit, default off, and never above the world's default role.
-  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "inhabitant", guests: "builder" } })).refused?.code === "shape", "H4g guests can't be given more than everyone else (guests ≤ the default role)");
+  ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "member", guests: "builder" } })).refused?.code === "shape", "H4g guests can't be given more than everyone else (guests ≤ the default role)");
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "builder", guests: "builder" } })).ok, "(H4g setup) meadow lets guests build");
   { const g2 = await sock(S3.port); const jg2 = await g2.join("meadow", "drifter2"); await sleep(100);
     const made = await g2.req("create", { id: "guestbox", model: "crate_large_red.glb" });
@@ -187,7 +187,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // H5: default-role owner refused; a junior owner can't demote the founder; owners can't be banned
   ok((await own.req("set", { id: "@world", component: "default-role", value: { role: "owner" } })).refused?.code === "shape", "H5 default-role can't be owner");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "owner" } })).ok, "(H5 setup) Rowan makes Wren an owner");
-  const demote = await wren.req("set", { id: "@world", component: `roles:${you(jo)}`, value: { role: "inhabitant" } });
+  const demote = await wren.req("set", { id: "@world", component: `roles:${you(jo)}`, value: { role: "member" } });
   ok(demote.refused?.code === "rights" && /longer than you/.test(demote.refused.reason), "H5 the junior owner can't demote the founder", demote.refused);
   ok((await wren.req("ban", { who: you(jo) })).refused?.code === "rights", "H5 an owner can't be banned");
   ok((await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } })).ok, "H5 …but the senior owner can demote the junior one");
@@ -203,14 +203,14 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   // a live drag is presence gated on the AUTHORITY's role for the person's directory identity (it looked up their name).
   // Proven accounts only here: this world now bans every guest from this address (H4 above)
   { const moss = await sock(S3.port); const jm = await moss.join("meadow", "Moss", { agentToken: "tok-moss" });
-    await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "inhabitant" } }); await sleep(100);
+    await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "member" } }); await sleep(100);
     const k = own.msgs.length;
     moss.raw({ type: "drag", id: "x", pos: [1, 0, 1] }); wren.raw({ type: "drag", id: "x", pos: [2, 0, 2] }); await sleep(300);
     const drags = own.msgs.slice(k).filter((m) => m.type === "drag").map((m) => m.pos[0]);
     ok(!!jm.snapshot && JSON.stringify(drags) === "[2]", "a visitor's live drag isn't relayed; a builder's is (the authority's role for their identity)", [drags, jm.errors]);
     moss.close(); }
   // muting someone for EVERYONE is the owner's (it read v1 rights by typed name, and a role the v1 table didn't know,
-  // `none`, compared undefined < 2 → false: it passed). A listed inhabitant and an unlisted stranger (meadow's newcomer role,
+  // `none`, compared undefined < 2 → false: it passed). A listed member and an unlisted stranger (meadow's newcomer role,
   // builder) both try; the owner's own mute is the control that the gate is reachable at all.
   { const fern = await sock(S3.port); const jf = await fern.join("meadow", "Fern", { agentToken: "tok-fern" });
     const vis = await sock(S3.port); const jv = await vis.join("meadow", "Moss", { agentToken: "tok-moss" });
@@ -219,8 +219,8 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
     own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
     const all = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "inhabitant" && byOthers.length === 0 && all.length === 1,
-      "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and an inhabitant are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
+      "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
@@ -341,11 +341,11 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
       "RS10 speech is arrival-only: a stranger and a moderator who arrived after a say read none of it back (history, the authority's history, the join); an owner arriving later reads the master log", seen10);
     // RS10b (the house's view, #260 10-20): reading speech back is a permission a role holds (readChat), not a role named in
     // the protocol: Newt, granted readChat alone, reads the master log on a fresh arrival; still nothing for Newt before it
-    const gr = await w2.req("set", { id: "@world", component: `roles:${you(jn)}`, value: { role: "inhabitant", can: { readChat: true } } });
+    const gr = await w2.req("set", { id: "@world", component: `roles:${you(jn)}`, value: { role: "member", can: { readChat: true } } });
     const nt2 = await sock(S4.port); const jn2 = await nt2.join("heath", "Newt", { agentToken: mint({ kind: "agent", name: "Newt", sub: "agent:newt@home.test" }) });
     const seen10b = { granted: gr.ok ?? gr, ws: heron(await hist2(nt2)), req: heron(await nt2.req("history", { verbs: ["say"], limit: 200 })), total: jn2.snapshot?.state?.chatTotal };
     ok(seen10b.granted === true && seen10b.ws && seen10b.req && seen10b.total > 0,
-      "RS10b reading speech back is a permission (readChat), not a role: an inhabitant granted it reads the master log on its next arrival", seen10b);
+      "RS10b reading speech back is a permission (readChat), not a role: a member granted it reads the master log on its next arrival", seen10b);
     for (const x of [vy, mo, gv, g2, nt, w2, nt2]) x.close(); }
   for (const x of [own, fern, wren]) x.close(); S4.proc.kill(); }
 

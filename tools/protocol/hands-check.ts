@@ -19,7 +19,7 @@ const held = (W) => Object.keys(openWorld(root, W).presence.holds);
 const code = (r) => (r.ok ? "ok" : r.refused?.code);
 // a (at x=0), b (x=3), c (x=1.5): 0.5 m crates, 0.6 tall, loose; physics on unless asked
 const mk = (W, physics = true) => { call(W, "rowan", "create-world", { title: W }); if (physics) call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
-  for (const [id, x] of [["a", 0], ["b", 3], ["c", 1.5]]) call(W, "rowan", "create", { id, model: "crate", components: { ...(physics ? { physics: { kind: "dynamic", who: "inhabitant" } } : { grabbable: { who: "inhabitant" } }) }, place: { at: [x, 0] } }); };
+  for (const [id, x] of [["a", 0], ["b", 3], ["c", 1.5]]) call(W, "rowan", "create", { id, model: "crate", components: { ...(physics ? { physics: { kind: "dynamic", who: "member" } } : { grabbable: { who: "member" } }) }, place: { at: [x, 0] } }); };
 const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); return call(W, "vic", "grab", { id }); };
 
 { const W = "ghost"; mk(W); take(W, "a", 0); take(W, "b", 3); call(W, "vic", "move", { to: [0.4, 0, -0.8] });
@@ -46,7 +46,7 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
   const e = call(W, "rowan", "set", { id: "a", component: "transform", value: { pos: [8, 0, 8] }, dry: true });
   ok(e.ok && e.dry && held(W).includes("a") && e.notes?.some((n) => n.id === "a" && n.tookFromHand === "vic"), "H6b a dry run of an edit that moves a held thing says it would leave the hand, and leaves it there", { e: code(e), notes: e.notes, held: held(W) }); }
 // H6c: …and a dry switch-off of what a held thing hangs under says the held thing would leave the hand, and leaves it there
-{ const W = "edit-dry-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { on: "b" } });
+{ const W = "edit-dry-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "member" } }, place: { on: "b" } });
   call(W, "vic", "move", { to: [3, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
   const e = call(W, "rowan", "set", { id: "b", component: "disabled", value: true, dry: true });
   ok(g.ok && e.ok && e.dry && held(W).includes("top") && (e.notes ?? []).filter((n) => n.id === "top" && n.tookFromHand === "vic").length === 1,
@@ -59,7 +59,7 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
     "H6d an edit writing a held thing's parent and transform together takes it from the hand once, with one note", { e: code(e), notes: e.notes, held: held(W) }); }
 // H6e: removing what a held thing hangs under removes the held thing too, and empties the hand (a hand left holding a thing
 // that's gone would count toward what it may hold)
-{ const W = "edit-gone-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "inhabitant" } }, place: { on: "b" } });
+{ const W = "edit-gone-under"; mk(W); call(W, "rowan", "create", { id: "top", model: "crate", components: { grabbable: { who: "member" } }, place: { on: "b" } });
   call(W, "vic", "move", { to: [3, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
   const e = call(W, "rowan", "delete", { id: "b" }); const gone = !fold(openWorld(root, W).entries).entities.top;
   ok(g.ok && e.ok && gone && !held(W).includes("top") && (e.notes ?? []).filter((n) => n.id === "top" && n.tookFromHand === "vic").length === 1,

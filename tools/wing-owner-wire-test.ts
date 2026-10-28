@@ -53,7 +53,7 @@ let failures=0, pass=0;
 const check=(label:string,ok:boolean,detail='')=>{ console.log(ok?`  ok    ${label}`:`  FAIL  ${label}${detail?' — '+detail:''}`); ok?pass++:failures++; };
 const owner:any={wingsFolded:false};
 controller.setMeHook(()=>owner);
-controller.setRightsHook(()=>({ role:'inhabitant', can:[] }));
+controller.setRightsHook(()=>({ role:'member', can:[] }));
 controller.armFlight(['L_Wing_Upper','L_Wing_Upper_1','R_Wing_Upper','R_Wing_Upper_1','L_Wing_Lower','R_Wing_Lower'],'owner');
 const sent:string[]=[];
 netmod.net.joined=true;

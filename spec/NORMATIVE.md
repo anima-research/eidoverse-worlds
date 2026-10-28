@@ -58,17 +58,17 @@ does, and no role overrides it).
 
 | Choice | Value | Status · source |
 |---|---|---|
-| The ladder | `inhabitant` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · lead (research 10-06; R 10-21) |
+| The ladder | `member` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · lead (research 10-06; R 10-21; the word R 10-28) |
 | States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · lead |
-| Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `inhabitant` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `inhabitant` included, beats it: an owner demotes one person by hand | default · lead (R 10-21) |
-| Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `inhabitant` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · lead (R 10-21) |
+| Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `member` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `member` included, beats it: an owner demotes one person by hand | default · lead (R 10-21) |
+| Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `member` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · lead (R 10-21) |
 | No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · lead (R 10-21) |
 | Doors | client presets that write `access` and the newcomer role: `open` (newcomers build) · `public` (newcomers play) · `invite-only` · `watch` | trial · lead (R 10-21) |
 | Permissions | `build`, `editOthers`, `editWorld`, `generate`, `fly`, `scripts`, `pauseScripts`, `mute`, `kick`, `ban`, `grantRoles`, `readChat` | trial · lead |
-| Built-in roles | inhabitant: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
+| Built-in roles | member: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
 | Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
 | What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · lead (house markup) |
-| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than inhabitant | default · house 22:03Z (starter config, switched on) |
+| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than member | default · house 22:03Z (starter config, switched on) |
 | Timed roles | `until` up to a year; never on owner; ended by the authority's logged act | trial · lead |
 | Locks | `lock: true`; its strength is its setter's rank now (read from the log); that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
 | Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · lead |

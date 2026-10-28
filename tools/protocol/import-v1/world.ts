@@ -141,7 +141,7 @@ const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `
 /** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
  *  from} or {name, role, account: null, why, bind}; owners first. What the operator approves, and the upgrade's result. */
 export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
-  const rank = (x: string) => ["owner", "moderator", "builder", "inhabitant"].indexOf(x) >>> 0;
+  const rank = (x: string) => ["owner", "moderator", "builder", "member"].indexOf(x) >>> 0;
   const out = Object.entries<Any>(r.final?.translated?.["@world"] ?? {}).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => {
     const d = describe(k.slice(6)); const name = d?.name ?? k.slice(6), role = String(v?.role ?? "?");
     return d?.account ? { name, role, account: d.account, from: d.from }

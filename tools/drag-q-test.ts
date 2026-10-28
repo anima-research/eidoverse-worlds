@@ -11,8 +11,8 @@ let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
 const out: any[] = [];
 // the gate reads the door's role for the person's directory identity (actorId), never their name
-const roles: Record<string, string> = { 'u-builder': 'builder', 'u-visitor': 'inhabitant' };
-const world: any = { name: 'w', log: { rightsOf: (id: string) => ({ can: { build: (roles[id] ?? "inhabitant") !== "inhabitant" } }) }, broadcast: (m: any) => out.push(m) };
+const roles: Record<string, string> = { 'u-builder': 'builder', 'u-visitor': 'member' };
+const world: any = { name: 'w', log: { rightsOf: (id: string) => ({ can: { build: (roles[id] ?? "member") !== "member" } }) }, broadcast: (m: any) => out.push(m) };
 const ctx: any = { c: { id: 'b', actorId: 'u-builder', world, spectator: false }, ws: { send() {} }, now: Date.now(), expel() {} };
 MESSAGES['drag'](ctx, { type: 'drag', id: 'crate', pos: [1, 0, 2], yaw: 0.3, q: [0, 0, 2, 2] });
 const m = out.at(-1);

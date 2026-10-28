@@ -10,7 +10,7 @@
 //
 //   grabbable: {
 //     enabled     true          can it be picked up now (false: a dynamic ball you can only kick)
-//     who         'builder'     inhabitant | builder | owner: who may pick it up
+//     who         'builder'     member | builder | owner: who may pick it up
 //     steal       true          may someone take it from a holder's hand (owners always may)
 //     range       1.5           m from the hand; past 1.5 it flies to the hand (0.1..10)
 //     priority    0             -10..10: wins over lower when several things are in reach (the key, not the table)
@@ -61,8 +61,8 @@ export const RESERVED_KEYS = COMPONENTS.grabbable.reservedFields;   // fx
 export const GRIP_KEYS = ['pos', 'q', 'hand', 'role', 'grasp', 'part'];
 // Who may carry or punt a thing that doesn't say (grabbable.who, physics.who absent): ONE value, read by the hand here and by
 // the authority's punt (review 10-06 finding 5: the old protocol let visitors punt and carry, rank 0; the grabbable migration chose builder).
-// Flipping it to 'inhabitant' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
-export const DEFAULT_WHO = materialize('grabbable', {}).value.who;   // 'inhabitant' (R 10-07: "I vote for visitors being able to grab and throw"; a world narrows it per thing with who)
+// Flipping it to 'member' is this one line plus the cases that pin builder today: grab-check M2, G6, I1 and phys-check F.
+export const DEFAULT_WHO = materialize('grabbable', {}).value.who;   // 'member' (R 10-07: "I vote for visitors being able to grab and throw"; a world narrows it per thing with who)
 // the written defaults are the registry's (componentspec.js grabbable.defaults: what the authority writes into a bare
 // {grabbable: {}}); the rest is what a reader fills in for a field the authority leaves absent
 export const DEFAULTS = Object.freeze({ ...materialize('grabbable', {}).value, anim: null, grips: Object.freeze({}), home: null, fits: Object.freeze([]), use: null, prompt: null, fx: null });
