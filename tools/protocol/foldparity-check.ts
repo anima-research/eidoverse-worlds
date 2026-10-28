@@ -17,6 +17,7 @@
 //   FP7 a torn last line after a tail boot's covered line is cut, as readLogBytes cuts it
 //   FP8 a log replaced under a live world: a prefix read throws, never reads the other file
 //   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster)
+//   FP10 the readers rewritten not to scan (creatorOf, modlog, chat pages, client cuts) answer as their whole-log formulas
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -125,6 +126,16 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
   const la = copyDir(dir, path.join(W, `${path.basename(dir)}-wl-with`)), lb = copyDir(dir, path.join(W, `${path.basename(dir)}-wl-without`)); SC.dropCache(lb);
   const { r: [La, Lb] } = await said(() => [new WorldLog(path.basename(la)), new WorldLog(path.basename(lb))]);
   const d3 = first(logReaders(La), logReaders(Lb)); ok(!d3, `FP2 ${label}: the WorldLog's readers (chat window, history pages, client cuts, known ids) answer alike`, d3);
+  // FP10: a reader rewritten not to scan answers as its whole-log formula (the two copies share the rewrite, so equivalence alone can't see it)
+  { const ids = Object.keys(wa.state().entities ?? {}); const bare = { entries: wa.entries, touching: wa.touching };   // no state: creatorOf walks
+    const cr = ids.filter((id) => J(creatorOf(wa, id)) !== J(creatorOf(bare, id)));
+    const whole = Object.create(wa); whole.touching = undefined;   // modlog's loop over every entry
+    const ml = J(request(wa, "rowan", "modlog", { limit: 200 })) === J(request(whole, "rowan", "modlog", { limit: 200 }));
+    const E = La.live.entries, X = actIndexOf(La.live), hist = [];
+    for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue; hist.push(e.seq * 1000); }
+    const paged = logReaders(La).pages.flatMap((p) => p.entries.map((x) => x.seq)).sort((a, b) => b - a);
+    const cuts = ["rowan", "ash"].filter((a) => J(La.clientCut(a).mine) !== J((X.actsOf.get(a) ?? []).filter((q) => !["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40)));
+    ok(!cr.length && ml && J(paged) === J(hist) && !cuts.length, `FP10 ${label}: creatorOf (born line), modlog (@world's index), chat pages (say index) and client cuts (newest 40) answer as their whole-log formulas`, { cr, ml, pages: paged.length, says: hist.length, cuts }); }
   ok(await wa.cacheChecked !== false, `FP2 ${label}: the re-derive agrees with the cache`);
   return { wa, wb, a, b };
 }
