@@ -50,6 +50,7 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
 //   IP30 (r14 M3) a world.mod.jsonl the server made after the translation blocks rollback without --discard-changes, is removed with it, and the world translates again
 //   IP24 `rollback <world>` restores the WHOLE operational set: the renamed originals back (same bytes, inode, mtime), the
@@ -75,6 +76,7 @@ import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js"
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
+import { CACHE_FILE } from "../../server/statecache.ts";
 const SWAP_MARKER = "translation.lock";   // the in-progress marker of an in-place swap (tools/protocol/world.ts)
 import { noFoldRefusal } from "../../server/oldworlds.ts";
 import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "./import-v1/world.ts";
@@ -291,7 +293,9 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(m.report === JSON.parse(fs.readFileSync(path.join(d, MANIFEST), "utf8")).approval.report && same(m.renamed, [["log.jsonl", "log.original.jsonl"], ["snapshot.json", "snapshot.original.json"], ["poses.json", "poses.original.json"]])
     && same(Object.keys(m.made).sort(), ["poses.json", MANIFEST, "world.jsonl", "world.mod.jsonl"]) && Object.keys(m.identities).length >= 2 && m.made["world.jsonl"] === mid["world.jsonl"][0],
     "IP24 the manifest names every rename, every made file with the sha256 it was made with, the minted identities and the approval", m);
+  fs.writeFileSync(path.join(d, CACHE_FILE), "{}");   // IP24c: the fold cache a server that served it leaves (server/statecache.ts)
   const r = tool(["rollback", name], { TRUST_NAMES: "" }); const after = fingerprint(d);
+  ok(r.code === 0 && !fs.existsSync(path.join(d, CACHE_FILE)), "IP24c a fold cache (derived, not history) neither blocks the rollback nor is left behind", r.out.slice(-400));
   ok(r.code === 0 && same(after, fp) && !isWorldDir(d) && oldWorldAt(W, name)?.kind === "translatable" && fs.readFileSync(dirf, "utf8") === dirBefore && !temps().length && /rolled back/.test(r.out) && /forgot 3 identities/.test(r.out),   // Ann, Bob and the banned Troll
     "IP24 rollback: every file is byte-identical to before (same bytes, inode, mtime; nothing made is left), the shared directory is byte-identical (the minted identities forgotten), and it is an old world again", { code: r.code, out: r.out.slice(-700), same: same(after, fp), dir: fs.readFileSync(dirf, "utf8") === dirBefore, keys: Object.keys(after) });
   ok((eidoBefore === null) === !fs.existsSync(path.join(OPT, "eido-index.json")) || fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") === eidoBefore, "IP24 the content-address index is left as it was (no model bytes on this host, so it never changed)");

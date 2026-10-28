@@ -130,10 +130,9 @@ export const LADDER = [PATCH_DIR, OPT_DIR, LIBRARY_DIR];
 
 mkdirSync(WORLDS_DIR, { recursive: true });
 
-/** How many entries may accumulate past a snapshot before folding again.
- *  Small enough that a joiner's tail stays trivial, large enough that a busy
- *  world is not writing a snapshot per action. */
-export const FOLD_EVERY = Number(process.env.FOLD_EVERY ?? 150);
+/** The fold cache (server/statecache.ts) is rewritten every this many entries; 0 = off. Server policy: resuming 1000 entries
+ *  costs ~4 ms at boot (fold ≈ 4.3 µs/entry measured), and a rewrite every 1000 is noise on the write path. */
+export const STATE_CACHE_EVERY = Number(process.env.STATE_CACHE_EVERY ?? 1000);
 /** Authored verbs allowed per client per 4s. A griefer gets silence; a person
  *  arranging furniture must not. Configurable because a build session and a
  *  show night want different answers. */

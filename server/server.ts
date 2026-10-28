@@ -1330,6 +1330,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
       for (const c of w.clients) {
         if (!c.spectator && !c.superseded && c.lastPose && c.actorId && !c.anonymous) w.rememberPose(c.actorId, c.lastPose);
       }
+      w.log.saveStateCache();   // the fold cache, so the next boot folds only what comes after (server/statecache.ts)
     }
     process.exit(0);
   });

@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
-import { WORLDS_DIR } from "./config.ts";
+import { WORLDS_DIR, STATE_CACHE_EVERY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
@@ -25,6 +25,7 @@ import { holdWire } from "../shared/grab.js";
 import { hear } from "../shared/chatwindow.js";
 import { dec } from "../shared/protocol/names.js";
 import { openLive, isWorldDir, isPreNamesDir, isSwapUnfinished } from "./livehost.ts";
+import { dropCache } from "./statecache.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
 import { backupBeforeRepair, sealBackup, dropBackup } from "./repairfiles.ts";
 
@@ -116,7 +117,8 @@ export class WorldLog {
     this.posesPath = path.join(this.dir, "poses.json");
     // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [],
-      sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity) });
+      sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity),
+      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; } } } : {}) });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
@@ -167,6 +169,8 @@ export class WorldLog {
     hear(this._state, { actor: line.actor, text: (line.args as Any).text, ts: line.ts, seq: line.seq });
     this.record(line);
   }
+  /** Write the fold cache if it is behind (server/statecache.ts): a clean shutdown calls it. */
+  saveStateCache() { if (!this.retired) this.live.saveCache?.(); }
   /** The last seq. */
   get head(): number { return this.live.entries.length - 1; }
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
@@ -593,6 +597,7 @@ export function resetWorld(log: WorldLog): string {
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
   mkdirDurable(arch);
   // from the first rename on, a failure has changed something: it says where the old log went (review of #260, server I19)
+  dropCache(dir);   // derived from the log that leaves (server/statecache.ts): the fresh world derives its own
   try {
     for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
     syncDir(arch);   // the archive's names first, then the world's: a crash never loses the old log (house 6344940039)

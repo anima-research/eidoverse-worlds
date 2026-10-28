@@ -332,7 +332,7 @@ async def main():
     check("T21 the embodied primary survives its malformed accessory", c12() is None, str(c12()))
 
     # T22 (review finding 3): attest survives later entries. (v1 folded entries[]
-    # out from under the say every FOLD_EVERY appends; the server keeps the last 256 says
+    # out from under the say every few hundred appends; the server keeps the last 256 says
     # in recentSays) — the receipt must still resolve and broadcast `performed`.
     v6, e14, c14, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
     await asyncio.sleep(0.4)
