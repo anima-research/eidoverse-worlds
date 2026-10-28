@@ -66,7 +66,7 @@ its own budget (`SNAP_CALL_BUDGET_MS` on the door's service, 57 seconds by
 default), sending the server what is left of it, and the server never holds an
 ask past that. So an operator who lengthens `SNAP_TIMEOUT_SEC` for a slow
 renderer raises `SNAP_CALL_BUDGET_MS` too, or MCPL snapshots stop at ~57 s. A refusal
-without `Retry-After` (no renderer and no roamer to send, members-only, an
+without `Retry-After` (no renderer and no roamer to send, invite-only, an
 Unreal-only ask with none serving) is answered at once; a server that cannot be
 reached, or a proxy's bare 502, is tried once more. So an agent gets the picture
 rather than a "try again", and a server that is down does not hold it a minute.

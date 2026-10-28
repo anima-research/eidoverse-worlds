@@ -1,18 +1,18 @@
 // tools/protocol/access-check.ts — WHO MAY COME IN, decided by the world (upstream #258/#259, ported to this protocol
 // 2026-10-17: shared/protocol/access.js + server/access.ts), against a real sequencer. Scratch port, scratch WORLDS_DIR, its
 // own tokens.json; never 8968/8970. usage: bun tools/protocol/access-check.ts
-//   A1  members only (@world.access {join: listed}): someone not listed is refused at the door, 4010, in words that say
+//   A1  invite-only (@world.access {join: listed}): someone not listed is refused at the door, 4010, in words that say
 //       only that the world isn't open to them; someone listed comes in
 //   A2  watch only ({join: listed, watch: anyone}): the same person may watch (spectate), and a body is refused
-//   A3  /worlds and the reads are per caller: a members-only world is on no stranger's map and /geom answers as for no
+//   A3  /worlds and the reads are per caller: an invite-only world is on no stranger's map and /geom answers as for no
 //       world; a listed caller's bearer sees it (access, you); /access answers enter | watch | none, and 401 anonymously
 //   A4  closing the door removes whoever is no longer let in, at once (4010); owners stay
 //   A5  a timed grant (roles:<id>.until): its holder is told before it ends (notice), and when it passes the authority
 //       writes its end (expire-roles) and the door removes them (4010)
 //   A6  until is refused in the past and on an owner
-//   A7  a reset keeps a members-only world's door and members
+//   A7  a reset keeps an invite-only world's door and the people it lists
 //   A8  a ban in the moderator log closes the door after a restart too, before the world is loaded: a banned caller
-//       still listed in a members-only world gets 404 from /geom and /heightmap, finds it on no map, and /access says
+//       still listed in an invite-only world gets 404 from /geom and /heightmap, finds it on no map, and /access says
 //       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
 //   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
@@ -95,21 +95,21 @@ const removed = !!(await tryUntil("Bob is removed", () => bob.closed != null, { 
 ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type === "error" && /isn't open to you/.test(m.error)) && own.closed == null,
   "A4 closing the door removes Bob (4010, in the door's words); the owner stays", [close.ok, bob.closed, bob.msgs.filter((m) => m.type === "error").map((m) => m.error), own.closed]);
 
-// ---- A1: members only ----
+// ---- A1: invite-only ----
 { const c = await sock(srv.port); const j = await c.join("keep", "Carl");
   ok(!j.snapshot && c.closed === 4010 && /"keep" isn't open to you/.test(j.errors.join(" ")) && !/role|listed/.test(j.errors.join(" ")),
     "A1 someone not listed is refused at the door: 4010, and the words say only that it isn't open to them", [j.errors, c.closed]); c.close();
   const r = await sock(srv.port); const jr = await r.join("keep", "Rowan", { agentToken: "tok-rowan" });
   ok(!!jr.snapshot, "A1 someone listed comes in", jr.errors); r.close();
   const w = await sock(srv.port); const jw = await w.join("keep", "Carl", { spectate: true });
-  ok(!jw.snapshot && w.closed === 4010, "A1 …and in a members-only world the stranger can't even watch", [jw.errors, w.closed]); w.close(); }
+  ok(!jw.snapshot && w.closed === 4010, "A1 …and in an invite-only world the stranger can't even watch", [jw.errors, w.closed]); w.close(); }
 
 // ---- A3: per-caller visibility ----
 { const anon = await worldsAs(srv.port), stranger = await worldsAs(srv.port, "tok-moss"), member = await worldsAs(srv.port, "tok-rowan");
   const geom = await fetch(`http://127.0.0.1:${srv.port}/geom?world=keep`);
   const mine = member.find((x) => x.name === "keep");
   ok(!anon.some((x) => x.name === "keep") && !stranger.some((x) => x.name === "keep") && geom.status === 404 && mine?.access === "invite-only" && mine?.you === "enter",
-    "A3 a members-only world is on no stranger's map (/geom answers as for no world); a listed caller sees it, members, enter", [anon.map((x) => x.name), stranger.map((x) => x.name), geom.status, mine]);
+    "A3 an invite-only world is on no stranger's map (/geom answers as for no world); a listed caller sees it, and listed people enter", [anon.map((x) => x.name), stranger.map((x) => x.name), geom.status, mine]);
   const a0 = await accessAs(srv.port, "keep"), a1 = await accessAs(srv.port, "keep", "tok-moss"), a2 = await accessAs(srv.port, "keep", "tok-rowan"), a3 = await accessAs(srv.port, "nowhere", "tok-rowan");
   ok(a0.status === 401 && a1.body?.you === "none" && a2.body?.you === "enter" && a3.body?.exists === false && a3.body?.found?.ok === false,
     "A3 /access: 401 anonymously; none for a stranger, enter for a member; a name with no world says joining never founds one", [a0.status, a1.body, a2.body, a3.body]); }
@@ -143,7 +143,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     [set.ok, !!jp.snapshot, told, p.closed, ended?.body, p.msgs.filter((m) => m.type === "notice" || m.type === "error").map((m) => m.text ?? m.error)]);
   void role; }
 
-// ---- A7: a reset keeps a members-only world's door and members ----
+// ---- A7: a reset keeps an invite-only world's door and the people it lists ----
 { const k0 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
   await tryUntil("the reset answers (or the owner's socket closes)", () => own.closed != null || own.msgs.slice(k0).some((m) => m.type === "world-reset" || m.type === "error"), { ms: 6000, step: 50 });
   await sleep(400);
@@ -151,7 +151,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops = log.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));   // a batch, or one op
   const access = ops.find((o) => o.id === "@world" && o.comp === "access")?.value;
   const rowan = ops.find((o) => o.id === "@world" && o.comp === `roles:${ids.Rowan}`)?.value;
-  ok(access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps a members-only world's door and its members", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
+  ok(access?.join === "listed" && rowan?.role === "member", "A7 a reset keeps an invite-only world's door and the people it lists", [access, rowan, ops.length, own.closed, own.msgs.slice(k0).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
   // A7b (review of #260, server I7): a signed-in-only door is kept too (only "listed" was, so the reset opened it to guests)
   const set = await own.req("set", { id: "@world", component: "access", value: { join: "signed-in" } });
   const k1 = own.msgs.length; own.raw({ type: "world-reset", name: "keep" });
@@ -161,9 +161,9 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const ops2 = log2.filter((e) => e.kind === "change").flatMap((e) => (Array.isArray(e.body?.ops) ? e.body.ops : [e.body]));
   const access2 = ops2.find((o) => o.id === "@world" && o.comp === "access")?.value;
   ok(set?.ok && access2?.join === "signed-in", "A7b a reset keeps a signed-in-only world's door", [set?.ok, set?.refused, access2, own.msgs.slice(k1).map((m) => m.type + (m.error ? `: ${m.error}` : "")).slice(0, 6)]);
-  // the rest of this suite reads "keep" as members-only: its door goes back as A7 left it
+  // the rest of this suite reads "keep" as invite-only: its door goes back as A7 left it
   const back = await own.req("set", { id: "@world", component: "access", value: access });
-  ok(back?.ok, "(A7b) keep's members-only door is put back for what follows", back?.refused); }
+  ok(back?.ok, "(A7b) keep's invite-only door is put back for what follows", back?.refused); }
 
 // ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked (R 10-28: a kick bars nothing) ----
 const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
@@ -181,7 +181,7 @@ own.close();
 try { srv.proc.kill(); } catch {}
 await sleep(300);
 
-// ---- A3 (idle): after a restart, nobody in it, the members-only world's door is read from its log without loading it ----
+// ---- A3 (idle): after a restart, nobody in it, the invite-only world's door is read from its log without loading it ----
 // A10's sessions (restored at boot): Rowan's account as a cookie session, once from a native pairing made before
 // main #255 (HnSession.nativeWorld) and once not
 // (a session is a person's, human:…: that account is bound to Rowan's identity, so it is a member of keep as Rowan is)
@@ -231,7 +231,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
   try { s2.proc.kill(); } catch {} }
 { // A11 (review of PR #260, server.ts:742): a server operator (SERVER_OPERATORS) has a NARROW, RECORDED repair capability through the
-  // authority: Fen, an operator not listed in the members-only world, gets in (the bypass) but an ordinary write is still the
+  // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
   const s3 = await start({ SERVER_OPERATORS: "agent:token:fen" });
@@ -456,7 +456,7 @@ const gonePid = await exitedPid();
   ok(met && typeof got.error === "string" && got.error.includes(T.lock) && got.error.includes(`by process ${process.pid}`) && /held .* for 10 s/.test(got.error) && got.ms >= 9_500 && !keysIn(T.f).holders,
     "A13g a mint that waits on a lock a live process holds gives up after its 10 s, naming the lock and its holder, and mints nothing", { met, got });
   fs.rmSync(T.lock, { force: true }); }
-{ // A9 (final review M1): a members-only door is not opened by default-role / role-defs powers handed to everyone
+{ // A9 (final review M1): an invite-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const base = { access: { join: "listed" } };
   const cases = [
@@ -465,7 +465,7 @@ const gonePid = await exitedPid();
     ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "member" }, "role-defs": { visitor: { can: { mute: true } } } }],
   ];
   const got = cases.map(([n, wc]) => [n, entryFor({ name: "m1", wc, label: "members" }, { account: "acct-stranger", actorId: "u-stranger00000000000000", addr: "1.2.3.4" }, "embody")?.code ?? "admitted"]);
-  ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in a members-only world stays out even when the default role (or a role-def) carries a moderation power", got);
+  ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in an invite-only world stays out even when the default role (or a role-def) carries a moderation power", got);
   const mem = { ...cases[1][1], "roles:u-member0000000000000000": { role: "moderator" } };
   const m = entryFor({ name: "m1", wc: mem, label: "members" }, { account: "acct-m", actorId: "u-member0000000000000000", addr: "1.2.3.5" }, "embody");
   ok(m === null, "A9 a LISTED moderator still gets in", m);

@@ -17,7 +17,7 @@ export const HOST = process.env.HOST ?? "0.0.0.0";
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 // The RENDERERS' own credential (docs/DESIGN-world-access.md). A renderer is the
 // vision of the agents in a world — screenshots are how they see — so a renderer
-// presenting this may WATCH any world, members-only ones included (invisible,
+// presenting this may WATCH any world, invite-only ones included (invisible,
 // never authoring, as every renderer). Distinct from JOIN_TOKEN on purpose: the
 // door key rides invite links, and "renderer" is a flag any client can set, so
 // the door key + the flag must never be a key to a private world. Unset = no

@@ -34,7 +34,7 @@ antra, 2026-10-17, are folded in below.
    changes on the home node's login.
 2. **Founding:** every member may create worlds, capped per day. *(Here: superseded — see Founding below.)*
 3. **Expiry while inside:** warn 5 minutes before, then remove.
-4. **Members-only worlds are unlisted and invisible** to non-members. There
+4. **Invite-only worlds are unlisted and invisible** to everyone they don't list. There
    is therefore no "knock": a refusal says only that the world isn't open to
    you.
 5. ~~Builders may create invite links~~. **No invite links** (antra,
@@ -67,7 +67,7 @@ none  <  spectator  <  visitor  <  builder  <  owner
 - `none` may not enter, may not watch, and the world is invisible to them.
 - `spectator` may watch but has no body.
 - The wildcard `*` is everyone not named. `grant * none` makes a world
-  members-only, `grant * spectator` makes it watch-only, and `grant * builder`
+  invite-only, `grant * spectator` makes it watch-only, and `grant * builder`
   (or revoking `*`) opens it again. A world with no `*` record reads as
   builder, so **no existing world changes.**
 
@@ -179,7 +179,7 @@ ban → world ban → operator → credential narrowing → the ladder.
 | MCPL door `worlds` tool, `/snap` | ask *as the agent* (bearer), so members see their private worlds |
 | behavior scripts | may not change access (`*`, revoke, `for`/`until`, `sub`, the two new rungs), and may not grant at all in a closed world. A script's emit skips the validator and the settle pass |
 | `/reset` | owners kept with their sub. A closed world keeps its `*` and its live members, because erasing content must not open it |
-| renderer client | a renderer is the vision of the agents inside, so one holding the renderers' credential (`RENDERER_TOKEN`, presented as its door key *with* the renderer flag) may watch any world, members-only included. It stays invisible and never authors, and closing a world doesn't remove it. A client that only *says* renderer (door key plus flag) gets nothing extra. The snapshot dispatcher sends a roamer only where it will be let in, because a refused renderer stops rather than retrying |
+| renderer client | a renderer is the vision of the agents inside, so one holding the renderers' credential (`RENDERER_TOKEN`, presented as its door key *with* the renderer flag) may watch any world, invite-only included. It stays invisible and never authors, and closing a world doesn't remove it. A client that only *says* renderer (door key plus flag) gets nothing extra. The snapshot dispatcher sends a roamer only where it will be let in, because a refused renderer stops rather than retrying |
 
 ## UX
 
@@ -210,7 +210,7 @@ toast plus a chat line.
 
 **Agents:** `world_access {action: show|mode|grant|revoke, mode?, id?, role?, for?}`.
 The reply is the world's refusal, or the door as it now stands. The `worlds`
-tool marks worlds as members-only or watch-only. An agent removed with 4010
+tool marks worlds as invite-only or watch-only. An agent removed with 4010
 stays down instead of reconnecting.
 
 ## Agent travel rules (built)
@@ -242,7 +242,7 @@ stays down instead of reconnecting.
   before any world uses them.
 - **Renderers' credential (deploy):** set `RENDERER_TOKEN` on the sequencer,
   and give it to the roaming renderers as their key. Until then roamers can
-  serve open worlds only, and a snapshot asked in a members-only world says
+  serve open worlds only, and a snapshot asked in an invite-only world says
   why.
 - **Proxy timeout (deploy):** `GET /snap` sets its own per-request timeout
   from the broker's longest wait, so Bun's idle timer doesn't reset a `/snap`
@@ -276,7 +276,7 @@ prefilter, a 1 s sweep, and the agent's `/snap` carrying its credential.
 
 ## Follow-ups noticed
 
-- A golden fixture for access (members-only, expiry, revoke) in `spec/fixtures/`.
+- A golden fixture for access (invite-only, expiry, revoke) in `spec/fixtures/`.
 - The browser recomputes its own rights without its sub (`state.js
   refreshMyRights`). For sub-bound grants this is wrong until the server's
   `your-rights` push lands right after. That push exists, so it self-corrects,

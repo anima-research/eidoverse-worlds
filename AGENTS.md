@@ -289,7 +289,7 @@ the world's own components on `@world`, changed by its owners with ordinary requ
 browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access):
 
 ```
-act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed"}}}                    # members only
+act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed"}}}                    # invite-only
 act {verb: "set", args: {id: "@world", component: "access", value: {join: "listed", watch: "anyone"}}}   # watch only
 act {verb: "set", args: {id: "@world", component: "roles:u-…", value: {role: "member", until: <epoch ms>}}}  # let someone in, for a while
 act {verb: "delete", args: {id: "@world", component: "roles:u-…"}}                                         # take it back

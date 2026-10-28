@@ -12,7 +12,7 @@ export function captureCapability(value: unknown): CaptureCapability | undefined
 }
 // `retryAfter` (seconds) marks a failure that asking again soon can fix: the renderer still loading, busy, slow,
 // or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `snapshot` tool asks again only when it is there,
-// so a refusal that will not change in seconds (no renderer and no roamer to send, members-only) is answered at once.
+// so a refusal that will not change in seconds (no renderer and no roamer to send, invite-only) is answered at once.
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
   | { ok: false; err: string; status: number; retryAfter?: number };
 type Pending = { renderer: Client; target: Client; world: World; gen?: number;
@@ -164,7 +164,7 @@ export function createScreenshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, 
         : arrived
         ? dispatch(world, follow, view, engine, frame, target, Math.max(arrivalTimeoutMs, timeoutMs), at, deadline, signal)
         : { ok: false as const, err: doorOf(world) === "invite-only"
-            ? `"${world.name}" is members-only and no roaming renderer holding the renderers' credential is free, so no screenshot can be taken there now`
+            ? `"${world.name}" is invite-only and no roaming renderer holding the renderers' credential is free, so no screenshot can be taken there now`
             : `${noRenderer(world, "auto")}, and no roaming renderer could come`, status: 503 });
     }
     return dispatch(world, follow, view, engine, frame, target, timeoutMs, at, deadline, signal);

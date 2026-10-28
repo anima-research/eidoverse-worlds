@@ -427,7 +427,7 @@ test("retryAfter marks only what asking again soon can fix", async () => {
   expect(await broker.request(w, "agent")).toMatchObject({ status: 504, retryAfter: 2 });
   const gone = broker.request(w, "agent"); broker.retire(r.c);
   expect(await gone).toMatchObject({ status: 503, retryAfter: 2 });
-  // no renderer and no roamer to send, members-only, an Unreal-only ask with none: not retryable
+  // no renderer and no roamer to send, invite-only, an Unreal-only ask with none: not retryable
   const alone = worldOf("alone"); join(alone, "agent");
   const none = await broker.request(alone, "agent"); expect(none.ok).toBe(false); expect((none as any).retryAfter).toBeUndefined();
   const unreal = await broker.request(alone, "agent", "first", "unreal"); expect((unreal as any).retryAfter).toBeUndefined();

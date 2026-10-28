@@ -779,7 +779,7 @@ const ROUTES: Route[] = [
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
       // PER CALLER: a world closed to whoever is asking is not on their map at
-      // all — members-only worlds are unlisted and invisible (access.ts). The
+      // all — invite-only worlds are unlisted and invisible (access.ts). The
       // caller is the cookie session or an Authorization bearer; anonymous
       // callers see what everyone may see. `access` is the world's door for
       // everyone not named; `you` is what THIS caller may do there.
@@ -793,7 +793,7 @@ const ROUTES: Route[] = [
         return [{
           name,
           loaded: !!w,
-          access: door.label,          // open | watch | members: the world's door for everyone it doesn't list
+          access: door.label,          // open | public | signed-in | watch | invite-only: the door for everyone it doesn't list
           you: mine,                   // enter | watch: what THIS caller may do there
           people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),
         }];

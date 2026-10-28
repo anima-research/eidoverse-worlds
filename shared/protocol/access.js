@@ -14,7 +14,7 @@
 //   roles:<id> {role, can?, note?, until?}   `until` (epoch ms): when the grant ends. The authority writes its end
 //             (`expire-roles`, a system act) within a second of it, and warns the holder five minutes before.
 //
-// Upstream spelled the same doors as rungs below visitor on one ladder (`grant * none` = members-only, `grant * spectator` =
+// Upstream spelled the same doors as rungs below visitor on one ladder (`grant * none` = invite-only, `grant * spectator` =
 // watch-only, `grant bob spectator`); here a rank is membership and entry is the world's `access` (roles.js: "a state is
 // never a rank"). The four doors upstream's panel offers map onto these components exactly (DOORS below).
 

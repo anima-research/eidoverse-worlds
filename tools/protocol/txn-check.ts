@@ -6,7 +6,7 @@
 //   T2  fsync throws after the bytes were written → ambiguous, wedged, no ok to anyone; reopen finds the line; later writes rolled back
 //   T3  a refusal is rolled back and publishes nothing; every published line was on disk when it was published
 //   T4  banned (the door) or re-roled while the request waited → refused, nothing written by the asker
-//   T5  the door closes (members only) while the request waits, the asker unlisted → refused
+//   T5  the door closes (invite-only) while the request waits, the asker unlisted → refused
 //   T6  the connection becomes someone else while the request waits → refused; nothing under either identity
 //   T7  static: no await in the authority; none between worldlog's recheck and the synchronous commit
 //   T8  a short write is looped to the end, and a write that takes nothing throws
@@ -210,10 +210,10 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 // ---------------- T5 ----------------
 { const X = world("t5"); const vic = idOf("local:vic", "vic"); const t = tab(X, vic, { account: "local:vic" });
   X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "through-a-closed-door" }); await tryUntil('"through-a-closed-door" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
-  ok(ownerDo(X, "set", { id: "@world", component: "access", value: { join: "listed" } })?.ok === true, "(T5 setup) the door becomes members-only while the request waits");
+  ok(ownerDo(X, "set", { id: "@world", component: "access", value: { join: "listed" } })?.ok === true, "(T5 setup) the door becomes invite-only while the request waits");
   X.g.release(); await tryUntil('the reply to "through-a-closed-door"', () => t.replies.length, { ms: 3000, step: 10 });
   ok(t.replies[0]?.reply?.refused?.code === "superseded" && /no-access/.test(t.replies[0]?.reply?.refused?.reason ?? "") && !said(X, "through-a-closed-door"),
-    "T5 members-only while it waited, the asker unlisted: refused by the door (the same decision as join), nothing written", t.replies[0]); }
+    "T5 invite-only while it waited, the asker unlisted: refused by the door (the same decision as join), nothing written", t.replies[0]); }
 
 // ---------------- T6 ----------------
 { const X = world("t6"); const vic = idOf("local:vic", "vic"), bea = idOf("local:bea", "bea"); const t = tab(X, vic, { account: "local:vic" }); const n0 = X.w.log.live.entries.length;

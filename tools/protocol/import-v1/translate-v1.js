@@ -779,7 +779,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
-  // upstream #258's world access rode the same map: `*` none = members only, `*` spectator = watch only. Here entry is
+  // upstream #258's world access rode the same map: `*` none = invite-only, `*` spectator = watch only. Here entry is
   // @world.access (shared/protocol/access.js); a person's own none / spectator is a record that lists no one (role none:
   // in, they watch only where the world lets everyone watch). A timed grant keeps its `until` (the load's sweep ends one
   // already past).

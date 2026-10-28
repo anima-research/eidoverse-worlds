@@ -121,7 +121,7 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
   // operators, owners and holders of a moderation power always get in (what @world.access always said)
   const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;
   // the bypass is for people this world LISTS (an explicit role row): a power handed to everyone through default-role or
-  // role-defs must not open a members-only door (final review M1, 10-18)
+  // role-defs must not open an invite-only door (final review M1, 10-18)
   // an ended timed grant is absent at `now` (security review 10-18 M6): the door reads it as not listed, loaded or not, before the
   // authority's sweep writes its end (expire-roles) — so an unloaded world's HTTP reads and a join don't honour it indefinitely
   const listed = !!actorId && listedIn(door.wc, actorId, now);
