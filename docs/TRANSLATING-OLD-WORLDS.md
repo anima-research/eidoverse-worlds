@@ -43,6 +43,46 @@ no frame to hold one (`water` on `@world` without one is the world's water
 level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
+**What a translation keeps of main's meaning** (translate-v1@24, R 10-28; the
+report lists each one):
+
+- *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
+  none was written, guests included; a world with no owner let everyone build
+  and generate. The translation writes that out: `default-role` with
+  `guests` the same role, and for an ownerless world the inhabitant role's
+  permissions (`role-defs`) set to the builder's plus generate, since this
+  protocol caps an ownerless world at inhabitant. Rank stays inhabitant there:
+  a lock and a `who: builder` gate refuse everyone until the world has an
+  owner (operator-repair set). The report's `rights` says which, and its notes
+  what can't be said (generate for guests). Worlds founded new keep this
+  protocol's defaults.
+- *Particles.* A preset retuned with main's knobs (wobble, up, spread, gravity,
+  grow, swirl, twinkle, converge, rotate, color, blending) becomes a derived
+  effect document: the Essential with those knobs read as the builder read
+  them, stored in the world's `blobs/` by its content address and named by the
+  `particles` component. A knob with no faithful reading stays in
+  `imported:particles` and is listed with why.
+- *Lights* fall off at decay 2 (inverse square, as every new light), each
+  brightened once so it matches main's at half its own range: intensity ×
+  (range/2)^0.3 (main's rig fell off as d^-1.7).
+- *Ranges.* A value outside the component registry's ranges is brought inside
+  them and listed (`adjusted`), so the world's next edit isn't refused.
+- *Carried, with their fate said:* vehicle `minY`/`maxY` (invisible hull-only
+  walls once collision layers exist), `probes` (retired: the authority's hull
+  sweep), water `speed` (a physics-area speed factor once that exists), sky
+  `audio` (the weather's own sounds, once the sky takes it again).
+
+A report reviewed under an earlier translator is never approvable: each
+version translates differently, so its hash differs, and the refusal says so.
+
+**Global bans from before accounts.** A main-era `.bans.json` entry that names
+only a name is bound at boot to the one account main recorded for it
+(`.principals.json`, or a pair another world's log stamped). One main's records
+bind to no one account, or to several, is kept on disk, never enforced (it would
+hit namesakes), said in the boot log and listed in the operators' `/gbans` as
+"pre-account ban: bind to a person or lift": `global-ban <the name>` binds it to
+whoever wears that name here, `global-unban <the name>` lifts it.
+
 It is translated in place: the world keeps its name, and the old log stays
 beside the new one as `log.original.jsonl`, renamed, never written (the swap
 refuses unless the old log still holds exactly the bytes that were
@@ -50,7 +90,8 @@ translated: nothing an old server wrote meanwhile is dropped); a directory
 whose `world.jsonl` is a world of this protocol is served as one whatever
 else it holds. (`translate <old> <new>` translates into a new name instead.)
 The swap also writes `translation.json`: every file it renamed, every file
-it made (`world.jsonl`, `poses.json`, `world.mod.jsonl` for imported bans)
+it made (`world.jsonl`, `poses.json`, `world.mod.jsonl` for imported bans,
+`blobs/` for derived particle effects)
 with its sha256, the identities it minted, the report hash and the approval.
 `bun tools/protocol/world.ts rollback <world>` undoes the whole swap from
 it: the made files removed, the originals renamed back (the same files: bytes,

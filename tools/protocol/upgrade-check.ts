@@ -202,9 +202,9 @@ let reviewed = "";
   const ids = { "u-THEIR-ID": real, "u-IMPORTED-ID": old };
   const g = give ? run(give.verb, give.args, ids) : { code: -1, reply: {} }, x = drop ? run(drop.verb, drop.args, ids) : { code: -1, reply: {} };
   await tryUntil("Ann's rights say owner", () => ann.msgs.some((m) => m.type === "your-rights" && m.rights?.role === "owner"), { ms: 5000, step: 50 }); ann.ws.close();
-  ok(up.code === 0 && before === "inhabitant" && found.code === 0 && real.startsWith("u-") && old.startsWith("u-") && g.code === 0 && x.code === 0
+  ok(up.code === 0 && before === "builder" && found.code === 0 && real.startsWith("u-") && old.startsWith("u-") && g.code === 0 && x.code === 0
     && ann.msgs.some((m) => m.type === "your-rights" && m.rights?.role === "owner") && x.reply?.after?.["@world"]?.[`roles:${old}`] === null,
-    "UD3 the doc's calls, as written: a main-era owner (a name) comes over as an imported identity; Ann signed in is a newcomer; whois finds both; operator-repair set gives Ann the world, delete clears the imported name's role",
+    "UD3 the doc's calls, as written: a main-era owner (a name) comes over as an imported identity; Ann signed in is a newcomer (builder: main's default, translate-v1@24); whois finds both; operator-repair set gives Ann the world, delete clears the imported name's role",
     { up: up.out.slice(-200), calls, before, found: found.reply, give: g, drop: x });
 }
 try { proc.kill(); } catch {}

@@ -95,7 +95,7 @@ Nothing was changed.`);
 (The approval of ${approved} can't override this: a refusal is not a loss to approve.)`);
   if (hash !== approved) die(`the dry-run report of "${name}" is not the one that was approved: approved ${approved}, but the report of log.jsonl as it stands now hashes to ${hash} `
     + `(${report.source.size} bytes, sha256 ${report.source.sha256.slice(0, 16)}…; translator ${report.translator}, fold ${report.fold}). `
-    + `The old log or the tool changed since it was read. Run --dry-run again, read the new report, and approve THAT hash. If log.jsonl is still being written to (an old server running), stop it first. Nothing was changed.`);
+    + `The old log or the tool changed since it was read: a report reviewed under an earlier translator than ${report.translator} is never approvable (each version translates differently). Run --dry-run again, read the new report, and approve THAT hash. If log.jsonl is still being written to (an old server running), stop it first. Nothing was changed.`);
   if (!noOwner) die(`"${name}": ${NO_FOUNDER}, so no owner can sign this approval. A translation runs on the operator's countersignature alone, and only when you say so: `
     + `translate ${name} --no-founder-key --approved ${approved} --operator-only-no-owner. The act will record that no owner was attested. Nothing was changed.`);
   // the operator's countersignature: this host's custody operator key signs the approval text (never the sequencer key)
@@ -110,7 +110,9 @@ const unapproved = (got: { size: number; sha256: string }, approved: { size: num
   : `the old log the translation read is not the bytes the approved report hashed (approved ${approved.size} bytes, sha256 ${approved.sha256.slice(0, 16)}…; read ${got.size} bytes, sha256 ${got.sha256.slice(0, 16)}…): something wrote to it after the approval was checked. If an old server is running, stop it, then run --dry-run again and approve the new report.`;
 /** How a translation says who approved: the operator alone, no owner attested (said plainly). */
 const approvalWords = (a: Approval) => `approved by the operator alone (${a.operator.key}, signature verified): no owner was attested — nothing can yet bind a key to the old world's owner, and --operator-only-no-owner was given; the act records this, and tier 0 is empty`;
-const sha = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+const sha = (f: string): string => fs.statSync(f).isDirectory()   // a directory (the derived effects' blobs/): its files, by name
+  ? crypto.createHash("sha256").update(fs.readdirSync(f).sort().map((n) => `${n}\0${sha(path.join(f, n))}\n`).join("")).digest("hex")
+  : crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
 /** Who holds a role and whether an account is bound to them: one line each, the unbound with the command that binds them. */
 function sayPeople(people: any[] = []) {
   for (const p of people) console.log(p.account ? `${p.role} ${p.name}: bound to their account (${p.account}:…, from ${p.from})`
@@ -185,6 +187,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   let r: ReturnType<typeof translateV1World>;
   try { r = translateV1World(D, T, { name, deferIdentities: true, approval }); } catch (x) { fail(`the translation failed: ${(x as Error).message}`, T); throw 0; }
   { const why = unapproved(r.source, approvedSource); if (why) fail(why, T); }
+  if (fs.existsSync(path.join(T, "blobs")) && fs.existsSync(path.join(D, "blobs"))) fail(`can't translate "${name}" in place: blobs/ already exists in ${D}, where the translation would put its derived particle effects.`, T);
   // 3. the result, opened as the server opens it: a world, folding to the importer's digest
   try { const live = openLive(T, name); const st = live.state();
     if (!isWorldDir(T) || st.status !== "ok" || digest(st) !== r.digest) throw new Error(`opened as the server opens it: ${isWorldDir(T) ? "" : "not a world, "}status ${st.status}, digest ${digest(st)} (the importer said ${r.digest})`); }
@@ -271,7 +274,7 @@ function rollback(name: string) {
   if ((changed.length || since.length) && !discard) die(`can't roll back "${name}" without losing history: ${[...changed.map((f) => `${f} changed since the translation made it`), ...since.map((f) => `${f} was made since the translation${f === "world.mod.jsonl" ? " (the moderator log: bans, mutes, kicks were filed)" : ""}`)].join("; ")} `
     + `(the server has written to the translated world: acts, places, bans). Rolling back deletes that; if that is what you want, say so: rollback ${name} --discard-changes. Nothing was changed.`);
   const did: string[] = [];
-  for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f)); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
+  for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f), { recursive: true }); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
   for (const f of since) { fs.rmSync(path.join(D, f), { recursive: true, force: true }); did.push(`removed ${f} (made by the server since the translation; discarded)`); }
   for (const f of fs.readdirSync(D)) if (isCacheFile(f)) fs.rmSync(path.join(D, f));   // the translated log's derived fold goes with it
   for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }

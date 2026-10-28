@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
 import { directoryFor, mintId, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
-import { mainKnowledge, type Known } from "./mainknew.ts";
+import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
@@ -17,6 +17,8 @@ import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
 import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
+import { jcs } from "../../../shared/protocol/fold.js";
+import { putBlobFile } from "../../../server/durable.ts";
 import { v1FoldBuild } from "./build.ts";
 import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
 
@@ -172,7 +174,10 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     dropped: DROPPED,            // what every translation drops or renames BY DESIGN (the translator's own table)
     deferred,                    // uses of features v4 doesn't carry yet: any → refused
     ...(r.stats.mapped ? { mapped: r.stats.mapped } : {}),
-    ...(r.stats.unmapped ? { unmapped: r.stats.unmapped } : {}),   // …and what of them has no home, carried as imported:<component>   // main's water volumes and air boxes, each as the things it became (translate-v1 VOLUMES)
+    ...(r.stats.unmapped ? { unmapped: r.stats.unmapped } : {}),   // …and what of them has no home, carried as imported:<component>, with its fate (FATES)
+    ...(r.stats.rights ? { rights: r.stats.rights } : {}),   // main's effective rights as written (translate-v1 mainRights), and what they can't say
+    ...(r.stats.effects ? { effects: r.stats.effects } : {}),   // the derived particle effects stored with the world (translate-v1 particlesOf)
+    ...(r.stats.adjusted ? { adjusted: r.stats.adjusted } : {}),   // values brought to main's reading or the registry's ranges, each with why (translate-v1 toSpec, lightParity)
     people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
     ownerWarning: ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
@@ -277,7 +282,12 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
     // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
     // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
+    // the derived particle effects (translate-v1 particlesOf): blobs of the world, by their content address, as an upload stores them
+    for (const [h, doc] of r.effects ?? []) { const f = path.join(destDir, "blobs", `${h.replace(/[^a-z0-9]/g, "-")}.json`), b = jcs(doc);
+      if (`sha256:${sha256(b)}` !== h) throw new Error(`a derived particle effect doesn't hash to its address ${h}`);
+      if (!fs.existsSync(f)) { touched.push({ file: f, before: null }); putBlobFile(f, b, h); } }
     const live = openLive(destDir, world, { catalogue: ENGINE_CATALOGUE, scripts: null });
+    for (const [h, doc] of r.effects ?? []) if (JSON.stringify(live.getBlob(h)) !== JSON.stringify(JSON.parse(jcs(doc)))) throw new Error(`the stored particle effect ${h} doesn't read back as written`);
     const m: Any = maintain(live, { by: "translate" });
     if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
     const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
@@ -295,10 +305,11 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (!deferIdentities) dir.put(planned);
     // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
     // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
-    return { source, unparsed, planned, people, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
+    return { source, unparsed, planned, people, effects: [...(r.effects?.keys() ?? [])], identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
   } catch (x) {
     const undone: string[] = [];
     for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }
+    try { const b = path.join(destDir, "blobs"); if (fs.existsSync(b) && !fs.readdirSync(b).length) fs.rmdirSync(b); } catch { /* not empty, or gone */ }
     if (madeDir) try { if (!fs.readdirSync(destDir).length) fs.rmdirSync(destDir); } catch { /* not empty, or gone */ }
     const left = touched.map((t) => path.basename(t.file)).filter((f) => !undone.includes(f));
     throw new Error(`${(x as Error)?.message ?? x}. Nothing written (${undone.join(", ")} put back as they were${left.length ? `; NOT put back: ${left.join(", ")}` : ""})`);

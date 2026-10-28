@@ -17,8 +17,11 @@ import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from 
 import { qNorm } from "../../../shared/rot.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
-import { modernize as newParticles, hashSeed } from "../../../shared/particle_effects.js";
-import { repairComps, repairWorld, renameFields, SHAPES_VERSION } from "../../../shared/protocol/shaperepair.js";
+import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
+import { BUILTIN } from "../../../shared/protocol/roles.js";
+import { CSS_NAMES } from "./cssnames.js";
+import { mapGrassArgs } from "../../../shared/flora_args.js";
+import { repairComps, repairWorld, renameFields, SHAPES_VERSION, OLD_LIGHT_DECAY } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
 import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 
@@ -36,7 +39,8 @@ import { ENGINES, DEFAULT_ENGINE } from "../../../shared/protocol/simlayer.js";
 // never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
 // v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
-  if (!m) return x; const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
+  if (!m) return Object.hasOwn(CSS_NAMES, x.trim().toLowerCase()) ? CSS_NAMES[x.trim().toLowerCase()] : x;   // @24: a CSS name, as three.js read it
+  const h = m[1].length === 3 ? [...m[1]].map((d) => d + d).join("") : m[1]; return parseInt(h, 16); };
 function splitUnknown(c) {
   if (c.light && typeof c.light === "object" && "color" in c.light) c.light = { ...c.light, color: hexColor(c.light.color) };
   if (c.light && typeof c.light === "object" && !Array.isArray(c.light) && "keep" in c.light) { const { keep, ...l } = c.light; c.light = { ...l, important: keep }; } // @7: v1's keep is light.important
@@ -59,11 +63,12 @@ function newSockets(S, c) {
   const out = {}, left = {};
   for (const [slot, s] of Object.entries(S)) {
     if (!s || typeof s !== "object" || Array.isArray(s)) { out[slot] = s; continue; }
-    const { pos, yaw: yaw0, part, pose, ...rest } = s;
+    const { pos, yaw: yaw0, part, pose, seatAnchor, ...rest } = s;
+    if (seatAnchor !== undefined && seatAnchor !== "surface") rest.seatAnchor = seatAnchor;   // main read anything else as root (seatcore socketAnchor)
     // v1's renderer turned the seat by `yaw ?? 0` through three.js, which coerces ("1.5" turns it); what can't turn is carried
     const yaw = yaw0 == null ? 0 : Number(yaw0);
     if (!Number.isFinite(yaw)) rest.yaw = yaw0;
-    out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: pose !== undefined ? { pose } : {} };
+    out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: { ...(pose !== undefined ? { pose } : {}), ...(seatAnchor === "surface" ? { anchor: "surface" } : {}) } };   // @24: main's seatAnchor is body.anchor
     if (Object.keys(rest).length) left[slot] = rest;
   }
   if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
@@ -117,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@23";
+export const TRANSLATOR = "eidoverse/translate-v1@24";
+// @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
 // @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
 // description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
 // can't say, rides imported:material and is listed. A picture with no part (main drew none) is carried as imported:picture.
@@ -205,7 +211,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@23";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@24";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -268,7 +274,7 @@ export const DROPPED = {
   "behaviors.authorSub, and any other account in a value": "the binding's author's account (the v1 server's bySub), and any account-shaped sub or *Sub a value carries: never written into a value (@16). With an identity mapper the binding's is how its author's id is found; without one it is dropped. A sub or *Sub that isn't account-shaped is ordinary data and stays, except a grant's or a ban's own top-level sub, the server's stamp of the person's account (roles.sub / bans.sub)",
   "an entry keyed by an account in a value, and a component an account names and fills": "an entry keyed by an account in a value, or a component whose name has an account's (`ownerSub`) and whose whole value is one, is person data (PROTOCOL §9.2): in the state it is dropped with what it held (@19); in a copied request (the translated act's genesis, an old request) an entry keyed by one is keyed by its person's id, and a comp request's data becomes it, each dropped without an identity mapper. A role or ban kept by its account isn't a value: it is kept, keyed by its person's id (with a mapper) or by its account, encoded (without one)",
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
-  "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
+  "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table) become a DERIVED effect document (@24): the Essential with those knobs read as the builder read them, stored in the world by its content address and named by the particles component (particlesOf); a knob with no faithful reading stays in imported:particles, listed. Gravity is the world frame now, as every Essential's. `scale` is the instance's own scale",
   "sound.look": "renamed description (@21, R 10-27): the same words under today's name",
   "picture.flip false": "main's default (the node's own UVs): the material's own reading, so nothing is written (@22)",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
@@ -288,7 +294,7 @@ export const DEFERRED = {};
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
-  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed" },
+  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed with what becomes of each (FATES)" },
   picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
@@ -427,28 +433,43 @@ export function volumeMappings(st) {
 /** main #248's climb routes, collision toggles and environments a v1 state holds, as the report lists them: [{component, feature, id, into}] */
 export function carriedMappings(st) {
   const out = [], env = new Map(environmentPlan(st).map((x) => [x.id, x.parts]));
+  { const x = grassExtras(st?.grass); if (x.length) out.push({ component: "grass", feature: "createFlora options the field has no field for (main passed them on)", id: "@world", into: ["@world.grass.strokes[0]"], fields: x }); }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
     if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : [])] }); }
     if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
     if (comp.picture != null && materialOf(comp.picture).material) out.push({ component: "picture", feature: CARRIED.picture.feature, id, into: [enc(id)] });
     if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] });
+    for (const p of particlesPlan(id, comp)) if (p.effect) out.push({ component: "particles", feature: "particle preset retuned by main's knobs", id, ...(p.emitter ? { emitter: p.emitter } : {}), into: [p.host], effect: p.effect, knobs: p.knobs });
     if (env.get(id)?.lowered) out.push({ component: "environment", feature: "bounds.min.y lowered to 2 m below the floor (the floor lay below the bounds)", id, into: ["@world.bounds"], ...env.get(id).lowered }); }
   return out;
 }
+/** What becomes of a carried field this protocol retires (R 10-28, item 50): plain words for the report, never a silent carry. */
+export const FATES = {
+  "vehicle.minY": "carried for now; once collision layers exist (collider {blocks}) it becomes an invisible wall below the vehicle that only its hull meets",
+  "vehicle.maxY": "carried for now; once collision layers exist (collider {blocks}) it becomes an invisible wall above the vehicle that only its hull meets",
+  "vehicle.probes": "retired: the authority's hull sweep (authority/drive.js) does what the probes did; carried only as the record",
+  "water.speed": "carried for now; once physics-area exists it becomes a speed factor on the water's zone (physics-area {kind: speed}), against the body's own swim speed",
+  "sky.audio": "the sky's own weather sounds (rain, thunder: main's makeSky audio switch), carried; the client still reads it, so it plays again once the sky component takes `audio`",
+};
 /** What of them has no home here, carried as imported:<component> on its thing: [{component, id, fields, as}] */
 export function unmappedOf(st) {
   const out = [];
   for (const { id, host, parts } of environmentPlan(st)) { const f = parts.fields.filter(([, to]) => to === null).map(([k]) => k); if (f.length) out.push({ component: "environment", id, fields: f, as: `${host} imported:environment` }); }
+  if (st?.sky && typeof st.sky === "object" && st.sky.audio !== undefined) out.push({ component: "sky", id: "@world", fields: ["audio"], as: "@world imported:sky", ...fatesOf("sky", ["audio"]) });
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
-    if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle` }); }
+    if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle`, ...fatesOf("vehicle", f) }); }
+    if (comp.water && typeof comp.water === "object" && !Array.isArray(comp.water) && comp.water.speed !== undefined) { const into = volumePartsOf(enc(id), { water: comp.water }, {}).own.water ? enc(id) : waterChildId(enc(id));
+      out.push({ component: "water", id, fields: ["speed"], as: `${into} imported:water`, ...fatesOf("water", ["speed"]) }); }
+    for (const p of particlesPlan(id, comp)) if (p.carried.length) out.push({ component: "particles", id, ...(p.emitter ? { emitter: p.emitter } : {}), fields: p.carried.map((c) => c.field), as: `${p.host} imported:particles`, why: p.carried.map((c) => `${c.field}: ${c.why}`).join("; ") });
     if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); }
     if (comp.picture != null) { const m = materialOf(comp.picture);
       if (m.left) out.push({ component: "picture", id, fields: Object.keys(m.left), as: `${enc(id)} imported:material`, why: "upside-down UVs: the material has no field for a texture transform yet (glTF's KHR_texture_transform)" });
       if (m.whole != null) out.push({ component: "picture", id, fields: ["part"], as: `${enc(id)} imported:picture`, why: "no part to put it on: main drew nothing" }); } }
   return out;
 }
+const fatesOf = (c, fields) => { const b = Object.fromEntries(fields.filter((f) => FATES[`${c}.${f}`]).map((f) => [f, FATES[`${c}.${f}`]])); return Object.keys(b).length ? { becomes: b } : {}; };
 /** Every use in a v1 log of a feature v4 doesn't carry yet that still stands at its end: [{component, feature, id, seq,
  *  actor, ts}], in log order. A `comp` that removes one (data null), or a `remove` of its thing, ends the uses before it,
  *  so removing it on the old server (the refusal's remedy) clears the refusal. Empty for every old world on Burrow and every
@@ -575,7 +596,119 @@ const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:s
 // same from every translation of the same world, never a person's id
 const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
-export function project(st, seen = null, who = null, ns = NAMESPACE, content = null) {
+// upstream #256's knobs as main's normalizeParticles bounded them (shared/particles.js NUMERIC_BOUNDS, at ccd5c53f)
+const KNOBS = { wobble: [0, 4], up: [-8, 8], spread: [0, 8], grow: [-4, 8], swirl: [0, 8], twinkle: [0, 1], converge: [0, 1], rotate: [0, 8] };
+const KNOB_NAMES = [...Object.keys(KNOBS), "gravity", "color", "blending"];
+const mainColor = (v) => { if (Number.isInteger(v) && v >= 0 && v <= 0xffffff) return v; const m = typeof v === "string" ? /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v.trim()) : null;
+  return m ? parseInt(m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1], 16) : null; };
+const derivedMemo = new Map();
+/** main's particles bag → {value (today's instance, a retuned preset naming its derived effect), effect, doc, knobs (translated),
+ *  carried [{field, why}]}. `seedKey`: what main hashed for an unwritten seed (shared/particles.js emitterSeed). */
+export function particlesOf(v, seedKey) {
+  const value = newParticles(v), adjusted = [];
+  if (isLegacy(v) && Number.isFinite(value.scale) && (value.scale < 0.01 || value.scale > 20)) {   // main drew a scale within 0.01..20
+    const now = Math.min(20, Math.max(0.01, value.scale)); adjusted.push({ field: "scale", was: value.scale, now, why: "main drew a scale within 0.01..20" }); value.scale = now; }
+  if (!isLegacy(v)) return { value, effect: null, doc: null, knobs: [], carried: [], adjusted };
+  const present = KNOB_NAMES.filter((k) => v[k] !== undefined && v[k] !== null);
+  if (!present.length) return { value, effect: null, doc: null, knobs: [], carried: [], adjusted };
+  if (!derivedEffect(v.preset)) return { value, effect: null, doc: null, knobs: [], adjusted, carried: present.map((field) => ({ field, why: `no Essential is called ${JSON.stringify(v.preset)}: main drew nothing` })) };
+  const over = {}, knobs = [], carried = [];
+  for (const k of present) { const x = v[k];
+    if (KNOBS[k]) { if (!Number.isFinite(x)) { carried.push({ field: k, why: "not a number: main drew the preset's own" }); continue; }
+      const c = Math.min(KNOBS[k][1], Math.max(KNOBS[k][0], x));
+      if (k === "wobble" && c > EFFECT_LIMITS.drift) { carried.push({ field: k, why: `a sway of ${c} m is past the effect document's drift limit (${EFFECT_LIMITS.drift} m)` }); continue; }
+      over[k] = c; }
+    else if (k === "gravity") { const g = typeof x === "number" ? [0, x, 0] : x;
+      if (!(Array.isArray(g) && g.length === 3 && g.every(Number.isFinite))) { carried.push({ field: k, why: "not a number or [x, y, z]: main drew the preset's own" }); continue; }
+      over.gravity = g.map((n) => Math.min(20, Math.max(-20, n))); }
+    else if (k === "color") { const c = mainColor(x); if (c === null) { carried.push({ field: k, why: "not a colour: main drew the preset's own" }); continue; } over.color = c; }
+    else if (x === "additive" || x === "normal") over.blend = x === "additive" ? "add" : "alpha";
+    else { carried.push({ field: k, why: "not additive or normal: main drew the preset's own" }); continue; }
+    knobs.push(k); }
+  const rest = { ...value }; for (const k of present) delete rest[k];
+  for (const { field } of carried) rest[field] = v[field];
+  if (!knobs.length) return { value: rest, effect: null, doc: null, knobs, carried, adjusted };
+  const key = `${v.preset}\0${JSON.stringify(over)}`;
+  let d = derivedMemo.get(key); if (!d) { const doc = derivedEffect(v.preset, over), bad = effectProblem(doc); d = bad ? { bad } : { doc, effect: effectAddress(doc) }; derivedMemo.set(key, d); }
+  if (d.bad) return { value, effect: null, doc: null, knobs: [], adjusted, carried: present.map((field) => ({ field, why: `the retuned effect is out of bounds (${d.bad})` })) };
+  return { value: { ...rest, effect: d.effect, seed: Number.isFinite(v.seed) ? v.seed : hashSeed(seedKey) }, effect: d.effect, doc: d.doc, knobs, carried, adjusted };
+}
+/** A v1 thing's emitters as project() writes them: [{emitter (null: its own particles), host (the thing written), ...particlesOf}] */
+export function particlesPlan(id, comp) {
+  const out = [];
+  for (const [k, v] of Object.entries(comp ?? {})) {
+    if (v == null) continue;
+    if (k === "particles") out.push({ emitter: null, host: enc(id), ...particlesOf(v, `${id}:${v?.preset ?? ""}`) });
+    else if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { const name = k.slice(10);
+      const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
+      out.push({ emitter: name, host: emitterChildId(enc(id), name), ...particlesOf(seeded, "") }); } }
+  return out;
+}
+const brief = (x) => { const j = JSON.stringify(x); if (j === undefined || j.length <= 80) return x === undefined ? null : x; return Array.isArray(x) ? `${x.length} items` : typeof x === "string" ? `${[...x].length} characters` : `${j.slice(0, 77)}…`; };
+/** main's grass keys the field doesn't hold but createFlora read (main drew a bag with no preset as one stroke of itself): a
+ *  stroke hands its every key to createFlora (client/lib/flora.js), so the bag becomes that one stroke. With a preset, none. */
+export function grassExtras(g) {
+  if (!g || typeof g !== "object" || Array.isArray(g) || g.preset != null || Array.isArray(g.strokes)) return [];
+  const m = mapGrassArgs(g); return Object.keys(m).filter((k) => !(k in COMPONENTS.grass.fields));
+}
+/** Decay 2, as every new light (inverse square: three.js, glTF, Unreal, Godot), at main's brightness (R 10-28): main's rig fell
+ *  off as d^-1.7, so intensity × (range/2)^0.3 lights the middle of the light's own reach as main did (range: main's 10 when unset). */
+export const parityIntensity = (intensity, range) => +((Number.isFinite(intensity) ? intensity : 16) * ((Number.isFinite(range) && range > 0 ? range : 10) / 2) ** 0.3).toPrecision(4);
+function lightParity(id, c, adjust) {
+  const L = c.light; if (!L || typeof L !== "object" || L.kind === "directional" || L.decay !== OLD_LIGHT_DECAY) return;
+  const now = parityIntensity(L.intensity, L.range);
+  adjust(id, "light", "intensity", L.intensity ?? 16, now, `decay 2 (main's rig: 1.7), brightened to main's at ${(Number.isFinite(L.range) && L.range > 0 ? L.range : 10) / 2} m (half its range): × (range/2)^0.3`);
+  c.light = { ...L, decay: 2, intensity: now };
+}
+// main's pivot was in its parent's units, unscaled (motioneval.js rotateAtPivot); today's is the thing's own, scaled (client/lib/motion.js)
+function unscalePivot(id, c, adjust) {
+  const s = c.transform?.scale, p = c.pivot?.pos;
+  if (!Array.isArray(s) || !Array.isArray(p) || p.length !== 3 || s.every((x) => x === 1) || !s.every((x) => Number.isFinite(x) && x !== 0)) return;
+  const now = p.map((x, i) => +(x / s[i]).toPrecision(12)); adjust(id, "pivot", "pos", p, now, "main didn't scale a pivot by its thing's scale; this protocol does"); c.pivot = { ...c.pivot, pos: now };
+}
+/** A value the registry's ranges refuse, brought inside them (componentspec ranges; the authority's checks.js refuses the next edit
+ *  otherwise): numbers clamped, a gt bound's field left to its default, text and lists cut, a path resampled to 64; each listed. */
+function toSpec(id, c, adjust) {
+  for (const [k, v] of Object.entries(c)) { const base = k.split(":")[0], def = COMPONENTS[base];
+    if (!def?.ranges || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    let o = null; const put = (f, x, why) => { adjust(id, k, f, v[f], x, why); (o ??= { ...v }); if (x === undefined) delete o[f]; else o[f] = x; };
+    for (const [f, r] of Object.entries(def.ranges)) { const x = v[f]; if (x === undefined) continue;
+      if (typeof x === "string" && r.maxLen !== undefined && [...x].length > r.maxLen) put(f, [...x].slice(0, r.maxLen).join(""), `longer than ${r.maxLen} characters: cut`);
+      else if (Array.isArray(x) && r.maxItems !== undefined && x.length > r.maxItems) put(f, x.slice(0, r.maxItems), `more than ${r.maxItems} items: the first ${r.maxItems} kept`);
+      else if (typeof x === "number" || (Array.isArray(x) && x.every((n) => typeof n === "number"))) {
+        const one = (n) => (r.gt !== undefined && n <= r.gt ? undefined : Math.min(r.max ?? Infinity, Math.max(r.min ?? -Infinity, n)));
+        const y = Array.isArray(x) ? x.map(one) : one(x);
+        if (Array.isArray(y) ? y.some((n) => n === undefined) : y === undefined) put(f, undefined, `not above ${r.gt}: its default (${def.defaults?.[f] ?? "absent"})`);
+        else if (JSON.stringify(y) !== JSON.stringify(x)) put(f, y, `outside ${r.min ?? "-∞"}..${r.max ?? "∞"}: clamped`); } }
+    if (base === "motion" && v.type === "path" && Array.isArray(v.points) && v.points.length > 64) {   // checks.js: 2 to 64 points
+      const P = v.points, now = Array.from({ length: 64 }, (_, i) => P[Math.round((i * (P.length - 1)) / 63)]); put("points", now, `${P.length} points: resampled to 64 (every ~${((P.length - 1) / 63).toFixed(1)}th, both ends kept)`); }
+    if (o) c[k] = o; }
+}
+// main's world with no owner was open: everyone builder + gen, its '*' unread (shared/rightsfold.js rightsIn, at ccd5c53f)
+const OPEN_CAN = Object.freeze({ ...Object.fromEntries(Object.entries(BUILTIN.builder.can).filter(([, x]) => x)), generate: true });
+/** main's effective rights as this protocol's @world components (R 10-28, item 22): {world, report}. Owned: newcomers and
+ *  guests hold main's '*' (builder when none). Ownerless: roles.js caps everyone at inhabitant, so inhabitant's role-defs
+ *  carry builder's permissions and generate; rank stays inhabitant (report.notes says what that leaves out). */
+export function mainRights(st) {
+  const roles = st?.roles ?? {}, owned = Object.entries(roles).some(([k, r]) => k !== "*" && r?.role === "owner");
+  const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
+    const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
+    return Object.keys(can).length ? { ...rest, can } : rest; };
+  const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
+  const world = {}, notes = [], star = roles["*"];
+  if (owned && DOOR_OF[star?.role]) { world.access = { ...DOOR_OF[star.role] }; const { role: _r, until: _u, ...rest } = toCan(star); if (Object.keys(rest).length) world["default-role"] = { role: "inhabitant", ...rest }; }
+  else { const { until: _u, ...dr } = toCan(star && typeof star === "object" && !DOOR_OF[star.role] ? star : { role: "builder" }) ?? {}; const role = dr.role === "visitor" ? "inhabitant" : dr.role;
+    world["default-role"] = { ...dr, role, ...(role && role !== "owner" ? { guests: role } : {}) };
+    if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
+  if (!owned) { world["role-defs"] = { inhabitant: { can: { ...OPEN_CAN } } };
+    notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at inhabitant (roles.js roleIdOf), so inhabitant's permissions here are builder's and generate. "
+      + "Rank stays inhabitant: a lock (builder strength) and a who: builder gate refuse everyone until the world has an owner (operator-repair set)");
+    if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`); }
+  const dr = world["default-role"];
+  return { world, report: { owned, newcomers: dr?.role ?? "inhabitant", guests: world.access ? "listed only" : dr?.guests ?? "inhabitant", ...(world["role-defs"] ? { inhabitantCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };
+}
+export function project(st, seen = null, who = null, ns = NAMESPACE, content = null, col = null) {
+  const effects = col?.effects, adjust = (id, component, field, was, now, why) => col?.adjusted?.set(`${id}\0${component}\0${field}`, { id, component, field, was: brief(was), now: brief(now), why });
   const out = {};
   // a key the v1 fold lowercased (a ban's) isn't an account as written: who() restores its case first, then reads it
   const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? (lowered ? undefined : asSub(k)), ...(lowered ? { lowered } : {}) }) : enc(k));
@@ -598,7 +731,8 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (k === "picture" && v != null) { const m = materialOf(v); if (m.material) c.material = m.material; if (m.left) c[keyed("imported", "material")] = m.left; if (m.whole != null) c[keyed("imported", "picture")] = m.whole; continue; }   // @22 (CARRIED)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
-      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : k === "sound" ? renameFields("sound", v).value : v; }
+      if (k === "particles") { const p = particlesOf(v, `${id}:${v?.preset ?? ""}`); c.particles = p.value; if (p.doc) effects?.set(p.effect, p.doc); for (const a of p.adjusted) adjust(enc(id), "particles", a.field, a.was, a.now, a.why); continue; }   // @24: a retuned preset is a derived effect
+      c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "captions" ? newCaptions(v) : k === "sound" ? renameFields("sound", v).value : v; }
     if (e.comp?.guard && !e.comp.lock) { c.lock = true; seen?.guards.add(id); } // §5: guard merges into lock
     if (c.lock === true) c.lock = { rank: "builder" };   // @12: the one spelling (a v1 lock and a guard were builder-level)
     if (c.story && typeof c.story === "object" && !Array.isArray(c.story)) c.story = newStory(c.story); // @5: a marker's words, in story's shape
@@ -607,6 +741,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       : e.parent; // not a v1 mount (the v1 fold writes `to` as a string): carried as it is
     for (const [k, v] of Object.entries(e)) {
       if (["pos", "yaw", "q", "scale", "lib", "kind", "color", "intensity", "range", "keep", "day", "comp", "parent", "placer"].includes(k) || ENTITY_SKIP.has(k)) continue;
+      if (k === "collide" && (v === "exact" || v === "box")) { if (!(c.collider && typeof c.collider === "object" && c.collider.shape)) c.collider = { ...(c.collider && typeof c.collider === "object" ? c.collider : {}), shape: v === "exact" ? "mesh" : "box" }; continue; }   // @24: main's spawn collide
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
     const vol = volumePartsOf(enc(id), volumes, c); Object.assign(c, vol.own);
@@ -619,15 +754,18 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
     const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle) : null;
     if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left; }
-    out[enc(id)] = shapeRepaired(c);
+    const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
+    out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
     for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : [])]) out[cid] = shapeRepaired(cc);
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
-      out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: newParticles(seeded) });
+      const p = particlesOf(seeded, ""); if (p.doc) effects?.set(p.effect, p.doc); for (const a of p.adjusted) adjust(emitterChildId(enc(id), name), "particles", a.field, a.was, a.now, a.why);
+      out[emitterChildId(enc(id), name)] = shapeRepaired({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: enc(id) }, label: name, particles: p.value });
     }
   }
   const w = {};
   for (const k of ["sky", "terrain", "grass"]) if (st[k] != null) w[k] = st[k];
+  if (grassExtras(st.grass).length) { const g = mapGrassArgs(st.grass); w.grass = { ...Object.fromEntries(Object.entries(g).filter(([k]) => k in COMPONENTS.grass.fields)), strokes: [g] }; }   // @24 (grassExtras)
   // v1 dialect 3's physics epoch is carried like any field the mapping doesn't know: imported:epoch (@12; was imported-epoch)
   // round-2 R8: v1 echoed into the sky value who set it (`by`, a display name) and at which seq: derived, and a person's
   // name inside a value. Dropped; the log says who set the sky (History, inspect's touched).
@@ -644,9 +782,9 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // @world.access (shared/protocol/access.js); a person's own none / spectator is a record that lists no one (role none:
   // in, they watch only where the world lets everyone watch). A timed grant keeps its `until` (the load's sweep ends one
   // already past).
-  const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
+  Object.assign(w, mainRights(st).world);   // @24 (R 10-28): main's effective rights, written out
   for (const [k, v] of Object.entries(st.roles ?? {})) {
-    if (k === "*") { if (DOOR_OF[v?.role]) { w.access = { ...DOOR_OF[v.role] }; const { role: _r, until: _u, ...rest } = toCan(v); if (Object.keys(rest).length) w["default-role"] = { role: "inhabitant", ...rest }; } else { const { until: _u, ...dr } = toCan(v) ?? {}; w["default-role"] = dr.role === "visitor" ? { ...dr, role: "inhabitant" } : dr; } }
+    if (k === "*") continue;   // the door and the newcomers: mainRights, below
     else { let r = toCan(unsub(v)); const id = person(k, v);
       // a caption deed (v1: to caption one thing, while it is the incarnation the deed was granted for) is a place in that
       // screen's captioners; a timed one stays carried, since captioners has no end
@@ -686,6 +824,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // no account subject in any value, wherever the v1 fold kept it (@16: a binding's authorSub, or anything carried as it was)
   for (const c of Object.values(out)) for (const [k, v] of Object.entries(c)) { const x = withoutAccounts(v); if (x !== v) c[k] = x; }
   for (const c of Object.values(out)) { splitUnknown(c); namespaceUnknown(c, ns); }
+  for (const [id, c] of Object.entries(out)) { unscalePivot(id, c, adjust); toSpec(id, c, adjust); }   // @24: main's unscaled pivot; the registry's ranges
   return clone(out); // a copy: the old fold mutates some records in place (bstate), and aliasing would hide the change
 }
 
@@ -771,7 +910,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   // spawn's or light's placer, a behaviour's bySub with the act's actor); any other account is its own person's alone
   const mapAcct = who ? (sub) => who(sub, { sub }) : undefined;
   // the old genesis as it was, but never an account (@19): a genesis role's sub becomes its person's id, as in an old request
-  push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
+  const translatedSeq = push({ kind: "act", actor: "system", verb: "translated", ts: t0.ts ?? 0, body: { from: unNegZero(withoutAccounts({ ...genesis, translator: physics ? TRANSLATOR_SIM : TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }, mapAcct)) } });
   // the translation writes the repaired spelling, so its log carries the load's once-per-world marker from the start: the
   // system's repair-shapes act, read by verb and actor only (review r8 M3: the translated act's body is purgeable)
   push({ kind: "act", actor: "system", verb: "repair-shapes", ts: t0.ts ?? 0, body: { v: SHAPES_VERSION, ids: [], translated: true } });
@@ -825,7 +964,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   if (physics) Object.assign(stats, { launches: 0, rests: 0, worldDivergences: 0 });
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
-  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr), dynamic);
+  const effects = new Map(), adjusted = new Map();   // every derived particle effect any state named (world.ts stores each); every value brought to spec
+  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr, { effects, adjusted }), dynamic);
   const stepTo = (tick) => { // single steps while anything flies, so each rest's real tick is known
     while (sim.epoch && !sim.epoch.foreign && sim.tick < tick) {
       const flying = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -835,6 +975,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
     }
   };
   let prev = view();
+  // what the world holds before any old entry (main's open-world rights, @24): one change by the system, caused by `translated`
+  { const ops = diff(v4project(v4), prev); if (ops.length) { push({ kind: "change", actor: "system", cause: translatedSeq, ts: t0.ts ?? 0, ...changeBody(unNegZero(ops)) }); stats.change++; stats.ops += ops.length; } }
   const clock = () => (Number.isFinite(lastTs) ? lastTs : 0);   // the latest ts written (push clamps to it)
   const logRests = (ts) => { // P5: one result per body that came to rest, in the order they stopped
     const fresh = Object.keys(sim.bodies).filter((id) => sim.bodies[id].resting && launchSeq[id] !== undefined && !restLogged.has(id))
@@ -879,6 +1021,8 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
   const mapped = [...volumeMappings(v1), ...carriedMappings(v1)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
   const unmapped = unmappedOf(v1); if (unmapped.length) stats.unmapped = unmapped;   // …and what of them has no home (imported:<component>), never silent
+  stats.rights = mainRights(v1).report; if (effects.size) stats.effects = [...effects.keys()].sort();
+  if (adjusted.size) stats.adjusted = [...adjusted.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : `${a.component}.${a.field}` < `${b.component}.${b.field}` ? -1 : 1));
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

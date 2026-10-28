@@ -368,7 +368,7 @@ function flameRgb(t) {   // the builder's colour-over-life: mix(white-hot, yello
   return (Math.round(c[0] * 255) << 16) | (Math.round(c[1] * 255) << 8) | Math.round(c[2] * 255);
 }
 function builderEffect(name, P) {
-  const growCurve = P.flame ? STOPS.map((t) => [t, r4(Math.sqrt(smooth(0, 0.12, t)) * (1 - t * 0.55))])
+  const growCurve = P.flame ? STOPS.map((t) => [t, r4(Math.sqrt(smooth(0, 0.12, t)) * (1 - t * 0.55) * Math.max(0, 1 + P.grow * t))])   // the builder grew a flame too
     : P.grow === 0 ? null : P.grow > -1 ? [[0, 1], [1, r4(1 + P.grow)]] : [[0, 1], [r4(-1 / P.grow), 0], [1, 0]];
   const ramp = STOPS.map((t) => [t, P.flame ? flameRgb(t) : 0xffffff, r4(FADE(t))]);
   const e = {
@@ -402,6 +402,8 @@ function LEGACY_PARAMS() {
   };
 }
 export const ESSENTIALS = Object.freeze(Object.fromEntries(Object.entries(BUILDER).map(([k, P]) => [k, Object.freeze(builderEffect(k, P))])));
+/** An Essential retuned by the builder's own knobs (upstream #256's overrides, its units), or null for a name that isn't one. */
+export const derivedEffect = (name, over = {}) => (Object.hasOwn(BUILDER, name) ? builderEffect(name, { ...BUILDER[name], ...over }) : null);
 export const ESSENTIAL_NAMES = Object.freeze(Object.keys(ESSENTIALS));
 /** An Essential's content address: the same document stored in a world has this name. */
 export const effectAddress = (doc) => `sha256:${sha256(jcs(doc))}`;

@@ -114,6 +114,9 @@ function oldNorm(st: any, phys: any = null) {
     if (e.parent && typeof e.parent.to === "string") e.parent = Object.fromEntries(Object.entries<any>(e.parent).filter(([k]) => !POSE.has(k)));
     if (e.comp && "guard" in e.comp) { const { guard, ...cc } = e.comp; e.comp = cc; if (guard && !cc.lock) e.comp.lock = true; }
     if (e.comp?.lock === true) e.comp = { ...e.comp, lock: { rank: "builder" } };   // declared (translate-v1@12): a lock's one spelling
+    // declared (translate-v1@24): main's spawn `collide` (exact | box) is the collider's shape, unless the thing names one
+    if (e.collide === "exact" || e.collide === "box") { const collide = e.collide; delete e.collide;
+      if (!(e.comp?.collider && typeof e.comp.collider === "object" && e.comp.collider.shape)) e.comp = { ...(e.comp ?? {}), collider: { ...(e.comp?.collider ?? {}), shape: collide === "exact" ? "mesh" : "box" } }; }
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
@@ -149,7 +152,9 @@ function oldNorm(st: any, phys: any = null) {
       if (isB(C.collider) && C.collider.shape === "exact") C.collider = { ...C.collider, shape: "mesh" };
       // declared (translate-v1@12, the shape audit's render-media-env family): a light falls off as the rig's old decay 1.7
       // and says daytime (v1's day: false = full), no shadows; a particle Essential keeps its name (R 10-17)
-      if (isB(C.light)) { const { day, shadows: _sh, ...L } = C.light; C.light = { ...L, decay: L.decay ?? 1.7, daytime: L.daytime ?? (day === false ? "full" : "dim") }; }
+      // …and (@24, R 10-28) decay 2 with main's brightness kept at half its reach: intensity × (range/2)^(2 − 1.7)
+      if (isB(C.light)) { const { day, shadows: _sh, ...L } = C.light; const r = Number.isFinite(L.range) && L.range > 0 ? L.range : 10;
+        C.light = { ...L, ...(L.decay === undefined && L.kind !== "directional" ? { decay: 2, intensity: +((Number.isFinite(L.intensity) ? L.intensity : 16) * Math.pow(r / 2, 0.3)).toPrecision(4) } : { decay: L.decay ?? 1.7 }), daytime: L.daytime ?? (day === false ? "full" : "dim") }; }
     }
     if (phys?.restAt[id]) n.pos = phys.restAt[id].slice();
     if (phys?.sim.boxes && typeof e0.lib === "string" && phys.sim.boxes[e0.lib]) n.comp = { ...(n.comp ?? {}), physics: { kind: phys.dynamic?.(id) ? "dynamic" : "static", shape: phys.sim.boxes[e0.lib] } };   // @11: what the log punts (this incarnation) is dynamic, from its start (R 10-08)
@@ -171,6 +176,11 @@ function oldNorm(st: any, phys: any = null) {
   for (const k of Object.keys(world)) world[k] = (k === "roles" || k === "bans") && world[k] && typeof world[k] === "object" && !Array.isArray(world[k])
     ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(k === "bans" && v && typeof v === "object" && /^(human|agent|aid1):/.test(v.by) ? (({ by: _b, ...r }) => r)(v) : v)]))
     : noAccounts(world[k]);
+  // declared (translate-v1@24, R 10-28): main's effective rights written out, read here from main's rule (rightsfold.js rightsIn):
+  // an unwritten '*' is builder; with no owner, '*' is unread (builder) and everyone holds builder's permissions and generate
+  { const R = world.roles ?? {}, owned = Object.entries<any>(R).some(([k, r]) => k !== "*" && r?.role === "owner");
+    if (!R["*"] || (!owned && ["none", "spectator"].includes(R["*"]?.role))) world.roles = { ...R, "*": { role: "builder" } };
+    if (!owned) world["??role-defs"] = { inhabitant: { can: { build: true, editOthers: true, scripts: true, generate: true } } }; }
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }
@@ -231,7 +241,7 @@ function unproject(ents0: any) {
         if (["sky", "terrain", "grass", "water"].includes(k)) world[k] = v;
         else if (k === "physics-engine") world.epoch = { sim: v.engine, tickMs: v.tickMs };   // translate-v1@10: a dialect-3 epoch
         else if (k.startsWith("assets:")) (world.assets ??= []).push(Object.keys(v).length ? v : dec(k.slice("assets:".length)));
-        else if (k === "default-role") (world.roles ??= {})["*"] = v1Role(fromCan(v)); // DROPPED: roles['*']
+        else if (k === "default-role") (world.roles ??= {})["*"] = v1Role(fromCan(v.guests === v.role ? (({ guests: _g, ...r }) => r)(v) : v)); // DROPPED: roles['*']; @24: guests mirror it
         else if (k.startsWith("roles:")) (world.roles ??= {})[dec(k.slice(6))] = v1Role(fromCan(v));
         else if (k.startsWith("imported-roles:")) (world.roles ??= {})[dec(k.slice("imported-roles:".length))] = v;   // @17: a grant with no rung in this protocol, carried as it was
         else if (k.startsWith(BANS)) (world.bans ??= {})[dec(k.slice(BANS.length))] = v;
