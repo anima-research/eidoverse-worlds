@@ -79,7 +79,26 @@ function dismiss(key) {
   t.node.classList.add('out');
   setTimeout(() => t.node.remove(), 320);
 }
-setErrorSink((context, message) => toast(`${context}: ${message}`, 'err'));
+// One notice per KIND of failure, not per thing (R 10-28: five "realize spawn … fetch …: 404 (×7)" toasts stacked): a fetch
+// that failed with the same status is one grouped toast that counts the things; each thing's line goes to the console.
+// Dismissing it keeps that kind quiet for the session (VS Code / DevTools grouping). Every other error toasts as before.
+const groups = new Map(), quiet = new Set();
+export function errorToast(context, message) {
+  const m = /\bfetch (\S+): (\d{3})\b/.exec(String(message));
+  if (!m) { toast(`${context}: ${message}`, 'err'); return; }
+  const kind = `fetch-${m[2]}`;
+  console.warn(`[load] ${context}: ${message}`);
+  if (quiet.has(kind)) return;
+  const g = groups.get(kind) ?? { things: new Set() }; groups.set(kind, g); g.things.add(String(context));
+  const n = g.things.size, why = m[2] === '404' ? 'not on this server' : `the server answered ${m[2]}`;
+  const text = `${n} thing${n === 1 ? '' : 's'} couldn't load (${why}) — the list is in the console`;
+  const live = g.key && liveToasts.get(g.key);
+  if (live) { live.node.firstChild.textContent = text; clearTimeout(live.timer); live.timer = setTimeout(() => dismiss(g.key), 9000); return; }
+  toast(text, 'err');
+  g.key = `err:${text}`;
+  const t = liveToasts.get(g.key); if (t) { const tk = g.key; t.node.onclick = () => { quiet.add(kind); dismiss(tk); }; }
+}
+setErrorSink(errorToast);
 
 // ============================================================ loading tray
 
