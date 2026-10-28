@@ -22,7 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
-import { mainKnowledge } from "./import-v1/mainknew.ts";
+import { mainKnowledge } from "../../server/mainknew.ts";
 import { directoryAt } from "../../server/directory.ts";
 import { directoryFileIn } from "../../server/keyfiles.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";

@@ -337,26 +337,27 @@ time.
 | 167 | shadow-fade | main | `tools/shadow-fade-test.mjs` | bun | 1 s | 180 s |
 | 168 | frames-layout | main | `tools/frames-layout-test.ts` | bun | 1 s | 180 s |
 | 169 | models-field | main | `tools/models-field-test.ts` | bun | 1 s | 180 s |
-| 170 | owners | main | `tools/protocol/owners-check.ts` | bun | ? | 300 s |
-| 171 | importer | main | `tools/protocol/importer-check.ts` | bun | 1.2 s | 180 s |
-| 172 | eidosim-v1 | main | `tools/protocol/import-v1/eidosim-v1-test.ts` | bun | 0.2 s | 180 s |
-| 173 | render-scene-import | main | `tools/render-scene-import-test.ts` | bun | ? | 300 s |
-| 174 | channelbox | main | `tools/channelbox-test.ts` | bun | ? | 300 s |
-| 175 | last-world | main | `tools/last-world-test.ts` | bun | 0.6 s | 180 s |
-| 176 | event-wire | main | `tools/event-wire-test.ts` | bun | 0.1 s | 180 s |
-| 177 | level-dive | browser | `tools/water/level-dive-check.ts` | Chromium | ? | 300 s |
-| 178 | toast-group | browser | `tools/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
-| 179 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
-| 180 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
-| 181 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
-| 182 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
-| 183 | access-panel | browser | `tools/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
-| 184 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 185 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 186 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 187 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 188 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 189 | client-tools | browser | `tools/run-client.ts --import-only --skip-suites` | Chromium | 202 s | 1010 s |
+| 170 | translate | main | `tools/protocol/translate-check.ts` | bun | 6 s | 180 s |
+| 171 | owners | main | `tools/protocol/owners-check.ts` | bun | ? | 300 s |
+| 172 | importer | main | `tools/protocol/importer-check.ts` | bun | 1.2 s | 180 s |
+| 173 | eidosim-v1 | main | `tools/protocol/import-v1/eidosim-v1-test.ts` | bun | 0.2 s | 180 s |
+| 174 | render-scene-import | main | `tools/render-scene-import-test.ts` | bun | ? | 300 s |
+| 175 | channelbox | main | `tools/channelbox-test.ts` | bun | ? | 300 s |
+| 176 | last-world | main | `tools/last-world-test.ts` | bun | 0.6 s | 180 s |
+| 177 | event-wire | main | `tools/event-wire-test.ts` | bun | 0.1 s | 180 s |
+| 178 | level-dive | browser | `tools/water/level-dive-check.ts` | Chromium | ? | 300 s |
+| 179 | toast-group | browser | `tools/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
+| 180 | browser | browser | `tools/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
+| 181 | client | browser | `tools/protocol/client-check.ts` | Chromium | 60 s | 300 s |
+| 182 | refusedjoin | browser | `tools/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
+| 183 | client-b2 | browser | `tools/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
+| 184 | access-panel | browser | `tools/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
+| 185 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 186 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 187 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 188 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 189 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 190 | client-tools | browser | `tools/run-client.ts --import-only --skip-suites` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 158 (~1750 s), browser 13 (~1147 s); 189 suites in all.
+Lanes: core 18 suites (~79 s), main 159 (~1756 s), browser 13 (~1147 s); 190 suites in all.
 <!-- END GENERATED -->

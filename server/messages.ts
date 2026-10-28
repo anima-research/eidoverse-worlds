@@ -28,7 +28,7 @@ import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
 import { snapshots } from "./snapshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy } from "./moderation.ts";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
 
 /** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
@@ -446,9 +446,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     if (msg.type === "global-bans") {
-      const list = Object.entries(globalBans).map(([k, b]) =>
-        `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
-      ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
+      ws.send(JSON.stringify({ type: "mod", text: globalBansText() }));   // pre-account bans listed too (R 10-28: moderation.ts restoreBans)
       return;
     }
     // an account selector keeps its whole length (an aid1 account carries its issuer's URL): cut to a display name's 64
@@ -465,6 +463,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const accts = new Set([id, ...dir.accountsNamed(id)]);
       const gone = bansLiftedBy(globalBans, id, accts, fold);
       for (const k of gone) delete globalBans[k];
+      gone.push(...takePending(id, fold));
       saveGlobalBans();
       console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
       ws.send(JSON.stringify({ type: "mod", text: gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
@@ -493,6 +492,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     const ts = Date.now();
     for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };
+    if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
     for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: ts + ADDR_BAN_MS, ...(reason ? { reason } : {}) };
     saveGlobalBans();
     let expelled = 0;

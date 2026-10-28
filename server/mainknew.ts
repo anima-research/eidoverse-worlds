@@ -1,5 +1,5 @@
-// tools/protocol/import-v1/mainknew.ts — which account the main-era server recorded for a NAME, outside the log being
-// translated: what lets a translation bind a name-only owner to the account they sign in with (owners sprint, R 10-28).
+// server/mainknew.ts — which account the main-era server recorded for a NAME, outside the log being
+// translated: what lets a translation bind a name-only owner, and the boot a name-only global ban (moderation.ts), to an account.
 // What main recorded (upstream main ccd5c53f), and what this reads:
 //   - WORLDS_DIR/.principals.json {sub: {name, kind: human|agent, first, last}}: every account a verified door saw, under the
 //     credential's name at its last sighting (server/access.ts notePrincipal; since 10-17). Main's own grant looked a name up

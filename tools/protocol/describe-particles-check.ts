@@ -223,7 +223,7 @@ const cases: Case[] = [
       return { tr: TV1.TRANSLATOR, p: c.particles, imp: c["imported:particles"], back: PE.instanceOf?.({ preset: "fire", seed: 781526, origin: [0, 0.18, 0], count: 150, quality: "auto" }) }; },
     // @12 (R 10-17): an Essential keeps its name, as the door and the load keep it
     good: (o) => translatorVersion(o.tr) >= 14 && JSON.stringify(o.p) === JSON.stringify({ effect: "fire", seed: 781526, at: [0, 0.18, 0], params: { count: 150, quality: "auto" } }) && o.imp?.glow === true && JSON.stringify(o.back) === JSON.stringify(o.p) },
-  { id: "X13", what: "upstream #256: a v1 thing's named emitter (particles:<name>) is translated as a child thing carrying it (one particles per thing), lit and put out on its own; v2's scale is the instance's, its look knobs ride in imported:particles", run(s) {
+  { id: "X13", what: "upstream #256: a v1 thing's named emitter (particles:<name>) is translated as a child thing carrying it (one particles per thing), lit and put out on its own; v2's scale is the instance's, its look knobs a derived effect (@24: translate-check P17)", run(s) {
       const L = [{ seq: 0, ts: 1, actor: "door", verb: "genesis", args: {} }, { seq: 1, ts: 2, actor: "mica", verb: "spawn", args: { id: "hearth", lib: "x.glb", pos: [0, 0, 0] } },
         { seq: 2, ts: 3, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire", origin: [0, 0.25, 0], scale: 0.5, wobble: 0.1 } } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "hearth", type: "particles:smoke", data: { preset: "smoke", origin: [0, 0.9, 0], color: "#3a3a44", gravity: 0.7 } } },
@@ -237,9 +237,9 @@ const cases: Case[] = [
       const made = s.call("olive", "create", { id: "smoke-k", components: { transform: { pos: [0, 0, 0] }, parent: { to: "hearth" }, label: "smoke", particles: { effect: "smoke", at: [0, 0.9, 0] } } });
       return { div: [r.stats?.divergences, r2.stats?.divergences], host: E.hearth, kids: kids(E), after: kids(E2), keys: Object.keys(E.hearth ?? {}), made: show(made), same: TV1.emitterChildId?.("hearth", "smoke") === TV1.emitterChildId?.("hearth", "smoke"),
         seed: PE.hashSeed?.("hearth:particles:smoke:smoke") }; },
-    good: (o) => o.div[0] === 0 && o.div[1] === 0 && o.host?.particles?.scale === 0.5 && o.host?.["imported:particles"]?.wobble === 0.1
+    good: (o) => o.div[0] === 0 && o.div[1] === 0 && o.host?.particles?.scale === 0.5 && /^sha256:/.test(o.host?.particles?.effect) && o.host?.["imported:particles"] === undefined
       && !o.keys.some((k: string) => k.startsWith("particles:")) && o.kids.length === 2
-      && o.kids.some((k: any) => k.label === "smoke" && k.p?.effect === "smoke" && JSON.stringify(k.p.at) === "[0,0.9,0]" && k.p.seed === o.seed && k.imp?.color === "#3a3a44" && k.imp?.gravity === 0.7)
+      && o.kids.some((k: any) => k.label === "smoke" && /^sha256:/.test(k.p?.effect) && JSON.stringify(k.p.at) === "[0,0.9,0]" && k.p.seed === o.seed && k.imp === undefined)
       && o.kids.some((k: any) => k.label === "sparks" && k.p?.effect === "embers" && k.p.seed === 7)
       && o.after.length === 1 && o.after[0].label === "smoke" && o.same && /^ok/.test(o.made) },
   { id: "X14", what: "a scaled emitter says how big it is in every text reading (upstream #256: size is a shared fact, a candle flame is not a bonfire); at its own size nothing is claimed", run() {

@@ -59,7 +59,7 @@ await tryRow('LI', async () => {
   check('LI9 …a second run finds nothing', repairComps(R).set.length === 0, '');
   const t = translate(v1({ verb: 'light', args: { id: 'l1', pos: [0, 2, 0], color: '#ffeedd', intensity: 8, range: 6, day: false } }));
   const tl = t.final.translated.l1?.light;
-  check('LI10 translate-v1@12 writes a v1 light as the load repairs it (decay 1.7, daytime)', tl?.decay === 1.7 && tl?.daytime === 'full' && !('day' in (tl ?? {})) && !t.stats.divergences, [tl, t.stats.divergences]);
+  check('LI10 translate-v1 writes a v1 light at decay 2, brightened to main\'s at half its range (@24, R 10-28), daytime', tl?.decay === 2 && tl?.intensity === +(8 * 3 ** 0.3).toPrecision(4) && tl?.daytime === 'full' && !('day' in (tl ?? {})) && !t.stats.divergences, [tl, t.stats.divergences]);
 });
 
 // ===================================================================== model: its library path as written; the bytes' hash rides beside it

@@ -10,6 +10,7 @@ import { atomicWrite } from "./fsutil.ts";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { ACCOUNT_SHAPE } from "./directory.ts";
+import { mainKnowledge, type Known } from "./mainknew.ts";
 
 // ---- global bans ------------------------------------------------------------
 // The door's own list, across all its worlds (each world's own bans are its door's moderator log). There is no global
@@ -17,31 +18,41 @@ import { ACCOUNT_SHAPE } from "./directory.ts";
 // Keyed by ACCOUNT (security review 10-06 H4/L4): a display name is typed, not proven, so banning a name hit every
 // namesake and missed the person the moment they picked another. A guest has no account: their ban names their
 // connection's address (hashed, never stored raw) and expires (ADDR_BAN_MS) — an address is shared and reassigned.
-export type BanRec = { by: string; ts: number; reason?: string; name?: string; account?: string; addr?: string; until?: number; world?: string; legacySub?: boolean };
+export type BanRec = { by: string; ts: number; reason?: string; name?: string; account?: string; addr?: string; until?: number; world?: string; legacySub?: boolean; boundFrom?: string };
 export const ADDR_BAN_MS = 24 * 3600 * 1000;
 export const BANS_FILE = join(WORLDS_DIR, ".bans.json");
 export const globalBans: Record<string, BanRec> = {};
 const refusedBans: Record<string, BanRec> = {};   // refused at boot (restoreBans): never enforced, written back as they were
+/** Pre-account bans (a name alone) main's records bind to no one account: kept on disk, never enforced, listed for operators. */
+export const pendingBans: Record<string, BanRec & { why: string }> = {};
+export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
 export function saveGlobalBans() {
   try {
-    atomicWrite(BANS_FILE, JSON.stringify({ ...refusedBans, ...globalBans }, null, 2), { mode: 0o600 });
+    const pending = Object.fromEntries(Object.entries(pendingBans).map(([k, { why: _w, ...b }]) => [k, b]));
+    atomicWrite(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2), { mode: 0o600 });
   } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
  *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
- *  `legacySub` and matches the aid1 account whose sub it names (review of #260). A name-keyed record with
- *  neither can't be honoured safely (it would hit namesakes) and is dropped, said once. */
-export function restoreBans(raw: Record<string, BanRec>, refused: Record<string, BanRec> = {}): Record<string, BanRec> {
-  const out: Record<string, BanRec> = {}; const dropped: string[] = [];
+ *  `legacySub` and matches the aid1 account whose sub it names (review of #260). A name-keyed record with neither is
+ *  bound to the one account main recorded for that name (`known`: mainknew.ts; R 10-28, the Minecraft migration); one
+ *  main's records bind to no one account is never enforced (it would hit namesakes): kept in `pending`, listed. */
+export function restoreBans(raw: Record<string, BanRec>, refused: Record<string, BanRec> = {}, { known = () => null, pending = {} }: { known?: (name: string) => Known | null; pending?: Record<string, BanRec & { why: string }> } = {}): Record<string, BanRec> {
+  const out: Record<string, BanRec> = {}; const dropped: string[] = [], bound: string[] = [];
   for (const [k, b] of Object.entries(raw ?? {})) {
     if (!b || typeof b.by !== "string") continue;
     const sub = (b as any).sub;
     if (b.account && !b.legacySub && !ACCOUNT_SHAPE.test(b.account)) refused[k] = b;   // a legacySub record is matched by its own rule (banHoldsAgainst)
     else if (b.account || b.addr) out[k] = b;
     else if (typeof sub === "string" && sub) { const { sub: _s, ...rest } = b as any; out[k] = { ...rest, account: sub, legacySub: true }; }
-    else dropped.push(b.name ?? k);
+    else { const name = b.name ?? k, m = known(name), subs = [...new Set(m?.subs ?? [])];
+      const legacy = (x: string) => /^agent:/.test(x) && !ACCOUNT_SHAPE.test(x);   // a home-node agent's sub: its aid1 account ends with it
+      if (subs.length === 1 && (ACCOUNT_SHAPE.test(subs[0]) || legacy(subs[0]))) {
+        out[`acct:${subs[0]}`] ??= { ...b, name, account: subs[0], ...(legacy(subs[0]) ? { legacySub: true } : {}), boundFrom: `main's ${m!.from.join(" and ")}` }; bound.push(name); }
+      else { pending[k] = { ...b, name, why: subs.length > 1 ? `main recorded ${subs.length} accounts under this name` : subs.length ? "main recorded an account that isn't one here" : "main recorded no account for this name" }; dropped.push(name); } }
   }
-  if (dropped.length) console.log(`[mod] ${dropped.length} name-only global ban(s) from before accounts dropped (they would hit namesakes): ${dropped.join(", ")}`);
+  if (bound.length) console.log(`[mod] ${bound.length} pre-account global ban(s) bound to the one account main recorded for the name: ${bound.join(", ")}`);
+  if (dropped.length) console.log(`[mod] ${dropped.length} ${PENDING_WORDS.replace(/^pre-account ban/, "pre-account global ban(s)")}; kept on disk, not enforced (they would hit namesakes): ${Object.values(pending).map((b) => `${b.name} (${b.why})`).join(", ")}`);
   const no = Object.entries(refused);
   if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => b.name ?? k).join(", ")}`);
   return out;
@@ -49,13 +60,27 @@ export function restoreBans(raw: Record<string, BanRec>, refused: Record<string,
 try {
   if (existsSync(BANS_FILE)) {
     const raw = JSON.parse(readFileSync(BANS_FILE, "utf8")) as Record<string, BanRec>;
-    // a name-keyed record from before accounts can't be honoured safely (it would hit namesakes): kept only if it
-    // carried the account it was made against
-    Object.assign(globalBans, restoreBans(raw, refusedBans));
+    // a name-keyed record from before accounts: bound through main's records, else kept pending (restoreBans)
+    const nameOnly = Object.values(raw ?? {}).some((b) => b && !b.account && !b.addr && !(b as any).sub);   // the logs are read only when needed
+    Object.assign(globalBans, restoreBans(raw, refusedBans, { pending: pendingBans, ...(nameOnly ? { known: mainKnowledge(WORLDS_DIR) } : {}) }));
+    if (Object.entries(globalBans).some(([k, b]) => b.boundFrom && !(k in raw))) saveGlobalBans();   // the binding, kept
     if (Object.keys(globalBans).length) console.log(`[mod] ${Object.keys(globalBans).length} global ban(s) loaded`);
   }
 } catch (e) { console.log(`[mod] global ban restore failed (starting empty): ${e}`); }
 
+/** The operator's ban list in words (global-bans): the enforced bans, then the pre-account ones, listed and never enforced. */
+export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans): string {
+  const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
+  const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
+  return [list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
+}
+/** The pre-account bans filed under this name (any case, by `fold`), removed: an unban lifts them, a ban that binds replaces them. */
+export function takePending(id: string, fold: (s: string) => string, pending: Record<string, BanRec & { why: string }> = pendingBans): string[] {
+  const keys = Object.entries(pending).filter(([k, b]) => fold(b.name ?? k) === fold(id)).map(([k]) => k);
+  for (const k of keys) delete pending[k];
+  return keys;
+}
 /** Whether a ban record names this account: its own account, or, for a record from before accounts (`legacySub`), the aid1
  *  account whose sub it names, under any issuer. */
 export function banHoldsAgainst(b: BanRec, account: string | null | undefined): boolean {
