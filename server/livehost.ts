@@ -170,7 +170,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     dropCache(dir); cachedAt = -1;
     st = fold(entries); resim(); cache?.onRefold?.();
     return false;
-  });
+  }).catch((x: Any) => { console.error(`[world:${name}] the fold cache's re-derive failed: ${x?.message ?? x}`); return null; });
   return w;
 }
 
