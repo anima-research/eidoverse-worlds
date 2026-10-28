@@ -57,9 +57,15 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries (M2). Ours win on a clash (the same id can only be minted by one of them).
   const tomb = new Set<string>();   // ids this process forgot (forgetPlanned): the merge below must not bring them back from disk
+  // an account another writer bound to an id this process holds (tools/operator-bind.ts, the server running): a bind only
+  // adds, so it is taken, never written over; an account this process already gives another id stays that id's
+  const takeBinds = (id: string, e: Entry) => { const mine = d.ids[id]; if (!mine || !Array.isArray(e?.subs)) return;
+    for (const s of e.subs) { const k = mine.world ? `${s}|${mine.world}` : s;
+      if (mine.subs.includes(s) || !ACCOUNT_SHAPE.test(s) || (byKey.has(k) && byKey.get(k) !== id)) continue;
+      mine.subs.push(s); if (mine.kind === "imported") mine.kind = "account"; byKey.set(k, id); } };
   const save = () => {
     const disk = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as File) : null;
-    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); }
+    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e);
     fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(d, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600);
   };
@@ -68,7 +74,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // an account re-reads before minting, or the server would hand a translated world's owner a fresh, roleless id
   const refresh = () => { if (!fs.existsSync(file)) return;
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
-    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } };
+    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
   /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another

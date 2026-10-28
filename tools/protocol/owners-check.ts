@@ -10,6 +10,11 @@
 //   OB3  the upgrade's result carries the same list (the approved report's)
 //   OB4  a name another world's log on this server paired with an account is bound
 //   OB5  an account that already wears an id here: the owner role goes to that id (one person, one identity)
+//   OR1  operator-repair bind <world> <name> <account>: the imported owner is worn by that account (signing in is them, with
+//        their roles); by id too; recorded in world.mod.jsonl as an operator repair, no account printed or logged
+//   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
+//        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
+//   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -100,6 +105,39 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const u = upgrade(root, "den");
   row("OB5", () => ok(u.up.code === 0 && u.roles["Antra Now"]?.[0] === pre && u.roles["Antra Now"]?.[1] === "owner" && Object.keys(u.roles).length === 1,
     "OB5 an account that already wears an id on this server: the old owner's role goes to that id, no second identity", { pre, roles: u.roles, out: u.up.code ? u.up.out.slice(-400) : undefined }));
+}
+
+// ================= OR: the operator binds an imported identity to an account =================
+{ const root = scratch("owners-or"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "porch", [["world", "grant", { id: "fable", role: "owner" }], ["fable", "grant", { id: "janus", role: "owner", sub: "human:test:janus" }],
+    ["fable", "grant", { id: "Digi_Rat", role: "builder" }], ["fable", "grant", { id: "Twin", role: "builder" }], ["fable", "grant", { id: "twin", role: "builder" }], ["Twin", "say", { text: "hi" }]]);
+  const u = upgrade(root, "porch"); const file = directoryFileIn(W);
+  const bind = (...a: string[]) => { const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", "bind", ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  const modOf = () => { const f = path.join(W, "porch", "world.mod.jsonl"); return fs.existsSync(f) ? fs.readFileSync(f, "utf8") : ""; };
+  const held = directoryAt(file);   // as a running server holds it: read before the bind
+  const fableId = u.roles.fable?.[0], digiId = u.roles.Digi_Rat?.[0], twins = [u.roles.Twin?.[0], u.roles.twin?.[0]];
+  const b1 = bind("porch", "Fable", "human:test:fable"); const e1 = directoryAt(file).entry(fableId) ?? {};
+  const rec = modOf().trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).at(-1) ?? {};
+  row("OR1", () => ok(u.up.code === 0 && b1.code === 0 && same(e1.subs, ["human:test:fable"]) && e1.kind === "account" && directoryAt(file).resolve({ sub: "human:test:fable", name: "fable" }) === fableId
+    && u.roles.fable?.[1] === "owner" && rec.verb === "bind" && rec.who === fableId && rec.operator === true && !/human:test:fable/.test(modOf()) && !/human:test:fable/.test(b1.out) && /operator repair/.test(b1.out),
+    "OR1 operator-repair bind porch Fable human:test:fable: the imported owner (any case of the name) is worn by that account, so signing in with it is them, owner; recorded in world.mod.jsonl as an operator repair; the account is neither printed nor logged",
+    { up: u.up.code, b1, e1, rec }));
+  const before = fs.readFileSync(file, "utf8"), mod0 = modOf();
+  const r2 = bind("porch", "janus", "human:test:other");
+  const r3 = ["discord:1", "human:", "agent:fable", "human:test:a b", "service:x"].map((a) => bind("porch", "Digi_Rat", a));
+  const r4 = bind("porch", "Digi_Rat", "human:test:janus");
+  const r5 = [bind("porch", "twin", "human:test:twin"), bind("porch", "nobody", "human:test:nobody")];
+  const still = fs.readFileSync(file, "utf8") === before && modOf() === mod0;
+  row("OR2", () => ok(r2.code === 1 && /isn't an imported identity/.test(r2.out) && still, "OR2 bind refuses a target that isn't imported (janus's identity wears an account), nothing changed", r2));
+  row("OR3", () => ok(r3.every((r) => r.code === 1 && /isn't an account/.test(r.out)) && still, "OR3 bind refuses a malformed account (no provider, empty, main's agent:<name>, a space, a shape that isn't one here), nothing changed", r3.map((r) => r.out.slice(0, 120))));
+  row("OR4", () => ok(r4.code === 1 && /already wears janus/.test(r4.out) && still, "OR4 bind refuses an account that already wears another identity here (it can't be two people), nothing changed", r4));
+  row("OR5", () => ok(r5[0].code === 1 && /2 imported identities/.test(r5[0].out) && twins.every((id) => r5[0].out.includes(id)) && r5[1].code === 1 && /nobody called "nobody"/.test(r5[1].out) && still,
+    "OR5 bind refuses an ambiguous name (Twin and twin: two imported people), naming their ids, and an unknown one, nothing changed", r5));
+  const b6 = bind("porch", twins[0], "human:test:twin"); held.markRenamed(digiId);   // the held directory writes after the bind
+  const e6 = directoryAt(file).entry(fableId) ?? {}, t6 = directoryAt(file).entry(twins[0]) ?? {};
+  row("OR6", () => ok(b6.code === 0 && same(e6.subs, ["human:test:fable"]) && same(t6.subs, ["human:test:twin"]) && held.resolve({ sub: "human:test:fable", name: "fable" }) === fableId && held.entry(fableId)?.kind === "account",
+    "OR6 a directory another process held from before (a running server) takes the binds: its next save keeps them, and signing in with a bound account there finds the identity; a bind by id works too", { b6: b6.out.slice(0, 200), e6, t6 }));
 }
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);

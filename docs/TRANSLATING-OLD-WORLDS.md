@@ -112,17 +112,46 @@ still reads `WORLD_ADMIN` too (merged with `SERVER_OPERATORS`) and logs one
 line at boot asking you to rename it; an entry without a `:` in either
 refuses to boot, saying so, so a typo can't quietly leave you out.
 
-**2. Upgrade the world, then give it to its owner.** A main-era world's
-owner is recorded by display name, and nothing can yet bind that name to an
-account (anyone could sign up as it). So the server operator upgrades the
-world (the browser's Upgrade world…, or the CLI above), and the old owner
-comes over as an *imported* person who holds the owner role but whom no
-account can be. Then ask the real owner to sign in and open the world (they
-arrive as a newcomer), and, while they're there, look them up and give them
-the world with operator-repair. Put your browser's `ew_sess` cookie for the
-server in place of `<cookie>` (or set `EIDO_AGENT_TOKEN` to an operator
-agent's token instead), your server's address for `https://your.server`, and
-the world's name for `<world>`:
+**2. Upgrade the world; its owners come with their accounts where main
+knew them.** A main-era world mostly records its owners by display name.
+The upgrade binds each name to the account main itself recorded for it, when
+there is exactly one: the server's `.principals.json` (every account a
+verified door saw, under its name), or a pair main stamped into another world
+on the same server (a grant's or ban's `sub`, a placer's). The world's own
+record wins over both. That is the rule main's own grant used to resolve a
+name, so whoever signs in with that account is the owner, as before.
+
+A name main recorded no account for, or several, comes over as an
+*imported* person: it holds its role, and no account can be it yet. The dry
+run lists every role holder, bound or not (`people` in the report), and says
+for each unbound one why and how to bind it:
+
+    owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons "fable" <their account>
+
+**Binding an imported owner.** Ask the owner for their account (the `"sub"`
+`https://<your server>/whoami` shows them when they're signed in), then, on
+the host:
+
+    WORLDS_DIR=<dir> bun tools/operator-repair.ts bind <world> <their old name, or its u- id> <their account>
+
+From then on, signing in with that account *is* that identity, with its roles,
+in every world. The bind is recorded in the world's `world.mod.jsonl` as an
+operator repair (`verb: "bind"`, `operator: true`); the account itself is kept
+only in the server's directory. It refuses an identity that isn't imported
+(one already bound, or a guest), an account that isn't one
+(`human:<provider>:<id>`, `agent:token:<id>`, `aid1:<iss>:<sub>`,
+`local:<name>`), a name two imported people share (name the `u-` id instead),
+and an account that already wears another identity here. The server may keep
+running: it picks the bind up at that account's next sign-in.
+
+**If they already signed in.** An owner who signed in to this server before
+being bound already has an identity of their own, so their account can't
+also wear the imported one. Give them the world from the inside instead. Ask
+them to open the world (they arrive as a newcomer), and, while they're there,
+look them up and give them the world with operator-repair. Put your browser's
+`ew_sess` cookie for the server in place of `<cookie>` (or set
+`EIDO_AGENT_TOKEN` to an operator agent's token instead), your server's
+address for `https://your.server`, and the world's name for `<world>`:
 
     EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> whois '{"name":"Ann"}'
     EIDO_SESSION=<cookie> bun tools/operator-repair.ts https://your.server <world> whois '{"name":"Ann-tann"}'
@@ -143,7 +172,7 @@ act, marked `operator: true`.
 **3. Nobody is locked out.** A server operator enters every world and can
 always run operator-repair there: to set or clear anyone's role, the world's
 `access` and `default-role`, or lift a ban. If an owner is lost, banned, or
-was never bound, operator-repair is the way back in.
+was never bound, `operator-repair bind` or operator-repair set is the way back in.
 
 ## Backups
 
