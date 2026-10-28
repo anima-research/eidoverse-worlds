@@ -30,7 +30,7 @@ const { REACH_NOTE_MS, refusalWords } = await import("../../shared/protocol/cons
 let pass = 0, fail = 0;
 const ok = (c, what, d?) => { if (c) { pass++; console.log(`  ok   ${what}`); } else { fail++; console.log(`  FAIL ${what}${d !== undefined ? " — " + JSON.stringify(d).slice(0, 500) : ""}`); } };
 
-foundWorld(path.join(process.env.WORLDS_DIR, "touch"), "touch", "olive");
+const OWNER = foundWorld(path.join(process.env.WORLDS_DIR, "touch"), "touch", "olive").owner;
 const w = new World("touch");
 const A = (k) => "u-" + k.repeat(20);   // actor ids in the directory's shape
 const people = {};
@@ -240,6 +240,24 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   const during = !!live.presence.reaches?.[sam.actorId];
   idle(sam);
   ok(during && !live.presence.reaches?.[sam.actorId], "RG16c after Sam lets go, the allowed touch is no longer under way", { during, after: live.presence.reaches?.[sam.actorId] }); }
+// RR (R 10-28 13:44, "lift caps in general"): the relay forwards a puppet or a grab from any distance unless the world sets a
+// range (@world.body-default.range, m); consent still decides
+{ const P = await import("../../shared/protocol/physconst.js");
+  const una = person("Una", "un", [40, 0, 40]), far = person("Fen", "fe", [70, 0, 40]);   // 30 m apart
+  req(una, "consent", { move: true, touch: true });
+  const puppet = (m) => { const k = una.got.length, kf = far.got.length; MESSAGES["puppet"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Una", ...m });
+    return { got: una.got.slice(k).filter((x) => x.type === "puppet").length, err: far.got.slice(kf).find((x) => x.type === "error")?.error ?? null }; };
+  const g = (m) => { const k = una.got.length; MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", grab: { joint: "hips" } }); return una.got.slice(k).filter((x) => x.type === "bodydrag").length; };
+  const a = puppet({ ragdoll: true }), b = puppet({ pose: { head: [0, 0, 0, 1] } });
+  ok(P.BODY_RANGE === null && a.got === 1 && b.got === 1 && g() === 1, "RR1 no range by default: Fen's knock-over, pose and grab reach Una from 30 m (her consent allows them)", { a, b, range: P.BODY_RANGE });
+  const set = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
+  const c = puppet({ ragdoll: true }), d = puppet({ pose: { head: [0, 0, 0, 1] } });
+  ok(set?.ok && c.got === 0 && /30\.0 m away/.test(c.err ?? "") && /5 m/.test(c.err ?? "") && d.got === 0 && g() === 0, "RR2 a world that sets range 5 refuses them from 30 m, saying how far and the world's range", { set, c, d });
+  pose(far, { p: [44, 0, 40], yaw: 0 });
+  ok(puppet({ ragdoll: true }).got === 1, "RR3 …and forwards them within it");
+  req(una, "consent", { move: false }); ok(puppet({ ragdoll: true }).got === 0, "RR4 …where consent still decides");
+  w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
+
 let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
 //   AG1  a stranger agent's hand on a person's chest_front: no frame the person receives carries it, and the reach reply

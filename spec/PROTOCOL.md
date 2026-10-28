@@ -778,7 +778,10 @@ copy that was updated and is published again keeps its parts' keys.
   them off both). Nothing asks: the answer is there before the act. A
   refused act is also said to its target, quietly: `body-refused {from,
   class, gate}` in their body inbox (`gate` null: their block list), once
-  per asker per minute whatever the asker tries meanwhile. Only
+  per asker per minute whatever the asker tries meanwhile. Distance is no
+  part of consent: the relay forwards a knock-over, pose or grab of another
+  body from any distance unless the world sets `@world.body-default.range`
+  (m). Only
   the owner changes their own answers. Near, follow and voice are classes
   no gate covers yet; nothing enforces them. The designs this replaced (the
   table of presets, tiers, pause and delegates; then one switch

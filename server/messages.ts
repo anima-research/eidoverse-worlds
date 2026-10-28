@@ -17,7 +17,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
 import { gateReach } from "./reachgate.ts";
-import { BODY_RANGE } from "../shared/protocol/physconst.js";
+import { bodyRangeOf } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor, foldName } from "./directory.ts";
@@ -44,17 +44,18 @@ const ACTOR_ID = /^u-[a-z2-7]{20}$/;
  *  for the class — move for shove and displace, touch for pose — then the world's default) and a sane range, BEFORE it's
  *  forwarded. The target's client still has the last word; this is so a packet never reaches a body that said no.
  *  Returns the refusal, or null to forward. */
-export { BODY_RANGE };   // m between the two bodies' last frames
 function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"): string | null {
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
   const d = consentDecide(live.presence, c.actorId, tc.actorId, cls);
   if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause (a closed gate, a block): the real cause is theirs, not yours; they are told (once per asker per cooldown)
-  const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
+  // a range only where the world sets one (@world.body-default.range; R 10-28 13:44): m between the two bodies' last frames
+  const r = bodyRangeOf(live.state?.()?.entities?.["@world"]?.c?.["body-default"]); if (r == null) return null;
+  const a = c.lastPose?.p, b = tc.lastPose?.p;
   if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
   const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (${cls} reaches ${r} m) — walk closer`;
+  if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (this world's range is ${r} m) — walk closer`;
   return null;
 }
 function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {

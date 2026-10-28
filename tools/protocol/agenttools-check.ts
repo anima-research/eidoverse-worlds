@@ -64,7 +64,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
   ok(/title:/.test(pp) && HINTS.every((h) => new RegExp(`${h}:\\s*(true|false)`).test(pp)), "AT4 …and the stdio host's own pending_pings tool too", pp.slice(0, 400));
   // AT3 / AT2 descriptions
   const desc = Object.fromEntries(TOOLS.map((t) => [t.name, t.description]));
-  ok(!/default for agent performers/.test(desc.act) && /owner's call \(their move gate/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
+  ok(!/default for agent performers/.test(desc.act) && /owner's call \(their move gate/.test(desc.act) && desc.act.includes((await import("../../shared/protocol/physconst.js")).bodyRangeWords()) && !/within 3 m/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",

@@ -126,10 +126,10 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0, "BC2b …but a pose is not: posing is behind the touch gate, never move", sly.since(ks));
-  // range: from 20 m, no
-  sly.at(20, 0); await sleep(300); k = vic.msgs.length; ks = sly.msgs.length;
-  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Sly is told he is too far away", () => sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), { ms: 2000 });
-  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), "BC3 a knock-over from 20 m is refused (out of reach), whatever the table says", sly.since(ks));
+  // range: none unless the world sets one (R 10-28 13:44; reachgate RR2 sets one)
+  sly.at(20, 0); await sleep(300); k = vic.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over from 20 m", () => got(k, "puppet").length, { ms: 2000 });
+  ok(got(k, "puppet").length === 1, "BC3 a knock-over from 20 m is forwarded: no range by default, consent decides", vic.since(k).map((m) => m.type));
   // the lists, at the server: block beats an open gate, allow beats a closed one
   sly.at(1, 0); await vic.req("consent", { block: sly.actor }); await sleep(300);
   k = vic.msgs.length; ks = sly.msgs.length;
