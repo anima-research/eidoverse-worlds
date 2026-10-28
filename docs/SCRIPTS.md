@@ -104,6 +104,7 @@ always the right one to keep.)
 | `world.children(id)` | the ids parented to it (≤ 1000) |
 | `world.ids()` | every id in the world (≤ 1000, sorted) |
 | `world.near(r)` | identities of people within `r` m of the thing (the act records `r` and how many, never who) |
+| `world.nearby(r)` | the same people as `[{id, d}]`, `d` their distance in metres (3 dp), nearest first; recorded as `near` is, never who or how far (`near` keeps its bare ids, so older scripts run unchanged) |
 | `world.count()` | how many people are here (recorded in the act) |
 | `world.name(id)` | a person's display name (identities are opaque ids; the act counts the call, never records the name), or `null` |
 | `world.set(id, comp, value)` | propose a write (must be inside `scope`) |
@@ -176,8 +177,8 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
 clock (the act's `ts`), `seed` and presence `reads`, and compares the writes. An act's `reads` say what was asked and
-how much came back (`{near: [{r, n}], count: [n], names: k}`), never who: so a re-run answers `world.near` with stand-ins
-and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
+how much came back (`{near: [{r, n}], count: [n], names: k}`; `nearby` is recorded under `near`), never who: so a re-run
+answers `world.near` and `world.nearby` with stand-ins (each `r` away) and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
 read who was near or a name, the auditor lists it as `skipped` (it can't be re-run to that result), never as verified.
 
 ## Auditing a script
@@ -190,7 +191,7 @@ Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that 
 - `Math.random()` is seeded from the activation (`seed` in the act): re-running it gives the same numbers.
 - The time zone is always UTC: local-time methods (`getHours`, `new Date(2026, 0, 1)`) are the UTC ones, and a
   date-time string with no zone is read as UTC. The host's zone never leaks in.
-- What a script reads from outside the log (`world.near`, `world.count`, `world.name`), and who arrived or left (`enter`,
+- What a script reads from outside the log (`world.near`, `world.nearby`, `world.count`, `world.name`), and who arrived or left (`enter`,
   `leave`), is recorded in its act as what it asked and how much came back, never who or what they're called: the log is
   permanent and public, and the authority's own record of an activation never becomes an attendance list. What the
   script WRITES is another matter: it receives identities live, and a value it sets or a `say` it makes can name them

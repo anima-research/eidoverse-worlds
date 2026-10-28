@@ -15,6 +15,7 @@ import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, holdsCustody, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
 import { worldT } from "./math.js";
+import { r3 } from "../round.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
 import { bodyGate, expireAsks } from "./bodyconsent.js";
@@ -97,7 +98,7 @@ function activate(w, id, name, ev) {
     D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, api: SR.API, st,
-    near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
+    near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k, at]) => ({ id: k, d: r3(dist(at, me)) })).sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? CTX.nameOf?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
   if (!dry) { const ms = performance.now() - t0;

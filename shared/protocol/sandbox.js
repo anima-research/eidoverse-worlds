@@ -93,6 +93,7 @@ const PRELUDE = String.raw`"use strict";
     children(id) { return call(["children", String(id)]); },
     ids() { return call(["ids"]); },
     near(r) { return call(["near", Number(r)]); },
+    nearby(r) { return call(["nearby", Number(r)]); },
     count() { return call(["count"]); },
     name(id) { return call(["name", String(id)]); },
     set(id, comp, value) { call(["set", String(id), String(comp), JSON.parse(enc(value, "world.set " + comp))]); },
@@ -167,9 +168,12 @@ export function makeHost(x) {
       case "get": { read(); const e = entOf(self(a[0])); if (!e) return null; if (a[1] === null) return copy(e.c); return copy(e.c[a[1]]); }
       case "children": { read(); return kidsOf(self(a[0])).slice(0, L.ids); }
       case "ids": { read(); return allIds().slice(0, L.ids); }
-      case "near": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError("world.near(r): r is metres, 0–1000");
-        const was = x.reads?.near?.[nearAt]; const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);
-        nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }
+      // near: ids (by id); nearby: {id, d} nearest first. Both record only {r, n}; a re-run's stand-ins are d = r away
+      case "near": case "nearby": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError(`world.${verb}(r): r is metres, 0–1000`);
+        const was = x.reads?.near?.[nearAt]; const got = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)).map((id) => ({ id, d: r }))
+          : (x.near ? x.near(r) : []).map((p) => (typeof p === "string" ? { id: p, d: r } : { id: p.id, d: p.d }));
+        nearAt++; reads.near.push({ r, n: got.length });
+        return verb === "near" ? got.map((p) => p.id) : got.sort((p, q) => p.d - q.d || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)); }
       case "name": { read(); const id = a[0]; // a display name lives in the authority's directory, outside the log: counted, never recorded
         const n = x.reads ? (Array.isArray(x.reads.names) ? x.reads.names[nameAt]?.name ?? null : null) : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names++; return n; }
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
@@ -256,7 +260,7 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
  * Run one activation IN THIS PROCESS (an auditor's re-run, tools). Never throws for anything the script does; returns
  * {ok, ...}. A slow native builtin can hold this thread: an authority runs activations isolated (runIsolated, below).
  * @param {{text: string, self: string, key: string, event: object, knobs?: object, now: number, seed: string, st: any,
- *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
+ *   near?: (r: number) => ({id: string, d: number} | string)[], count?: () => number, name?: (id: string) => string | null,
  *   reads?: {near?: {r, n, ids?}[], count?: number[], names?: number | {id, name}[]},
  *   limits?: object, clock?: () => number}} x
  * @returns {{ok: true, ops, says, bodies, uses, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}

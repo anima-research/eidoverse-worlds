@@ -67,8 +67,11 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
-  ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],
-  ["a near() read records who (ids)", "sandbox.js", "nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }", "nearAt++; reads.near.push({ r, n: ids.length, ids: ids.slice() }); return ids.slice(); }", ["D4"]],
+  ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const got = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)).map((id) => ({ id, d: r }))", "const got = false ? []", ["D1"]],
+  ["a near() read records who (ids)", "sandbox.js", "nearAt++; reads.near.push({ r, n: got.length });", "nearAt++; reads.near.push({ r, n: got.length, ids: got.map((p) => p.id) });", ["D4"]],
+  ["a nearby() read records how far", "sandbox.js", "nearAt++; reads.near.push({ r, n: got.length });", "nearAt++; reads.near.push({ r, n: got.length, ...(verb === \"nearby\" ? { d: got.map((p) => p.d) } : {}) });", ["N1"]],
+  ["nearby() is nearest first", "sandbox.js", "got.sort((p, q) => p.d - q.d ||", "got.sort((p, q) => 0 ||", ["N1"]],
+  ["a re-run's nearby() stand-ins carry a number for d", "sandbox.js", ".map((id) => ({ id, d: r }))", ".map((id) => ({ id, d: null }))", ["N1"]],
   ["a name() read records the name", "sandbox.js", "nameAt++; reads.names++; return n; }", "nameAt++; reads.names++; reads.near.push({ r: 0, n: 0, ids: [n] }); return n; }", ["D4"]],
   ["the auditor counts an identity-dependent act verified (or flags it)", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (false) { skipped.push(", ["D4"]],
   ["the auditor checks the read shape", "scriptaudit.js", "if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) {", "if (false) {", ["D4"]],
@@ -974,6 +977,21 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("vic", "use", { id: "gate", action: "open" });
       return { bob: code(bob), stored: !!comp(s, "@world", "script:tally"), heard: comp(s, "post", "t/heard") ?? null }; },
     good: (o) => o.bob === "rights" && !o.stored && o.heard === null },
+  { id: "N1", what: "world.nearby(r): the people within r m with how far (metres, 3 dp), nearest first; world.near(r) still gives bare ids; the act records only {r, n} for each, never who or how far; the auditor skips a who-dependent result and verifies one that only counts (its stand-ins carry a number for d)", run(s) { cast(s);
+      s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "dial", "look", onUse(`world.set("self", "t/near", { by: world.nearby(3), ids: world.near(3) });`), { scope: { ids: "self", comps: ["t/near"] }, on: ["use"] });
+      install(s, "bob", "dial", "count", onUse(`world.set("self", "t/count", world.nearby(3).filter((p) => p.d.toFixed(1) !== "x").length);`), { scope: { ids: "self", comps: ["t/count"] }, on: ["use"] });
+      s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "look" }, count: { kind: "script", script: "count" } } });
+      s.call("ann", "move", { to: [0, 0, 2.5] }); s.call("vic", "move", { to: [0, 0, 1.23456] });
+      const me = s.w().state().entities.dial.c.transform?.pos ?? [0, 0, 0];
+      const r1 = useSteady(s, "olive", { id: "dial", action: "look" }), r2 = useSteady(s, "olive", { id: "dial", action: "count" });
+      const L = s.entries(), acts = L.filter((e: any) => e.actor === "script:dial" && e.verb === "script");
+      const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
+      return { r1: st(s, r1), r2: st(s, r2), me, near: comp(s, "dial", "t/near"), count: comp(s, "dial", "t/count"), reads: acts.map((e: any) => e.body.reads), actText: JSON.stringify(acts),
+        audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null, skipped: A?.skipped?.length ?? null }; },
+    good: (o) => { const d = (z: number) => Math.round(Math.hypot(o.me[0], o.me[1], z - o.me[2]) * 1000) / 1000;
+      return o.r1 === "ran" && o.r2 === "ran" && JSON.stringify(o.near?.by) === JSON.stringify([{ id: "vic", d: d(1.23456) }, { id: "ann", d: d(2.5) }]) && JSON.stringify(o.near?.ids) === '["ann","vic"]'
+        && o.count === 2 && JSON.stringify(o.reads) === JSON.stringify([{ near: [{ r: 3, n: 2 }, { r: 3, n: 2 }] }, { near: [{ r: 3, n: 2 }] }]) && !/"d"|vic|ann/.test(o.actText) && o.audit === "1/2 " && o.skipped === 1; } },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });
