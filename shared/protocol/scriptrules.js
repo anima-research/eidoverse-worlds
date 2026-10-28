@@ -31,6 +31,7 @@ export const LIMITS = Object.freeze({
   ops: 32,              // writes in one activation's batch
   says: 4,              // say entries per activation
   bodies: 4,            // body effects per activation
+  uses: 4,              // world.use calls per activation (each another thing's reaction)
   ids: 1000,            // ids one read returns at most
   logLines: 20,         // world.log lines kept per activation in the console ring
   cpu: 2000,            // authority practice: ms of sandbox time per sponsor per minute (runs that write nothing cost the authority too)

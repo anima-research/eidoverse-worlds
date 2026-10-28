@@ -100,6 +100,7 @@ const PRELUDE = String.raw`"use strict";
     delete(id, comp) { call(["delete", String(id), comp === undefined ? null : String(comp)]); },
     create(components, id) { return call(["create", JSON.parse(enc(components ?? {}, "world.create")), id === undefined || id === null ? null : String(id)]); },
     say(text) { call(["say", String(text)]); },
+    use(id, action, args) { call(["use", String(id), String(action), args === undefined ? null : JSON.parse(enc(args, "world.use " + action))]); },
     shove(who) { call(["body", "shove", String(who), null]); },
     pose(who, spec) { call(["body", "pose", String(who), JSON.parse(enc(spec ?? {}, "world.pose"))]); },
     // world.log: the old spelling of console.log, kept for one version (the names pass, 2026-10-07); "the world log" is
@@ -129,7 +130,7 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace
  */
 export function makeHost(x) {
   const L = { ...LIMITS, ...(x.limits ?? {}) };
-  const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: 0 }; let nearAt = 0, countAt = 0, nameAt = 0;
+  const logs = [], ops = [], says = [], bodies = [], uses = [], reads = { near: [], count: [], names: 0 }; let nearAt = 0, countAt = 0, nameAt = 0;
   let calls = 0, minted = 0, stop = null;
   // read-your-writes without copying the world: an overlay of the things this activation wrote (id → entity, or null if
   // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (a review
@@ -196,6 +197,10 @@ export function makeHost(x) {
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }
         bodies.push({ kind: a[0], to: String(a[1]).replace(/^body:/, ""), ...(a[2] ? { spec: a[2] } : {}) }); return null; }
+      // a proposal like a write: after the batch lands, each meets the target's own reaction gate (scriptrun, use.js scriptUse)
+      case "use": { if (uses.length >= L.uses) { stop = { code: "too-big", why: `more than ${L.uses} uses in one activation` }; throw new HostError(stop.why); }
+        const id = wantId(self(a[0]), "world.use"); if (!a[1]) throw new HostError("world.use(id, action, args?): action names one of the thing's reactions");
+        uses.push({ id, action: a[1], ...(a[2] !== null ? { args: a[2] } : {}) }); return null; }
       case "log": { if (logs.length < L.logLines) logs.push(String(a[0]).slice(0, 500)); return null; }
       default: throw new HostError(`no host call '${verb}'`);
     }
@@ -207,7 +212,7 @@ export function makeHost(x) {
   const finish = (vm) => {
     if (stop) return { ok: false, ...stop, logs, fuel: vm.fuel };
     if (vm.fail) return { ok: false, ...vm.fail, logs, fuel: vm.fuel };
-    return { ok: true, ran: vm.ran, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
+    return { ok: true, ran: vm.ran, ops, says, bodies, uses, reads: reads.near.length || reads.count.length || reads.names ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
   };
   return { call, finish, limits: L, input: { self: x.self, key: x.key, knobs: x.knobs ?? {}, now: x.now, seed: x.seed } };
 }
@@ -254,7 +259,7 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
  *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
  *   reads?: {near?: {r, n, ids?}[], count?: number[], names?: number | {id, name}[]},
  *   limits?: object, clock?: () => number}} x
- * @returns {{ok: true, ops, says, bodies, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
+ * @returns {{ok: true, ops, says, bodies, uses, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
  */
 export function runScript(x) {
   const h = makeHost(x);

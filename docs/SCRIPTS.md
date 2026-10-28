@@ -104,6 +104,7 @@ always the right one to keep.)
 | `world.create(components)` | propose a new thing (needs `scope.create`); returns the id it was minted (opaque: a script never chooses an id, and an id never carries a word; API 2) |
 | `world.param(id, name, number)` | write `params.<name>` on a thing (merged into what's there; needs `params` in the scope's comps): a signal something else reads (a seat pose blends by `param.<name>`) |
 | `world.say(text)` | a say entry (needs `scope.say`) |
+| `world.use(id, action, args?)` | set off another thing's reaction (the id must be in `scope.ids`; ≤ 4): after the batch lands it meets that thing's own gate as a visitor's use would, with the sponsor's rights; its script hears `use` with `by: "script:<thing>"`. The act records the call, the use is its own act, and the cascade depth bounds a loop |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |
 | `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). `world.log` is the old spelling, kept for one version |
 
@@ -162,6 +163,8 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
                                                          head, seed, depth, engine, api, reads?, bodies?}
 814 change actor=script:bell1  cause=813    the batch: every write, all or nothing
 815 say    actor=script:bell1  cause=813
+816 act    actor=script:bell1  verb=use  cause=813  body={request: {id, action, args?}, sponsor, …}   a world.use: then the
+                                                         target's change or script act, caused by 816
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
@@ -204,7 +207,7 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
 | wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process (where scripts run isolated: not on Windows, see Isolation) |
 | memory / native stack | 24 MB / 256 KB per activation |
-| reads per activation | 64; writes 32; says 4; body effects 4 |
+| reads per activation | 64; writes 32; says 4; body effects 4; uses 4 |
 | logged activations | 6 per minute per script (server) |
 | process script time | 500 ms per rolling second across every world on the authority (host-settable); past it, `busy` |
 | waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |
