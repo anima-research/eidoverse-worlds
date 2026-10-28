@@ -1597,21 +1597,55 @@ export class Avatar {
    *  step replaces this pose with a rotations-only one, so a lowered hips
    *  (kneeling) snapped back to standing height while the sim — which had
    *  measured the lowered hips — went on placing the root under them: the body
-   *  rendered a hips-drop above its own physics. A clip-lowered body (sit)
-   *  never showed it because the clip keeps playing under the sim. Baked into
-   *  the root, the skeleton is standard again and the root carries the drop,
-   *  which is also what remotes see. True when something moved. */
-  bakeHipsIntoRoot() {
+   *  rendered a hips-drop above its own physics. Baked into the root, the
+   *  skeleton is standard again and the root carries the drop, which is also
+   *  what remotes see. True when something moved.
+   *
+   *  `clip: true` bakes what a lowering CLIP did to the hips too (sit, lie).
+   *  It used to be left alone on the grounds that the clip keeps playing under
+   *  the sim — true here, but not on anyone else's screen. A body that fell
+   *  from lying published a root measured from the lie clip's hips, while an
+   *  agent (whose sim has no clip) publishes one measured from the rest hips;
+   *  every watcher draws a limp remote over the clip it last saw, so an agent
+   *  seen lying down went 0.74 m under the floor (#282) and a person who fell
+   *  from lying stood 0.74 m over it for anyone who joined later. One
+   *  convention ends both: the root carries every drop, the hips stay at rest
+   *  while limp (_park). */
+  bakeHipsIntoRoot({ clip = false } = {}) {
+    let moved = false;
     const o = this._override;
-    if (o?.kind !== 'pose' || !o.hipsT || !o.hipsNode) return false;
-    o.hipsNode.parent.updateWorldMatrix(true, false);
-    _hv.copy(o.hipsT).multiplyScalar(o.weight)
-      .applyMatrix3(new THREE.Matrix3().setFromMatrix4(o.hipsNode.parent.matrixWorld));
-    this._rawRelease(o.hipsNode);
-    o.hipsT = null; o.hipsNode = null;
-    this.root.position.add(_hv);
-    this.root.updateMatrixWorld(true);
-    return true;
+    if (o?.kind === 'pose' && o.hipsT && o.hipsNode) {
+      o.hipsNode.parent.updateWorldMatrix(true, false);
+      _hv.copy(o.hipsT).multiplyScalar(o.weight)
+        .applyMatrix3(new THREE.Matrix3().setFromMatrix4(o.hipsNode.parent.matrixWorld));
+      this._rawRelease(o.hipsNode);
+      o.hipsT = null; o.hipsNode = null;
+      this.root.position.add(_hv);
+      moved = true;
+    }
+    const hips = clip ? this.vrm.humanoid?.getNormalizedBoneNode('hips') : null;
+    const rest = hips && this._hipsRest();
+    if (rest) {
+      _hv.copy(hips.position).sub(rest);
+      if (_hv.lengthSq() > 1e-8) {
+        hips.parent.updateWorldMatrix(true, false);
+        _hv.applyMatrix3(new THREE.Matrix3().setFromMatrix4(hips.parent.matrixWorld));
+        hips.position.copy(rest);
+        this.root.position.add(_hv);
+        moved = true;
+      }
+    }
+    if (moved) this.root.updateMatrixWorld(true);
+    return moved;
+  }
+
+  /** The normalized hips' rest position in its parent's frame (three-vrm's
+   *  normalizedRestPose): the height every fallen body's root is measured
+   *  from, on every screen and in every agent's sim. */
+  _hipsRest() {
+    if (this.__hipsRest !== undefined) return this.__hipsRest;
+    const p = this.vrm.humanoid?.normalizedRestPose?.hips?.position;
+    return (this.__hipsRest = Array.isArray(p) && p.length === 3 ? new THREE.Vector3().fromArray(p) : null);
   }
 
   /** Go limp, or stand back up.
@@ -1648,10 +1682,17 @@ export class Avatar {
    *      skeleton to its bind pose — a visible T-pose flash, and the Ragdoll
    *      constructor then measures THAT instead of the pose you fell in.
    *  Leaving the mixer running costs one clip evaluation whose driven bones we
-   *  overwrite anyway, and none of the above happens. */
-  setLimp(on) {
+   *  overwrite anyway, and none of the above happens.
+   *
+   *  `bake` is for YOUR OWN body only: the drop a lowering clip put on the hips
+   *  moves onto the root before the hips are parked (bakeHipsIntoRoot). A
+   *  remote's root comes off the wire every frame, already carrying its drop. */
+  setLimp(on, { bake = false } = {}) {
     on = !!on;
     if (on === this._limp) return;
+    const hipsNode = on ? this.vrm.humanoid?.getNormalizedBoneNode('hips') : null;
+    const clipHips = hipsNode?.position.clone() ?? null;   // what getting up hands back
+    if (on && bake) this.bakeHipsIntoRoot({ clip: true });
     this._limp = on;
     // Eyes close when the body goes slack, and open when it gets up. Only for a
     // rig with eyelid BONES — setEyes says so itself and does nothing otherwise,
@@ -1691,6 +1732,9 @@ export class Avatar {
       // with its hands left open.
       for (const [node, q] of this._parked ?? []) node.quaternion.copy(q);
       this._parked = null;
+      // and the hips where the clip had them, for the same reason
+      if (this._parkedHips) this._parkedHips[0].position.copy(this._parkedHips[1]);
+      this._parkedHips = null;
       return;
     }
     if (this.emote) this.cancelEmote();
@@ -1700,13 +1744,20 @@ export class Avatar {
     this._parked = this._resolveBones(
       this._humanoidBones().filter((n) => !driven.has(n)))
       .map(([, node]) => [node, node.quaternion.clone()]);
+    // The hips POSITION is parked at rest too: whatever drop a clip put on it
+    // belongs to the root (bakeHipsIntoRoot), on every screen alike — a limp
+    // body's root, its own or off the wire, is always measured from rest hips.
+    this._parkedHips = hipsNode && clipHips && this._hipsRest() ? [hipsNode, clipHips] : null;
     // once here as well as per-frame, so the Ragdoll about to be built reads a
     // skeleton that already agrees with what it will be driving
     this._park();
     this.root.updateMatrixWorld(true);
   }
 
-  _park() { for (const [node] of this._parked ?? []) node.quaternion.identity(); }
+  _park() {
+    for (const [node] of this._parked ?? []) node.quaternion.identity();
+    if (this._parkedHips) this._parkedHips[0].position.copy(this._hipsRest());
+  }
 
   // ---- composing on top of the clip, without trusting it to come back
   //

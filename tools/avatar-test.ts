@@ -95,7 +95,7 @@ function stand({ constant = false } = {}) {
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
                    'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
                    '_applyPoseSlot', '_applyAnimSlot', '_handBack', '_rawBegin', '_rawEnd', '_rawRelease', 'playAnimation', '_sampleTrack',
-                   'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair']) {
+                   'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair', 'bakeHipsIntoRoot', '_hipsRest']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
@@ -1055,6 +1055,52 @@ console.log('\nmeasured jump take-off (#196 review B2):');
   self.actions.walk = wa; self.setClip('walk');
   check('a non-jump clip is not re-timed, even with a findable dip in its hips track',
     wa.time === 0, `walk time = ${wa.time}`);
+}
+
+// #282: a clip that LOWERS the hips (sit, lie) — the drop belongs to the root, on every screen. A watcher keeps
+// the last clip it saw playing under a limp remote; an agent's sim has no clip and measures its root from rest
+// hips. Without the hold, a watcher drew an agent fallen from lying 0.74 m under the floor.
+console.log('\na lowering clip under a limp body (#282):');
+for (const constant of [false, true]) {
+  const REST = 0.9, LOW = 0.1;
+  const { self, nodes } = stand({ constant });
+  self.vrm.humanoid.normalizedRestPose = { hips: { position: [0, REST, 0] } };
+  // the lie clip: hips held low (constant: written once by three.js and never again)
+  const hipsTrack = new THREE.VectorKeyframeTrack('hips.position', [0, 0.5, 1],
+    constant ? [0, LOW, 0, 0, LOW, 0, 0, LOW, 0] : [0, LOW, 0, 0, LOW + 0.02, 0, 0, LOW, 0]);
+  const clip = new THREE.AnimationClip('lie', 1, [hipsTrack]);
+  const lie = self.mixer.clipAction(clip); lie.play(); lie.setEffectiveWeight(1);
+  self.tick();
+  const label = constant ? ' (a constant track)' : '';
+  const hipsWorldY = () => { self.root.updateMatrixWorld(true); return nodes.hips.getWorldPosition(new THREE.Vector3()).y; };
+
+  // a REMOTE going limp: its root comes off the wire, so nothing is baked
+  {
+    const r = stand({ constant });
+    r.self.vrm.humanoid.normalizedRestPose = { hips: { position: [0, REST, 0] } };
+    const a = r.self.mixer.clipAction(clip); a.play(); a.setEffectiveWeight(1);
+    r.self.tick();
+    r.self.setLimp(true);
+    r.self.tick();
+    check(`a remote's hips are held at REST while limp${label}`, Math.abs(r.nodes.hips.position.y - REST) < 1e-9,
+      `hips y ${r.nodes.hips.position.y}`);
+    check(`...and its root is left to the wire${label}`, r.self.root.position.y === 0, `root y ${r.self.root.position.y}`);
+  }
+
+  // YOUR OWN body going limp: the drop moves onto the root, and nothing on screen moves
+  const before = hipsWorldY();
+  self.setLimp(true, { bake: true });
+  check(`your own body: the clip's drop moves onto the root${label}`,
+    Math.abs(self.root.position.y - (nodes.hips.position.y === REST ? before - REST : NaN)) < 1e-6,
+    `root y ${self.root.position.y}, hips ${nodes.hips.position.y}`);
+  check(`...and the hips do not move on screen as it does${label}`, Math.abs(hipsWorldY() - before) < 1e-6,
+    `${before} -> ${hipsWorldY()}`);
+  self.tick(); self.tick(0.3);
+  check(`...and stay at rest after the mixer writes again${label}`, Math.abs(nodes.hips.position.y - REST) < 1e-9,
+    `hips y ${nodes.hips.position.y}`);
+  self.setLimp(false);
+  check(`getting up hands the clip's hips back${label}`, Math.abs(nodes.hips.position.y - LOW) < 0.03,
+    `hips y ${nodes.hips.position.y}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
