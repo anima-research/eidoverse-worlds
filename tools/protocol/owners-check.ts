@@ -4,12 +4,21 @@
 //   MK2  two accounts under one name (principals and another world's log) are both returned: ambiguous
 //   MK3  another world's grant / genesis / placer pairs count (log.jsonl, or log.original.jsonl once translated); the world itself doesn't
 //   MK4  .bans.json and .sessions.json are not read
+//   OB1  the Commons shape: a name-only owner grant whose account main's .principals.json holds is bound after the upgrade
+//        (signing in as that account is the owner); a grant that carried its sub stays bound
+//   OB2  an unknown name and an ambiguous one (two accounts) stay imported, and the dry run lists each with why and the bind command
+//   OB3  the upgrade's result carries the same list (the approved report's)
+//   OB4  a name another world's log on this server paired with an account is bound
+//   OB5  an account that already wears an id here: the owner role goes to that id (one person, one identity)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
-import { scratch } from "./common.ts";
+import { ENGINE, scratch } from "./common.ts";
 import { mainKnowledge } from "./import-v1/mainknew.ts";
+import { directoryAt } from "../../server/directory.ts";
+import { directoryFileIn } from "../../server/keyfiles.ts";
+import { readLog, fold } from "../../shared/protocol/fold.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -42,6 +51,55 @@ const principals = (W: string, p: Record<string, [string, string]>) => fs.writeF
   row("MK3", () => ok(same(k("pip")?.subs, ["human:test:pip"]) && same(k("rue")?.from, ["water's log"]) && k("self") === null,
     "MK3 another world's placer and genesis pairs count (log.jsonl, or log.original.jsonl once that world was translated); the world being translated is skipped", { pip: k("pip"), rue: k("rue"), self: k("self") }));
   row("MK4", () => ok(k("zed") === null && k("sess") === null, "MK4 .bans.json (a name the banner typed) and .sessions.json (bearer secrets) are not read", { zed: k("zed"), sess: k("sess") }));
+}
+
+// ================= OB: the upgrade binds what main knew, and lists the rest =================
+const tool = (root: string, args: string[], env: Record<string, string> = {}) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
+  env: { ...process.env, WORLDS_DIR: path.join(root, "worlds"), OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", PROTOCOL_SCRATCH: root, AGENT_TOKENS_PATH: path.join(root, "tokens.json"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, timeout: 60_000 });
+  return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+const tagged = (out: string, tag: string) => { const l = out.split("\n").find((x) => x.startsWith(`${tag} `)); try { return l ? JSON.parse(l.slice(tag.length + 1)) : null; } catch { return null; } };
+/** dry run, then the approved in-place upgrade: {dry, up, report, result, dir, roles: name → [id, role]} */
+function upgrade(root: string, name: string) {
+  const dry = tool(root, ["translate", "--dry-run", "--no-founder-key", "--json", "--", name]); const rj = tagged(dry.out, "report-json");
+  const up = tool(root, ["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", rj?.hash ?? "none", "--json", "--", name]);
+  const dir = directoryAt(directoryFileIn(path.join(root, "worlds")));
+  const f = path.join(root, "worlds", name, "world.jsonl");
+  const c = fs.existsSync(f) ? fold(readLog(fs.readFileSync(f))).entities?.["@world"]?.c ?? {} : {};
+  const roles: Record<string, [string, string]> = {};
+  for (const [k, v] of Object.entries<any>(c)) if (k.startsWith("roles:")) roles[dir.nameOf(k.slice(6)) ?? k] = [k.slice(6), v?.role];
+  return { dry, up, report: rj?.report, result: tagged(up.out, "result-json"), dir, roles };
+}
+const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra", role: "owner", gen: true }], ["antra", "grant", { id: "Digi_Rat", role: "builder" }],
+  ["antra", "grant", { id: "fable", role: "owner" }], ["antra", "grant", { id: "janus", role: "owner", sub: "human:test:janus" }], ["antra", "grant", { id: "mica", role: "owner" }],
+  ["antra", "grant", { id: "lark", role: "owner" }], ["antra", "grant", { id: "svc", role: "builder" }], ["antra", "say", { text: "hello" }], ["Pip", "say", { text: "hi" }]];
+{ const root = scratch("owners-ob"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:antra": ["Antra", "human"], "human:test:mica1": ["mica", "human"], "human:test:mica2": ["Mica", "human"],
+    "human:test:janus-namesake": ["janus", "human"], "service:svc": ["svc", "human"] });   // a namesake of a grant that carried its sub; a sub that is no account here
+  v1(W, "garden", [["world", "grant", { id: "Lark", role: "owner", sub: "human:test:lark" }]]);
+  v1(W, "commons", commonsShape);
+  const u = upgrade(root, "commons"); const P = Object.fromEntries((u.report?.people ?? []).map((p) => [p.name, p]));
+  const at = (n: string) => u.dir.entry(u.roles[n]?.[0] ?? "") ?? {};
+  row("OB1", () => ok(u.up.code === 0 && u.roles.antra?.[1] === "owner" && same(at("antra").subs, ["human:test:antra"]) && at("antra").kind === "account"
+    && u.dir.resolve({ sub: "human:test:antra", name: "Antra" }) === u.roles.antra?.[0] && u.roles.janus?.[1] === "owner" && same(at("janus").subs, ["human:test:janus"]) && u.dir.idOfSub("human:test:janus-namesake") === null && P.antra?.from === "main's .principals.json",
+    "OB1 the Commons shape: antra's name-only owner grant, with main's .principals.json holding one account for the name, is bound after the upgrade (signing in as it is the owner); janus's grant carried its sub and stays bound to it (a namesake in main's principals doesn't override the world's own record)",
+    { code: u.up.code, out: u.up.code ? u.up.out.slice(-600) : undefined, roles: Object.keys(u.roles), antra: at("antra"), P: P.antra }));
+  row("OB2", () => ok(at("fable").kind === "imported" && same(at("fable").subs, []) && at("mica").kind === "imported" && at("Digi_Rat").kind === "imported"
+    && P.fable?.account === null && /no account/.test(P.fable?.why) && /2 accounts/.test(P.mica?.why) && P.Digi_Rat?.role === "builder"
+    && /^owner fable has no account yet \(main recorded no account for this name\): bind with bun tools\/operator-repair\.ts bind commons "fable" <their account>$/m.test(u.dry.out)
+    && /^owner mica has no account yet \(main recorded 2 accounts/m.test(u.dry.out) && /isn't one here \(service:…\)/.test(P.svc?.why) && at("svc").kind === "imported" && !/human:test:[a-z]/.test(u.dry.out),
+    "OB2 an unknown name (fable, Digi_Rat), an ambiguous one (mica: two accounts) and one main paired with no account shape (svc) stay imported; the dry run lists each with why and the bind command, and prints no account", { P, fable: at("fable"), dry: u.dry.out.split("\n").filter((l) => /account/.test(l)) }));
+  row("OB3", () => ok(same(u.result?.people, u.report?.people) && u.report.people.length === 7 && u.report.people[0].role === "owner",
+    "OB3 the upgrade's result carries the approved report's list of who holds a role, owners first", { result: u.result?.people, report: u.report?.people }));
+  row("OB4", () => ok(u.roles.lark?.[1] === "owner" && same(at("lark").subs, ["human:test:lark"]) && P.lark?.from === "main's garden's log",
+    "OB4 a name another world's log on this server paired with an account (garden's grant to Lark) is bound", { lark: at("lark"), P: P.lark, roles: Object.keys(u.roles) }));
+}
+{ const root = scratch("owners-ob5"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:antra": ["antra", "human"] });
+  const pre = directoryAt(directoryFileIn(W)).resolve({ sub: "human:test:antra", name: "Antra Now" });
+  v1(W, "den", [["world", "grant", { id: "antra", role: "owner" }], ["antra", "say", { text: "mine" }]]);
+  const u = upgrade(root, "den");
+  row("OB5", () => ok(u.up.code === 0 && u.roles["Antra Now"]?.[0] === pre && u.roles["Antra Now"]?.[1] === "owner" && Object.keys(u.roles).length === 1,
+    "OB5 an account that already wears an id on this server: the old owner's role goes to that id, no second identity", { pre, roles: u.roles, out: u.up.code ? u.up.out.slice(-400) : undefined }));
 }
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);

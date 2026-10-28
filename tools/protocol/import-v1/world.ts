@@ -5,7 +5,8 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, mintId, type Entry } from "../../../server/directory.ts";
+import { directoryFor, mintId, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { mainKnowledge, type Known } from "./mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
 import { custodyFileIn } from "../../../server/keyfiles.ts";
@@ -68,8 +69,10 @@ function readOld(srcBytes: Buffer) {
  *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
  *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
  *  the report counts exactly what the real run renames and nothing in it varies. */
-function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true }: { mint?: boolean } = {}) {
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true, known = null }: { mint?: boolean; known?: ((name: string) => Known | null) | null } = {}) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
+  const fromOf = new Map<string, string>();   // account → where this translation learned it (the report says, per role)
+  const unbound = new Map<string, string>();  // name → why main's records bind it to no one account
   const agents = agentTokens();
   const nameKey = (n: string) => `name:${n}`;
   // every name this log gives a person (actors, grants, genesis roles, a say's addressee), and every account it gives one
@@ -91,13 +94,14 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
   const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
   const stable = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
-  const who = (name0: string, { sub, lowered = false }: { sub?: string; lowered?: boolean } = {}) => {
+  const who = (name0: string, { sub, lowered = false, from = "this world's log" }: { sub?: string; lowered?: boolean; from?: string } = {}) => {
     const name = lowered && sub === undefined ? unlowered(name0) : name0;
     // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
     // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
     const acct = sub !== undefined ? liveAccount(sub) : (isAccountName(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
     const display = isAccountName(name) || name === sub ? null : name;   // a role keyed by its account, or an account alone, has no name of its own
     const key = acct ?? nameKey(name);
+    if (acct && !fromOf.has(acct)) fromOf.set(acct, sub !== undefined || isAccountName(name) ? from : agents.names.has(name.toLowerCase()) ? "tokens.json (an enrolled agent's name)" : "TRUST_NAMES (a private server: a name is its local account)");
     // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
     let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
     if (!id) { id = mint ? mintId() : stable(key); planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
@@ -113,7 +117,18 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub });
     if ((e?.verb === "spawn" || e?.verb === "light") && typeof a.placer?.id === "string" && isAccount(a.placer.sub)) who(a.placer.id, { sub: a.placer.sub });
     if (e?.verb === "behavior" && typeof e.actor === "string" && !["door", "world", "sim"].includes(e.actor) && !/^bhv:/i.test(e.actor) && isAccount(a.bySub)) who(e.actor, { sub: a.bySub }); }
-  return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)) };
+  // a name this log pairs with no account: the one account main recorded for it elsewhere on this server (mainknew.ts), as
+  // main's own grant resolved a name (one match binds); several, or none that is an account here, stay imported and are listed
+  if (known && !TRUST_NAMES) for (const n of [...names].sort()) {
+    if (isAccount(n) || ["door", "world", "sim", "*"].includes(n) || /^bhv:/i.test(n) || memo.has(nameKey(n)) || agents.names.has(n.toLowerCase())) continue;
+    const k = known(n); if (!k) { unbound.set(n, "main recorded no account for this name"); continue; }
+    const accts = [...new Set(k.subs.map(liveAccount))];
+    if (accts.length === 1 && ACCOUNT_SHAPE.test(accts[0])) who(n, { sub: k.subs[0], from: `main's ${k.from.join(" and ")}` });
+    else unbound.set(n, accts.length > 1 ? `main recorded ${accts.length} accounts under this name (${k.from.join(", ")}): which one is theirs isn't guessed` : `main recorded an account that isn't one here (${accts[0].split(":")[0]}:…)`); }
+  /** id → who they are, for the report: their name, and the account's kind and where it was learned (null: imported, and why) */
+  const describe = (id: string) => { const e = planned[id] ?? dir?.entry(id) ?? null; if (!e) return null;
+    const acct = e.subs[0]; return { name: e.name, account: acct ? acct.split(":").slice(0, 2).join(":") : null, from: acct ? (fromOf.get(acct) ?? "this server's directory") : null, why: acct ? null : (unbound.get(e.name) ?? "main recorded no account for this name") }; };
+  return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)), describe };
 }
 
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
@@ -121,7 +136,17 @@ const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `
  *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
  *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
  *  report from its own run and refuses an approval of any other hash. */
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length) {
+/** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
+ *  from} or {name, role, account: null, why, bind}; owners first. What the operator approves, and the upgrade's result. */
+export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
+  const rank = (x: string) => ["owner", "moderator", "builder", "inhabitant"].indexOf(x) >>> 0;
+  const out = Object.entries<Any>(r.final?.translated?.["@world"] ?? {}).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => {
+    const d = describe(k.slice(6)); const name = d?.name ?? k.slice(6), role = String(v?.role ?? "?");
+    return d?.account ? { name, role, account: d.account, from: d.from }
+      : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; });
+  return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = []) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
@@ -138,6 +163,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     deferred,                    // uses of features v4 doesn't carry yet: any → refused
     ...(r.stats.mapped ? { mapped: r.stats.mapped } : {}),
     ...(r.stats.unmapped ? { unmapped: r.stats.unmapped } : {}),   // …and what of them has no home, carried as imported:<component>   // main's water volumes and air boxes, each as the things it became (translate-v1 VOLUMES)
+    people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
   };
   return { report, hash: sha256(JSON.stringify(report)) };
@@ -150,8 +176,10 @@ export function reportV1World(srcDir: string, { name, content }: { name?: string
   const world = name ?? path.basename(srcDir);
   // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: identityMapper(old, directoryFor(path.dirname(path.resolve(srcDir))), { mint: false }).who, content: content ?? hostContent });
-  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r);
+  const worlds = path.dirname(path.resolve(srcDir));
+  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent });
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, peopleOf(world, r, m.describe));
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -187,7 +215,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // directory only after the log is — and, translating in place (deferIdentities), only once the swap has succeeded
   // (world.ts): a failed translation leaves no identities behind.
   const dir = directoryFor(path.dirname(destDir));
-  const { who, planned, idOfName } = identityMapper(old, dir);
+  const srcWorlds = path.dirname(path.resolve(srcDir));
+  const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }) });
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
   // recorded so this server answers /eido/sha256/<hex> for them
@@ -202,7 +231,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: world, content, ...(approved ? { approved } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
-  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1).hash;
+  const people = peopleOf(world, r, describe);
+  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people).hash;
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now} (the old log or the tool changed since the dry run). Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
@@ -254,7 +284,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (!deferIdentities) dir.put(planned);
     // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
     // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
-    return { source, unparsed, planned, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
+    return { source, unparsed, planned, people, identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
   } catch (x) {
     const undone: string[] = [];
     for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }

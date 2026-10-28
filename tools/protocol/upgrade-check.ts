@@ -137,8 +137,8 @@ const attic = oldWorld("attic"); const atticBefore = tree(attic);
 }
 let reviewed = "";
 { const r = await ask(OP, "world-upgrade-review", { world: "attic" }); reviewed = r.hash ?? "";
-  ok(r.ok === true && /^[0-9a-f]{64}$/.test(r.hash ?? "") && r.hash === dryHash("attic") && r.report?.world === "attic" && r.report?.entries?.old === 3 && r.report.refused === null && same(tree(attic), atticBefore) && backupsOf("attic").length === 0,
-    "US3 world-upgrade-review (the operator): the CLI's dry-run report and its hash (the same hash the CLI prints), nothing written", { ok: r.ok, hash: r.hash, refused: r.refused, keys: Object.keys(r.report ?? {}) });
+  ok(r.ok === true && /^[0-9a-f]{64}$/.test(r.hash ?? "") && r.hash === dryHash("attic", { TRUST_NAMES: "1" }) && r.report?.world === "attic" && r.report?.entries?.old === 3 && r.report.refused === null && same(tree(attic), atticBefore) && backupsOf("attic").length === 0,
+    "US3 world-upgrade-review (the operator): the CLI's dry-run report and its hash (the same hash the CLI prints under the server's TRUST_NAMES: the report says who is bound), nothing written", { ok: r.ok, hash: r.hash, refused: r.refused, keys: Object.keys(r.report ?? {}) });
 }
 { const stale = await ask(OP, "world-upgrade", { world: "attic", approved: "1".repeat(64) });
   ok(stale.ok === false && stale.refused?.code === "stale" && stale.refused.reason.includes("1".repeat(64)) && stale.refused.reason.includes(reviewed) && same(tree(attic), atticBefore) && backupsOf("attic").length === 0 && !isWorldDir(attic),
