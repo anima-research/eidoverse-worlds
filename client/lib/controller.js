@@ -648,6 +648,9 @@ let levelDiving = false;
 const levelHere = () => { const wl = flight ? null : waterLevel(); return wl == null ? null : levelAt(myState.pos, wl); };
 const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
 // pushing forward while looking down is diving, on a desk as in a headset (Minecraft's rule; R 10-28)
+// the swim keys, said once a session the first time the body is in water: afloat on a lake or swimming in a volume (R 10-28)
+let swimHinted = false;
+const swimHint = () => { if (swimHinted) return; swimHinted = true; flashHint('swimming — WASD where you look (look down to dive), Space rise, C / Ctrl sink, Shift faster', 6000); };
 const headingDown = (fwd) => fwd * Math.sin(xrIntent.active ? xrIntent.pitchDown : camPitch - .32) > .3;
 function levelDiveWater(me, fwd) {
   const wl = levelHere();
@@ -683,7 +686,7 @@ function updateSwimming(dt, me, fwd, strafe) {
   const stature=deskEyeY(me?.userScale)/deskEyeY(1);   // this body's size: float depth, handover and head sweep follow it
   if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-floatDepth(MOVER.body.height*stature) && !rise) { levelDiving=false; return false; }
   if(flight){flight=null;releaseWings();}
-  if(!myState.locomotion)flashHint('swimming — WASD where you look (look down to dive), Space rise, C / Ctrl sink, Shift faster');
+  swimHint();
   mantle=null;posture=null;grounded=false;vy=0;airborneFor=0;
   _dir.set(strafe,0,-fwd).applyAxisAngle(UP,camYaw);
   _dir.y = Number(rise)-Number(dive)-fwd*Math.sin(xr?xrIntent.pitchDown:camPitch-.32);
@@ -994,7 +997,7 @@ export function updateMe(dt, me) {
         // steep wave climbs the body before it bobs up. It takes over from wherever the body was, moving
         // as it was — so a drop into deep water dunks you and bobs you back up. Ahead of the falling
         // branch, so a crest lifting the swimmer above its resting depth is not mistaken for a fall.
-        if (!afloat) { _float.on = true; _float.y = myState.pos.y; _float.vy = vy; }
+        if (!afloat) { _float.on = true; _float.y = myState.pos.y; _float.vy = vy; swimHint(); }
         _float.at = nowMs;
         const t = waveTime();
         const surf = footprintSurface((x, z) => wl + surfaceOffset(waterAt(x, z), x, z, t), myState.pos.x, myState.pos.z);

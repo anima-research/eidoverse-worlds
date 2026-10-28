@@ -43,6 +43,7 @@ try {
   await js("(await import('/lib/world.js')).applyTerrainState({ seed: 7, size: 120, amplitude: 0, features: [{ type: 'hill', x: 0, z: 30, radius: 18, height: -8 }], water: { level: 0 } }); return true;");
   await until("the lake's level is 0", () => js("return (await import('/lib/water.js')).waterLevel() === 0;"), { ms: 15000 });
 
+  await js("globalThis.__hints = []; const h = document.getElementById('hintbar'); new MutationObserver(() => __hints.push(h.textContent)).observe(h, { childList: true, subtree: true, characterData: true }); return true;");
   // falling over the lake with C held, before the body has ever floated: no swim starts in mid-air (review #254)
   await put(8); await key("add", "KeyC"); await pause("C held through the start of the fall", 200);
   const fallingWithC = { diving: await diving(), y: await y() }; await key("delete", "KeyC");
@@ -51,6 +52,7 @@ try {
     return Math.abs(b + 1.1) <= 0.25 && Math.abs(b - a) < 0.05; }, { ms: 15000 });
   await put(-1.1); await pause("the float settles", 1500);
   const floating = { y: await y(), diving: await diving() };
+  const hintAfloat = await js("return __hints.some((t) => /look down to dive/.test(t));");
   // the clip while afloat holds steady (tread idle, swim moving), not flipping frame to frame: sampled every frame for 1.5 s
   const clips = () => js(`const c = ${C}, seen = [], t0 = performance.now();
     while (performance.now() - t0 < 1500) { seen.push(c.myState.clip); await new Promise((r) => requestAnimationFrame(r)); }
@@ -75,6 +77,7 @@ try {
   check("LD4 back at the surface the float takes the body again, at the floating depth", surfaced.diving === false && Math.abs(surfaced.y - floating.y) < 0.6, JSON.stringify({ floating, surfaced }));
   check("LD5 looking down with W held dives, no key (R 10-28)", lookDive.diving === true && lookDive.y < floating.y - 1, JSON.stringify({ floating, lookDive }));
   check("LD6 the floating clip holds steady, idle and swimming (at most one change in 1.5 s)", idleClips.flips <= 1 && swimClips.flips <= 1 && idleClips.frames > 10, JSON.stringify({ idleClips, swimClips }));
+  check("LD8 afloat on a lake, before any dive, the swim keys are said (look down to dive) (R 10-28)", hintAfloat === true, "");
   // headless Chrome has no working GPU: WebGPU's error scopes complain on every boot (colour-picker-bench, same filter)
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("LD7 no page errors (beyond headless GPU noise)", real.length === 0, JSON.stringify(real.slice(0, 4)));
