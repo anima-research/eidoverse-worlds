@@ -647,7 +647,9 @@ let levelDiving = false;
 // the world's level where my feet are: none while flying or in a dry pocket below it (watervolumes levelAt: mediumOf)
 const levelHere = () => { const wl = flight ? null : waterLevel(); return wl == null ? null : levelAt(myState.pos, wl); };
 const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
-function levelDiveWater(me) {
+// pushing forward while looking down is diving, on a desk as in a headset (Minecraft's rule; R 10-28)
+const headingDown = (fwd) => fwd * Math.sin(xrIntent.active ? xrIntent.pitchDown : camPitch - .32) > .3;
+function levelDiveWater(me, fwd) {
   const wl = levelHere();
   const w = wl == null ? null : waterAt(myState.pos.x, myState.pos.z);
   if (!w) { levelDiving = false; return null; }
@@ -655,7 +657,7 @@ function levelDiveWater(me) {
   if (!levelDiving) {
     // only from a swim (deep enough to float: MOVER.swim.deep of the float depth), and only when asked: C / Ctrl, or a
     // headset heading down
-    const wantDive = levelDiveKeys() || (xrIntent.active && xrIntent.fwd * Math.sin(xrIntent.pitchDown) > .3);
+    const wantDive = levelDiveKeys() || headingDown(fwd);
     if (!wantDive || !(w.depth > MOVER.swim.deep * floatDepth(MOVER.body.height * stature))) return null;
     // only from IN the water (review #254): falling over a lake with C held must not start a swim in mid-air —
     // the body is at least half under its float line (afloat, its feet ride floatDepth under the surface)
@@ -669,7 +671,7 @@ function levelDiveWater(me) {
 export const isLevelDiving = () => levelDiving;   // probes and tests
 function updateSwimming(dt, me, fwd, strafe) {
   _swimProbe.copy(myState.pos); _swimProbe.y += .7;
-  const water = volumeAt(_swimProbe) ?? levelDiveWater(me);
+  const water = volumeAt(_swimProbe) ?? levelDiveWater(me, fwd);
   if (!water || myState.seat) { swimVelocity=[0,0,0];levelDiving=false;return false; }
   _swimProbe.copy(myState.pos);
   const floor = resolveColliders(_swimProbe,heightAt);
@@ -681,14 +683,14 @@ function updateSwimming(dt, me, fwd, strafe) {
   const stature=deskEyeY(me?.userScale)/deskEyeY(1);   // this body's size: float depth, handover and head sweep follow it
   if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-floatDepth(MOVER.body.height*stature) && !rise) { levelDiving=false; return false; }
   if(flight){flight=null;releaseWings();}
-  if(!myState.locomotion)flashHint('swimming — WASD move, Space rise, C / Ctrl dive, Shift faster');
+  if(!myState.locomotion)flashHint('swimming — WASD where you look (look down to dive), Space rise, C / Ctrl sink, Shift faster');
   mantle=null;posture=null;grounded=false;vy=0;airborneFor=0;
   _dir.set(strafe,0,-fwd).applyAxisAngle(UP,camYaw);
   _dir.y = Number(rise)-Number(dive)-fwd*Math.sin(xr?xrIntent.pitchDown:camPitch-.32);
-  // a headset heading down (looking down, pushing forward) is diving: it releases the surface latch, which
-  // otherwise snaps a swimmer with no dive button straight back up (its direction stays where it looks)
-  const headsetDive=xr&&!rise&&fwd*Math.sin(xrIntent.pitchDown)>.3;   // an explicit rise (A/X) wins
-  const input={direction:_dir.toArray(),rise,dive:dive||headsetDive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight'),stature};
+  // heading down (looking down, pushing forward) is diving: it releases the surface latch, which otherwise snaps
+  // the swimmer straight back up (its direction stays where it looks)
+  const lookDive=!rise&&headingDown(fwd);   // an explicit rise wins
+  const input={direction:_dir.toArray(),rise,dive:dive||lookDive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight'),stature};
   let mode='swim';const steps=Math.max(1,Math.ceil(dt/(1/60)));
   for(let i=0;i<steps;i++){
     _swimOld.copy(myState.pos);
@@ -1245,7 +1247,8 @@ export function updateSpectator(dt, remote) {
   camera.lookAt(eye.clone().addScaledVector(_facing, FP_GAZE_AHEAD).add(new THREE.Vector3(0, -FP_GAZE_DROP, 0)));
 }
 
-export function setCamYaw(v) { camYaw = Math.atan2(Math.sin(v), Math.cos(v)); }   // wrapped: the body's yaw must never carry a full turn (XR pop, 09-05)
+export function setCamYaw(v) { camYaw = Math.atan2(Math.sin(v), Math.cos(v)); }
+export function setCamPitch(v) { camPitch = THREE.MathUtils.clamp(v, -0.9, 1.2); }   // probes: the same clamp as the mouse   // wrapped: the body's yaw must never carry a full turn (XR pop, 09-05)
 export function setPosture(p) { posture = p; }
 // the action bar's posture tiles (actionbar.js): sit runs the same seat search as X, stand leaves seat and posture.
 // A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —

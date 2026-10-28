@@ -8,7 +8,8 @@ import { strict as assert } from 'node:assert';
 import { readFileSync, existsSync } from 'node:fs';
 const base = process.env.WATER_PREVIEW_URL ?? 'http://127.0.0.1:19347/?world=level-dive&name=diver';
 const engine = process.env.ENGINE_LIB;
-const browser = await chromium.launch({ headless: true, channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal'] });
+const mac = process.platform === 'darwin';   // the installed Chrome and Metal are a Mac's; elsewhere Playwright's own Chromium
+const browser = await chromium.launch({ headless: true, ...(mac ? { channel: 'chrome' } : {}), args: ['--enable-unsafe-webgpu', ...(mac ? ['--use-angle=metal'] : [])] });
 try {
   const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
   const errors: string[] = []; page.on('pageerror', (e) => errors.push(String(e)));
@@ -50,6 +51,9 @@ try {
     out.diving = { y: y(), diving: c.isLevelDiving(), mode: c.myState.locomotion?.mode ?? null, medium: c.myState.locomotion?.medium ?? null };
     c.keys.delete('KeyC'); c.keys.add('Space'); await sleep(3500); c.keys.delete('Space'); await sleep(1500);
     out.surfaced = { y: y(), diving: c.isLevelDiving(), clip: c.myState.clip };
+    // look down and push forward: a desk dives the way a headset does, no dive key (R 10-28: "Minecraft rules")
+    c.myState.pos.set(0, -1.1, 30); await sleep(1200); c.setCamPitch(1.1); c.keys.add('KeyW'); await sleep(1500);
+    out.lookDive = { y: y(), diving: c.isLevelDiving() }; c.keys.delete('KeyW'); c.setCamPitch(0.32);
     return out;
   }, !!engine);
   console.log(JSON.stringify(r));
@@ -59,6 +63,7 @@ try {
   assert.ok(r.diving.y < r.floating.y - 1, `the body goes down while diving (${r.floating.y} → ${r.diving.y})`);
   assert.equal(r.diving.medium, 'water');
   assert.equal(r.surfaced.diving, false, 'back at the surface the float takes the body again');
+  assert.ok(r.lookDive.diving === true && r.lookDive.y < r.floating.y - 1, `looking down with W held dives, no key (${JSON.stringify(r.lookDive)})`);
   assert.ok(Math.abs(r.surfaced.y - r.floating.y) < 0.6, `it surfaces at the floating depth (${r.surfaced.y} vs ${r.floating.y})`);
   assert.ok(r.idleClips.flips <= 1 && r.swimClips.flips <= 1, `the floating clip holds steady (idle ${JSON.stringify(r.idleClips)}, swimming ${JSON.stringify(r.swimClips)})`);
   assert.deepEqual(errors, [], 'no page errors');
