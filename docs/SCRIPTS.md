@@ -37,6 +37,14 @@ that runs as it stands). Create sends `upload`, then ONE batch: `script:<name>` 
 (`use`, or the script's own name when the thing's `use` already does something else). One act, so Ctrl+Z takes it off.
 Refusals show on the card in these same words. (shared/protocol/newscript.js plans it; client/lib/scriptnew.js is the card.)
 
+## Developer kit
+
+`scripting/` holds what you need to write one before installing it: `world.d.ts` (types for the API below, kept equal to
+the sandbox's by `tools/protocol/scripting-check.ts`), `run.ts` (runs a script locally in the real sandbox:
+`bun scripting/run.ts <file> --self id --knobs json --use json --say json --enter id --tick n --people json`; it prints the
+writes, says, uses and console, and carries state between events; scope, rights and budgets are the authority's, not
+checked there) and `examples/` (greeter, bellkeeper with `world.use`, lighthouse with `world.nearby`).
+
 ## The component
 
 ```jsonc
