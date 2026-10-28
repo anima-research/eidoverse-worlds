@@ -64,10 +64,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["no old words on the wire", "shared/protocol/consent.js", "const tierOf = (t) => (Object.hasOwn(LEGACY_TIER, t) ? LEGACY_TIER[t] : t);", "const tierOf = (t) => t;", ["C2"]],
   ["drag is move again", "shared/protocol/consent.js", "drag: \"displace\", occupy: \"displace\", carry: \"displace\"", "drag: \"move\", occupy: \"displace\", carry: \"displace\"", ["C1"]],
   // "a friend may close the table" mutant RETIRED with C3 (recut A2)
-  ["the old list isn't the delegates", "shared/protocol/consent.js", "if (Array.isArray(t.friends) && !Array.isArray(t.delegates)) t.delegates = t.friends.slice(); }", "}", ["C4"]],
   ["no presence migration at load", "shared/protocol/authority/storage.js", "if (migratePresence(w.presence)) w.presenceDirty = true;", "", ["C5"]],
-  ["the reply says strangers", "shared/protocol/authority/bodyconsent.js", "table: { preset: t.preset, everyone: t.everyone,", "table: { preset: t.preset, strangers: t.everyone,", ["C6"]],
-  ["the browser keeps the old words", "client/lib/consent.js", "if (old) lsSet(KEY, JSON.stringify(t));", "", ["C7"]],
   ["/worlds sorts by kind", "server/routes.ts", "people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),", "people: present.filter((c) => c.declares !== \"agent\").map((c) => c.id), agents: present.filter((c) => c.declares === \"agent\").map((c) => c.id),", ["W1"]],
   ["the tool says (agent)", "mcpl/tools.ts", "p.declares ? `${p.id} (${p.declares})` : p.id", "p.declares === \"agent\" ? `${p.id} (agent)` : p.id", ["W2"]],
   ["the plate says agent", "client/lib/platecard.js", "const where = [typeof r.declares === 'string' && r.declares ? r.declares : null,", "const where = [r.agent ? 'agent' : null,", ["W3"]],
@@ -336,12 +333,13 @@ const cases: Case[] = [
       const words = (p: any) => Object.keys(p).sort().join() === "everyone,friends" && Object.values(p).every((row: any) => Object.keys(row).every((c) => C.CLASSES.includes(c)) && Object.values(row).every((m) => ["allow", "ask", "deny"].includes(m as string)));
       return { tiers: C.TIERS ?? null, modes: C.MODES ?? null, cls: C.CLASSES, kinds: [C.KIND_CLASS.drag, C.KIND_CLASS.occupy, C.KIND_CLASS.carry], presets: Object.values(C.PRESETS).every(words) }; },
     good: (o) => JSON.stringify(o.tiers) === '["everyone","friends"]' && JSON.stringify(o.modes) === '["allow","ask","deny"]' && o.cls.includes("displace") && !o.cls.includes("move") && o.kinds.every((k: string) => k === "displace") && o.presets },
-  // C2, C4, C6, C7 RETIRED (recut A2, 10-20): tiers, cells, the client table and delegates are gone; r11 C4 pins the migration.
-  { id: "C5", what: "…the authority's load (worldOf) reads a presence file in the old shape and holds today's: a switch, narrowed", run(s) {
+  // C2, C4, C6, C7 RETIRED (recut A2, 10-20): tiers, cells, the client table and delegates are gone; r11 C4 pins the
+  // migration. C1 holds the words a stored table is READ in (migratePresence), never written.
+  { id: "C5", what: "…the authority's load (worldOf) reads a presence file in the old shape and holds today's: two gates, narrowed", run(s) {
       s.call("olive", "create-world", { title: s.name });
       const w = s.reopen({ bodies: {}, holds: {}, consent: { "u-a": { cells: { strangers: { pose: "everyone" } }, friends: ["u-f"] } } });
-      return { sw: w.presence.consent["u-a"]?.switch ?? null, raw: JSON.stringify(w.presence.consent["u-a"]) }; },
-    good: (o) => o.sw === "refuse" && !/strangers|friends|cells/.test(o.raw) },
+      const t = w.presence.consent["u-a"]; return { move: t?.move, touch: t?.touch, raw: JSON.stringify(t) }; },
+    good: (o) => o.move === false && o.touch === false && !/strangers|friends|cells|switch/.test(o.raw) },
   { id: "W1", what: "(R 14:41) /worlds answers ONE people list of {id, declares?} (no agents list)", run() {
       const src = readText("server/routes.ts"); const h = src.slice(src.indexOf('u.pathname === "/worlds"'), src.indexOf('u.pathname === "/worlds"') + 2000);
       return { one: /people: present\.map\(\(c\) => \(\{ id: c\.id, \.\.\.\(c\.declares \? \{ declares: c\.declares \} : \{\}\) \}\)\)/.test(h), agents: /agents:/.test(h) }; },
@@ -687,10 +685,10 @@ const cases: Case[] = [
       return { stale: files.filter((f) => motionBob.test(readText(f))), says: files.filter((f) => /\boscillate\b/.test(readText(f))), vh: /`oscillate`/.test(vh) && /`bob`/.test(vh), cl: /oscillate/.test(readText("spec/REGISTRY-CHANGELOG.md").split("\n").filter((l: string) => /^- 2026-10-1[78]/.test(l)).join("\n")) }; },
     good: (o) => !o.stale.length && o.says.length === 5 && o.vh && o.cl },
   // ---------------- X: the record ----------------
-  { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the switch since recut A2, §7a rule 4)", run() {
+  { id: "X1", what: "the version history records the renames at minor 0, and the spec body speaks the new words (§5 consent: the two gates since R 10-28, §7a rule 4)", run() {
       const md = readText("spec/PROTOCOL.md"); const vh = md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md"); const body = md.slice(0, md.indexOf("## Version history"));
       return { vh: ["`hold-limit`", "`contact`", "`trusted-components`", "`rename-components`", "`displace`", "`delegates`", "`grabbable.anim`", "`grasp`", "`anim-pose`", "`wings-folded`", "`bodyMode`", "`{stop: true}`", "`live`"].every((w) => vh.includes(w)),
-        body: /`consent \{switch:\s*\n?\s*accept\|ask\|refuse\}`/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
+        body: /`consent \{move: true\|false, touch: true\|false\}`/.test(body) && !/`consent \{switch/.test(body) && !/everyone, ask, or nobody/.test(body) && !/\(strangers \/ friends\)/.test(body) }; },
     good: (o) => o.vh && o.body },
 ];
 

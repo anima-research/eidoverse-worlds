@@ -33,7 +33,7 @@ import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
 import { pushable, bodyTable, onConsentChange } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
-import { bodyActAsPuppet } from './consentinbox.js';
+import { bodyActAsPuppet, refusedNotice } from './bodyact.js';
 import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
@@ -517,9 +517,8 @@ function applyShove(lean, by) {
 export function initLocalBody({ logChat: logChatFn }) {
   logChat = logChatFn;
 
-  // my whole consent table (every class × everyone/friends) as the authority takes it (consentsync.js: a set for every
-  // cell, no preset): every arrival, every change; a refusal
-  // is a toast and a retry
+  // my body's consent (two gates, two lists) as the authority takes it (consentsync.js: only what differs): every arrival,
+  // every change; a refusal is a toast and a retry
   const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate) });
   onConsentChange(consentSync.sync);
 
@@ -534,10 +533,12 @@ export function initLocalBody({ logChat: logChatFn }) {
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'vacated') : null;
     if (u && vacatedFromMine(u, avatarMounts.get(CONFIG.name)) && dismountMe('script', vacatedAt(u))) toast(`${typeof u.by === 'string' ? u.by : 'someone'} moved what you were occupying, so you stood up`, 'info', 5000);
     // an act the authority delivered (an ask I said yes to: house review of #260, client/lib I1) is applied as a puppet is
+    const nameOf = (a) => (typeof a === 'string' ? ([...identities].find(([, id]) => id === a)?.[0] ?? a) : null);
     for (const m of Array.isArray(msg?.messages) ? msg.messages : []) {
+      // someone tried, and my consent turned it away: said quietly, once per person per minute (the authority's TRIED_NOTE_MS)
+      const said = refusedNotice(m, nameOf); if (said) { toast(said, 'info', 6000); continue; }
       const p = bodyActAsPuppet(m); if (!p) continue;
-      const by = typeof m.from === 'string' ? ([...identities].find(([, a]) => a === m.from)?.[0] ?? m.from) : 'someone';
-      applyPuppet({ by, ...p });
+      applyPuppet({ by: nameOf(m.from) ?? 'someone', ...p });
     }
   });
   setOccupyHook(() => {

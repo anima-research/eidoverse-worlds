@@ -428,7 +428,7 @@ register('letgo', (arg) => {
 register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
-  return logChat('*', `shoves and blasts ${pushable() ? 'CAN' : 'can NOT'} knock you over${v ? '' : ' — /pushable on|off to change'}`);
+  return logChat('*', `Move me is ${pushable() ? 'on: people CAN' : 'off: people can NOT'} shove, blast, drag, carry or seat you${v ? '' : ' — /pushable on|off to change'}`);
 });
 
 register('fork', (arg) => {

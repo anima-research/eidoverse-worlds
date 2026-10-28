@@ -5,7 +5,7 @@
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
 import { bodyOf } from "../shared/components.js";
-import { CLASSES, KIND_CLASS, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
+import { CLASSES, REACH_NOTE_MS, namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { kindOf } from "../shared/protocol/kind.js";
 import { describeBody, mayLeave, resolveSeat, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
@@ -569,31 +569,30 @@ export class WorldAgent {
   occupiedBody() { const m = this.myOccupancy; return m ? bodyOf(this.socketRec(m.to)?.station) : null; }
   /** May I vacate this way? (its leaveBy: a 'script' station lets go only when the world does, or by the escape) */
   mayVacate(kind: "move" | "jump" | "menu" | "script" | "escape") { const b: any = this.occupiedBody(); return !b || mayLeave(b, kind) || !this.socketRec(this.myOccupancy!.to); }
-  /** The authority's body inbox (PROTOCOL L6), pushed by the server as it fills: an ask waiting for ME (someone's act met
-   *  an `ask` cell of my table; 20 s, silence is no) is said with how to answer it through `act`; the replies to my own asks,
-   *  acts delivered to my body, revocations and being let go from what I occupy (`vacated`) are said in the authority's words. */
+  /** The authority's body inbox (PROTOCOL §5), pushed by the server as it fills: acts delivered to my body, revocations,
+   *  my refused reaches, someone's refused act on me (`body-refused`) and being let go from what I occupy (`vacated`) are said. */
   bodyInbox(messages: any) {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
-      if (m.type === "body-ask" && m.ask) { const a = m.ask; const left = typeof a.expires === "number" ? Math.max(1, Math.round((a.expires - ts) / 1000)) : 20;
-        text = `${a.summary ?? `${a.from} asks to ${a.kind}`}${a.why ? ` — "${a.why}"` : ""} (consent class ${a.cls ?? KIND_CLASS[a.kind] ?? a.kind}; about ${left} s to answer, silence is no): act {verb: "consent", args: {answer: ${JSON.stringify(a.id)}, yes: true}} allows it this once, yes: false refuses`; }
-      else if (m.type === "body-reply") text = m.ok ? `your ask ${m.ask} was allowed${m.applied ? " and done" : ""}` : `your ask ${m.ask} was refused: ${m.why ?? "no"}`;
       // what the authority did: it let the act reach this body, and recorded it
-      else if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
+      if (m.type === "body") text = `the world let ${m.from}'s ${m.kind}${m.spec?.point ? ` (${m.spec.point})` : ""} reach your body (consent: ${m.consent})`;
       else if (m.type === "vacated") {   // review r9 M3: an edit by someone else moved the seat I sat on, and the authority let me go
         if (vacatedFromMine(m, this.myOccupancy)) { const on = this.socketName(m.socket); this.setOccupant(null);
           // stand where the authority let me go (its track of my body starts again there, r9 M2)
           const at = vacatedAt(m); if (at) { this.pos.x = at[0]; this.pos.y = at[1]; this.pos.z = at[2]; }
           text = `${typeof m.by === "string" ? this.nameOfActor(m.by) ?? m.by : "someone"} moved ${on}, the seat you were on, so you are standing where it was${typeof m.why === "string" ? ` (${m.why})` : ""}`; } }
       else if (m.type === "body-revoked") text = `${m.by} withdrew consent for ${m.class}: what you were doing to their body has ended`;
+      // someone's act on MY body was refused (said once per asker per minute): who, and what of mine turned it away
+      else if (m.type === "body-refused") { const who = this.nameOfActor(String(m.from)) ?? String(m.from);
+        text = `${who} tried to ${m.class === "shove" || m.class === "displace" ? "move" : "touch"} you (${m.class}); it was refused: ${m.gate ? `your ${m.gate} gate is off` : "they are on your block list"}`; }
       else if (m.type === "reach-refused") {   // the relay took a hand of mine out of my pose: nobody saw it (server/reachgate.ts)
         const to = String(m.to ?? ""), who = this.nameOfActor(to) ?? to;
         this.reachRefusals.push({ to, cls: String(m.class ?? "touch"), why: String(m.why ?? "their consent refused it"), ...(m.fix ? { fix: String(m.fix) } : {}), ...(typeof m.limb === "string" ? { limb: m.limb } : {}), ts });
         if (this.reachRefusals.length > 20) this.reachRefusals.shift();
         const dropped = this.dropReachesAt(to, typeof m.limb === "string" ? m.limb : undefined, String(m.class ?? "touch"));
         text = `your hand toward ${who}${m.point ? `'s ${m.point}` : ""} was not shown to anyone (consent class ${m.class}): ${m.why}${m.fix ? ` — ${m.fix}` : ""}${dropped.length ? `. Withdrawn: ${dropped.join(", ")}` : ""}`; }
-      if (text) { this.inbox.push({ ts, kind: "act", who: m.type === "body-ask" ? String(m.ask?.from ?? "world") : String(m.from ?? m.by ?? "world"), text }); this.onEvent?.({ ts, kind: "act", who: String(m.ask?.from ?? m.from ?? m.by ?? "world"), text, mention: m.type === "body-ask" }); }
+      if (text) { const who = String(m.from ?? m.by ?? "world"); this.inbox.push({ ts, kind: "act", who, text }); this.onEvent?.({ ts, kind: "act", who, text }); }
     }
   }
   /** sit on a thing's seat socket (presence: my frames carry {to: <socket id>}), or stand (null) */
@@ -1185,9 +1184,9 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
             this.resumeWalkGate();   // a walk carried across the rejoin
-            // my body's switch (recut A2), as a person's client sends it on every arrival (consentsync.js): read what the
-            // authority holds, send mine only if it differs. Unset = never chosen: the world's default stands.
-            void this.replaySwitch();
+            // my body's consent (two gates, two lists), as a person's client sends it on every arrival (consentsync.js):
+            // read what the authority holds, send what I chose only where it differs. Never chosen: the world's default stands.
+            void this.replayConsent();
             this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
@@ -4726,18 +4725,26 @@ export class WorldAgent {
       this.ws!.send(JSON.stringify({ type: "request", id, verb, args }));
     });
   }
-  /** This body's switch as it last set it (recut A2), resent on every arrival so a reconnect keeps it. */
-  private consentSwitch: string | null = null;
-  /** On every arrival, as a person's client does (consentsync.js): read what the authority holds for my body's switch and
-   *  send mine only if it differs. Unset = never chosen: the world's default stands. */
-  async replaySwitch(): Promise<void> {
-    if (!this.consentSwitch) return;
+  /** What this body chose with `consent` (each gate, and each person it listed or unlisted), resent on every arrival so a
+   *  reconnect keeps it. Only what it chose: never chosen is the world's default, and an unlist is said again too. */
+  private consentWant: { move?: boolean; touch?: boolean; people: Map<string, "allow" | "block" | null> } = { people: new Map() };
+  /** On every arrival, as a person's client does (consentsync.js): read what the authority holds for my body and send what
+   *  I chose only where it differs. */
+  async replayConsent(): Promise<void> {
+    const w0 = this.consentWant; if (w0.move === undefined && w0.touch === undefined && !w0.people.size) return;
     const held = await this.request("consent", {}).catch(() => null); if (!held?.ok || !held.table) return;
-    // read mine when the answer is back: a switch set while the read was out is newer than the one this began with
-    const want = this.consentSwitch;
-    if (want && held.table.switch !== want) await this.request("consent", { switch: want }).catch(() => null);
+    // read what I chose when the answer is back: a change made while the read was out is newer than the one this began with
+    const want = this.consentWant, t = held.table, gates: Record<string, boolean> = {};
+    for (const g of ["move", "touch"] as const) if (want[g] !== undefined && t[g] !== want[g]) gates[g] = want[g]!;
+    if (Object.keys(gates).length) await this.request("consent", gates).catch(() => null);
+    for (const [who, list] of want.people) {
+      const now = Array.isArray(t.block) && t.block.includes(who) ? "block" : Array.isArray(t.allow) && t.allow.includes(who) ? "allow" : null;
+      if (now !== list) await this.request("consent", { [list ?? "unlist"]: who }).catch(() => null); }
   }
-  private noteConsent(args: Record<string, unknown>) { if (typeof args.switch === "string") this.consentSwitch = args.switch; }
+  private noteConsent(args: Record<string, unknown>) {
+    for (const g of ["move", "touch"] as const) if (typeof args[g] === "boolean") this.consentWant[g] = args[g] as boolean;
+    for (const op of ["allow", "block", "unlist"] as const) if (typeof args[op] === "string") this.consentWant.people.set(args[op] as string, op === "unlist" ? null : op);
+  }
   /** present people's identities, by display name (their arrival carries it) */
   actorIds = new Map<string, string>();
   /** Reaches the relay refused to show (server/reachgate.ts; the authority says so once per target and class per

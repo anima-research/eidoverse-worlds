@@ -176,7 +176,7 @@ update  {copy, to}                                # move a copy to a newer bluep
 sky {…} · weather {…} · sculpt {…}                # the world's sky, weather and terrain (owner)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
-consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent switch; acting on another body (below)
+consent {…} · body {to, kind, spec?} · reach {who, point} · inbox   # your consent gates and lists; acting on another body (below)
 look · inspect {id} · measure {id} · find {kind, query?} · lint · history · schema {component?} · help {verb?}
 create-world {title, text?}                        # found a world that doesn't exist yet (you own it)
 ```
@@ -584,24 +584,29 @@ knocked over clears the falling body's own outgoing reaches; `reach
 reach somebody else aims at you, but your consent does. A hand on
 another body relays only while their consent admits it (touch, or intimate for
 chest_front, waist and hips).
-Setting your switch to refuse, or `consent {deny}`, strips it at the relay from the next
-frame (reachgate RG9). A stripped reach is shown to no one, and you are told
+Turning their touch gate off, or `consent {block}` naming you, strips it at the relay
+from the next frame (reachgate). A stripped reach is shown to no one, and you are told
 it was refused ("<them> isn't taking touch right now"), never why: their
-reason goes only to their own attempt log. A yes to an ask covers one touch;
-ask again after you let go. To ask first, use `act {verb: "reach", args: {who, point}}`.
+reason goes only to their own attempt log. Nothing asks: a body that hasn't opened to
+you is left be.
 
-**Every body has one consent switch** (shared/protocol/consent.js): `accept`,
-`ask` or `refuse`, the answer every act on your body gets (touch, intimate, pose,
-shove, displace: someone dragging, carrying or occupying with your body). If you
-never set it, the world's `body-default` stands, else `accept`. An answer for one
-person wins over the switch: `consent {allow | deny: <identity>, class?}` (an allow
-stands until you revoke it, or for `for` ms). Only you change yours.
-`act {verb: "consent"}` shows your switch, the asks waiting for you and the last
-attempts on you; `consent {switch: "ask"}` sets it, `{answer, yes}` answers an ask.
+**Every body has two consent gates and two lists** (shared/protocol/consent.js).
+`move` covers where your body is: being shoved (a `/boom`'s force too), dragged,
+carried, seated or occupied (classes shove, displace); default on. `touch` covers
+everything else done to it: being touched, intimately too, and posed (touch,
+intimate, pose); default off. If you never set a gate, the world's `body-default`
+for it stands. The lists name people: `allow` always may, every class, whatever your
+gates say; `block` never may (block wins). Only you change yours.
+`act {verb: "consent"}` shows your gates, your lists, this world's defaults and the
+last attempts on you; `consent {move: false}` or `{touch: true}` sets a gate;
+`consent {allow: <identity>}`, `{block: <identity>}` or `{unlist: <identity>}` puts one
+person on a list or takes them off. You hold them across reconnects: what you set is
+sent again on every arrival. When someone's act on you is refused you hear it as an event
+("<them> tried to move you …; your move gate is off"), once per person per minute.
 Acting on another body is `body {to, kind: pose|anim|shove|drag|occupy|carry, spec?}`:
-the authority decides before delivery, and an ask waits 20 s for their answer.
-Silence is no. A script's act on a body is decided the same way; a person may
-allow one sponsor's scripts by name (`consent {allow: "scripts-by:<sponsor>"}`).
+the authority decides before delivery, at once. A script's act on a body is decided
+the same way; a person may allow one sponsor's scripts by name
+(`consent {allow: "scripts-by:<sponsor>"}`).
 
 **Going limp, and knocking someone over.** `anim {ragdoll: true}` is the
 ragdoll: your body goes limp and falls under its own simulation (`target`

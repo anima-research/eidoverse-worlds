@@ -134,7 +134,7 @@ const cases: Case[] = [
       const ring = D.refusalRing ? D.refusalRing(s.w()) : [];
       return { r: code(r), verb: a?.verb, body: a?.body, log: JSON.stringify(s.entries()).includes("5550100") || JSON.stringify(s.entries()).includes("555-0100"), ring: ring.at(-1)?.verb }; },
     good: (o) => o.r === "unknown-verb" && o.verb === "unknown-verb" && JSON.stringify(o.body?.args) === "[]" && o.body?.unknownArgs === 1 && !o.log && o.ring === "call-me-on-5550100" },
-  { id: "L7", what: "one switch per body, and nothing around it (recut A2, house plan #260 10-20): what the consent switch grants lands in presence fields (poseBy, draggedBy, tumble, the reaches a relay caches), and the authority and the relay write them in bodyconsent.js alone, where every path (a request, a script's world.pose, a seat, a stream) is decided first; a write anywhere else in shared/ or server/ is a path around the switch", run() {
+  { id: "L7", what: "one consent per body, and nothing around it (recut A2, house plan #260 10-20; two gates and two lists, R 10-28): what consent grants lands in presence fields (poseBy, draggedBy, tumble, the reaches a relay caches), and the authority and the relay write them in bodyconsent.js alone, where every path (a request, a script's world.pose, a seat, a stream) is decided first; a write anywhere else in shared/ or server/ is a path around the gates", run() {
       const walk = (d: string): string[] => fs.readdirSync(path.join(TREE, d), { withFileTypes: true }).flatMap((e) => e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(d, e.name))) : /\.(js|ts|mjs)$/.test(e.name) ? [path.join(d, e.name)] : []);
       const WRITE = /\.(poseBy|poseSponsor|draggedBy|dragSponsor|tumble)\s*(=[^=]|\?\?=)|reaches\s*\?\?=|\.reaches\)?\[[^\]]+\]\s*=[^=]/;
       const files = [...walk("shared"), ...walk("server")];
@@ -143,13 +143,13 @@ const cases: Case[] = [
       return { files: files.length, around, inside }; },
     good: (o) => o.files > 50 && o.around.length === 0 && o.inside >= 4 },
   { id: "L6", what: "a consented pose keeps who posed you (poseBy: the 'who posed me' answer and the revoke read it), never the pose itself: the authority sends no body's pose, so a copy of it was write-only (recut A4, house plan #260 10-20)", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });   // recut A2: default is accept
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { touch: true });   // a pose is behind the touch gate (off by default)
       const r = s.call("vic", "body", { to: "bob", kind: "pose", spec: { head: [0, 0, 0, 1] } });
       const b = s.w().presence.bodies.bob ?? {};
       return { r: show(r), poseBy: b.poseBy, hasPose: "pose" in b }; },
     good: (o) => o.r === "ok" && o.poseBy === "vic" && !o.hasPose },
   { id: "L5", what: "a refused touch, body effect or consent write is never logged (presence: consent is never appended, scars r8 M3); a refused edit still is", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });   // recut A2: default is accept
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("bob", "consent", { move: false, touch: false });
       const n0 = s.entries().length;
       const b = s.call("vic", "body", { to: "bob", kind: "shove" });
       const r = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
@@ -160,15 +160,15 @@ const cases: Case[] = [
       return { b: show(b), r: show(r), c: show(c), wrote: n1 - n0, edit: code(e), editLogged: s.entries().length - n2 }; },
     good: (o) => /^refused/.test(o.b) && /^refused/.test(o.c) && o.wrote === 0 && o.edit === "rights" && o.editLogged === 1 },
   // ---------------- K: look ----------------
-  { id: "K1", what: "look: vic sees his own consent switch, and nobody else's (bob's refuse stays bob's)", run(s) { cast(s);
-      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { switch: "refuse" });
+  { id: "K1", what: "look: vic sees his own consent gates, and nobody else's (bob's closed gates stay bob's)", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [1, 0, 0] }); s.call("bob", "consent", { move: false, touch: false }); s.call("vic", "consent", { touch: true });
       const L = s.call("vic", "look", {}); const me = L.bodies?.find((b: any) => b.id === "vic"), him = L.bodies?.find((b: any) => b.id === "bob");
       return { me, him }; },
-    good: (o) => o.me?.shield && "switch" in o.me.shield && !!o.him && !("shield" in o.him) && !JSON.stringify(o.him).includes("refuse") },
+    good: (o) => o.me?.shield?.touch === true && o.me.shield.move === null && !!o.him && !("shield" in o.him) && !/"move"|"touch"|false/.test(JSON.stringify(o.him)) },
   { id: "K2", what: "look: who touches whom is the toucher's and the touched's own: a third person sees none of it", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "inhabitant" } });
       s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] }); s.call("ann", "move", { to: [3, 0, 0] });
-      s.call("bob", "consent", { allow: "vic", class: "touch" }); const t = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
+      s.call("bob", "consent", { allow: "vic" }); const t = s.call("vic", "reach", { who: "bob", point: "shoulder_l" });
       const seen = (who: string) => s.call(who, "look", {}).bodies?.find((b: any) => b.id === "bob")?.touchedBy ?? [];
       return { t: show(t), bob: seen("bob"), vic: seen("vic"), ann: seen("ann") }; },
     good: (o) => o.t === "ok" && JSON.stringify(o.bob) === '["vic"]' && JSON.stringify(o.vic) === '["vic"]' && JSON.stringify(o.ann) === "[]" },
@@ -307,7 +307,7 @@ const cases: Case[] = [
   { id: "X6", what: "PROTOCOL §7 and §8 say what a refused act and a script act keep: argument names and a code; presence reads as counts, body effects without consent", run() {
       const spec = read("spec/PROTOCOL.md");
       return { refused: spec.includes("`{args:\n<the names of the arguments the verb takes>, refused: {code}}`") || /refused: \{code\}\}`/.test(spec) && /never holds a value/.test(spec),
-        oldRefused: spec.includes("(`{code, reason, fix}`) and nothing else is written"), reads: /never who was near or what anyone\s+is called/.test(spec), look: /`look` shows each viewer their own switch/.test(spec) }; },
+        oldRefused: spec.includes("(`{code, reason, fix}`) and nothing else is written"), reads: /never who was near or what anyone\s+is called/.test(spec), look: /`look` shows each viewer their own gates/.test(spec) }; },
     good: (o) => o.refused && !o.oldRefused && o.reads && o.look },
 ];
 // G1 (static): scan the files the authority's refusals come from, then the registry; built after the cases list so the

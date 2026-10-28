@@ -64,7 +64,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the beat drains scripts", "authority/scriptrun.js", "drainAll(w);   // what the beat logged reaches scripts", "/* mutant */   // what the beat logged reaches scripts", ["E6"]],
   ["enter() restores the outer call's queues", "authority.js", "Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ;", "Object.assign(CTX, outer); w.sayQ = wq.sayQ;", ["E5"]],
   ["bodies need scope.bodies", "authority/scriptrun.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
-  ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
+  ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& !named(from) && named(`scripts-by:${sponsor}`) ?", "&& false ?", ["C3"]],
+  ["a behaviour's own entry answers for it", "authority/bodyconsent.js", "&& !named(from) && named(`scripts-by:${sponsor}`) ?", "&& named(`scripts-by:${sponsor}`) ?", ["C4"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
   ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],
@@ -985,13 +986,13 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       return { str: code(str), name: code(name), many: code(many), full: ok(full) ? "ok" : code(full), script: st(s, s.call("vic", "use", { id: "seatl", action: "p" })) }; },
     good: (o) => o.str === "shape" && o.name === "shape" && o.many === "bounds" && o.full === "ok" && o.script === "failed thrown" },
   // ---------------- C: body effects meet consent ----------------
-  { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose table says no (a behaviour is a stranger): refused where it lands, nothing logged; once vic allows it by name, it lands; the act records what and on whom, never which consent let it (consent gaps 6c: a per-person allow is presence)", run(s) { cast(s);
+  { id: "C1", what: "41 #13 / §3d M4: a script `shove`s a visitor whose move gate is off (a behaviour is anyone): refused where it lands, nothing logged; once vic allows it by name, it lands; the act records what and on whom, never which consent let it (consent gaps 6c: an allow list is presence)", run(s) { cast(s);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); const n0 = s.entries().length;
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { move: false }); const n0 = s.entries().length;
       const r1 = s.call("vic", "use", { id: "trap", action: "step" }); const scripted1 = s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length;
-      s.call("vic", "consent", { allow: "script:trap", class: "shove" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
+      s.call("vic", "consent", { allow: "script:trap" }); const r2 = s.call("vic", "use", { id: "trap", action: "step" });
       const act = s.entries().findLast((e: any) => e.actor === "script:trap" && e.kind === "act");
       return { r1: st(s, r1), scripted1, r2: st(s, r2), recorded: act?.body?.bodies, tumble: !!s.w().presence.bodies.vic?.tumble }; },
     good: (o) => o.r1 === "refused consent" && o.scripted1 === 0 && o.r2 === "ran" && JSON.stringify(o.recorded) === '[{"kind":"shove","to":"body:vic"}]' && o.tumble },
@@ -999,14 +1000,14 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "trap", "spring", onUse(`world.shove(e.by);`), { scope: { ids: "self", comps: [] }, on: ["use"] });
       s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "accept" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { move: true });
       return { r: st(s, s.call("vic", "use", { id: "trap", action: "step" })) }; },
     good: (o) => o.r === "refused scope" },
   { id: "C3", what: "§3d M4: a person may allow a sponsor's behaviours by name (scripts-by:<sponsor>): every one of bob's scripts may then pose them; ann's still may not", run(s) { cast(s);
       for (const [who, id] of [["bob", "pad1"], ["bob", "pad2"], ["ann", "pad3"]]) { s.call(who, "create", { id, model: "crate", place: { at: [0, 0] } });
         install(s, who, id, "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
         s.call(who, "set", { id, component: "reactions", value: { go: { kind: "script", script: "p" } } }); }
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { touch: false }); s.call("vic", "consent", { allow: "scripts-by:bob" });
       return { rs: ["pad1", "pad2", "pad3"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => JSON.stringify(o.rs) === '["ran","ran","refused consent"]' },
   { id: "B20b", what: "a script that throws a falsy value (0, \"\", null, undefined, false) fails, and the writes it made first are not kept", run(s) { cast(s);
@@ -1036,26 +1037,23 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
         const r = s.call("vic", "use", { id: "box", action: "yr" }); return { local, st: r.script?.status ?? st(s, r), n: comp(s, "box", "t/n") ?? null }; }
       finally { if (was === undefined) delete process.env.TZ; else process.env.TZ = was; } },
     good: (o) => o.local === 126 && o.st === "ran" && o.n?.y === 125 && o.n?.set === "1999-12-31T23:30:00.000Z" },
-  { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table", run(s) { cast(s);
+  { id: "C3b", what: "§3d M4: a pose a sponsor-wide allowance let in stands when the person changes some other part of their table (the move gate)", run(s) { cast(s);
       s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
       s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" }); s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { touch: false }); s.call("vic", "consent", { allow: "scripts-by:bob" });
       const r = st(s, s.call("vic", "use", { id: "pad1", action: "go" })); const posed = s.w().presence.bodies.vic?.poseBy !== undefined;   // who posed you, never the pose (recut A4)
-      s.call("vic", "consent", { switch: "refuse" });
+      s.call("vic", "consent", { move: false });
       return { r, posed, after: s.w().presence.bodies.vic?.poseBy !== undefined }; },
     good: (o) => o.r === "ran" && o.posed && o.after },
-  { id: "C4", what: "an expired allowance for one behaviour no longer masks its sponsor's: the sponsor-wide allowance applies once it has run out", run(s) { cast(s);
-      s.call("bob", "create", { id: "pad1", model: "crate", place: { at: [0, 0] } });
-      install(s, "bob", "pad1", "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
-      s.call("bob", "set", { id: "pad1", component: "reactions", value: { go: { kind: "script", script: "p" } } });
-      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { switch: "refuse" });
-      s.call("vic", "consent", { allow: "scripts-by:bob", class: "pose" });
-      const one = s.call("vic", "consent", { allow: "script:pad1", class: "pose", for: 60000 });
-      const during = st(s, s.call("vic", "use", { id: "pad1", action: "go" }));
-      s.advance(5 * 60000);
-      return { one: one?.ok, during, after: st(s, s.call("vic", "use", { id: "pad1", action: "go" })) }; },
-    good: (o) => o.one === true && o.during === "ran" && o.after === "ran" },
+  { id: "C4", what: "a behaviour a list names answers for itself; one neither list names is answered by its sponsor's entry (bob's scripts allowed, his pad1 blocked: pad1 is refused, pad2 runs)", run(s) { cast(s);
+      for (const id of ["pad1", "pad2"]) { s.call("bob", "create", { id, model: "crate", place: { at: [0, 0] } });
+        install(s, "bob", id, "p", onUse(`world.pose(e.by, { clip: "wave" });`), { scope: { ids: "self", comps: [], bodies: ["pose"] }, on: ["use"] });
+        s.call("bob", "set", { id, component: "reactions", value: { go: { kind: "script", script: "p" } } }); }
+      s.call("vic", "move", { to: [0, 0, 1] }); s.call("vic", "consent", { touch: false });
+      s.call("vic", "consent", { allow: "scripts-by:bob" }); const one = s.call("vic", "consent", { block: "script:pad1" });
+      return { one: one?.ok, rs: ["pad1", "pad2"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
+    good: (o) => o.one === true && JSON.stringify(o.rs) === '["refused consent","ran"]' },
   { id: "Q1", what: "reinstalling a script whose value was purged counts against the world's script limit, as a new one does", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
       for (const id of ["qa", "qb"]) s.call("bob", "create", { id, model: "crate", place: { at: [0, 0] } });

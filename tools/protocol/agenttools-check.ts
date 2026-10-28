@@ -64,7 +64,7 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
   ok(/title:/.test(pp) && HINTS.every((h) => new RegExp(`${h}:\\s*(true|false)`).test(pp)), "AT4 …and the stdio host's own pending_pings tool too", pp.slice(0, 400));
   // AT3 / AT2 descriptions
   const desc = Object.fromEntries(TOOLS.map((t) => [t.name, t.description]));
-  ok(!/default for agent performers/.test(desc.act) && /owner's call \(their consent switch/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
+  ok(!/default for agent performers/.test(desc.act) && /owner's call \(their move gate/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
@@ -92,11 +92,11 @@ const { HANDLERS, TOOLS, TOOL_ALIASES, toolList, handleTool: handleToolDoor } = 
     ok(!/\bpushable\b/.test(agentSrc), "AT7a agent.ts has no `pushable` flag: the authority's consent table is the one answer to a shove");
     // It pins the default's NAME in the table the agent starts with. Every arrival sends that table as a person's client
     // does: it reads what the authority holds and sets each cell that differs, never a preset, which empties the cells
-    // (review of #260). The arrival calls replaySwitch() (lifted out for house 6340433633); that method is read here.
-    const at = agentSrc.indexOf("async replaySwitch()"), end = agentSrc.indexOf("\n  }", at);
-    const arrival = at < 0 || end < 0 || !/void this\.replaySwitch\(\)/.test(agentSrc) ? "" : agentSrc.slice(at, end);
-    ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", \{ switch: want \}\)/.test(arrival) && !/\bpreset\b|\{ set \}/.test(arrival) && !/DEFAULT_PRESET/.test(agentSrc),
-      "AT7b (recut A2) an arrival reads the authority and sends the agent's switch only if it differs; no preset, no cells", arrival.slice(0, 300));
+    // (review of #260). The arrival calls replayConsent() (lifted out for house 6340433633); that method is read here.
+    const at = agentSrc.indexOf("async replayConsent()"), end = agentSrc.indexOf("\n  }", at);
+    const arrival = at < 0 || end < 0 || !/void this\.replayConsent\(\)/.test(agentSrc) ? "" : agentSrc.slice(at, end);
+    ok(/this\.request\("consent", \{\}\)/.test(arrival) && /this\.request\("consent", gates\)/.test(arrival) && /unlist/.test(arrival) && !/\bpreset\b|\{ set \}|switch/.test(arrival) && !/DEFAULT_PRESET/.test(agentSrc),
+      "AT7b (R 10-28) an arrival reads the authority and sends the agent's gates and listed people only where they differ; no preset, no switch", arrival.slice(0, 300));
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
@@ -231,10 +231,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 // ---- AT3: a refused shove is an error ----
 { const vic = await sock("Vic"); await sleep(200);
   vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // in reach (shove: 3 m)
-  const sw = await vic.req("consent", { switch: "refuse" }); ok(sw?.ok, "(AT3 setup) Vic sets her body to refuse (recut A2: the default accepts)", sw);
+  const sw = await vic.req("consent", { move: false }); ok(sw?.ok, "(AT3 setup) Vic turns her move gate off (its default is on)", sw);
   const no = await call("act", { verb: "shove", args: { target: "Vic" } });
   ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body refuses: act shove is refused, and the tool says so as an error naming the class", T(no));
-  ok((await vic.req("consent", { switch: "accept" })).ok, "(AT3 setup) Vic sets her body back to accept");
+  ok((await vic.req("consent", { move: true })).ok, "(AT3 setup) Vic turns her move gate back on");
   const k = vic.msgs.length; const yes = await call("act", { verb: "shove", args: { target: "Vic" } });
   await tryUntil("Vic is sent the shove's ragdoll", () => vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), { ms: 3000 });
   ok(!yes.isError && vic.msgs.slice(k).some((m) => m.type === "puppet" && m.ragdoll), "AT3b once Vic allows it, the shove goes through and reports no error", [T(yes), vic.msgs.slice(k).map((m) => m.type)]);

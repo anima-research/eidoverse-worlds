@@ -1048,8 +1048,7 @@ async function handle(msg, at) {
       break;
 
     case 'body-inbox':
-      // the authority's body inbox (PROTOCOL L6): asks waiting for me, replies to my asks, acts delivered, revocations.
-      // people.js holds them (consentinbox.js), marks the asker's row in People Here and offers Allow / Not now / Never.
+      // the authority's body inbox (PROTOCOL §5): acts delivered (localbody.js applies them), revocations, a seat let go.
       bus.emit('body-inbox', msg);
       break;
     case 'log': onLog(msg); break;

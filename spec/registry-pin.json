@@ -1030,7 +1030,18 @@
  },
  "body-default": {
   "status": "trial",
-  "type": "string",
+  "fields": {
+   "move": "bool",
+   "touch": "bool"
+  },
+  "absentMeans": {
+   "move": "true: an untouched body may be moved (shoved, dragged, carried, seated)",
+   "touch": "false: an untouched body may not be touched or posed"
+  },
+  "docs": {
+   "move": "the move gate an untouched body has here: being shoved (a /boom's force too), dragged, carried, seated or occupied",
+   "touch": "the touch gate an untouched body has here: being touched (intimate points too) and posed"
+  },
   "on": "world"
  },
  "keep-owner": {

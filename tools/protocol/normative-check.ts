@@ -1,7 +1,7 @@
 // normative-check — spec/NORMATIVE.md is the closed set, and its tables say what the reference does.
 //   N1 every file the normative set lists exists; nothing outside spec/ is listed as normative
-//   N2 the consent switch row equals consent.js SWITCHES (recut A2: one switch replaced the preset table)
-//   N3 the default and the ask window in the prose equal the code's; N3b the old table is kept in docs/
+//   N2 the consent gates row equals consent.js GATES and GATE_OF (R 10-28: two gates and two lists replaced the switch)
+//   N3 the default and the order in the prose equal the code's; N3b the old designs are kept in docs/
 //   N4 the roles ladder, permission list and built-in roles equal shared/protocol/roles.js
 //   N5 PROTOCOL.md never calls a code file normative (code is informative: NORMATIVE.md says so)
 //   N6–N9 (recut C12) the refusal codes and the readback table are PINNED in spec/ (refusal-codes.json, readback.json): the
@@ -58,14 +58,19 @@ const listed = rows(section("## The normative set")).slice(1).map((r) => r[0].re
 const missing = listed.filter((f) => !existsSync(ROOT + f));
 check("N1", `the normative set's ${listed.length} files exist, all under spec/`, listed.length >= 8 && !missing.length && listed.every((f) => f.startsWith("spec/")), { missing, outside: listed.filter((f) => !f.startsWith("spec/")) });
 
-// N2 (recut A2): the switch row names exactly consent.js SWITCHES, and the default row names DEFAULT_SWITCH
+// N2 (R 10-28): the gates row names exactly consent.js GATES and which classes each covers (GATE_OF); the lists row names allow and block
 { const row = (k: string) => (doc.split("\n").find((l) => l.startsWith(`| ${k} |`)) ?? "");
-  const sw = [...row("The answer").matchAll(/`([a-z]+)`/g)].map((m) => m[1]);
-  check("N2", "the switch row lists consent.js SWITCHES, in order", JSON.stringify(sw) === JSON.stringify(C.SWITCHES), { sw, code: C.SWITCHES });
-// N3: the default and the ask window equal the code
-  const def = row("Default").match(/`([a-z]+)`/)?.[1];
-  check("N3", "the default row equals DEFAULT_SWITCH and the ask row says 20 s (ASK_MS)", def === C.DEFAULT_SWITCH && C.ASK_MS === 20000 && /20 s/.test(row("Ask")), { def, code: C.DEFAULT_SWITCH, ask: row("Ask") });
-  check("N3b", "the retired table is kept as a record in docs/", existsSync(ROOT + "docs/CONSENT-TABLE-RECORD.md")); }
+  const g = row("The gates"); const named = [...g.matchAll(/`([a-z]+)`/g)].map((m) => m[1]);
+  const covers = (gate: string) => Object.entries(C.GATE_OF).filter(([, v]) => v === gate).map(([c]) => c);
+  const said = (gate: string) => { const i = g.indexOf(`\`${gate}\``), j = C.GATES.map((x) => g.indexOf(`\`${x}\``)).filter((n) => n > i).sort((a, b) => a - b)[0] ?? g.length; return g.slice(i, j); };
+  check("N2", "the gates row names consent.js GATES, in order, and each with the classes GATE_OF puts behind it",
+    JSON.stringify(named.filter((n) => C.GATES.includes(n))) === JSON.stringify(C.GATES) && C.GATES.every((x) => covers(x).every((c) => said(x).includes(c))) && /`allow`/.test(row("The lists")) && /`block`/.test(row("The lists")),
+    { named, covers: C.GATES.map((x) => [x, covers(x), said(x)]) });
+// N3: the default equals the code's, and the order puts block above allow above the gates
+  const def = row("Default"); const ord = row("Order");
+  check("N3", "the default row says each gate's DEFAULT_GATES value, and the order row says block > allow > the gate > the world's default",
+    C.GATES.every((x) => new RegExp(`\`${x}\` ${C.DEFAULT_GATES[x] ? "on" : "off"}`).test(def)) && ord.indexOf("`block`") < ord.indexOf("`allow`") && ord.indexOf("`allow`") < ord.indexOf("gate") && ord.indexOf("gate") < ord.indexOf("body-default"), { def, ord, code: C.DEFAULT_GATES });
+  check("N3b", "the retired designs are kept as a record in docs/", existsSync(ROOT + "docs/CONSENT-TABLE-RECORD.md")); }
 
 // N4
 const roles = section("### World roles");

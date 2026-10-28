@@ -107,9 +107,9 @@ check("a directed shove floors it downwind", ag.clip === "ragdoll" && ag.pos.z >
   `clip=${ag.clip} Δz=${(ag.pos.z - b2.z).toFixed(2)}`);
 check("...and named the shover", events.some((t) => t.includes("shover") && t.includes("knocks you over")), events.join(" | "));
 
-// 4. consent: the body's switch set to refuse turns every shove away at the relay, completely
-const sw = await (ag as any).request("consent", { switch: "refuse" });
-check("the agent's body switch is set to refuse", sw?.ok === true, JSON.stringify(sw));
+// 4. consent: the body's move gate off turns every shove away at the relay, completely
+const sw = await (ag as any).request("consent", { move: false });
+check("the agent's move gate is set off", sw?.ok === true, JSON.stringify(sw));
 ag.setPose(null);
 await sleep(300);
 await h.near(ag);
@@ -117,8 +117,8 @@ const b3 = { x: ag.pos.x, z: ag.pos.z }, e3 = h.errors.length;
 h.send({ type: "puppet", target: "kd-bot", ragdoll: { lean: [3, 0, 0] } });
 await settleOrRefused(h, e3);
 await pause("past the refusal: a delivered shove would have landed by now", 600);
-check("switch refuse: the relay refuses the shove", h.errors.length > e3, JSON.stringify(h.errors.slice(e3)));
-check("switch refuse: unmoved and standing",
+check("move off: the relay refuses the shove", h.errors.length > e3, JSON.stringify(h.errors.slice(e3)));
+check("move off: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 

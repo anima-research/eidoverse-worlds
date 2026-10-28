@@ -13,30 +13,16 @@
 // The role ▸ submenu lists the roles you may give (grantableRoles: ranked below yours, with only permissions you hold).
 // The badge: none for an inhabitant, "guest" for someone without an account, else the role's name (badgeOf).
 import { CONFIG, bus, report } from './base.js';
-import { net, identities, guests, sendRequest, replica, identityOf } from './net.js';
+import { net, identities, guests, sendRequest, replica } from './net.js';
 import { contextMenu, closeContextMenu } from './panels.js';
 import * as R from '../../shared/protocol/roles.js';
-import { makeConsentInbox } from './consentinbox.js';
-import { SWITCHES, SWITCH_WORDS, CLASS_WORDS, mySwitch, setSwitch } from './consent.js';
+import { listOf, setListed } from './consent.js';
 
 let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
 export function initPeople(d) { deps = { ...deps, ...d }; }
 
-// ---------------------------------------------------------------- asks waiting for me (PROTOCOL L6; R 10-14: wire `ask`)
-// The authority files an ask when someone's act on my body meets an `ask` cell and pushes it here as body-inbox (net.js).
-// It marks the asker's row in People Here (badgeHtml), is said once as a toast in the authority's words, and the person's
-// menu answers it: Allow (this once) / Not now / Never. Gone when answered or at its 20 s expiry (consentinbox.js).
-export const consentInbox = makeConsentInbox({ onChange: (ev) => {
-  for (const k of ev.added ?? []) deps.toast(`${displayOf(k.from)} asks to ${CLASS_WORDS[k.cls] ?? k.cls}${k.why ? ` — "${k.why}"` : ''}. Right-click them in People Here to answer; no answer in 20 s is no.`, 'warn', 10000);
-  bus.emit('roster');   // People Here repaints its rows (the mark comes and goes)
-} });
-bus.on('body-inbox', (msg) => consentInbox.take(msg?.messages));
-if (typeof setInterval === 'function') setInterval(() => consentInbox.sweep(), 1000);
-/** The display name behind an identity here (People Here rows are names; the authority's asks name identities). */
+/** The display name behind an identity here (People Here rows are names; the authority names identities). */
 export function displayOf(actorId) { if (actorId && actorId === net.you) return CONFIG.name; for (const [n, id] of identities) if (id === actorId) return n; return actorId ?? '?'; }
-/** The ask this person has waiting with me, if any. */
-export const askFrom = (display) => { const id = identityOf(display); return id ? consentInbox.askFrom(id) : null; };
-export const askWords = (k) => CLASS_WORDS[k.cls] ?? k.cls;
 
 const wc = () => replica.st?.entities?.['@world']?.c ?? {};
 /** The person behind a display name here: {display, id, anon, role, name, rank, permissions, muted, me}. */
@@ -55,18 +41,10 @@ export function menuFor(display) {
   if (!them.id && !them.me) return [{ id: 'mention', label: 'Mention' }];   // not known to the authority yet (an old client)
   const items = R.personActions(me, them, { muted: them.muted });
   if (them.me) return items;
-  // an ask waiting from this person comes first: it has 20 s to live (consentinbox.js)
-  const k = consentInbox.askFrom(them.id);
-  const ask = k ? [
-    { id: 'ask-allow', label: `Allow: ${askWords(k)} (this once)`, ask: k.id },
-    { id: 'ask-no', label: 'Not now', ask: k.id },
-    { id: 'ask-never', label: `Never (${k.cls}: deny for them)`, ask: k.id, danger: true },
-  ] : [];
-  // my standing table, as a sub-list on every person: ✓ per class that is `allow` for everyone, All at the top
-  return [...ask, ...items, { id: 'consent', label: 'Consent ▸' }];
+  return [...items, ...consentItems(them.id)];
 }
-export const badgeHtml = (display, esc) => { const b = R.badgeOf(personOf(display)); const k = askFrom(display);
-  return `${b ? `<span class="who-badge" data-tone="${b.tone}">${esc(b.text)}</span>` : ''}${k ? `<span class="who-ask" title="asks to ${esc(askWords(k))}" aria-label="asks to ${esc(askWords(k))}">?</span>` : ''}`; };
+export const badgeHtml = (display, esc) => { const b = R.badgeOf(personOf(display));
+  return b ? `<span class="who-badge" data-tone="${b.tone}">${esc(b.text)}</span>` : ''; };
 export const isPhone = () => (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) || innerWidth <= 600;
 
 // ---------------------------------------------------------------- the acts
@@ -84,17 +62,15 @@ async function run(verb, args, what) {
   if (r?.ok) deps.toast(`${what}: done`, 'info'); else deps.toast(`${what}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000);
   return r;
 }
-/** Do a menu item. Acts with choices open the form on `surface` ('card' | 'sheet' | {strip: host}). An ask's rows carry
- *  the id of the ask they showed (`ask`), and answer that one. */
-export function act(item, display, surface = 'card', ask = null) {
+/** Do a menu item. Acts with choices open the form on `surface` ('card' | 'sheet' | {strip: host}). */
+export function act(item, display, surface = 'card') {
   const them = personOf(display);
   switch (item) {
     case 'mention': return deps.mentionPerson(display);
     case 'history': return deps.openModLog(them.id);
     case 'unmute': return run('unmute', { who: them.id }, `unmute ${display}`);
     case 'role': return roleMenu(display, surface);
-    case 'consent': return consentMenu(display, surface);
-    case 'ask-allow': case 'ask-no': case 'ask-never': return answerAsk(item, display, ask);
+    case 'consent-allow': case 'consent-block': case 'consent-default': return listPerson(item, display);
     default: if (VERB[item]) return openForm(item, display, surface);
   }
 }
@@ -104,7 +80,7 @@ export function act(item, display, surface = 'card', ask = null) {
 export function menuAt(display, x, y) {
   const items = menuFor(display);
   contextMenu(x, y, items.map((it) => ({ k: it.id, label: it.label, ...(it.dim ? { title: it.label } : {}), ...(it.danger || ['kick', 'ban'].includes(it.id) ? { danger: true } : {}) })),
-    (k) => { if (k !== 'rank-line') act(k, display, 'card', items.find((it) => it.id === k)?.ask); });
+    (k) => { if (k !== 'rank-line') act(k, display, 'card'); });
   const m = document.querySelector('.sp-ctx'); m?.setAttribute('data-person', display);
   for (const b of m?.querySelectorAll('.sp-ctx-item') ?? []) if (b.textContent.startsWith("they're")) { b.classList.add('dim'); b.disabled = true; }
   const head = document.createElement('div'); head.className = 'sp-ctx-head'; head.textContent = display; m?.prepend(head);
@@ -118,7 +94,7 @@ export function sheetFor(display) {
   for (const it of items) {
     if (it.dim) { const p = document.createElement('p'); p.className = 'pm-dim'; p.textContent = it.label; sh.body.append(p); continue; }
     const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
-    b.onclick = () => { if (!sh.armed) return; if (!VERB[it.id] && it.id !== 'role' && it.id !== 'consent') closeSheet(); act(it.id, display, 'sheet', it.ask); };
+    b.onclick = () => { if (!sh.armed) return; if (!VERB[it.id] && it.id !== 'role') closeSheet(); act(it.id, display, 'sheet'); };
     sh.body.append(b);
   }
   // the press that opened the sheet is still down: lifting it must not "click" the row that slid under the finger
@@ -134,7 +110,7 @@ export function stripFor(display, host) {
   for (const it of menuFor(display)) {
     if (it.dim) { const p = document.createElement('div'); p.className = 'pm-dim'; p.textContent = it.label; host.append(p); continue; }
     const b = document.createElement('button'); b.type = 'button'; b.className = `pm-row${it.danger || ['kick', 'ban'].includes(it.id) ? ' danger' : ''}`; b.textContent = it.label; b.dataset.act = it.id;
-    b.onclick = (e) => { e.stopPropagation(); act(it.id, display, { strip: host }, it.ask); };
+    b.onclick = (e) => { e.stopPropagation(); act(it.id, display, { strip: host }); };
     host.append(b);
   }
   return host;
@@ -168,50 +144,22 @@ function roleMenu(display, surface) {
   for (const it of items) { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-row'; b.textContent = it.label; b.onclick = (e) => { e.stopPropagation(); if (surface === 'sheet') closeSheet(); choose(it.k); }; host.append(b); }
 }
 
-// ---------------------------------------------------------------- answering an ask; the Consent ▸ sub-list
-/** Allow (this once) / Not now / Never. Never also files a standing `deny` for that person and class at the authority
- *  (consent {deny, class}: PROTOCOL L6's per-person override, presence-only — it lasts this stay, like the authority's
- *  table itself; my table (consent.js) has no per-person cell to persist it in). */
-// The row answers the ask it showed, by its id (consent {answer: <id>}): never "whatever this person asks now", which
-// could be a newer, different ask the person never saw (review of #260). If that one is gone, nothing is sent.
-async function answerAsk(item, display, askId) {
-  const k = askId ? consentInbox.asks().find((x) => x.id === askId) ?? null : null;
-  if (!k) { deps.toast(`the ask from ${display} you were answering is gone (answered, or past its 20 s); nothing was sent`, 'info'); bus.emit('roster'); return null; }
-  const yes = item === 'ask-allow'; const words = askWords(k);
-  const r = await consentInbox.answer(k.id, yes, sendRequest);
-  // Never's standing no is filed whatever became of the answer to an ask still here at the press: if the authority
-  // refuses the answer (its ask lapsed or was answered there a moment before), that is still a person I said Never to
-  // (review of #260). An ask already gone here by the press (answered, or past its 20 s) returned above, with nothing
-  // sent, so no standing no is filed for it.
-  // The deny goes to the ask's own sender (k.from), never to whoever holds that display name now, which a guest who
-  // left can have passed to another within the ask's 20 s; so the toast names them as the one who asked as `display`.
-  // A reply that never came (mayHaveLanded) isn't a refusal: the answer or the deny may have landed, so the toast says so.
-  if (item === 'ask-never') { const d = await sendRequest('consent', { deny: k.from, class: k.cls });
-    const gone = r?.ok ? '' : r?.refused?.mayHaveLanded ? `the answer may have landed (${r.refused.reason}); ` : `the ask had gone (${r?.refused?.reason ?? 'refused'}); `;
-    deps.toast(d?.ok ? `${gone}the one who asked as ${display} may not ${words} — not now, and not when they ask again`
-      : d?.refused?.mayHaveLanded ? `${gone}the standing no may have landed (${d.refused.reason}): look before saying Never again`
-      : `${gone || 'said no; '}the standing no didn't land: ${d?.refused?.reason ?? 'refused'}`, d?.ok ? 'info' : 'warn', 7000);
-    return r; }
-  if (!r?.ok) { deps.toast(`answering ${display}: ${r?.refused?.reason ?? 'refused'}`, 'warn', 8000); return r; }
-  deps.toast(yes ? `${display} may ${words}, this once` : `told ${display} not now`, 'info');
-  return r;
+// ---------------------------------------------------------------- my lists, per person
+// Always allow / Never allow / Default (R 10-28): this person is always yes or always no to everything done to my body,
+// whatever my switches say, or back to my switches. ✓ on the current one. consent.js keeps it (with the name, for the
+// list in Settings ▸ body) and consentsync sends it; the list is by identity, so a name passed on later isn't on it.
+const LIST_ITEMS = [['consent-allow', 'allow', 'Always allow'], ['consent-block', 'block', 'Never allow'], ['consent-default', null, 'Default']];
+export function consentItems(id) {
+  const now = listOf(id);
+  return LIST_ITEMS.map(([k, list, label]) => ({ id: k, label: `${now === list ? '✓ ' : ''}${label}`, ...(list === 'block' ? { danger: true } : {}) }));
 }
-/** My body's one switch as three choices (recut A2): ✓ on the current one; a press sets it (consent.js → consentsync). */
-const TIER = 'switch';
-export function consentItems() {
-  return SWITCHES.map((v) => ({ k: v, label: `${mySwitch() === v ? '✓ ' : ''}${v} — ${SWITCH_WORDS[v]}` }));
-}
-export function toggleConsent(k) { setSwitch(k); }
-function consentMenu(display, surface) {
-  const items = consentItems();
-  if (surface === 'card') { const r = document.querySelector('.sp-ctx')?.getBoundingClientRect();
-    const m = contextMenu(r ? r.left + 8 : innerWidth / 2, r ? r.top + 8 : innerHeight / 3, items, (k) => { toggleConsent(k); consentMenu(display, 'card'); });   // stays open: a checklist
-    m?.setAttribute('data-consent', TIER); const head = document.createElement('div'); head.className = 'sp-ctx-head'; head.textContent = 'who may, with my body'; m?.prepend(head); return m; }
-  const host = surface === 'sheet' ? sheet().body : surface.strip;
-  host.innerHTML = '';
-  const t = document.createElement('div'); t.className = 'pm-label'; t.textContent = 'who may, with my body'; host.append(t);
-  for (const it of items) { const b = document.createElement('button'); b.type = 'button'; b.className = 'pm-row'; b.textContent = it.label; b.dataset.consent = it.k; if (it.title) b.title = it.title; b.onclick = (e) => { e.stopPropagation(); toggleConsent(it.k); consentMenu(display, surface); }; host.append(b); }
-  return host;
+function listPerson(item, display) {
+  const them = personOf(display); if (!them.id || them.me) return false;
+  const list = LIST_ITEMS.find(([k]) => k === item)?.[1] ?? null;
+  const changed = setListed(them.id, list, display);
+  if (changed) deps.toast(list === 'allow' ? `${display} may always do things with your body, whatever your switches say` : list === 'block' ? `${display} may never do anything with your body` : `your switches answer ${display} again`, 'info');
+  bus.emit('roster');
+  return changed;
 }
 
 // ---------------------------------------------------------------- the one form (warn, mute, kick, ban)

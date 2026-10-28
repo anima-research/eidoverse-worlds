@@ -52,8 +52,8 @@ import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx,
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
 import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
 export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
-import { BODY_VERBS, bodyGate, expireAsks, forgetReaches, inboxPush, shieldOf } from "./authority/bodyconsent.js";
-export { reachAdmits, reachLetGo } from "./authority/bodyconsent.js";
+import { BODY_VERBS, bodyGate, forgetReaches, inboxPush, shieldOf } from "./authority/bodyconsent.js";
+export { reachAdmits, reachLetGo, noteRefused } from "./authority/bodyconsent.js";
 import { MOD_VERBS } from "./authority/moderation.js";
 import { USE_VERBS, actionsOf, offersFor, pivotOf, reactionCap, toggleOf } from "./authority/use.js";
 import { READ_VERBS, buildCreateFrom, buildPublish, buildUpdate, thingSaid } from "./authority/blueprints.js";
@@ -140,7 +140,7 @@ export function request(w, actor, verb, args = {}) {
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
     // the returns that are due (each one a thing someone let go of that long ago)
-    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
+    if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; restampEngine(w); settleSim(w); returnDue(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
     const minted = h && w.exists ? placeholders(w, verb, args) : null; if (minted) args = minted.args;
     // throughLock (§5) is a flag on any request, not an argument of one verb: checked here, then admit reads it

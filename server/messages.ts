@@ -39,19 +39,18 @@ import { isOwner } from "../shared/protocol/roles.js";
  *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
 const ACTOR_ID = /^u-[a-z2-7]{20}$/;
 
-/** Body consent at the server (PROTOCOL L6; tools audit 10-07 "Body consent"): a presence act on someone else's body is
- *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js — a body that never sent
- *  one is Normal: everyone's shove, pose and displace are deny) and a sane range, BEFORE it's forwarded. The target's
- *  client still has the last word; this is so a stranger's packet never reaches a body that said no. 'ask' is refused
- *  with how to ask (the authority's `body` verb asks and delivers). Returns the refusal, or null to forward. */
+/** Body consent at the server (PROTOCOL §5; tools audit 10-07 "Body consent"): a presence act on someone else's body is
+ *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js: their lists, then the gate
+ *  for the class — move for shove and displace, touch for pose — then the world's default) and a sane range, BEFORE it's
+ *  forwarded. The target's client still has the last word; this is so a packet never reaches a body that said no.
+ *  Returns the refusal, or null to forward. */
 export { BODY_RANGE };   // m between the two bodies' last frames
-function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace", kind: string): string | null {
+function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"): string | null {
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
-  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, live.now());
-  if (d.mode === "deny") return refusalWords(tc.id, cls);   // one sentence whatever the cause (a pause, a per-person no, a tier): the real cause is theirs, not yours
-  if (d.mode === "ask") return `${tc.id} asks first for ${cls}: ask with the body request — body {to: "${tc.actorId}", kind: "${kind}"}`;
+  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls);
+  if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause (a closed gate, a block): the real cause is theirs, not yours; they are told (once per asker per cooldown)
   const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
   if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
   const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -165,7 +164,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
     // consent and range at the server (L6): a knock-over is a shove, a pose or an animation is a pose
-    const why = (rag ? bodyRefusal(c, tc, "shove", "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose", msg.anim ? "anim" : "pose") : null);
+    const why = (rag ? bodyRefusal(c, tc, "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose") : null);
     if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
     // merge: pose only the bones sent, over what the target already holds.
     // Absent means replace — what every sender meant before the flag existed.
@@ -213,11 +212,11 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!tc) return;                       // dragging the departed: silently moot
     // a grab takes someone's body (move, L6): their consent and reach, at the server; the stream and release that follow
     // only ever go to a body that accepted the grab (its client answers with end otherwise)
-    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
     // what follows a grab is held to the same table (review of #260): pulling a nail (unpin) takes the body as a
-    // grab does, so it needs displace allowed or a drag this person granted; and once displace is deny, nothing more of a
-    // drag reaches them ("only deny ends it": a grant by an ask outlives a later ask cell). An end always goes through, but
-    // a nail riding it (unpin, pinAt, pins) is checked like any nail and dropped from it when refused (house 6340433633 Q3)
+    // grab does, so it needs displace allowed; and once displace is refused (their move gate closed, or a block), nothing
+    // more of a drag reaches them. An end always goes through, but a nail riding it (unpin, pinAt, pins) is checked like
+    // any nail and dropped from it when refused (house 6340433633 Q3)
     else if ((msg.end == null || msg.unpin != null || msg.pinAt != null || msg.pins != null) && !(c.actorId && c.actorId === tc.actorId)) {
       const nail = msg.unpin != null || msg.pinAt != null || msg.pins != null;
       const endAlone = () => { if (msg.end == null) return true; delete msg.unpin; delete msg.pinAt; delete msg.pins; return false; };   // refused: an end still goes, bare
@@ -225,10 +224,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const live = c.world.log?.live;
       if (!live || !c.actorId || !tc.actorId) { if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` })); if (endAlone()) return; }
       else {
-      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", live.now());
-      const granted = (live.presence as any)?.bodies?.[tc.actorId]?.draggedBy === c.actorId;
-      if (d.mode === "deny" || (nail && d.mode !== "allow" && !granted)) {
-        if (nail) ws.send(JSON.stringify({ type: "error", error: d.mode === "deny" ? refusalWords(tc.id, "displace") : `${tc.id} asks first for displace: ask with the body request — body {to: "${tc.actorId}", kind: "drag"}` }));
+      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace");
+      if (d.mode === "deny") {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: refusalWords(tc.id, "displace") }));
         if (endAlone()) return;
       }
     } }

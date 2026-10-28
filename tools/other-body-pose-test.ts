@@ -116,7 +116,7 @@ async function agent(name: string) {
   // the server checks a request to pose or knock over a body against that body's consent table (pose; a knock-over is
   // shove): each body here opens both to everyone, as presence-check's do
   for (const cls of ["pose", "shove"]) {
-    const r = await a.request("consent", { switch: "accept" });
+    const r = await a.request("consent", { move: true, touch: true });
     if (!r?.ok) throw new Error(`${name}: consent ${cls} refused: ${JSON.stringify(r)}`);
   }
   return a;

@@ -85,20 +85,22 @@ export const VERBSPEC = {
   // ---- the rest of the authority's verbs (rows added 10-17: names and types; each handler still judges its values) ----
   leave: { doc: "leave the world: whatever you hold is dropped (the server sends this when you disconnect)", args: {} },
   wait: { doc: "what physics did lately: things in flight, things that came to rest in the last minute, and any not yet on the record", args: {} },
-  consent: { doc: "your body's consent (presence: never logged). Bare: read it (your switch, your per-person answers), with asks waiting for you and the last attempts on you. switch sets the one answer every act on your body gets; allow/deny answer one person; answer replies to an ask. Only you change yours", args: {
-      switch: { type: "any", doc: "accept | ask | refuse: the answer every act on your body gets (a per-person answer still wins)" },
-      allow: { type: "any", doc: "an identity allowed (every class, or `class`); stands until you revoke it, or for `for` ms" }, deny: { type: "any", doc: "an identity refused (every class, or `class`) until lifted" },
-      class: { type: "any", doc: "near | follow | touch | intimate | pose | shove | displace | voice (displace: someone dragging, carrying or occupying-with your body; `move` is its old spelling)" }, for: { type: "any", doc: "ms an allow lasts (leave out: until you revoke it)" },
-      answer: { type: "any", doc: "an ask's id" }, yes: { type: "any", doc: "with answer: true allows it this once" },
-      preset: { type: "any", doc: "retired (recut A2): refused with a pointer to switch" }, set: { type: "any", doc: "retired (recut A2)" }, pause: { type: "any", doc: "retired (recut A2): switch refuse" },
-      friend: { type: "any", doc: "retired (recut A2)" }, unfriend: { type: "any", doc: "retired (recut A2)" }, delegate: { type: "any", doc: "retired (recut A2)" }, undelegate: { type: "any", doc: "retired (recut A2)" }, of: { type: "any", doc: "retired (recut A2)" } }, example: { switch: "ask" } },
-  body: { doc: "act on another body (pose, anim, shove, drag, occupy, carry): their consent decides, at once or after they answer an ask (20 s; silence is no)", args: {
-      to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | occupy | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" }, why: { type: "any", doc: "a line they see with the ask" } },
+  consent: { doc: "your body's consent (presence: never logged). Bare: read it (your two gates, your allow and block lists, this world's defaults for the gates) and the last attempts on you. move and touch each turn a gate on or off; allow, block and unlist put one person on a list or take them off. A listed person's answer is always theirs: allow is yes and block is no, whatever the gates say (block wins). Only you change yours", args: {
+      move: { type: "any", doc: "true | false: whether anyone may move your body — shove you (a /boom's force too), drag, carry, seat or occupy you (classes shove, displace)" },
+      touch: { type: "any", doc: "true | false: whether anyone may touch your body (intimate points too) or pose it (classes touch, intimate, pose)" },
+      allow: { type: "any", doc: "an identity who always may, every class, whatever your gates say (takes them off block)" }, block: { type: "any", doc: "an identity who never may, whatever your gates say (takes them off allow)" },
+      unlist: { type: "any", doc: "an identity taken off both lists: your gates answer them again" },
+      switch: { type: "any", doc: "retired (R 10-28): move and touch" }, deny: { type: "any", doc: "retired (R 10-28): block" }, class: { type: "any", doc: "retired (R 10-28): a list is for every class" }, for: { type: "any", doc: "retired (R 10-28): a list stands until you change it" },
+      answer: { type: "any", doc: "retired (R 10-28): nothing asks" }, yes: { type: "any", doc: "retired (R 10-28)" },
+      preset: { type: "any", doc: "retired (recut A2)" }, set: { type: "any", doc: "retired (recut A2)" }, pause: { type: "any", doc: "retired (recut A2): move and touch false" },
+      friend: { type: "any", doc: "retired (recut A2)" }, unfriend: { type: "any", doc: "retired (recut A2)" }, delegate: { type: "any", doc: "retired (recut A2)" }, undelegate: { type: "any", doc: "retired (recut A2)" }, of: { type: "any", doc: "retired (recut A2)" } }, example: { touch: true } },
+  body: { doc: "act on another body (pose, anim, shove, drag, occupy, carry): their consent decides, at once (their lists, then their move gate for shove, drag, occupy, carry and their touch gate for pose, anim)", args: {
+      to: { type: "any", doc: "their identity" }, kind: { type: "any", doc: "pose | anim | shove | drag | occupy | carry" }, spec: { type: "any", doc: "what the act carries (a pose, a clip)" } },
     required: ["to", "kind"], example: { to: "u-…", kind: "pose", spec: { clip: "wave" } } },
-  reach: { doc: "touch someone: a named contact point on them, or a world point at their body; judged by where the hand lands (touch or intimate) against their consent", args: {
-      who: { type: "any", doc: "their identity" }, point: { type: "any", doc: "a contact point (shoulder_l, hand_r, …)" }, at: { type: "any", doc: "[x, y, z]: a world point instead" }, why: { type: "any", doc: "a line they see with the ask" } },
+  reach: { doc: "touch someone: a named contact point on them, or a world point at their body; judged by where the hand lands (touch or intimate, both behind their touch gate) against their consent", args: {
+      who: { type: "any", doc: "their identity" }, point: { type: "any", doc: "a contact point (shoulder_l, hand_r, …)" }, at: { type: "any", doc: "[x, y, z]: a world point instead" } },
     example: { who: "u-…", point: "shoulder_l" } },
-  inbox: { doc: "what reached your body since you last asked (asks, replies, touches, revocations), then empty", args: {} },
+  inbox: { doc: "what reached your body since you last asked (acts done to it, someone's act on it refused — once per person per minute —, revocations, your refused reaches, a seat let go), then empty", args: {} },
   "create-world": { doc: "found this world (you become its owner)", args: { title: { type: "any", doc: "its name" }, text: { type: "any", doc: "a line about it" },
       from: { type: "any", doc: "a fork or reset: {world: sha256:…, head, seq?, name?}" }, ownerKey: { type: "any", doc: "your own governance key, ed25519:<base64url> (PROTOCOL §13)" }, dry: { type: "bool" } }, example: { title: "the meadow" } },
   help: { doc: "what the authority answers: every verb, or one verb's arguments with examples", args: { verb: { type: "string", doc: "one verb" } }, example: { verb: "place" } },

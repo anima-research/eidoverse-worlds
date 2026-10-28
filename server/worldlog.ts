@@ -16,7 +16,7 @@ import { WORLDS_DIR } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
@@ -64,7 +64,7 @@ export type LogHost = {
    *  no floor). The World answers from its connections (world.ts sayFloor); the authority's history reads it. */
   sayFloor?(actor: string): number | null;
   /** after a request: every standing pose that carries a reach is held to the tables as they are now, so a hand a consent
-   *  no longer allows leaves at once, whether the touch was allowed by the table or granted by an ask */
+   *  no longer allows leaves at once */
   regateReaches?(): void;
 };
 
@@ -217,7 +217,7 @@ export class WorldLog {
     try { if (this.live.entries.length > from) this.afterWrite(from); } catch (err) { console.error(`[world:${this.name}] publishing seq ${from}… failed`, err); }
     try { if (this.holdsKey() !== held) this.host?.broadcast({ type: "holds", world: this.name, holds: this.holds() }); this.forwardInbox(); }
     catch (err) { console.error(`[world:${this.name}] holds/inbox after a request failed`, err); }
-    // a request may have closed someone's table (consent, a friend removed, a pause): what rests on them is held to it now,
+    // a request may have closed someone's table (a gate shut, someone blocked): what rests on them is held to it now,
     // not at the reacher's next packet (review of #260)
     try { this.host?.regateReaches?.(); } catch (err) { console.error(`[world:${this.name}] re-gating reaches after a request failed`, err); }
   }
@@ -246,12 +246,18 @@ export class WorldLog {
     return r;
   }
   /** The relay's per-packet question for a reach descriptor aimed at another body (authority.js reachAdmits): presence only,
-   *  never a request (nothing appended, no ask made). A refusal it noted goes straight to the reacher's socket. */
+   *  never a request (nothing appended). A refusal it noted goes straight to the reacher's socket. */
   reachAdmits(from: string, to: string, cls: string, extra: { point?: string | null; limb?: string; quiet?: boolean } = {}) {
     if (this.retired) return { ok: false, code: "reset", reason: "this world was reset", noted: false };
     const r = reachAdmits(this.live, from, to, cls, extra);
-    if (r.noted) this.forwardInbox();
+    if (r.noted || r.told) this.forwardInbox();
     return r;
+  }
+  /** The relay refused a presence act on `to`'s body (server/messages.ts bodyRefusal): `to` is told, once per asker per
+   *  TRIED_NOTE_MS (authority.js noteRefused). Presence only. */
+  noteRefused(from: string, to: string, cls: string) {
+    if (this.retired) return false;
+    const said = noteRefused(this.live, from, to, cls); if (said) this.forwardInbox(); return said;
   }
   /** …and after the packet: which bodies a relayed limb of `from`'s rests on. A yes whose hand is no longer on its body ends
    *  (authority.js reachLetGo; r2 holes F3). Presence only. */
@@ -259,7 +265,7 @@ export class WorldLog {
     if (this.retired) return false;
     return reachLetGo(this.live, from, aimed);
   }
-  /** The authority's body inbox (asks, replies, acts, revocations: PROTOCOL L6) reaches its person: what's new since we
+  /** The authority's body inbox (acts delivered, revocations, refused reaches, a seat let go: PROTOCOL §5) reaches its person: what's new since we
    *  last sent is pushed to their socket as {type: "body-inbox", messages} (tools audit 10-07: it was written and never
    *  delivered). The inbox itself is left as the authority keeps it, so `inbox` still answers an agent that polls. */
   /** per person: the `n` of the last message forwarded (authority.js inboxPush numbers each one, and the count outlives the

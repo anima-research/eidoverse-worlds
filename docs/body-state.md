@@ -110,8 +110,8 @@ These commands clear **your outgoing reaches**. Your own knockdown also
 clears your outgoing reaches. Walking, changing posture or falling does not
 revoke somebody else's incoming tracking relation; moving out of reach can
 make contact fail while the relation remains. The target ends an incoming
-reach by closing their consent to it: `consent {deny: <who>}` for that
-person, or `consent {switch: "refuse"}` for everyone they haven't allowed by
+reach by closing their consent to it: `consent {block: <who>}` for that
+person, or `consent {touch: false}` for everyone they haven't allowed by
 name. The reach ends then, and its reacher hears `body-revoked`.
 
 Examples (`reach` arguments):

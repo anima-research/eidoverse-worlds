@@ -76,9 +76,9 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
   and it adopts nothing: the sponsor stays whoever last changed something else. `scripts` says who paused it and when,
   read from the log (nothing is stored in the value).
 - A lock binds scripts like everyone; a script never acts through one. A thing in flight can't be written.
-- People are presence. A script's `shove`/`pose` lands only where that body's consent allows it, and a script is a
-  stranger to everyone unless they allow it by name: `consent {allow: "script:<thing>", class: "shove"}`, or all of one
-  sponsor's scripts: `consent {allow: "scripts-by:<sponsor id>", class: "pose"}`. A script can't ask; an "ask" is a no.
+- People are presence. A script's `shove`/`pose` lands only where that body's consent allows it (its move or touch gate
+  open, or the script on its allow list), as anyone's does: `consent {allow: "script:<thing>"}` allows one, or all of
+  one sponsor's scripts: `consent {allow: "scripts-by:<sponsor id>"}`; `block` refuses them whatever the gates say.
 
 ## The API (one global, `world`)
 
