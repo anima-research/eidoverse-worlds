@@ -155,7 +155,7 @@ function withAuthority(w, fn) {
 /**
  * The engine's heartbeat (DESIGN-physics-responsiveness §1). Advances the sim toward the authority's clock, at most `maxTicks`
  * engine ticks a pass (a stall catches up over several passes, never by a longer step: the bits stay the law's), and logs
- * what came to rest, returns what is due back, expires asks. A host calls this at tick cadence; a request still settles
+ * what came to rest, returns what is due back.  A host calls this at tick cadence; a request still settles
  * first (the fallback for a host without a heartbeat) and finds nothing left to do. Returns how many entries it wrote.
  */
 export function settle(w, { maxTicks = 8 } = {}) {
