@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "./harness.ts";
 import { verifyToken } from "../server/aid1.ts";
+import { accountTag } from "../server/directory.ts";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9420);   // a free port, never a fixed default
 const HTTP = `http://localhost:${PORT}`;
@@ -134,7 +135,7 @@ try {
   const t1 = await open({}, twinA.cookie);
   const t2 = await open({}, twinB.cookie);
   check("same nick, different person → suffixed, no takeover",
-    snap(t2)?.you === "Twin-0002" && t1.closedWith === null,
+    snap(t2)?.you === `Twin-${accountTag("human:discord:5550002")}` && t1.closedWith === null,   // a hash: none of the account's digits
     `you=${snap(t2)?.you} t1closed=${t1.closedWith}`);
   const t1b = await open({}, (await auth(mint({ sub: "human:discord:5550001", name: "Twin" }))).cookie);
   check("same person re-arriving → takeover still works", snap(t1b)?.you === "Twin" && t1.closedWith === 4002,

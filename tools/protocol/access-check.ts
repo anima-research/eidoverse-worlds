@@ -184,10 +184,12 @@ await sleep(300);
 // ---- A3 (idle): after a restart, nobody in it, the members-only world's door is read from its log without loading it ----
 // A10's sessions (restored at boot): Rowan's account as a cookie session, once from a native pairing made before
 // main #255 (HnSession.nativeWorld) and once not
+// (a session is a person's, human:…: that account is bound to Rowan's identity, so it is a member of keep as Rowan is)
 const SID_NATIVE = "a".repeat(64), SID_FULL = "b".repeat(64);
+{ const { directoryFor } = await import("../../server/directory.ts"); const d = directoryFor(W); d.bind(d.idOfSub("agent:token:rowan"), "human:test:rowan"); }
 fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
-  [SID_NATIVE]: { sub: "agent:token:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000, nativeWorld: "water" },
-  [SID_FULL]: { sub: "agent:token:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }));
+  [SID_NATIVE]: { sub: "human:test:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000, nativeWorld: "water" },
+  [SID_FULL]: { sub: "human:test:rowan", name: "Rowan", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }));
 { const s2 = await start();
   const anon = await worldsAs(s2.port), member = (await worldsAs(s2.port, "tok-rowan")).find((x) => x.name === "keep");
   const a1 = await accessAs(s2.port, "keep", "tok-ivy");   // a stranger (Moss is listed by now, for A8; Fen holds A14's timed grant)
@@ -333,8 +335,8 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
   await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });   // the spectator's record is written
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
-  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith("-cher") && seen.toLowerCase() !== LONG.toLowerCase(),
-    "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (-cher), within the limit, never the other account's name",
+  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
+    "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
     { joins: [jb.errors, jw.errors], theirs, seen });
   body.close(); watch.close(); op.close(); try { s.proc.kill(); } catch {} await sleep(300); fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----

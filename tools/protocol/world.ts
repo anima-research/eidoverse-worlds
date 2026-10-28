@@ -32,7 +32,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { translateV1World, reportV1World, approvalProblem, makeApproval, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, approvalProblem, makeApproval, ownerWarning, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -110,11 +110,18 @@ const unapproved = (got: { size: number; sha256: string }, approved: { size: num
 /** How a translation says who approved: the operator alone, no owner attested (said plainly). */
 const approvalWords = (a: Approval) => `approved by the operator alone (${a.operator.key}, signature verified): no owner was attested — nothing can yet bind a key to the old world's owner, and --operator-only-no-owner was given; the act records this, and tier 0 is empty`;
 const sha = (f: string) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+/** Who holds a role and whether an account is bound to them: one line each, the unbound with the command that binds them. */
+function sayPeople(people: any[] = []) {
+  for (const p of people) console.log(p.account ? `${p.role} ${p.name}: bound to their account (${p.account}:…, from ${p.from})`
+    : `${p.role} ${p.name} has no account yet (${p.why}): bind with ${p.bind}`);
+}
 /** `--dry-run`: the report and its hash, printed; nothing written. Exit 1 when the translation would be refused. */
 function dryRun(D: string, name: string) {
   const { report, hash } = reportNow(D, name);
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
+  sayPeople(report.people);
+  if (report.ownerWarning) console.log(`WARNING: ${report.ownerWarning}`);
   console.log(`report-hash ${hash}`);
   if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
@@ -133,6 +140,8 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
   if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) became launches, ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
   // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
   // world's owners can be told what changed (and which entities to look at).
+  sayPeople(r.people);
+  { const w = ownerWarning(dest, r.people); if (w) console.log(`WARNING: ${w}`); }
   if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded entities in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
     + `Now a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
 }
@@ -230,7 +239,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in world.jsonl as the system's translation-approved act. `
     + `${MANIFEST} records what the swap did; \`rollback ${name}\` undoes it.`);
   console.log(`backup: ${backup!.dir} (${backup!.files} file(s), ${backup!.bytes} bytes, each verified against its SHA256SUMS before anything moved; nothing writes to it again, and rollback leaves it)`);
-  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
+  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, people: r!.people, ownerWarning: ownerWarning(name, r!.people), rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
 }
 
 /** `rollback <world>`: undo an in-place translation from its manifest. The kept originals go back under their names

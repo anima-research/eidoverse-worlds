@@ -39,6 +39,19 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
   return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
 }
 
+/** The account an agent credential proves, the one derivation every door uses (account shapes: server/directory.ts header):
+ *  null = no credential; `refused` = one was given and isn't a verified agent's. */
+export function accountOf(tok: string): { account: string; name: string } | { refused: string } | null {
+  if (!tok) return null;
+  const at = agentTokens();
+  const enrolled = at.byToken.get(tok);
+  if (enrolled) return { account: `agent:token:${enrolled.toLowerCase()}`, name: enrolled };
+  const a = aid1JoinIdentity(tok);
+  if (!a || a.payload.kind !== "agent") return { refused: a ? "that credential isn't an agent's — sign in as yourself instead" : "that agent credential didn't verify" };
+  const via = at.bySub.get(a.payload.sub);
+  return via ? { account: `agent:token:${via.toLowerCase()}`, name: via } : { account: `aid1:${a.payload.iss}:${a.payload.sub}`, name: a.slug };
+}
+
 // `native`: issued to a native client by browser-approved pairing (native-login.ts). It is an ordinary session
 // for every world the account may join; the mark only stops it approving another native pairing. Sessions paired
 // before native sessions became ordinary ones carry `nativeWorld` instead, which means the same thing now.
@@ -51,7 +64,7 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
   const s = hnSessions.get(m[1]!);
   if (!s) return null;
   if (s.exp < Date.now()) { hnSessions.delete(m[1]!); return null; }
-  return s;
+  return s.sub.startsWith("human:") ? s : null;   // a session is a person's: anything else proves nobody (/auth refuses to make one)
 }
 
 /** The session a request's cookie proves, as the ws join takes it — refused only from another site's page (a browser says
@@ -86,6 +99,8 @@ try {
       if (/^[a-f0-9]{64}$/.test(sid) && s.exp > Date.now()) hnSessions.set(sid, s);
     }
     if (hnSessions.size) console.log(`[auth] restored ${hnSessions.size} live session(s)`);
+    const odd = [...hnSessions.values()].filter((s) => !String(s.sub).startsWith("human:"));
+    if (odd.length) console.log(`[auth] ${odd.length} session(s) refused (sub isn't human:…; kept on disk, proves nobody): ${odd.map((s) => s.name).join(", ")}`);
   }
 } catch (e) { console.log(`[auth] session restore failed (starting empty): ${e}`); }
 
@@ -97,6 +112,7 @@ try {
 // Path is env-overridable so a self-contained test can own its credential
 // fixture (a scratch tokens.json) without mutating the checkout — same posture
 // as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
+export const ENROLMENT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
 let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
@@ -111,12 +127,17 @@ export function agentTokens() {
       const bySub = new Map<string, string>();
       if (mtime) {
         const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
-        for (const [tok, v] of Object.entries(raw)) {
-          if (!v?.id) continue;
-          byToken.set(tok, v.id);
-          names.add(v.id.toLowerCase());
-          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, v.id);
+        const entries = Object.entries(raw).filter(([, v]) => typeof v?.id === "string" && v.id);
+        const count = new Map<string, number>(); for (const [, v] of entries) count.set(v.id!.toLowerCase(), (count.get(v.id!.toLowerCase()) ?? 0) + 1);
+        // an id is the account (agent:token:<id>): well-formed and unique lowercased, or it proves nobody (its name stays reserved)
+        const refused: string[] = [];
+        for (const [tok, v] of entries) {
+          const id = v.id!; names.add(id.toLowerCase());
+          if (!ENROLMENT_ID.test(id.toLowerCase()) || count.get(id.toLowerCase())! > 1) { refused.push(id); continue; }
+          byToken.set(tok, id);
+          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, id);
         }
+        if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and be unique lowercased): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
       }
       agentTokCache = { mtime, byToken, names, bySub };
     }

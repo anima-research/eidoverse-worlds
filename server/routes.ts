@@ -545,6 +545,15 @@ const ROUTES: Route[] = [
         return new Response(JSON.stringify({ error: v.reason }), { status: 403, headers: { "content-type": "application/json" } });
       }
       const p = v.payload;
+      // a session is a person's (account shapes: server/directory.ts header); agents prove themselves at the join door
+      const notHere = p.kind !== "human" ? "this is an agent's credential: agents join with it as their agentToken (the join door), not here"
+        : !p.sub.startsWith("human:") ? "this login's subject isn't a person's account (human:…)"
+        : !p.scopes.includes("worlds:join") && !p.scopes.includes("worlds:spectate") ? "this login grants neither worlds:join nor worlds:spectate"
+        : null;
+      if (notHere) {
+        console.log(`[auth] login refused (kind ${p.kind}): ${notHere}`);
+        return new Response(JSON.stringify({ error: notHere }), { status: 403, headers: { "content-type": "application/json" } });
+      }
       if (p.jti && !hnJti.claim(p.jti, p.exp)) {
         console.log(`[auth] login token replayed: ${p.sub}`);
         return new Response(JSON.stringify({ error: "token already used" }), { status: 403, headers: { "content-type": "application/json" } });

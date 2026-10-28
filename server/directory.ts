@@ -28,6 +28,10 @@ type File = { v: 1 | 2; ids: Record<string, Entry> };
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
+/** The account shapes above; a stored account outside them is refused at boot (named, kept on disk), never worn. */
+export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
+/** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
+export const accountTag = (sub: string) => crypto.createHash("sha256").update(`eidoverse-name-tag:${sub}`).digest("hex").slice(0, 4);
 
 /** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
  *  server-wide ids). */
@@ -46,13 +50,22 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   const unkind = (e: Entry) => { if ((e.kind as string) === "human" || (e.kind as string) === "agent") e.kind = "account"; return e; };
   const index = (id: string, e: Entry) => { for (const s of e.subs) byKey.set(e.world ? `${s}|${e.world}` : s, id); };
   for (const [id, e] of Object.entries(d.ids)) index(id, unkind(e));
+  { const odd = Object.entries(d.ids).filter(([, e]) => e.subs.some((s) => !ACCOUNT_SHAPE.test(s)));
+    for (const [, e] of odd) for (const s of e.subs) if (!ACCOUNT_SHAPE.test(s)) byKey.delete(e.world ? `${s}|${e.world}` : s);
+    if (odd.length) console.log(`[directory] ${odd.length} stored account(s) refused (not an account shape; kept on disk, nobody wears them): ${odd.map(([id, e]) => `${e.name} (${id})`).join(", ")}`); }
   const anon = new Map<string, Entry>();   // in memory only: an anonymous id is never written, never outlives the process
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries (M2). Ours win on a clash (the same id can only be minted by one of them).
   const tomb = new Set<string>();   // ids this process forgot (forgetPlanned): the merge below must not bring them back from disk
+  // an account another writer bound to an id this process holds (tools/operator-bind.ts, the server running): a bind only
+  // adds, so it is taken, never written over; an account this process already gives another id stays that id's
+  const takeBinds = (id: string, e: Entry) => { const mine = d.ids[id]; if (!mine || !Array.isArray(e?.subs)) return;
+    for (const s of e.subs) { const k = mine.world ? `${s}|${mine.world}` : s;
+      if (mine.subs.includes(s) || !ACCOUNT_SHAPE.test(s) || (byKey.has(k) && byKey.get(k) !== id)) continue;
+      mine.subs.push(s); if (mine.kind === "imported") mine.kind = "account"; byKey.set(k, id); } };
   const save = () => {
     const disk = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as File) : null;
-    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); }
+    if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e);
     fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(d, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600);
   };
@@ -61,7 +74,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   // an account re-reads before minting, or the server would hand a translated world's owner a fresh, roleless id
   const refresh = () => { if (!fs.existsSync(file)) return;
     const disk = JSON.parse(fs.readFileSync(file, "utf8")) as File;
-    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } };
+    for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id]) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e); };
   const add = (e: Entry) => { let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId(); d.ids[id] = e; index(id, e); save(); return id; };
   const get = (id: string) => d.ids[id] ?? anon.get(id) ?? null;
   /** …claimed by an account OTHER than `sub` (security pass 3, H2: an account-holder may not appear under a name another
@@ -109,11 +122,11 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     claimedName(name: string): boolean { const k = foldName(name); for (const e of Object.values(d.ids)) if (e.subs.length && foldName(e.name) === k) return true; return false; },
     claimedByOther,
     /** The name a spectator's account takes on first sight: the typed name, unless another account wears it; then the
-     *  typed name with a tag from the account (`-` and its last four letters or digits), the name cut so the tag always
+     *  typed name with the account's tag (`-` and accountTag), the name cut so the tag always
      *  fits in `max`, and a number after the tag until no other account wears the result (review of #260, server I42). */
     spectatorName(name: string, sub: string, max: number): string {
       if (!claimedByOther(name, sub)) return name;
-      const tag = sub.replace(/[^a-z0-9]/gi, "").slice(-4) || "2";
+      const tag = accountTag(sub);
       for (let k = 1; ; k++) { const suffix = k === 1 ? tag : `${tag}${k}`; const n = `${name.slice(0, Math.max(0, max - suffix.length - 1))}-${suffix}`;
         if (!claimedByOther(n, sub)) return n; }
     },

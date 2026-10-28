@@ -10,6 +10,11 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
+//   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$ and unique, lowercased; a refused one proves nobody
+//   CS  a collision's tag on a display name carries nothing of the account, and is the same each time
+//   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
+//   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
+//   AC  one agent credential is one account at the ws join, httpCaller, provenAccount; /auth refuses it (accounts review 10-28)
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
 //       with a disambiguator (pass 3 H2), and doesn't get the first one's remembered pose; the real one does
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
@@ -430,6 +435,90 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   const b = await sock(S2.port); const jb = await b.join("orchard", "x", { agentToken: "tok-rowan" });
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the authority", [you(ja), you(jb)]);
   a.close(); b.close(); }
+
+// ---- AU: POST /auth makes a session for a person only (accounts review 10-28): an agent's kind, a sub outside human:, or
+// a login without worlds:join|spectate is refused. AC: one agent credential is one account at every door ----
+const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { method: "POST", body: JSON.stringify({ token }) })
+  .then(async (r) => ({ status: r.status, cookie: !!r.headers.get("set-cookie"), body: await r.json().catch(() => ({})) }));
+{ const agent = await postAuth(srv.port, mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" }));
+  ok(agent.status === 403 && !agent.cookie && /agent/.test(agent.body.error ?? "") && /join/.test(agent.body.error ?? ""), "AU1 /auth refuses an agent's credential, pointing it at the join door", agent);
+  const noScope = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:41", scopes: ["worlds:upload"] }));
+  ok(noScope.status === 403 && !noScope.cookie && /worlds:join/.test(noScope.body.error ?? ""), "AU2 /auth refuses a login with neither worlds:join nor worlds:spectate (httpCaller's rule)", noScope);
+  const notHuman = await postAuth(srv.port, mint({ kind: "human", sub: "agent:token:rowan" }));
+  ok(notHuman.status === 403 && !notHuman.cookie, "AU3 /auth refuses a person whose sub isn't human:… (it would be an enrolled agent's account)", notHuman);
+  const watch = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:42", scopes: ["worlds:spectate"] }));
+  const join = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:43" }));
+  ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]); }
+{ const quill = mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" });
+  const wrenAid1 = mint({ kind: "agent", sub: "agent:wren@home.test", name: "Wren" });
+  const q = await sock(srv.port); const jq = await q.join("garden", "x", { agentToken: quill });
+  // the HTTP door and the operator's door, in-process against the same directory, for each credential
+  const code = `const { httpCaller } = await import("./server/access.ts"); const { provenAccount } = await import("./server/upgrade.ts");
+    const out = {}; for (const k of ["Q", "W", "E"]) { const t = process.env["CRED_" + k];
+      const h = httpCaller(new Request("http://x/", { headers: { authorization: "Bearer " + t } }));
+      out[k] = { http: h?.account ?? null, actor: h?.actorId ?? null, proven: provenAccount({}, { agentToken: t }) }; }
+    console.log(JSON.stringify(out));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ CRED_Q: quill, CRED_W: wrenAid1, CRED_E: "tok-wren" }) });
+  let doors = {}; try { doors = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
+  const Q = doors.Q ?? {}, Wd = doors.W ?? {}, E = doors.E ?? {};
+  ok(!!jq.snapshot && Q.http === "aid1:id.test:agent:quill@home.test" && Q.proven === Q.http && Q.actor === you(jq),
+    "AC1 an aid1 agent credential is one account at the ws join, httpCaller and provenAccount", { Q, you: you(jq), err: r.stderr.toString().slice(-300) });
+  ok(Wd.http === "agent:token:wren" && Wd.proven === Wd.http && E.http === Wd.http && E.proven === Wd.http,
+    "AC2 an enrolled agent is one account whether it brings its bearer or its listed aid1 subject, at every door", { Wd, E });
+  const viaAuth = await postAuth(srv.port, quill);
+  ok(viaAuth.status === 403 && !viaAuth.cookie, "AC3 …and /auth makes no second account from that same credential (refused)", viaAuth);
+  q.close(); }
+
+// ---- SA: stored accounts are checked at boot (accounts review 10-28): one outside ^(human|agent:token|aid1|local): is
+// refused and said (count and names), and stays on disk; a session's sub must be human:… to be anyone ----
+{ const D = path.join(root, "sa"); fs.mkdirSync(D, { recursive: true });
+  fs.writeFileSync(path.join(D, ".bans.json"), JSON.stringify({ "acct:human:discord:9": { by: "op", ts: 1, name: "Good", account: "human:discord:9" },
+    "acct:agent:odd@x": { by: "op", ts: 1, name: "Oddban", account: "agent:odd@x" }, "old": { by: "op", ts: 1, sub: "agent-7f3a" } }));
+  fs.writeFileSync(path.join(D, ".directory.json"), JSON.stringify({ v: 2, ids: { "u-aaaaaaaaaaaaaaaaaaaa": { name: "Fine", subs: ["local:fine"], kind: "account", since: 1 },
+    "u-bbbbbbbbbbbbbbbbbbbb": { name: "Oddone", subs: ["agent:odd@x"], kind: "account", since: 1 } } }));
+  const code = `const m = await import("./server/moderation.ts"); const { directoryFor } = await import("./server/directory.ts");
+    const d = directoryFor(process.env.WORLDS_DIR); m.saveGlobalBans(); d.resolve({ sub: "local:new", name: "New" });
+    console.log("RESULT " + JSON.stringify({ bans: Object.keys(m.globalBans).sort(), odd: d.idOfSub("agent:odd@x"), fine: d.idOfSub("local:fine") }));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ WORLDS_DIR: D }) }); const out = r.stdout.toString() + r.stderr.toString();
+  let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
+  const disk = (f) => JSON.parse(fs.readFileSync(path.join(D, f), "utf8"));
+  ok(JSON.stringify(res.bans) === JSON.stringify(["acct:human:discord:9", "old"]) && /1 global ban\(s\) refused/.test(out) && /Oddban/.test(out) && !!disk(".bans.json")["acct:agent:odd@x"],
+    "SA1 a stored ban whose account isn't one of the shapes is refused and named at boot, and kept on disk (a legacy sub record is its own rule)", { res, out: out.slice(-400) });
+  ok(res.fine && !res.odd && /1 stored account\(s\) refused/.test(out) && /Oddone/.test(out) && disk(".directory.json").ids["u-bbbbbbbbbbbbbbbbbbbb"]?.subs?.[0] === "agent:odd@x",
+    "SA2 a directory account outside the shapes is refused (nobody wears it) and named at boot, and kept on disk", { res, out: out.slice(-400) }); }
+{ const SF = path.join(root, "sa-sessions.json"), sid = "c".repeat(64), exp = Date.now() + 3600_000;
+  fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "agent:token:rowan", name: "Notrowan", scopes: ["worlds:join"], exp } }));
+  const S6 = await start({ SESSIONS_PATH: SF }); const log = bootErr(S6);
+  const s = await sock(S6.port, { cookie: `ew_sess=${sid}` }); const j = await s.join("garden", "Rowan");
+  ok(!S6.dead && !j.snapshot && /reserved agent name/.test(j.errors.join(" ")), "SA3 a session whose sub isn't human:… proves nobody (here: not the enrolled Rowan)", [j.snapshot?.you, j.errors]);
+  ok(/1 session\(s\) refused/.test(log) && /Notrowan/.test(log) && !!JSON.parse(fs.readFileSync(SF, "utf8"))[sid], "SA3 …it is named at boot and kept on disk", log.slice(-300));
+  s.close(); S6.proc.kill(); }
+
+// ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased) and unique lowercased; a refused one proves
+// nobody, its name stays reserved, and the load says which (accounts review 10-28) ----
+{ const TF = path.join(root, "tv-tokens.json");
+  fs.writeFileSync(TF, JSON.stringify({ t1: { id: "Ok-1" }, t2: { id: "has space" }, t3: { id: "x".repeat(33) }, t4: { id: "Dup" }, t5: { id: "dup" }, t6: { id: "-lead" } }));
+  const code = `const { agentTokens } = await import("./server/auth.ts"); const a = agentTokens();
+    console.log("RESULT " + JSON.stringify({ proves: [...a.byToken.values()].sort(), reserved: [...a.names].sort() }));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ AGENT_TOKENS_PATH: TF }) }); const out = r.stdout.toString() + r.stderr.toString();
+  let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
+  ok(JSON.stringify(res.proves) === JSON.stringify(["Ok-1"]), "TV1 only a well-formed, unique enrolment id proves anyone (spaces, 33 characters, a leading '-', a case-duplicate refused)", { res, out: out.slice(-400) });
+  ok(["has space", "dup", "-lead", "ok-1"].every((n) => res.reserved?.includes(n)), "TV2 …a refused id's name stays reserved (nobody else may wear it)", res.reserved);
+  ok(/5 enrolment\(s\) refused/.test(out) && /has space/.test(out) && /Dup/.test(out) && /\^\[a-z0-9\]/.test(out), "TV3 …and the load says how many, which ids, and the rule", out.slice(-400)); }
+
+// ---- CS: a name another account wears gets a tag that says nothing about the account (it was its last four characters:
+// a Discord id's digits), the same tag each time (accounts review 10-28) ----
+{ const login = async (sub) => { const r = await fetch(`http://127.0.0.1:${srv.port}/auth`, { method: "POST", body: JSON.stringify({ token: mint({ kind: "human", sub, name: "Juniper", scopes: ["worlds:join", "worlds:spectate"] }) }) });
+    return /ew_sess=[a-f0-9]{64}/.exec(r.headers.get("set-cookie") ?? "")?.[0]; };
+  const first = await login("human:discord:111111"), second = await login("human:discord:987654321");
+  const a = await sock(srv.port, { cookie: first }); const ja = await a.join("garden", "x"); a.close();
+  const shown = [];
+  for (let i = 0; i < 2; i++) { const b = await sock(srv.port, { cookie: second }); const jb = await b.join("garden", "x"); shown.push(jb.snapshot?.you); b.close(); }
+  const leaks = (n) => !n || /4321|7654|9876/.test(n);
+  ok(ja.snapshot?.you === "Juniper" && shown.every((n) => n && n !== "Juniper" && n.startsWith("Juniper-") && !leaks(n)) && shown[0] === shown[1],
+    "CS1 a second account asking for a worn name is shown with a tag that carries none of its account, the same tag on each join", { first: ja.snapshot?.you, shown, errs: ja.errors });
+    // the spectator path (directory spectatorName) is directory-check D12
+  }
 
 // ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
 // name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper
