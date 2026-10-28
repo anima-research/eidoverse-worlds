@@ -40,6 +40,10 @@ export const CHAT = {
   private: "chat:private",
   group: "chat:group",
   thread: "chat:thread",
+  // Kind facet (RFC-001 rev 3): a notice from the place, not a message anyone
+  // sent — weather, someone arriving or leaving, a visible change to the world.
+  // Hosts don't let a notice decide where the agent's plain speech goes.
+  system: "chat:system",
 } as const;
 
 /** This producer's own namespace (§16.1: it SHOULD match the producer's declared
@@ -76,7 +80,9 @@ const CLOSURE: Record<string, string[]> = {
  * §16.3: `chat:addressed` and `chat:ambient` are opposites, and a host that
  * receives both MUST resolve it by dropping `chat:ambient`. Producers SHOULD NOT
  * emit the pair at all — so we resolve it here, identically, rather than shipping
- * a set whose meaning depends on the consumer's rule ordering.
+ * a set whose meaning depends on the consumer's rule ordering. `chat:system`
+ * is another facet (kind, not addressing) and is left alone: nothing this door
+ * sends is both, and elsewhere a notice can be addressed by its place.
  */
 export function tags(...list: (string | false | null | undefined)[]): string[] {
   const out = new Set<string>();
@@ -163,7 +169,7 @@ const TAG_ONTOLOGY = {
   // here says only "this server emits these", never what they mean (§16.4).
   coreTags: [
     CHAT.addressed, CHAT.mention, CHAT.dm, CHAT.private, CHAT.ambient,
-    CHAT.fromAgent,
+    CHAT.fromAgent, CHAT.system,
   ],
   tags: {
     [EIDO.whisper]: {
@@ -181,8 +187,8 @@ const TAG_ONTOLOGY = {
       implies: [CHAT.addressed],
     },
     [EIDO.depart]: {
-      desc: "Someone who had walked up to you is no longer in your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived. The wire text names who moved when there is evidence ('walked away' only when their own movement carried them out); otherwise it states the relation neutrally ('is no longer nearby' — you may be the one who left).",
-      // AMBIENT, not addressing: a departure is worth knowing and not worth
+      desc: "Someone who had walked up to you is no longer in your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived. The wire text names who moved when there is evidence ('walked away' only when their own movement carried them out); otherwise it states the relation neutrally ('is no longer nearby' — you may be the one who left). Arrives as a chat:system notice (with chat:ambient): nobody said it.",
+      // AMBIENT and chat:system, not addressing: a departure is worth knowing and not worth
       // waking for, and the whole point of this pair is fewer interruptions,
       // not one more. Consumers who do want to wake on it can say so in their
       // own rules — the reverse (unpicking a wake we declared) they cannot.
@@ -203,19 +209,19 @@ const TAG_ONTOLOGY = {
       facet: "lifecycle",
     },
     [EIDO.presence]: {
-      desc: "Someone arrived in or left the world. Flap-suppressed producer-side before it is ever sent.",
+      desc: "Someone arrived in or left the world. Flap-suppressed producer-side before it is ever sent. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.activityDigest]: {
-      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool.",
+      desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool. Arrives as a chat:system notice (with chat:ambient): the world wrote it, nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.weather]: {
-      desc: "The world's weather or light changed on its own: a forecast segment boundary, a manual override landing or expiring, or the day crossing dawn/day/dusk/night. Derived deterministically from the authored sky policy (never a log entry); the text carries its provenance. At most one line per boundary — dwell is floored at 60s, so typically minutes-to-hours apart.",
+      desc: "The world's weather or light changed on its own: a forecast segment boundary, a manual override landing or expiring, or the day crossing dawn/day/dusk/night. Derived deterministically from the authored sky policy (never a log entry); the text carries its provenance. At most one line per boundary — dwell is floored at 60s, so typically minutes-to-hours apart. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.worldChange]: {
-      desc: "Someone changed how the world LOOKS near you — a visible authored change to a thing that is here, carrying who did it, to which entity, and whether it began, changed, or ended. Ambient and radius-gated, at most one line per (entity, component) per quiet window, and never replayed: a reconnect reconstructs the resulting state in look() without re-performing the event.",
+      desc: "Someone changed how the world LOOKS near you — a visible authored change to a thing that is here, carrying who did it, to which entity, and whether it began, changed, or ended. Ambient and radius-gated, at most one line per (entity, component) per quiet window, and never replayed: a reconnect reconstructs the resulting state in look() without re-performing the event. Arrives as a chat:system notice (with chat:ambient): nobody said it.",
       facet: "lifecycle",
     },
     [EIDO.particles]: {
@@ -223,7 +229,7 @@ const TAG_ONTOLOGY = {
       facet: "lifecycle",
     },
     [EIDO.catchup]: {
-      desc: "Replayed history, not live traffic: something that happened while you were away. Carries its ORIGINAL addressing tags, so ten missed mentions still look like ten mentions — this tag is how you tell a reconnect from ten people speaking at once.",
+      desc: "Replayed history, not live traffic: something that happened while you were away. Carries its ORIGINAL addressing tags, so ten missed mentions still look like ten mentions — this tag is how you tell a reconnect from ten people speaking at once. The 'While you were away' header before them is a chat:system notice; the replayed messages are not.",
       facet: "lifecycle",
       stability: "stable",
     },
