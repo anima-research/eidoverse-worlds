@@ -48,12 +48,15 @@ const UNDRIVEN = BONES.filter((b) => !DRIVEN_BONES.includes(b));
 /** A skeleton, a mixer, and a clip that animates EVERY bone — set up exactly
  *  the way Avatar's constructor does it: play() once, weight 0, cross-fade
  *  after. Plus the minimum `this` the lifecycle methods reach for. */
-function stand({ constant = false } = {}) {
+function stand({ constant = false, pivot = false } = {}) {
   const root = new THREE.Object3D();
   const nodes: Record<string, any> = {};
+  // `pivot`: the bones hang off a scaled, half-turned node, as a VRM0 rig at a chosen body size hangs off vrm.scene
+  const parent = pivot ? new THREE.Object3D() : root;
+  if (pivot) { parent.scale.setScalar(1.4); parent.rotation.y = Math.PI; root.add(parent); }
   for (const b of BONES) {
     const n = new THREE.Object3D(); n.name = b;
-    root.add(n); nodes[b] = n;
+    parent.add(n); nodes[b] = n;
   }
   // A clip that genuinely MOVES, because a real locomotion clip does and the
   // difference matters: three.js only writes a bone when the value it computes
@@ -1061,9 +1064,9 @@ console.log('\nmeasured jump take-off (#196 review B2):');
 // the last clip it saw playing under a limp remote; an agent's sim has no clip and measures its root from rest
 // hips. Without the hold, a watcher drew an agent fallen from lying 0.74 m under the floor.
 console.log('\na lowering clip under a limp body (#282):');
-for (const constant of [false, true]) {
-  const REST = 0.9, LOW = 0.1;
-  const { self, nodes } = stand({ constant });
+for (const { constant, pivot } of [{ constant: false, pivot: false }, { constant: true, pivot: false }, { constant: true, pivot: true }]) {
+  const REST = 0.9, LOW = 0.1, S = pivot ? 1.4 : 1;
+  const { self, nodes } = stand({ constant, pivot });
   self.vrm.humanoid.normalizedRestPose = { hips: { position: [0, REST, 0] } };
   // the lie clip: hips held low (constant: written once by three.js and never again)
   const hipsTrack = new THREE.VectorKeyframeTrack('hips.position', [0, 0.5, 1],
@@ -1071,12 +1074,12 @@ for (const constant of [false, true]) {
   const clip = new THREE.AnimationClip('lie', 1, [hipsTrack]);
   const lie = self.mixer.clipAction(clip); lie.play(); lie.setEffectiveWeight(1);
   self.tick();
-  const label = constant ? ' (a constant track)' : '';
+  const label = pivot ? ' (scaled, half-turned parent)' : constant ? ' (a constant track)' : '';
   const hipsWorldY = () => { self.root.updateMatrixWorld(true); return nodes.hips.getWorldPosition(new THREE.Vector3()).y; };
 
   // a REMOTE going limp: its root comes off the wire, so nothing is baked
   {
-    const r = stand({ constant });
+    const r = stand({ constant, pivot });
     r.self.vrm.humanoid.normalizedRestPose = { hips: { position: [0, REST, 0] } };
     const a = r.self.mixer.clipAction(clip); a.play(); a.setEffectiveWeight(1);
     r.self.tick();
@@ -1091,8 +1094,8 @@ for (const constant of [false, true]) {
   const before = hipsWorldY();
   self.setLimp(true, { bake: true });
   check(`your own body: the clip's drop moves onto the root${label}`,
-    Math.abs(self.root.position.y - (nodes.hips.position.y === REST ? before - REST : NaN)) < 1e-6,
-    `root y ${self.root.position.y}, hips ${nodes.hips.position.y}`);
+    Math.abs(self.root.position.y - (before - S * REST)) < 1e-6 && Math.abs(before - S * LOW) < 0.03 * S,
+    `root y ${self.root.position.y} (want ${before - S * REST}), hips ${nodes.hips.position.y}`);
   check(`...and the hips do not move on screen as it does${label}`, Math.abs(hipsWorldY() - before) < 1e-6,
     `${before} -> ${hipsWorldY()}`);
   self.tick(); self.tick(0.3);
@@ -1100,6 +1103,29 @@ for (const constant of [false, true]) {
     `hips y ${nodes.hips.position.y}`);
   self.setLimp(false);
   check(`getting up hands the clip's hips back${label}`, Math.abs(nodes.hips.position.y - LOW) < 0.03,
+    `hips y ${nodes.hips.position.y}`);
+}
+
+// a held KNEEL (a pose's hips translation) over a clip that never writes the hips: going limp bakes the kneel and
+// then the clip, and getting up must hand back the clip's hips, not the kneel nobody owns any more (PR #283 review)
+{
+  const REST = 0.9, KNEEL = -0.4;
+  const { self, nodes } = stand({ constant: true });
+  self.vrm.humanoid.normalizedRestPose = { hips: { position: [0, REST, 0] } };
+  nodes.hips.position.set(0, REST, 0);   // the idle clip has no hips.position track: rest is the clip's value
+  self.tick();
+  self.setPose({ hips: { t: [0, KNEEL, 0] } });
+  for (let i = 0; i < 60; i++) self.tick();
+  check('a held kneel lowers the hips (the fixture)', Math.abs(nodes.hips.position.y - (REST + KNEEL)) < 1e-3,
+    `hips y ${nodes.hips.position.y}`);
+  self.setLimp(true, { bake: true });
+  check('going limp from a kneel: the kneel is on the root', Math.abs(self.root.position.y - KNEEL) < 1e-6,
+    `root y ${self.root.position.y}`);
+  check('...and the hips are at rest', Math.abs(nodes.hips.position.y - REST) < 1e-9, `hips y ${nodes.hips.position.y}`);
+  self.tick();
+  self.setLimp(false);
+  for (let i = 0; i < 5; i++) self.tick();
+  check('getting up from a kneel hands back the clip\'s hips, not the kneel', Math.abs(nodes.hips.position.y - REST) < 1e-6,
     `hips y ${nodes.hips.position.y}`);
 }
 

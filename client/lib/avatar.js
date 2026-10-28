@@ -1690,6 +1690,10 @@ export class Avatar {
   setLimp(on, { bake = false } = {}) {
     on = !!on;
     if (on === this._limp) return;
+    // A held pose's hips translation (a kneel) is baked FIRST: that hands the
+    // hips back to the clip's own value, which is what getting up must restore.
+    // Snapshotted before, the kneel came back with nothing left to undo it.
+    if (on && bake) this.bakeHipsIntoRoot();
     const hipsNode = on ? this.vrm.humanoid?.getNormalizedBoneNode('hips') : null;
     const clipHips = hipsNode?.position.clone() ?? null;   // what getting up hands back
     if (on && bake) this.bakeHipsIntoRoot({ clip: true });
