@@ -21,6 +21,7 @@
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
 //   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Upgrade world…
 //   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command
+//   W12 the world's owner's splash (signed in as "author", its owner by name, not an operator) offers Upgrade world… too; another name's doesn't
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -34,8 +35,10 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 // any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
 const V1 = process.env.V1_LOG ?? path.resolve(import.meta.dir, "../../spec/fixtures/01-build/log.jsonl");
 // W10/W11: a signed-in server operator (SERVER_OPERATORS) and its session, beside the guest the other rows are
-const OP_SID = "e".repeat(64), SESS = path.join(fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "refusedjoin-sess-")), "sessions.json");
-fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+const OP_SID = "e".repeat(64), AUTHOR_SID = "f".repeat(64), VEE_SID = "9".repeat(64), SESS = path.join(fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "refusedjoin-sess-")), "sessions.json");
+fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [AUTHOR_SID]: { sub: "human:test:author", name: "author", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [VEE_SID]: { sub: "human:test:vee", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const { evalJson, cdp, cleanup, die, BASE, SCRATCH } = await scratchBench("refusedjoin", { worlds: ["here"], owner: "keeper", serverEnv: { TRUST_NAMES: "1", SERVER_OPERATORS: "human:test:op", SESSIONS_PATH: SESS, BACKUPS_DIR: "" },
   prepare: (scratch) => {
     // a first-protocol log, cut to its first lines (a v1 world is recognised by its genesis line); old-y is W11's to upgrade
@@ -190,6 +193,16 @@ try {
     check("W11 …Back up and upgrade: the result names the verified backup (on disk, with SHA256SUMS) and the rollback command, and old-y is a world now",
       onDisk && /^\S*backups\/old-y-\d{8}T\d{6}Z$/.test(done.backup.split(path.sep).join("/")) && /world\.ts rollback old-y/.test(done.rollback ?? "") && done.enter && fs.existsSync(path.join(SCRATCH, "worlds", "old-y", "world.jsonl")), done);
     await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
+  }
+  // W12: the world's owner (the fixture's grant to "author", a name main recorded no account for) is offered the upgrade too
+  {
+    const btnOf = async (sid: string, name: string) => { await cdp.send("Network.setCookie", { name: "ew_sess", value: sid, url: BASE });
+      await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=${name}&earlysock=0` });
+      const st: any = await tryUntil(`${name}'s old-format splash`, () => evalJson(`(() => { const s = document.getElementById('splash'); return s?.querySelector('a.sp-up-doc') ? { review: s.querySelector('.sp-up-review')?.textContent ?? null } : null; })()`).catch(() => null), { ms: 20000, step: 250 });
+      await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE }); return st; };
+    const own = await btnOf(AUTHOR_SID, "author"), other = await btnOf(VEE_SID, "Vee");
+    check("W12 old-x signed in as its owner by name (author, not an operator): the splash offers Upgrade world…; signed in as Vee, it doesn't",
+      own?.review === "Upgrade world…" && other && other.review === null, { own, other });
   }
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
 console.log(`[refusedjoin-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);

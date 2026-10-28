@@ -28,6 +28,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["linear falloff", "blast.js", "mag: power * (1 - d / radius)", "mag: power", ["F5"]],
   ["the bounds", "blast.js", "Math.min(b.max, Math.max(b.min, n))", "n", ["F4"]],
   ["the target is told once a minute per asker", "protocol/authority/bodyconsent.js", "if (n[key] > now - C.TRIED_NOTE_MS) return false;", "if (false) return false;", ["F10"]],
+  ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
+  ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -159,7 +161,21 @@ const cases: Case[] = [
       const first = tried(); s.call("bob", "force", { at: [0, 0, 0] }, 61000); const later = tried();
       return { first: first.map((m: any) => `${m.class}/${m.gate}`), later: later.length }; },
     good: (o) => o.first.join() === "shove/move" && o.later === 1 },
+  { id: "F11", what: "two blasts into three opted-out bodies count toward the moderator cool-down twice, not six times: no cool-down, the third still reaches the gates", run(s) { const t = optedOut(s);
+      for (let k = 0; k < 2; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      const r = s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      return { ...t, cooled: cooled(s), refusals: (s.w().presence.refusals ?? []).length, third: r.bodies }; },
+    good: (o) => o.ok && o.cooled === 0 && JSON.stringify(o.third) === '{"shoved":0,"refused":3}' },
+  { id: "F12", what: "…five blasts into them are five refusals from three people: the cool-down starts, once (counting still works)", run(s) { const t = optedOut(s);
+      for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      return { ...t, cooled: cooled(s) }; },
+    good: (o) => o.ok && o.cooled === 1 },
 ];
+function optedOut(s: any) { cast(s, { physics: false });
+  const ok = ["vic", "ida", "cy"].map((who, k) => { s.call(who, "move", { to: [Math.cos(k * 2), 0, Math.sin(k * 2)] }); return s.call(who, "consent", { move: false }).ok; }).every(Boolean);
+  s.call("bob", "move", { to: [0, 0, 6] }); return { ok }; }
+function cooled(s: any) { const f = path.join(root, "worlds", `${s.name}.mod.jsonl`);
+  return fs.existsSync(f) ? fs.readFileSync(f, "utf8").split("\n").filter((l) => /"auto-cooldown"/.test(l)).length : 0; }
 let pass = 0, fail = 0;
 for (const c of cases) {
   if (ONLY && !ONLY.includes(c.id)) continue;

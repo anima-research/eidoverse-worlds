@@ -53,7 +53,7 @@ report lists each one):
   permissions (`role-defs`) set to the builder's plus generate, since this
   protocol caps an ownerless world at member. Rank stays member there:
   a lock and a `who: builder` gate refuse everyone until the world has an
-  owner (operator-repair set). The report's `rights` says which, and its notes
+  owner (operator-repair set, or the upgrader's claim: below). The report's `rights` says which, and its notes
   what can't be said (generate for guests). Worlds founded new keep this
   protocol's defaults.
 - *Particles.* A preset retuned with main's knobs (wobble, up, spread, gravity,
@@ -111,21 +111,42 @@ Opening an old-format world shows a splash: "This world was saved by an
 older Eidoverse. It needs a one-time upgrade before anyone can enter.", the
 server's own sentence, and a link to this page. The join is still refused
 (close 4005); its `error` carries `refused {code: "old-format", doc,
-upgrade: "operator", operator}`, so agents read the same thing in words.
+upgrade: "operator-or-owner", operator, may, owner?}`, so agents read the same thing in words.
 
-Only the server's **operator** may upgrade a world: a signed-in account
-listed in `SERVER_OPERATORS` (a session, or an agent's credential; never a
-typed name). Not the old world's owner: an old log names its owner, and
-nothing can yet bind an account or key to that name, so a name match would
-let anyone who signs up as that name take the world. Everyone else is told
-to ask the server's operator, and sees no report (it names people).
+A server **operator** or the world's **owner** may upgrade it (R 10-28),
+signed in (a session, or an agent's credential; never a typed name):
 
-The operator's splash has a **Upgrade world…** button. It shows the dry-run
+- an operator: an account listed in `SERVER_OPERATORS`;
+- an owner **bound** by main's own records: the old log's grant carried the
+  account, or main's `.principals.json` or another world's log on this server
+  pairs the owner's name with exactly this one account (as below, step 2);
+- an owner main recorded **no** account for, whose name the signed-in
+  account's name is (any case), when main's records never bound that name to
+  another account and only one account on this server holds the name.
+  Name-matched ownership is provisional, an alpha risk the owner accepted,
+  until durable accounts; the pre-upgrade backup stays the undo.
+
+An owner main recorded several accounts for is not guessed, and no sign-in
+proves nothing: everyone else is told an operator or the world's (verified)
+owner can upgrade it, and sees no report (it names people). The review's and
+the upgrade's replies (`owner {recognised: "bound" | "name", name}`) and the
+server's log say how the owner was recognised.
+
+**An ownerless world is claimed.** A world with no owner at all becomes the
+upgrader's (`world.ts translate … --claim`, the account from
+`EIDO_UPGRADER_ACCOUNT`): the report says so (`claim`, in the approved hash),
+the upgrader's identity is set owner as their own recorded operator repair,
+and the builder role gains generate, so everyone else keeps what main gave
+them there (build and generate). The result and the success page say "You're
+now this world's owner". Without `--claim` (the command line) it stays
+ownerless, warned. Existing owners always stay owners.
+
+The splash of anyone who may upgrade has a **Upgrade world…** button. It shows the dry-run
 report (what carries, what is mapped, what has no home and is kept as
 `imported:<name>`, what is dropped by design, what is refused) and its
 hash. **Back up and upgrade** is the only action: the server runs this
 page's CLI itself (`world.ts translate <world> --no-founder-key --approved
-<that hash> --operator-only-no-owner`), so the browser path and the command
+<that hash> --operator-only-no-owner --claim`), so the browser path and the command
 line are one path. A report that changed since it was reviewed is refused.
 The result screen says where the backup is and how to roll back. The world
 opens on the next join; nobody needs to restart the server.

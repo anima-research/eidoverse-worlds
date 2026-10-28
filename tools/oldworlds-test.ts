@@ -92,7 +92,7 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
 
 // ---- O7: what a visitor is told ----
 { const v1 = visitorText("oldtown", "translatable"), v2 = visitorText("prenamed", "pre-names");
-  ok(v1 === `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server. Nothing is lost — the world's log is kept as it was.`, "O7 the translatable visitor text, verbatim", v1);
+  ok(v1 === `"oldtown" was saved by an older version of Eidoverse and needs a one-time conversion by whoever runs this server or the world's owner. Nothing is lost — the world's log is kept as it was.`, "O7 the translatable visitor text, verbatim", v1);
   ok(/^"prenamed" /.test(v2) && /whoever runs this server/.test(v2) && /kept as it was/.test(v2) && v2 !== v1.replace("oldtown", "prenamed"), "O7 the pre-names visitor text, in its own words", v2);
   ok([v1, v2].every((t) => !/\bbun\b|tools\/|world\.ts|translate |--/.test(t)), "O7 neither carries a command line", [v1, v2]);
   ok(oldWorldAt(W, "oldtown")?.visitor === v1 && oldWorldAt(W, "prenamed")?.visitor === v2, "O7 oldWorldAt carries the visitor text the join sends"); }

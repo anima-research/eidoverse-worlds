@@ -17,6 +17,16 @@
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 //   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
 //   UN2  one owner bound: no warning; UN3 no owner at all: warned too
+//   OU1  world.ts owner-of: a signed-in account main's records bind to an owner is that owner ("bound"), whatever its name
+//   OU2  an owner main recorded NO account for is recognised by the account's name, any case ("name": provisional, R 10-28)
+//   OU3  a different name is refused; so is a bound owner's name on another account, and a builder's name
+//   OU4  an owner main recorded several accounts for is never recognised (even by name or one of those accounts); no sign-in neither
+//   OU5  (a) main's records bind the owner's name to another account (here on a TRUST_NAMES server): refused by name; that account is recognised
+//   OU6  (b) another account on this server already holds the signed-in name: refused by name
+//   CL1  --claim on an ownerless world: the upgrader's account is its owner, the report says so (claim), no warning, the result names them
+//   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
+//   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
+//   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -26,6 +36,7 @@ import { mainKnowledge } from "../../server/mainknew.ts";
 import { directoryAt } from "../../server/directory.ts";
 import { directoryFileIn } from "../../server/keyfiles.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
+import * as R from "../../shared/protocol/roles.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -66,15 +77,15 @@ const tool = (root: string, args: string[], env: Record<string, string> = {}) =>
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 const tagged = (out: string, tag: string) => { const l = out.split("\n").find((x) => x.startsWith(`${tag} `)); try { return l ? JSON.parse(l.slice(tag.length + 1)) : null; } catch { return null; } };
 /** dry run, then the approved in-place upgrade: {dry, up, report, result, dir, roles: name → [id, role]} */
-function upgrade(root: string, name: string) {
-  const dry = tool(root, ["translate", "--dry-run", "--no-founder-key", "--json", "--", name]); const rj = tagged(dry.out, "report-json");
-  const up = tool(root, ["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", rj?.hash ?? "none", "--json", "--", name]);
+function upgrade(root: string, name: string, flags: string[] = [], env: Record<string, string> = {}) {
+  const dry = tool(root, ["translate", "--dry-run", "--no-founder-key", ...flags, "--json", "--", name], env); const rj = tagged(dry.out, "report-json");
+  const up = tool(root, ["translate", "--no-founder-key", "--operator-only-no-owner", ...flags, "--approved", rj?.hash ?? "none", "--json", "--", name], env);
   const dir = directoryAt(directoryFileIn(path.join(root, "worlds")));
   const f = path.join(root, "worlds", name, "world.jsonl");
   const c = fs.existsSync(f) ? fold(readLog(fs.readFileSync(f))).entities?.["@world"]?.c ?? {} : {};
   const roles: Record<string, [string, string]> = {};
   for (const [k, v] of Object.entries<any>(c)) if (k.startsWith("roles:")) roles[dir.nameOf(k.slice(6)) ?? k] = [k.slice(6), v?.role];
-  return { dry, up, report: rj?.report, result: tagged(up.out, "result-json"), dir, roles };
+  return { dry, up, report: rj?.report, result: tagged(up.out, "result-json"), dir, roles, c };
 }
 const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra", role: "owner", gen: true }], ["antra", "grant", { id: "Digi_Rat", role: "builder" }],
   ["antra", "grant", { id: "fable", role: "owner" }], ["antra", "grant", { id: "janus", role: "owner", sub: "human:test:janus" }], ["antra", "grant", { id: "mica", role: "owner" }],
@@ -121,6 +132,56 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "UN1 no owner bound to any account: the dry run, the approved report and the upgrade's result warn, naming the owners (not the builder) and the bind; the upgrade still runs", { w: a.report?.ownerWarning, r: a.result?.ownerWarning, code: a.up.code }));
   row("UN3", () => ok(/"shed" has no owner at all/.test(s.report?.ownerWarning ?? "") && s.up.code === 0 && /has no owner at all/.test(s.result?.ownerWarning ?? ""),
     "UN3 a world with no owner at all after the upgrade is warned about too, and still upgraded", { w: s.report?.ownerWarning, code: s.up.code }));
+}
+
+// ================= OU: who may upgrade as the world's owner (R 10-28: "owners or operators can update worlds") =================
+{ const root = scratch("owners-ou"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:mica1": ["mica", "human"], "human:test:mica2": ["Mica", "human"] });
+  v1(W, "loft", [["world", "grant", { id: "Bo", role: "owner", sub: "human:test:bo" }], ["world", "grant", { id: "Ann", role: "owner" }], ["world", "grant", { id: "mica", role: "owner" }],
+    ["world", "grant", { id: "Cy", role: "builder" }], ["Ann", "say", { text: "hi" }]]);
+  const of = (account: string, name: string) => { const r = tool(root, ["owner-of", "--", "loft"], { EIDO_UPGRADER_ACCOUNT: account, EIDO_UPGRADER_NAME: name }); return { ...(tagged(r.out, "owner-json") ?? { out: r.out.slice(-300) }), printed: /human:test:/.test(r.out) }; };
+  const bo = of("human:test:bo", "Robert"), ann = of("human:test:new", "ann"), annie = of("human:test:new", "Annie"), boName = of("human:test:other", "Bo"), cy = of("human:test:cy", "Cy");
+  const mica = of("human:test:mica1", "mica"), none = of("", "Ann");
+  row("OU1", () => ok(bo.recognised === "bound" && bo.owner === "Bo" && !bo.printed, "OU1 owner-of: the signed-in account main's records bind to an owner (the grant's sub) is that owner, 'bound', whatever its name; no account printed", bo));
+  row("OU2", () => ok(ann.recognised === "name" && ann.owner === "Ann", "OU2 an owner main recorded no account for (Ann) is recognised by the signed-in account's name, any case: 'name' (provisional)", ann));
+  row("OU3", () => ok(annie.recognised === null && boName.recognised === null && cy.recognised === null && /don't make this account/.test(annie.why),
+    "OU3 a different name (Annie) is refused; so is a bound owner's name (Bo) on another account, and a builder's name (Cy)", { annie, boName, cy }));
+  row("OU4", () => ok(mica.recognised === null && /several accounts for the owner mica/.test(mica.why) && none.recognised === null && /not signed in/.test(none.why),
+    "OU4 an owner main recorded several accounts for (mica) is not recognised, by name or by one of those accounts; no sign-in isn't either", { mica, none }));
+  directoryAt(directoryFileIn(W)).resolve({ sub: "human:test:ann2", name: "ANN" });   // someone else signed in here as "ANN"
+  const ann2 = of("human:test:new", "Ann"), own2 = of("human:test:ann2", "ann");
+  row("OU6", () => ok(ann2.recognised === null && /held by more than one account/.test(ann2.why ?? "") && own2.recognised === "name",
+    "OU6 (b) once another account on this server holds the name (ANN), a second account by that name is refused; the one account holding it is still recognised", { ann2, own2 }));
+}
+{ const root = scratch("owners-ou5"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:lu": ["Lu", "human"] });
+  v1(W, "shed", [["world", "grant", { id: "Lu", role: "owner" }]]);
+  const of = (account: string, name: string) => tagged(tool(root, ["owner-of", "--", "shed"], { TRUST_NAMES: "1", EIDO_UPGRADER_ACCOUNT: account, EIDO_UPGRADER_NAME: name }).out, "owner-json") ?? {};
+  const other = of("human:test:other", "Lu"), lu = of("human:test:lu", "Lu");
+  row("OU5", () => ok(other.recognised === null && /bind the owner Lu to another account/.test(other.why ?? "") && lu.recognised === "name",
+    "OU5 (a) main's .principals.json binds Lu to an account (a TRUST_NAMES server, where a name is its account): another account named Lu is refused; Lu's own account is recognised", { other, lu }));
+}
+
+// ================= CL: an ownerless world is claimed by whoever upgrades it (R 10-28) =================
+{ const root = scratch("owners-cl"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "barn", [["Pip", "say", { text: "nobody owns this" }], ["Pip", "spawn", { id: "c", lib: "x.glb" }]]);
+  v1(W, "den", [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "say", { text: "mine" }]]);
+  const OPAL = { EIDO_UPGRADER_ACCOUNT: "human:test:op", EIDO_UPGRADER_NAME: "Opal" };
+  const c = upgrade(root, "barn", ["--claim"], OPAL), d = upgrade(root, "den", ["--claim"], OPAL);
+  const id = c.roles.Opal?.[0] ?? "";
+  row("CL1", () => ok(c.up.code === 0 && c.roles.Opal?.[1] === "owner" && same(c.dir.entry(id)?.subs, ["human:test:op"]) && /no owner: whoever performs this upgrade becomes its owner/.test(c.report?.claim ?? "")
+    && c.report.ownerWarning === null && c.result?.ownerWarning === null && c.result?.claimed?.name === "Opal" && c.result.people?.[0]?.claimed === true && /^claimed: "barn" had no owner; Opal/m.test(c.up.out) && !/human:test:op/.test(c.up.out + c.dry.out),
+    "CL1 --claim on an ownerless world: the upgrader's account is its owner (their identity, owner role), the approved report says so (claim) and warns of nothing, the result names them; no account printed", { code: c.up.code, out: c.up.out.slice(-500), roles: c.roles, claim: c.report?.claim, claimed: c.result?.claimed }));
+  const eff = (who: string, anon = false) => R.effectiveOf(c.c, who, { anon });
+  const n = eff("u-somebodyelse00000000"), g = eff("guest", true), o = eff(id);
+  row("CL2", () => ok(o.role === "owner" && ["build", "editOthers", "generate"].every((k) => n.can[k] && g.can[k]) && !n.can.fly && !g.can.fly && n.role !== "owner" && g.role !== "owner",
+    "CL2 …everyone else keeps what main gave them in an ownerless world: newcomers and guests build, edit others' things and generate (builder gains generate), never fly", { n: n.permissions, g: g.permissions, o: o.role }));
+  row("CL4", () => ok(d.up.code === 0 && d.report?.claim === undefined && same(Object.values(d.roles).map(([, r]) => r), ["owner"]) && !d.roles.Opal && d.result?.claimed === undefined,
+    "CL4 --claim on a world that has an owner changes nothing: no claim in the report, Ann stays its only owner, nobody claimed it", { roles: d.roles, claim: d.report?.claim }));
+  const rb = tool(root, ["rollback", "barn"]);
+  row("CL3", () => ok(rb.code === 0 && directoryAt(directoryFileIn(W)).idOfSub("human:test:op") === null && !fs.existsSync(path.join(W, "barn", "world.jsonl")) && fs.existsSync(path.join(W, "barn", "log.jsonl"))
+    && fs.readdirSync(path.join(root, "backups")).some((f) => f.startsWith("barn-")),
+    "CL3 rollback of a claimed upgrade forgets the claimant's identity with the rest; the old world is back and its backup kept", { code: rb.code, out: rb.out.slice(-300) }));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

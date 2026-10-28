@@ -25,10 +25,13 @@ const inboxPush = (P, who, m) => { const n = ((P.inboxN ??= {})[who] ?? 0) + 1; 
 const bodyRef = (x) => (typeof x === "string" ? x.replace(/^body:/, "") : x);
 // 42 §4.13 item 4: five refusals of one class from three distinct targets in 5 min puts the actor on a 10-minute
 // cool-down for that class, world-wide, written as an automatic action in the MODERATOR log. Never a ban.
+// `to` may be several bodies: one blast's refusals are ONE attempt (R 10-28), its people all counted as refusing
 function noteRefusal(w, from, to, cls, now) { const P = w.presence; (P.refusals ??= []).push({ ts: now, from, to, cls }); P.refusals = P.refusals.filter((r) => now - r.ts < 300000);
-  const mine = P.refusals.filter((r) => r.from === from && r.cls === cls);
-  if (mine.length >= 5 && new Set(mine.map((r) => r.to)).size >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
-    (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "system", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${new Set(mine.map((r) => r.to)).size} people in 5 min` }); } }
+  const mine = P.refusals.filter((r) => r.from === from && r.cls === cls), people = new Set(mine.flatMap((r) => [].concat(r.to))).size;
+  if (mine.length >= 5 && people >= 3 && !(P.throttle?.[`${from}:${cls}`] > now)) {
+    (P.throttle ??= {})[`${from}:${cls}`] = now + 600000; w.appendMod({ actor: "system", verb: "auto-cooldown", who: from, class: cls, minutes: 10, why: `${mine.length} refusals of ${cls} from ${people} people in 5 min` }); } }
+/** A blast's refused bodies (bodyGate with uncounted), counted toward the cool-down once for the whole blast. */
+export function noteBlastRefusals(w, from, tos, cls) { if (tos.length) noteRefusal(w, from, tos, cls, w.now()); }
 const COOL_FIX = "leave people be who haven't opened to you; this lifts by itself";
 // The TARGET hears a refusal too (parity with main's "X tried to knock you over"): body-refused {from, class, gate} in their
 // own inbox, once per (asker, target) per C.TRIED_NOTE_MS, whatever the asker tries meanwhile. The asker never sees it.
@@ -39,7 +42,7 @@ function tellTarget(w, from, to, cls, d) { const P = w.presence, now = w.now(), 
 /** The relay refused `from`'s act on `to` itself (server/messages.ts bodyRefusal: a puppet or a grab): the target is told as
  *  above. Decided again here, so the notice names the gate that answered. Returns whether it was said now. */
 export function noteRefused(w, from, to, cls) { syncDefault(w); const d = C.decide(w.presence, from, to, cls); return d.mode === "deny" && tellTarget(w, from, to, cls, d); }
-// The gate for every act on another body. extra: { cls?, spec?, script?, sponsor? }.
+// The gate for every act on another body. extra: { cls?, spec?, script?, sponsor?, uncounted? (the caller counts: a blast) }.
 function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
   const P = w.presence, now = w.now(); to = bodyRef(to); const cls = extra.cls ?? C.KIND_CLASS[kind];
   if (!cls) return { ok: false, code: "shape", reason: `no body kind '${kind}'`, fix: Object.keys(C.KIND_CLASS).join(", ") };
@@ -48,7 +51,7 @@ function bodyGate(w, from, to, kind, extra = {}) { syncDefault(w);
   if (P.throttle?.[`${from}:${cls}`] > now) { ringPush(P, { ts: now, from, to, cls, verdict: "refused" }); w.presenceDirty = true;
     return { ok: false, code: "cool-down", class: cls, reason: `${from} is on a cool-down for ${cls} after repeated refusals (moderator log)`, fix: COOL_FIX }; }
   const d = decideAs(P, from, extra.sponsor, to, cls);
-  if (d.mode === "deny") { noteRefusal(w, from, to, cls, now); tellTarget(w, from, to, cls, d); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
+  if (d.mode === "deny") { if (!extra.uncounted) noteRefusal(w, from, to, cls, now); tellTarget(w, from, to, cls, d); ringPush(P, { ts: now, from, to, cls, verdict: "refused", why: d.why }); w.presenceDirty = true;
     return { ok: false, code: "consent", class: cls, reason: C.refusalWords(to, cls), fix: C.REFUSAL_FIX }; }   // the why is the target's (ring) only
   return { ok: true, consent: "allowed", deliver: () => { ringPush(P, { ts: now, from, to, cls, verdict: "allowed" }); deliver(w, from, to, kind, cls, extra); } };
 }
