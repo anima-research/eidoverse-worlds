@@ -53,6 +53,14 @@ check("describe: an invalid source says it is not heard", /not heard: invalid de
 check("describe: malformed", describeSound(null) === "a sound (malformed declaration)");
 check("describe never claims anything about the audio (no 'loud', 'hz', 'waveform')", !/loud|hz|waveform|db/i.test(describeSound({ src: GOOD, description: "x" })));
 
+// R 10-28 (item 18): a sound carries up to 200 m, still silent AT its radius (the 10-07 taper)
+{ const { SOUND_MAX_RADIUS, gainAt } = await import("../shared/sound.js"); const { COMPONENTS } = await import("../shared/protocol/componentspec.js");
+  const far = normalizeSound({ src: GOOD, description: "x", t0: 1, radius: 180, near: 150 }), over = normalizeSound({ src: GOOD, description: "x", t0: 1, radius: 500 });
+  check("SOUND_MAX_RADIUS is 200 m: radius 180 (near 150) is kept, 500 is held to 200", SOUND_MAX_RADIUS === 200 && far.ok && far.sound.radius === 180 && far.sound.near === 150 && over.ok && over.sound.radius === 200, JSON.stringify([far.ok && far.sound, over.ok && over.sound]));
+  const R = COMPONENTS.sound.ranges;
+  check("…and the registry's ranges say the same (near and radius at most 200)", R.radius.max === SOUND_MAX_RADIUS && R.near.max === SOUND_MAX_RADIUS, JSON.stringify(R));
+  check("…still silent at radius at 200 m (gain 0 at and past it, > 0 just inside)", gainAt(200, 1.5, 200) === 0 && gainAt(250, 1.5, 200) === 0 && gainAt(199, 1.5, 200) > 0 && gainAt(150, 1.5, 200) === 1.5 / 150); }
+
 console.log("— 2. perception —");
 const T0 = 1_754_000_000_000;
 // the agent's path: a scratch door, its cut adopted, and the next view taken after every write (tools/agent-scratch.ts)

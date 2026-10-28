@@ -311,12 +311,12 @@ export const COMPONENTS = {
   "copy-of": { on: "thing", fields: { from: "string", key: "string" }, required: ["from", "key"], grammar: { from: "sha256" }, writtenBy: "server",
                docs: { from: "the blueprint record it was copied from, sha256:<64 hex>", key: "which part of that record it is" }, help: "set by the server on copies (never by hand below owner): {from: the record's hash sha256:<64 hex>, key: its part key in that record}" },
   // a sound a thing plays (shared/sound.js; batch 2, 10-07): silent AT radius (a true taper to zero, not Web Audio's clamp,
-  // which leaked about −21 dB across the whole world), cap 100 m, near ≤ radius (valueCheck), the authority stamps t0 when it
+  // which leaked about −21 dB across the whole world), cap 200 m (R 10-28; = shared/sound.js SOUND_MAX_RADIUS), near ≤ radius (valueCheck), the authority stamps t0 when it
   // starts. src: this server's store, an allowlisted host's https link (everyone hears it), or another https link (only
   // viewers who allow untrusted links hear it; shared/mediasrc.js). Registered so it isn't refused as a near-miss of bounds
   sound:      { on: "thing", fields: { src: "string", playing: "bool", loop: "bool", volume: "number", pitch: "number", near: "number", radius: "number", spatial: "bool", t0: "number", description: "string" },
                 defaults: { playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true }, required: ["src"],
-                ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 100 }, radius: { min: 1, max: 100 }, src: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
+                ranges: { volume: { min: 0, max: 1 }, pitch: { min: 0.5, max: 2 }, near: { gt: 0, max: 200 }, radius: { min: 1, max: 200 }, src: { maxLen: 2048 }, description: { maxLen: 200 } }, clean: { description: "line" },
                 units: { near: "m", radius: "m", t0: "ms" },
                 // pinned (shape audit 10-16, render-media-env §6): the distance law every client hears (shared/sound.js gainAt);
                 // a future curve choice is an addition (rolloff, absent = this law)
@@ -324,7 +324,7 @@ export const COMPONENTS = {
                 docs: { src: "the sound file: store/audio/…, eidoverse/assets/…, or an https link", playing: "it plays now (false: paused)", loop: "plays again when it ends", volume: "linear amplitude gain (not dB): 0 silent to 1 full", pitch: "playback rate: 2 = an octave up and twice as fast",
                   near: "full volume within this many metres", radius: "silent at and beyond this many metres: nobody further hears it at all", spatial: "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)", t0: "when it started, epoch ms (the authority stamps it)",
                   description: "what is playing, in words: for people who can't hear it and for agents" },
-                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 100: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), description? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
+                help: "a sound this thing plays: {src (store/audio/…, eidoverse/assets/…, or an https link: an allowlisted host's plays for everyone, any other only for viewers who allow untrusted links), playing? (default true), loop?, volume? 0..1, pitch? 0.5..2 (playback rate), near? m (full volume inside it), radius? m (≤ 200: silent at and beyond it; inverse distance from near, a (1−t)² taper over the last 5% to 0 at radius), spatial? (false: heard evenly inside radius, no panning), t0? (stamped by the authority when it starts), description? (what is playing, in words: what agents and people who can't hear it read)}. A reaction {kind: 'play'} plays it again from the top" },
   // an image on a thing (shared/picture.js; batch 2): a framed quad of its own (width m, height from the image's aspect,
   // facing +Z on its origin). src as sound's, for images. Shape audit 10-16 (render-media-env §5): texturing one node of a
   // model (part, flip) is the `material` component's, not a picture of its own: both are cut (0 stored)

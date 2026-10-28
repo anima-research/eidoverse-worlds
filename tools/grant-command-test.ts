@@ -67,5 +67,23 @@ check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?
   check('the help sheet teaches no visitor role (it is inhabitant)', !/\bvisitors?\b/i.test(help) && /\/grant \* inhabitant/.test(help), help.match(/[^.]*visitor[^.]*/i)?.[0]);
   check('…and names +gen, +fly and /epoch', /\+gen/.test(help) && /\+fly/.test(help) && /\/epoch/.test(help) && /\+gen/.test(g) && /\+fly/.test(g), g); }
 
+// R 10-28 (item 13): a word /access doesn't take is refused with the doors it does take, each said; the role names are the
+// world's registry's (an owner renamed inhabitant here), never typed into the words. No aliases.
+{ const cmd = async (c: string, arg: string) => { sent.length = 0; messages.length = 0; dispatch(c, arg); await settle(); };
+  world.c = { 'role-defs': { inhabitant: { name: 'Regular' } } };
+  for (const w of ['members', 'visitors']) { await cmd('access', w);
+    const m = messages.join(' ');
+    check(`/access ${w} sends nothing and teaches the four doors`, sent.length === 0 && new RegExp(`'${w}' isn't one of the doors`).test(m) && ['invite-only', 'watch', 'public', 'open'].every((d) => m.includes(`${d} (`)), m); }
+  const m = messages.join(' ');
+  check('…naming the newcomer roles from the registry (a renamed inhabitant reads as its name)', /newcomers get the Regular role/.test(m) && /newcomers get the Builder role/.test(m), m);
+  await cmd('access', 'public');
+  check('…and a real door still sets it', sent.length === 1 && JSON.stringify(sent[0]).includes('"join":"anyone"'), JSON.stringify(sent));
+  // R 10-28 (item 4): /boom [power] [radius] and /blast are a force request at my feet
+  await cmd('boom', '5 10');
+  check('/boom 5 10 sends force {at: my feet, power 5, radius 10}', sent.length === 1 && sent[0].verb === 'force' && JSON.stringify(sent[0].args) === JSON.stringify({ at: [0, 0, 0], power: 5, radius: 10 }), JSON.stringify(sent));
+  const { resolveCommand } = await import('../client/lib/commands/registry.js');
+  await cmd(resolveCommand('blast')?.name ?? 'blast', '');   // chat.js resolves the typed word, then dispatches
+  check('/blast is /boom, with the authority\'s defaults', sent.length === 1 && sent[0].verb === 'force' && JSON.stringify(sent[0].args) === JSON.stringify({ at: [0, 0, 0] }), JSON.stringify(sent)); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

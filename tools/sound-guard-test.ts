@@ -67,5 +67,10 @@ stub.comps.set('radio1', { sound: stub.bagOf('radio1').sound });
 as('carol', SUB_CAROL, 'builder');
 check('no stored guard: the stranger gets the form too', /data-se-root/.test(render()));
 
+// R 10-28 (item 18): 32 world sounds heard at once (was 8), and the editor's radius goes to the 200 m cap
+{ const S: any = await import('../client/lib/sounds.js'); const { SOUND_MAX_RADIUS } = await import('../shared/sound.js');
+  check('VOICES: 32 world sounds are heard at once', S.VOICES === 32, String(S.VOICES));
+  check('the editor\'s radius field goes to SOUND_MAX_RADIUS (200 m)', new RegExp(`data-se="radius"[^>]*max="${SOUND_MAX_RADIUS}"`).test(render()) && SOUND_MAX_RADIUS === 200, render().match(/data-se="radius"[^>]*/)?.[0]); }
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

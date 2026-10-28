@@ -41,7 +41,7 @@ const AUDIO_EXT = /\.(mp3|ogg|opus|wav|webm|m4a)$/i;
 export const SOUND_DESCRIPTION_MAX = 200;
 /** The description field's tooltip, in plain words. */
 export const SOUND_DESCRIPTION_HINT = 'Describes what is playing in words, for people who can\'t hear it and for agents';
-export const SOUND_MAX_RADIUS = 100;
+export const SOUND_MAX_RADIUS = 200;   // m (R 10-28: 100 → 200); componentspec's sound ranges say the same
 // R 10-07: a placed sound plays (no start-paused); distance is what keeps it from covering the world
 export const SOUND_DEFAULTS = Object.freeze({ playing: true, loop: true, volume: 0.8, pitch: 1, near: 1.5, radius: 12, spatial: true });
 const KNOWN_KEYS = new Set(['src', 'playing', 'loop', 'volume', 'pitch', 'near', 'radius', 'spatial', 't0', 'description']);

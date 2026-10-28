@@ -25,6 +25,7 @@
 import { bus, CONFIG, report } from './base.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
+import { physicsEnabled, setPhysicsEnabled } from './thingphysics.js';
 import { makeFrame } from './windows.js';
 import { logChat } from './chat.js';
 
@@ -184,6 +185,9 @@ export function initMods() {
         <div class="mod-row">
           <div class="mod-txt"><span class="mod-nm">body engine</span><span class="mod-note">how your falls simulate — verlet: particles · ammo: Bullet, the janus rig. Click to cycle.</span></div>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">object physics</span><span class="mod-note">flights drawn here, and the things you walk into pushed. Off, for a slow device: things stand where the world last logged them. Only this browser changes</span></div>
+          <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
         <div class="sec-cap">your mods</div>
         <div class="mod-note warn">local mods run with full access, as you — load only code you trust</div>
         ${rows || '<div class="mod-note">no local mods yet</div>'}
@@ -210,6 +214,11 @@ export function initMods() {
           const names = listBodyEngines();
           setBodyEngine(names[(names.indexOf(currentBodyEngine()) + 1) % names.length]);
           flashHint(`body engine: ${bodyEngine()} — takes effect on your next fall`);
+          return render();
+        }
+        if (d.corephys) {   // R 10-28 (item 33): thingphysics.js setPhysicsEnabled
+          setPhysicsEnabled(!physicsEnabled());
+          flashHint(`object physics ${physicsEnabled() ? 'on' : 'off: things stand where the world last logged them'}`);
           return render();
         }
         let mine2 = [];

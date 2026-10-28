@@ -78,6 +78,17 @@ export function doorWrites(door, wc = {}) {
     { component: "default-role", value: { ...dr, role: door === "open" ? "builder" : "inhabitant" } }];
 }
 
+/** A door in words, its role names read from the world's registry (roles.js roleDef: an owner may rename a role). */
+export function doorWords(door, wc = {}) {
+  const newcomer = (d) => doorWrites(d, wc)?.find((x) => x.component === "default-role")?.value.role;
+  const nm = (id) => R.roleDef(wc, id)?.name ?? id;
+  if (door === "open") return `anyone may come in and build: newcomers get the ${nm(newcomer("open"))} role`;
+  if (door === "public") return `anyone may come in and play: newcomers get the ${nm(newcomer("public"))} role; building is for ${nm(newcomer("open"))} and up`;
+  return DOORS[door] ?? null;
+}
+/** What /access says to a word that isn't a door (R 10-28: it teaches the doors, it adds no aliases). */
+export const notADoor = (word, wc = {}) => `'${word}' isn't one of the doors. /access takes ${Object.keys(DOORS).map((d) => `${d} (${doorWords(d, wc)})`).join("; ")}. /access alone shows who can come in now`;
+
 /** A duration as people type it ("30m", "2h", "1d", "1w", "90 min") → ms, or null. At most a year. */
 export function durationMs(s) {
   const m = String(s ?? "").trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|wk|weeks?)$/);

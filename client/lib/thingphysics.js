@@ -444,7 +444,7 @@ const PENDING_MS = 1500, OFFSET_SNAP = 3, OFFSET_DEAD = 0.02;   // a reply norma
 let predictOn = true;        // lab knob (physicsApi.predict(false)): the old shape, for the probe's control arm
 const swapFrom = new Map();  // id -> drawn world position before a copy swap (the offset starts from it)
 function planRelease(id, pos, v, w) {
-  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
+  const canon = replica.sim; if (!predictOn || !physOn || !canon?.sim || canon.foreign || !pos || clockRtt() === null) return null;
   const obj = entities.get(id); if (!obj) return null;
   const q = obj.getWorldQuaternion(new THREE.Quaternion()).normalize().toArray();
   const { notes: _n, ...entry } = planLaunch({ id, p: pos, q, v, ...(w ? { w } : {}) }, grabOf(compsOf(id)), ENGINES[canon.spec?.engine]?.maxSpeed, 'throw');   // the authority's own arithmetic (launchplan.js)
@@ -526,18 +526,28 @@ function drawFlights(wall, now) {
   swapFrom.clear();
 }
 
+// "object physics off" (R 10-28, item 33; main's ew-phys): this browser stops folding and drawing flights, predicting its own
+// releases and shoving what it walks into; things stand at their committed poses (the log's). Local only: nobody else is touched.
+let physOn = (() => { try { return localStorage.getItem('ew-phys') !== '0'; } catch { return true; } })();
+export const physicsEnabled = () => physOn;
+export function setPhysicsEnabled(on) {
+  physOn = !!on; try { localStorage.setItem('ew-phys', physOn ? '1' : '0'); } catch { /* private mode: this session only */ }
+  if (!physOn && pres) { for (const id of Object.keys(pres.bodies)) { suspendCollider(id, holds[id] != null); bus.emit('pose-revert', { id }); }
+    pres = null; presV = -1; prev.clear(); spins.clear(); pending.clear(); swapFrom.clear(); }
+  bus.emit('object-physics', { on: physOn });
+}
 const stats = { frames: 0, ms: 0, clones: 0, maxMs: 0, swaps: [] };   // swaps: the last copy swaps that moved a drawn body (probe)
 /** One presentation frame. `wall` (the server clock, ms) may be given: a probe can sample the real applier at exact
  *  display times without depending on the page's frame rate (simworld's bench rule). */
 function frame(wall) {
   if (!replica.active) return;
   const now = performance.now();
-  drawFlights(wall ?? serverNow(), now);
+  if (physOn) drawFlights(wall ?? serverNow(), now);
   drawHeld();
   drawSettles(now);
   drawPressFx();
   tickTrack(now);
-  tickShove(now);
+  if (physOn) tickShove(now);
   const ms = performance.now() - now; stats.frames++; stats.ms += ms; if (ms > stats.maxMs) stats.maxMs = ms;
 }
 
@@ -730,7 +740,7 @@ function tickShove(now) {
   for (const p of go) { hooks?.capSpeed?.(p.kept, p.keepMs); void shove(p.id, p.v, now); }
 }
 function planPunt(id, v) {
-  const canon = replica.sim; if (!predictOn || !canon?.sim || canon.foreign || clockRtt() === null) return null;
+  const canon = replica.sim; if (!predictOn || !physOn || !canon?.sim || canon.foreign || clockRtt() === null) return null;
   const wp = worldPose(replica.st, id); if (!wp) return null;
   const { notes: _n, ...entry } = planLaunch({ id, p: wp.pos, q: wp.q, v }, null, ENGINES[canon.spec?.engine]?.maxSpeed, 'punt');
   return entry;

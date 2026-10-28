@@ -346,7 +346,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(wv.isError && /world_verb was removed/.test(T(wv)) && /act \{verb, args\}/.test(T(wv)), "AT9 world_verb is refused as removed, naming act (R 10-27)", T(wv).slice(0, 160));
   // main's verbs the authority doesn't have are refused as removed with the call that does it now, never a did-you-mean (R 10-27)
   const { VERBSPEC } = await import("../../shared/protocol/verbspec.js");
-  for (const v of ["force", "mount", "dismount", "spawn", "remove", "light", "comp", "motion", "behavior", "asset", "terrain", "grass", "epoch", "grant"]) {
+  for (const v of ["mount", "dismount", "spawn", "remove", "light", "comp", "motion", "behavior", "asset", "terrain", "grass", "epoch", "grant"]) {
     const r = await handleTool(ctx as any, "act", { verb: v, args: {} }); let j = null; try { j = JSON.parse(T(r)); } catch {}
     const names = (j?.refused?.fix ?? "").match(/\b[a-z-]+(?= \{)/g) ?? [];
     ok(r.isError && j?.refused?.code === "removed" && !j?.refused?.didYouMean && names.length > 0 && names.every((n) => VERBSPEC[n] || HANDLERS[n]),

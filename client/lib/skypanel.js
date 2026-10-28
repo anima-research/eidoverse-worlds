@@ -13,7 +13,7 @@ import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
 import { flashHint } from './ui.js';
 import { selectRow } from './rows.js';
-import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
+import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS,
   CLOUD_QUALITY, getCloudChoice, setCloudQuality, cloudCap, skyInXR } from './sky.js';
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
@@ -155,9 +155,7 @@ export function paintSky(body) {
     (v) => preview({ clouds: v }));
   body.appendChild(clRow);
 
-  const { row: wlRow, select: wl } = selectRow('world', SKY_WORLDS, null,
-    (v) => preview({ world: v }));
-  body.appendChild(wlRow);
+  // (no "world" select: the sky stores no world since the 10-16 shape audit, and earth is the only one drawn: sky.js SKY_WORLDS)
 
   // Cloud budget is YOURS, not the world's — it never becomes a verb. The
   // volumetric march is the most expensive thing the client draws and its cost
@@ -390,7 +388,6 @@ export function paintSky(body) {
     }
     if (a.weather) wx.value = a.weather;
     if (a.clouds) cl.value = a.clouds;
-    if (a.world) wl.value = a.world;
     // the option list is def-fed; fillClocks appends a raw-tz option when the
     // world's committed clock is one the def no longer lists
     const realTz = typeof a.tz === 'string' ? a.tz : a.clock === 'real' ? 'America/Los_Angeles' : '';   // a tz present is the wall clock
