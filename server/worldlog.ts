@@ -12,11 +12,11 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
-import { WORLDS_DIR, STATE_CACHE_EVERY } from "./config.ts";
+import { WORLDS_DIR, STATE_CACHE_EVERY, SIM_CHECKPOINT_EVERY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
@@ -118,7 +118,8 @@ export class WorldLog {
     // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [],
       sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity),
-      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; } } } : {}) });
+      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; } } } : {}),
+      ...(SIM_CHECKPOINT_EVERY > 0 ? { simCheckpoint: { every: SIM_CHECKPOINT_EVERY } } : {}) });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
@@ -171,6 +172,12 @@ export class WorldLog {
   }
   /** Write the fold cache if it is behind (server/statecache.ts): a clean shutdown calls it. */
   saveStateCache() { if (!this.retired) this.live.saveCache?.(); }
+  /** A clean shutdown: a sim checkpoint when the engine's tail is a tenth of SIM_CHECKPOINT_EVERY or more (so the next boot
+   *  replays little), before saveStateCache (which then covers it). Never throws: the log is already whole without it. */
+  checkpointSim() {
+    if (this.retired || SIM_CHECKPOINT_EVERY <= 0 || this.live.state().status !== "ok") return;
+    try { authorityCheckpointNow(this.live, { every: Math.ceil(SIM_CHECKPOINT_EVERY / 10) }); } catch (x) { console.warn(`[world:${this.name}] sim checkpoint at shutdown not written: ${(x as Error).message}`); }
+  }
   /** The last seq. */
   get head(): number { return this.live.entries.length - 1; }
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
