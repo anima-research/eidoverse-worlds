@@ -146,12 +146,12 @@ row("S3-T2", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: 
   const body = (n: string) => S[n]?.body ?? kids.find((k) => k.socket?.name === n)?.station;
   ok(body("a")?.anchor === "surface" && body("b")?.anchor !== "surface" && E.s["imported:sockets"]?.b?.seatAnchor === "hips", "S3-T2 a socket's seatAnchor surface is its body's anchor; any other value (main read it as root) is carried", { S, imp: E.s["imported:sockets"] }); });
 row("S3-X1", () => { const pts = Array.from({ length: 70 }, (_, i) => [i, 0, 0]);
-  const { r, E } = tr([OWNER, ["olga", "spawn", { id: "m", lib: "x.glb", scale: 5000 }], ["olga", "comp", { id: "m", type: "sound", data: { src: "store/audio/a.ogg", radius: 150 } }],
+  const { r, E } = tr([OWNER, ["olga", "spawn", { id: "m", lib: "x.glb", scale: 5000 }], ["olga", "comp", { id: "m", type: "sound", data: { src: "store/audio/a.ogg", radius: 250 } }],
     ["olga", "comp", { id: "m", type: "motion", data: { type: "path", points: pts, speed: 1 } }], ["olga", "light", { id: "l", range: 0, intensity: 4 }]]);
   const A = (id: string, c: string, f: string) => r.stats.adjusted?.find((x) => x.id === id && x.component === c && x.field === f);
-  ok(E.m.sound.radius === 100 && E.m.motion.points.length === 64 && JSON.stringify(E.m.motion.points[63]) === "[69,0,0]" && E.m.transform.scale[0] === 1000 && E.l.light.range === undefined
-    && A("m", "sound", "radius")?.now === 100 && A("m", "motion", "points") && A("m", "transform", "scale") && A("l", "light", "range"),
-    "S3-X1 values outside the registry's ranges are brought inside (sound radius 150 → 100, a 70-point path → 64, scale 5000 → 1000, light range 0 → its default) and each is listed", { s: E.m.sound, n: E.m.motion.points.length, t: E.m.transform.scale, l: E.l.light, adj: r.stats.adjusted }); });
+  ok(E.m.sound.radius === 200 && E.m.motion.points.length === 64 && JSON.stringify(E.m.motion.points[63]) === "[69,0,0]" && E.m.transform.scale[0] === 1000 && E.l.light.range === undefined
+    && A("m", "sound", "radius")?.now === 200 && A("m", "motion", "points") && A("m", "transform", "scale") && A("l", "light", "range"),
+    "S3-X1 values outside the registry's ranges are brought inside (sound radius 250 → 200, a 70-point path → 64, scale 5000 → 1000, light range 0 → its default) and each is listed", { s: E.m.sound, n: E.m.motion.points.length, t: E.m.transform.scale, l: E.l.light, adj: r.stats.adjusted }); });
 row("S3-L2", () => { const { E } = tr([OWNER, ["olga", "light", { id: "l", color: "Red" }], ["olga", "light", { id: "k", color: "rebeccapurple" }]]);
   ok(E.l.light.color === 0xff0000 && E.k.light.color === 0x663399, "S3-L2 a light's CSS colour name is its colour, as three.js read it", { l: E.l.light.color, k: E.k.light.color }); });
 row("S3-M1", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "bell", lib: "x.glb", scale: 2 }], ["olga", "comp", { id: "bell", type: "motion", data: { type: "pendulum", amp: 0.3, pivot: [0, 3, 0] } }]]);
