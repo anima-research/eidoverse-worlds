@@ -38,6 +38,12 @@ const authority = () => { const P: any = { consent: { me: { switch: 'accept', ov
   check('a client that chose move:true sends it (and only it), and a stranger may shove in a move:false world', JSON.stringify(A.sent.slice(1)) === '[{"move":true}]' && decide(A.P, 'pal', 'me', 'shove').mode === 'allow', JSON.stringify(A.sent)); }
 { const A = authority(); C.setListed('u-bob', 'block', 'Bob'); C.setListed('u-bob', null); const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {} }); await s.sync();
   check('…and a person I unlisted here (People panel) is unlisted at the authority too', A.sent.some((a) => a.unlist === 'u-bob') && tableOf(A.P, 'me').block.length === 0, JSON.stringify(A.sent)); }
+{ // (F2 follow-up) the People panel shows the authority's lists: a block only the world holds is listed and can be removed
+  const A = authority(); A.P.consent.me.block['u-mig'] = true;
+  const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: (C as any).noteHeld }); await s.sync();
+  check('a block that exists only at the authority is listed in the panel', C.listed('block').some((p: any) => p.id === 'u-mig') && C.listOf('u-mig') === 'block', JSON.stringify(C.listed('block')));
+  const removed = C.setListed('u-mig', null); await s.sync();
+  check('…and removing it records an unlist and sends it: the authority no longer blocks them, the panel no longer lists them', removed && C.bodyTable().unlist.includes('u-mig') && A.sent.some((a) => a.unlist === 'u-mig') && !tableOf(A.P, 'me').block.includes('u-mig') && !C.listed('block').some((p: any) => p.id === 'u-mig'), JSON.stringify(A.sent)); }
 
 // 1. the gates and lists, as the authority takes them
 check('a fresh client: Move me on, Touch me off (the defaults)', C.gate('move') && !C.gate('touch') && landed('pal', 'shove') === 'allow' && landed('pal', 'pose') === 'deny');

@@ -7,7 +7,7 @@
 // and the table is sent again on a timer and on the next arrival.
 // A leaf like consent.js — everything it touches comes in, so tools/consent-switch-test.ts can drive it.
 export const RETRY_MS = 5000;
-export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true }) {
+export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true, held = () => {} }) {
   let failing = false, retryArmed = false;
   // ONE sync in flight: changes made while it runs collapse into a single follow-up that reads the latest table, so a
   // burst of changes stays under the server's per-connection message cap (10-19), which would refuse some sets.
@@ -21,11 +21,12 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
     if (!enabled()) return;
     const want = table();
     const failed = (e) => ({ ok: false, refused: { reason: String(e?.message ?? e) } });
-    const read = await send('consent', {}).then((r) => r, failed);   // reads, changes nothing: send only what differs
+    const read = await send('consent', {}).then((r) => r, failed);
+    const noteHeld = (t) => { try { held(t); } catch { /* the panel's, never the sync's */ } };   // reads, changes nothing: send only what differs
     const results = [];
     if (!read?.ok || !read.table) results.push(['your consent, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]);
     else {
-      const held = read.table, gates = {};
+      const held = read.table, gates = {}; noteHeld(held);   // the panel shows the authority's lists too
       for (const g of ['move', 'touch']) if (typeof want[g] === 'boolean' && held[g] !== want[g]) gates[g] = want[g];   // never chosen: the world's default stands (F2b)
       if (Object.keys(gates).length) results.push([Object.entries(gates).map(([g, v]) => `${g} ${v ? 'on' : 'off'}`).join(', '), await send('consent', gates).then((r) => r, failed)]);
       const has = (list, id) => Array.isArray(held[list]) && held[list].includes(id);

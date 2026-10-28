@@ -1,9 +1,9 @@
 // consentpanel — Settings ▸ body: my body's two gates (Move me, Touch me), each a checkbox with a tooltip saying what it
-// covers, then the people I always or never allow, each with a remove button (R 10-28). The lists are set from People
-// Here (right-click a person: people.js). The authority decides every act on my body by these (PROTOCOL §5); consentsync
-// sends them. Same .row.wide / .nm / .ctl markup as the video and audio sections (index.html owns it).
+// covers, then the people I always or never allow (mine and this world's authority's), each with a remove button
+// (R 10-28). The lists are set from People Here (right-click a person: people.js). The authority decides every act on
+// my body by these (PROTOCOL §5); consentsync sends them. Same .row.wide / .nm / .ctl markup as the video and audio sections (index.html owns it).
 import { makeSection, flashHint } from './ui.js';
-import { GATES, GATE_WORDS, gate, setGate, listed, setListed, onConsentChange } from './consent.js';
+import { GATES, GATE_WORDS, gate, setGate, listed, setListed, onConsentChange, onHeldChange } from './consent.js';
 
 const LISTS = [['allow', 'Always allowed', 'always yes, whatever the switches say'], ['block', 'Never allowed', 'always no, whatever the switches say']];
 
@@ -43,5 +43,6 @@ export function initConsentPanel() {
     };
     paintLists();
     onConsentChange(() => { for (const g of GATES) boxes[g].checked = gate(g); paintLists(); });
+    onHeldChange(paintLists);   // the authority's lists, as each sync reads them
   }, { id: 'body', host: 'settings' });
 }

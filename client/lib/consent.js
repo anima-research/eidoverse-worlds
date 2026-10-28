@@ -44,8 +44,17 @@ const changed = () => { save(); for (const fn of listeners) fn(current); };
 /** a gate as it shows: what I chose, else the built-in default (the world's own default is the authority's to apply) */
 export const gate = (g) => (current[g] ?? DEFAULT_GATES[g]) === true;
 export function setGate(g, on) { if (!GATES.includes(g) || current[g] === !!on) return false; current = { ...current, [g]: !!on }; changed(); return true; }
-/** a person's list: 'allow' | 'block' | null (neither: the gates answer them) */
-export const listOf = (id) => (Object.hasOwn(current.block, id) ? 'block' : Object.hasOwn(current.allow, id) ? 'allow' : null);
+// the lists this world's authority holds for me (consentsync's read; per world, never stored), shown beside mine so a block
+// it migrated can be seen and removed (F2 follow-up)
+let held = { allow: [], block: [] };
+const heldListeners = new Set();
+export function noteHeld(t) { const next = { allow: Array.isArray(t?.allow) ? [...t.allow] : [], block: Array.isArray(t?.block) ? [...t.block] : [] };
+  if (JSON.stringify(next) === JSON.stringify(held)) return; held = next; for (const fn of heldListeners) fn(); }
+export function onHeldChange(fn) { heldListeners.add(fn); return () => heldListeners.delete(fn); }
+/** the authority's word on a person I never listed or unlisted here */
+const heldOf = (id) => (Object.hasOwn(current.allow, id) || Object.hasOwn(current.block, id) || current.unlist.includes(id) ? null : held.block.includes(id) ? 'block' : held.allow.includes(id) ? 'allow' : null);
+/** a person's list: 'allow' | 'block' | null (neither: the gates answer them); mine first, else the authority's */
+export const listOf = (id) => (Object.hasOwn(current.block, id) ? 'block' : Object.hasOwn(current.allow, id) ? 'allow' : heldOf(id));
 /** put a person on a list ('allow' | 'block') or take them off both (null). `name` is how the list shows them. */
 export function setListed(id, list, name = id) {
   if (typeof id !== 'string' || !id || !['allow', 'block', null].includes(list)) return false;
@@ -55,8 +64,8 @@ export function setListed(id, list, name = id) {
   const unlist = current.unlist.filter((x) => x !== id); if (!list) unlist.push(id);
   current = { ...current, allow, block, unlist }; changed(); return true;
 }
-/** a list as [{id, name}], for the panel */
-export const listed = (list) => Object.entries(current[list] ?? {}).map(([id, name]) => ({ id, name }));
+/** a list as [{id, name}], for the panel: mine, then the authority's that I never listed or unlisted here (named by id) */
+export const listed = (list) => [...Object.entries(current[list] ?? {}).map(([id, name]) => ({ id, name })), ...(held[list] ?? []).filter((id) => heldOf(id) === list).map((id) => ({ id, name: id }))];
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 /** what consentsync sends: the gates I chose (undefined = never chosen), the lists' identities, and who I unlisted */
 export const bodyTable = () => ({ move: current.move, touch: current.touch, allow: Object.keys(current.allow), block: Object.keys(current.block), unlist: [...current.unlist] });
