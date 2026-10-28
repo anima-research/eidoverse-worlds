@@ -64,7 +64,7 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
   const s = hnSessions.get(m[1]!);
   if (!s) return null;
   if (s.exp < Date.now()) { hnSessions.delete(m[1]!); return null; }
-  return s;
+  return s.sub.startsWith("human:") ? s : null;   // a session is a person's: anything else proves nobody (/auth refuses to make one)
 }
 
 /** The session a request's cookie proves, as the ws join takes it — refused only from another site's page (a browser says
@@ -99,6 +99,8 @@ try {
       if (/^[a-f0-9]{64}$/.test(sid) && s.exp > Date.now()) hnSessions.set(sid, s);
     }
     if (hnSessions.size) console.log(`[auth] restored ${hnSessions.size} live session(s)`);
+    const odd = [...hnSessions.values()].filter((s) => !String(s.sub).startsWith("human:"));
+    if (odd.length) console.log(`[auth] ${odd.length} session(s) refused (sub isn't human:…; kept on disk, proves nobody): ${odd.map((s) => s.name).join(", ")}`);
   }
 } catch (e) { console.log(`[auth] session restore failed (starting empty): ${e}`); }
 

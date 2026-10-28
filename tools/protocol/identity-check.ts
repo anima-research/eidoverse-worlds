@@ -10,6 +10,7 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
+//   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
 //   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
 //       with a disambiguator (pass 3 H2), and doesn't get the first one's remembered pose; the real one does
@@ -445,6 +446,31 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   const watch = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:42", scopes: ["worlds:spectate"] }));
   const join = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:43" }));
   ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]); }
+
+// ---- SA: stored accounts are checked at boot (accounts review 10-28): one outside ^(human|agent:token|aid1|local): is
+// refused and said (count and names), and stays on disk; a session's sub must be human:… to be anyone ----
+{ const D = path.join(root, "sa"); fs.mkdirSync(D, { recursive: true });
+  fs.writeFileSync(path.join(D, ".bans.json"), JSON.stringify({ "acct:human:discord:9": { by: "op", ts: 1, name: "Good", account: "human:discord:9" },
+    "acct:agent:odd@x": { by: "op", ts: 1, name: "Oddban", account: "agent:odd@x" }, "old": { by: "op", ts: 1, sub: "agent-7f3a" } }));
+  fs.writeFileSync(path.join(D, ".directory.json"), JSON.stringify({ v: 2, ids: { "u-aaaaaaaaaaaaaaaaaaaa": { name: "Fine", subs: ["local:fine"], kind: "account", since: 1 },
+    "u-bbbbbbbbbbbbbbbbbbbb": { name: "Oddone", subs: ["agent:odd@x"], kind: "account", since: 1 } } }));
+  const code = `const m = await import("./server/moderation.ts"); const { directoryFor } = await import("./server/directory.ts");
+    const d = directoryFor(process.env.WORLDS_DIR); m.saveGlobalBans(); d.resolve({ sub: "local:new", name: "New" });
+    console.log("RESULT " + JSON.stringify({ bans: Object.keys(m.globalBans).sort(), odd: d.idOfSub("agent:odd@x"), fine: d.idOfSub("local:fine") }));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ WORLDS_DIR: D }) }); const out = r.stdout.toString() + r.stderr.toString();
+  let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
+  const disk = (f) => JSON.parse(fs.readFileSync(path.join(D, f), "utf8"));
+  ok(JSON.stringify(res.bans) === JSON.stringify(["acct:human:discord:9", "old"]) && /1 global ban\(s\) refused/.test(out) && /Oddban/.test(out) && !!disk(".bans.json")["acct:agent:odd@x"],
+    "SA1 a stored ban whose account isn't one of the shapes is refused and named at boot, and kept on disk (a legacy sub record is its own rule)", { res, out: out.slice(-400) });
+  ok(res.fine && !res.odd && /1 stored account\(s\) refused/.test(out) && /Oddone/.test(out) && disk(".directory.json").ids["u-bbbbbbbbbbbbbbbbbbbb"]?.subs?.[0] === "agent:odd@x",
+    "SA2 a directory account outside the shapes is refused (nobody wears it) and named at boot, and kept on disk", { res, out: out.slice(-400) }); }
+{ const SF = path.join(root, "sa-sessions.json"), sid = "c".repeat(64), exp = Date.now() + 3600_000;
+  fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "agent:token:rowan", name: "Notrowan", scopes: ["worlds:join"], exp } }));
+  const S6 = await start({ SESSIONS_PATH: SF }); const log = bootErr(S6);
+  const s = await sock(S6.port, { cookie: `ew_sess=${sid}` }); const j = await s.join("garden", "Rowan");
+  ok(!S6.dead && !j.snapshot && /reserved agent name/.test(j.errors.join(" ")), "SA3 a session whose sub isn't human:… proves nobody (here: not the enrolled Rowan)", [j.snapshot?.you, j.errors]);
+  ok(/1 session\(s\) refused/.test(log) && /Notrowan/.test(log) && !!JSON.parse(fs.readFileSync(SF, "utf8"))[sid], "SA3 …it is named at boot and kept on disk", log.slice(-300));
+  s.close(); S6.proc.kill(); }
 
 // ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
 // name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper

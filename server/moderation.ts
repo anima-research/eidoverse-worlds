@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { atomicWrite } from "./fsutil.ts";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
+import { ACCOUNT_SHAPE } from "./directory.ts";
 
 // ---- global bans ------------------------------------------------------------
 // The door's own list, across all its worlds (each world's own bans are its door's moderator log). There is no global
@@ -20,25 +21,29 @@ export type BanRec = { by: string; ts: number; reason?: string; name?: string; a
 export const ADDR_BAN_MS = 24 * 3600 * 1000;
 export const BANS_FILE = join(WORLDS_DIR, ".bans.json");
 export const globalBans: Record<string, BanRec> = {};
+const refusedBans: Record<string, BanRec> = {};   // refused at boot (restoreBans): never enforced, written back as they were
 export function saveGlobalBans() {
   try {
-    atomicWrite(BANS_FILE, JSON.stringify(globalBans, null, 2), { mode: 0o600 });
+    atomicWrite(BANS_FILE, JSON.stringify({ ...refusedBans, ...globalBans }, null, 2), { mode: 0o600 });
   } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
  *  person's account is that sub still, but an aid1 agent's is now `aid1:<iss>:<sub>`, so such a record is kept with
  *  `legacySub` and matches the aid1 account whose sub it names (review of #260). A name-keyed record with
  *  neither can't be honoured safely (it would hit namesakes) and is dropped, said once. */
-export function restoreBans(raw: Record<string, BanRec>): Record<string, BanRec> {
+export function restoreBans(raw: Record<string, BanRec>, refused: Record<string, BanRec> = {}): Record<string, BanRec> {
   const out: Record<string, BanRec> = {}; const dropped: string[] = [];
   for (const [k, b] of Object.entries(raw ?? {})) {
     if (!b || typeof b.by !== "string") continue;
     const sub = (b as any).sub;
-    if (b.account || b.addr) out[k] = b;
+    if (b.account && !b.legacySub && !ACCOUNT_SHAPE.test(b.account)) refused[k] = b;   // a legacySub record is matched by its own rule (banHoldsAgainst)
+    else if (b.account || b.addr) out[k] = b;
     else if (typeof sub === "string" && sub) { const { sub: _s, ...rest } = b as any; out[k] = { ...rest, account: sub, legacySub: true }; }
     else dropped.push(b.name ?? k);
   }
   if (dropped.length) console.log(`[mod] ${dropped.length} name-only global ban(s) from before accounts dropped (they would hit namesakes): ${dropped.join(", ")}`);
+  const no = Object.entries(refused);
+  if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => b.name ?? k).join(", ")}`);
   return out;
 }
 try {
@@ -46,7 +51,7 @@ try {
     const raw = JSON.parse(readFileSync(BANS_FILE, "utf8")) as Record<string, BanRec>;
     // a name-keyed record from before accounts can't be honoured safely (it would hit namesakes): kept only if it
     // carried the account it was made against
-    Object.assign(globalBans, restoreBans(raw));
+    Object.assign(globalBans, restoreBans(raw, refusedBans));
     if (Object.keys(globalBans).length) console.log(`[mod] ${Object.keys(globalBans).length} global ban(s) loaded`);
   }
 } catch (e) { console.log(`[mod] global ban restore failed (starting empty): ${e}`); }

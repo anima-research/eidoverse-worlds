@@ -28,6 +28,8 @@ type File = { v: 1 | 2; ids: Record<string, Entry> };
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
+/** The account shapes above; a stored account outside them is refused at boot (named, kept on disk), never worn. */
+export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
 
 /** `existingWorlds`: the world ids already in this server, read only on the one-time v1 → v2 upgrade (they keep their
  *  server-wide ids). */
@@ -46,6 +48,9 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
   const unkind = (e: Entry) => { if ((e.kind as string) === "human" || (e.kind as string) === "agent") e.kind = "account"; return e; };
   const index = (id: string, e: Entry) => { for (const s of e.subs) byKey.set(e.world ? `${s}|${e.world}` : s, id); };
   for (const [id, e] of Object.entries(d.ids)) index(id, unkind(e));
+  { const odd = Object.entries(d.ids).filter(([, e]) => e.subs.some((s) => !ACCOUNT_SHAPE.test(s)));
+    for (const [, e] of odd) for (const s of e.subs) if (!ACCOUNT_SHAPE.test(s)) byKey.delete(e.world ? `${s}|${e.world}` : s);
+    if (odd.length) console.log(`[directory] ${odd.length} stored account(s) refused (not an account shape; kept on disk, nobody wears them): ${odd.map(([id, e]) => `${e.name} (${id})`).join(", ")}`); }
   const anon = new Map<string, Entry>();   // in memory only: an anonymous id is never written, never outlives the process
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries (M2). Ours win on a clash (the same id can only be minted by one of them).
