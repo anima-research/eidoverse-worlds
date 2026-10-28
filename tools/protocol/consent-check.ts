@@ -1,6 +1,6 @@
 // consent tool: names from the wire never reach a plain object's prototype (security pass 2, H-0); a refused change
 // changes nothing; every retired argument says where to go (R 10-28: two gates, two lists)
-import { setConsent, decide } from "../../shared/protocol/consent.js";
+import { setConsent, decide, tableOf, migratePresence } from "../../shared/protocol/consent.js";
 let fails = 0; const ok = (c: boolean, n: string, d: any = "") => { console.log((c ? "ok   " : "FAIL ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) fails++; };
 const P: any = {};
 for (const op of ["allow", "block", "unlist"]) for (const who of ["__proto__", "constructor", "prototype"]) {
@@ -22,4 +22,17 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   for (const a of [{ move: false, allow: "__proto__" }, { touch: true, move: "no" }, { move: false, allow: B, block: B }]) {
     const r = setConsent(Q, A, a);
     ok(r.ok === false && JSON.stringify(Q.consent?.[A]) === before, `C8 a refused change (${JSON.stringify(a)}) leaves the table as it was`, { r, table: Q.consent?.[A] }); } }
+// C9 (review F2, R 10-28): a browser client that never chose leaves a migrated block and the world's move:false default alone
+{ const { makeConsentSync } = await import("../../client/lib/consentsync.js"); const { readStored } = await import("../../client/lib/consent.js");
+  const run = async (kv: Record<string, string>) => { const Q: any = { consent: { me: { over: { "u-bob": { touch: { mode: "deny" } } } } }, consentShape: 3, bodyDefault: { move: false } }; migratePresence(Q);
+    const st = readStored((k: string) => kv[k] ?? null), sent: any[] = [];
+    await makeConsentSync({ table: () => ({ move: st.move, touch: st.touch, allow: Object.keys(st.allow), block: Object.keys(st.block), unlist: st.unlist }), toast: () => {}, on: () => {}, later: () => {},
+      send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(Q, "me", a) : { ok: true, table: tableOf(Q, "me") }; } }).sync();
+    return { Q, sent }; };
+  const f = await run({}); ok(decide(f.Q, "u-bob", "me", "touch").mode === "deny" && tableOf(f.Q, "me").block.includes("u-bob"), "C9 an authority block survives a fresh client's sync", f.sent);
+  ok(f.sent.length === 1 && decide(f.Q, "pal", "me", "shove").mode === "deny", "C9b a never-chosen client in a move:false world stays move:false", f.sent);
+  { const Q: any = { consent: { me: { switch: "refuse" } }, consentShape: 3 }; migratePresence(Q); const sent: any[] = [];
+    await makeConsentSync({ table: () => ({ allow: [], block: [], unlist: [] }), toast: () => {}, on: () => {}, later: () => {}, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(Q, "me", a) : { ok: true, table: tableOf(Q, "me") }; } }).sync();
+    ok(sent.length === 1 && Q.consent.me.move === false && Q.consent.me.touch === false, "C9d a never-chosen client sends no gate where the authority holds one (a migrated refuse stays both off)", sent); }
+  const c = await run({ "ew-pushable": "1" }); ok(JSON.stringify(c.sent.slice(1)) === '[{"move":true}]' && decide(c.Q, "pal", "me", "shove").mode === "allow", "C9c a client that chose move:true (main's ew-pushable kept) sends it", c.sent); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

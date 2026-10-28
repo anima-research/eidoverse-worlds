@@ -6,7 +6,7 @@
 // refused `consent` sync (DEBT-SURVEY 2026-10-12 #9), leaving the server on its defaults while my switch said otherwise.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/consent-client-test.ts
 // Mutation (must go red): in client/lib/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
-import { setConsent, decide } from '../shared/protocol/consent.js';
+import { setConsent, decide, tableOf, migratePresence } from '../shared/protocol/consent.js';
 import { makeConsentSync } from '../client/lib/consentsync.js';
 
 let pass = 0, fail = 0;
@@ -22,6 +22,28 @@ const C = await import('../client/lib/consent.js');
 const landed = (from: string, cls: string) => { const P: any = {}; const t = C.bodyTable();
   for (const a of [{ move: t.move, touch: t.touch }, ...t.allow.map((id: string) => ({ allow: id })), ...t.block.map((id: string) => ({ block: id }))]) { const r = setConsent(P, 'me', a); if (!r.ok) return `refused ${JSON.stringify(a)}`; }
   return decide(P, from, 'me', cls).mode; };
+
+// 0. (review F2, R 10-28) a fresh client never chose: its sync leaves the authority's lists and the world's default alone.
+// Mutation (must go red): in consentsync.js send a gate whenever held !== want, or unlist every held id the client doesn't name.
+/** an authority with Bob blocked by migration and a world default of move off; `send` is the authority's own consent verb */
+const authority = () => { const P: any = { consent: { me: { switch: 'accept', over: { 'u-bob': { shove: { mode: 'deny' } } } } }, consentShape: 3, bodyDefault: { move: false } }; migratePresence(P);
+  delete P.consent.me.move;   // as if 'me' never chose a gate, so the world default answers
+  const sent: any[] = []; const send = async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; };
+  return { P, sent, send }; };
+{ const A = authority(); const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {} }); await s.sync();
+  check('a fresh client: neither gate is chosen (absent, not the defaults)', C.bodyTable().move === undefined && C.bodyTable().touch === undefined, JSON.stringify(C.bodyTable()));
+  check('an authority block survives a fresh client\'s sync (no unlist for a person the client never listed)', JSON.stringify(tableOf(A.P, 'me').block) === '["u-bob"]' && decide(A.P, 'u-bob', 'me', 'pose').mode === 'deny' && !A.sent.some((a) => a.unlist), JSON.stringify(A.sent));
+  check('a never-chosen client in a move:false world stays move:false (no gate sent)', A.sent.length === 1 && decide(A.P, 'pal', 'me', 'shove').mode === 'deny', JSON.stringify(A.sent)); }
+{ const A = authority(); C.setGate('move', true); const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {} }); await s.sync();
+  check('a client that chose move:true sends it (and only it), and a stranger may shove in a move:false world', JSON.stringify(A.sent.slice(1)) === '[{"move":true}]' && decide(A.P, 'pal', 'me', 'shove').mode === 'allow', JSON.stringify(A.sent)); }
+{ const A = authority(); C.setListed('u-bob', 'block', 'Bob'); C.setListed('u-bob', null); const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {} }); await s.sync();
+  check('…and a person I unlisted here (People panel) is unlisted at the authority too', A.sent.some((a) => a.unlist === 'u-bob') && tableOf(A.P, 'me').block.length === 0, JSON.stringify(A.sent)); }
+{ // (F2 follow-up) the People panel shows the authority's lists: a block only the world holds is listed and can be removed
+  const A = authority(); A.P.consent.me.block['u-mig'] = true;
+  const s = makeConsentSync({ table: C.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: (C as any).noteHeld }); await s.sync();
+  check('a block that exists only at the authority is listed in the panel', C.listed('block').some((p: any) => p.id === 'u-mig') && C.listOf('u-mig') === 'block', JSON.stringify(C.listed('block')));
+  const removed = C.setListed('u-mig', null); await s.sync();
+  check('…and removing it records an unlist and sends it: the authority no longer blocks them, the panel no longer lists them', removed && C.bodyTable().unlist.includes('u-mig') && A.sent.some((a) => a.unlist === 'u-mig') && !tableOf(A.P, 'me').block.includes('u-mig') && !C.listed('block').some((p: any) => p.id === 'u-mig'), JSON.stringify(A.sent)); }
 
 // 1. the gates and lists, as the authority takes them
 check('a fresh client: Move me on, Touch me off (the defaults)', C.gate('move') && !C.gate('touch') && landed('pal', 'shove') === 'allow' && landed('pal', 'pose') === 'deny');
@@ -39,10 +61,10 @@ check('it is remembered under ew-body-consent, lists and names too', (C.setListe
 
 // 1b. an older stored setting (main's two keys, v4's switch) is carried into the gates silently, never wider
 const was = (kv: Record<string, string>) => C.readStored((k: string) => kv[k] ?? null);
-const g2 = (s: any) => `${s.move ? 'move' : '-'}/${s.touch ? 'touch' : '-'}`;
+const g2 = (s: any) => `${(s.move ?? true) ? 'move' : '-'}/${(s.touch ?? false) ? 'touch' : '-'}`;   // never chosen shows as the defaults
 for (const [kv, want, why] of [
   [{ 'ew-body-switch': 'refuse' }, '-/-', 'v4 refuse → both off'],
-  [{ 'ew-body-switch': 'ask' }, 'move/-', 'v4 ask → Move on, Touch off'],
+  [{ 'ew-body-switch': 'ask' }, '-/-', 'v4 ask → both off (F3, R 10-28 16:02: ask was no until yes)'],
   [{ 'ew-body-switch': 'accept' }, 'move/-', 'v4 accept → Move on, Touch its default (off)'],
   [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/touch', 'v4 accept with main\'s posable on → Touch as stored (on)'],
   [{ 'ew-body-switch': 'refuse', 'ew-posable': '1', 'ew-pushable': '1' }, '-/-', 'v4 refuse beats main\'s on keys: an opt-out is never lost'],
@@ -52,10 +74,11 @@ for (const [kv, want, why] of [
   [{}, 'move/-', 'nothing stored → the defaults'],
   [{ 'ew-body-consent': '{"v":4,"move":false,"touch":true,"allow":{"u-a":"A"},"block":{}}', 'ew-body-switch': 'accept' }, '-/touch', 'today\'s key wins over the old ones'],
 ] as const) { const s = was(kv as any); check(`migration: ${why}`, g2(s) === want, `${g2(s)} (want ${want})`); }
+check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world)', ((s) => s.move === undefined && s.touch === true)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
 check('migration carries no lists from the old keys (v4 kept per-person answers only at the authority)', JSON.stringify(was({ 'ew-body-switch': 'accept' }).allow) === '{}');
 
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
-const T = (o: any = {}) => ({ move: true, touch: false, allow: [] as string[], block: [] as string[], ...o });
+const T = (o: any = {}) => ({ move: true, touch: false, allow: [] as string[], block: [] as string[], unlist: [] as string[], ...o });
 const held0 = { move: null, touch: null, allow: [], block: [] };
 const isRead = (a: any) => Object.keys(a ?? {}).length === 0;
 const run = async (reply: (n: number) => any, want = T({ move: false })) => {
@@ -77,9 +100,9 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   check('a sync that lands says nothing', t.toasts.length === 0 && t.timers.length === 0, JSON.stringify(t.toasts)); }
 { const sent: any[] = []; const s = makeConsentSync({ table: () => T({ allow: ['u-a'] }), send: async (v: string, a: any) => { sent.push(a); return { ok: true, table: { move: true, touch: false, allow: ['u-a'], block: [] } }; }, toast: () => {}, on: () => {}, later: () => {} });
   await s.sync(); check('gates and lists the authority already holds are not sent again', sent.length === 1, JSON.stringify(sent)); }
-{ const sent: any[] = []; const s = makeConsentSync({ table: () => T({ allow: ['u-a'], block: ['u-b'] }), send: async (v: string, a: any) => { sent.push(a); return isRead(a) ? { ok: true, table: { move: true, touch: true, allow: ['u-b', 'u-old'], block: [] } } : { ok: true }; }, toast: () => {}, on: () => {}, later: () => {} });
+{ const sent: any[] = []; const s = makeConsentSync({ table: () => T({ allow: ['u-a'], block: ['u-b'], unlist: ['u-old', 'u-gone'] }), send: async (v: string, a: any) => { sent.push(a); return isRead(a) ? { ok: true, table: { move: true, touch: true, allow: ['u-b', 'u-old', 'u-theirs'], block: [] } } : { ok: true }; }, toast: () => {}, on: () => {}, later: () => {} });
   await s.sync(); const s2 = sent.slice(1).map((a) => JSON.stringify(a));
-  check('only what differs is sent: the touch gate, each person to the list I keep them on, and an unlist for one I no longer keep', JSON.stringify(s2) === JSON.stringify(['{"touch":false}', '{"allow":"u-a"}', '{"block":"u-b"}', '{"unlist":"u-old"}']), JSON.stringify(s2)); }
+  check('only what differs is sent: the touch gate, each person to the list I keep them on, an unlist for one I unlisted here (held), none for one the authority listed', JSON.stringify(s2) === JSON.stringify(['{"touch":false}', '{"allow":"u-a"}', '{"block":"u-b"}', '{"unlist":"u-old"}']), JSON.stringify(s2)); }
 { let down = true;
   const t = await run(() => (down ? { ok: false, refused: { code: 'offline', reason: 'the connection dropped before the authority answered' } } : { ok: true }));
   await t.fire('hydrated');
