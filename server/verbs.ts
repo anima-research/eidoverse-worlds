@@ -19,6 +19,7 @@ import { settleAccess, resolveName, principalOf, canEnter, whoOf, SUB_RE, type A
 import { entryRestrictedIn } from "../shared/rightsfold.js";
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { lintMotion, lintParticles } from "./lint.ts";
+import { EMITTER_NAME_MAX } from "../shared/particles.js";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { lightArgsError } from "./verb-shapes.ts";
@@ -401,7 +402,18 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
   // data is opaque but BOUNDED — components are parameters, not
   // payloads; anything bigger belongs in /upload + a path here.
   const id = String(args.id ?? "").slice(0, 64);
-  const type = String(args.type ?? "").slice(0, 32);
+  const rawType = String(args.type ?? "");
+  // An emitter key must reach the fold WHOLE: cutting `particles:<a long
+  // name>` to 32 would silently merge two emitters that share a prefix (and
+  // removing either would put out both). Refuse it instead, saying why. The
+  // reply and the flight recorder show the key cut short, as the id is.
+  if (rawType.startsWith("particles:") && rawType.length > 32) {
+    const key = rawType.length > 48 ? `${rawType.slice(0, 48)}…` : rawType;
+    const why = `"${key}" (${rawType.length} characters) is too long for an emitter key, so nothing was written: a name after "particles:" is 1–${EMITTER_NAME_MAX} of A–Z a–z 0–9 _ -, so the whole key fits the 32-character component type`;
+    w.debug("rejected", { who: c.id, verb: "comp", why: `${why} on ${id}` });
+    return { error: why };
+  }
+  const type = rawType.slice(0, 32);
   if (!id || !type) {
     w.debug("rejected", { who: c.id, verb: "comp", why: "malformed — wants {id, type, data|null}" });
     return { error: "comp wants {id, type, data|null}" };
