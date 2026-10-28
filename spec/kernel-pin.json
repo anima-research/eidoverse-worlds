@@ -1,6 +1,6 @@
 {
  "status": "trial-kernel",
- "translator": "eidoverse/translate-v1@21",
+ "translator": "eidoverse/translate-v1@22",
  "companions": {
   "changelog": "2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin",
   "trim": {

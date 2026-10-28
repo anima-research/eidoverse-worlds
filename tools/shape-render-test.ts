@@ -260,6 +260,11 @@ await tryRow('TR', async () => {
   const t = translate(v1(spawn('radio', 'props/radio.glb'), comp('radio', 'sound', { src: 'eidoverse/assets/a.ogg', look: 'rain on the awning' })));
   const r = t.final.translated.radio;
   check('TR1 (B1) main\'s sound look is description, not lost to imported:sound', r?.sound?.description === 'rain on the awning' && !('imported:sound' in (r ?? {})) && !t.stats.divergences, [r, t.stats.divergences]);
+  const t2 = translate(v1(spawn('tv', 'props/tv.glb'), comp('tv', 'picture', { src: 'eidoverse/assets/p.png', part: 'screen', look: 'static', lit: 'self', flip: false }),
+    spawn('frame', 'props/frame.glb'), comp('frame', 'picture', { src: 'eidoverse/assets/q.png', part: 'canvas', flip: true })));
+  const tv = t2.final.translated.tv, fr = t2.final.translated.frame;
+  check('TR2 (B2) main\'s picture on a part is a material on that node (look → description), never a floating quad', !('picture' in (tv ?? {})) && keys(tv?.material) === keys({ node: 1, texture: 1, lit: 1, description: 1 }) && tv.material.node === 'screen' && tv.material.texture === 'eidoverse/assets/p.png' && tv.material.lit === 'self' && tv.material.description === 'static' && !('imported:picture' in (tv ?? {})) && !t2.stats.divergences, [tv, t2.stats.divergences]);
+  check('TR3 a flip the material can\'t say is carried (imported:material) and listed with its reason, never dropped', !('picture' in (fr ?? {})) && fr?.material?.node === 'canvas' && fr?.['imported:material']?.flip === true && (t2.stats.unmapped ?? []).some((u: any) => u.component === 'picture' && u.id === 'frame' && u.fields.includes('flip') && /material/.test(u.why ?? '')) && (t2.stats.mapped ?? []).some((m: any) => m.component === 'picture' && m.id === 'tv'), [fr, t2.stats.unmapped, t2.stats.mapped]);
 });
 
 // ===================================================================== captions: the current cue only

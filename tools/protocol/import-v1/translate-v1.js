@@ -117,7 +117,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@22";
+export const TRANSLATOR = "eidoverse/translate-v1@23";
+// @23 (R 10-27, audit B2): main's picture {src, part, look?, lit?, flip?} is a material on that node {node, texture,
+// description?, lit?} (materialOf), where @22 made it a quad of its own at the thing's origin; flip: true, which the material
+// can't say, rides imported:material and is listed. A picture with no part (main drew none) is carried as imported:picture.
 // @22 (R 10-27): main's sound look is description (shaperepair renameFields, as the load renames a stored one), where @21 left
 // it in imported:sound. Output differs from @21 on any log with a described sound. Both names.
 /** The version number in a translator name ("eidoverse/translate-v1@20" → 20), or NaN. Compare numbers, never a regex
@@ -202,7 +205,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@21";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@22";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -267,6 +270,7 @@ export const DROPPED = {
   "comp['particles:<name>']": "a thing's second (third, …) emitter (upstream #256) becomes a child thing carrying it: parent {to: the thing}, label <name>, its own `particles`, its seed the one v1 drew it with (@15). v4 keeps one particles per thing",
   "particles.wobble / up / spread / gravity / grow / swirl / twinkle / converge / rotate / color / blending": "upstream #256's preset overrides (the old builder's table): carried in imported:particles, not drawn; v4 says that look in an effect document's modules (velocity, forces.gravity, size.curve, color, render.blend, drift, swirl, converge, flicker, rotation). `scale` is the instance's own scale",
   "sound.look": "renamed description (@21, R 10-27): the same words under today's name",
+  "picture.flip false": "main's default (the node's own UVs): the material's own reading, so nothing is written (@22)",
   "motion.rpm": "becomes degPerSec = rpm × 6 (@5): the rate the renderer drew, under the authority's one name for it",
   "motion.type": "the back-and-forth along an axis is written oscillate (@14, R 10-17 21:40; shared/protocol/names.js OLD_MOTION_TYPES holds the old word): the same motion under today's name",
   "motion.part": "a bare motion naming a part becomes motion:<slot> {node: <the part's name>} (@12; the slot is shared/protocol/names.js partSlot of the name: the name itself when it is a §2.3 tag, else a sanitized form with 8 hex of its sha256): when the thing already has a motion on that node, that one wins and the bare one is dropped (the renderer drew both on one node, the keyed one last). A keyed motion carries node (its key's tag, the old reading)",
@@ -285,8 +289,17 @@ export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
   vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed" },
+  picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
+/** main's picture (an image on a named part of its model) → {material, left (imported:material), whole (imported:picture,
+ *  when there is no part to put it on: main drew nothing then)}. A flip of false is main's default, the material's own. */
+export function materialOf(d) {
+  const v = d && typeof d === "object" && !Array.isArray(d) ? d : {};
+  if (typeof v.part !== "string" || !v.part.trim()) return { material: null, left: null, whole: d };
+  const { part, src, look, flip, ...rest } = v;
+  return { material: { ...rest, node: part.trim(), texture: src, ...(look !== undefined ? { description: look } : {}) }, left: flip === undefined || flip === false ? null : { flip }, whole: null };
+}
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
 /** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, left (no home: imported:vehicle)}; main's clamps */
@@ -418,6 +431,7 @@ export function carriedMappings(st) {
     if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
     if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : [])] }); }
     if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
+    if (comp.picture != null && materialOf(comp.picture).material) out.push({ component: "picture", feature: CARRIED.picture.feature, id, into: [enc(id)] });
     if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] });
     if (env.get(id)?.lowered) out.push({ component: "environment", feature: "bounds.min.y lowered to 2 m below the floor (the floor lay below the bounds)", id, into: ["@world.bounds"], ...env.get(id).lowered }); }
   return out;
@@ -429,7 +443,10 @@ export function unmappedOf(st) {
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
     if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle` }); }
-    if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); } }
+    if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); }
+    if (comp.picture != null) { const m = materialOf(comp.picture);
+      if (m.left) out.push({ component: "picture", id, fields: Object.keys(m.left), as: `${enc(id)} imported:material`, why: "upside-down UVs: the material has no field for a texture transform yet (glTF's KHR_texture_transform)" });
+      if (m.whole != null) out.push({ component: "picture", id, fields: ["part"], as: `${enc(id)} imported:picture`, why: "no part to put it on: main drew nothing" }); } }
   return out;
 }
 /** Every use in a v1 log of a feature v4 doesn't carry yet that still stands at its end: [{component, feature, id, seq,
@@ -578,6 +595,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (k.startsWith("particles:") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push([k.slice(10), v]); continue; }
       if ((k === "water" || k === "air") && v != null) { volumes[k] = v; continue; }   // main #248's: zone things (VOLUMES)
       if ((k === "traversal" || k === "collision" || k === "environment" || k === "vehicle") && v != null) { carried[k] = v; continue; }   // main #248's (CARRIED)
+      if (k === "picture" && v != null) { const m = materialOf(v); if (m.material) c.material = m.material; if (m.left) c[keyed("imported", "material")] = m.left; if (m.whole != null) c[keyed("imported", "picture")] = m.whole; continue; }   // @22 (CARRIED)
       // a node's motion (v1 motion:<node name>): the name is data, motion:<partSlot(name)> {node: name} (@12, review r7 F1)
       if (k.startsWith("motion:") && v && typeof v === "object" && !Array.isArray(v)) { const node = k.slice(7); c[`motion:${partSlot(node)}`] = { ...newMotion(v), node: typeof v.node === "string" && v.node ? v.node : node }; continue; }
       c[encName(k === "door" && !e.comp.openable ? "openable" : k)] = k === "reactions" ? newReactions(v) : k === "sockets" ? newSockets(v, c) : k === "motion" ? newMotion(v) : k === "particles" ? newParticles(v) : k === "captions" ? newCaptions(v) : k === "sound" ? renameFields("sound", v).value : v; }
