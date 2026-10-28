@@ -326,6 +326,14 @@ function pickFile(accept) {
     inp.click();
   });
 }
+/** Pick an image and send it through the store door, with the rights reminder: its library path, or null (cancelled or
+ *  failed, said in a toast). Create ▸ Picture's first step (build.js holdPicture). */
+export async function pickPicture() {
+  flashHint(`🖼 ${RIGHTS_WARNING}`, 4000);
+  const file = await pickFile(PICTURE_ACCEPT); if (!file) return null;
+  flashHint(`uploading ${file.name}…`);
+  try { return await uploadPicture(file); } catch (err) { toast(`picture upload failed — ${err.message}`, 'warn', 8000); return null; }
+}
 async function uploadThenSet(id, key) {
   flashHint(`🖼 ${RIGHTS_WARNING}`, 4000);
   const file = await pickFile(PICTURE_ACCEPT); if (!file) return;

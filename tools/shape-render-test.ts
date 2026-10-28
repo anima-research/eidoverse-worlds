@@ -253,6 +253,13 @@ await tryRow('MA', async () => {
   check('MA4 the client wears it: imported by main, a prepared clone per mesh of the node, the original put back on removal', /import '\.\/lib\/materialcomp\.js'/.test(read('client/main.js')) && /original\.clone\(\)/.test(host) && /prepareMaterial\(clone/.test(host) && /mesh\.material = original/.test(host) && /findPart\(root, m\.node\)/.test(host), '');
 });
 
+// ===================================================================== Create ▸ Picture: a non-technical way in (R 10-27)
+await tryRow('CP', () => {
+  const menu = read('client/lib/editlayout.js'), build = read('client/lib/build.js');
+  check('CP1 the Create menu offers Picture, which picks an image and holds it to place', /label: 'Picture…', run: \(\) => holdPicture\(\)/.test(menu) && /export async function holdPicture\(/.test(build), '');
+  check('CP2 …and placing it creates a thing with a picture {src, width} (its height follows the image)', /pictureOf\(ghost\.lib\)[^\n]*components: \{ picture: \{ src: pictureOf\(ghost\.lib\), width:/.test(build), '');
+});
+
 // ===================================================================== the translator: main's media in today's shapes (R 10-27; audit B1, B2)
 await tryRow('TR', async () => {
   const spawn = (id: string, lib: string) => ({ verb: 'spawn', args: { id, lib, pos: [0, 0, 0] } });

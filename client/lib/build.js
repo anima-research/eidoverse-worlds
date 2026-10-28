@@ -283,6 +283,15 @@ function meshGhost(shape, [x, y, z]) {
   obj.castShadow = false; obj.userData.noCamCollide = true;
   return obj;
 }
+// Create ▸ Picture (R 10-27): a standalone image (Godot's Sprite3D): pick a file, it goes to the store, then a 1 m plate
+// is in hand and placed with a click, facing the camera's way like any ghost; its height follows the image once it loads.
+// Q/E turn it, ,/. size its width. The lib is '@picture:<src>'.
+const pictureOf = (lib) => (typeof lib === 'string' && lib.startsWith('@picture:') ? lib.slice(9) : null);
+export async function holdPicture() {
+  const { pickPicture } = await import('./pictures.js');
+  const src = await pickPicture();
+  if (src) await holdGhost(`@picture:${src}`, 'picture');
+}
 export async function holdGhost(lib, label) {
   setEditMode(true, { quiet: true });   // choosing a thing to place is intent enough
   cancelGhost();
@@ -296,6 +305,9 @@ export async function holdGhost(lib, label) {
       obj = new THREE.AxesHelper(0.5);
     } else if (meshOf(lib)) {
       obj = meshGhost(meshOf(lib), MESH_DEFAULT[meshOf(lib)] ?? [1, 1, 1]);
+    } else if (pictureOf(lib)) {   // the picture's own grey plate, standing on its lower edge (pictures.js quadOf)
+      obj = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+      obj.userData.noCamCollide = true;
     } else {
       obj = await loadGLB(lib);
       ghostify(obj);
@@ -531,6 +543,7 @@ function commitSpawn() {
   else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
   else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = ghostMeshSize(shape, ghost.scale);
     sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
+  else if (pictureOf(ghost.lib)) sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { picture: { src: pictureOf(ghost.lib), width: +ghost.scale.toFixed(3) }, label: 'picture' } })], { what: 'hang a picture', expect: false });
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { color: 0xffd9a0, intensity: 16, range: 10 } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
   // what you just placed is the selection, so you can tweak it straight away (review 10-07 S7; Roblox, Unity and Godot

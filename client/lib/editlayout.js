@@ -21,7 +21,7 @@ import { worldEdgeWanted, setWorldEdgeShown } from './edge.js';
 import { register } from './actions.js';
 import { bus } from './base.js';
 import { getFrame, allFrames } from './windows.js';
-import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost } from './build.js';
+import { setTool, getTool, undo, deselectAll, setEditMode, removeKeyTargets, SPACES, getSpace, setSpace, holdGhost, holdPicture } from './build.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { withKeys, KEYHINTS } from './keyhints.js';
@@ -149,6 +149,7 @@ function build() {
       { label: 'Light', run: () => holdGhost('@light', 'light'), title: 'a point light, placed where you click' },
       ...[['box', 'Box'], ['sphere', 'Sphere'], ['cylinder', 'Cylinder'], ['plane', 'Plane'], ['capsule', 'Capsule']].map(([k, lab]) => ({ label: lab, run: () => holdGhost(`@mesh:${k}`, k),
         title: `a ${k}: a parametric body with no model (its mesh card sets shape and size), placed where you click` })),
+      { label: 'Picture…', run: () => holdPicture(), title: 'an image of its own: pick a PNG, JPEG or WebP, then click where it stands (its height follows the image)' },
       { label: 'Model from the library…', run: () => { L = useTab(L, 'build'); save(); apply(); setTimeout(() => document.querySelector('[data-frame="build"] input[type="text"], [data-frame="build"] input')?.focus(), 50); },
         title: 'the Build tab: search the library, click a model, click the world' },
       { label: 'Blueprint…', run: () => { L = useTab(L, 'build'); save(); apply(); }, title: 'the Build tab\'s Blueprints: saved groups of things, placed as copies' },
