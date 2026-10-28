@@ -112,6 +112,7 @@ try {
 // Path is env-overridable so a self-contained test can own its credential
 // fixture (a scratch tokens.json) without mutating the checkout — same posture
 // as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
+export const ENROLMENT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
 let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
@@ -126,12 +127,17 @@ export function agentTokens() {
       const bySub = new Map<string, string>();
       if (mtime) {
         const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
-        for (const [tok, v] of Object.entries(raw)) {
-          if (!v?.id) continue;
-          byToken.set(tok, v.id);
-          names.add(v.id.toLowerCase());
-          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, v.id);
+        const entries = Object.entries(raw).filter(([, v]) => typeof v?.id === "string" && v.id);
+        const count = new Map<string, number>(); for (const [, v] of entries) count.set(v.id!.toLowerCase(), (count.get(v.id!.toLowerCase()) ?? 0) + 1);
+        // an id is the account (agent:token:<id>): well-formed and unique lowercased, or it proves nobody (its name stays reserved)
+        const refused: string[] = [];
+        for (const [tok, v] of entries) {
+          const id = v.id!; names.add(id.toLowerCase());
+          if (!ENROLMENT_ID.test(id.toLowerCase()) || count.get(id.toLowerCase())! > 1) { refused.push(id); continue; }
+          byToken.set(tok, id);
+          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, id);
         }
+        if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and be unique lowercased): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
       }
       agentTokCache = { mtime, byToken, names, bySub };
     }

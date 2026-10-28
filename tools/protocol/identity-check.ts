@@ -10,6 +10,7 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
+//   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$ and unique, lowercased; a refused one proves nobody
 //   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
 //   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
 //   HB  presence is keyed by identity, never a display name (pass 2 H-B): a second account asking to be "Marigold" is shown
@@ -471,6 +472,18 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(!S6.dead && !j.snapshot && /reserved agent name/.test(j.errors.join(" ")), "SA3 a session whose sub isn't human:… proves nobody (here: not the enrolled Rowan)", [j.snapshot?.you, j.errors]);
   ok(/1 session\(s\) refused/.test(log) && /Notrowan/.test(log) && !!JSON.parse(fs.readFileSync(SF, "utf8"))[sid], "SA3 …it is named at boot and kept on disk", log.slice(-300));
   s.close(); S6.proc.kill(); }
+
+// ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased) and unique lowercased; a refused one proves
+// nobody, its name stays reserved, and the load says which (accounts review 10-28) ----
+{ const TF = path.join(root, "tv-tokens.json");
+  fs.writeFileSync(TF, JSON.stringify({ t1: { id: "Ok-1" }, t2: { id: "has space" }, t3: { id: "x".repeat(33) }, t4: { id: "Dup" }, t5: { id: "dup" }, t6: { id: "-lead" } }));
+  const code = `const { agentTokens } = await import("./server/auth.ts"); const a = agentTokens();
+    console.log("RESULT " + JSON.stringify({ proves: [...a.byToken.values()].sort(), reserved: [...a.names].sort() }));`;
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ AGENT_TOKENS_PATH: TF }) }); const out = r.stdout.toString() + r.stderr.toString();
+  let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
+  ok(JSON.stringify(res.proves) === JSON.stringify(["Ok-1"]), "TV1 only a well-formed, unique enrolment id proves anyone (spaces, 33 characters, a leading '-', a case-duplicate refused)", { res, out: out.slice(-400) });
+  ok(["has space", "dup", "-lead", "ok-1"].every((n) => res.reserved?.includes(n)), "TV2 …a refused id's name stays reserved (nobody else may wear it)", res.reserved);
+  ok(/5 enrolment\(s\) refused/.test(out) && /has space/.test(out) && /Dup/.test(out) && /\^\[a-z0-9\]/.test(out), "TV3 …and the load says how many, which ids, and the rule", out.slice(-400)); }
 
 // ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
 // name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper
