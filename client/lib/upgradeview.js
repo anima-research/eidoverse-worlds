@@ -37,6 +37,8 @@ export function reportView(report, hash) {
   box.append(section('Mapped', (R.mapped ?? []).map((m) => `${m.feature} on ${m.id} → ${(m.into ?? []).join(', ') || '(nothing new)'}`)));
   box.append(section('Unmapped, kept as imported', (R.unmapped ?? []).map((u) => `${u.component} on ${u.id}: ${(u.fields ?? []).join(', ')} (${u.as})`)));
   box.append(section('Dropped by design', Object.entries(R.dropped ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)));
+  box.append(section('People with a role', (R.people ?? []).map((p) => p.account ? `${p.role} ${p.name}: bound to their account (${p.account}, from ${p.from})` : `${p.role} ${p.name}: no account yet (${p.why}); bind with ${p.bind}`)));
+  if (R.ownerWarning) box.append(el('p', 'sp-up-err sp-up-owners', `Warning: ${R.ownerWarning}`));
   box.append(section('Refused', R.refused ? [R.refused] : []));
   if (R.trial) box.append(el('div', 'sp-up-note', R.trial));
   box.append(el('div', 'sp-up-hash', `report ${hash}`));
@@ -74,7 +76,7 @@ export function showOldFormat(root, refused, world) {
         const more = el('details', 'sp-up-more'); more.append(el('summary', null, 'Backup and undo'),
           el('p', null, 'A verified copy of the old world was saved on the server, at:'), el('pre', 'sp-up-backup', u.backup),
           el('p', null, 'To undo: stop the server, then run this in a terminal on the server machine, from the folder the server runs in:'), el('pre', 'sp-up-rollback', u.rollback));
-        done.append(enter, more);
+        done.append(enter, ...(u.warning ? [el('p', 'sp-up-err sp-up-owners', `Warning: ${u.warning}`)] : []), more);
         area.append(done);
       };
     };

@@ -146,6 +146,16 @@ export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
       : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; });
   return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
+/** The upgrade's safety net (R 10-27 "don't lock anyone out of their worlds"): words when no owner of the translated world is
+ *  bound to an account, naming them, else null. A warning, never a refusal: an old-format world admits nobody until it is
+ *  upgraded, and after it a server operator enters every world and can bind its owner (operator-repair bind) or set one. */
+export function ownerWarning(world: string, people: Any[] = []): string | null {
+  const owners = people.filter((p) => p.role === "owner");
+  if (owners.some((p) => p.account)) return null;
+  const how = `a server operator still enters it and can bind them (bun tools/operator-repair.ts bind ${world} <name> <their account>) or give it to someone with operator-repair set (docs/TRANSLATING-OLD-WORLDS.md)`;
+  return owners.length ? `no owner of "${world}" is bound to an account: ${owners.map((p) => p.name).join(", ")}. Until one is, nobody who signs in is its owner; ${how}`
+    : `"${world}" has no owner at all after the upgrade; ${how}`;
+}
 function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = []) {
   const report = {
     v: 1, world,
@@ -164,6 +174,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     ...(r.stats.mapped ? { mapped: r.stats.mapped } : {}),
     ...(r.stats.unmapped ? { unmapped: r.stats.unmapped } : {}),   // …and what of them has no home, carried as imported:<component>   // main's water volumes and air boxes, each as the things it became (translate-v1 VOLUMES)
     people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
+    ownerWarning: ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
   };
   return { report, hash: sha256(JSON.stringify(report)) };

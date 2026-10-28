@@ -128,6 +128,12 @@ for each unbound one why and how to bind it:
 
     owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons "fable" <their account>
 
+If no owner is bound to any account, the dry run, the report
+(`ownerWarning`), the browser's review and result, and the server's log all
+say so, naming them. The upgrade still runs: refusing it would leave the
+world refusing everyone, its owners included, while once it is upgraded a
+server operator enters it and can bind them (below).
+
 **Binding an imported owner.** Ask the owner for their account (the `"sub"`
 `https://<your server>/whoami` shows them when they're signed in), then, on
 the host:

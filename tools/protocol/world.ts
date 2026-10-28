@@ -32,7 +32,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { translateV1World, reportV1World, approvalProblem, makeApproval, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, approvalProblem, makeApproval, ownerWarning, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -121,6 +121,7 @@ function dryRun(D: string, name: string) {
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
   sayPeople(report.people);
+  if (report.ownerWarning) console.log(`WARNING: ${report.ownerWarning}`);
   console.log(`report-hash ${hash}`);
   if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
@@ -140,6 +141,7 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
   // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
   // world's owners can be told what changed (and which entities to look at).
   sayPeople(r.people);
+  { const w = ownerWarning(dest, r.people); if (w) console.log(`WARNING: ${w}`); }
   if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded entities in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
     + `Now a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
 }
@@ -237,7 +239,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in world.jsonl as the system's translation-approved act. `
     + `${MANIFEST} records what the swap did; \`rollback ${name}\` undoes it.`);
   console.log(`backup: ${backup!.dir} (${backup!.files} file(s), ${backup!.bytes} bytes, each verified against its SHA256SUMS before anything moved; nothing writes to it again, and rollback leaves it)`);
-  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, people: r!.people, rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
+  if (rest.includes("--json")) console.log(`result-json ${JSON.stringify({ world: name, backup: backup!.dir, report: approval.report, people: r!.people, ownerWarning: ownerWarning(name, r!.people), rollback: `WORLDS_DIR=${shellWord(WORLDS_DIR)} bun tools/protocol/world.ts rollback ${name}` })}`);
 }
 
 /** `rollback <world>`: undo an in-place translation from its manifest. The kept originals go back under their names

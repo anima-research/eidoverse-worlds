@@ -1,8 +1,10 @@
 // server/upgrade.ts — opening a world saved in an older format: the join's structured refusal, and the operator's upgrade.
-// world-upgrade-review {id, world} → {type, id, ok, world, report, hash}: the CLI's dry run (nothing written).
-// world-upgrade {id, world, approved} → {type, id, ok, world, backup, report, rollback, people}: the CLI's in-place translation, bound to
+// world-upgrade-review {id, world} → {type, id, ok, world, report, hash, warning?}: the CLI's dry run (nothing written).
+// world-upgrade {id, world, approved} → {type, id, ok, world, backup, report, rollback, people, warning?}: the CLI's in-place translation, bound to
 // that hash (a verified backup first: server/backups.ts). Both run tools/protocol/world.ts itself: the translation has one code path.
-// Server operator only (SERVER_OPERATORS, by a proven account): an old world's owner is a name nothing binds yet (docs/TRANSLATING-OLD-WORLDS.md).
+// Server operator only (SERVER_OPERATORS, by a proven account). The translation binds an owner to the account main recorded for
+// them; when no owner is bound, both replies carry `warning` and the server log says so (a warning, not a refusal: the
+// world stays enterable by the operator, who can bind them: docs/TRANSLATING-OLD-WORLDS.md).
 import path from "node:path";
 import { WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ROOT } from "./config.ts";
 import { accountOf } from "./auth.ts";
@@ -66,7 +68,8 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       const got = tagged(r.out, "report-json");
       if (!got) { a.refuse("failed", `the dry run didn't finish: ${(r.err || r.out).trim().slice(-1200)}`); return; }
       console.log(`[upgrade] ${a.world}: reviewed by ${a.account} (report ${got.hash}${got.report?.refused ? ", refused" : ""})`);
-      ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, report: got.report, hash: got.hash }));
+      if (got.report?.ownerWarning) console.log(`[upgrade] WARNING ${a.world}: ${got.report.ownerWarning}`);
+      ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, report: got.report, hash: got.hash, ...(got.report?.ownerWarning ? { warning: got.report.ownerWarning } : {}) }));
     }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world));
   },
   "world-upgrade": (ctx, msg) => {
@@ -81,7 +84,8 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (!got) { a.refuse(/is not the one that was approved/.test(said) ? "stale" : "refused", said.slice(-1500)); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} refused`); return; }
       // the world is on disk in this protocol now: the next join opens it (nothing of it was ever loaded while it was old)
       console.log(`[upgrade] ${a.world}: upgraded by ${a.account} (report ${got.report}); backup ${got.backup}`);
-      ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, backup: got.backup, report: got.report, rollback: got.rollback, people: got.people ?? [] }));
+      if (got.ownerWarning) console.log(`[upgrade] WARNING ${a.world}: ${got.ownerWarning}`);
+      ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, backup: got.backup, report: got.report, rollback: got.rollback, people: got.people ?? [], ...(got.ownerWarning ? { warning: got.ownerWarning } : {}) }));
     }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world));
   },
 };

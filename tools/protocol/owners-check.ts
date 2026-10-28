@@ -15,6 +15,8 @@
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
 //        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
+//   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
+//   UN2  one owner bound: no warning; UN3 no owner at all: warned too
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -95,6 +97,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OB2 an unknown name (fable, Digi_Rat), an ambiguous one (mica: two accounts) and one main paired with no account shape (svc) stay imported; the dry run lists each with why and the bind command, and prints no account", { P, fable: at("fable"), dry: u.dry.out.split("\n").filter((l) => /account/.test(l)) }));
   row("OB3", () => ok(same(u.result?.people, u.report?.people) && u.report.people.length === 7 && u.report.people[0].role === "owner",
     "OB3 the upgrade's result carries the approved report's list of who holds a role, owners first", { result: u.result?.people, report: u.report?.people }));
+  row("UN2", () => ok(u.report?.ownerWarning === null && !/^WARNING/m.test(u.dry.out) && u.result && !("ownerWarning" in u.result && u.result.ownerWarning),
+    "UN2 a world with an owner bound to an account (antra, janus, lark): no warning, though fable and mica are not", { w: u.report?.ownerWarning }));
   row("OB4", () => ok(u.roles.lark?.[1] === "owner" && same(at("lark").subs, ["human:test:lark"]) && P.lark?.from === "main's garden's log",
     "OB4 a name another world's log on this server paired with an account (garden's grant to Lark) is bound", { lark: at("lark"), P: P.lark, roles: Object.keys(u.roles) }));
 }
@@ -105,6 +109,18 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const u = upgrade(root, "den");
   row("OB5", () => ok(u.up.code === 0 && u.roles["Antra Now"]?.[0] === pre && u.roles["Antra Now"]?.[1] === "owner" && Object.keys(u.roles).length === 1,
     "OB5 an account that already wears an id on this server: the old owner's role goes to that id, no second identity", { pre, roles: u.roles, out: u.up.code ? u.up.out.slice(-400) : undefined }));
+}
+
+// ================= UN: the safety net, a warning that names them =================
+{ const root = scratch("owners-un"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "attic", [["world", "grant", { id: "fable", role: "owner" }], ["fable", "grant", { id: "mica", role: "owner" }], ["fable", "grant", { id: "Digi_Rat", role: "builder" }], ["fable", "say", { text: "hi" }]]);
+  v1(W, "shed", [["Pip", "say", { text: "nobody owns this" }]]);
+  const a = upgrade(root, "attic"), s = upgrade(root, "shed");
+  const named = (w: any) => typeof w === "string" && /no owner of "attic" is bound to an account: fable, mica\./.test(w) && /operator-repair\.ts bind attic /.test(w) && !/Digi_Rat/.test(w);
+  row("UN1", () => ok(named(a.report?.ownerWarning) && a.dry.out.includes(`WARNING: ${a.report.ownerWarning}`) && a.up.code === 0 && fs.existsSync(path.join(W, "attic", "world.jsonl")) && named(a.result?.ownerWarning) && /^WARNING: no owner of "attic"/m.test(a.up.out),
+    "UN1 no owner bound to any account: the dry run, the approved report and the upgrade's result warn, naming the owners (not the builder) and the bind; the upgrade still runs", { w: a.report?.ownerWarning, r: a.result?.ownerWarning, code: a.up.code }));
+  row("UN3", () => ok(/"shed" has no owner at all/.test(s.report?.ownerWarning ?? "") && s.up.code === 0 && /has no owner at all/.test(s.result?.ownerWarning ?? ""),
+    "UN3 a world with no owner at all after the upgrade is warned about too, and still upgraded", { w: s.report?.ownerWarning, code: s.up.code }));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

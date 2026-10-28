@@ -14,6 +14,7 @@
 //   US7  an agent (mcpl/agent.ts) refused at an old-format world says, in words, who can upgrade it and where the doc is
 //   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
 //   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
+//   US9  a world no owner would be bound in: the review and the upgrade both carry `warning` naming that, and the upgrade still runs
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
@@ -157,6 +158,11 @@ let reviewed = "";
   const a = await ask(OP2, "world-upgrade-review", { world: "-x" }), b = await ask(OP2, "world-upgrade-review", { world: "linked" });
   ok(a.refused?.code === "not-old" && b.refused?.code === "not-old" && same(tree(x), xb) && same(tree(to), lb) && backupsOf("linked").length === 0 && backupsOf("-x").length === 0,
     "US8 the server refuses a world named \"-x\" and a symlinked world dir (not-old), nothing written", { a: a.refused ?? a.ok, b: b.refused ?? b.ok }); }
+{ const d = path.join(W, "barn"); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", verb: "say", args: { text: "nobody owns this" } }) + "\n");
+  const r = await ask(OP2, "world-upgrade-review", { world: "barn" }), u = r.ok ? await ask(OP2, "world-upgrade", { world: "barn", approved: r.hash }, 120_000) : null;
+  ok(r.ok && /"barn" has no owner at all/.test(r.warning ?? "") && r.warning === r.report?.ownerWarning && u?.ok === true && /has no owner at all/.test(u.warning ?? "") && isWorldDir(d) && /WARNING barn/.test(fs.readFileSync(slog, "utf8")),
+    "US9 a world no owner would be bound in: the review and the upgrade carry `warning` naming that (and the server's log), and the upgrade still runs", { r: r.warning ?? r.refused, u: u?.warning ?? u?.refused }); }
 { oldWorld("cellar"); const RATE_N = 6, seen: any[] = [];   // server/upgrade.ts RATE_N; a fresh account, so no other row spent its slots
   let last: any = null; for (let k = 0; k <= RATE_N; k++) { last = await ask(OP3, "world-upgrade-review", { world: "cellar" }); seen.push(last.ok ? "ok" : last.refused?.code); }
   ok(seen.slice(0, RATE_N).every((x) => x === "ok") && seen[RATE_N] === "rate" && new RegExp(`at most ${RATE_N} `).test(last.refused?.reason ?? ""),
