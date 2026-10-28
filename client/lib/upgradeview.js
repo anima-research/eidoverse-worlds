@@ -65,10 +65,16 @@ export function showOldFormat(root, refused, world) {
         const u = await ask('world-upgrade', { world, approved: r.hash });
         area.textContent = '';
         if (!u.ok) { area.append(el('p', 'sp-up-err', `The upgrade was refused, and nothing was changed: ${refusedWords(u)}`)); return; }
+        // success replaces the problem: the headline, the doc link and the report go; Enter first; the backup and the undo fold away
+        const phase = root.querySelector('.sp-phase'); if (phase) { phase.textContent = 'Upgraded. The world is ready.'; phase.removeAttribute('role'); }
+        const sub = root.querySelector('.sp-sub'); if (sub) sub.textContent = 'upgrade complete';
+        doc.remove();
         const done = el('div', 'sp-up-done');
-        done.append(el('p', 'sp-up-ok', `Upgraded. The old world is backed up, verified, at:`), el('code', 'sp-up-backup', u.backup),
-          el('p', null, 'To undo the upgrade (stop the server first):'), el('code', 'sp-up-rollback', u.rollback));
-        const enter = el('button', 'sp-up-btn sp-up-enter', 'Enter the world'); enter.onclick = () => location.reload(); done.append(enter);
+        const enter = el('button', 'sp-up-btn sp-up-enter', 'Enter the world'); enter.onclick = () => location.reload();
+        const more = el('details', 'sp-up-more'); more.append(el('summary', null, 'Backup and undo'),
+          el('p', null, 'A verified copy of the old world was saved on the server, at:'), el('pre', 'sp-up-backup', u.backup),
+          el('p', null, 'To undo: stop the server, then run this in a terminal on the server machine, from the folder the server runs in:'), el('pre', 'sp-up-rollback', u.rollback));
+        done.append(enter, more);
         area.append(done);
       };
     };
