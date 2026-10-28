@@ -71,20 +71,20 @@ check('after a remove the next block has no line', paint() === '', JSON.stringif
 console.log('\n4. a disagreeing echo retires the line');
 paint(); refuse();
 check('the refusal is back (about: no picture)', /not an allowed/.test(paint()));
-echo({ src: 'store/images/0123456789abcdef.png', part: 'screenplane', look: 'someone else hung this' });
+echo({ src: 'store/images/0123456789abcdef.png', part: 'screenplane', description: 'someone else hung this' });
 check('someone else hangs a picture: the line is gone', paint() === '', JSON.stringify(paint()));
 
 console.log('\n5. an agreeing echo keeps it');
 committed.length = 0;
-q('src').value = 'store/images/fedcba9876543210.png'; q('look').value = 'mine'; q('hang').click();
+q('src').value = 'store/images/fedcba9876543210.png'; q('description').value = 'mine'; q('hang').click();
 check('hang commits one comp and says so', committed.length === 1 && committed[0][0] === 'comp' && /hung on screenplane/.test(q('msg').textContent), JSON.stringify(committed));
 const mine = committed[0][1].data;
 echo({ ...mine });
 check('the hang\'s own echo keeps "hung on screenplane" through the repaint', /hung on screenplane/.test(paint()));
 echo({ ...mine, flip: false, lit: 'scene' });
 check('…a repeat with server-side defaults spelled out still agrees', /hung on screenplane/.test(paint()));
-echo({ ...mine, look: 'changed by another hand' });
-check('…an echo that changed the look retires it', paint() === '', JSON.stringify(paint()));
+echo({ ...mine, description: 'changed by another hand' });
+check('…an echo that changed the description retires it', paint() === '', JSON.stringify(paint()));
 q('down').click();
 check('take down says so', /taken down/.test(q('msg').textContent));
 echo(null);
