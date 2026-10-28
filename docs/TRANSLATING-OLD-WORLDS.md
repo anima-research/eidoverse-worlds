@@ -79,7 +79,7 @@ nothing can yet bind an account or key to that name, so a name match would
 let anyone who signs up as that name take the world. Everyone else is told
 to ask the server's operator, and sees no report (it names people).
 
-The operator's splash has a **Review upgrade** button. It shows the dry-run
+The operator's splash has a **Upgrade world…** button. It shows the dry-run
 report (what carries, what is mapped, what has no home and is kept as
 `imported:<name>`, what is dropped by design, what is refused) and its
 hash. **Back up and upgrade** is the only action: the server runs this
@@ -115,7 +115,7 @@ refuses to boot, saying so, so a typo can't quietly leave you out.
 **2. Upgrade the world, then give it to its owner.** A main-era world's
 owner is recorded by display name, and nothing can yet bind that name to an
 account (anyone could sign up as it). So the server operator upgrades the
-world (the browser's Review upgrade, or the CLI above), and the old owner
+world (the browser's Upgrade world…, or the CLI above), and the old owner
 comes over as an *imported* person who holds the owner role but whom no
 account can be. Then ask the real owner to sign in and open the world (they
 arrive as a newcomer), and, while they're there, look them up and give them

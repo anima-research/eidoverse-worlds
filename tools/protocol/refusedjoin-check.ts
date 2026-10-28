@@ -7,7 +7,7 @@
 //   old-x   a first-protocol log.jsonl (an old-format world: the server answers with the "translate" visitor sentence)
 //   (nope)  nothing at all (no such world)
 // For each world, by both boot paths (the early socket, and ?earlysock=0's fresh connect):
-//   W1 the server's own sentence is on screen, and still there 6 s later (not a 4-second toast)
+//   W1 the refusal is on screen (an old world: the one-line splash; else the server's sentence), and still there 6 s later (not a 4-second toast)
 //   W2 the bad-LINK wording ("is not a valid world name") is not shown — the name is fine
 //   W3 the client knows it is refused (net.status 'rejected') and never says it joined (net.joined false)
 //   W4 it didn't redial: one join reached the server for this page load
@@ -19,8 +19,8 @@
 //      gets in by itself once there is room (review r3 F6)
 //   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
-//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Review upgrade
-//   W11 the operator's splash: Review upgrade → the report → Back up and upgrade → the backup and the rollback command
+//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Upgrade world…
+//   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -64,7 +64,7 @@ try {
       await cdp.send("Page.navigate", { url: `${BASE}/?world=${world}&name=T${early ? "" : "&earlysock=0"}` });
       // on screen = in the page's text AND the topmost thing where it is drawn (a toast UNDER the splash is in the text
       // and invisible: that was the bug)
-      const visible = `(() => { const want = ${JSON.stringify(said.error)};
+      const visible = `(() => { const want = ${JSON.stringify(world === "old-x" ? OLD_FORMAT_SPLASH : said.error)};
         const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let n;
         while ((n = w.nextNode())) { if (!n.textContent.includes(want)) continue; const host = n.parentElement; const r = host.getBoundingClientRect();
           if (r.width < 1 || r.height < 1 || getComputedStyle(host).visibility === 'hidden') continue;
@@ -77,7 +77,7 @@ try {
       const st = await evalJson(`import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins,
         toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 160)),
         badLink: /is not a valid world name/.test(document.body.innerText) }))`).catch((e) => ({ err: String(e) }));
-      check(`W1 ${tag}: the server's sentence is on screen, and still there 6 s later`, seen && stays, { seen, stays, ...st });
+      check(`W1 ${tag}: the refusal is on screen, and still there 6 s later`, seen && stays, { seen, stays, ...st });
       check(`W2 ${tag}: no "not a valid world name" (the link is fine)`, st.badLink === false, st);
       check(`W3 ${tag}: the client is refused (status 'rejected'), never joined`, st.status === "rejected" && st.joined === false, st);
       check(`W4 ${tag}: no redial (one join sent)`, st.joins === 1, st);
@@ -167,10 +167,10 @@ try {
       return { head: s?.querySelector('.sp-phase')?.textContent, doc: a ? a.getAttribute('href') : null, review: !!s?.querySelector('.sp-up-review') }; })()`;
     const st: any = await tryUntil("the old-format splash shows its doc link", async () => { const v = await evalJson(probe).catch(() => null); return v?.doc ? v : null; }, { ms: 20000, step: 250 });
     const doc = st?.doc ? await fetch(new URL(st.doc, BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 200) })).catch((e) => ({ err: String(e) })) : null;
-    check("W10 old-x as a guest: the splash says the world was saved by an older Eidoverse and needs a one-time upgrade, links the doc (served), and offers no Review upgrade",
+    check("W10 old-x as a guest: the splash says the world was saved by an older version of the engine and needs a one-time upgrade, links the doc (served), and offers no Upgrade world…",
       st?.head === OLD_FORMAT_SPLASH && st.doc === "/docs/TRANSLATING-OLD-WORLDS.md" && doc?.status === 200 && /Translating a first-protocol world/.test(doc.text) && st.review === false, { st, doc });
   }
-  // W11: the operator's splash: Review upgrade → the report → Back up and upgrade (the only action) → the backup and the rollback command
+  // W11: the operator's splash: Upgrade world… → the report → Back up and upgrade (the only action) → the backup and the rollback command
   {
     await cdp.send("Network.enable", {});
     await cdp.send("Network.setCookie", { name: "ew_sess", value: OP_SID, url: BASE });
@@ -179,8 +179,8 @@ try {
     const btn = await shows(`(() => { const b = document.querySelector('#splash .sp-up-review'); if (!b) return null; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { text: b.textContent, top: top === b }; })()`);
     await evalJson(`(document.querySelector('#splash .sp-up-review')?.click(), true)`).catch(() => null);
     const rep = await shows(`(() => { const r = document.querySelector('#splash .sp-up-report'); if (!r) return null; return { text: r.innerText, buttons: [...document.querySelectorAll('#splash .sp-up-area button')].map((b) => b.textContent) }; })()`, 60000);
-    check("W11 old-y as the operator: Review upgrade (on top) shows the report — carried, mapped, unmapped, dropped, refused, each counted, and its hash — and Back up and upgrade is the only action",
-      btn?.text === "Review upgrade" && btn.top && /Carried \(\d+\)/.test(rep?.text ?? "") && /Mapped \(\d+\)/.test(rep.text) && /Unmapped[^\n]*\(\d+\)/.test(rep.text) && /Dropped by design \(\d+\)/.test(rep.text) && /Refused \(0\)/.test(rep.text)
+    check("W11 old-y as the operator: Upgrade world… (on top) shows the report — carried, mapped, unmapped, dropped, refused, each counted, and its hash — and Back up and upgrade is the only action",
+      btn?.text === "Upgrade world…" && btn.top && /Carried \(\d+\)/.test(rep?.text ?? "") && /Mapped \(\d+\)/.test(rep.text) && /Unmapped[^\n]*\(\d+\)/.test(rep.text) && /Dropped by design \(\d+\)/.test(rep.text) && /Refused \(0\)/.test(rep.text)
       && /report [0-9a-f]{64}/.test(rep.text) && JSON.stringify(rep.buttons) === JSON.stringify(["Back up and upgrade"]), { btn, rep: rep && { ...rep, text: rep.text.slice(0, 300) } });
     await evalJson(`(document.querySelector('#splash .sp-up-go')?.click(), true)`).catch(() => null);
     const done = await shows(`(() => { const d = document.querySelector('#splash .sp-up-done'); return d ? { backup: d.querySelector('.sp-up-backup')?.textContent, rollback: d.querySelector('.sp-up-rollback')?.textContent, enter: !!d.querySelector('.sp-up-enter') } : null; })()`, 120000);

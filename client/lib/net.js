@@ -808,7 +808,7 @@ function onSocketClosed(ev) {
   }
   if (ev.code === 4005 && joinRefused?.code === 'old-format') {   // the splash says it, links the doc, and offers the operator the upgrade
     showRefusal(OLD_FORMAT_SPLASH);
-    showOldFormat(document.getElementById('splash'), joinRefused, joinRefusal, CONFIG.world);
+    showOldFormat(document.getElementById('splash'), joinRefused, CONFIG.world);
     return;
   }
   if (ev.code === 4005) {

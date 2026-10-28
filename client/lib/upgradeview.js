@@ -1,5 +1,5 @@
 // client/lib/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (operator only)
-// Review upgrade → the dry-run report → Back up and upgrade → where the backup is. The server runs the CLI (server/upgrade.ts).
+// Upgrade world… → the dry-run report → Back up and upgrade → where the backup is. The server runs the CLI (server/upgrade.ts).
 import { OLD_FORMAT_DOC } from '../../shared/oldformat.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
@@ -44,16 +44,15 @@ export function reportView(report, hash) {
 }
 
 /** Fill the refused splash for an old-format world. `refused`: the join's structured reason; `words`: the server's sentence. */
-export function showOldFormat(root, refused, words, world) {
+export function showOldFormat(root, refused, world) {
   if (!root) return;
   root.querySelector('.sp-upgrade')?.remove();
   const box = el('div', 'sp-upgrade');
-  if (words) box.append(el('p', 'sp-up-words', words));
   const doc = el('a', 'sp-up-doc', 'How upgrading works'); doc.href = `/${refused?.doc ?? OLD_FORMAT_DOC}`; doc.target = '_blank'; doc.rel = 'noopener';
   box.append(doc);
   const area = el('div', 'sp-up-area'); box.append(area);
   if (refused?.operator && refused.upgrade === 'operator') {
-    const review = el('button', 'sp-up-btn sp-up-review', 'Review upgrade'); area.append(review);
+    const review = el('button', 'sp-up-btn sp-up-review', 'Upgrade world…'); area.append(review);
     review.onclick = async () => {
       review.disabled = true; review.textContent = 'reading the old world…';
       const r = await ask('world-upgrade-review', { world });
