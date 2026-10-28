@@ -170,16 +170,19 @@ export const SHAPES_VERSION = 2;
 // body is unknown, and unknown is MARKED. Never re-running a one-way rewrite on values written in today's spelling is the safe
 // side; the cost is a world founded before 10-16 whose founding was purged before its repair here, which keeps its old
 // values unrepaired (their readers' defaults) rather than having today's values rewritten as if old.
-export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null) {
-  const L = entries ?? []; let founded = false;
-  for (let i = 0; i < L.length; i++) { const e = L[i];
+export function shapesMarked(entries, bodyOf = (i) => entries?.[i]?.body ?? null) { return shapesScan(entries, bodyOf).marked; }
+/** shapesMarked as a scan that resumes: `s` ({n, founded, marked}) from an earlier call over a prefix of the same log, whose
+ *  bodies read the same since (no purge between: the authority rescans from genesis when there is one). */
+export function shapesScan(entries, bodyOf = (i) => entries?.[i]?.body ?? null, s = { n: 0, founded: false, marked: false }) {
+  const L = entries ?? [];
+  for (; !s.marked && s.n < L.length; s.n++) { const i = s.n, e = L[i];
     if (!e || e.kind !== "act") continue;
-    if (e.verb === "repair-shapes" && e.actor === "system") return true;
+    if (e.verb === "repair-shapes" && e.actor === "system") { s.marked = true; break; }
     // only the founding counts (review r9 L5): the first create-world act. A later one is a refused attempt the log keeps (a
     // visitor's create-world on a world that exists), whose purge must never read as "marked"
-    if (e.verb === "create-world" && !founded) { founded = true; const b = bodyOf(i); if (b === null) return true; if (b && typeof b === "object" && Number.isInteger(b.shapes)) return true; }
-    if (e.verb === "translated" && e.actor === "system") { const b = bodyOf(i); if (b === null) return true; const m = /@(\d+)$/.exec(String(b?.from?.translator ?? "")); if (m && +m[1] >= 12) return true; } }
-  return false;
+    if (e.verb === "create-world" && !s.founded) { s.founded = true; const b = bodyOf(i); if (b === null || (b && typeof b === "object" && Number.isInteger(b.shapes))) { s.marked = true; break; } }
+    if (e.verb === "translated" && e.actor === "system") { const b = bodyOf(i); const m = /@(\d+)$/.exec(String(b?.from?.translator ?? "")); if (b === null || (m && +m[1] >= 12)) { s.marked = true; break; } } }
+  return s;
 }
 
 /** Component names renamed before release (protocol minor 0), {old: new}, per the entity they live on ("@world" or "thing").

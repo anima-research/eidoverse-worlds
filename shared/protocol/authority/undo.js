@@ -75,6 +75,8 @@ export function actIndexOf(w) {
     indexEntry(x, E, x.n); }
   return x;
 }
+/** Seed the index for a log whose first `n` lines hold no purge and no malformed line, from a fold cache (server/foldviews.ts). */
+export function seedActIndex(w, n, v, st) { w.__actIndex = Object.assign(freshIndex(), v, { n, pt: n, entries: w.entries, bad: malformedSeqs(st) }); }
 /** The same index built from nothing over `entries` (the reference the incremental one must equal). */
 export function actIndexFresh(entries) { return actIndexOf({ entries }); }
 const firstAfter = (a, seq) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= seq) lo = m + 1; else hi = m; } return lo; };

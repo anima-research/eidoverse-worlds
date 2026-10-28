@@ -85,11 +85,16 @@ export function worldOf(io) {
     return (cache = { n: entries.length, st: fold(entries) }).st; };
   // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
   // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
-  const heads = [];
-  w.headAt = (seq) => { for (let i = heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1];
-      heads[i] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq] ?? null; };
+  // heads[k] is head(hb + k); a host that knows head(at) (server/statecache.ts) seeds hb = at, and heads below it are chained
+  // from genesis only when one is asked for (low)
+  let hb = 0, low = null; const heads = [];
+  const lowHeads = () => { if (!low) { low = []; for (let i = 0; i < hb; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : low[i - 1]; low[i] = isE(e) && prev ? chainStep(prev, e) : null; } } return low; };
+  w.headAt = (seq) => { if (seq < 0) return null; if (seq < hb) return lowHeads()[seq] ?? null;
+    for (let i = hb + heads.length; i <= seq && i < entries.length; i++) { const e = entries[i], prev = i === 0 ? "00".repeat(32) : heads[i - 1 - hb];
+      heads[i - hb] = isE(e) && prev ? chainStep(prev, e) : null; } return heads[seq - hb] ?? null; };
+  w.seedHead = (seq, head) => { low = null; heads.length = 0; if (seq < 0) hb = 0; else { hb = seq; heads.push(head); } };   // seq < 0: unseeded
   // §3d H7: every id this world has ever created (a log view, kept incrementally): an id is never reused
-  const ever = { n: 0, ids: new Set() };
+  const ever = { n: 0, ids: new Set() }; w.__ever = ever;   // a host seeds it from its fold cache (server/foldviews.ts)
   w.everIds = () => { for (; ever.n < entries.length; ever.n++) { const e = entries[ever.n]; if (isE(e) && e.kind === "change") for (const o of opsQuiet(e)) if (o.verb === "create") ever.ids.add(o.id); } return ever.ids; };
   w.sim = () => simFold(entries, w.now());
   w.stateAt = (seq) => fold(entries, { until: seq });
@@ -188,6 +193,8 @@ export function txnRefusal(o) {
 // already rewritten to its {commit} stub on disk. Null is UNKNOWN, and each reader says what unknown means for it (never
 // "the default": a purged cause act must not make an owner's chosen build look stamped, or a handler's write the visitor's).
 const purgeIx = new WeakMap();   // entries array → {n, seqs}: purge targets whose whole body is gone, kept incrementally
+/** Seed the purge index for a log whose first n lines hold no purge (server/foldviews.ts). */
+export const seedPurgedSeqs = (w, n) => { purgeIx.set(w.entries, { n, seqs: new Set() }); };
 export function purgedSeqs(w) {
   const E = w.entries; let c = purgeIx.get(E); if (!c) purgeIx.set(E, (c = { n: 0, seqs: new Set() }));
   for (; c.n < E.length; c.n++) { const e = E[c.n];

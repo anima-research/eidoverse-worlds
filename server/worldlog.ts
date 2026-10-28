@@ -118,9 +118,9 @@ export class WorldLog {
     // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, rate: RATE_POLICY, present: () => this.host?.present?.() ?? [],
       sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity),
-      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; } } } : {}),
+      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; for (const a of this.live.actors()) this.actors.add(a); } } } : {}),
       ...(SIM_CHECKPOINT_EVERY > 0 ? { simCheckpoint: { every: SIM_CHECKPOINT_EVERY } } : {}) });
-    for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);
+    for (const a of this.live.actors()) this.actors.add(a);   // the host's index (livehost.ts): never a scan of the prefix
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and
     // logged, so a joiner's cut already has it back in the world (authority.js settleOrphans)
     try { const settled = settleOrphans(this.live, []); if (settled.length) console.log(`[world:${name}] settled ${settled.length} hold(s) left from before the restart: ${JSON.stringify(settled).slice(0, 300)}`); }
@@ -144,9 +144,9 @@ export class WorldLog {
     if (altered.length) console.warn(`[world:${name}] log was changed outside its purge rule at line(s) ${altered.map(([q]: Any) => q).join(", ")} (a value stripped to its commit, no purge naming it): it reads as unknown. The operator can, with the world closed, restore those lines from a backup of the log and reopen it (each restored whole keeps its commit, so later lines still verify)`);
     this._state = this.view();
     // chat: the last 40 says, through the window's own rule; chatTotal counts every line ever said here
-    const says = this.live.entries.filter((e: Any) => e && e.kind === "say");
+    const says: number[] = this.live.saySeqs();
     if (this._state) this._state.chatTotal = Math.max(0, says.length - 40);
-    for (const e of says.slice(-40)) this.hearSay(e);
+    for (const q of says.slice(-40)) this.hearSay(this.live.entries[q]);
     if (fs.existsSync(this.posesPath)) { try { this.poses = JSON.parse(fs.readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ } }
     // standing models, measured for the authority; a request waits for them (review of #260, server I70: one decided in
     // the first moments after a load met unsized standing models, and its outcome is logged for good)
@@ -374,8 +374,8 @@ export class WorldLog {
     // the whole log is in memory (live.entries): page back through every chat line ever said, not the ones heard since
     // load (Commons audit #2: scrollback stopped at 40 and told people it was "the beginning of this world")
     if (verbs && !verbs.has("say")) return { entries: [], oldestSeq: null, hasMore: false };
-    const out: ChatLine[] = []; let more = false; const E = this.live.entries;
-    for (let i = E.length - 1; i >= 0; i--) { const e = E[i]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
+    const out: ChatLine[] = []; let more = false; const E = this.live.entries, S: number[] = this.live.saySeqs();   // every say's seq (livehost.ts)
+    for (let k = S.length - 1; k >= 0; k--) { const e = E[S[k]]; if (!e || e.kind !== "say" || e.body?.commit !== undefined) continue;
       if (floor !== null && !(e.seq > floor)) break;   // before the asker arrived: older lines are older still
       const seq = e.seq * 1000; if (seq >= before) continue; if (seq <= after) break;
       if (out.length === limit) { more = true; break; } out.push(this.sayLine(e)); }
@@ -426,7 +426,9 @@ export class WorldLog {
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {
     const X = actIndexOf(this.live); const E = this.live.entries;
-    const mine = (X.actsOf.get(actor) ?? []).filter((q: number) => !["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40);
+    const acts: number[] = X.actsOf.get(actor) ?? [], mine: number[] = [];   // newest first, so only the last 40 are read
+    for (let k = acts.length - 1; k >= 0 && mine.length < 40; k--) { const q = acts[k]; if (!["undo", "create-world", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)) mine.push(q); }
+    mine.reverse();
     return { ...clientCutOf(this.live), head: this.head, mine, you: actor, names: this.names([...this.actors, actor]), holds: this.holds() };
   }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {

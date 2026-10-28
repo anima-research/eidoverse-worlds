@@ -10,10 +10,10 @@ import { dec } from "../names.js";
 import * as SR from "../scriptrules.js";
 import { effectFor, effectBlobName, EFFECT_KIND, ESSENTIAL_NAMES } from "../../particle_effects.js";
 import { livePoses, digestOf, simCutOf, lostPlace, ends, endsUnder } from "../simlayer.js";
-import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, SHAPES_VERSION } from "../shaperepair.js";
+import { RENAMED_COMPONENTS, renameOps, shapeRepairOps, shapesMarked, shapesScan, SHAPES_VERSION } from "../shaperepair.js";
 import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
-import { readback, delOp, holdsCustody, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
+import { readback, purgedSeqs, delOp, holdsCustody, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
 import { worldT } from "./math.js";
 import { r3 } from "../round.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
@@ -182,16 +182,22 @@ export function settle(w, { maxTicks = 8 } = {}) {
 // written once that many entries follow the last checkpoint (or a purge, which voids every earlier one) and something the sim
 // folds (a change or a sim intent) is among them; a tail of acts and says alone changes nothing a cut holds, so none is written.
 const CHECKPOINT_QUIET_MS = 20000;
-function checkpointSim(w, { every = w.simCheckpointEvery ?? 0 } = {}) {
-  if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
-  // incremental (second review S2-3: a whole-log scan every beat until the first checkpoint): what's been counted stays counted
-  const E = w.entries; const k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity, base: -1, moved: false });
+/** checkpointSim's scan of the log, advanced to its end (a pure fold of kinds, verbs and ts; a host seeds w.ckptScan from its
+ *  fold cache, server/foldviews.ts). `k`: advance this copy instead of w's own. */
+export function ckptScanOf(w, k = (w.ckptScan ??= { to: -1, launches: 0, newest: -Infinity, base: -1, moved: false })) {
+  const E = w.entries;
   for (let s = k.to + 1; s < E.length; s++) { const e = E[s]; k.to = s; if (!e || typeof e !== "object") continue;
     if (e.kind === "purge") { k.base = -1; k.moved = true; continue; }   // a boot replays from genesis after a purge (livehost)
     if (e.kind === "change") { k.moved = true; continue; }
     if (e.kind !== "sim") continue;
     if (e.verb === "checkpoint") { k.launches = 0; k.newest = -Infinity; k.base = s; k.moved = false; }
     else if (e.verb !== "digest") { k.moved = true; if (e.verb === "launch") { k.launches++; if (e.ts > k.newest) k.newest = e.ts; } } }
+  return k;
+}
+function checkpointSim(w, { every = w.simCheckpointEvery ?? 0 } = {}) {
+  if (typeof w.putBlob !== "function" || !w.state().entities["@world"]?.c["physics-engine"]) return;
+  // incremental (second review S2-3: a whole-log scan every beat until the first checkpoint): what's been counted stays counted
+  const E = w.entries; const k = ckptScanOf(w);
   const afterLaunch = k.launches > 0 && w.now() - k.newest >= CHECKPOINT_QUIET_MS;
   const longTail = every > 0 && k.moved && E.length - 1 - k.base >= every;
   if (!afterLaunch && !longTail) return;
@@ -328,6 +334,13 @@ export function writeBlock(w) {
 /** What maintenance a world needs: {steps: ["lift-sockets", "rename-components", "repair-shapes"] (those needed, in order),
  *  blocking: the subset whose old shape no reader serves, lift: [hosts], rename: [ops], repair: bool, fix}. Cached per log
  *  length (a needed step is only ever removed by the command, which appends). */
+/** shapesMarked over w's log, resumed from where it last stopped while the log holds no purge (a purge can change what an
+ *  earlier body reads back: then from genesis, as before). A host seeds w.__shapes from its fold cache (server/foldviews.ts). */
+export function shapesOf(w) {
+  const bodyOf = (q) => readback(w, q);
+  if (purgedSeqs(w).size) { delete w.__shapes; return shapesMarked(w.entries, bodyOf); }
+  return shapesScan(w.entries, bodyOf, (w.__shapes ??= { n: 0, founded: false, marked: false })).marked;
+}
 export function maintenanceNeeds(w) {
   if (!w.exists || w.state().status !== "ok") return { steps: [], blocking: [], lift: [], rename: [], repair: false };
   const c = needsCache.get(w); if (c && c.n === w.entries.length) return c.v;
@@ -338,7 +351,7 @@ export function maintenanceNeeds(w) {
   // simply aren't seatable until the command runs
   const stored = new Set(storedLegacyHosts(st)); const liftStored = lift.filter((h) => stored.has(h)), liftOptional = lift.filter((h) => !stored.has(h));
   const rename = renameOps(st, PURGED);
-  const repair = !shapesMarked(w.entries, (q) => readback(w, q));   // READBACK act:create-world / act:translated: a purged one is marked
+  const repair = !shapesOf(w);   // READBACK act:create-world / act:translated: a purged one is marked
   const steps = [...(lift.length ? ["lift-sockets"] : []), ...(rename.length ? ["rename-components"] : []), ...(repair ? ["repair-shapes"] : [])];
   const optional = !liftStored.length && liftOptional.length ? ["lift-sockets"] : [];
   const blocking = steps.filter((s) => (s === "lift-sockets" ? liftStored.length > 0 : s === "rename-components" ? rename.some((o) => !SERVED_RENAMES(o)) : true));
@@ -430,11 +443,17 @@ const RENAMED_TO = (id, comp) => RENAMED_COMPONENTS[id]?.[comp] ?? null;
 // Things the log has lifted out of the engine (a grab's lift, a catch) with nothing after that puts them back: no launch,
 // and no write that ends the hold (simlayer's ends() and endsUnder(), the replay's own rule). An epoch cut doesn't end
 // one: a hold outlives it, and the new epoch's engine leaves the held thing out, as the replay does.
+// Resumed from where it last stopped while the log holds no purge (a purge changes what an earlier lift reads back: then from
+// genesis, as before); a host seeds w.__orphans from its fold cache (server/foldviews.ts).
 function orphanLifts(w) {
-  const lifted = new Map(), parentOf = new Map();   // parentOf: each thing's parent as the log has it so far
+  if (purgedSeqs(w).size) { delete w.__orphans; return orphanScan(w, { n: 0, lifted: new Map(), parentOf: new Map() }).lifted; }
+  return orphanScan(w, (w.__orphans ??= { n: 0, lifted: new Map(), parentOf: new Map() })).lifted;
+}
+export function orphanScan(w, sc) {
+  const { lifted, parentOf } = sc;   // parentOf: each thing's parent as the log has it so far
   const under = (k, id) => { for (let p = parentOf.get(k), n = 0; p && n < 33; p = parentOf.get(p), n++) if (p === id) return true; return false; };
-  w.entries.forEach((e, seq) => {
-    if (!isE(e)) return;
+  for (; sc.n < w.entries.length; sc.n++) { const seq = sc.n, e = w.entries[seq];
+    if (!isE(e)) continue;
     if (e.kind === "sim" && (e.verb === "lift" || e.verb === "catch") && readback(w, seq)?.id) lifted.set(readback(w, seq).id, { seq, by: e.actor });   // READBACK: a purged lift names nothing to return
     else if (e.kind === "sim" && e.verb === "launch") lifted.delete(readback(w, seq)?.id);
     else if (e.kind === "change") { const ops = opsQuiet(e);
@@ -446,8 +465,8 @@ function orphanLifts(w) {
       for (const o of ops) { if (o.verb === "create" || ends(o)) lifted.delete(o.id);
         if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }
       for (const o of ops) if (o.verb === "delete" && o.comp === undefined) parentOf.delete(o.id); }
-  });
-  return lifted;
+  }
+  return sc;
 }
 /** Someone arrived or left (presence, told by the host): scripts that list `enter` / `leave` hear it, with `by` (live only:
  *  the act records no identity, ANON_EVENTS). The act's cause is the entry that made the script's sponsor (an arrival isn't

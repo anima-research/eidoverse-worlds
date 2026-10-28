@@ -159,7 +159,7 @@ export function simFold(entries, now, opts = {}) {
 // builds a fresh folder with them (a purge is retroactive), rather than feeding it.
 export function simFolder(entries, { models = MODELS, from = null, purged = null } = {}) {
   const st = from?.st ?? emptyState(); let clock = from?.clock ?? 0;
-  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: { agree: 0, disagree: [] }, restTicks: {},
+  const out = { st, spec: from?.spec ?? null, foreign: from?.foreign ?? false, sim: from?.sim ?? null, launched: from?.launched ?? {}, lifted: new Set(from?.lifted ?? []), rested: [], checks: from?.checks ?? { agree: 0, disagree: [] }, restTicks: {},
     unknownEpoch: !!from?.unknownEpoch, unknownHold: !!from?.unknownHold };
   const E = () => eidosim;
   // every engine write counts (out.rev): a client re-copies its presentation sim only when this moved, not on every entry
