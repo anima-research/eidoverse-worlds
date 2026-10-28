@@ -39,6 +39,19 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
   return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
 }
 
+/** The account an agent credential proves, the one derivation every door uses (account shapes: server/directory.ts header):
+ *  null = no credential; `refused` = one was given and isn't a verified agent's. */
+export function accountOf(tok: string): { account: string; name: string } | { refused: string } | null {
+  if (!tok) return null;
+  const at = agentTokens();
+  const enrolled = at.byToken.get(tok);
+  if (enrolled) return { account: `agent:token:${enrolled.toLowerCase()}`, name: enrolled };
+  const a = aid1JoinIdentity(tok);
+  if (!a || a.payload.kind !== "agent") return { refused: a ? "that credential isn't an agent's — sign in as yourself instead" : "that agent credential didn't verify" };
+  const via = at.bySub.get(a.payload.sub);
+  return via ? { account: `agent:token:${via.toLowerCase()}`, name: via } : { account: `aid1:${a.payload.iss}:${a.payload.sub}`, name: a.slug };
+}
+
 // `native`: issued to a native client by browser-approved pairing (native-login.ts). It is an ordinary session
 // for every world the account may join; the mark only stops it approving another native pairing. Sessions paired
 // before native sessions became ordinary ones carry `nativeWorld` instead, which means the same thing now.

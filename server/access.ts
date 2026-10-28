@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
-import { sessionOfRequest, agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { sessionOfRequest, accountOf } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
@@ -167,11 +167,8 @@ export function httpCaller(req: Request): Who | null {
   if (m) {
     const tok = m[1]!;
     if (JOIN_TOKEN && tok === JOIN_TOKEN) return null;
-    const at = agentTokens();
-    const name = at.byToken.get(tok);
-    if (name) return who(`agent:token:${name.toLowerCase()}`);
-    const a = aid1JoinIdentity(tok);
-    if (a && a.payload.kind === "agent") { const via = at.bySub.get(a.payload.sub); return who(via ? `agent:token:${via.toLowerCase()}` : `aid1:${a.payload.iss}:${a.payload.sub}`); }
+    const a = accountOf(tok);
+    if (a && "account" in a) return who(a.account);
   }
   return null;
 }

@@ -5,7 +5,7 @@
 // Server operator only (SERVER_OPERATORS, by a proven account): an old world's owner is a name nothing binds yet (docs/TRANSLATING-OLD-WORLDS.md).
 import path from "node:path";
 import { WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ROOT } from "./config.ts";
-import { agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { accountOf } from "./auth.ts";
 import { isOperator } from "./operators.ts";
 import { oldWorldAt, type OldWorldKind } from "./oldworlds.ts";
 import { OLD_FORMAT_DOC, ASK_OPERATOR } from "../shared/oldformat.js";
@@ -17,12 +17,8 @@ type Ctx = { c: Client; ws: { send(d: string): void } };
 /** The account a connection proves without a join: its verified session, else an agent credential in the message. Never a typed name. */
 export function provenAccount(c: Client, msg: Any): string | null {
   if (c.auth && c.auth.exp > Date.now() && c.auth.sub) return c.auth.sub;
-  const tok = String(msg?.agentToken ?? ""); if (!tok) return null;
-  const at = agentTokens(); const enrolled = at.byToken.get(tok);
-  if (enrolled) return `agent:token:${enrolled.toLowerCase()}`;
-  const a = aid1JoinIdentity(tok); if (!a || a.payload.kind !== "agent") return null;
-  const via = at.bySub.get(a.payload.sub);
-  return via ? `agent:token:${via.toLowerCase()}` : `aid1:${a.payload.iss}:${a.payload.sub}`;
+  const a = accountOf(String(msg?.agentToken ?? ""));
+  return a && "account" in a ? a.account : null;
 }
 
 /** The refusal an old-format world's join carries beside its words (docs/WIRE.md 4005). */
