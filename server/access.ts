@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { WORLDS_DIR, JOIN_TOKEN } from "./config.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isOperator } from "./operators.ts";
-import { sessionFromCookie, agentTokens, aid1JoinIdentity } from "./auth.ts";
+import { sessionOfRequest, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
@@ -155,11 +155,11 @@ export function youAt(door: Door, who: Who | null): { you: "enter" | "watch" | "
   return { you: watch ? "none" : "watch", why: embody.why };
 }
 
-/** Who is asking, over HTTP: the browser's session cookie (same-origin), or an `Authorization: Bearer` credential the
+/** Who is asking, over HTTP: the session cookie the join takes (auth.ts sessionOfRequest), or an `Authorization: Bearer` credential the
  *  join door takes (an enrolled agent's bearer, an aid1 agent credential). Null = anonymous (a JOIN_TOKEN bearer proves
  *  the door key, not who). Never the URL: credentials in query strings end up in logs. */
 export function httpCaller(req: Request): Who | null {
-  const s = sessionFromCookie(req.headers.get("cookie"));
+  const s = sessionOfRequest(req);
   const dir = directoryFor(WORLDS_DIR);
   const who = (account: string): Who => ({ account, actorId: dir.idOfSub(account) });
   if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return who(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)

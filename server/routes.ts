@@ -27,7 +27,7 @@ import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
-import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
+import { hnSessions, hnJti, sessionFromCookie, sessionOfRequest, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { createNativeLogin } from "./native-login.ts";
 const nativeLogin = createNativeLogin({
@@ -69,13 +69,13 @@ const knownWorld = (name: string) => {
 };
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need a key a join would take (the authority key, an agent token, an aid1 credential) as a Bearer header,
- *  or a signed-in session cookie from this page (security review 10-06 pass 2, L-C). An open box (no JOIN_TOKEN) is open. */
+ *  or the session cookie the join takes, never from another site's page (auth.ts sessionOfRequest). An open box is open. */
 function mayRead(req: Request): boolean {
   if (!JOIN_TOKEN) return true;
   const auth = req.headers.get("authorization") ?? "";
   const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   return !!(key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || aid1JoinIdentity(key)))
-    || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
+    || !!sessionOfRequest(req);
 }
 const unauthorized = () => new Response("this world's state is behind its door: send a key it takes as a Bearer header", { status: 401 });
 
@@ -944,8 +944,8 @@ const ROUTES: Route[] = [
         const auth = req.headers.get("authorization") ?? "";
         const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
-          // a cookie rides cross-site requests from sibling subdomains (SameSite=Lax is per-SITE): take it only from this page
-          || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
+          // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page
+          || !!sessionOfRequest(req);
         if (!ok) return new Response("sign in or send the authority key as a Bearer header", { status: 401 });
       }
       // a forced rebuild skips the freshness check, so a POST loop could keep the one serial pump busy and starve uploads

@@ -54,6 +54,13 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
   return s;
 }
 
+/** The session a request's cookie proves, as the ws join takes it — refused only from another site's page (a browser says
+ *  so in Sec-Fetch-Site; SameSite=Lax lets the cookie ride from sibling subdomains). A native client sends no fetch metadata. */
+export function sessionOfRequest(req: Request): HnSession | null {
+  const site = req.headers.get("sec-fetch-site");
+  return site === null || site === "same-origin" ? sessionFromCookie(req.headers.get("cookie")) : null;
+}
+
 // ---- session persistence ----------------------------------------------------
 // Sessions used to be memory-only, so every deploy logged the whole show out
 // and sent verified humans back to the door mid-event. They survive restarts

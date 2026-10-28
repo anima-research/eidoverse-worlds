@@ -84,7 +84,7 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "se
   env: {
     // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
-    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
+    HN_NATIVE_ORIGIN: HTTP, HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
   },
   stdout: "ignore", stderr: "inherit",
 });
@@ -177,11 +177,31 @@ try {
   const entry = manifest[imPath.replace(/^store\/images\//, "").replace(/\.[a-z]+$/, "")];
   check("...credited to the signed-in name, not the forged ?by=", entry?.by === "Guest One", `status=${im.status} by=${entry?.by}`);
   check("...the cookie from another site's page is not taken", (await upAs({ cookie: a1.cookie, "sec-fetch-site": "same-site" })).status === 401);
-  check("...nor a cookie with no fetch-site at all", (await upAs({ cookie: a1.cookie })).status === 401);
   check("no session, no key → 401", (await upAs({ "sec-fetch-site": "same-origin" })).status === 401);
   const spectOnly = await auth(mint({ sub: "human:discord:7770001", name: "Watcher", scopes: ["worlds:spectate"] }));
   check("a spectate-only login cannot upload", spectOnly.cookie.length > 0
     && (await upAs({ cookie: spectOnly.cookie, "sec-fetch-site": "same-origin" })).status === 401);
+
+  // ---- a native client's session (browser-approved pairing, native-login.ts): the cookie the ws join takes, with no
+  // fetch metadata (a native client isn't a browser), is taken by /worlds and /upload too (R 10-27; unreal-contract CONTRACT.md)
+  const npost = (path: string, body: object, headers: Record<string, string> = {}) =>
+    fetch(`${HTTP}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const pairing = await (await npost("/native/start", {})).json();
+  const approved = await npost("/native/approve", { user_code: pairing.user_code }, { origin: HTTP, cookie: a1.cookie });
+  const polled = await npost("/native/poll", { device_code: pairing.device_code });
+  const native = /ew_sess=[a-f0-9]{64}/.exec(polled.headers.get("set-cookie") ?? "")?.[0] ?? "";
+  check("native pairing: the browser approves, the client's poll gets its own session cookie", approved.status === 200 && polled.status === 200 && native.length > 0 && native !== a1.cookie, `approve=${approved.status} poll=${polled.status}`);
+  const sN = await open({}, native);
+  check("native session: the ws join takes it with no door key", Boolean(snap(sN)), `closed=${sN.closedWith}`);
+  check("native session: GET /worlds (a JOIN_TOKEN box) takes the same cookie → 200", (await fetch(`${HTTP}/worlds`, { headers: { cookie: native } })).status === 200);
+  const upN = await upAs({ cookie: native, "x-real-ip": "203.0.113.7" });
+  check("native session: POST /upload takes the same cookie → 200", upN.status === 200, `status=${upN.status} ${upN.status !== 200 ? await upN.text() : ""}`);
+  check("...a browser's cookie with no fetch-site at all is the same request, and is taken too", (await upAs({ cookie: a1.cookie, "x-real-ip": "203.0.113.8" })).status === 200);
+  check("...but the cookie from another site's page (sec-fetch-site: same-site) still isn't, at /worlds or /upload",
+    (await fetch(`${HTTP}/worlds`, { headers: { cookie: native, "sec-fetch-site": "same-site" } })).status === 401
+    && (await upAs({ cookie: native, "sec-fetch-site": "cross-site", "x-real-ip": "203.0.113.9" })).status === 401);
+  check("no cookie, no key: GET /worlds → 401", (await fetch(`${HTTP}/worlds`)).status === 401);
+  check("a key in ?token= is not a /worlds credential", (await fetch(`${HTTP}/worlds?token=${DOOR}`)).status === 401);
 
   // ---- agent-door verifier (the same copy net-server.ts uses) ----
   const agentTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });
@@ -190,7 +210,7 @@ try {
   const vBad = verifyToken(agentTok, { issuerId: ISSUER_ID, iss: ISS, aud: "orrery" });
   check("agent aid1 for another audience refused", !vBad.ok);
 
-  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6]) { try { s.ws.close(); } catch { /* closed */ } }
+  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6, sN]) { try { s.ws.close(); } catch { /* closed */ } }
 } finally {
   proc.kill();
 }

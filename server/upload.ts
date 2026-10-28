@@ -14,7 +14,7 @@ import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DI
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
 import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, freshOver, diskIdentity, sourceSidecar, recordedSource, sameIdentity, verdictMarker, readVerdict, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
-import { agentTokens, aid1JoinIdentity, sessionFromCookie } from "./auth.ts";
+import { agentTokens, aid1JoinIdentity, sessionOfRequest } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
@@ -489,11 +489,10 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   // (an aid1 credential is reusable until expiry at every door).
   if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
   // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the
-  // join door takes the same cookie). Taken only from this site's own pages — SameSite=Lax lets the cookie
-  // ride requests from sibling subdomains — exactly as /rebuild takes it (routes.ts).
-  const session = sessionFromCookie(req.headers.get("cookie"));
+  // join door takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
+  const session = sessionOfRequest(req);
   // (embodied access, worlds:join — what the join door asks of a login that is not spectating)
-  const upPerson = session && session.scopes.includes("worlds:join") && req.headers.get("sec-fetch-site") === "same-origin" ? session.name : null;
+  const upPerson = session && session.scopes.includes("worlds:join") ? session.name : null;
   if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent && !upPerson)
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
