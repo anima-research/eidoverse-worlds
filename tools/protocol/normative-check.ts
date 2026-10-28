@@ -77,7 +77,7 @@ const can = (k: string) => Object.keys(R.BUILTIN[k].can).filter((x) => R.BUILTIN
 const builtOk = can("inhabitant").length === 0 && /inhabitant: none/.test(built) && /builder: build, editOthers, scripts/.test(built) && can("builder").join() === "build,editOthers,scripts"
   && can("moderator").join() === "build,editOthers,scripts,pauseScripts,mute,kick,ban,grantRoles" && /moderator: those \+ pauseScripts, mute, kick, ban, grantRoles/.test(built)
   && can("owner").length === R.PERMISSION_NAMES.length && /owner: all/.test(built);
-const caps = R.MUTE_MAX_MIN === 7 * 1440 && R.KICK_DEFAULT_MIN === 10 && R.KICK_MAX_MIN === 60 && R.REASON_MAX === 500 && /mute ≤ 7 days · kick 10 min default, ≤ 60 min · reason ≤ 500/.test(roles);
+const caps = R.MUTE_MAX_MIN === 7 * 1440 && !("KICK_MAX_MIN" in R) && R.REASON_MAX === 500 && /mute ≤ 7 days · a kick has no length .* · reason ≤ 500/.test(roles);
 const qs = [["Q1", R.CAPTION_ON_SCREENS], ["Q2", R.OWNERS_FLY], ["Q3", R.GUESTS_AT_MOST_DEFAULT], ["Q4", R.EDIT_WORLD_PERMISSION]].every(([q, v]) => v === true && new RegExp(`^\\| ${q}[^\\n]*\\*\\*open\\*\\*`, "m").test(roles))
   && R.MOD_BAN_MAX_DAYS === 30 && /^\| Q5[^\n]*at most 30 days[^\n]*\*\*open\*\*/m.test(roles);
 check("N4", "the roles ladder, permissions, built-in roles, caps and the five open defaults equal roles.js",

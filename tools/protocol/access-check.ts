@@ -11,9 +11,9 @@
 //       writes its end (expire-roles) and the door removes them (4010)
 //   A6  until is refused in the past and on an owner
 //   A7  a reset keeps a members-only world's door and members
-//   A8  a ban or kick in the moderator log closes the door after a restart too, before the world is loaded: a banned
-//       (and a kicked) caller still listed in a members-only world gets 404 from /geom and /heightmap, finds it on no
-//       map, and /access says none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200)
+//   A8  a ban in the moderator log closes the door after a restart too, before the world is loaded: a banned caller
+//       still listed in a members-only world gets 404 from /geom and /heightmap, finds it on no map, and /access says
+//       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
 //   A12 (security review 10-18 H1) an operator's GLOBAL ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
 //   A13 (10-18 H2) the client's address: X-Real-IP / X-Forwarded-For honoured only from a trusted proxy (loopback, TRUSTED_PROXIES);
@@ -165,13 +165,13 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const back = await own.req("set", { id: "@world", component: "access", value: access });
   ok(back?.ok, "(A7b) keep's members-only door is put back for what follows", back?.refused); }
 
-// ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked for 30 min; the loaded door refuses both ----
+// ---- A8 (setup, loaded): Moss and Wren are listed; Moss is banned, Wren kicked (R 10-28: a kick bars nothing) ----
 const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${port}/geom?world=${world}`, { headers: { authorization: `Bearer ${bearer}` } })).status;
 { const lm = await own.req("set", { id: "@world", component: `roles:${ids.Moss}`, value: { role: "inhabitant" } });
   const lw = await own.req("set", { id: "@world", component: `roles:${ids.Wren}`, value: { role: "inhabitant" } });
-  const bm = await own.req("ban", { who: ids.Moss, reason: "A8" }), kw = await own.req("kick", { who: ids.Wren, minutes: 30, reason: "A8" });
+  const bm = await own.req("ban", { who: ids.Moss, reason: "A8" }), kw = await own.req("kick", { who: ids.Wren, reason: "A8" });
   const gm = await geomAs(srv.port, "keep", "tok-moss"), gw = await geomAs(srv.port, "keep", "tok-wren"), gr = await geomAs(srv.port, "keep", "tok-rowan");
-  ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 404 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses both (404), a member still reads it",
+  ok(lm.ok && lw.ok && bm.ok && kw.ok && gm === 404 && gw === 200 && gr === 200, "(A8 setup) listed, then banned / kicked: the loaded world's /geom refuses the banned (404); the kicked and a member still read it",
     [lm.refused, lw.refused, bm.refused, kw.refused, gm, gw, gr]); }
 
 // (A14 setup) Fen is listed for 2.5 s; the server is stopped BEFORE that ends, so no sweep can write the end: the log keeps the grant
@@ -208,7 +208,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
       "A14 an ended timed grant is absent on every read: the unloaded world's /worlds, /access and /geom refuse the ex-member (the log still holds the grant, no expire-roles yet), and the refusal loads nothing",
       { logHas, map: map.map((x) => x.name), access: acc.body, geom: g, loaded: still?.loaded }); }
   // A8: the same world, still not loaded — the moderator log is read with the door
-  for (const [who, tok] of [["banned Moss", "tok-moss"], ["kicked Wren", "tok-wren"]]) {
+  for (const [who, tok] of [["banned Moss", "tok-moss"]]) {
     const map = await worldsAs(s2.port, tok), acc = await accessAs(s2.port, "keep", tok);
     const g1 = await geomAs(s2.port, "keep", tok), g2 = await geomAs(s2.port, "keep", tok);
     const hm = await fetch(`http://127.0.0.1:${s2.port}/heightmap?world=keep&format=json`, { headers: { authorization: `Bearer ${tok}` } }); const hmText = await hm.text();

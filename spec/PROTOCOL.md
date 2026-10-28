@@ -1000,7 +1000,7 @@ people the world has granted a role, unexpired); whoever `join` turns away
 may still watch, with no body, when `watch: "anyone"`, and otherwise a
 listed-only world is invisible to them (not in a listing, every read of it
 answering as for no world). `minAccountDays` and `max` refine it. Bans (the
-moderator log) and a kick's cooldown come first; owners and holders of a
+moderator log) come first (a kick bars nothing: they may come straight back); owners and holders of a
 moderation power always get in. One function decides for every door (a join,
 a listing, an HTTP read, the re-check after any change to `access`,
 `default-role` or a role): a reference authority removes whoever may no

@@ -16,7 +16,7 @@ import { WORLDS_DIR, STATE_CACHE_EVERY, RATE_POLICY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
-import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, kickOf, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
+import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
 import { txnOutcome, txnRefusal, wedgedOf } from "../shared/protocol/authority/storage.js";
 import { clientCutOf, spokenOf } from "../shared/protocol/replica.js";
@@ -400,7 +400,6 @@ export class WorldLog {
   /** What this identity may do here, from the authority (roles.js effectiveOf): {role, name, rank, can, switches}. */
   rightsOf(actor: string) { return effectiveIn(this.live.state(), actor, { anon: this.anon(actor) }); }
   /** A kick whose cooldown still runs: {until, by, reason?} or null (join refuses it). */
-  kickedHere(actor: string): Any { return kickOf(this.live, actor); }
   mutedHere(actor: string, channel?: "voice" | "chat"): Any { return muteOf(this.live, actor, channel); }
   /** Everything in force now, per identity (the sweep that re-applies voice mutes reads it). */
   sanctions(): Record<string, Any> { return sanctionsNow(this.live); }

@@ -340,3 +340,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - material.node: added after material was first registered, with no meaning of absence (absentMeans.node: what an older value without it means)
   - material.texture: added after material was first registered, with no meaning of absence (absentMeans.texture: what an older value without it means)
   - material.lit: added after material was first registered, with no meaning of absence (absentMeans.lit: what an older value without it means)
+- 2026-10-28: normative: kick is conventional (R 10-28): it removes someone now and they may come straight back, so no kick is ever in force and the kicked refusal is gone
+  - refusal kicked: gone (old logs may hold it)

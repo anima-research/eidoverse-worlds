@@ -20,10 +20,10 @@
 //   MA  a pose past the size cap isn't relayed or remembered; one websocket message past the cap closes the socket
 //   LC  on a box with a JOIN_TOKEN, /worlds, /snap and /geom?world need a key a join would take
 //   RS  roles and moderation at the server (research roles S4): your-rights from the authority, voice-moderate as the authority's
-//       identity-keyed logged mute (surviving a reconnect), a kick's cooldown at join, ghost hidden server-side, warn and
+//       identity-keyed logged mute (surviving a reconnect), a kick that lets them straight back (R 10-28), ghost hidden server-side, warn and
 //       mute notices, access (listed / max with the moderator bypass); RS7 reset is the most senior owner's, forks meet the server's default gap;
 //       RS8 whisper is removed (R 10-18: refused `removed`, delivered to nobody); RS9 ghost history/presence, the ban list,
-//       a guest's kick by address; RS10 speech is arrival-only: no say before you arrived reaches a non-admin by either
+//       a guest's ban by address (a kick bars no address); RS10 speech is arrival-only: no say before you arrived reaches a non-admin by either
 //       history route or the join, a moderator included; an owner who joins later reads the master log
 //   GG  a guest's mute and ghost carry by hashed address to the next guest from it (R 10-07: reconnecting sheds nothing);
 //       lifting them lifts the address record; a signed-in person is untouched
@@ -272,19 +272,13 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     fern.raw({ type: "voice-moderate", id: "Moss", muted: false }); await sleep(400);
     const after = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? [];
     ok(still.includes("Moss") && !after.includes("Moss"), "RS2 a builder's voice-moderate is refused (needs mute); the moderator's unmute lifts it", [still, after]);
-    // RS3: a kick bars rejoining until its cooldown ends, then lets them in; the removal says when
-    const kk = await fern.req("kick", { who: you(jm2), minutes: 0.03, reason: "cool off" }); await sleep(300);
-    const said = m2.msgs.find((m) => m.type === "error" && m.until);
-    const m3 = await sock(S4.port); const jm3 = await m3.join("heath", "Moss", { agentToken: "tok-moss" });
-    // past the cooldown the SERVER stated, read on the same wall clock it judges by (never a fixed sleep on the monotonic
-    // timer: a WSL host's wall clock steps back ~1.4 s every ~30 s, and the server's clock then holds still, so a fixed
-    // 2.2 s after a 1.8 s cooldown arrived early under load: gate 10-22, and twice before)
-    for (let i = 0; i < 100 && !(said?.until && Date.now() > said.until + 300); i++) await sleep(100);
+    // RS3 (R 10-28, conventional): a kick removes them now and they may come straight back; a kick with a length is refused
+    const timed = await fern.req("kick", { who: you(jm2), minutes: 5 });
+    const kk = await fern.req("kick", { who: you(jm2), reason: "cool off" }); await sleep(300);
+    const said = m2.msgs.find((m) => m.type === "error" && /removed from/.test(m.error ?? ""));
     const m4 = await sock(S4.port); const jm4 = await m4.join("heath", "Moss", { agentToken: "tok-moss" });
-    // join() waits 3 s for the snapshot; a loaded host can take longer (the snapshot then arrives late, not never)
-    for (let i = 0; i < 100 && !jm4.snapshot && !jm4.errors.length && m4.closed == null; i++) { await sleep(100); jm4.snapshot = m4.msgs.find((m) => m.type === "snapshot"); }
-    ok(kk.ok && m2.closed === 4006 && !!said && !jm3.snapshot && /may come back/.test(jm3.errors.join(" ")) && !!jm4.snapshot, "RS3 a kick: removed now (4006, with until), refused while the cooldown runs, admitted after it", [kk, m2.closed, said, jm3.errors, !!jm4.snapshot, jm4.errors]);
-    m3.close();
+    ok(timed.ok === false && timed.refused?.code === "shape" && /ban/.test(timed.refused?.fix ?? "") && kk.ok && m2.closed === 4006 && !!said && !said.until && /may come back/.test(said.error) && !!jm4.snapshot,
+      "RS3 a kick: removed now (4006, no until) and back at once; a kick with minutes is refused, pointing at ban", [timed.refused, kk, m2.closed, said, jm4.errors]);
     // RS4 RETIRED (R 10-20: ghost removed). Its setup stays: RS10 reads back the line said here, RS5 uses the rejoin
     await own.req("say", { text: "the secret word is heron" }); await sleep(400);
     const rejoin = await sock(S4.port); const jr = await rejoin.join("heath", "Moss", { agentToken: "tok-moss" }); await sleep(300);
@@ -322,14 +316,16 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const fernGot = mo.msgs.some((m) => m.type === "whisper" || JSON.stringify(m).includes("why was I muted") || JSON.stringify(m).includes("psst"));
     ok(vyRef?.refused?.code === "removed" && /removed/.test(vyRef?.error ?? "") && rq.ok === false && rq.refused?.code === "removed" && !fernGot,
       "RS8 whisper is removed: the message is refused as `removed` in words, the request of that name likewise, and nothing reaches the person named", [vyRef, rq.refused, fernGot]);
-    // RS9 (review 10-07): a visitor can't read the ban list; a guest's kick holds against a fresh guest connection (its ghost half retired 10-20)
+    // RS9 (review 10-07): a visitor can't read the ban list; a guest's ban holds against a fresh guest connection, a kick doesn't (R 10-28)
     const gv = await sock(S4.port); const jg = await gv.join("heath", "visitor-x");   // a guest (no account on this server)
     const kb = gv.msgs.length; gv.raw({ type: "world-bans" }); await sleep(300);
     const visBans = gv.msgs.slice(kb).find((m) => m.type === "error")?.error ?? "";   // a refusal, not a mod result (review of #260, server I33)
-    const kk = await own.req("kick", { who: you(jg), minutes: 0.5 }); await sleep(300);
+    const kk = await own.req("kick", { who: you(jg) }); await sleep(300);
     const g2 = await sock(S4.port); const jg2 = await g2.join("heath", "visitor-y");
-    ok(/moderation power/.test(visBans) && kk.ok && !jg2.snapshot,
-      "RS9 the ban list is for moderators; a guest's kick holds against a fresh guest from the same address", [visBans.slice(0, 60), kk.ok, jg2.errors]);
+    const bb = await own.req("ban", { who: you(jg2), days: 0.0004 }); await sleep(300);   // ~35 s: what the old 30 s kick held
+    const g3 = await sock(S4.port); const jg3 = await g3.join("heath", "visitor-z");
+    ok(/moderation power/.test(visBans) && kk.ok && !!jg2.snapshot && bb.ok && !jg3.snapshot,
+      "RS9 the ban list is for moderators; after a guest's kick a fresh guest from the address gets in, after a guest's ban it doesn't", [visBans.slice(0, 60), kk.ok, jg2.errors, bb.refused, jg3.errors]);
     // RS10 (R 10-18): speech is arrival-only. "the secret word is heron" was said (RS4) before Fern's new leg (mo) and Newt
     // arrived: neither a moderator nor a stranger reads it back, by the history message, the authority's history or the
     // join's window; an owner (Wren, an owner since RS7) joining later reads the master log, and its join counts it

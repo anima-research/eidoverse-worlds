@@ -177,24 +177,24 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         if (happened) { const text = modLine(w, c.id, verb, who);
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
-      // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
+      // an unban also lifts the address entry a guest's ban left
       if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
         for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
         if (n) saveGlobalBans(); }
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
-      // talking until they chose to leave). A guest has no account to ban, so their ban also names their
-      // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
+      // talking until they chose to leave); a kicked person may come straight back (R 10-28). A guest has no account to ban,
+      // so their ban also names their connection's address in this world for a day (moderation.ts), or they'd reconnect as a fresh guest.
       if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.actorId === who) {
-          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
-          // also name its connection's address in this world, or reconnecting would shed them (review 10-07)
-          if (t.anonymous && t.addr) {
+          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) also names its
+          // connection's address in this world, or reconnecting would shed it (review 10-07)
+          if (verb === "ban" && t.anonymous && t.addr) {
             const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
             globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
-          const back = r.until ? ` — you may come back ${verb === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
+          const back = verb === "kick" ? " — you may come back" : r.until ? ` — you may come back on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC` : "";
           expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }

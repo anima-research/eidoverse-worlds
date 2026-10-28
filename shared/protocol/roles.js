@@ -29,7 +29,6 @@ export const MOD_BAN_MAX_DAYS = 30;
 
 // ---------------- the other caps (research §5) ----------------
 export const MUTE_MAX_MIN = 7 * 24 * 60;        // a mute lasts at most 7 days
-export const KICK_DEFAULT_MIN = 10, KICK_MAX_MIN = 60;
 export const REASON_MAX = 500;
 
 export const RANK = Object.freeze({ inhabitant: 0, builder: 100, moderator: 200, owner: 255 });

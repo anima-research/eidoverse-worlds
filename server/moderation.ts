@@ -83,7 +83,7 @@ export const banKey = (account: string | null | undefined, addr?: string | null,
 
 // ---- a guest's mute, by address (R 10-07) ----------------------
 // A guest is a fresh identity per connection, so a mute on one was shed by reconnecting. Like a guest's ban
-// and kick (above), the sanction is also filed against the connection's HASHED address in that world, for at most
+// (above), the sanction is also filed against the connection's HASHED address in that world, for at most
 // ADDR_BAN_MS (or the sanction's own shorter end), and every new guest joining that world from the address is given
 // the same sanction (server.ts, at join). Lifting it on any identity it was carried to lifts the address record. Kept
 // apart from the ban list so nothing that reads bans (findBan, the operator's list) can mistake a mute for a ban.

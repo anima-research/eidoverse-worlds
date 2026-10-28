@@ -292,12 +292,12 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // moderation through act: the agent becomes an owner, kicks Vic by NAME (resolved to an identity), reads what's in force, unbans
   ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "owner" } })).ok, "(AT6 setup) Ann makes the agent an owner");
   await sleep(300);
-  const kicked = await call("act", { verb: "kick", args: { who: "Vic", minutes: 5, reason: "test" } }); await sleep(300);
+  const kicked = await call("act", { verb: "kick", args: { who: "Vic", reason: "test" } }); await sleep(300);
   ok(!kicked.isError && /done|kick/.test(T(kicked)) && /u-/.test(T(kicked)), "AT6l act kick {who: a name} resolves the name to an identity and the authority does it", T(kicked));
-  const inforce = await call("act", { verb: "bans" });
-  ok(!inforce.isError && /Vic|cooling/.test(T(inforce)), "AT6m act bans lists the cooldown in force (list_bans folded)", T(inforce));
+  const banned = await call("act", { verb: "ban", args: { who: "Vic", days: 1, reason: "test" } }), inforce = await call("act", { verb: "bans" });
+  ok(!banned.isError && !inforce.isError && /banned: Vic/.test(T(inforce)), "AT6m act bans lists the ban in force (list_bans folded)", [T(banned), T(inforce)]);
   const lifted = await call("act", { verb: "unban", args: { who: "Vic" } });
-  ok(!lifted.isError && /done|unban/.test(T(lifted)), "AT6n act unban lifts it (a kick's cooldown too)", T(lifted));
+  ok(!lifted.isError && /done|unban/.test(T(lifted)), "AT6n act unban lifts it", T(lifted));
   const nobody = await call("act", { verb: "ban", args: { who: "Nobody-Here" } });
   ok(nobody.isError && /Nobody-Here/.test(T(nobody)), "AT6o act ban of a name the world never saw is an error naming it", T(nobody));
   vic.close(); }

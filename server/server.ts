@@ -197,7 +197,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
 }
 
 function expel(w: World, target: Client, why: string, until?: number | null, code = 4006) {
-  // `until`: when they may come back (a kick's cooldown, a timed ban); an agent host reconnects then instead of never.
+  // `until`: when they may come back (a timed ban); an agent host reconnects then instead of never.
   // `code`: 4006 removed by moderation; 4010 (access.ts ACCESS_CLOSE) this world is no longer open to you — neither is redialled
   try { target.ws.send(JSON.stringify({ type: "error", error: why, ...(until ? { until } : {}) })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
@@ -570,7 +570,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
     // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
     // settle after a role change): bans first (a global ban closes every door, a world's ban this one; watching counts —
-    // a ban is exclusion, not just silencing), a kick's cooldown, then the world's own @world.access (who may come in
+    // a ban is exclusion, not just silencing), then the world's own @world.access (who may come in
     // with a body; watch: anyone lets the rest spectate), account age, and capacity for a body. Operators, owners and
     // holders of a moderation power always get in — an operator can never be locked out, which is also the unban path
     // of last resort.
@@ -582,7 +582,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         ws.send(JSON.stringify({ type: "error", error: r.why, ...(r.until ? { until: r.until } : {}) }));
         // "full" is its own close reason: it is transient (someone leaves), so a client waits and tries again rather than
         // showing it as the answer (review r3 F6); the other refusals won't change by retrying
-        c.ws.close?.(r.code, r.reason === "full" ? "full" : r.reason === "banned" ? "banned" : r.reason === "kicked" ? "kicked" : "no access");
+        c.ws.close?.(r.code, r.reason === "full" ? "full" : r.reason === "banned" ? "banned" : "no access");
         return null;
       }
     }

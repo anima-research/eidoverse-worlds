@@ -47,8 +47,8 @@ const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 // ---------- sanctions: views over the moderator log (research §5) ----------
 // Every sanction is a record with an optional `until` (the authority's clock, ms). Expiry is computed, never written: a view
 // reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the authority's clock). Records
-// name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted",
-// an old kick) is permanent for a ban and no cooldown for a kick.
+// name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted")
+// is permanent. A kick is never in force: it removes someone now, and they may come back at once (R 10-28).
 // Every record since the last LIFT of its kind (unban, unmute) that is still in force counts, and the STRONGEST
 // wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
 // owner's permanent one used to replace it, the newest record alone being read). Lifting goes through personLift.
@@ -59,11 +59,10 @@ const strongest = (a) => a.reduce((x, m) => (!x ? m : x.until === undefined ? x 
 const recsOf = (w, who) => w.mod.filter((m) => m.who === who);
 /** The sanctions of one kind in force on `who` now, every one (a lift must be allowed over each). */
 export function inForceOf(w, who, kind, recs = recsOf(w, who)) {
-  const lifts = { ban: ["unban"], kick: ["unban"], mute: ["unmute"] }[kind];
-  return sinceLift(recs, kind, lifts).filter((m) => inForce(w, m) && (kind !== "kick" || m.until !== undefined));
+  const lifts = { ban: ["unban"], mute: ["unmute"] }[kind]; if (!lifts) return [];
+  return sinceLift(recs, kind, lifts).filter((m) => inForce(w, m));
 }
 const banFrom = (w, who, recs) => strongest(inForceOf(w, who, "ban", recs));
-const kickFrom = (w, who, recs) => strongest(inForceOf(w, who, "kick", recs));
 const muteFrom = (w, who, channel, recs) => { const all = inForceOf(w, who, "mute", recs); if (!all.length) return null;
   const channels = [...new Set(all.flatMap((m) => m.channels ?? ["voice", "chat"]))];   // the union: a voice-only mute never narrows a both-channel one
   // asked about one channel, the record, its end and its reason are the mutes that cover it, never a voice-only one for chat
@@ -73,16 +72,14 @@ const muteFrom = (w, who, channel, recs) => { const all = inForceOf(w, who, "mut
 /** The ban in force on `who` (the strongest record), or null. */
 export const banOf = (w, who) => banFrom(w, who, recsOf(w, who));
 export const isBanned = (w, who) => !!banOf(w, who);
-/** The kick whose cooldown still runs (they can't rejoin until m.until), or null. An unban ends it early. */
-export const kickOf = (w, who) => kickFrom(w, who, recsOf(w, who));
 /** The mute in force (channels: the union of every mute in force, until: the latest), or null; `channel` narrows it. */
 export const muteOf = (w, who, channel) => muteFrom(w, who, channel, recsOf(w, who));
 /** Everything in force now, per identity (the Moderation panel's Bans tab; the server's join and voice gates).
  *  One pass over the moderator log, so the server's sweep stays linear in it. */
 export function sanctionsNow(w) {
   const by = new Map(); for (const m of w.mod) if (typeof m.who === "string") { let a = by.get(m.who); if (!a) by.set(m.who, (a = [])); a.push(m); }
-  const out = {}; for (const [x, recs] of by) { const b = banFrom(w, x, recs), k = kickFrom(w, x, recs), m = muteFrom(w, x, undefined, recs);
-    if (b || k || m) out[x] = { ...(b ? { ban: b } : {}), ...(k ? { kick: k } : {}), ...(m ? { mute: m } : {}) }; }
+  const out = {}; for (const [x, recs] of by) { const b = banFrom(w, x, recs), m = muteFrom(w, x, undefined, recs);
+    if (b || m) out[x] = { ...(b ? { ban: b } : {}), ...(m ? { mute: m } : {}) }; }
   return out;
 }
 // Who a change entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
@@ -143,4 +140,4 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 // (refactor split, 2026-10-17: moved here from authority.js's "the authority" section; request, undo and the hands' returns read it)
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
-export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, kickFrom, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
+export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
