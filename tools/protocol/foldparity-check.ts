@@ -179,11 +179,12 @@ async function equivalent(label, dir, { writes = true, wantTail = true, mustWrit
     const carried = fs.existsSync(cacheP(dir)) && !!cacheOf(dir).views; await equivalent(`fixture ${path.basename(f)}`, dir, { wantTail: carried, mustWrite: false }); n++; }
   ok(n >= 2, "FP2 (setup) the repo's conformance logs that fold cleanly were each re-signed, grown and compared", { n, seen }); }
 { const src = path.join(W, "noopc-src"); fs.mkdirSync(src, { recursive: true }); const w = open(src); grow(w, 120, "nc");   // a hand-made line: a create of a thing already live (noop:create-live), by ash
-  const E = w.entries.map((e) => JSON.parse(JSON.stringify(e))), id = Object.keys(w.state().entities).find((k) => k !== "@world" && w.state().entities[k].born < 100);
+  const E = w.entries.map((e) => JSON.parse(JSON.stringify(e))), id = Object.keys(w.state().entities).find((k) => k !== "@world" && creatorOf(w, k)?.by === "rowan");   // rowan made it; the no-op create is ash's
   const ashAct = E.findLastIndex((e) => e.kind === "act" && e.actor === "ash"); T += 700;
   E.push({ world: w.worldId, kind: "change", actor: "ash", cause: ashAct, verb: "create", body: { id }, ts: T });
   const dir = path.join(W, "noopc"); fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(logP(dir), resealed(E));
   const { r: x } = await said(() => open(dir)); ok(x.state().diagnostics.some(([, c, d]) => c === "noop:create-live" && d === id), "FP10 (setup) a log whose fold holds a no-op create of a live thing", id);
+  ok(creatorOf({ entries: x.entries, touching: x.touching }, id)?.by === "ash", "FP10 (setup) …whose walk names the no-op create's author (the born line names another)");
   grow(x, 20, "nc"); x.saveCache(); grow(x, 3, "nc"); await equivalent("a log with a no-op create", dir, { mustWrite: false }); }
 if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, { recursive: true });
   if (fs.existsSync(path.join(process.env.FP_FROM, "blobs"))) fs.cpSync(path.join(process.env.FP_FROM, "blobs"), path.join(dir, "blobs"), { recursive: true });
