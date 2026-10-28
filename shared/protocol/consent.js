@@ -63,10 +63,9 @@ const listed = (t, list, who) => !!t?.[list] && Object.hasOwn(t[list], who);
 export function tableOf(P, who) { const t = P.consent?.[who];
   return { move: t?.move, touch: t?.touch, allow: Object.keys(t?.allow ?? {}), block: Object.keys(t?.block ?? {}) }; }
 /** A world's @world.body-default as {move?, touch?}. The switch's words (to 10-28) are read too, in a stored value only,
- *  as a person's stored switch is (migratePresence): refuse → both off, ask → move on and touch off, accept → move on. */
+ *  as a person's stored switch is (migratePresence): refuse and ask → both off, accept → move on. */
 export function worldGates(v) {
-  if (v === "refuse") return { move: false, touch: false };
-  if (v === "ask") return { move: true, touch: false };
+  if (v === "refuse" || v === "ask") return { move: false, touch: false };   // ask was no until yes (F3, R 10-28 16:02)
   if (v === "accept") return { move: true };
   if (!v || typeof v !== "object") return {};
   return Object.fromEntries(GATES.filter((g) => typeof v[g] === "boolean").map((g) => [g, v[g]]));
@@ -111,10 +110,10 @@ export function setConsent(P, actor, a) {
   return { ok: true, target: actor };
 }
 /** The presence plane's consent tables in today's shape (CONSENT_SHAPE), only ever NARROWER than they were. A switch (to
- *  10-28): refuse → both gates off; ask → move on, touch off; accept → move on, touch left to the world's default. A table
+ *  10-28): refuse or ask → both gates off (ask was no until yes); accept → move on, touch left to the world's default. A table
  *  before the switch (to 10-20: preset, cells, pause, friends) is read as the switch it became then: paused or any enforced
  *  class closed for everyone → refuse, else any ask → ask, else accept. Per-person answers become the lists: any class
- *  denied → block; else any class allowed with no end → allow (one with an end was a yes for a while, and is dropped). The
+ *  denied → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). The
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
  *  tables changed. In place; idempotent. */
 export const CONSENT_SHAPE = 4;
@@ -132,11 +131,11 @@ export function migratePresence(P) {
   for (const t of Object.values(P.consent ?? {})) { if (!t || typeof t !== "object") continue;
     const old = ["switch", "over", "preset", "cells", "paused", "friends", "delegates"].filter((k) => Object.hasOwn(t, k)); if (!old.length) continue;
     const sw = switchOf(t);
-    if (sw === "refuse") { t.move = false; t.touch = false; } else if (sw === "ask") { t.move = true; t.touch = false; } else if (sw === "accept") t.move = true;
+    if (sw === "refuse" || sw === "ask") { t.move = false; t.touch = false; } else if (sw === "accept") t.move = true;   // F3, R 10-28 16:02
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
-      const cells = Object.values(row).filter((c) => c && typeof c === "object");
-      if (cells.some((c) => c.mode === "deny")) (t.block ??= bag())[who] = true;
-      else if (cells.some((c) => c.mode === "allow" && c.until === undefined)) (t.allow ??= bag())[who] = true; }
+      const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
+      if (cells.some(([, c]) => c.mode === "deny")) (t.block ??= bag())[who] = true;
+      else if (ENFORCED.every((c) => yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28)
     for (const k of old) delete t[k]; n++; }
   for (const k of ["asks", "asked", "askSeq", "cool"]) if (Object.hasOwn(P, k)) { delete P[k]; n++; }
   for (const r of P.ring ?? []) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);
