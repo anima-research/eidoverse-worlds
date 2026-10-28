@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { BACKUPS_DIR } from "./config.ts";
+import { isCacheFile } from "./statecache.ts";
 
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 export const SUMS = "SHA256SUMS";
@@ -45,7 +46,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
   for (let k = 2; fs.existsSync(dir); k++) dir = path.join(backupsDir, `${name}-${stampOf(now)}-${k}`);
   fs.mkdirSync(dir);
   try {
-    const files = filesUnder(src); const sums: Record<string, string> = {}; let bytes = 0;
+    const files = filesUnder(src).filter((f) => !isCacheFile(f)); const sums: Record<string, string> = {}; let bytes = 0;
     if (files.includes(SUMS)) throw new Error(`${src} holds a file named ${SUMS}, the name the backup's own list takes`);
     for (const rel of files) { const a = path.join(src, rel), b = path.join(dir, rel);
       fs.mkdirSync(path.dirname(b), { recursive: true }); fs.copyFileSync(a, b);

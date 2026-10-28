@@ -23,6 +23,7 @@ import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
 import { custodyAt, modLogAt } from "./custody.ts";
 import { directoryFor } from "./directory.ts";
 import { SANDBOX } from "../shared/protocol/sandbox.js";
+import { readCache, resumeFold, writeCache, dropCache, CACHE_FILE } from "./statecache.ts";
 
 type Any = any; // the authority is JSDoc-typed JS; the server holds it structurally
 
@@ -99,7 +100,6 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   });
 
   // ---- the views, built once from the log, then advanced per entry ----
-  let st = fold(entries);
   const touching = new Map<string, number[]>();
   // the sim starts from the last VALID checkpoint (authority checkpointSim): its blob present and hashing to its name, written
   // right after the entry it says (at = seq - 1), no purge after it (a purge is retroactive: its bytes may sit in the cut), an
@@ -114,9 +114,16 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
       return { seq: s, cut }; }
     return null;
   })();
+  // the strict fold: from the derived cache when it is this log's (server/statecache.ts), else from genesis
+  const cache = opts.stateCache, refused = (why: string) => console.warn(`[world:${name}] fold cache not used (${why}): folded from genesis`);
+  const hit = cache ? readCache(dir, entries, refused) : null;
+  const resumed = hit ? resumeFold(hit, entries, refused, ckpt && ckpt.seq >= hit.coversIndex ? ckpt.seq : undefined) : null;
+  let st = resumed?.st ?? fold(entries);
+  let cachedAt = resumed ? hit!.coversIndex : -1;   // the line the cache on disk covers (-1: none to trust)
   // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
   // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
-  let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries), ...(ckpt ? { from: { ...ckpt.cut, st: fold(entries, { until: ckpt.seq }) } } : {}) });
+  const ckptSt = ckpt ? (resumed?.snap ?? fold(entries, { until: ckpt.seq })) : null;
+  let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries), ...(ckpt ? { from: { ...ckpt.cut, st: ckptSt } } : {}) });
   const index = (seq: number, e: Any) => { if (!isE(e) || e.kind !== "change") return;
     for (const id of new Set(opsQuiet(e).map((o: Any) => o.id))) { let a = touching.get(id as string); if (!a) touching.set(id as string, (a = [])); a.push(seq); } };
   const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
@@ -130,6 +137,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.simCapTs = (maxTicks: number) => sim.capTs(maxTicks);
   w.simPeek = () => sim.view();   // where the engine stands, without advancing it (checks)
   w.touching = (id: string) => touching.get(id) ?? [];
+  const resim = () => { const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
+    sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries) });
+    if (st.status === "ok") for (let s = 0; s < entries.length; s++) if (isE(entries[s]) && !bad.has(s)) sim.feed(s); };
   const baseAppend = w.append;
   w.append = (e: Any, token: Any) => {
     const seq = baseAppend(e, token); const x = entries[seq];
@@ -140,14 +150,40 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     index(seq, x);
     // a purge is retroactive, so the engine's world is rebuilt from the whole log with it, as a fresh reader would fold it
     // (the sim fold reads a purged physical value as no body); a checkpoint can't stand in, since it may hold the purged bytes
-    if (x.kind === "purge") { const bad = new Set(st.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed")).map(([q]: Any) => q));
-      sim = simFolder(entries, { models: opts.simModels ?? {}, purged: purgesIn(entries) });
-      if (st.status === "ok") for (let s = 0; s < entries.length; s++) if (isE(entries[s]) && !bad.has(s)) sim.feed(s); }
+    if (x.kind === "purge") resim();
     else if (st.status === "ok") sim.feed(seq);
+    if (cache) { if (x.kind === "purge") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
+      if (seq - cachedAt >= cache.every) saveCache(); }
     opts.onAppend?.(seq, x);
     return seq;
   };
+  /** write the fold cache if it is behind the log (a clean shutdown; every `every` entries). Never throws: it is only a cache */
+  const saveCache = () => { if (!cache || entries.length - 1 <= cachedAt) return;
+    try { if (writeCache(dir, entries, st)) cachedAt = entries.length - 1; } catch (x) { console.warn(`[world:${name}] fold cache not written: ${(x as Error).message}`); } };
+  w.saveCache = saveCache;
+  w.bootedFromCache = resumed ? hit!.coversIndex : null;
+  // the background re-derive: a Worker folds and chains the covered lines from genesis; a disagreement is a bug, never an outage
+  w.cacheChecked = !hit || !resumed ? Promise.resolve(null) : verifyCache(path.join(dir, "world.jsonl"), hit.coversIndex).then((r: Any) => {
+    const agrees = !r.error && r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1;
+    if (agrees) return true;
+    console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.error ?? (r.head !== hit.coversHead ? "chain head" : "state")}): discarded it and refolded from the log; please report this`);
+    dropCache(dir); cachedAt = -1;
+    st = fold(entries); resim(); cache?.onRefold?.();
+    return false;
+  });
   return w;
+}
+
+/** Fold and chain a log's first coversIndex+1 lines in a Worker (server/statecache-verify.ts): {digest, head, n} or {error}. */
+function verifyCache(logPath: string, coversIndex: number): Promise<Any> {
+  return new Promise((resolve) => {
+    let worker: Worker; try { worker = new Worker(new URL("./statecache-verify.ts", import.meta.url).href); } catch (x) { resolve({ error: `no worker: ${(x as Error).message}` }); return; }
+    const done = (r: Any) => { try { worker.terminate(); } catch { /* gone */ } resolve(r); };
+    worker.onmessage = (ev: MessageEvent) => done(ev.data);
+    worker.onerror = (ev: Any) => done({ error: String(ev?.message ?? ev) });
+    (worker as Any).unref?.();
+    worker.postMessage({ logPath, coversIndex });
+  });
 }
 
 /** Line 0 of the log at `p`, read (only the first 64 KiB is looked at), or null. */

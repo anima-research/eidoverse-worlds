@@ -43,6 +43,7 @@ import { maintain } from "../../shared/protocol/authority.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { backupBeforeRepair, sealBackup, dropBackup, rollbackRepair } from "../../server/repairfiles.ts";
 import { backupWorld, type Backup } from "../../server/backups.ts";
+import { isCacheFile } from "../../server/statecache.ts";
 import { shellWord } from "../../server/oldworlds.ts";
 
 // `--` ends the flags: what follows is only words (the server passes it before a world name: server/upgrade.ts)
@@ -257,12 +258,13 @@ function rollback(name: string) {
   // files the server made since the translation (r14 M3): not made by it, not renamed by it, not there before it. The moderator
   // log (bans, mutes, kicks: PROTOCOL §2.1) is the usual one; a repair's backups another. They are history too.
   const known = new Set([...Object.keys(m.made), ...m.renamed.flat(), ...(m.present ?? []), MANIFEST]);
-  const since = fs.readdirSync(D).filter((f) => !known.has(f));
+  const since = fs.readdirSync(D).filter((f) => !known.has(f) && !isCacheFile(f));   // the fold cache is derived, not history (server/statecache.ts)
   if ((changed.length || since.length) && !discard) die(`can't roll back "${name}" without losing history: ${[...changed.map((f) => `${f} changed since the translation made it`), ...since.map((f) => `${f} was made since the translation${f === "world.mod.jsonl" ? " (the moderator log: bans, mutes, kicks were filed)" : ""}`)].join("; ")} `
     + `(the server has written to the translated world: acts, places, bans). Rolling back deletes that; if that is what you want, say so: rollback ${name} --discard-changes. Nothing was changed.`);
   const did: string[] = [];
   for (const f of Object.keys(m.made)) if (f !== MANIFEST && fs.existsSync(path.join(D, f))) { fs.rmSync(path.join(D, f)); did.push(`removed ${f}${changed.includes(f) ? " (its changes since the translation discarded)" : ""}`); }
   for (const f of since) { fs.rmSync(path.join(D, f), { recursive: true, force: true }); did.push(`removed ${f} (made by the server since the translation; discarded)`); }
+  for (const f of fs.readdirSync(D)) if (isCacheFile(f)) fs.rmSync(path.join(D, f));   // the translated log's derived fold goes with it
   for (const [a, b] of m.renamed) { fs.renameSync(path.join(D, b), path.join(D, a)); did.push(`${b} → ${a}`); }
   // an identity this translation minted that another world's files name (a later translation reused it through the same
   // account, or the person has been there since) is that world's too: forgetting it would hand them a fresh, roleless id
