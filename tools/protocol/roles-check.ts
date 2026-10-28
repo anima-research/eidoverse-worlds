@@ -344,13 +344,16 @@ const cases: Case[] = [
     good: (o) => o.code === "shape" && /no level/.test(o.why) && o.before === undefined && o.rank === 200 },
 
   // ---------------- B3 (recut B; house 22:03Z "starter config, switched on"): world settings that reach the authority ----------------
-  { id: "WS1", what: "(recut B3) an owner sets @world.body-default through the real set verb and it is stored (the decision reading it: switch-check W8)", run(s) { cast(s);
-      const r = set(s, "olive", "body-default", "refuse");
-      return { set: show(r), stored: s.w().state().entities["@world"].c["body-default"] }; },
-    good: (o) => o.set === "ok" && o.stored === "refuse" },
-  { id: "WS2", what: "(recut B3) body-default is accept | ask | refuse, nothing else; a builder (no editWorld) can't set it", run(s) { cast(s);
-      return { bad: code(set(s, "olive", "body-default", "maybe")), bob: code(set(s, "bob", "body-default", "ask")) }; },
-    good: (o) => o.bad === "shape" && o.bob === "rights" },
+  { id: "WS1", what: "(recut B3; R 10-28) an owner sets @world.body-default {move, touch} through the real set verb; it is stored, and it is what a body that never chose answers (gates-check W1–W5 for the order)", run(s) { cast(s);
+      const r = set(s, "olive", "body-default", { move: false, touch: true });
+      s.call("bob", "move", { to: [0, 0, 0] }); s.call("vic", "move", { to: [0.5, 0, 0] });
+      const pose = s.call("bob", "body", { to: "vic", kind: "pose", spec: { head: [0, 0, 0, 1] } }), shove = s.call("bob", "body", { to: "vic", kind: "shove" });
+      s.call("vic", "consent", { move: true }); const mine = s.call("bob", "body", { to: "vic", kind: "shove" });
+      return { set: show(r), stored: s.w().state().entities["@world"].c["body-default"], pose: show(pose), shove: code(shove), mine: show(mine) }; },
+    good: (o) => o.set === "ok" && JSON.stringify(o.stored) === '{"move":false,"touch":true}' && o.pose === "ok" && o.shove === "consent" && o.mine === "ok" },
+  { id: "WS2", what: "(recut B3; R 10-28) body-default is {move?, touch?}, each true or false; the switch's words are refused; a builder (no editWorld) can't set it", run(s) { cast(s);
+      return { word: code(set(s, "olive", "body-default", "refuse")), bad: code(set(s, "olive", "body-default", { move: "yes" })), bob: code(set(s, "bob", "body-default", { touch: true })) }; },
+    good: (o) => o.word !== "ok" && o.word != null && o.bad !== "ok" && o.bad != null && o.bob === "rights" },
   { id: "WS3", what: "(recut B3) keep-owner absent = on: removing the last owner is refused 'last-owner'", run(s) { cast(s);
       return { c: code(role(s, "olive", { role: "builder" })) }; },
     good: (o) => o.c === "last-owner" },

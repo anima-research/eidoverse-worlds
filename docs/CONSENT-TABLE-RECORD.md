@@ -1,6 +1,6 @@
-# Consent table — a record of one design (retired from code 10-20, #260 recut A)
+# Consent table — a record of two designs (the table, retired from code 10-20, #260 recut A; the switch, retired 10-28)
 
-Kept so the thinking isn't lost. Not a direction: nobody knows yet which of these a world will need (house markup, #260 22:05Z). What shipped instead is one switch per body — see spec/NORMATIVE.md.
+Kept so the thinking isn't lost. Not a direction: nobody knows yet which of these a world will need (house markup, #260 22:05Z). What ships now is two gates (move, touch) and two lists (allow, block) per body — see spec/NORMATIVE.md. The switch's code, its asks included, is on branch `archive/consent-ask`.
 
 ### Body consent (who may do what to your body)
 
@@ -39,3 +39,14 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 | shove | deny | ask | deny | allow | allow |
 | displace | deny | ask | deny | ask | ask |
 | voice | ask | allow | deny | allow | allow |
+
+### The switch (recut A2, 10-20 to 10-28)
+
+| Choice | Value |
+|---|---|
+| The answer | one switch per body: `accept`, `ask` or `refuse`; every kind of act on a body got the same answer |
+| Order | a per-person never > the switch > the world's `body-default` (a switch value) > `accept` |
+| Ask | `ask` filed a live question to the owner (the People Here row was marked, a toast said it, the person's menu answered Allow this once / Not now / Never); no answer in 20 s was no; one ask at a time per pair, two a minute per asker, a doubling cool-down after a no; a yes covered one act (a touch at most 10 min) |
+| Per-person | an allow or a deny for one person, per class or all; an allow could name `for` |
+
+Why it went (R 10-28): asking was the wrong shape for most bodies most of the time. "Keep main's shape of binary switches", with per-person lists that carve out around them. A stored switch became gates, never wider: refuse → both off; ask → move on, touch off; accept → move on, touch as stored (main's `ew-posable`) or off. A per-person deny became a block, a standing allow an allow; an allow with an end was dropped.

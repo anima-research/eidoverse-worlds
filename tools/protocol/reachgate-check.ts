@@ -3,17 +3,17 @@
 // place every packet passes, so that is where a hand on another body is held to that body's table: the real World, its real
 // authority (consent verb, reach verb, the presence plane) and the real pose handler. Nothing here is a mock of the gate.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/reachgate-check.ts
-//   RG1  a stranger's hand on chest_front (Normal: strangers' intimate is nobody): stripped from the relayed packet, the rest
-//        of the pose still relays, and the reacher is told why (once per cooldown, not per frame)
-//   RG2  a stranger's hand on a shoulder (Normal: strangers' touch is ask): stripped, told how to ask
-//   RG3  mutual friends (Normal friends: touch everyone, intimate ask): a shoulder relays, chest_front doesn't
-//   RG4  a standing allow for touch: relayed
+//   RG1  a stranger's hand on chest_front (both gates off): stripped from the relayed packet, the rest of the pose still
+//        relays, and the reacher is told why (once per cooldown, not per frame)
+//   RG2  a stranger's hand on a shoulder (touch gate off): stripped, told it is theirs to open
+//   RG4  a person on the allow list: relayed, every point (an allow is every class); on the block list: it leaves at once
 //   RG5  self-touch: relayed, whatever the point
 //   RG6  a bare world point inside a stranger's torso: stripped; one in open air: relayed
 //   RG7  a point in a stranger's own frame: inside them stripped, beside them relayed
 //   RG8  a hand toward someone who isn't here: stripped (it would land on whoever arrives under the name)
-//   RG9  an ask through the authority's reach verb, answered yes: relayed; the target closing touch ends it again
+//   RG9  the target opens touch: the reach verb's touch relays; closing it ends it again
 //   RG10 the target is never told about a stripped reach as a touch, and nothing is appended to the log
+// The asks (RG11–RG13, RG15–RG17, RL3) went with the ask (R 10-28; branch archive/consent-ask keeps them).
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -30,7 +30,7 @@ const { REACH_NOTE_MS, refusalWords } = await import("../../shared/protocol/cons
 let pass = 0, fail = 0;
 const ok = (c, what, d?) => { if (c) { pass++; console.log(`  ok   ${what}`); } else { fail++; console.log(`  FAIL ${what}${d !== undefined ? " — " + JSON.stringify(d).slice(0, 500) : ""}`); } };
 
-foundWorld(path.join(process.env.WORLDS_DIR, "touch"), "touch", "olive");
+const OWNER = foundWorld(path.join(process.env.WORLDS_DIR, "touch"), "touch", "olive").owner;
 const w = new World("touch");
 const A = (k) => "u-" + k.repeat(20);   // actor ids in the directory's shape
 const people = {};
@@ -38,7 +38,7 @@ function person(id, key, at) {
   const c = { id, actorId: A(key), world: w, ws: null, lastPose: null, spectator: false, surface: "world", avatar: "", got: [] };
   c.ws = { send: (d) => c.got.push(JSON.parse(d)) };
   w.clients.add(c); people[id] = c;
-  w.log.requestSync(c.actorId, "consent", { switch: "ask" });   // recut A2: the gate's mechanics run against "ask", set explicitly (the default is accept)
+  w.log.requestSync(c.actorId, "consent", { touch: false });   // the gate's mechanics run against touch off, set explicitly (never by leaning on the default)
   const mv = w.log.requestSync(c.actorId, "move", { to: at }); if (!mv?.ok) console.log("  (debug) move", id, JSON.stringify(mv));   // the authority's body (the reach verb needs one)
   pose(c, { p: at, yaw: 0 });
   return c;
@@ -53,8 +53,8 @@ const tom = person("Tom", "t", [-0.6, 0, 0]);
 const ann = person("Ann", "a", [5, 0, 0]), bob = person("Bob", "b", [5.6, 0, 0]);
 const head0 = w.log.head;
 
-// RG1 (recut A2: one switch per body — the gate's mechanics are tested with Vic's switch set, never by leaning on a default)
-{ const sw = req(vic, "consent", { switch: "refuse" }); ok(sw?.ok, "(RG1 setup) Vic sets her body to refuse", sw);
+// RG1 (Vic's gates set, never by leaning on a default)
+{ const sw = req(vic, "consent", { move: false, touch: false }); ok(sw?.ok, "(RG1 setup) Vic turns both gates off", sw);
   const k = sly.got.length, kv = vic.got.length;
   const out = reachTo(sly, { who: "Vic", point: "chest_front" });
   ok(out && !out.reach, "RG1 a stranger's hand on Vic's chest_front is stripped from the relayed packet", out);
@@ -67,27 +67,48 @@ const head0 = w.log.head;
   ok(!vic.got.slice(kv).some((m) => m.type === "body-inbox" && m.messages.some((x) => x.type === "body")), "RG10 Vic is never told she was touched", vic.got.slice(kv)); }
 
 // RG2
-{ req(vic, "consent", { switch: "ask" }); const k = sly.got.length;
+{ req(vic, "consent", { move: true, touch: false }); const k = sly.got.length;
   const out = reachTo(sly, { who: "Vic", point: "shoulder_l" });
   const r = refusals(sly, k);
-  ok(out && !out.reach, "RG2 a stranger's hand on Vic's shoulder (Vic: ask) is stripped", out);
-  ok(r.length === 1 && r[0].class === "touch" && /reach/.test(r[0].fix ?? ""), "RG2 …and Sly is told to ask through the reach request", r); }
+  ok(out && !out.reach, "RG2 a stranger's hand on Vic's shoulder (Vic: touch off, move on) is stripped", out);
+  ok(r.length === 1 && r[0].class === "touch" && r[0].fix === "leave it be: it is theirs to open" && !/ask/.test(JSON.stringify(r[0])), "RG2 …and Sly is told it is Vic's to open (nothing asks)", r); }
 
-// RG3 RETIRED (recut A2, 10-20): it tested the friends tier, which is gone — mutual friends get the same switch as anyone.
+// RG3 RETIRED (recut A2, 10-20): it tested the friends tier, which is gone.
 // RG4
-{ const r = req(vic, "consent", { allow: sly.actorId, class: "touch" });
-  ok(r?.ok, "(RG4 setup) Vic allows Sly touch", r);
+{ const r = req(vic, "consent", { allow: sly.actorId });
+  ok(r?.ok, "(RG4 setup) Vic puts Sly on her allow list (her touch gate stays off)", r);
   const out = reachTo(sly, { who: "Vic", point: "hand_r" });
-  ok(out?.reach?.rightHand?.t?.point === "hand_r", "RG4 a standing allow: Sly's hand on Vic's hand relays", out);
+  ok(out?.reach?.rightHand?.t?.point === "hand_r", "RG4 an allowed person: Sly's hand on Vic's hand relays though her touch gate is off", out);
   const out2 = reachTo(sly, { who: "Vic", point: "chest_front" });
-  ok(out2 && !out2.reach, "RG4 …an allow for touch is not one for intimate", out2);
-  // RG25 (review of #260): a touch the table allowed (no ask, so no grant and no body-revoked) leaves Sly's
+  ok(out2?.reach?.rightHand?.t?.point === "chest_front", "RG4 …an allow is every class: intimate too (R 10-28: always yes)", out2);
+  const out3 = reachTo(tom, { who: "Vic", point: "hand_r" });
+  ok(out3 && !out3.reach, "RG4 …and only for Sly: Tom's hand is still stripped", out3);
+  // RG25 (review of #260): a touch the table allowed (no body-revoked: nothing was granted) leaves Sly's
   // standing pose the moment Vic's table closes, and the server's re-hold isn't told to Sly as an attempt of his
   reachTo(sly, { who: "Vic", point: "hand_r" });
   const ks = sly.got.length;
-  req(vic, "consent", { deny: sly.actorId, class: "touch" });
-  ok(!sly.lastPose?.reach && w.dirty.has(sly.id) && !w.dirty.get(sly.id)?.reach, "RG25 a table-allowed touch leaves the standing pose and the next frame when the table closes", { last: sly.lastPose?.reach, dirty: w.dirty.get(sly.id)?.reach });
-  ok(refusals(sly, ks).length === 0, "RG25 …without a refusal said to Sly for a packet he didn't send", sly.got.slice(ks)); }
+  req(vic, "consent", { block: sly.actorId });
+  ok(!sly.lastPose?.reach && w.dirty.has(sly.id) && !w.dirty.get(sly.id)?.reach, "RG25 a table-allowed touch leaves the standing pose and the next frame when Vic blocks Sly", { last: sly.lastPose?.reach, dirty: w.dirty.get(sly.id)?.reach });
+  ok(refusals(sly, ks).length === 0, "RG25 …without a refusal said to Sly for a packet he didn't send", sly.got.slice(ks));
+  req(vic, "consent", { touch: true }); const out4 = reachTo(sly, { who: "Vic", point: "hand_r" });
+  ok(out4 && !out4.reach, "RG4b a block beats Vic's touch gate on: Sly's hand is still stripped", out4);
+  req(vic, "consent", { touch: false }); req(vic, "consent", { unlist: sly.actorId }); }
+
+// RT (parity with main, localbody.js:371/:381: the target was told "X tried to knock you over"): a refused act on my body is
+// said to ME once per asker per C.TRIED_NOTE_MS, in the body inbox, naming who and which gate; never more often
+{ const told = (c, k) => c.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages).filter((m) => m.type === "body-refused");
+  const rav = person("Rav", "rv", [0, 0, 20]), ike = person("Ike", "ik", [0.6, 0, 20]);
+  req(rav, "consent", { move: false, touch: false }); const k = rav.got.length, ki = ike.got.length;
+  MESSAGES["puppet"]({ c: ike, ws: ike.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Rav", ragdoll: true });
+  const t1 = told(rav, k);
+  ok(t1.length === 1 && t1[0].from === ike.actorId && t1[0].gate === "move" && t1[0].class === "shove", "RT1 Ike's refused knock-over is said to Rav, once: who, and that it was her move gate", rav.got.slice(k));
+  for (let i = 0; i < 4; i++) MESSAGES["puppet"]({ c: ike, ws: ike.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Rav", ragdoll: true });
+  reachTo(ike, { who: "Rav", point: "shoulder_l" }); req(ike, "body", { to: rav.actorId, kind: "pose" });
+  ok(told(rav, k).length === 1, "RT2 …and not again from Ike within the cooldown, whatever he tries (more shoves, a hand, the body verb): it can't be spammed", told(rav, k));
+  const k2 = rav.got.length; reachTo(tom, { who: "Rav", point: "shoulder_l" });
+  const t3 = told(rav, k2);
+  ok(t3.length === 1 && t3[0].from === tom.actorId && t3[0].gate === "touch", "RT3 another asker (Tom's refused hand) is said once of its own, as touch", rav.got.slice(k2));
+  ok(told(ike, ki).length === 0 && !JSON.stringify(ike.got.slice(ki)).includes("body-refused"), "RT4 the asker is never sent the target's notice: none of Ike's tries above told him anything of Rav's", ike.got.slice(ki)); }
 
 // RG5
 { const out = reachTo(sly, { who: "Sly", point: "chest_front" });
@@ -130,78 +151,40 @@ const head0 = w.log.head;
 ok(w.log.head === head0, "RG10 nothing about a reach is appended to the log", w.log.live.entries.slice(head0 + 1).map((e) => e.verb));
 
 
-// RG9 (Tom: a stranger Vic has no standing word about)
-{ const r = req(tom, "reach", { who: vic.actorId, point: "upper_back" });
-  ok(r?.ok && r.outcome === "asked", "(RG9 setup) Tom asks Vic through the authority's reach verb", r);
-  const ans = req(vic, "consent", { answer: r.ask, yes: true });
-  ok(ans?.ok && ans.yes, "(RG9 setup) Vic says yes", ans);
+// RG9 (Tom: a stranger neither of Vic's lists names)
+{ req(vic, "consent", { touch: true });
+  const r = req(tom, "reach", { who: vic.actorId, point: "upper_back" });
+  ok(r?.ok && r.outcome === "allowed", "(RG9 setup) Vic opens touch; Tom reaches for her through the authority's reach verb", r);
   const out = reachTo(tom, { who: "Vic", point: "upper_back" });
-  ok(out?.reach?.rightHand?.t?.point === "upper_back", "RG9 a touch the authority's reach verb admitted (asked, yes) relays", out);
+  ok(out?.reach?.rightHand?.t?.point === "upper_back", "RG9 a touch Vic's open gate admits relays", out);
   const k = tom.got.length;   // from before the change: the revocation is what Tom hears, whenever it reaches him
-  req(vic, "consent", { switch: "refuse" });
+  req(vic, "consent", { touch: false });
   // review of #260: the hand already resting on her leaves at once, from the pose joiners are handed and the
   // next frame, without Tom sending another packet
   ok(!tom.lastPose?.reach && w.dirty.has(tom.id) && !w.dirty.get(tom.id)?.reach, "RG24 …and the hand Tom already holds there leaves his standing pose and the next frame at once", { last: tom.lastPose?.reach, dirty: w.dirty.get(tom.id)?.reach });
   const heard = tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages);
   ok(heard.filter((m) => m.type === "body-revoked").length === 1 && heard.filter((m) => m.type === "reach-refused").length === 0, "RG24 …and Tom hears the revocation once, and no refusal for a packet he didn't send", heard);
   const out2 = reachTo(tom, { who: "Vic", point: "upper_back" });
-  ok(out2 && !out2.reach, "RG9 …and Vic closing touch to nobody ends it at the relay too", out2);
-  ok(refusals(tom, k).length + tom.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages).filter((m) => m.type === "body-revoked").length >= 1, "RG9 …and Tom hears it", tom.got.slice(k)); }
+  ok(out2 && !out2.reach, "RG9 …and Vic closing touch ends it at the relay too", out2); }
 
-// ---- r2 holes review 10-15 F3: an ask answered yes is ONE touch, not a standing allow ----
-const live = w.log.live, wall = live.now; let skew = 0; live.now = () => wall() + skew;   // restored after RG15
+const live = w.log.live, wall = live.now; let skew = 0; live.now = () => wall() + skew;   // restored after RG14
 const rf = (r) => (r?.ok === false ? r.refused ?? r : r);
-const shoulder = (c, who = "Quin") => reachTo(c, { who, point: "shoulder_l" });
+const shoulder = (c, who) => reachTo(c, { who, point: "shoulder_l" });
 const idle = (c) => pose(c, { p: c.lastPose?.p ?? [0, 0, 0], yaw: 0 });
-function grant(asker, target, point = "shoulder_l") {
-  skew += 61000;   // past the asker's 2-asks-a-minute
-  const r = req(asker, "reach", { who: target.actorId, point });
-  const ans = r?.ok && r.outcome === "asked" ? req(target, "consent", { answer: r.ask, yes: true }) : null;
-  return !!ans?.ok && ans.yes === true;
-}
-const pat = person("Pat", "p", [10, 0, 0]), quin = person("Quin", "q", [10.6, 0, 0]);
-// RG11 (a): letting go ends it
-{ ok(grant(pat, quin), "(RG11 setup) Pat asks Quin for her shoulder; Quin says yes");
-  idle(pat);   // a packet between the yes and the hand landing (the agent/browser is still streaming its idle pose)
-  ok(shoulder(pat)?.reach?.rightHand?.t?.point === "shoulder_l", "RG11a the granted hand relays, even after a packet that came before it landed");
-  ok(shoulder(pat)?.reach && shoulder(pat)?.reach, "RG11a …and keeps relaying while it is held, frame after frame");
-  idle(pat);   // the hand let go
-  const out = shoulder(pat);
-  ok(out && !out.reach, "RG11a after Pat lets go, the same hand again is stripped: a yes was one touch", out); }
-// RG12 (b): either person leaving ends it
-{ ok(grant(pat, quin), "(RG12 setup) a fresh yes");
-  ok(!!shoulder(pat)?.reach, "(RG12 setup) the hand relays");
-  w.log.departed(pat.actorId); req(pat, "move", { to: [10, 0, 0] });   // Pat's connection left; Pat comes back
-  const out = shoulder(pat);
-  ok(out && !out.reach, "RG12b the reacher leaving ends the grant: back again, the hand is stripped", out);
-  ok(grant(pat, quin), "(RG12 setup) another yes"); ok(!!shoulder(pat)?.reach, "(RG12 setup) relays");
-  w.log.departed(quin.actorId); req(quin, "move", { to: [10.6, 0, 0] });
-  const out2 = shoulder(pat);
-  ok(out2 && !out2.reach, "RG12b the target leaving ends it too: when she is back, the held hand is stripped", out2); }
-// RG13 (c): a change of mind is a revoke
-{ ok(grant(pat, quin), "(RG13 setup) a fresh yes"); ok(!!shoulder(pat)?.reach, "(RG13 setup) relays");
-  req(quin, "consent", { switch: "ask" });   // a change to another class
-  ok(!!shoulder(pat)?.reach, "RG13c a change to an unrelated class of Quin's table leaves the touch she said yes to");
-  req(quin, "consent", { switch: "accept" });
-  ok(!!shoulder(pat)?.reach, "(RG13 setup) Quin opens touch to everyone: relays");
-  req(quin, "consent", { switch: "ask" });
-  const out = shoulder(pat);
-  ok(out && !out.reach, "RG13c Quin going everyone → ask ends the held touch (only nobody used to)", out);
-  ok(grant(pat, quin), "(RG13 setup) another yes"); ok(!!shoulder(pat)?.reach, "(RG13 setup) relays");
-  }   // RG13c's friends-tier half RETIRED (recut A2): there is no friends cell to move
-
-// ---- F5: every contact point can be asked for through the verb, classed as the relay classes it ----
+// ---- F5: every contact point is classed by the reach verb as the relay classes it ----
 { const { CONTACT_POINTS } = await import("../../shared/contact.js");
   const fay = person("Fay", "f", [0, 0, 10]), gil = person("Gil", "g", [0.6, 0, 10]);
-  req(gil, "consent", { switch: "refuse" }); req(gil, "consent", { allow: fay.actorId, class: "touch" });   // Gil refuses; a per-person allow opens touch for Fay, not intimate
+  req(gil, "consent", { touch: false });   // every point refused, so both the verb and the relay say the class they judged
   const bad = [];
   for (const point of Object.keys(CONTACT_POINTS)) {
     const v = rf(req(fay, "reach", { who: gil.actorId, point }));
-    const verbCls = v?.ok ? v.class : v?.code === "consent" ? v.class : `refused ${v?.code}: ${v?.reason}`;
-    const out = reachTo(fay, { who: "Gil", point }); idle(fay);
-    const relayCls = out?.reach ? "touch" : "intimate";
+    const verbCls = v?.code === "consent" ? v.class : `not refused for consent: ${v?.code}: ${v?.reason}`;
+    skew += REACH_NOTE_MS + 1; const k = fay.got.length;   // past the once-per-class note, so the relay says this point's class
+    reachTo(fay, { who: "Gil", point }); idle(fay);
+    const relayCls = refusals(fay, k)[0]?.class ?? "relayed";
     if (verbCls !== relayCls) bad.push({ point, verb: verbCls, relay: relayCls }); }
-  ok(Object.keys(CONTACT_POINTS).length === 27 && bad.length === 0, "RG14 each of the 27 contact points can be asked for through the reach verb, and the verb's class is the relay's", bad); }
+  ok(Object.keys(CONTACT_POINTS).length === 27 && bad.length === 0, "RG14 each of the 27 contact points: the reach verb's class is the relay's (one classifier)", bad); }
+live.now = wall;
 
 // ---- consent refusals don't say WHY to the asker (10-13 consent research; coordinator 10-15) ----
 const lu = person("Lu", "l", [0, 0, -10]), mo = person("Mo", "m", [0.6, 0, -10]);
@@ -210,29 +193,29 @@ const said = () => { const v = rf(req(lu, "reach", { who: mo.actorId, point: "ch
   const k = lu.got.length; MESSAGES["puppet"]({ c: lu, ws: lu.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Mo", pose: { head: [0, 0, 0, 1] } });
   const puppet = lu.got.slice(k).find((m) => m.type === "error")?.error;   // the relay's own puppet path (server/messages.ts bodyRefusal), not the authority's body verb
   return { verb: v?.reason, verbFix: v?.fix, relay: g.reason, relayFix: g.fix, pose: rf(req(lu, "body", { to: mo.actorId, kind: "pose" }))?.reason, puppet }; };
-let tierNobody, perPerson;   // recut A2: the two ways to be refused are my switch (refuse) and a never for one person; a pause is gone (it was switch: refuse)
-{ req(mo, "consent", { switch: "refuse" }); tierNobody = said();
-  req(mo, "consent", { switch: "accept" });
-  req(mo, "consent", { deny: lu.actorId, class: "intimate" }); req(mo, "consent", { deny: lu.actorId, class: "pose" });
+let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a block
+{ req(mo, "consent", { touch: false }); tierNobody = said();
+  req(mo, "consent", { touch: true });
+  req(mo, "consent", { block: lu.actorId });
   perPerson = said();
   const same = (k) => tierNobody[k] === perPerson[k] && typeof perPerson[k] === "string";
-  ok(same("verb") && same("verbFix"), "RL1 the reach verb's refusal is byte-identical for a refuse switch and a per-person never", { tierNobody, perPerson });
+  ok(same("verb") && same("verbFix"), "RL1 the reach verb's refusal is byte-identical for a closed touch gate and a block", { tierNobody, perPerson });
   ok(same("relay") && same("relayFix"), "RL1 …so is what the relay tells a stripped reacher", { tierNobody, perPerson });
   ok(same("pose"), "RL1 …and the body verb's (pose)", { tierNobody, perPerson });
   ok(same("puppet") && perPerson.puppet === refusalWords("Mo", "pose"), "RL1 …and the relay's puppet path (posing someone: server/messages.ts bodyRefusal) says the one uniform sentence", { tierNobody, perPerson, want: refusalWords("Mo", "pose") });
-  ok(![tierNobody, perPerson].some((s) => /refuse|said no|strangers|friends|from Lu|u-l|from you|their consent|set to/.test(JSON.stringify(s))), "RL1 …neither mentions the switch, a per-person no, or a tier", perPerson);
+  ok(![tierNobody, perPerson].some((s) => /gate|never allows|block|from Lu|u-l|from you|their consent|is off/.test(JSON.stringify(s))), "RL1 …neither mentions a gate or a block", perPerson);
   const att = rf(req(mo, "consent", {}))?.attempts ?? [];
-  ok(att.some((a) => /said no/.test(a.why ?? "")) && att.some((a) => /set to refuse/.test(a.why ?? "")),
+  ok(att.some((a) => /never allows/.test(a.why ?? "")) && att.some((a) => /touch gate is off/.test(a.why ?? "")),
     "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }
 
-// RG23 (review of #260): pulling a nail (unpin) and a drag's stream are held to the target's displace consent
-// like the grab is; the agent runtime applies an unpin on the word that the server checked it
-{ req(vic, "consent", { switch: "refuse" });
+// RG23 (review of #260): pulling a nail (unpin) and a drag's stream are held to the target's displace consent (her move
+// gate) like the grab is; the agent runtime applies an unpin on the word that the server checked it
+{ req(vic, "consent", { move: false });
   const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });
   const kv = vic.got.length, ks = sly.got.length;
   drag({ unpin: { joint: "hand_l" } }); drag({ pose: { p: [0, 1, 0] } });
   const reached = vic.got.slice(kv).filter((m) => m.type === "bodydrag");
-  ok(reached.length === 0, "RG23 with Vic's displace at deny, Sly's unpin and drag samples never reach her", reached);
+  ok(reached.length === 0, "RG23 with Vic's move gate off, Sly's unpin and drag samples never reach her", reached);
   ok(sly.got.slice(ks).some((m) => m.type === "error"), "RG23 …and Sly is told the unpin was refused", sly.got.slice(ks));
   drag({ end: true });
   ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG23 …an end still goes through", vic.got.slice(kv));
@@ -249,59 +232,31 @@ let tierNobody, perPerson;   // recut A2: the two ways to be refused are my swit
   ok(got3.length === 1 && got3[0].end != null && got3[0].pinAt === undefined && sly.got.slice(ks3).some((m) => m.type === "error"),
     "RG23c a nail (pinAt) sent with an end is refused (Sly is told); the end still reaches Vic, without it", { got3, sly: sly.got.slice(ks3) }); }
 
-// ---- (the clock moves on from here: asks are at most 2 a minute) ----
-// RL3: an ask answered no and an ask nobody answered read the same to the asker, and the same as a refusal
-{ req(mo, "consent", { switch: "ask" });
-  const a1 = req(ned, "reach", { who: mo.actorId, point: "chest_front" }); req(ned, "inbox", {});
-  req(mo, "consent", { answer: a1.ask, yes: false });
-  const noWhy = (req(ned, "inbox", {}).messages ?? []).find((m) => m.type === "body-reply")?.why;
-  const a2 = req(kit, "reach", { who: mo.actorId, point: "chest_front" }); req(kit, "inbox", {});
-  skew += 21000; req(mo, "consent", {});   // any request expires asks past their 20 s
-  const silentWhy = (req(kit, "inbox", {}).messages ?? []).find((m) => m.type === "body-reply")?.why;
-  ok(a1?.outcome === "asked" && a2?.outcome === "asked" && typeof noWhy === "string" && noWhy === silentWhy && noWhy === tierNobody.verb,
-    "RL3 'said no' and 'no answer' tell the asker the same words, and the same as a refusal", { noWhy, silentWhy, refusal: tierNobody.verb }); }
-// RG15 (d): a TTL backstops all of the above
-{ const rae = person("Rae", "r", [10, 0, 10]), zed = person("Zed", "z", [10.6, 0, 10]);
-  ok(grant(rae, zed), "(RG15 setup) Rae asks Zed; Zed says yes");
-  ok(!!shoulder(rae, "Zed")?.reach, "(RG15 setup) relays");
-  skew += 9 * 60000; ok(!!shoulder(rae, "Zed")?.reach, "RG15d still held 9 min on: relays");
-  skew += 60000 + 1000; const out = shoulder(rae, "Zed");
-  ok(out && !out.reach, "RG15d past 10 min the grant has lapsed even though the hand never let go: stripped (ask again)", out); }
-// RG16: a cached reach grant ends no later than the timed allowance it came from
-{ const uma = person("Uma", "h", [-10, 0, -10]), val = person("Val", "j", [-10.6, 0, -10]);
-  ok(req(uma, "consent", { allow: val.actorId, class: "touch", for: 60000 })?.ok === true, "(RG16 setup) Uma allows Val touch for a minute");
-  const asked = req(val, "reach", { who: uma.actorId, point: "shoulder_l" });   // the reach verb delivers and caches the relay's grant
-  ok(asked?.ok === true && !!shoulder(val, "Uma")?.reach, "RG16 within the minute Val's reach is delivered and the hand relays", asked);
-  skew += 61000; const out = shoulder(val, "Uma");
-  ok(out && !out.reach, "RG16 past the minute it is stripped: the grant ended with the allowance", out); }
-// RG16b: a yes to an ask asked after an allowance ran out is that yes, not the old allowance's end (review of #260, house
-// 6340433633 Q1: the cap read the stale allowance and ended the fresh yes at once)
-{ const ola = person("Ola", "h2", [-14, 0, -14]), pim = person("Pim", "j2", [-14.6, 0, -14]);
-  req(ola, "consent", { switch: "ask" });
-  ok(req(ola, "consent", { allow: pim.actorId, class: "touch", for: 60000 })?.ok === true, "(RG16b setup) Ola allows Pim touch for a minute, and asks everyone else");
-  ok(grant(pim, ola), "(RG16b setup) past that minute Pim's reach is an ask, and Ola says yes");
-  const out = shoulder(pim, "Ola");
-  ok(!!out?.reach, "RG16b the yes stands: the hand relays (the run-out allowance doesn't end it)", out); }
-// RG16c (review of the house fixes): a touch an allowance admitted is let go like an asked one: once its hand has landed and
-// leaves, it is no longer under way (touchedBy, and no body-revoked later for a hand that isn't there)
+// RG16c (review of the house fixes): a touch the allow list admitted is let go: once its hand has landed and leaves, it is
+// no longer under way (touchedBy, and no body-revoked later for a hand that isn't there)
 { const rho = person("Rho", "h3", [-16, 0, -16]), sam = person("Sam", "j3", [-16.6, 0, -16]);
-  req(rho, "consent", { allow: sam.actorId, class: "touch" });
+  req(rho, "consent", { allow: sam.actorId });
   ok(req(sam, "reach", { who: rho.actorId, point: "shoulder_l" })?.ok === true && !!shoulder(sam, "Rho")?.reach, "(RG16c setup) Rho allows Sam; Sam's hand lands and relays");
   const during = !!live.presence.reaches?.[sam.actorId];
   idle(sam);
   ok(during && !live.presence.reaches?.[sam.actorId], "RG16c after Sam lets go, the allowed touch is no longer under way", { during, after: live.presence.reaches?.[sam.actorId] }); }
-// RG17: an ask's id names it alone, even when another ask made in the same millisecond was answered first
-{ const wes = person("Wes", "k", [-12, 0, -12]), xa = person("Xa", "l", [-12.6, 0, -12]), yo = person("Yo", "m", [-11.4, 0, -12]), zu = person("Zu", "n", [-12, 0, -11.4]);
-  req(wes, "consent", { switch: "ask" });
-  const t = live.now(); live.now = () => t;
-  const a1 = req(xa, "reach", { who: wes.actorId, point: "shoulder_l" }), a2 = req(yo, "reach", { who: wes.actorId, point: "shoulder_l" });
-  req(wes, "consent", { answer: a1?.ask, yes: false });
-  const a3 = req(zu, "reach", { who: wes.actorId, point: "shoulder_l" });
-  const waiting = (req(wes, "consent", {})?.asks ?? []).map((k) => k.from);
-  live.now = () => wall() + skew;
-  ok(a2?.outcome === "asked" && a3?.outcome === "asked" && a2.ask !== a3.ask && waiting.includes(yo.actorId) && waiting.includes(zu.actorId),
-    "RG17 a new ask doesn't take the id of one still waiting", { a2: a2?.ask, a3: a3?.ask, waiting }); }
-live.now = wall;
+// RR (R 10-28 13:44, "lift caps in general"): the relay forwards a puppet or a grab from any distance unless the world sets a
+// range (@world.body-default.range, m); consent still decides
+{ const P = await import("../../shared/protocol/physconst.js");
+  const una = person("Una", "un", [40, 0, 40]), far = person("Fen", "fe", [70, 0, 40]);   // 30 m apart
+  req(una, "consent", { move: true, touch: true });
+  const puppet = (m) => { const k = una.got.length, kf = far.got.length; MESSAGES["puppet"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Una", ...m });
+    return { got: una.got.slice(k).filter((x) => x.type === "puppet").length, err: far.got.slice(kf).find((x) => x.type === "error")?.error ?? null }; };
+  const g = (m) => { const k = una.got.length; MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", grab: { joint: "hips" } }); return una.got.slice(k).filter((x) => x.type === "bodydrag").length; };
+  const a = puppet({ ragdoll: true }), b = puppet({ pose: { head: [0, 0, 0, 1] } });
+  ok(P.BODY_RANGE === null && a.got === 1 && b.got === 1 && g() === 1, "RR1 no range by default: Fen's knock-over, pose and grab reach Una from 30 m (her consent allows them)", { a, b, range: P.BODY_RANGE });
+  const set = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
+  const c = puppet({ ragdoll: true }), d = puppet({ pose: { head: [0, 0, 0, 1] } });
+  ok(set?.ok && c.got === 0 && /30\.0 m away/.test(c.err ?? "") && /5 m/.test(c.err ?? "") && d.got === 0 && g() === 0, "RR2 a world that sets range 5 refuses them from 30 m, saying how far and the world's range", { set, c, d });
+  pose(far, { p: [44, 0, 40], yaw: 0 });
+  ok(puppet({ ragdoll: true }).got === 1, "RR3 …and forwards them within it");
+  req(una, "consent", { move: false }); ok(puppet({ ragdoll: true }).got === 0, "RR4 …where consent still decides");
+  w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
 let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
@@ -345,8 +300,8 @@ let skipped = null; const SKIP = Symbol("skip");
     const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
     const T = (r) => r?.content?.[0]?.text ?? "";
     const seenReach = (k, point) => msgs.slice(k).some((m) => m.type === "frame" && m.poses?.Hep?.reach && JSON.stringify(m.poses.Hep.reach).includes(point));
-    // AG1 (recut A2: Vic sets her switch to refuse; touch for the agent alone is opened in AG2 by a per-person allow)
-    const sw = await vreq("consent", { switch: "refuse" }); ok(sw?.ok, "(AG1 setup) Vic sets her body to refuse", sw);
+    // AG1 (Vic's touch gate off; the agent alone is let in by her allow list in AG2)
+    const sw = await vreq("consent", { touch: false }); ok(sw?.ok, "(AG1 setup) Vic turns her touch gate off", sw);
     let k = msgs.length;
     const r1 = await call("reach", { who: "Vic", point: "chest_front" }); await pause("a relayed hand on Vic's chest has had its time to arrive (none must)", 600);
     ok(!seenReach(k, "chest_front"), "AG1 Vic receives no frame carrying the agent's hand on her chest_front", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-3));
@@ -354,22 +309,14 @@ let skipped = null; const SKIP = Symbol("skip");
     // AG2
     const hep = (() => { for (const m of msgs) { if (m.id === "Hep" && typeof m.actorId === "string") return m.actorId;
       for (const p of m.present ?? []) if (p.id === "Hep" && typeof p.actorId === "string") return p.actorId; } return null; })();
-    const op = await vreq("consent", { allow: hep, class: "touch" });
-    ok(op?.ok, "(AG2 setup) Vic opens touch to the agent alone (a per-person allow; intimate stays refused)", { op, hep });
+    const op = await vreq("consent", { allow: hep });
+    ok(op?.ok, "(AG2 setup) Vic puts the agent on her allow list", { op, hep });
     k = msgs.length;
     const r2 = await call("reach", { who: "Vic", point: "shoulder_l" }); await tryUntil("Vic receives the agent's hand on her shoulder", () => seenReach(k, "shoulder_l"), { ms: 3000 });
-    ok(seenReach(k, "shoulder_l"), "AG2 with touch open to it, the agent's hand on Vic's shoulder relays", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-2));
+    ok(seenReach(k, "shoulder_l"), "AG2 allowed by name, the agent's hand on Vic's shoulder relays", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-2));
     ok(!/not shown/.test(T(r2)) && ag.reaches.has("rightHand"), "AG2 …and the reply claims no refusal", T(r2));
-    // AG3 (r2 holes F9): a refusal for one limb withdraws that limb, not a consented one on the same body
-    await pause("the relay says a (reacher, target, class) refusal once per REACH_NOTE_MS: wait out AG1's", REACH_NOTE_MS + 500);
-    k = msgs.length;
-    const r3 = await call("reach", { limb: "leftHand", who: "Vic", point: "chest_front" }); await tryUntil("the left hand is withdrawn and the right still relays", () => !ag.reaches.has("leftHand") && seenReach(k, "shoulder_l"), { ms: 3000 });
-    ok(/not shown/.test(T(r3)) && !ag.reaches.has("leftHand"), "(AG3 setup) the left hand on Vic's chest_front is refused and withdrawn", T(r3));
-    ok(ag.reaches.has("rightHand") && seenReach(k, "shoulder_l"), "AG3 …and the right hand she consented to stays on her shoulder", { reaches: [...ag.reaches.keys()], text: T(r3) });
-    // AG4: within REACH_NOTE_MS of that intimate refusal, a TOUCH-class point in Vic's own frame is not refused by memory of it
-    k = msgs.length;
-    const r4 = await call("reach", { limb: "leftHand", x: 0.24, y: 1.0, z: 0, space: "Vic" }); await sleep(600);
-    ok(!/not shown/.test(T(r4)) && ag.reaches.has("leftHand") && seenReach(k, '"space":"Vic"'), "AG4 a point at Vic's side (touch, open) relays and the agent doesn't claim the earlier intimate refusal for it", { text: T(r4), reaches: [...ag.reaches.keys()] });
+    // AG3, AG4 RETIRED (R 10-28): they held one limb refused (intimate) beside one allowed (touch) on the same body; an allow
+    // is now every class and both points are behind one gate, so one body can't refuse one hand and take the other
   } catch (e) { if (e !== SKIP) ok(false, "AG threw", String(e?.stack ?? e).slice(0, 600)); else console.log(`  SKIP AG1-AG2: the agent can't load here (${skipped}); NODE_PATH=<node_modules with it> runs them`); }
   try { ag?.close(); } catch {} try { vs?.close(); } catch {} try { proc.kill(); } catch {} }
 

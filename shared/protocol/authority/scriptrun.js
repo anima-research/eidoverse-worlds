@@ -18,7 +18,7 @@ import { worldT } from "./math.js";
 import { r3 } from "../round.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
-import { bodyGate, expireAsks } from "./bodyconsent.js";
+import { bodyGate } from "./bodyconsent.js";
 import { scriptUse } from "./use.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
@@ -127,8 +127,8 @@ function activate(w, id, name, ev) {
   const actE = { kind: "act", actor: `script:${id}`, verb: "script", ...(cause !== undefined ? { cause } : {}),
     body: { script: key, src: v.src, sponsor: sp.sponsor, sponsorAt: sp.sponsorAt, on: ev.on, ...(ev.by && !anon ? { trigger: { actor: ev.by, ...(ev.seq !== undefined ? { seq: ev.seq } : {}) } } : {}),
       event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
-      // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: "allowed" (a per-person allow) vs
-      // "standing" is a relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
+      // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: an allow list vs an open gate is a
+      // relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
       ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}), ...(uses.length ? { uses } : {}) } };
   const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
@@ -167,7 +167,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     const n0 = w.entries.length;
     CTX.work = { left: Infinity, until: Infinity, k: 0 };
-    restampEngine(w); settleSim(w); returnDue(w); expireAsks(w); checkpointSim(w);
+    restampEngine(w); settleSim(w); returnDue(w); checkpointSim(w);
     drainAll(w);   // what the beat logged reaches scripts, as a request's entries do (second review S2-2)
     return w.entries.length - n0;
   });

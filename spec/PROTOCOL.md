@@ -646,14 +646,13 @@ copy that was updated and is published again keeps its parts' keys.
   waist and the hips. Otherwise the limb is stripped from the packet and
   from the pose kept for late joiners, and the reacher is told only that
   it was refused, in one sentence whatever the cause (`<them> isn't taking
-  <class> right now`: a switch at `refuse`, a per-person deny, an ask
-  answered no or left to expire all read the same; a switch at `ask` says
-  to ask). The cause goes only to the target's own attempt ring, which
+  <class> right now`: a closed touch gate and a block read the same). The
+  cause goes only to the target's own attempt ring, which
   `consent {}` shows them as `attempts` (server/reachgate.ts → the
   authority's `reachAdmits`; shared/protocol/consent.js `refusalWords`).
-  Consent is its person's own: `look` shows each viewer their own switch and
+  Consent is its person's own: `look` shows each viewer their own gates and
   who poses, drags or touches them, and of anyone else only where they
-  stand (and what the viewer is doing to them); another body's switch
+  stand (and what the viewer is doing to them); another body's gates and lists
   would undo the uniform words. Sitting includes agreeing to be carried by
   the seat: a seat carries its occupant through whatever moves it, and an edit is never refused because a
   body is on the thing. An edit by anyone but the occupant that would move a
@@ -767,17 +766,30 @@ copy that was updated and is published again keeps its parts' keys.
   touch, pose, shove, displace — someone else dragging, carrying or
   occupying-with you, never your own `move`) is one request to that body's
   owner, and the authority alone decides it, the same way for every kind of
-  body. The answer comes, in this order, from: the owner's answer for that
-  one person (`consent {allow|deny: <who>, class?}`; an allow stands until
-  revoked, or for `for` ms), else the owner's **switch** (`consent {switch:
-  accept|ask|refuse}`), else the world's `body-default` (`@world`), else
-  `accept`. `ask` files an ask the owner answers (silence is no, after 20 s).
-  Only the owner changes their own answers. A world or a person may close
-  this further; nothing here opens it. Near, follow and voice are classes an
-  ask or a per-person answer may name, but nothing enforces them yet. The
-  table this replaced (presets, tiers, pause, delegates) is kept as a record
-  in `docs/CONSENT-TABLE-RECORD.md`; a stored table is read once as a switch
-  that is never wider than it was.
+  body. Each body has two **gates**, each on or off: `move` — where the
+  body is: shoved (a `/boom`'s force too), dragged, carried, seated or
+  occupied (classes `shove`, `displace`) — and `touch` — everything else
+  done to it: touched, intimately too, and posed (`touch`, `intimate`,
+  `pose`); and two **lists** of people: `allow`, who always may, every
+  class, whatever the gates say, and `block`, who never may. The answer
+  comes, in this order, from: `block`, then `allow`, then the owner's gate
+  for the class (`consent {move: true|false, touch: true|false}`), else the
+  world's `body-default` for that gate (`@world.body-default {move?,
+  touch?}`), else `move` on and `touch` off. A list is set per person:
+  `consent {allow|block|unlist: <who>}` (one list at a time; `unlist` takes
+  them off both). Nothing asks: the answer is there before the act. A
+  refused act is also said to its target, quietly: `body-refused {from,
+  class, gate}` in their body inbox (`gate` null: their block list), once
+  per asker per minute whatever the asker tries meanwhile. Distance is no
+  part of consent: the relay forwards a knock-over, pose or grab of another
+  body from any distance unless the world sets `@world.body-default.range`
+  (m). Only
+  the owner changes their own answers. Near, follow and voice are classes
+  no gate covers yet; nothing enforces them. The designs this replaced (the
+  table of presets, tiers, pause and delegates; then one switch
+  `accept|ask|refuse` with live asks) are kept as a record in
+  `docs/CONSENT-TABLE-RECORD.md`; a stored table or switch is read once as
+  gates and lists never wider than it was.
 
 ### Private attention metadata
 
@@ -828,7 +840,7 @@ program, or a program someone is steering.
 
 1. **One gate for everyone.** The authority MUST NOT read what is behind a
    participant (a browser, a headset, a program). Rights, roles, locks, rates, refusal
-   codes and words, the consent switch and its default, and every request verb
+   codes and words, the consent gates and their defaults, and every request verb
    are the same for every identity. The only distinctions the authority MAY
    draw between identities are the world's own grants (roles, §7) and whether
    the identity holds an account (a guest, §7a).
@@ -1112,9 +1124,8 @@ person's own word tell them no over people); it has a documented override
 **4. The body: what the affected participant permits.** A request that
 reaches another person's body — standing close, following, touching
 (plainly or intimately), posing, knocking over, carrying, speaking into the
-ear — is decided by **their** consent (§5): their switch, `accept` | `ask` |
-`refuse`, with `ask` filing a 20-second question they answer or let lapse
-(silence is no), and their per-person answers, which win over it. No role, including owner,
+ear — is decided by **their** consent (§5): their two gates, `move` and
+`touch`, and their allow and block lists, which win over the gates. No role, including owner,
 overrides a consent refusal: this is the one veto standing *outside* the
 role ladder, and it is the affected party's, never the installer's or the
 invoker's. Sitting is not on the table: it is consent to the seat's own

@@ -1030,7 +1030,30 @@
  },
  "body-default": {
   "status": "trial",
-  "type": "string",
+  "fields": {
+   "move": "bool",
+   "touch": "bool",
+   "range": "number"
+  },
+  "ranges": {
+   "range": {
+    "min": 0.5,
+    "max": 10000
+   }
+  },
+  "absentMeans": {
+   "move": "true: an untouched body may be moved (shoved, dragged, carried, seated)",
+   "touch": "false: an untouched body may not be touched or posed",
+   "range": "no limit: the server forwards a puppet or a grab from any distance unless the world sets a range (@world.body-default.range)"
+  },
+  "docs": {
+   "move": "the move gate an untouched body has here: being shoved (a /boom's force too), dragged, carried, seated or occupied",
+   "touch": "the touch gate an untouched body has here: being touched (intimate points too) and posed",
+   "range": "how near (m, between the two bodies) someone must be for the server to forward their knock-over, pose or grab of another body; consent still decides"
+  },
+  "units": {
+   "range": "m"
+  },
   "on": "world"
  },
  "keep-owner": {

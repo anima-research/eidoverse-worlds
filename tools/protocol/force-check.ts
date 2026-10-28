@@ -27,6 +27,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a blast needs no kick's reach", "protocol/authority/bodyverbs.js", "else if (!blast && (dh > KICK.reach", "else if ((dh > KICK.reach", ["F5"]],
   ["linear falloff", "blast.js", "mag: power * (1 - d / radius)", "mag: power", ["F5"]],
   ["the bounds", "blast.js", "Math.min(b.max, Math.max(b.min, n))", "n", ["F4"]],
+  ["the target is told once a minute per asker", "protocol/authority/bodyconsent.js", "if (n[key] > now - C.TRIED_NOTE_MS) return false;", "if (false) return false;", ["F10"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -135,13 +136,13 @@ const cases: Case[] = [
       const r = s.call("bob", "force", { at: [-1, 0, 0] });
       return { g: show(g), r: show(r), punted: (r.punted ?? []).map((x: any) => x.id), skipped: r.skipped ?? [] }; },
     good: (o) => o.g === "ok" && o.r === "ok" && o.punted.join() === "crate" && o.skipped.some((x: any) => x.id === "lk" && x.code === "locked") && o.skipped.some((x: any) => x.id === "ball" && x.code === "held") },
-  { id: "F7", what: "bodies: vic (accepting) is shoved away from the blast; ida (refuse) is not, and is only counted; a body past the rim hears nothing", run(s) { cast(s, { physics: false });
-      s.call("vic", "move", { to: [1, 0, 0] }); s.call("ida", "move", { to: [-1, 0, 0.5] }); s.call("ida", "consent", { switch: "refuse" });
+  { id: "F7", what: "bodies: vic (move gate on, the default) is shoved away from the blast; ida (move off) is not, and is only counted; a body past the rim hears nothing", run(s) { cast(s, { physics: false });
+      s.call("vic", "move", { to: [1, 0, 0] }); s.call("ida", "move", { to: [-1, 0, 0.5] }); const c = s.call("ida", "consent", { move: false });
       s.call("bob", "move", { to: [0, 0, 6] });
       const r = s.call("bob", "force", { at: [0, 0, 0], radius: 4, power: 3 });
       const v = shovesIn(s, "vic"), i = shovesIn(s, "ida"), b = shovesIn(s, "bob");
-      return { r: show(r), bodies: r.bodies, vic: v.map((m: any) => m.spec?.lean), ida: i.length, bob: b.length }; },
-    good: (o) => o.r === "ok" && o.vic.length === 1 && o.vic[0]?.[0] > 2 && Math.abs(o.vic[0][2]) < 1e-9 && o.ida === 0 && o.bob === 0 && o.bodies?.shoved === 1 && o.bodies?.refused === 1 },
+      return { c: show(c), r: show(r), bodies: r.bodies, vic: v.map((m: any) => m.spec?.lean), ida: i.length, bob: b.length }; },
+    good: (o) => o.c === "ok" && o.r === "ok" && o.vic.length === 1 && o.vic[0]?.[0] > 2 && Math.abs(o.vic[0][2]) < 1e-9 && o.ida === 0 && o.bob === 0 && JSON.stringify(o.bodies) === '{"shoved":1,"refused":1}' },
   { id: "F8", what: "a world without physics: bodies are still shoved, things stay put (a note says why); standing at your own blast knocks you over too", run(s) { cast(s, { physics: false });
       s.call("bob", "move", { to: [0.5, 0, 0.5] }); const n0 = s.entries().length;
       const r = s.call("bob", "force", { at: [0.5, 0, 0.5] });
@@ -151,8 +152,14 @@ const cases: Case[] = [
       s.call("vic", "move", { to: [1, 0, 0] }); const n0 = s.entries().length; s.call("bob", "force", { at: [0, 0, 0] });
       const added = s.entries().slice(n0); return { n: added.length, at: added[0]?.body?.request?.at, refused: added[0]?.body?.refused, text: JSON.stringify(added) }; },
     good: (o) => o.n === 1 && !o.refused && JSON.stringify(o.at) === "[0,0,0]" && !/vic/.test(o.text) && /"force"/.test(o.text) },
+  { id: "F10", what: "a refused body hears body-refused {from, class shove, gate move} once per asker per TRIED_NOTE_MS, however many blasts land meanwhile", run(s) { cast(s, { physics: false });
+      s.call("ida", "move", { to: [1, 0, 0] }); s.call("ida", "consent", { move: false }); s.call("bob", "move", { to: [0, 0, 6] });
+      for (let k = 0; k < 3; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      const tried = () => (s.call("ida", "inbox").messages ?? []).filter((m: any) => m.type === "body-refused" && m.from === "bob");
+      const first = tried(); s.call("bob", "force", { at: [0, 0, 0] }, 61000); const later = tried();
+      return { first: first.map((m: any) => `${m.class}/${m.gate}`), later: later.length }; },
+    good: (o) => o.first.join() === "shove/move" && o.later === 1 },
 ];
-
 let pass = 0, fail = 0;
 for (const c of cases) {
   if (ONLY && !ONLY.includes(c.id)) continue;

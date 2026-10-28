@@ -228,10 +228,9 @@ try {
     ok(s1?.ok && s2?.ok, "(AS16 setup) two steps out and back spend the track", { s1: s1?.refused, s2: s2?.refused });
     const t = T(await call("move", { to: [at[0] - 3, at[2]] }));
     ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
-  // AS15 (review of #260): a rejoin resends the agent's consent table without a preset. A preset
-  // empties the agent's cells, so a cell it closed would stand open until its set landed. The rejoin reads what the
-  // authority holds and sets only what differs; the closed cell is closed throughout and after
-  { const closed = await ag.request("consent", { switch: "refuse" });
+  // AS15 (review of #260): a rejoin resends what the agent chose with consent. The rejoin reads what the authority holds
+  // and sets only what differs; the gate it closed is closed throughout and after
+  { const closed = await ag.request("consent", { move: false });
     const sent: any[] = []; const orig = ag.request.bind(ag);
     ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); return orig(verb, args); };
     ag.ws?.close();
@@ -240,8 +239,8 @@ try {
     for (let i = 0; i < 40 && !sent.length; i++) await sleep(50); await sleep(500);
     const after = await orig("consent", {});
     ag.request = orig;
-    ok(closed?.ok && ag.joined && sent.length > 0 && after?.table?.switch === "refuse",
-      "AS15 (recut A2) a rejoin keeps the agent's switch: what it closed stays closed", { closed, joined: ag.joined, sent, sw: after?.table?.switch }); }
+    ok(closed?.ok && ag.joined && sent.length > 0 && after?.table?.move === false,
+      "AS15 (R 10-28) a rejoin keeps the agent's gates: what it closed stays closed", { closed, joined: ag.joined, sent, table: after?.table }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {
       const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });

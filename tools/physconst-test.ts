@@ -110,7 +110,8 @@ for (const [f, imp, lits] of NO) {
 { // the shared values are the ones the design states, and the layered shove reaches stay distinct on purpose
   const P = await import("../shared/protocol/physconst.js"), R = await import("../shared/protocol/round.js");
   ok(P.REACH === 1.5 && P.HAND_Y === 1.1 && P.MAX_HELD === 2 && P.USE_REACH === 2.5, "B physconst values", P);
-  ok(P.BODY_REACH === P.REACH + 0.5 && P.SHOVE_REACH === 2.5 && P.BODY_RANGE.shove === 3, "B shove reach is three layers (authority 2.0 < client 2.5 < server cap 3.0), each named", P);
+  ok(P.BODY_REACH === P.REACH + 0.5 && P.SHOVE_REACH === 2.5 && P.BODY_RANGE === null && P.bodyRangeOf?.({ range: 4 }) === 4 && P.bodyRangeOf?.(undefined) === null && P.bodyRangeOf?.({ range: -1 }) === null,
+    "B shove reach: the authority's 2.0 and the client's 2.5, each named; the server's range is none unless a world sets body-default.range (R 10-28)", P);
   ok(P.KICK.reach === 2.5 && P.KICK.below === -0.5 && P.KICK.above === 2.0 && P.KICK.lift === 0.9, "B KICK", P.KICK);
   ok(Object.is(R.r3(1.0005), 1.001) && Object.is(R.r3(-0), -0) && Object.is(R.noNeg0(-0), 0) && Object.is(R.noNeg0(-1), -1) && R.r2(1.234) === 1.23, "B round.js helpers", R);
   ok(bytes(R.unNegZero({ a: [-0, { b: -0 }], c: -0 })) === bytes({ a: [0, { b: 0 }], c: 0 }), "B unNegZero scrubs nested", R.unNegZero({ a: [-0] }));

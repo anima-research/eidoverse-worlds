@@ -296,7 +296,7 @@ const cases = [
       const call = (actor, verb, args = {}, step = 100) => { clock.advance(step); return log.requestSync(actor, verb, args); };
       for (const [who, role] of [["bob", "builder"], ["vic", "inhabitant"]]) call(owner, "set", { id: "@world", component: `roles:${who}`, value: { role } });
       call("bob", "move", { to: [0, 0, 0] }); call("vic", "move", { to: [0.5, 0, 0] });
-      const allow = call("bob", "consent", { allow: "vic", class: "pose" });
+      const allow = call("bob", "consent", { allow: "vic" });
       const rs = Array.from({ length: 300 }, () => call("vic", "body", { to: "bob", kind: "anim" }, 10));
       const kept = log.live.presence?.inbox?.bob?.length ?? 0, sent300 = got.length;
       // an agent that polls drains it; what comes after still reaches the socket

@@ -5,9 +5,9 @@
 //       arriving as an absent person's name (or one that folds to it) is shown with a disambiguator, as a present
 //       collision already was; the claimant themself still arrives as themself
 //   BC  body consent at the server (tools audit 10-07 "Body consent"): a puppet (ragdoll → shove, pose/anim → pose) and a
-//       bodydrag grab (→ move) are checked against the TARGET's consent table (shared/protocol/consent.js; silence is
-//       Normal: strangers' shove/pose/move are nobody) and a sane range BEFORE they're forwarded; 'ask' refuses with how to
-//       ask; the authority's body inbox (asks, replies, acts) is pushed to its person's socket
+//       bodydrag grab (→ displace) are checked against the TARGET's consent (shared/protocol/consent.js: their lists, then
+//       their move gate for shove and displace, their touch gate for pose) and a sane range BEFORE they're forwarded; the
+//       authority's body inbox (acts delivered, revocations) is pushed to its person's socket
 //   PR  puppet / bodydrag / typing reach the IDENTITY the sender named (targetActor / toActor, the opaque u-… id every
 //       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused; a
 //       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
@@ -60,7 +60,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 { const bob = await sock("Bob"), carol = await sock("Carol"), mal = await sock("Mallory");
   // within reach, and both open pose and move to strangers (BC: the server checks a body's consent before forwarding)
   bob.at(0, 0); carol.at(1, 0); mal.at(0.5, 0.5);
-  for (const s2 of [bob, carol]) await s2.req("consent", { switch: "accept" });
+  for (const s2 of [bob, carol]) await s2.req("consent", { move: true, touch: true });
   await sleep(300);
   ok(/^u-/.test(bob.actor ?? "") && /^u-/.test(carol.actor ?? ""), "(PR setup) every joiner knows its own actor id", [bob.actor, carol.actor]);
   const arrive = mal.msgs.find((m) => m.type === "arrive" && m.id === "Carol") ?? null;
@@ -102,44 +102,50 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 { const vic = await sock("Vic"), sly = await sock("Sly");
   vic.at(0, 0); sly.at(1, 0); await sleep(300);
   const got = (k, t) => vic.since(k).filter((m) => m.type === t);
-  // recut A2 (R 10-20): an untouched body ACCEPTS (permissive default); the gate is exercised by Vic choosing refuse
-  const r0 = await vic.req("consent", { switch: "refuse" }); ok(r0?.ok, "(BC1 setup) Vic sets her body to refuse", r0);
+  // the gates are exercised by Vic setting them, never by leaning on a default
+  const r0 = await vic.req("consent", { move: false, touch: false }); ok(r0?.ok, "(BC1 setup) Vic turns both gates off", r0);
   let k = vic.msgs.length, ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Sly is told the knock-over is refused", () => sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error) && /consent|isn't taking/.test(m.error)),
-    "BC1 a stranger's knock-over of a body set to refuse is refused at the server, never forwarded", { vic: got(k, "puppet"), sly: sly.since(ks).filter((m) => m.type === "error") });
+    "BC1 a stranger's knock-over of a body with move off is refused at the server, never forwarded", { vic: got(k, "puppet"), sly: sly.since(ks).filter((m) => m.type === "error") });
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), "BC1 …and a pose likewise", sly.since(ks));
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await pause("a refused grab has had its chance to be forwarded (it must not)", 300);
   ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise", got(k, "bodydrag"));
-  // Vic opens shove and move to everyone: now it's forwarded, within reach
-  const r1 = await vic.req("consent", { switch: "accept" }), r2 = r1;
-  ok(r1?.ok, "(BC setup) Vic sets her body back to accept through the authority's consent verb", r1);
+  // Vic turns move on: a knock-over and a grab are forwarded, within reach; a pose is touch, still off
+  const r1 = await vic.req("consent", { move: true });
+  ok(r1?.ok, "(BC setup) Vic turns her move gate on through the authority's consent verb", r1);
   k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
   k = vic.msgs.length;
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Vic is sent the grab", () => got(k, "bodydrag").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "bodydrag").length === 1, "BC2 …and the grab", vic.since(k).map((m) => m.type));
-  // range: from 20 m, no
-  sly.at(20, 0); await sleep(300); k = vic.msgs.length; ks = sly.msgs.length;
-  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Sly is told he is too far away", () => sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), { ms: 2000 });
-  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /away/.test(m.error)), "BC3 a knock-over from 20 m is refused (out of reach), whatever the table says", sly.since(ks));
-  // ask: refused, saying how to ask
-  sly.at(1, 0); await vic.req("consent", { switch: "ask" }); await sleep(300);
   k = vic.msgs.length; ks = sly.msgs.length;
-  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told how to ask", () => sly.since(ks).some((m) => m.type === "error" && /ask/.test(m.error)), { ms: 2000 });
-  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /ask/.test(m.error) && /body/.test(m.error)), "BC4 'ask' is refused with how to ask (body {to, kind}), not forwarded", sly.since(ks));
-  // the ask path delivers: the authority's inbox reaches Vic's socket
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
+  ok(got(k, "puppet").length === 0, "BC2b …but a pose is not: posing is behind the touch gate, never move", sly.since(ks));
+  // range: none unless the world sets one (R 10-28 13:44; reachgate RR2 sets one)
+  sly.at(20, 0); await sleep(300); k = vic.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over from 20 m", () => got(k, "puppet").length, { ms: 2000 });
+  ok(got(k, "puppet").length === 1, "BC3 a knock-over from 20 m is forwarded: no range by default, consent decides", vic.since(k).map((m) => m.type));
+  // the lists, at the server: block beats an open gate, allow beats a closed one
+  sly.at(1, 0); await vic.req("consent", { block: sly.actor }); await sleep(300);
+  k = vic.msgs.length; ks = sly.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Sly is told the knock-over is refused", () => sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error)), { ms: 2000 });
+  ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /isn't taking shove/.test(m.error) && !/block|never/.test(m.error)), "BC4 Vic blocks Sly: his knock-over is refused though her move gate is on, in the one uniform sentence", sly.since(ks));
+  await vic.req("consent", { allow: sly.actor }); k = vic.msgs.length;
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Vic is sent Sly's pose", () => got(k, "puppet").length, { ms: 2000 });
+  ok(got(k, "puppet").length === 1, "BC4b Vic allows Sly: his pose is forwarded though her touch gate is off", vic.since(k).map((m) => m.type));
+  // an act the authority delivers: its inbox reaches Vic's socket
   const mv = [await vic.req("move", { to: [0, 0, 0] }), await sly.req("move", { to: [1, 0, 0] })];   // the authority's body track (a client's first move is its arrival)
   ok(mv.every((r) => r?.ok), "(BC5 setup) both bodies are on the authority's track", mv);
   k = vic.msgs.length;
-  const asked = await sly.req("body", { to: vic.actor, kind: "pose", spec: { head: [0, 0, 0, 1] } });
-  await tryUntil("the ask reaches Vic's socket", () => vic.since(k).some((m) => m.type === "body-inbox" && m.messages?.some((x) => x.type === "body-ask")), { ms: 2000 });
-  ok(asked?.outcome === "asked" && vic.since(k).some((m) => m.type === "body-inbox" && m.messages?.some((x) => x.type === "body-ask")), "BC5 an ask through the authority (body {to, kind}) reaches the asked person's socket (the inbox is forwarded)",
-    { asked, vic: vic.since(k).filter((m) => m.type === "body-inbox") });
+  const acted = await sly.req("body", { to: vic.actor, kind: "pose", spec: { head: [0, 0, 0, 1] } });
+  await tryUntil("the act reaches Vic's socket", () => vic.since(k).some((m) => m.type === "body-inbox" && m.messages?.some((x) => x.type === "body")), { ms: 2000 });
+  ok(acted?.outcome === "allowed" && vic.since(k).some((m) => m.type === "body-inbox" && m.messages?.some((x) => x.type === "body" && x.kind === "pose" && x.from === sly.actor)), "BC5 an act the authority admits (body {to, kind}) reaches the person's socket (the inbox is forwarded)",
+    { acted, vic: vic.since(k).filter((m) => m.type === "body-inbox") });
   // yourself: always
   k = vic.msgs.length;
   vic.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent her own knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);

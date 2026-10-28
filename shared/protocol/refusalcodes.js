@@ -23,9 +23,9 @@ export const REFUSAL_CODES = Object.freeze({
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },
   "kicked":         { meaning: "the actor was removed and may come back later", when: "any request but help/leave inside a kick's cooldown" },
   "muted":          { meaning: "the actor is muted here", when: "a say (or voice) while a mute is in force" },
-  "rate":           { meaning: "too much, too fast", when: "an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent" },
-  "cool-down":      { meaning: "wait before asking this again", when: "a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)" },
-  "pending":        { meaning: "one ask at a time", when: "a body ask while another to the same person is still waiting" },
+  "rate":           { meaning: "too much, too fast", when: "an actor's entry, say, byte, dry-run or upload budget for the window is spent" },
+  "cool-down":      { meaning: "wait before trying this again", when: "repeated refusals of one class of body act (world-wide, moderator log)" },
+  "pending":        { meaning: "one ask at a time", when: "reserved: a body ask while another to the same person was waiting (the ask was removed 10-28; never logged, kept so the word isn't reused)", reserved: true },
   // ---- rights, ranks and consent ----
   "rights":         { meaning: "the actor's role doesn't allow this", when: "a missing permission (build, editOthers, scripts…), someone else's key, a world setting below owner, a rollback below owner" },
   "rank":           { meaning: "the other side ranks at or above you", when: "a lock above your rank, undoing someone ranked above you, a sanction on an equal or higher rank, an authority act" },

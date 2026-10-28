@@ -59,7 +59,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a returning throw doesn't fly", "protocol/authority/bodyverbs.js", ": g?.release === \"return\" ? null : undefined;", ": undefined;", ["R3"]],
   ["home is stamped", "protocol/authority/manipulate.js", "if (!h || (born && !sameHome(after, id, h))) home = homeHere(after, id);", "if (false) home = homeHere(after, id);", ["R3", "R4"]],
   ["home follows an edit that moves it from home", "protocol/authority/manipulate.js", "else if (!setsH && was && sameHome(ctx.st, id, was) && !sameHome(after, id, was)) home = homeHere(after, id);", "", ["R4"]],
-  ["returnAfter runs at each request", "protocol/authority.js", "settleSim(w); returnDue(w); expireAsks(w); CTX.work", "settleSim(w); expireAsks(w); CTX.work", ["R4"]],
+  ["returnAfter runs at each request", "protocol/authority.js", "settleSim(w); returnDue(w); CTX.work", "settleSim(w); CTX.work", ["R4"]],
   ["returnAfter: not while held", "protocol/authority/manipulate.js", "if (!g?.home || w.presence.holds[id]) continue;", "if (!g?.home) continue;", ["R4"]],
   ["returnAfter: only a hand or physics moving it counts", "protocol/authority/manipulate.js", "const byManipulation = (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", "const byManipulation = true || (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", ["R4"]],
   ["returnAfter: the time", "protocol/authority/manipulate.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],

@@ -50,8 +50,8 @@ export function worldOf(io) {
   // a presence file written before R 10-17 13:46 named who occupies what `seats`: read it as `occupants`, keep only the new key
   if (w.presence.seats && !w.presence.occupants) w.presence.occupants = w.presence.seats;
   delete w.presence.seats;
-  // …and consent tables in the words before R 10-17 14:41 (strangers/everyone/nobody/move, one friends list): read them,
-  // rewrite them in today's (consent.js migratePresence: once, marked in the plane)
+  // …and consent tables in an older shape (cells per tier to 10-20, one switch to 10-28): read them, rewrite them as two
+  // gates and two lists (consent.js migratePresence: once, marked in the plane)
   if (migratePresence(w.presence)) w.presenceDirty = true;
   w.savePresence = () => io.savePresence?.(w.presence);
   // Governance keys (§2.4) live outside the log. Custody is authority practice (§5 identity), injected like storage:

@@ -112,7 +112,7 @@ const pinged = async (list: any[], kind: string, ms = 4000) => {
 };
 // every body starts at Normal, where everyone's touch is ask: open touch on both sides first, as two people who had
 // agreed to it would, so the reaches below are shown rather than refused
-const OPEN_TOUCH = { set: { class: "touch", tier: "everyone", mode: "allow" } };
+const OPEN_TOUCH = { touch: true };
 check("the bystander opens its touch", (await bystander.request("consent", OPEN_TOUCH))?.ok === true);
 await conn.sendToolsCall("act", { verb: "consent", args: OPEN_TOUCH });
 const reachRes = await conn.sendToolsCall("reach", { who: "bystander", point: "left shoulder" });

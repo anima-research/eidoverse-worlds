@@ -17,6 +17,7 @@
 // how two touching surfaces' coefficients combine: the modes PhysX, Unity and Rapier name (Jolt and Box2D take any rule as a
 // callback), so every engine can carry them; when two differ, the later in this list wins (PhysX's and Unity's priority)
 import { RANK, BUILTIN_IDS, PERMISSION_NAMES, CUSTOM_ID, RESERVED_IDS } from "./roles.js";
+import { BODY_RANGE, bodyRangeWords } from "./physconst.js";
 export const COMBINE = ["average", "min", "multiply", "max"];
 export const COMPONENTS = {
   // glTF's node TRS (shape audit 10-16, physics-motion §1): local matrix = T · R · S, world = parent's world × local, down the
@@ -284,7 +285,10 @@ export const COMPONENTS = {
   // engine's (eidosim TICK_MS; tools/shape-physics-test holds them equal); build is the authority's stamp, a string. Gravity
   // is the engine's own, not in the log (eidosim: [0, −9.81, 0] m/s²): a field is an addition once an engine reads one
   // recut B3 (house 22:03Z: "starter config, switched on"): two world settings the authority reads at decision time.
-  "body-default": { on: "world", type: "string", choices: ["accept", "ask", "refuse"], help: "the consent switch an untouched body has in this world: accept (the default when absent), ask or refuse. A person's own switch and their answers for someone always win (PROTOCOL §5, Body consent)" },
+  "body-default": { on: "world", fields: { move: "bool", touch: "bool", range: "number" }, ranges: { range: { min: 0.5, max: 10000 } }, units: { range: "m" },
+    absentMeans: { move: "true: an untouched body may be moved (shoved, dragged, carried, seated)", touch: "false: an untouched body may not be touched or posed", range: `no limit: the server forwards a puppet or a grab ${bodyRangeWords(BODY_RANGE)}` },
+    docs: { move: "the move gate an untouched body has here: being shoved (a /boom's force too), dragged, carried, seated or occupied", touch: "the touch gate an untouched body has here: being touched (intimate points too) and posed", range: "how near (m, between the two bodies) someone must be for the server to forward their knock-over, pose or grab of another body; consent still decides" },
+    help: "the two consent gates a body that never chose has in this world: {move?, touch?, range?}, gates true or false (absent: move on, touch off); range (m) limits how far away a knock-over, pose or grab of another body may come from (absent: no limit). A person's own gates, and their allow and block lists, always win (PROTOCOL §5, Body consent)" },
   "keep-owner": { on: "world", type: "bool", help: "absent or true: the authority refuses a change that would leave this world with no owner ('last-owner'). false: an owner may leave it ownerless on purpose (the host operator can still mend it). Starter config, switched on" },
   "physics-engine": { on: "world", fields: { engine: "string", tickMs: "int" }, required: ["engine"], defaults: { tickMs: 33 },
     ranges: { tickMs: { min: 16, max: 1000 } }, units: { tickMs: "ms" },

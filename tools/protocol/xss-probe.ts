@@ -173,7 +173,7 @@ try {
     const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
     wren.send({ type: "pose", pose: { p: [mine[0] + 1, mine[1], mine[2]], yaw: 0, speed: 0, clip: "idle" } });
     let rq = 0; const wreq = (verb: string, args: any) => { const id = `w${++rq}`; wren.send({ type: "request", id, verb, args }); };
-    wreq("consent", { switch: "accept" });
+    wreq("consent", { move: true, touch: true });
     await sleep(500);
     await evalJson(`(() => { window.__sent = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (['puppet', 'bodydrag', 'typing'].includes(m.type)) __sent.push(m); } catch {} return s.call(this, d); }; return true; })()`);
     await evalJson(`import('/lib/net.js').then((m) => { m.sendPuppet('Wren', { pose: { head: [0, 0, 0, 1] } }); m.sendBodyDrag('Wren', { end: true }); m.sendTyping('Wren'); return true; })`);
@@ -186,132 +186,59 @@ try {
     wren.ws.close();
   });
 
-  // ---- K: my body's one switch (recut A2) is what the authority holds for me ----
+  // ---- K: my body's two gates (R 10-28) are what the authority holds for me ----
   await stage("K", async () => {
-    const sw = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table?.switch ?? null)`;
-    for (const v of ["refuse", "ask", "accept"]) {
-      await evalJson(`import('/lib/consent.js').then((m) => (m.setSwitch(${JSON.stringify(v)}), true))`);
-      check(`K1 switch ${v} set in the browser lands at the authority`, await waitFor(`${sw}.then((t) => t === ${JSON.stringify(v)})`, 5000), await evalJson(sw));
+    const tbl = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
+    for (const [g, on] of [["move", false], ["touch", true], ["touch", false], ["move", true]] as const) {
+      await evalJson(`import('/lib/consent.js').then((m) => (m.setGate(${JSON.stringify(g)}, ${on}), true))`);
+      check(`K1 ${g} ${on ? "on" : "off"} set in the browser lands at the authority`, await waitFor(`${tbl}.then((t) => t && t[${JSON.stringify(g)}] === ${on})`, 5000), await evalJson(tbl));
     }
     await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(false), true))`);
-    check("K2 /pushable off is refuse at the authority", await waitFor(`${sw}.then((t) => t === 'refuse')`, 5000), await evalJson(sw));
-    check("K3 the choice is persisted under ew-body-switch", await evalJson(`localStorage.getItem('ew-body-switch') === 'refuse'`));
+    check("K2 /pushable off is the move gate off at the authority", await waitFor(`${tbl}.then((t) => t && t.move === false)`, 5000), await evalJson(tbl));
+    check("K3 the choice is persisted under ew-body-consent", await evalJson(`(() => { const v = JSON.parse(localStorage.getItem('ew-body-consent') ?? '{}'); return v.v === 4 && v.move === false && v.touch === false; })()`));
     await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);
-    check("K4 Settings ▸ body is one select, reading the switch", await evalJson(`(() => { const sels = document.querySelectorAll('#sec-body select'); return sels.length === 1 && sels[0].value === 'refuse'; })()`));
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
+    const panel = await evalJson(`(() => { const b = [...document.querySelectorAll('#sec-body input[type=checkbox][data-gate]')]; return b.map((x) => ({ g: x.dataset.gate, on: x.checked, tip: x.title, label: x.closest('.row')?.querySelector('.nm')?.textContent })); })()`);
+    check("K4 Settings ▸ body is two checkboxes, Move me and Touch me, reading the gates", JSON.stringify(panel?.map((x: any) => [x.g, x.on, x.label])) === JSON.stringify([["move", false, "Move me"], ["touch", false, "Touch me"]]), panel);
+    check("K5 …each with a tooltip saying in plain words what it covers", /shove/.test(panel?.[0]?.tip ?? "") && /drag/.test(panel?.[0]?.tip ?? "") && /carry/.test(panel?.[0]?.tip ?? "") && /sit/.test(panel?.[0]?.tip ?? "") && /hands on you/.test(panel?.[1]?.tip ?? "") && /intimate/.test(panel?.[1]?.tip ?? "") && /pose/.test(panel?.[1]?.tip ?? ""), panel);
+    await evalJson(`(() => { const b = document.querySelector('#sec-body input[data-gate=move]'); b.checked = true; b.dispatchEvent(new Event('change')); return true; })()`);
+    check("K6 ticking Move me in the panel lands at the authority", await waitFor(`${tbl}.then((t) => t && t.move === true)`, 5000), await evalJson(tbl));
   });
 
-  // ---- Q: `ask` is wired (R 10-14). A stranger's act that meets an `ask` cell files an ask at the authority; it is pushed
-  // to me as body-inbox, marks their row in People Here, and their menu answers it: Allow / Not now / Never. The Consent ▸
-  // sub-list on every person is my table's strangers row as a checklist. ASK_SHOTS=<dir> saves PNGs for the owner.
-  await stage("Q", async () => {
-    const shot = async (name: string) => { if (!process.env.ASK_SHOTS) return; try { const r = await cdp.send<any>("Page.captureScreenshot", { format: "png" }); fs.mkdirSync(process.env.ASK_SHOTS, { recursive: true }); fs.writeFileSync(path.join(process.env.ASK_SHOTS, name), Buffer.from(r.data, "base64")); } catch (e) { console.log(`  (shot ${name} failed: ${String(e)})`); } };
-    const full = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
-    await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.hide?.(); if (document.querySelector('.chat-side')?.classList.contains('closed')) (await import('/lib/ui.js')).togglePeopleHere(); return true; })()`);
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setSwitch('ask'), true))`);
-    check("(Q setup) my switch is `ask` at the authority", await waitFor(`${full}.then((t) => t && t.switch === 'ask')`, 5000), await evalJson(full));
+  // ---- L: per-person lists (R 10-28) from People Here: right-click someone → Always allow / Never allow / Default; the
+  // lists show in Settings ▸ body with a remove button each; the authority decides by them, whatever the gates say.
+  await stage("L", async () => {
+    const tbl = `import('/lib/net.js').then((m) => m.sendRequest('consent', {})).then((r) => r?.table ?? null)`;
+    await evalJson(`(async () => { if (document.querySelector('.chat-side')?.classList.contains('closed')) (await import('/lib/ui.js')).togglePeopleHere(); return true; })()`);
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setGate('move', true), m.setGate('touch', false), true))`);
     const wren = guest("Wren"); const { snap } = await wren.join(); const wrenActor = snap?.cut?.you;
-    check("(Q setup) Wren is here with an identity, and the page knows it", /^u-/.test(wrenActor ?? "") && await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
+    check("(L setup) Wren is here with an identity, and the page knows it", /^u-/.test(wrenActor ?? "") && await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Wren') === ${JSON.stringify(wrenActor)})`, 5000));
     const victim = await evalJson(`import('/lib/net.js').then((m) => m.net.you)`);
     const mine = await evalJson(`import('/lib/controller.js').then((m) => m.myState.pos.toArray())`);
-    let rq = 0; const wreq = async (verb: string, args: any) => { const id = `q${++rq}`; wren.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = wren.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
-    const mv = await wreq("move", { to: [mine[0] + 1, mine[1], mine[2]] });   // the authority tracks bodies that moved (presence); a pose needs no reach
-    const mv2 = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('move', { to: ${JSON.stringify(mine.map((n: number) => Math.round(n * 1000) / 1000))} }))`);   // and mine (in play, thingphysics does this on arrival)
-    check("(Q setup) both bodies are in the world at the authority (move)", mv?.ok === true && mv2?.ok === true, { wren: mv, me: mv2 });
-    const r1 = await wreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } });
-    const askId = r1?.reply?.ask;
-    check("Q1 Wren's pose meets my `ask` cell: the authority files an ask (outcome asked)", r1?.reply?.outcome === "asked" && typeof askId === "string", r1);
-    const marked = await waitFor(`!!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 5000);
-    check("Q2 the ask reached my page: Wren's row in People Here carries the mark, titled with the class", marked && await waitFor(`!!document.querySelector('.who-row[data-name="Wren"] .who-ask') && document.querySelector('.who-row[data-name="Wren"] .who-ask').title === 'asks to pose my body'`, 5000), await evalJson(`document.querySelector('.who-row[data-name="Wren"]')?.outerHTML ?? null`));
-    check("Q3 …and said once as a toast, in words (who, what, how long)", await waitFor(`[...document.querySelectorAll('.toast')].filter((t) => /Wren asks to pose my body/.test(t.textContent) && /20 s/.test(t.textContent)).length === 1`, 3000), await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent)`));
-    const rows = await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); return [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].map((b) => b.textContent); })`);
-    check("Q4 right-click Wren: Allow (this once) / Not now / Never lead the menu, and Consent ▸ is on it", rows?.[0] === "Allow: pose my body (this once)" && rows?.[1] === "Not now" && rows?.[2] === "Never (pose: deny for them)" && rows.includes("Consent ▸"), rows);
-    await shot("ask-1-people-here-menu.png");
-    await evalJson(`(() => { document.querySelector('.sp-ctx .sp-ctx-item').click(); return true; })()`);
-    check("Q5 Allow answers the ask: Wren hears body-reply ok (consent {answer, yes: true} landed) and the pose was delivered", await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 5000) { if (wren.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === askId && x.ok === true && x.applied === true))) return true; await sleep(50); } return false; })(), wren.msgs.filter((m) => m.type === "body-inbox"));
-    check("Q6 …and the mark is gone", marked && await waitFor(`!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 3000));
-    // review of #260: a row answers the ask it SHOWED. Kit's ask A is on the open menu; A is answered elsewhere
-    // (yes, as the XR ask panel would: a no would cool Kit's asks down), then Kit asks again (B). Pressing the row that
-    // showed A must answer nothing, and B stays pending. Kit is a second guest: the authority takes at most 2 asks a minute from one.
-    { const kit = guest("Kit"); const { snap: ks } = await kit.join(); const kitActor = ks?.cut?.you;
-      await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Kit') === ${JSON.stringify(kitActor)})`, 5000);
-      let kq = 0; const kreq = async (verb: string, args: any) => { const id = `k${++kq}`; kit.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = kit.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
-      await kreq("move", { to: [mine[0] - 1, mine[1], mine[2]] });
-      const ra = await kreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askA = ra?.reply?.ask;
-      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askA)}))`, 5000);
-      await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Kit', 180, 120); window.__allowA = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent.startsWith('Allow')); return !!window.__allowA; })`);
-      const ansA = await evalJson(`Promise.all([import('/lib/people.js'), import('/lib/net.js')]).then(([p, n]) => p.consentInbox.answer(${JSON.stringify(askA)}, true, n.sendRequest))`);
-      await waitFor(`import('/lib/people.js').then((m) => !m.consentInbox.asks().length)`, 3000); await sleep(300);
-      const rb = await kreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askB = rb?.reply?.ask;
-      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askB)}))`, 5000);
-      await evalJson(`(() => { window.__allowA?.click(); return true; })()`); await sleep(800);
-      const bAnswered = kit.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === askB));
-      const bPending = await evalJson(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askB)}))`);
-      check("Q6b the Allow row answers the ask it showed: with that ask gone and a newer one pending, pressing it answers nothing (the newer ask is still pending, unanswered)",
-        typeof askA === "string" && typeof askB === "string" && askA !== askB && !bAnswered && bPending === true, { askA, ansA, askB, rb: rb?.reply, bAnswered, bPending });
-      await evalJson(`Promise.all([import('/lib/people.js'), import('/lib/net.js')]).then(([p, n]) => p.consentInbox.answer(${JSON.stringify(askB)}, true, n.sendRequest)).then(() => true)`);
-      kit.ws.close(); }
-    // a second ask, answered Never: no to this one, and a standing deny for Wren's pose at the authority (consent {deny, class})
-    await evalJson(`(() => { window.__creq = []; const s = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'consent') __creq.push(m.args); } catch {} return s.call(this, d); }; return true; })()`);
-    const r2 = await wreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const ask2 = r2?.reply?.ask;
-    check("(Q7 setup) a second ask is filed and marked", typeof ask2 === "string" && await waitFor(`!!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 5000), r2);
-    await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent.startsWith('Never')).click(); return true; })`);
-    check("Q7 Never: Wren hears no, and my page sent consent {answer, yes: false} then consent {deny: Wren, class: pose}", await (async () => { const t0 = Date.now(); while (Date.now() - t0 < 5000) { const no = wren.msgs.some((m) => m.type === "body-inbox" && m.messages?.some((x: any) => x.type === "body-reply" && x.ask === ask2 && x.ok === false)); const sent = await evalJson(`__creq`); if (no && sent.some((a: any) => a.answer === ask2 && a.yes === false) && sent.some((a: any) => a.deny === wrenActor && a.class === 'pose')) return true; await sleep(100); } return false; })(), { creq: await evalJson(`__creq`), wren: wren.msgs.filter((m) => m.type === "body-inbox") });
-    check("Q8 …and the mark is gone", await waitFor(`!document.querySelector('.who-row[data-name="Wren"] .who-ask')`, 3000));
-    // review of #260: Never's standing no goes to the ask's own sender, not to whoever holds that name when it's pressed.
-    // Rook asks and the row is kept; Rook leaves, and once the page has seen it go (the server drops a client before it
-    // broadcasts the leave, so the name is free), another guest joins as Rook before the press.
-    { await evalJson(`import('/lib/base.js').then((m) => { window.__torn = []; m.bus.on('participant-teardown', (id) => window.__torn.push(id)); return true; })`);
-      const rookA = guest("Rook"); const { snap: sa } = await rookA.join(); const actorA = sa?.cut?.you;
-      await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Rook') === ${JSON.stringify(actorA)})`, 5000);
-      let aq = 0; const areq = async (verb: string, args: any) => { const id = `a${++aq}`; rookA.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = rookA.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
-      await areq("move", { to: [mine[0] - 1, mine[1], mine[2] + 1] });
-      const ra = await areq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askR = ra?.reply?.ask;
-      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askR)}))`, 5000);
-      await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Rook', 180, 120); window.__neverR = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent.startsWith('Never')); return !!window.__neverR; })`);
-      rookA.ws.close();
-      const left = await waitFor(`window.__torn.includes('Rook')`, 8000);
-      const rookB = guest("Rook"); const { snap: sb } = await rookB.join(); const actorB = sb?.cut?.you;
-      const handed = await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Rook') === ${JSON.stringify(actorB)})`, 8000);
-      const n0 = await evalJson(`__creq.length`);
-      await evalJson(`(() => { window.__neverR?.click(); return true; })()`);
-      let denies: any[] = []; for (const t0 = Date.now(); Date.now() - t0 < 5000 && !denies.length; await sleep(100)) denies = (await evalJson(`__creq.slice(${n0})`)).filter((a: any) => a?.deny !== undefined);
-      const told = await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('the one who asked as Rook may not'))`, 5000);
-      check("Q8b Never files its standing no against the ask's own sender, though another guest holds that name by the press, and its toast names them as the one who asked",
-        typeof askR === "string" && !!actorA && !!actorB && actorA !== actorB && left && handed && denies.length === 1 && denies[0].deny === actorA && denies[0].class === "pose" && told, { askR, actorA, actorB, left, handed, denies, told });
-      rookB.ws.close(); }
-    // review of #260: a reply that never comes isn't a refusal. Lark asks and I press Never, but neither the answer nor the
-    // deny reaches the authority (the page drops both sends), so each ends in sendRequest's timeout, shortened here to
-    // 300 ms: the toast must say each may have landed, never that the ask had gone or that the no didn't land.
-    { const lark = guest("Lark"); const { snap: sl } = await lark.join(); const larkActor = sl?.cut?.you;
-      await waitFor(`import('/lib/net.js').then((m) => m.identities.get('Lark') === ${JSON.stringify(larkActor)})`, 5000);
-      let lq = 0; const lreq = async (verb: string, args: any) => { const id = `l${++lq}`; lark.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = lark.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r; await sleep(50); } return null; };
-      await lreq("move", { to: [mine[0] + 1, mine[1], mine[2] + 1] });
-      const rl = await lreq("body", { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } }); const askL = rl?.reply?.ask;
-      await waitFor(`import('/lib/people.js').then((m) => m.consentInbox.asks().some((k) => k.id === ${JSON.stringify(askL)}))`, 5000);
-      await evalJson(`(() => { window.__dropped = []; const send = WebSocket.prototype.send, st = window.setTimeout; window.__restore = () => { WebSocket.prototype.send = send; window.setTimeout = st; };
-        WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.type === 'request' && m.verb === 'consent') { __dropped.push(m.args); return; } } catch {} return send.call(this, d); };
-        window.setTimeout = (f, ms, ...a) => st(f, ms === 15000 ? 300 : ms, ...a); return true; })()`);
-      await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Lark', 180, 120); const b = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((x) => x.textContent.startsWith('Never')); b?.click(); return !!b; })`);
-      const shown = await waitFor(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('the standing no may have landed'))`, 5000);
-      const text = await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent).find((x) => x.includes('the standing no may have landed')) ?? null`);
-      const dropped = await evalJson(`(() => { window.__restore(); return __dropped; })()`);
-      check("Q8c a Never whose answer and deny get no reply says each may have landed, not that the ask had gone or the no didn't land",
-        typeof askL === "string" && shown && /the answer may have landed/.test(text ?? "") && !/had gone|didn't land/.test(text ?? "")
-          && ((ad) => ad.length === 2 && ad[0].answer === askL && ad[1].deny === larkActor)(dropped.filter((x: any) => x && ("answer" in x || "deny" in x))), { askL, shown, text, dropped });
-      lark.ws.close(); }
-    // the Consent ▸ sub-list (recut A2): my body's switch as three choices, ✓ on the current one; a press sets it
-    const sub = await evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((b) => b.textContent === 'Consent ▸').click(); return [...document.querySelectorAll('.sp-ctx[data-consent] .sp-ctx-item')].map((b) => b.textContent); })`);
-    check("Q9 Consent ▸ lists the three choices, ✓ on ask (my switch now)", sub?.length === 3 && sub.filter((x: string) => x.startsWith("✓")).length === 1 && sub.includes("✓ ask — ask me first, every time"), sub);
-    await shot("ask-2-consent-sublist.png");
-    const pick = (v: string) => evalJson(`(() => { [...document.querySelectorAll('.sp-ctx[data-consent] .sp-ctx-item')].find((b) => b.textContent.replace(/^✓ /, '').startsWith(${JSON.stringify(v)})).click(); return true; })()`);
-    await pick("refuse"); const t10 = Date.now(); const landed = await waitFor(`${full}.then((t) => t && t.switch === 'refuse')`, 12000);
-    check("Q10 pressing refuse sets it at the authority, and the list stays open with its ✓", landed && await evalJson(`[...document.querySelectorAll('.sp-ctx[data-consent] .sp-ctx-item')].some((b) => b.textContent.startsWith('✓ refuse'))`), { ms: Date.now() - t10, authority: await evalJson(full) });
-    await pick("accept");
-    check("Q11 pressing accept sets it back", await waitFor(`${full}.then((t) => t && t.switch === 'accept')`, 5000), await evalJson(full));
+    let rq = 0; const wreq = async (verb: string, args: any) => { const id = `l${++rq}`; wren.send({ type: "request", id, verb, args }); const t0 = Date.now(); while (Date.now() - t0 < 5000) { const r = wren.msgs.find((m) => m.type === "reply" && m.id === id); if (r) return r.reply; await sleep(50); } return null; };
+    const mv = await wreq("move", { to: [mine[0] + 1, mine[1], mine[2]] });
+    const mv2 = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('move', { to: ${JSON.stringify(mine.map((n: number) => Math.round(n * 1000) / 1000))} }))`);
+    check("(L setup) both bodies are in the world at the authority (move)", mv?.ok === true && mv2?.ok === true, { wren: mv, me: mv2 });
+    const items = () => evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); const r = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].map((b) => b.textContent); return r; })`);
+    const press = (label: string) => evalJson(`import('/lib/people.js').then((m) => { m.menuAt('Wren', 180, 120); const b = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((x) => x.textContent.replace(/^✓ /, '') === ${JSON.stringify(label)}); b?.click(); return !!b; })`);
+    const rows0 = await items();
+    check("L1 right-click Wren: Always allow / Never allow / Default, ✓ on Default, and nothing that asks", ["Always allow", "Never allow", "✓ Default"].every((x) => rows0?.includes(x)) && !rows0?.some((x: string) => /ask|this once|Not now|Consent ▸/.test(x)), rows0);
+    const pose = { to: victim, kind: "pose", spec: { head: [0, 0, 0, 1] } };
+    check("(L2 setup) with my touch gate off, Wren's pose is refused", (await wreq("body", pose))?.refused?.code === "consent");
+    check("L2 Always allow: pressed, it lands at the authority as my allow list", await press("Always allow") && await waitFor(`${tbl}.then((t) => t && t.allow.includes(${JSON.stringify(wrenActor)}))`, 5000), await evalJson(tbl));
+    check("L2b …and Wren's pose now lands, though my touch gate is off", (await wreq("body", pose))?.ok === true);
+    check("L2c …and the menu shows ✓ Always allow", (await items())?.includes("✓ Always allow"));
+    await evalJson(`(async () => { (await import('/lib/panels.js')).closeContextMenu(); (await import('/lib/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);
+    check("L3 Settings ▸ body lists Wren under Always allowed, with a remove button", await waitFor(`(() => { const r = document.querySelector('#sec-body [data-list=allow][data-id=${JSON.stringify(wrenActor)}]'); return !!r && /Wren/.test(r.textContent) && !!r.querySelector('button'); })()`, 3000), await evalJson(`document.querySelector('#sec-body [data-lists]')?.outerHTML ?? null`));
+    check("L4 Never allow: pressed, Wren moves to my block list (off allow)", await press("Never allow") && await waitFor(`${tbl}.then((t) => t && t.block.includes(${JSON.stringify(wrenActor)}) && !t.allow.includes(${JSON.stringify(wrenActor)}))`, 5000), await evalJson(tbl));
+    await evalJson(`import('/lib/consent.js').then((m) => (m.setGate('move', true), true))`);
+    check("L4b …and Wren's shove is refused though my move gate is on", (await wreq("body", { to: victim, kind: "shove" }))?.refused?.code === "consent");
+    check("L4c …and the panel shows Wren under Never allowed", await waitFor(`!!document.querySelector('#sec-body [data-list=block][data-id=${JSON.stringify(wrenActor)}]') && !document.querySelector('#sec-body [data-list=allow]')`, 3000));
+    await evalJson(`(() => { document.querySelector('#sec-body [data-list=block][data-id=${JSON.stringify(wrenActor)}] button').click(); return true; })()`);
+    check("L5 the panel's remove takes Wren off at the authority, and the switches answer them again (a shove lands)", await waitFor(`${tbl}.then((t) => t && !t.block.includes(${JSON.stringify(wrenActor)}) && !t.allow.includes(${JSON.stringify(wrenActor)}))`, 5000) && (await wreq("body", { to: victim, kind: "shove" }))?.ok === true && await evalJson(`!document.querySelector('#sec-body [data-list]')`), await evalJson(tbl));
+    await press("Always allow"); await waitFor(`${tbl}.then((t) => t && t.allow.length > 0)`, 5000);
+    check("L6 Default from the menu takes them off too", await press("Default") && await waitFor(`${tbl}.then((t) => t && !t.allow.length && !t.block.length)`, 5000), await evalJson(tbl));
     await evalJson(`import('/lib/panels.js').then((m) => (m.closeContextMenu(), true))`);
     wren.ws.close();
-    await evalJson(`import('/lib/consent.js').then((m) => (m.setPushable(true), true))`);
   });
 
   // ---- C: the page's own policy refuses inline script ----

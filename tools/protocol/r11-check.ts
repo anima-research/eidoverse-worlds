@@ -123,7 +123,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   // ---------------- C: consent after recut A2 ----------------
   // C1, C2, C3, C6 RETIRED (recut A2, 10-20): they tested delegates and the friends tier, which are gone (house K5).
-  { id: "C4", what: "(recut A2) a stored table becomes a switch only ever NARROWER: Normal's closed cells → refuse; an all-open table → accept; pause → refuse; friends and delegates are dropped; per-person answers stay", run(s) {
+  { id: "C4", what: "(recut A2; R 10-28) a stored table becomes gates only ever NARROWER: Normal's closed cells → both off; an all-open table → move on, touch its default; pause → both off; friends and delegates are dropped; a per-person no is a block", run(s) {
       s.call("olive", "create-world", { title: s.name });
       s.reopen({ bodies: {}, holds: {}, consent: {
         alice: { cells: { strangers: { touch: "everyone" } }, friends: ["carol"] },
@@ -131,14 +131,15 @@ const cases: Case[] = [
         eve: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } }, paused: true } } });   // only the pause closes eve
       C.migratePresence(s.w().presence); C.migratePresence(s.w().presence);   // idempotent
       const P = s.w().presence.consent;
-      return { a: P.alice.switch, d: P.dora.switch, e: P.eve.switch, gone: ["alice", "dora", "eve"].every((k) => !("friends" in P[k]) && !("delegates" in P[k]) && !("cells" in P[k]) && !("preset" in P[k]) && !("paused" in P[k])),
-        kept: P.dora.over?.bob?.touch?.mode }; },
-    good: (o) => o.a === "refuse" && o.d === "accept" && o.e === "refuse" && o.gone && o.kept === "deny" },
-  { id: "C5", what: "(recut A2) said where it's read: the consent verb's doc names the switch and offers no delegate; a retired argument is refused with a pointer", run(s) {
+      const g = (k: string) => `${P[k].move}/${P[k].touch}`;
+      return { a: g("alice"), d: g("dora"), e: g("eve"), gone: ["alice", "dora", "eve"].every((k) => ["friends", "delegates", "cells", "preset", "paused", "switch", "over"].every((x) => !(x in P[k]))),
+        kept: C.tableOf(s.w().presence, "dora").block }; },
+    good: (o) => o.a === "false/false" && o.d === "true/undefined" && o.e === "false/false" && o.gone && JSON.stringify(o.kept) === '["bob"]' },
+  { id: "C5", what: "(R 10-28) said where it's read: the consent verb's doc names the gates and lists and offers no delegate, switch or ask; a retired argument is refused with a pointer", run(s) {
       s.call("olive", "create-world", { title: s.name });
-      const doc = VS.VERBSPEC?.consent?.doc ?? ""; const r = s.call("alice", "consent", { delegate: "mallory" });
-      return { doc: /switch/.test(doc) && !/delegate/.test(doc), r: show(r) }; },
-    good: (o) => o.doc && /^refused shape/.test(o.r) && /switch/.test(o.r) },
+      const doc = VS.VERBSPEC?.consent?.doc ?? ""; const r = s.call("alice", "consent", { delegate: "mallory" }); const r2 = s.call("alice", "consent", { switch: "ask" });
+      return { doc: /move and touch/.test(doc) && /allow, block and unlist/.test(doc) && !/delegate|switch|asks? /.test(doc), r: show(r), r2: show(r2) }; },
+    good: (o) => o.doc && [o.r, o.r2].every((x) => /^refused shape/.test(x) && /two gates/.test(x)) },
   // ---------------- X: the spec says it ----------------
   { id: "X1", what: "(stern M2) §7's table of the authority's consequences lists rename-components ({renamed, why}: the system's act and change); §4 says a pure rename is not marker-gated: the explicit repair command renames what it finds (a load never writes) and writes nothing when there's nothing", run() {
       const md = PROTO(); const s7 = section(md, /\n## 7\. /); const s4 = section(md, /\n## 4\. /);

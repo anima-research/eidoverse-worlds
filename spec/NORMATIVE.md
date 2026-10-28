@@ -42,15 +42,14 @@ The bone (normative): **every act on someone else's body goes through one reques
 
 | What | Rule | Status |
 |---|---|---|
-| The answer | One switch per body: `accept`, `ask` or `refuse`. Every kind of act on a body gets the same answer | trial |
-| Order | A per-person never (deny for one person) > my switch > the world's `body-default` > `accept` | trial |
-| Default | `accept` — permissive; a world makes itself stricter with `@world.body-default` | default |
-| Ask | "ask" puts the request to the owner live; no answer in 20 s is no. A yes covers that one act | trial |
-| Per-person | An allow or a never for one person, standing until revoked; an allow may name `for` | trial |
-| A no | Reads the same to the requester whatever caused it (switch, never, silence). The owner's own record keeps the real cause | **guarantee** |
+| The gates | Two per body, each on or off: `move` (shove — a `/boom`'s force too — and displace: dragged, carried, seated, occupied) and `touch` (touch, intimate, pose) | trial |
+| The lists | `allow` (always yes, every class, whatever the gates say) and `block` (always no, whatever the gates say), per person, standing until changed | trial |
+| Order | `block` > `allow` > my gate for the class > the world's `body-default` for that gate > the default | trial |
+| Default | `move` on, `touch` off; a world sets its own with `@world.body-default {move?, touch?}` | default |
+| A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause | **guarantee** |
 | Who sets it | Only the body's owner | **guarantee** |
 
-The earlier design — eight classes × two tiers × allow/ask/deny, presets, pause, delegates — is kept as a record in `docs/CONSENT-TABLE-RECORD.md`, not as a direction.
+The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/CONSENT-TABLE-RECORD.md`, not as a direction.
 
 ### World roles (who may do what in a world)
 

@@ -1,0 +1,57 @@
+// gates-check — body consent as the owner chose it (R 10-28): two gates (move, touch), each on or off, and two lists
+// (allow, block) that carve out around them. Order: block > allow > my gate for the class > the world's body-default for
+// that gate > move on, touch off. A stored switch or table becomes gates and lists only ever NARROWER (migratePresence).
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/gates-check.ts
+import * as C from "../../shared/protocol/consent.js";
+let pass = 0, fail = 0;
+const check = (id: string, what: string, ok: boolean, got?: unknown) => { ok ? pass++ : fail++; console.log(`${ok ? "ok  " : "FAIL"} ${id} ${what}${ok ? "" : "  " + JSON.stringify(got)}`); };
+const P = (): any => ({ consent: Object.create(null) });
+const set = (p: any, a: any) => C.setConsent(p, "me", a);
+const d = (p: any, cls: string, wd?: unknown, from = "pal") => C.decide(p, from, "me", cls, wd).mode;
+const MOVE = ["shove", "displace"], TOUCH = ["touch", "intimate", "pose"];
+const all = (p: any, cs: string[], want: string, wd?: unknown) => cs.every((c) => d(p, c, wd) === want);
+const modes = (p: any, wd?: unknown) => Object.fromEntries([...MOVE, ...TOUCH].map((c) => [c, d(p, c, wd)]));
+
+// ---- G: the gates ----
+{ const p = P(); check("G1", "nothing chosen, no world default: move on (shove, displace allowed), touch off (touch, intimate, pose refused)", all(p, MOVE, "allow") && all(p, TOUCH, "deny"), modes(p)); }
+{ const p = P(); const r = set(p, { move: false }); check("G2", "move off refuses shove and displace, and nothing under touch changes", r.ok && all(p, MOVE, "deny") && all(p, TOUCH, "deny"), { r, m: modes(p) }); }
+{ const p = P(); const r = set(p, { touch: true }); check("G3", "touch on allows touch, intimate and pose; move stays on", r.ok && all(p, TOUCH, "allow") && all(p, MOVE, "allow"), { r, m: modes(p) }); }
+{ const p = P(); set(p, { move: false, touch: true }); check("G4", "pose is under touch, never move: move off and touch on allows a pose and refuses a shove", d(p, "pose") === "allow" && d(p, "shove") === "deny" && d(p, "displace") === "deny", modes(p)); }
+{ const p = P(); set(p, { move: true, touch: false }); check("G5", "…and move on, touch off allows a drag (displace: carry, occupy too) and refuses a pose", d(p, "displace") === "allow" && d(p, "pose") === "deny", modes(p)); }
+{ check("G6", "the gate of each enforced class, and nothing else: shove/displace → move, touch/intimate/pose → touch; drag, occupy and carry are displace", JSON.stringify(C.GATE_OF) === JSON.stringify({ shove: "move", displace: "move", touch: "touch", intimate: "touch", pose: "touch" }) && ["drag", "occupy", "carry"].every((k) => C.KIND_CLASS[k] === "displace") && C.KIND_CLASS.pose === "pose" && C.KIND_CLASS.anim === "pose", C.GATE_OF); }
+// ---- L: the lists beat the gates, both ways, and block beats allow ----
+{ const p = P(); set(p, { move: false, touch: false }); set(p, { allow: "pal" }); check("L1", "allow beats both gates off: every enforced class is yes for that person", all(p, [...MOVE, ...TOUCH], "allow") && d(p, "pose", undefined, "stranger") === "deny", modes(p)); }
+{ const p = P(); set(p, { move: true, touch: true }); set(p, { block: "pal" }); check("L2", "block beats both gates on: every enforced class is no for that person, and others still yes", all(p, [...MOVE, ...TOUCH], "deny") && d(p, "pose", undefined, "stranger") === "allow", modes(p)); }
+{ const p = P(); set(p, { allow: "pal" }); p.consent.me.block = Object.assign(Object.create(null), { pal: true });   // both, somehow (a hand-edited plane)
+  check("L3", "block beats allow if a person is somehow on both", all(p, [...MOVE, ...TOUCH], "deny"), modes(p)); }
+{ const p = P(); set(p, { allow: "pal" }); set(p, { block: "pal" }); const t = C.tableOf(p, "me");
+  check("L4", "block takes them off allow (and allow off block): a person is on one list at a time", JSON.stringify(t.allow) === "[]" && JSON.stringify(t.block) === '["pal"]', t);
+  set(p, { allow: "pal" }); const t2 = C.tableOf(p, "me"); check("L4b", "…and allow takes them off block", JSON.stringify(t2.allow) === '["pal"]' && JSON.stringify(t2.block) === "[]", t2); }
+{ const p = P(); set(p, { block: "pal" }); const r = set(p, { unlist: "pal" }); check("L5", "unlist puts them back under the gates", r.ok && d(p, "shove") === "allow" && d(p, "pose") === "deny" && C.tableOf(p, "me").block.length === 0, modes(p)); }
+{ const p = P(); set(p, { allow: "pal" }); check("L6", "a list answers a world default too: allow beats a world with both gates off", d(p, "pose", { move: false, touch: false }) === "allow"); }
+// ---- W: the world's body-default is the gates' default; my own gate beats it ----
+{ const p = P(); check("W1", "a world default {touch: true} opens touch for a body that never chose; move keeps its default", all(p, TOUCH, "allow", { touch: true }) && all(p, MOVE, "allow", { touch: true }), modes(p, { touch: true })); }
+{ const p = P(); check("W2", "a world default {move: false} closes move for a body that never chose", all(p, MOVE, "deny", { move: false }) && all(p, TOUCH, "deny", { move: false }), modes(p, { move: false })); }
+{ const p = P(); set(p, { touch: false }); check("W3", "my touch off beats a world default of touch on", all(p, TOUCH, "deny", { touch: true })); }
+{ const p = P(); set(p, { move: true }); check("W4", "my move on beats a world default of move off", all(p, MOVE, "allow", { move: false })); }
+{ const p: any = P(); p.bodyDefault = { move: false, touch: true }; check("W5", "the authority's synced world default applies when the caller passes none", C.decide(p, "pal", "me", "shove").mode === "deny" && C.decide(p, "pal", "me", "pose").mode === "allow"); }
+{ const g = ["refuse", "ask", "accept"].map((v) => C.worldGates(v)); check("W6", "a stored world default in the switch's words reads as a person's stored switch does: refuse → both off, ask → move on/touch off, accept → move on (touch its default)", JSON.stringify(g) === JSON.stringify([{ move: false, touch: false }, { move: true, touch: false }, { move: true }]), g); }
+// ---- S: the shape; only the owner ----
+{ const p = P(); const r = set(p, { move: "yes" }); check("S1", "a gate is true or false; anything else is refused and changes nothing", !r.ok && r.code === "shape" && !p.consent.me, r); }
+{ const p = P(); const bad = ["switch", "deny", "class", "for", "answer"].map((k) => set(p, { [k]: k === "switch" ? "refuse" : "pal" }));
+  check("S2", "switch, deny, class, for and answer are retired: refused with the gates' pointer, nothing written", bad.every((r) => !r.ok && r.code === "shape" && /move/.test(r.fix ?? "") && /block/.test(r.fix ?? "")) && !p.consent.me, bad); }
+{ const p = P(); const r = set(p, { allow: "pal", block: "kit" }); check("S3", "one list change at a time", !r.ok && !p.consent.me, r); }
+{ const p = P(); const r = set(p, { block: "__proto__" }); check("S4", "a list names an identity (never a prototype key)", !r.ok && !(Object.prototype as any).true, r); }
+{ const p = P(); const r = C.setConsent(p, "pal", { of: "me", move: false }); check("S5", "only the body's owner sets its gates (of is retired)", !r.ok && d(p, "shove") === "allow", r); }
+// ---- M: a stored switch or table becomes gates and lists, only ever narrower ----
+const mig = (consent: any) => { const p: any = { consent, consentShape: 3, asks: { a: 1 }, asked: { a: 1 }, askSeq: 3, cool: { k: 1 } }; C.migratePresence(p); return p; };
+{ const p = mig({ me: { switch: "refuse" } }); check("M1", "a stored switch refuse → both gates off", p.consent.me.move === false && p.consent.me.touch === false && !("switch" in p.consent.me), p.consent.me); }
+{ const p = mig({ me: { switch: "accept" } }); check("M2", "accept → move on, touch left to the world's default (off by default)", p.consent.me.move === true && p.consent.me.touch === undefined && d(p, "pose") === "deny" && d(p, "pose", { touch: true }) === "allow", p.consent.me); }
+{ const p = mig({ me: { switch: "ask" } }); check("M3", "ask → move on, touch off (a world default can't open it)", p.consent.me.move === true && p.consent.me.touch === false && d(p, "pose", { touch: true }) === "deny", p.consent.me); }
+{ const p = mig({ me: { switch: "accept", over: { pal: { touch: { mode: "allow" } }, kit: { pose: { mode: "allow" }, shove: { mode: "deny" } }, tim: { touch: { mode: "allow", until: 5 } } } } });
+  const t = C.tableOf(p, "me"); check("M4", "per-person answers carry over: any class allowed → allow, any denied → block (beats an allow), an allow with an end is dropped", JSON.stringify(t.allow) === '["pal"]' && JSON.stringify(t.block) === '["kit"]' && !("over" in p.consent.me), { t, raw: p.consent.me }); }
+{ const p = mig({ me: { cells: { strangers: { pose: "everyone" } }, friends: ["u-f"] }, eve: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } }, paused: true } });
+  check("M5", "a table from before the switch reads as the switch it became, then as gates: Normal's closed cells → both off; a pause → both off", p.consent.me.move === false && p.consent.me.touch === false && p.consent.eve.move === false && p.consent.eve.touch === false && !/cells|friends|preset|paused/.test(JSON.stringify(p.consent)), p.consent); }
+{ const p = mig({ me: { switch: "refuse" } }); const once = JSON.stringify(p); C.migratePresence(p); set(p, { move: true });
+  check("M6", "the asks, their cool-downs and rate are dropped, the plane is marked, and a second load changes nothing (a gate chosen since stays chosen)", !("asks" in p) && !("cool" in p) && !("asked" in p) && !("askSeq" in p) && p.consentShape === C.CONSENT_SHAPE && C.CONSENT_SHAPE === 4 && (C.migratePresence(p), p.consent.me.move === true) && JSON.parse(once).consent.me.move === false, p); }
+console.log(`[gates-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
