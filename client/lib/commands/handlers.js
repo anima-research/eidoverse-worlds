@@ -200,17 +200,17 @@ function showMembers() {
   logChat('*', `who can come into "${CONFIG.world}": ${door === 'signed-in' ? 'anyone signed in' : DOORS[door]}${rows.length ? `\n${rows.join('\n')}` : '\nnobody is listed by name'}`);
 }
 
-// /kick <name> [minutes] [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
+// /kick <name> [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
 // /warn <name> <reason…>: the authority enforces the permission and the rank (only below you);
-// everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here); the others also
+// everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here, and may come straight back); the others also
 // reach someone who has left (the world's lookup).
 function moderate(cmd, arg) {
   const [id, ...rest0] = (arg || '').trim().split(/\s+/).filter(Boolean);
-  const USAGE = { kick: '<name> [minutes, default 10] [reason]', ban: '<name> [days | forever] [reason]', mute: '<name> [minutes, default 60] [voice|chat] [reason]', warn: '<name> <reason>' };
+  const USAGE = { kick: '<name> [reason] (they may come straight back; /ban keeps someone out)', ban: '<name> [days | forever] [reason]', mute: '<name> [minutes, default 60] [voice|chat] [reason]', warn: '<name> <reason>' };
   if (!id) return logChat('*', `usage: /${cmd} ${USAGE[cmd]}`);
   let rest = rest0.slice(); const args = {};
   const num = () => (rest.length && /^\d+(\.\d+)?$/.test(rest[0]) ? Number(rest.shift()) : undefined);
-  if (cmd === 'kick') { const m = num(); if (m !== undefined) args.minutes = m; }
+  if (cmd === 'kick') { const m = num(); if (m !== undefined) args.minutes = m; }   // the authority refuses a length, pointing at ban
   if (cmd === 'ban') { if (rest[0] === 'forever') rest.shift(); else { const d = num(); if (d !== undefined) args.days = d; } }
   if (cmd === 'mute') args.minutes = num() ?? 60;
   if (cmd === 'mute' && (rest[0] === 'voice' || rest[0] === 'chat')) args.channels = [rest.shift()];
@@ -274,7 +274,7 @@ register('unban', (arg) => {
   onePerson(id, 'unban').then((who) => { if (who) send({ verb: 'unban', args: { who } }, { what: `unban ${id}`, record: false }); });
 });
 
-// /bans: what is in force here now — bans, removals cooling down and mutes — from the authority's `bans` (the
+// /bans: what is in force here now — bans and mutes — from the authority's `bans` (the
 // Moderation panel's source). The legacy world-bans message listed bans only, so a mute in force read "nobody is banned"
 // (audit 10-07). Moderators may ask; the authority says so to anyone else.
 register('bans', async () => {
@@ -287,7 +287,6 @@ register('bans', async () => {
   for (const x of now) {
     const who = x.name ?? x.who;
     if (x.ban) lines.push(`banned: ${who} ${until(x.ban.until)}${why(x.ban)}`);
-    else if (x.kick) lines.push(`removed (cooling down): ${who} ${until(x.kick.until)}${why(x.kick)}`);
     if (x.mute) lines.push(`muted (${(x.mute.channels ?? ['voice', 'chat']).join(' + ')}): ${who} ${until(x.mute.until)}${why(x.mute)}`);
   }
   if (!lines.length) return logChat('*', 'nobody is banned or muted here');
@@ -452,8 +451,8 @@ register('fork', (arg) => {
 });
 
 register('newworld', (arg) => {
-  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in person; the server holds the caps:
-  // a few worlds per account, one every few minutes). The reply arrives as world-founded, with the link.
+  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in account; no quotas, R 10-28).
+  // The reply arrives as world-founded, with the link.
   const [name, ...rest] = (arg || '').trim().split(/\s+/);
   if (!name) return logChat('*', 'usage: /newworld <name> [title] — founds a new, empty world that you own');
   if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(name)) return logChat('*', `"${name}" won't do as a world name — 3 to 32 lowercase letters, digits and -`);

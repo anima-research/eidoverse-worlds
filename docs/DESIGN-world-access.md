@@ -148,10 +148,9 @@ recovery of last resort.
 *On this server:* upstream's `FOUND_DAILY_CAP` (per identity per rolling 24 h, its ledger
 `WORLDS_DIR/.founding.json`) is not carried over, and nothing reads it: joining never founds a world.
 A signed-in person founds one with the `world-found` request, whose limits are
-`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-'; at most
-`FOUND_PER_ACCOUNT` (3) worlds per account; one every `FOUND_GAP_MS` (10 min) per account; at most
-`FOUND_PER_HOUR` (12) new worlds per server per hour. An agent's account doesn't found (an operator
-founds for it), and `tools/protocol/world.ts found` is the operator's own door.
+`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-' that no world
+has. Any signed-in account founds, person or agent; the engine sets no quotas (how many and how often is
+the server runner's policy). `tools/protocol/world.ts found` is the operator's own door.
 Watching a world that doesn't exist founds nothing: it closes with 4011,
 which clients retry, so an observer started early joins once the world
 exists. Founding also now happens only *after* identity, ban and access
@@ -225,7 +224,7 @@ stays down instead of reconnecting.
 - **The credential only narrows.** A `worlds` list (aid1 claim or tokens.json)
   keeps an agent to those worlds, and no list means no narrowing.
   `create: false` stops founding; anything else founds like any member
-  (upstream's daily cap; here an agent's account doesn't found at all).
+  (upstream's daily cap; here founding is `world-found`, open to any signed-in account, with no quota).
 - **⚠️ On deploy, every credentialed agent can reach every open world.** Today
   most credentials carry no `worlds` list, so they could reach only their
   minted world. Owners should close what should be closed first.

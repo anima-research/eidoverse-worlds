@@ -56,7 +56,8 @@ function spokenOf(a, now) {
   if (a.spoken !== true || !Number.isSafeInteger(a.utt) || a.utt < 0) return {};
   return { spoken: true, utt: a.utt, ...(typeof a.t0 === "number" && Number.isFinite(a.t0) ? { t0: Math.round(Math.min(now, Math.max(now - MAX_UTTER_MS, a.t0))) } : {}) };
 }
-const RATE = { n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
+// the defaults; a server injects its own policy (io.rate, server/config.ts RATE_POLICY): never process.env here (browsers run this)
+export const RATE_DEFAULT = Object.freeze({ n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 });
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? utf8Len(JSON.stringify(e));   // UTF-8 bytes, as the log stores it (storage: bytes)
 // FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
@@ -67,15 +68,15 @@ class Admitted { constructor(who, ops, after, notes = [], vacate = [], followUps
 // agents" is the actor alone here. Refusals aren't logged, so they cost the authority, not the log (authority practice).
 function rateCheck(w, actor, kind = "act", extra = 0) {
   if (w.leaving === actor) return; // a disconnect's settlement is the authority's duty, not the leaver's request: never rate-refused
-  const r = rateOf(w, actor); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
+  const RATE = w.rate ?? RATE_DEFAULT, r = rateOf(w, actor, RATE.ms); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
   if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
   if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; big data goes in a blob");
 }
 // what this actor put in the log over the window: acts, says (counted apart), and all their bytes (incl. results)
-function rateOf(w, actor) {
+function rateOf(w, actor, ms) {
   const now = w.now(); let acts = 0, says = 0, bytes = 0;
   for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i];
-    if (isE(e) && Number.isInteger(e.ts) && now - e.ts > RATE.ms) break; // ts never decreases: everything earlier is older
+    if (isE(e) && Number.isInteger(e.ts) && now - e.ts > ms) break; // ts never decreases: everything earlier is older
     if (!isE(e) || e.actor !== actor) continue;
     if (e.kind === "act") acts++; else if (e.kind === "say") says++;
     bytes += bytesOf(e); }

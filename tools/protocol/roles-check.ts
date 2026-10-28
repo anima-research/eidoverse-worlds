@@ -72,15 +72,14 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a mute's channels are the union", "protocol/authority.js", "const channels = [...new Set(a.flatMap((m) => m.channels ?? [\"voice\", \"chat\"]))];", "const channels = strongest(a).channels ?? [\"voice\", \"chat\"];", ["V1b"]],
   ["a lift needs rights over every record", "protocol/authority/moderation.js", "for (const rec of (Array.isArray(recs) ? recs : recs ? [recs] : [])) {", "for (const rec of (Array.isArray(recs) ? recs.slice(-1) : recs ? [recs] : [])) {", ["V2"]],
   ["nobody lifts their own", "protocol/authority/moderation.js", "if (a.who === actor) refuse(\"rank\", `you can't lift a ${verb} on yourself`", "if (false) refuse(\"rank\", `you can't lift a ${verb} on yourself`", ["V5"]],
-  ["leave passes the kick gate", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor))", "if (w.exists && tool !== \"help\" && kickOf(w, actor))", ["K5"]],
-  ["a muted refusal isn't logged", "protocol/authority.js", "\"kicked\", \"muted\"]);", "\"kicked\"]);", ["V7"]],
+  ["a muted refusal isn't logged", "protocol/authority.js", "\"banned\", \"muted\"]);", "\"banned\"]);", ["V7"]],
   ["custom ranks are range-checked on read", "protocol/roles.js", "|| d.rank < 1 || d.rank > 254) return null;", ") return null;", ["V9"]],
   ["seniority binds a capability's holder", "protocol/authority.js", "const cap = who.cap; if (cap && cap.kind !== \"reaction\" && cap.kind !== \"script\") return;", "const cap = who.cap; if (cap) return;", ["V10"]],
   ["a banned person is refused", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && isBanned(w, actor)) refuse(\"banned\"", "if (false) refuse(\"banned\"", ["M2"]],
   ["chat mute refuses say", "protocol/authority/verbs.js", "{ const m = muteOf(w, actor, \"chat\"); if (m)", "{ const m = null; if (m)", ["M3", "V3"]],
   ["mute channels", "protocol/authority.js", "  if (channel && !channels.includes(channel)) return null;", "", ["M3"]],
-  ["mute cap", "protocol/authority/moderation.js", "if (minutes > cap && (ownerCap ||", "if (false && (ownerCap ||", ["M4", "M5"]],
-  ["a kick's cooldown", "protocol/authority.js", "if (w.exists && tool !== \"help\" && tool !== \"leave\" && kickOf(w, actor)) refuse(\"kicked\"", "if (false) refuse(\"kicked\"", ["M5"]],
+  ["mute cap", "protocol/authority/moderation.js", "if (minutes > cap && roleOf(w.state(), actor)", "if (false && roleOf(w.state(), actor)", ["M4"]],
+  ["a kick takes no length", "protocol/authority/moderation.js", "if (a.minutes !== undefined) refuse(\"shape\", \"a kick has no length", "if (false) refuse(\"shape\", \"a kick has no length", ["M5"]],
   ["lifting goes by the record's author", "protocol/authority/moderation.js", "if (strict ? mine <= theirs : mine < theirs) refuse(\"rank\"", "if (false) refuse(\"rank\"", ["M6", "G2"]],
   ["lifting needs the permission", "protocol/authority/moderation.js", "if (!may(st, actor, power) && roleOf(st, actor) !== \"owner\") refuse(\"rights\", `lifting a", "if (false) refuse(\"rights\", `lifting a", ["M6"]],
   ["grant: grantRoles", "protocol/authority/gate.js", "if (n === \"grant\") return eff.can.grantRoles ? null : \"grantRoles\";", "if (n === \"grant\") return null;", ["M7"]],
@@ -386,12 +385,12 @@ const cases: Case[] = [
       return { long: code(s.call("mo", "mute", { who: "vic", minutes: 7 * 1440 + 1 })), none: code(s.call("mo", "mute", { who: "vic" })), bob: code(s.call("bob", "mute", { who: "vic", minutes: 5 })),
         weekOk: show(s.call("mo", "mute", { who: "vic", minutes: 7 * 1440 })) }; },
     good: (o) => o.long === "bounds" && (o.none === "missing-arg" || o.none === "shape") && o.bob === "rights" && o.weekOk === "ok" },
-  { id: "M5", what: "kick: a builder kicking is refused (needs kick); a moderator's kick bars rejoin for 10 minutes by default, 60 at most", run(s) { cast(s);
-      const b = s.call("bob", "kick", { who: "vic" }), k = s.call("mo", "kick", { who: "vic", reason: "rude" }), long = s.call("mo", "kick", { who: "ann", minutes: 61 });
-      const barred = code(s.call("vic", "look")); const until = D.kickOf?.(s.w(), "vic")?.until;
-      s.advance(10 * MIN + 1000);
-      return { b: code(b), needs: b.refused?.needs, k: show(k), long: code(long), barred, mins: until && Math.round((until - k.until) / MIN), after: show(s.call("vic", "look")) }; },
-    good: (o) => o.b === "rights" && o.needs === "kick" && o.k === "ok" && o.long === "bounds" && o.barred === "kicked" && o.after === "ok" },
+  { id: "M5", what: "kick (R 10-28, conventional): a builder kicking is refused (needs kick); a moderator's kick is logged, bars nothing (they act at once, nothing in force), and takes no length", run(s) { cast(s);
+      const b = s.call("bob", "kick", { who: "vic" }), k = s.call("mo", "kick", { who: "vic", reason: "rude" }), timed = s.call("mo", "kick", { who: "ann", minutes: 10 });
+      const rec = s.w().mod.filter((m) => m.verb === "kick");
+      return { b: code(b), needs: b.refused?.needs, k: show(k), until: "until" in k, timed: code(timed), fix: timed.refused?.fix, recs: rec.map((m) => [m.who, "until" in m]), after: show(s.call("vic", "look")),
+        inForce: Object.keys(D.sanctionsNow(s.w())).includes("vic") }; },
+    good: (o) => o.b === "rights" && o.needs === "kick" && o.k === "ok" && !o.until && o.timed === "shape" && /ban/.test(o.fix ?? "") && JSON.stringify(o.recs) === '[["vic",false]]' && o.after === "ok" && !o.inForce },
   { id: "M6", what: "unban: a moderator can't lift an owner's ban; the owner can; a moderator lifts their own", run(s) { cast(s);
       s.call("olive", "ban", { who: "ann" }); s.call("mo", "ban", { who: "vic", days: 3 });
       return { moOwner: code(s.call("mo", "unban", { who: "ann" })), moOwn: show(s.call("mo", "unban", { who: "vic" })), owner: show(s.call("olive", "unban", { who: "ann" })), bob: code(s.call("bob", "unban", { who: "ann" })) }; },
@@ -504,15 +503,14 @@ const cases: Case[] = [
     good: (o) => o.note === "ok" && o.demote === "rights" && o.olive === "owner" },
 
   // ---------------- V: the independent review's findings (10-07), each red before its fix ----------------
-  { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban, 1-minute voice mute or kick under an owner's leaves the owner's in force", run(s) { cast(s);
+  { id: "V1", what: "a weaker sanction never cancels a stronger one: a moderator's 0.0001-day ban or 1-minute voice mute under an owner's leaves the owner's in force", run(s) { cast(s);
       role(s, "ann2", { role: "inhabitant" }); role(s, "kk", { role: "inhabitant" });
       s.call("olive", "ban", { who: "vic" }); const b = s.call("mo", "ban", { who: "vic", days: 0.0001 });
       s.call("olive", "mute", { who: "ann", minutes: 10080 }); const m = s.call("mo", "mute", { who: "ann", minutes: 1, channels: ["voice"] });
-      s.call("olive", "kick", { who: "kk", minutes: 60 }); s.call("mo", "kick", { who: "kk", minutes: 0.01 });
-      const now0 = s.now(); const banUntil = D.banOf(s.w(), "vic")?.until ?? "never", kickLeft = (D.kickOf(s.w(), "kk")?.until ?? 0) - now0;   // while both are in force: the strongest is read
+      const banUntil = D.banOf(s.w(), "vic")?.until ?? "never";   // while both are in force: the strongest is read
       s.advance(20_000);
-      return { b: show(b), m: show(m), banUntil, kickLeft, banned: D.isBanned(s.w(), "vic"), annSay: code(s.call("ann", "say", { text: "hi" })), kicked: !!D.kickOf(s.w(), "kk") }; },
-    good: (o) => o.banUntil === "never" && o.kickLeft > 50 * MIN && o.banned && o.annSay === "muted" && o.kicked },
+      return { b: show(b), m: show(m), banUntil, banned: D.isBanned(s.w(), "vic"), annSay: code(s.call("ann", "say", { text: "hi" })) }; },
+    good: (o) => o.banUntil === "never" && o.banned && o.annSay === "muted" },
   { id: "V1b", what: "a mute's channels are the union of every mute in force: a longer voice-only mute over a shorter chat mute keeps chat muted", run(s) { cast(s);
       s.call("olive", "mute", { who: "vic", minutes: 10, channels: ["chat"] }); s.call("mo", "mute", { who: "vic", minutes: 60, channels: ["voice"] });
       return { say: code(s.call("vic", "say", { text: "hi" })), ch: D.muteOf(s.w(), "vic")?.channels }; },

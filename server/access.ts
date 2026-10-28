@@ -14,8 +14,8 @@
 //   sweepAccess   — timed grants: warn five minutes out, then the authority writes the end (expire-roles) and settle
 // It never imports server.ts: the session's expel is injected by the caller.
 //
-// Not ported from upstream (and why): a FOUNDING CAP (joining never founds a world here; founding is `world-found`, which
-// has its own caps, and an agent's account doesn't found); the directory SEARCH of everyone who has signed in (this
+// Not ported from upstream (and why): a FOUNDING CAP (joining never founds a world here; founding is `world-found`, with no
+// engine quota); the directory SEARCH of everyone who has signed in (this
 // server's whois is scoped to a world's own people: a roster of sign-ins isn't an owner's to browse); `grant <name>
 // spectator` for ONE person (a role is membership here, never a state: a world that admits only people listed lets
 // everyone else watch with access.watch, or no one).
@@ -30,7 +30,7 @@ import { directoryFor } from "./directory.ts";
 import { accountAgeRefusal } from "./accountage.ts";
 import { effectiveOf, isOwner, MOD_POWERS } from "../shared/protocol/roles.js";
 import { opsOf } from "../shared/protocol/fold.js";
-import { isBanned, kickOf } from "../shared/protocol/authority.js";
+import { isBanned } from "../shared/protocol/authority.js";
 import { modLogAt } from "./custody.ts";
 import { entryOf, doorOf as doorOfWc, listedIn, timedGrants, leftWords, ACCESS_WARN_MS } from "../shared/protocol/access.js";
 import type { World, Client } from "./world.ts";
@@ -49,7 +49,7 @@ export type Who = { account: string | null; actorId?: string | null; trustedRend
 /** `mod`: an unloaded world's moderator log, read from disk with its door (a loaded world's own log is the truth). */
 export type Door = { name: string; wc: Record<string, any>; label: string; world?: World; mod?: any[] };
 export type EntryMode = "embody" | "watch";
-export type Refusal = { code: number; reason: "banned" | "kicked" | "no-access" | "full" | "age"; why: string; until?: number };
+export type Refusal = { code: number; reason: "banned" | "no-access" | "full" | "age"; why: string; until?: number };
 
 const wcOfWorld = (w: World): Record<string, any> => (w.log?.live?.state?.().entities?.["@world"]?.c ?? {}) as Record<string, any>;
 
@@ -114,13 +114,9 @@ export function entryFor(door: Door, who: Who, mode: EntryMode, { now = Date.now
     // the world's own moderator log: the loaded world's, else the one read from disk with its door (same views, at `now`)
     const off = !door.world && door.mod ? { mod: door.mod, now: () => now } : null;
     const bannedHere = (id: string) => door.world ? !!door.world.log?.bannedHere(id) : !!off && isBanned(off, id);
-    const kickedHere = (id: string) => door.world ? door.world.log?.kickedHere(id) : off ? kickOf(off, id) : null;
     const gb = findBan(globalBans, account, addr);
     const ban = gb ?? findBan(globalBans, account, addr, now, door.name) ?? (actorId && bannedHere(actorId) ? { by: "a moderator" } as any : null);
     if (ban) return { code: 4006, reason: "banned", why: `you are banned from ${gb ? "these worlds" : `"${door.name}"`}${ban.reason ? ` — ${ban.reason}` : ""}` };
-    const k = actorId ? kickedHere(actorId) : null;
-    if (k) { const mins = Math.max(1, Math.ceil((k.until - now) / 60000));
-      return { code: 4006, reason: "kicked", why: `you were removed from "${door.name}" and may come back in ${mins} min${k.reason ? ` — ${k.reason}` : ""}`, until: k.until }; }
   }
   // operators, owners and holders of a moderation power always get in (what @world.access always said)
   const eff = actorId ? effectiveOf(door.wc, actorId, { anon: !account }) : null;

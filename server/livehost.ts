@@ -40,7 +40,7 @@ export function applyShared(st: Any, ops: Any[], seq: number) {
   return applyInPlace({ ...st, entities, diagnostics: st.diagnostics }, ops, seq);
 }
 
-export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time clock (ms); default: performance.now, or `now` when given */ pace?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
+export type LiveOpts = { /** the act rate (server/config.ts RATE_POLICY); default: gate.js RATE_DEFAULT */ rate?: { n: number; says: number; ms: number; bytes: number; anonBytes: number }; now?: () => number; /** the speed track's elapsed-time clock (ms); default: performance.now, or `now` when given */ pace?: () => number; catalogue?: Any; simModels?: Any; onAppend?: (seq: number, e: Any) => void;
   /** the authority's governance keys file (§2.4); default <worlds dir>/.custody.json, shared by every world in it */ custodyFile?: string;
   /** id → display name (the authority directory, server/directory.ts); default: that worlds dir's directory */ nameOf?: (id: string) => string | null;
   /** id → account|anon|imported (the directory; the authority reads only "anon"); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
@@ -90,7 +90,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const pace = opts.pace ?? (opts.now ? now : () => performance.now());
 
   const w: Any = worldOf({
-    name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue,
+    name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue, rate: opts.rate,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present, sayFloor: opts.sayFloor,
     writeLine: (line: string) => appendDurable(logPath, line),
     presence: { bodies: {}, holds: {} }, savePresence: () => {},

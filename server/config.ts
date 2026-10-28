@@ -138,10 +138,24 @@ export const STATE_CACHE_EVERY = Number(process.env.STATE_CACHE_EVERY ?? 1000);
  *  205k log (10-28): a checkpoint costs ~10 ms (cut + fsynced ~50 KB blob + its line), replay 1.2 µs/entry for label sets and
  *  56 µs for transform sets, so 1000 bounds a boot's engine tail at ~60 ms for ~10 µs/entry of writing. */
 export const SIM_CHECKPOINT_EVERY = Number(process.env.SIM_CHECKPOINT_EVERY ?? 1000);
-/** Authored verbs allowed per client per 4s. A griefer gets silence; a person
- *  arranging furniture must not. Configurable because a build session and a
- *  show night want different answers. */
-export const VERB_RATE = Number(process.env.VERB_RATE ?? 12);
+// ---- server policy: every limit a server runner may set, in one place (an operator surface reads these: WISHLIST) ----
+/** One person's acts per window, logged entries (Matrix rc_message's shape; shared/protocol/authority/gate.js rateCheck). */
+export const ACT_RATE = envNumber("ACT_RATE", 60, (n) => n > 0);
+/** One person's says per window, counted apart from acts so chat and building can't starve each other. */
+export const SAY_RATE = envNumber("SAY_RATE", 20, (n) => n > 0);
+/** The act/say window, in seconds. */
+export const RATE_WINDOW_SEC = envNumber("RATE_WINDOW_SEC", 10, (n) => n > 0);
+/** Bytes one account may make the log hold per window, in KiB. */
+export const RATE_KIB = envNumber("RATE_KIB", 256, (n) => n > 0);
+/** Bytes one guest (no account) may make the log hold per window, in KiB. */
+export const ANON_RATE_KIB = envNumber("ANON_RATE_KIB", 32, (n) => n > 0);
+/** The act rate as the authority takes it (injected: the authority is shared code, livehost opts.rate). */
+export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 1000, bytes: RATE_KIB * 1024, anonBytes: ANON_RATE_KIB * 1024 };
+/** Seconds between two copies of one world (world-fork copies on the shared thread); 0 = no limit. */
+export const FORK_GAP_SEC = envNumber("FORK_GAP_SEC", 60, (n) => n >= 0);
+/** Copies one person may make per hour; 0 = no limit. */
+export const FORK_PER_HOUR = envNumber("FORK_PER_HOUR", 5, (n) => n >= 0);
+// Founding a world: no limits (R 10-28, "no limits until we can study this properly"); server/worldlog.ts foundRefusal.
 /** All messages per client per second — 15Hz of pose plus verbs plus slack; a token bucket with two seconds of burst
  *  (server/msgrate.ts), so a backlog the server itself caused isn't charged to the client. */
 export const MSG_RATE = Number(process.env.MSG_RATE ?? 60);

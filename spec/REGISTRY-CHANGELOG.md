@@ -350,3 +350,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-28: R 10-28: sky takes audio again (a bool, absent off: plays the asset library's weather sounds when this server has them, silent otherwise), mapped from main's sky.audio by translate-v1@25; a new light's default intensity 16 → 25.93 cd, main's default light (16 cd, decay 1.7) matched at 5 m, half the default range (16 × 5^0.3). An older light (no decay) still reads 16: the repair writes it beside decay 1.7; only a light stored since 10-16 with a decay and no intensity reads brighter
   - light.intensity: default 16 → 25.93
   - light.intensity: its meaning "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise" → "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise. Default 25.93: main's default light's brightness at 5 m"
+- 2026-10-28: normative: kick is conventional (R 10-28): it removes someone now and they may come straight back, so no kick is ever in force and the kicked refusal is gone
+  - refusal kicked: gone (old logs may hold it)

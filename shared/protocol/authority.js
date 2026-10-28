@@ -50,8 +50,8 @@ export { posAt, worldOf, seal, readback } from "./authority/storage.js";
 import { NONE, aabb, ancestors, descendants, hits, localFrom, obbs, qYaw, qinv, qmul, qrot, satCost, satDepth, surfacesOf, worldT, yawQ } from "./authority/math.js";
 import { SPATIAL, WORK_BUDGET, clockMs, familyOf, groundOf, groundReady, hitsIx, kidsMap, near, spatial, spend, supportBelow, supportUnder } from "./authority/spatial.js";
 export { WORK_BUDGET, indexAudit } from "./authority/spatial.js";
-import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, inForce, inForceOf, isBanned, isScriptActor, kickOf, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
-export { effectiveIn, roleIn, inForceOf, banOf, isBanned, kickOf, muteOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
+import { RANK, RESERVED, backward, banOf, creatorOf, effective, entryBy, inForce, inForceOf, isBanned, isScriptActor, lastSetterOf, madeBy, may, modHolder, muteOf, ownersOf, rankOf, roleOf, sanctionsNow, wcOf, whoRank } from "./authority/rights.js";
+export { effectiveIn, roleIn, inForceOf, banOf, isBanned, muteOf, sanctionsNow, creatorOf, lastSetterOf } from "./authority/rights.js";
 import { BODY_VERBS, bodyGate, forgetReaches, inboxPush, shieldOf } from "./authority/bodyconsent.js";
 export { reachAdmits, reachLetGo, noteRefused } from "./authority/bodyconsent.js";
 import { MOD_VERBS } from "./authority/moderation.js";
@@ -135,7 +135,6 @@ export function request(w, actor, verb, args = {}) {
     // body and what it held were never released)
     // an operator's recorded repair (operatorRepair) is not the person's own request: their sanctions and role here don't gate it
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && isBanned(w, actor)) refuse("banned", `${said(actor)} is banned from this world`, "the moderator log says so; ask a moderator");
-    if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && kickOf(w, actor)) refuse("kicked", `${said(actor)} was removed from this world and may come back in ${Math.ceil((kickOf(w, actor).until - w.now()) / 60000)} min`, "wait; the moderator log says who and why");
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
     // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
@@ -223,7 +222,7 @@ function placeholders(w, verb, args) {
 // no-world, custody, unreadable, and the sanctions banned and kicked): logging those would be the flood. Past the
 // budget, the authority counts what it didn't write, and the next refusal it does write says how many (`unrecorded`).
 // "muted": its refusal would put the muted words in the public log (review 10-07)
-const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "kicked", "muted"]);
+const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "muted"]);
 const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
 const PRESENCE_VERBS = new Set(["move", "drive", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged
 const REFUSAL_RING = 200, RING_VALUE_BYTES = 2048;

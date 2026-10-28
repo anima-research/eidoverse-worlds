@@ -7,7 +7,7 @@ import { ownedWorld } from './probe-harness.mjs';
 import { qFromYaw } from '../shared/rot.js';
 
 // founded and owned by the driver's id (TRUST_NAMES), so its creates are admitted (#260 house I419)
-const world = await ownedWorld({ worlds: ['draw-probe'], owner: 'draw-driver', env: { VERB_RATE: '100', TRUST_NAMES: '1' } });
+const world = await ownedWorld({ worlds: ['draw-probe'], owner: 'draw-driver', env: { ACT_RATE: '250', TRUST_NAMES: '1' } });
 let browser, ws;
 const errors = [];
 try {

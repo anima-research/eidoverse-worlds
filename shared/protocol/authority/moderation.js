@@ -13,11 +13,11 @@ import { banOf, effective, entryBy, inForceOf, may, modHolder, rankOf, roleOf, s
 // ---------- acting on a person (research roles §6) ----------
 const WARN_OR_MOD = (st, who) => modHolder(st, who) || roleOf(st, who) === "owner";
 const reasonOf = (a) => (typeof a.reason === "string" && a.reason.trim() ? { reason: a.reason.slice(0, R.REASON_MAX) } : {});
-/** A duration in minutes → until (the authority's ms). Capped below owner at `cap` (an owner may go past it only when ownerCap is false). */
-function minutesUntil(w, actor, minutes, { cap, what, required = false, ownerCap = false }) {
+/** A duration in minutes → until (the authority's ms). Capped below owner at `cap`. */
+function minutesUntil(w, actor, minutes, { cap, what, required = false }) {
   if (minutes === undefined) { if (required) refuse("shape", `${what} needs minutes (how long)`, `e.g. minutes: 5, 60 or 1440 (at most ${cap})`); return undefined; }
   if (!(typeof minutes === "number" && Number.isFinite(minutes) && minutes > 0)) refuse("shape", `${what}: minutes is a number above 0`, "");
-  if (minutes > cap && (ownerCap || roleOf(w.state(), actor) !== "owner")) refuse("bounds", `${what} lasts at most ${cap} minutes${ownerCap ? "" : " (owners may go longer)"}`, `minutes: ${cap} or less`);
+  if (minutes > cap && roleOf(w.state(), actor) !== "owner") refuse("bounds", `${what} lasts at most ${cap} minutes (owners may go longer)`, `minutes: ${cap} or less`);
   return Math.floor(w.now() + minutes * 60000);
 }
 /** The rule every person-act shares: the switch (one of `powers`), an identity, someone ranked strictly below you.
@@ -66,11 +66,11 @@ const MOD_VERBS = {
     w.appendMod({ actor, verb: "mute", who: a.who, channels: ch, until, ...reasonOf(a) }); return { ok: true, muted: a.who, channels: ch, until, ...t, logged: "moderator log" }; },
   unmute: (w, actor, a) => { if (!personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true })) return { ok: true, unmuted: a.who, recorded: false, note: `${said(a.who)} has no mute in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
-  // a kick removes a live session now (the authority's server does the removing on this reply); they may come back after
-  // `minutes` (default 10, at most 60: VRChat's kick is a one-hour bar)
+  // a kick removes a live session now (the server does the removing on this reply) and they may come straight back: the
+  // conventional kick (R 10-28); a timed exclusion is a ban {days}
   kick: (w, actor, a) => { const t = personAct(w, actor, a, "kick", ["kick"], { noOwner: "kicked" });
-    const until = minutesUntil(w, actor, a.minutes ?? R.KICK_DEFAULT_MIN, { cap: R.KICK_MAX_MIN, what: "a kick's cooldown", ownerCap: true });
-    w.appendMod({ actor, verb: "kick", who: a.who, until, ...reasonOf(a) }); return { ok: true, kicked: a.who, until, ...t, logged: "moderator log" }; },
+    if (a.minutes !== undefined) refuse("shape", "a kick has no length: it removes them now and they may come back at once", "to keep them out for a while, ban {who, days, reason}");
+    w.appendMod({ actor, verb: "kick", who: a.who, ...reasonOf(a) }); return { ok: true, kicked: a.who, ...t, logged: "moderator log" }; },
   ban: (w, actor, a) => { const t = personAct(w, actor, a, "ban", ["ban"], { noOwner: "banned" });
     const owner = roleOf(w.state(), actor) === "owner";
     if (a.days === undefined && !owner) refuse("rights", `a ban with no end needs an owner; you may ban for up to ${R.MOD_BAN_MAX_DAYS} days`, `ban {who, days: 1|7|${R.MOD_BAN_MAX_DAYS}, reason}`, { needs: "owner" });
@@ -79,9 +79,9 @@ const MOD_VERBS = {
     const until = a.days === undefined ? undefined : Math.floor(w.now() + a.days * 86400000);
     w.appendMod({ actor, verb: "ban", who: a.who, ...(until !== undefined ? { until } : {}), ...reasonOf(a) }); return { ok: true, banned: a.who, ...(until !== undefined ? { until } : { until: null }), ...t, logged: "moderator log" }; },
   unban: (w, actor, a) => { if (!isIdentity(a.who)) refuse("shape", "unban {who}", "");
-    // an operator's recorded repair lifts any ban or kick here, their own included (authority.js operatorRepair), and says so
+    // an operator's recorded repair lifts any ban here, their own included (authority.js operatorRepair), and says so
     const op = !!CTX.operator && CTX.operator === actor;
-    if (!op && !personLift(w, actor, a, "ban", [...inForceOf(w, a.who, "ban"), ...inForceOf(w, a.who, "kick")], { strict: true })) return { ok: true, unbanned: a.who, recorded: false, note: `${said(a.who)} has no ban or kick in force here: there was nothing to lift` };
+    if (!op && !personLift(w, actor, a, "ban", inForceOf(w, a.who, "ban"), { strict: true })) return { ok: true, unbanned: a.who, recorded: false, note: `${said(a.who)} has no ban in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unban", who: a.who, ...(op ? { operator: true } : {}) }); return { ok: true, unbanned: a.who, ...(op ? { operator: true } : {}) }; },
   // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
   // from the world log (roles:* writes, read-only) and the authority's automatic cool-downs

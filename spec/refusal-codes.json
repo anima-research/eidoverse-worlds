@@ -40,10 +40,6 @@
    "meaning": "the actor is banned from this world",
    "when": "any request but help/leave from a banned identity"
   },
-  "kicked": {
-   "meaning": "the actor was removed and may come back later",
-   "when": "any request but help/leave inside a kick's cooldown"
-  },
   "muted": {
    "meaning": "the actor is muted here",
    "when": "a say (or voice) while a mute is in force"

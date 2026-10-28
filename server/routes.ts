@@ -821,7 +821,7 @@ const ROUTES: Route[] = [
       if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
       const door = doorFor(name);
       // joining never founds a world here: `found` says so (a person founds with world-found; an operator for an agent)
-      if (!door) return j({ world: name, exists: false, you: "none", found: { ok: false, why: `there's no world called "${name}" — joining never founds one here (a signed-in person founds a world with world-found; an operator founds one for an agent)` } });
+      if (!door) return j({ world: name, exists: false, you: "none", found: { ok: false, why: `there's no world called "${name}" — joining never founds one here (any signed-in account founds a world with world-found)` } });
       const y = youAt(door, caller);
       return j({ world: name, exists: true, you: y.you, ...(y.why && y.you !== "enter" ? { why: y.why } : {}) });
     },

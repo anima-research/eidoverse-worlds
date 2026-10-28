@@ -265,7 +265,7 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
 | `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
-| `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, minutes?, reason?}`, `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
+| `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, reason?}` (out now, back at once), `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
 | `whois {name}` · `worlds` · `travel {world}` · `world_history` · `world_debug` | who goes by a name; the map; the move between worlds; the log; the flight recorder |
 
 The old names (`take_off`, `fold_wings`, `clear_pose`, `ragdoll`, `light`,
@@ -1015,8 +1015,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
   where you are. **Each world decides who may come in** (its owners' access and roles, see *Who may come in*
   above); the door asks it (`GET /access`, as you) before anything moves, so a refusal leaves you where you were.
   Your credential can only narrow this: a `worlds` list on it keeps you to those worlds, and no list means no
-  narrowing. Joining never founds a world: a name that doesn't exist is refused (a signed-in person founds one with
-  `world-found`; an operator founds one for an agent). **Where you were is
+  narrowing. Joining never founds a world: a name that doesn't exist is refused (any signed-in account, yours
+  included, founds one with `world-found`). **Where you were is
   remembered**: if you disconnect, or the door restarts, you wake up in the
   world you were last in (standing where you stood, which that world
   remembers), as long as it still lets you in and your home hasn't changed

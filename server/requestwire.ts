@@ -17,7 +17,7 @@ import { worldExists, worlds } from "./world.ts";
 import type { Client, World } from "./world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
-import { WORLDS_DIR } from "./config.ts";
+import { WORLDS_DIR, FORK_GAP_SEC, FORK_PER_HOUR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
 import { txnRefusal } from "../shared/protocol/authority/storage.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
@@ -112,8 +112,7 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?:
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
-const FORK_GAP_MS = 60_000, FORK_PER_HOUR = 5;
-const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();
+const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();   // the fork limits' memory (config.ts FORK_*)
 export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   ...UPGRADE_MESSAGES,   // world-upgrade-review, world-upgrade: the operator opens a world saved in an older format (server/upgrade.ts)
   "request": ({ c, ws, expel, sweep }, msg) => {
@@ -178,24 +177,24 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         if (happened) { const text = modLine(w, c.id, verb, who);
           for (const t of w.clients) if (t.actorId !== who) { try { t.ws.send(JSON.stringify({ type: "moderated", verb, by: c.id, text })); } catch { /* gone */ } } }
       }
-      // an unban (or the end of a kick, lifted) also lifts the address entry a guest's ban or kick left
+      // an unban also lifts the address entry a guest's ban left
       if (r?.ok && verb === "unban" && typeof args.who === "string") { let n = 0;
         for (const [k, e] of Object.entries(globalBans)) if ((e as Any)?.who === args.who && (e as Any)?.world === w.name) { delete globalBans[k]; n++; }
         if (n) saveGlobalBans(); }
       // a ban or kick the authority accepted takes the person out NOW (H4b: a ban used to leave the banned person present,
-      // talking until they chose to leave). A guest has no account to ban, so their ban also names their
-      // connection's address in this world for a day (moderation.ts) — or they'd simply reconnect as a fresh guest.
+      // talking until they chose to leave); a kicked person may come straight back (R 10-28). A guest has no account to ban,
+      // so their ban also names their connection's address in this world for a day (moderation.ts), or they'd reconnect as a fresh guest.
       if (r?.ok && (verb === "ban" || verb === "kick")) {
         const who = String(args.who);
         for (const t of [...w.clients]) if (t.actorId === who) {
-          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) and its kick's cooldown
-          // also name its connection's address in this world, or reconnecting would shed them (review 10-07)
-          if (t.anonymous && t.addr) {
+          // a guest has no account: a fresh connection is a fresh identity, so its ban (at most a day) also names its
+          // connection's address in this world, or reconnecting would shed it (review 10-07)
+          if (verb === "ban" && t.anonymous && t.addr) {
             const until = Math.min(Date.now() + ADDR_BAN_MS, r.until ?? Infinity);
             globalBans[banKey(null, t.addr, w.name)] = { by: c.id, ts: Date.now(), name: t.id, addr: t.addr, until, world: w.name, who, ...(args.reason ? { reason: String(args.reason) } : {}) };
             saveGlobalBans();
           }
-          const back = r.until ? ` — you may come back ${verb === "kick" ? `in ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} min` : `on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC`}` : "";
+          const back = verb === "kick" ? " — you may come back" : r.until ? ` — you may come back on ${new Date(r.until).toISOString().slice(0, 16).replace("T", " ")} UTC` : "";
           expel(w, t, `you were ${verb === "ban" ? "banned from" : "removed from"} "${w.name}"${args.reason ? ` — ${String(args.reason)}` : ""}${back}`, r.until ?? null);
         }
       }
@@ -235,11 +234,10 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.log.roleOf(actorOf(c)); if (!isOwner(role)) return err(`copying a world needs its owner — you are a ${role} here`);
-    // a fork copies the whole world synchronously on the shared thread (review 10-06): one at a time per world, and at
-    // most FORK_PER_HOUR per person, so no owner can stall every world on the authority by forking in a loop
-    const now = Date.now(), last = forkAt.get(w.name) ?? 0, mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
-    if (now - last < FORK_GAP_MS) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — try again in a minute`);
-    if (mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (at most ${FORK_PER_HOUR})`);
+    // a fork copies synchronously on the shared thread: the server's fork limits (config.ts FORK_GAP_SEC, FORK_PER_HOUR; 0 = none)
+    const now = Date.now(), last = forkAt.get(w.name), mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
+    if (FORK_GAP_SEC > 0 && last !== undefined && now - last < FORK_GAP_SEC * 1000) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — this server allows one copy every ${FORK_GAP_SEC} s`);
+    if (FORK_PER_HOUR > 0 && mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (this server allows ${FORK_PER_HOUR})`);
     const to = String(msg.to ?? "").slice(0, 64);
     const r = forkWorld(w.log, to, actorOf(c));
     if (!r.ok) return err(r.err);
@@ -247,14 +245,12 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },
-  // Found a new, empty world that you own (ship list 10-07). A signed-in person only: a guest has no account to hold it
-  // and an agent's account doesn't found here (an operator founds for an agent); caps and the name rule in foundOwnedWorld.
+  // Found a new, empty world that you own. Any signed-in account, person or agent: a guest has no account to own it.
   "world-found": ({ c, ws }, msg) => {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e, about: "world-found" }));
     if (!c.world) return err("join a world first");
     if (c.spectator) return err("spectators can't found worlds — join embodied");
     if (c.anonymous || !c.account) return err("founding a world needs a signed-in account (a guest's world would have no one to own it)");
-    if (/^(agent|aid1):/.test(c.account)) return err("an agent's account doesn't found worlds here — the server's operator can found one for it");
     const name = String(msg.name ?? "").trim().toLowerCase().slice(0, 64);
     const r = foundOwnedWorld(name, actorOf(c), c.account, typeof msg.title === "string" ? msg.title : undefined, worldExists);
     if (!r.ok) return err(r.err);

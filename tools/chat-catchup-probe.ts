@@ -35,11 +35,10 @@
 // The three worlds are founded before the server starts, since a join never
 // founds one, and each raw socket joins as a replica, since a world talks only
 // to clients that fold its log. They speak through `say` requests and read
-// the lines back from the log stream's `say` entries (saysIn). The world's
-// authority takes at most 20 says in 10 s from one speaker
-// (shared/protocol/authority/gate.js RATE), so VOICES speakers take turns,
-// each kept under that, and each line waits for the world's reply to the one
-// before it, so the log holds them in order.
+// the lines back from the log stream's `say` entries (saysIn). The server's
+// say rate is lifted (SAY_RATE, server/config.ts); VOICES speakers still take
+// turns under its default (20 in 10 s), and each line waits for the world's
+// reply to the one before it, so the log holds them in order.
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -49,10 +48,10 @@ import { launchBrowser } from "./probe-harness.mjs";
 const { check, tally } = mkCheck();
 const BEFORE = 200, HEARD = 40, END = "— the beginning of this world —", LOADING = "… loading earlier messages";
 const data = mkdtempSync(join(tmpdir(), "catchup-data-"));
-// MSG_RATE and VERB_RATE lifted: the raw sockets say 1,100 lines as fast as the authority takes them
+// MSG_RATE and SAY_RATE lifted: the raw sockets say 1,100 lines as fast as the authority takes them
 const WORLDS = ["catchup-page", "catchup-begin", "catchup-lost"];
 const h = await scratchSequencer("catchup", { worlds: WORLDS, owner: "reader", serverEnv: {
-  SKIP_OPT_SWEEP: "1", JOIN_TOKEN: "test-door", MSG_RATE: "100000", VERB_RATE: "100000", TRUST_NAMES: "1",
+  SKIP_OPT_SWEEP: "1", JOIN_TOKEN: "test-door", MSG_RATE: "100000", SAY_RATE: "100000", TRUST_NAMES: "1",
   OPT_DIR: join(data, "opt"), STORE_DIR: join(data, "store"), EIDOVERSE_DIR: join(data, "library"),
 } });
 

@@ -48,14 +48,14 @@ export const badgeHtml = (display, esc) => { const b = R.badgeOf(personOf(displa
 export const isPhone = () => (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) || innerWidth <= 600;
 
 // ---------------------------------------------------------------- the acts
-// One duration list for every act, cut to each act's limit (roles.js: a kick lasts at most 60 min, a mute 7 days).
+// One duration list for every act, cut to each act's limit (roles.js: a mute lasts at most 7 days; a kick has no length).
 const DURATIONS = [[10, '10 min'], [60, '1 hour'], [1440, '1 day'], [10080, '7 days'], [43200, '30 days']];
-const LIMIT = { mute: [5, 10080], kick: [1, 60], ban: [1440, Infinity] };
+const LIMIT = { mute: [5, 10080], ban: [1440, Infinity] };
 const PRESETS = Object.fromEntries(Object.entries(LIMIT).map(([v, [lo, hi]]) => [v, DURATIONS.filter(([m]) => m >= lo && m <= hi)]));
 const REASONS = ['spam', 'harassment', 'other'];
 const VERB = { warn: 'Warn', mute: 'Mute', kick: 'Kick', ban: 'Ban' };
 const SAY = { warn: 'They see a notice they must dismiss.', mute: 'Nobody hears them on the chosen channels until it ends.',
-  kick: "They're removed now and can't come back until it ends.", ban: "They're removed and kept out until it ends." };
+  kick: "They're removed now and may come straight back. A ban keeps them out.", ban: "They're removed and kept out until it ends." };
 
 async function run(verb, args, what) {
   const r = await sendRequest(verb, args);
@@ -201,7 +201,6 @@ export function openForm(verb, display, surface = 'card') {
     if (strip && ['kick', 'ban'].includes(verb) && !armed) { armed = true; go.textContent = `confirm: ${VERB[verb].toLowerCase()} ${display}`; go.classList.add('armed'); return; }   // VR: a second trigger, never a centred dialog
     const args = { who: them.id, ...(reason ? { reason } : {}) };
     if (verb === 'mute') Object.assign(args, { minutes: st.len, channels: [...st.ch] });
-    if (verb === 'kick') args.minutes = st.len;
     if (verb === 'ban' && !st.forever) args.days = st.len / 1440;
     const r = await run(verb, args, `${VERB[verb].toLowerCase()} ${display}`);
     if (r?.ok) done(); else if (r?.refused) { let p = host.querySelector('.pm-err'); if (!p) { p = document.createElement('p'); p.className = 'pm-err'; host.insertBefore(p, btns); } p.textContent = r.refused.reason; }

@@ -71,7 +71,7 @@ does, and no role overrides it).
 | Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than inhabitant | default · house 22:03Z (starter config, switched on) |
 | Timed roles | `until` up to a year; never on owner; ended by the authority's logged act | trial · lead |
 | Locks | `lock: true`; its strength is its setter's rank now (read from the log); that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
-| Caps | mute ≤ 7 days · kick 10 min default, ≤ 60 min · reason ≤ 500 characters | trial · lead |
+| Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · lead |
 | Q1: caption | a property of the screen it captions, not a role permission | **open** · never ruled |
 | Q2: owners fly | yes by default (v1 had flight off even for owners) | **open** · never ruled |
 | Q3: guests | can't be set above the world's default role | **open** · never ruled |
