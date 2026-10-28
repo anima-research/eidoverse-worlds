@@ -32,6 +32,7 @@ const M: [string, string, string, string, string[]][] = [
   ["the ban list is for moderation holders", "server/messages.ts", "if (!e || !(isOwner(e) ||", "if (false && !(isOwner(e) ||", ["RS9"]],
   ["a guest's kick names its address", "server/requestwire.ts", "          if (t.anonymous && t.addr) {", "          if (false) {", ["RS9"]],
   ["reset is the most senior owner's", "server/requestwire.ts", "if (w.log.seniorOwner() !== actorOf(c)) return err(", "if (false) return err(", ["RS7"]],
+  ["forks meet the server's gap", "server/requestwire.ts", "if (FORK_GAP_SEC > 0 && last !== undefined && now - last < FORK_GAP_SEC * 1000) return err(", "if (false) return err(", ["RS7"]],
   // a guest's mute by address; minimum account age (R 10-07)
   ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG5"]],
   ["a guest's mute is filed against the address", "server/requestwire.ts", "for (const addr of addrs) fileAddrSanction(", "for (const addr of [] as string[]) fileAddrSanction(", ["GG1", "GG5"]],

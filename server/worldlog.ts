@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
-import { WORLDS_DIR, STATE_CACHE_EVERY } from "./config.ts";
+import { WORLDS_DIR, STATE_CACHE_EVERY, RATE_POLICY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
@@ -116,7 +116,7 @@ export class WorldLog {
     this.dir = path.join(WORLDS_DIR, name);
     this.posesPath = path.join(this.dir, "poses.json");
     // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
-    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, present: () => this.host?.present?.() ?? [],
+    this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, rate: RATE_POLICY, present: () => this.host?.present?.() ?? [],
       sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity),
       ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; } } } : {}) });
     for (const e of this.live.entries) if (e && typeof e.actor === "string") this.actors.add(e.actor);

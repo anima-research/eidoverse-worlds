@@ -441,8 +441,8 @@ register('fork', (arg) => {
 });
 
 register('newworld', (arg) => {
-  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in person; the server holds the caps:
-  // a few worlds per account, one every few minutes). The reply arrives as world-founded, with the link.
+  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in account; no quotas, R 10-28).
+  // The reply arrives as world-founded, with the link.
   const [name, ...rest] = (arg || '').trim().split(/\s+/);
   if (!name) return logChat('*', 'usage: /newworld <name> [title] — founds a new, empty world that you own');
   if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(name)) return logChat('*', `"${name}" won't do as a world name — 3 to 32 lowercase letters, digits and -`);

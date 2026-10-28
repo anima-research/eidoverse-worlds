@@ -12,7 +12,7 @@
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 import { pagedEval } from './protocol/idalias.ts';
 
-const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('comps-parity', { worlds: ['parity'], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('comps-parity', { worlds: ['parity'], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', ACT_RATE: '1000' } });
 // R 10-17: the page names its crate with a placeholder (tools/protocol/idalias.ts pageIds); 'crate' in page code is its id
 const evalJson = pagedEval(evalRaw, ['crate']);
 const { check, tally } = mkCheck();

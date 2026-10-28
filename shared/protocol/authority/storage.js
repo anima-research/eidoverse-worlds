@@ -34,6 +34,7 @@ export function worldOf(io) {
   w.kindOf = io.kindOf ?? null; // id → account|anon|imported (the directory: about the account, never what holds it, §6a); only "anon" is read (a guest gets a smaller budget)
   w.nameOf = io.nameOf ?? null; // id → display name (the authority's directory, §2.3); null = old escaped ids only
   w.now = io.now;
+  w.rate = io.rate ?? null; // the act rate (gate.js rateCheck): a server's policy, injected; null = gate.js RATE_DEFAULT
   // presence pacing (the speed track): a clock of elapsed ms that no wall-clock step moves; null = pace by w.now
   w.pace = io.pace ?? null;
   // scripts (research 41): the sandbox is injected ({run, checkSyntax, available}: shared/protocol/sandbox.js), never imported

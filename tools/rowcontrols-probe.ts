@@ -24,7 +24,7 @@ import { scratchBench, mkCheck, sleep } from './harness.ts';
 import { pagedEval } from './protocol/idalias.ts';
 
 const WORLD = 'rows', CRATE = 'eidoverse/assets/models/crate_large_blue.glb';
-const { evalJson: evalRaw, cleanup, die, cdp, BASE, SCRATCH } = await scratchBench('rowcontrols', { worlds: [WORLD], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', VERB_RATE: '1000' } });
+const { evalJson: evalRaw, cleanup, die, cdp, BASE, SCRATCH } = await scratchBench('rowcontrols', { worlds: [WORLD], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', ACT_RATE: '1000' } });
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted scene names in page
 // code are read as ids, every answer brings the minted ids back, and N(name) reads one for the node-side checks
 const NAMES = ["crate", "box2", "cup", "toy", "lamp", "deep1", "deep2", "deep3", "deep4", "deep5", "deep6"]; const NODE = new Map<string, string>(); const N = (n: string) => NODE.get(n) ?? n;

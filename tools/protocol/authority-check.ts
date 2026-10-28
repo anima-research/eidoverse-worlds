@@ -1762,5 +1762,16 @@ for (const [name, steps] of [
   const bad = call("olive", "create-world", { title: "x".repeat(5000) });
   const again = call("olive", "create-world", { title: "second try" });
   ok(bad?.ok === false && again?.ok === true && again.you === "owner", "F1 a refused founding leaves nothing: the next founding of that name succeeds", { bad, again }); }
+// RP1 (R 10-28): the act rate is the host's policy (io.rate; server/config.ts RATE_POLICY), gate.js RATE_DEFAULT without one
+{ const R = (rate) => (actor, verb, args) => { clock.advance(100); const w = openWorld(root, "ratepol"); if (rate) w.rate = rate; const r = request(w, actor, verb, args); return r.ok ? "ok" : r.refused?.code; };
+  const P = { n: 3, says: 2, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 };
+  R(null)("ann", "create-world", { title: "ratepol" }); clock.advance(20000);
+  const def = []; for (let i = 0; i < 8; i++) def.push(R(null)("ann", "create", { id: `rd${i}`, model: "crate" })); clock.advance(20000);
+  const acts = []; for (let i = 0; i < 4; i++) acts.push(R(P)("ann", "create", { id: `ra${i}`, model: "crate" })); clock.advance(20000);
+  const says = []; for (let i = 0; i < 3; i++) says.push(R(P)("ann", "say", { text: `line ${i}` })); clock.advance(20000);
+  const win = []; for (let i = 0; i < 4; i++) win.push(R({ ...P, ms: 1000 })("ann", "create", { id: `rw${i}`, model: "crate" })); clock.advance(1500); win.push(R({ ...P, ms: 1000 })("ann", "create", { id: "rw-after", model: "crate" })); clock.advance(20000);
+  const bytes = R({ ...P, bytes: 1024 })("ann", "create", { id: "rb", model: "crate", components: { "t/note": "x".repeat(2000) } });
+  ok(def.every((x) => x === "ok") && acts.join() === "ok,ok,ok,rate" && says.join() === "ok,ok,rate" && win.join() === "ok,ok,ok,rate,ok" && bytes === "rate",
+    "RP1 the host's rate is the one met: its acts, says, window and bytes (8 acts pass on the defaults)", { def, acts, says, win, bytes }); }
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

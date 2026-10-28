@@ -6,6 +6,7 @@
 //       names the world it replaced; every owner is still an owner; the people present are told
 //   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the authority's founding act;
 //       a taken or bad name and a guest are refused; there is no quota, and an agent's account founds like a person's
+//   FL  fork limits and the act rate are server policy (R 10-28, server/config.ts): FORK_GAP_SEC, FORK_PER_HOUR (0 = none), ACT_RATE
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -169,6 +170,27 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const rg = await guest.raw({ type: "world-found", name: "gus-place" }, "world-founded");
   ok(!!jg.snapshot && rg?.type === "error" && /signed-in account/.test(rg.error) && !fs.existsSync(path.join(W, "gus-place")), "FD5 a guest never founds", [jg.errors, rg]);
   guest.close(); G.proc.kill(); }
+
+// ---- FL ---- (the defaults are identity-check RS7's)
+ok(["fl-src", "fl-rate", "fl-one"].every((n) => tool(["found", n, "--owner", "Fay"]).code === 0), "(FL setup) found fl-src, fl-rate and fl-one, Fay owns them");
+{ const P = await start({ FORK_GAP_SEC: "0", FORK_PER_HOUR: "0", ACT_RATE: "5" });
+  const fay = await sock(P.port); const jf = await fay.join("fl-src", "Fay");
+  const six = []; for (let i = 1; i <= 6; i++) six.push(await fay.raw({ type: "world-fork", to: `fl-free${i}` }, "world-forked", 8000));
+  ok(!!jf.snapshot && six.every((m) => m?.type === "world-forked"), "FL1 FORK_GAP_SEC=0 and FORK_PER_HOUR=0: six copies back to back all happen", six.map((m) => m?.error ?? m?.type));
+  const fr = await sock(P.port); await fr.join("fl-rate", "Fay");
+  const made = []; for (let i = 0; i < 8; i++) { const r = await fr.req("create", { id: `fl${i}`, model: MODEL }); made.push(r.ok ? "ok" : r.refused?.code); }
+  const firstRate = made.indexOf("rate");
+  ok(made[0] === "ok" && firstRate > 0 && firstRate <= 5 && made.slice(firstRate).every((x) => x === "rate"), "FL2 ACT_RATE=5 reaches the world's authority: a sixth act in the window is refused rate", made);
+  fay.close(); fr.close(); P.proc.kill(); }
+{ const Q = await start({ FORK_GAP_SEC: "1", FORK_PER_HOUR: "2" });
+  const fay = await sock(Q.port); await fay.join("fl-one", "Fay");
+  const f1 = await fay.raw({ type: "world-fork", to: "fl-cap1" }, "world-forked", 8000), early = await fay.raw({ type: "world-fork", to: "fl-early" }, "world-forked", 8000);
+  await sleep(1200); const f2 = await fay.raw({ type: "world-fork", to: "fl-cap2" }, "world-forked", 8000);
+  await sleep(1200); const f3 = await fay.raw({ type: "world-fork", to: "fl-cap3" }, "world-forked", 8000);
+  ok(f1?.type === "world-forked" && early?.type === "error" && /one copy every 1 s/.test(early.error) && f2?.type === "world-forked", "FL3 FORK_GAP_SEC=1: a copy straight after is refused, one a second later happens", [f1, early, f2].map((m) => m?.error ?? m?.type));
+  ok(f3?.type === "error" && /2 times in the last hour \(this server allows 2\)/.test(f3.error) && !fs.existsSync(path.join(W, "fl-cap3")),
+    "FL4 FORK_PER_HOUR=2: a third copy within the hour is refused, and nothing is written", f3);
+  fay.close(); Q.proc.kill(); }
 
 ann.close(); bob.close(); S.proc.kill();
 console.log(`[fork-reset-check] ${pass} passed, ${fail} failed`);

@@ -17,7 +17,7 @@ import { worldExists, worlds } from "./world.ts";
 import type { Client, World } from "./world.ts";
 import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, fileAddrSanction, liftAddrSanction } from "./moderation.ts";
 import { directoryFor, foldName } from "./directory.ts";
-import { WORLDS_DIR } from "./config.ts";
+import { WORLDS_DIR, FORK_GAP_SEC, FORK_PER_HOUR } from "./config.ts";
 import { isBanned } from "../shared/protocol/authority.js";
 import { txnRefusal } from "../shared/protocol/authority/storage.js";
 import { WIRE_READS, PERSON_ACTS } from "../shared/protocol/verbclasses.js";
@@ -112,6 +112,7 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?:
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
+const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();   // the fork limits' memory (config.ts FORK_*)
 export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   ...UPGRADE_MESSAGES,   // world-upgrade-review, world-upgrade: the operator opens a world saved in an older format (server/upgrade.ts)
   "request": ({ c, ws, expel, sweep }, msg) => {
@@ -233,10 +234,14 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     const err = (e: string) => ws.send(JSON.stringify({ type: "error", error: e }));
     if (c.spectator) return err("spectators can't copy worlds — join embodied");
     const role = w.log.roleOf(actorOf(c)); if (!isOwner(role)) return err(`copying a world needs its owner — you are a ${role} here`);
-    // a fork copies synchronously on the shared thread; no engine quota (server policy, R 10-24)
+    // a fork copies synchronously on the shared thread: the server's fork limits (config.ts FORK_GAP_SEC, FORK_PER_HOUR; 0 = none)
+    const now = Date.now(), last = forkAt.get(w.name), mine = (forksBy.get(actorOf(c)) ?? []).filter((t) => now - t < 3600_000);
+    if (FORK_GAP_SEC > 0 && last !== undefined && now - last < FORK_GAP_SEC * 1000) return err(`this world was copied ${Math.round((now - last) / 1000)} s ago — this server allows one copy every ${FORK_GAP_SEC} s`);
+    if (FORK_PER_HOUR > 0 && mine.length >= FORK_PER_HOUR) return err(`you've copied worlds ${mine.length} times in the last hour (this server allows ${FORK_PER_HOUR})`);
     const to = String(msg.to ?? "").slice(0, 64);
     const r = forkWorld(w.log, to, actorOf(c));
     if (!r.ok) return err(r.err);
+    forkAt.set(w.name, now); forksBy.set(actorOf(c), [...mine, now]);   // only a fork that happened counts
     console.log(`[world:${w.name}] copied → "${to}" by ${c.id} (${r.things} things, ${r.acts} acts)`);
     ws.send(JSON.stringify({ type: "world-forked", from: w.name, to }));
   },

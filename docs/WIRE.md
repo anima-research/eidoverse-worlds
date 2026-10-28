@@ -39,8 +39,8 @@ review.
 - Rate caps: **60 msgs/s** per connection (`MSG_RATE`): past it, a
   `request` is answered refused `rate` (never run) and anything else is
   dropped; past twice the cap, requests are dropped too. The authority's
-  own rate per identity over everything it makes the log hold (acts and says: entries and bytes per 10 s, `RATE` in
-  `shared/protocol/authority.js`), refused with code `rate`.
+  own rate per identity over everything it makes the log hold (acts and says: entries and bytes per window: server policy,
+  `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 60, 20, 10 s, 256, 32), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.
 
