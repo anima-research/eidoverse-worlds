@@ -33,10 +33,16 @@ const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERV
   return k === "anon" ? "anon" : k == null ? "unknown" : null; };
 // how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
 // them the write's state s no longer holds (a log view, kept incrementally like everIds)
+/** The scan behind guestMade: made (id → its creator's rights, while it stands) and the ids whose kind isn't read yet
+ *  (pending). A host seeds {n, made} from its fold cache (server/foldviews.ts), every id pending, as a scan from genesis has it. */
+export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pending: new Map(), ids: new Map() })) {
+  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let rights;
+    for (const o of opsQuiet(e)) { if (o.verb === "create") { if (rights === undefined) rights = entryBy(w, e).rights; G.made.set(o.id, rights); G.pending.set(o.id, rights); } else if (o.verb === "delete" && o.comp === undefined) { G.made.delete(o.id); G.pending.delete(o.id); G.ids.delete(o.id); } } }
+  return G;
+}
 function guestMade(w, st, s = st) {
-  const G = (w.__guests ??= { n: 0, ids: new Map() });
-  for (; G.n < w.entries.length; G.n++) { const e = w.entries[G.n]; if (!isE(e) || e.kind !== "change") continue; let kind;
-    for (const o of opsQuiet(e)) { if (o.verb === "create") { kind ??= guestKind(w, entryBy(w, e).rights); if (kind) G.ids.set(o.id, kind); } else if (o.verb === "delete" && o.comp === undefined) G.ids.delete(o.id); } }
+  const G = guestScan(w); G.seeded = false;
+  for (const [id, r] of G.pending) { const kind = guestKind(w, r); if (kind) G.ids.set(id, kind); } G.pending.clear();   // a kind is read once, at the first call after its create
   let n = 0, unknown = 0, gone = 0; for (const [id, k] of G.ids) if (st.entities[id]) { n++; if (k === "unknown") unknown++; if (!s.entities[id]) gone++; }
   return { n, unknown, gone };
 }

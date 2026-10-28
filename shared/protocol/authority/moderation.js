@@ -88,7 +88,8 @@ const MOD_VERBS = {
   modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
     const lim = Math.max(1, Math.min(200, a.limit ?? 50)); const before = a.before ?? Infinity;
     const rows = w.mod.map((m, i) => ({ ...m, at: i, src: "mod" }));
-    for (let i = 0; i < w.entries.length; i++) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
+    const atWorld = w.touching ? w.touching("@world") : null;   // a live world's index: @world's own changes, not the whole log
+    for (let k = 0, n = atWorld ? atWorld.length : w.entries.length; k < n; k++) { const i = atWorld ? atWorld[k] : k; const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
       for (const o of opsQuiet(e)) if (o.id === "@world" && String(o.comp ?? "").startsWith("roles:")) rows.push({ ts: e.ts, actor: entryBy(w, e).by, verb: "role", who: o.comp.slice(6), role: o.verb === "delete" ? null : o.value?.role ?? null, ...(o.value?.can ? { can: o.value.can } : {}), seq: i, src: "log" }); }
     const all = rows.filter((r) => (a.who === undefined || r.who === a.who) && r.ts < before).sort((x, y) => y.ts - x.ts || (y.at ?? y.seq) - (x.at ?? x.seq));
     // the cursor is a time (the next page is what came before it), and many records share one (every op of one change entry

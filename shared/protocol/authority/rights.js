@@ -111,7 +111,15 @@ function* backward(w, id) {
 // A follow-up set that put a value back (an undo's restore) also steps over the follow-up delete it reverses (review r10 M2),
 // so the restored value keeps its author and its life; any write of the asker's own in between ends that (a key re-created
 // by someone else after a clear is a new life, never merged with the old one).
+// A whole thing's creator in a live world is the entry its fold marks it born at: the newest create op on it, unless a no-op
+// create came later (noop:create-live) or the fold holds a diagnostic other than a no-op's; then the walk below (it costs the
+// thing's whole history, which a boot from a fold cache keeps on disk: server/lazylog.ts).
+const plainFolds = new WeakMap();   // st → ids a no-op create names, or null when the fold holds another kind of diagnostic
+const bornShortcut = (st) => { if (!plainFolds.has(st)) { const d = st.diagnostics ?? [];
+  plainFolds.set(st, d.every(([, c]) => String(c).startsWith("noop:")) ? new Set(d.filter(([, c]) => c === "noop:create-live").map(([, , x]) => x)) : null); } return plainFolds.get(st); };
 export function creatorOf(w, id, comp) {
+  if (comp === undefined && id !== "@world" && w.touching && w.state) { const st = w.state(), ent = st?.entities?.[id], plain = st?.status === "ok" && ent ? bornShortcut(st) : null;
+    if (plain && !plain.has(id) && Number.isInteger(ent.born)) { const e = w.entries[ent.born]; if (isE(e) && e.kind === "change") return entryBy(w, e); } }
   let found = null, restored = false;
   for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue;
     const ops = opsQuiet(e); const fu = followUpsOf(e);

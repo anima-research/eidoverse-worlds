@@ -101,6 +101,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["fork-reset", "fork-reset-check.ts", 1],
   ["simckpt", "simckpt-check.ts", 1],   // periodic sim checkpoints (SIM_CHECKPOINT_EVERY): a physics world without launches still bounds its boot's engine replay; purges and audits as before
   ["statecache", "statecache-check.ts", 1], // the derived fold cache (server/statecache.ts): a boot folds only the tail, any doubt folds from genesis, a background re-derive checks it
+  ["foldparity", "foldparity-check.ts", 1], // the fold cache's views (server/foldviews.ts): a boot reads only genesis and the tail, and every reader answers as a whole-log boot
   ["reset-race", "reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["txn", "txn-check.ts", 1],           // reviewer items 1–2 (10-18): every request ends committed | rolled-back | ambiguous (persist before publish, publish in a finally, ambiguous never ok); one immutable request capability rechecked at both await→commit seams (liveness, identity, operator, the door, role)
   ["txn-mutants", "txn-check.ts --mutants", 1], // …and each of its rows turns red under the mutation it exists to catch (a scratch copy of the tree per mutant; the control stays green)
