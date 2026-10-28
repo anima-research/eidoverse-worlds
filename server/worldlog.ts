@@ -24,7 +24,7 @@ import { viewState } from "../shared/protocol/view.js";
 import { holdWire } from "../shared/grab.js";
 import { hear } from "../shared/chatwindow.js";
 import { dec } from "../shared/protocol/names.js";
-import { openLive, isWorldDir, isPreNamesDir } from "./livehost.ts";
+import { openLive, isWorldDir, isPreNamesDir, isSwapUnfinished } from "./livehost.ts";
 import { ENGINE_CATALOGUE, warm, modelsIn } from "./modelcatalogue.ts";
 import { backupBeforeRepair, sealBackup, dropBackup } from "./repairfiles.ts";
 
@@ -46,7 +46,7 @@ export function wireEntry(e: Any) {
   return rest;
 }
 /** Does this world's directory hold a log? (Decided once, when the world is first opened.) */
-export function isWorldSaved(name: string): boolean { return isWorldDir(path.join(WORLDS_DIR, name)); }
+export function isWorldSaved(name: string): boolean { const d = path.join(WORLDS_DIR, name); return isWorldDir(d) && !isSwapUnfinished(d); }
 /** Does it hold a log saved before the 2026-10-07 names pass (livehost isPreNamesDir)? */
 export function isPreNamesSaved(name: string): boolean { return isPreNamesDir(path.join(WORLDS_DIR, name)); }
 

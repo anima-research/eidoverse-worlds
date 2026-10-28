@@ -47,8 +47,17 @@ export type LiveOpts = { now?: () => number; /** the speed track's elapsed-time 
   /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[];
   /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null };
 
+/** An in-place translation's in-progress marker, like git's index.lock (tools/protocol/world.ts translateInPlace; R 10-27). */
+export const SWAP_MARKER = "translation.lock";
+/** Does `dir` hold an in-place swap that hasn't finished (its bans and identities may not be in yet)? Never served. */
+export const isSwapUnfinished = (dir: string): boolean => fs.existsSync(path.join(dir, SWAP_MARKER));
+/** What the operator does about an unfinished swap (boot notice, openLive's refusal). */
+export const swapRecovery = (name: string, tool = "bun tools/protocol/world.ts") => `its in-place translation was interrupted mid-swap (${SWAP_MARKER} is still in its directory), so its bans and identity mappings may not be in place yet. `
+  + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only); then, to have the old world back: ${tool} rollback ${name}.`;
+
 /** Open (or prepare to found) the world stored in `dir`. */
 export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
+  if (isSwapUnfinished(dir)) throw new Error(`"${name}" can't be served: ${swapRecovery(name)}`);
   const logPath = path.join(dir, "world.jsonl");
   const blobDir = path.join(dir, "blobs");
   const entries: Any[] = readLog(readLogBytes(logPath)).map(posAt);

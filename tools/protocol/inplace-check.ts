@@ -21,6 +21,8 @@
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
 //   IP13 the process dies between swap steps (WORLD_TS_DIE_AT_STEP, no rollback): a re-run sees the half-swapped
 //        directory and finishes the swap, saying so (review r11 L4)
+//   IP13s a half-swapped world (marked translation.lock) is never served, banned account included; boot names the recovery
+//   IP13z a death before the first rename: the re-run clears the marker; rollback of a marked world refuses
 //   IP14 an old log written to during the translation (a server still running): the swap refuses and moves nothing
 //   IP15 a write that slips in mid-swap (injected: WORLD_TS_TOUCH_SOURCE_AT_STEP) undoes the swap
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
@@ -73,6 +75,7 @@ import { emptyState as v1Empty, foldEntry as v1Fold } from "./import-v1/fold.js"
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
 import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/oldworlds.ts";
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
+const SWAP_MARKER = "translation.lock";   // the in-progress marker of an in-place swap (tools/protocol/world.ts)
 import { noFoldRefusal } from "../../server/oldworlds.ts";
 import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "./import-v1/world.ts";
 const operatorPub = () => JSON.parse(fs.readFileSync(path.join(W, ".custody.json"), "utf8")).operator?.pub as string;
@@ -138,12 +141,12 @@ async function boot(tag: string, extra: Record<string, string> = {}) {
   if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc, log };
   throw new Error(`${tag}: the server didn't come up: ${fs.existsSync(log + ".err") ? fs.readFileSync(log + ".err", "utf8").slice(-500) : ""}`);
 }
-async function joinAs(port: number, world: string) {
+async function joinAs(port: number, world: string, id = "Ann") {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs: any[] = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", world, id: "Ann", avatar: "", replica: true }));
-  await tryUntil(`Ann's join to ${world} is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
+  ws.send(JSON.stringify({ type: "join", world, id, avatar: "", replica: true }));
+  await tryUntil(`${id}'s join to ${world} is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   ws.close();
   return { snap: msgs.find((m) => m.type === "snapshot"), err: msgs.find((m) => m.type === "error")?.error, types: msgs.map((m) => m.type === "error" ? m.error : m.type).slice(0, 6) };
 }
@@ -459,12 +462,38 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
   const r = tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);   // a recovery needs no new approval: it finishes the approved one
   const again = xlate([name]);
   const info = tool(["info", name]);
+  ok(died.code !== 0 && !!mid[SWAP_MARKER] && !after[SWAP_MARKER], `IP13 (k=${k}) the half-swapped directory holds ${SWAP_MARKER} (written before the first rename), and the finished swap clears it`, { mid: Object.keys(mid), after: Object.keys(after) });
   ok(died.code !== 0 && !!mid["world.jsonl"] && (k === 1 ? !!mid["log.jsonl"] : !!mid["snapshot.original.json"] && !!mid["poses.json"] && !mid["poses.original.json"]) && midTemps === 1,
     `IP13 (k=${k}) a death after ${k} rename(s) leaves the half-swapped directory (world.jsonl landed, the rest not) and its temporary directory`, { code: died.code, mid: Object.keys(mid), midTemps });
   ok(r.code === 0 && /interrupted/.test(r.out) && /finished/.test(r.out) && same(after["log.original.jsonl"], fp["log.jsonl"]) && same(after["snapshot.original.json"], fp["snapshot.json"]) && same(after["poses.original.json"], fp["poses.json"])
     && same(Object.keys(after).sort(), ["log.original.jsonl", "poses.json", "poses.original.json", "snapshot.original.json", MANIFEST, "world.jsonl"]) && !temps().some((t) => t.includes(name)) && after["world.jsonl"][0] === mid["world.jsonl"][0],
     `IP13 (k=${k}) the re-run notices the interrupted swap and finishes it: the originals renamed beside it (the same files), the translated files moved in, no temporary directory left, and it says so`, { code: r.code, out: r.out.slice(-600), keys: Object.keys(after) });
   ok(again.code !== 0 && /already translated/.test(again.out) && info.code === 0 && /"status": "ok"/.test(info.out), `IP13 (k=${k}) …then it's a translated world like any other (a third run says so; info opens it)`, { again: again.out.slice(-300), info: info.out.slice(-300) }); }
+
+// IP13s (R 10-27) the server never serves a half-swapped world: a death right after world.jsonl landed (k=1; bans and
+// identities not yet moved in) is refused at join, the banned account too, and boot names the recovery; once `translate`
+// finishes it, the ban holds
+{ const name = "halfbanned"; oldWorld(name, { extra: [{ actor: "Ann", verb: "ban", args: { id: "Troll", reason: "spam" } }] });
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" });
+  const srv = await boot("bootHalf"); const j = await joinAs(srv.port, name, "Troll"); const bootLog = fs.readFileSync(srv.log, "utf8");
+  try { srv.proc.kill(); } catch {}
+  ok(died.code !== 0 && !j.snap && /interrupted/.test(j.err ?? ""), "IP13s a half-swapped world is not served: the banned account's join is refused (the world isn't open), in words saying its conversion was interrupted", j.types);
+  ok(new RegExp(`world "${name}".*NOT being served`).test(bootLog) && bootLog.includes(`translate ${name}`) && /rollback/.test(bootLog), "IP13s …and boot lists it as needing recovery, naming `translate <world>` (and rollback)", bootLog.slice(-800));
+  const r = tool(["translate", name, "--no-founder-key"]);
+  const srv2 = await boot("bootHalf2"); const j2 = await joinAs(srv2.port, name, "Troll"); const j3 = await joinAs(srv2.port, name, "Ann");
+  try { srv2.proc.kill(); } catch {}
+  ok(r.code === 0 && !fs.existsSync(path.join(W, name, SWAP_MARKER)) && !j2.snap && !!j3.snap, "IP13s …recovery (`translate <world>` again) clears the marker; then the world is served and the v1 ban holds (Troll refused, Ann admitted)", { out: r.out.slice(-300), troll: j2.types, ann: j3.types }); }
+
+// IP13z a death before the first rename (k=0) leaves only the marker: a re-run clears it and its temporary directory, nothing
+// having moved; and `rollback` of a marked world refuses, naming the finish (R 10-27)
+{ const name = "halfzero"; const d = oldWorld(name); const fp = fingerprint(d);
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "0" }); const mid = fingerprint(d);
+  const r = tool(["translate", name, "--no-founder-key"]);
+  ok(died.code !== 0 && !!mid[SWAP_MARKER] && !mid["world.jsonl"] && r.code === 0 && /nothing had moved/.test(r.out) && same(fingerprint(d), fp) && !temps().some((t) => t.includes(name)),
+    "IP13z a death before the first rename: the marker is there; the re-run clears it and the temporary directory, and the old world is exactly as it was", { died: died.code, mid: Object.keys(mid), out: r.out.slice(-300) });
+  const name1 = "halfroll"; const d1 = oldWorld(name1); xlate([name1], { WORLD_TS_DIE_AT_STEP: "1" }); const m1 = fingerprint(d1);
+  const rb = tool(["rollback", name1]);
+  ok(rb.code !== 0 && /interrupted mid-swap/.test(rb.out) && rb.out.includes(`translate ${name1}`) && same(fingerprint(d1), m1), "IP13z `rollback` of a half-swapped world refuses, says to finish it first, and changes nothing", rb.out.slice(-300)); }
 
 // ================= IP14–IP16: the old log must not change under the translation (review of PR #260, world.ts:99) =================
 // IP14 a writer (an old server still running) appends to log.jsonl the whole time the translation runs: the swap refuses

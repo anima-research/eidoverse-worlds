@@ -25,7 +25,7 @@
 // with the old log kept beside it as log.original.jsonl (snapshot.json → snapshot.original.json): renamed, never
 // rewritten. On any failure the original is left as it was, the temporary directory is removed, and it says why. If the
 // process itself dies mid-swap (no rollback runs), the next `translate <world>` sees the half-swapped directory and finishes
-// the swap (renames and moves only), saying so.
+// the swap (renames and moves only), saying so; until then translation.lock marks it and the server won't serve it.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -37,7 +37,7 @@ import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
 import { TRANSLATOR } from "./import-v1/translate-v1.js";
-import { openLive, isWorldDir } from "../../server/livehost.ts";
+import { openLive, isWorldDir, SWAP_MARKER, isSwapUnfinished } from "../../server/livehost.ts";
 import { digest, keyOk } from "../../shared/protocol/fold.js";
 import { maintain } from "../../shared/protocol/authority.js";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
@@ -197,6 +197,9 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     identities: r!.planned, eido: r!.addressed,
     note: "written by tools/protocol/world.ts translate (in place); read by `rollback <world>`, which puts the renamed files back, removes the made ones and forgets the identities. The content-address index (OPT_DIR/eido-index.json) is a cache of library bytes, not world state: a rollback leaves it." }, null, 1));
   for (const f of fs.readdirSync(T)) if (f !== "world.jsonl" && !TEMP_ONLY.has(f)) steps.push([path.join(T, f), path.join(D, f)]);
+  // the in-progress marker, before the first rename and gone only once the identities are in: the server never serves a
+  // directory holding it (server/livehost.ts SWAP_MARKER; R 10-27), and a recovery clears it
+  { const fd = fs.openSync(path.join(D, SWAP_MARKER), "wx"); fs.writeSync(fd, JSON.stringify({ temp: T, at: Date.now() })); fs.fsyncSync(fd); fs.closeSync(fd); }
   const done: [string, string][] = [];
   const fault = Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN);   // tests only: fail as if step k's rename had (tools/protocol/inplace-check.ts)
   const death = Number(process.env.WORLD_TS_DIE_AT_STEP ?? NaN);      // tests only: the process dies after k renames, no rollback (IP13)
@@ -209,10 +212,11 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
     // the swap has succeeded: only now do its identities join the shared directory (a refusal here, an account taken since,
     // undoes the swap like any other failure)
     if (Number(process.env.WORLD_TS_FAULT_AT_STEP ?? NaN) === steps.length) throw new Error(`(injected) step ${steps.length} failed`);
-    putIdentities(r!.planned); }
+    putIdentities(r!.planned); fs.rmSync(path.join(D, SWAP_MARKER)); }
   catch (x) {
     const stuck: string[] = [];
     for (const [a, b] of done.reverse()) { try { fs.renameSync(b, a); } catch (y) { stuck.push(`${b} (should be ${a}: ${(y as Error).message})`); } }
+    if (!stuck.length) fs.rmSync(path.join(D, SWAP_MARKER), { force: true });   // all put back: an old world again; else it stays marked
     if (stuck.length) die(`the swap failed (${(x as Error).message}) and these couldn't be put back; move them by hand:\n  ${stuck.join("\n  ")}\nThe translated files are in ${T}.`);
     fail(`the swap failed: ${(x as Error).message}; everything that had moved was put back.`, T);
   }
@@ -236,6 +240,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
  *  serving the world holds it in memory and would write the translated files back. */
 function rollback(name: string) {
   const D = path.join(WORLDS_DIR, name), mf = path.join(D, MANIFEST);
+  if (isSwapUnfinished(D)) die(`"${name}"'s in-place translation was interrupted mid-swap (${SWAP_MARKER} is there): finish it first (translate ${name} --no-founder-key), then roll it back. Nothing was changed.`);
   if (!fs.existsSync(mf)) die(`"${name}" holds no ${MANIFEST}: it wasn't translated in place by this tool (or the manifest is gone), so there is nothing here to roll back. Nothing was changed.`
     + (fs.existsSync(path.join(D, ORIGINAL.log)) ? ` (${ORIGINAL.log} is there: an older translation kept it, without a manifest; put it back by hand: rename it to log.jsonl and remove world.jsonl.)` : ""));
   let m: any; try { m = JSON.parse(fs.readFileSync(mf, "utf8")); } catch (x) { die(`${mf} doesn't parse: ${(x as Error).message}. Nothing was changed.`); }
@@ -290,7 +295,7 @@ function interruptedSwap(name: string): { D: string; temps: string[]; oldLog: bo
   const temps = fs.readdirSync(WORLDS_DIR).filter((f) => f.startsWith(`.translating-${name}-`) && /^[0-9a-f]{8}$/.test(f.slice(`.translating-${name}-`.length))
     && !fs.existsSync(path.join(WORLDS_DIR, f, "world.jsonl"))).map((f) => path.join(WORLDS_DIR, f));
   const oldLog = fs.existsSync(path.join(D, "log.jsonl")) && !fs.existsSync(path.join(D, ORIGINAL.log));
-  return temps.length || oldLog ? { D, temps, oldLog } : null;
+  return temps.length || oldLog || isSwapUnfinished(D) ? { D, temps, oldLog } : null;
 }
 /** Finish an interrupted swap, in the swap's own order: the old files renamed beside the world (log.jsonl →
  *  log.original.jsonl, snapshot.json → snapshot.original.json, poses.json → poses.original.json: renames, never writes),
@@ -319,6 +324,7 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
     if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
     for (const f of fs.readdirSync(T)) mv(path.join(T, f), path.join(D, f));
     if (!fs.readdirSync(T).length) { fs.rmSync(T, { recursive: true, force: true }); did.push(`removed ${path.relative(WORLDS_DIR, T).split(path.sep).join("/")}`); } }
+  if (!stuck.length && isSwapUnfinished(D)) { fs.rmSync(path.join(D, SWAP_MARKER)); did.push(`removed ${SWAP_MARKER}`); }
   if (stuck.length) die(`the in-place translation of "${name}" was interrupted; finishing it moved ${did.length ? did.join(", ") : "nothing"}, but these are in the way; move them by hand:\n  ${stuck.join("\n  ")}\n`
     + `${ORIGINAL.log} (or log.jsonl) is the untouched original either way.`);
   console.log(`the in-place translation of "${name}" was interrupted after world.jsonl landed (the process stopped mid-swap); finished it now: ${did.join(", ") || "nothing left to move"}. `
@@ -357,7 +363,12 @@ if (cmd === "found") {
   if (!words.length || words.length > 2 || !words.every((w) => NAME.test(w))) die(USAGE);
   const [src, dest] = words;
   for (const w of words) { try { if (fs.lstatSync(path.join(WORLDS_DIR, w)).isSymbolicLink()) die(`"${w}" in ${WORLDS_DIR} is a symlink: translate and its backup never follow one. Nothing was changed.`); } catch { /* absent */ } }
-  { const half = isWorldSaved(src) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
+  { const half = isWorldDir(path.join(WORLDS_DIR, src)) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
+  { const D = path.join(WORLDS_DIR, src);   // marked but world.jsonl never landed: the swap died before its first rename, so nothing moved
+    if (isSwapUnfinished(D) && !fs.existsSync(path.join(D, "world.jsonl"))) { let t = ""; try { t = JSON.parse(fs.readFileSync(path.join(D, SWAP_MARKER), "utf8")).temp ?? ""; } catch { /* unreadable: no temp named */ }
+      if (t && path.dirname(t) === WORLDS_DIR && path.basename(t).startsWith(`.translating-${src}-`)) fs.rmSync(t, { recursive: true, force: true });
+      fs.rmSync(path.join(D, SWAP_MARKER));
+      console.log(`the in-place translation of "${src}" stopped before its first rename: nothing had moved. Cleared ${SWAP_MARKER}${t ? ` and ${path.basename(t)}` : ""}; "${src}" is the old-format world it was. Translate it again (the dry run, then --approved).`); process.exit(0); } }
   if (isWorldSaved(src)) die(fs.existsSync(path.join(WORLDS_DIR, src, ORIGINAL.log))
     ? `"${src}" is already translated: it's a world in this protocol, and its original old log is kept beside it as ${ORIGINAL.log}. Nothing was changed.`
     : `"${src}" is already a world in this protocol: there's nothing to translate. Nothing was changed.`);

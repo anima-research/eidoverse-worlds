@@ -26,7 +26,8 @@ import { summarizeGlb } from "./geometry.ts";
 // policy, not world mechanics.
 import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
 import { isWorldSaved } from "./worldlog.ts";
-import { oldWorldAt, bootNotice, noFoldRefusal } from "./oldworlds.ts";
+import { oldWorldAt, bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
+import { isSwapUnfinished } from "./livehost.ts";
 import { oldFormatRefused, provenAccount } from "./upgrade.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
@@ -381,6 +382,11 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
     // world behind it is refused, and only a world is served (the old protocol has no runtime here: an old log is
     // translated once, by the operator, into a new world).
+    if (worldExists(wname) && isSwapUnfinished(join(WORLDS_DIR, wname))) {   // an in-place translation stopped mid-swap: never served (boot names the recovery)
+      ws.send(JSON.stringify({ type: "error", error: interruptedVisitorText(wname) }));
+      c.ws.close?.(4005, "interrupted conversion");
+      return null;
+    }
     if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in an old format: it is translated once, by the operator
       // (server/oldworlds.ts: a first-protocol log.jsonl is translatable; a log saved before the 2026-10-07 names pass is
       // re-translated from its original log, or refounded). The visitor is told in plain words that nothing is lost and

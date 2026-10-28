@@ -9,10 +9,11 @@
 //                 place (the world keeps its name; the old log is renamed log.original.jsonl beside it, never written);
 //   pre-names     a log of this protocol's family saved before the 2026-10-07 names pass (livehost isPreNamesDir): it
 //                 can't be translated as it stands; it's re-translated from its ORIGINAL old log, or refounded.
+// A world holding translation.lock (an in-place swap that stopped midway) is neither: never served, named at boot (interruptedSwapsIn).
 // Pure reads of the directory: nothing here writes, and nothing here loads the translator.
 import fs from "node:fs";
 import path from "node:path";
-import { isWorldDir, isPreNamesDir } from "./livehost.ts";
+import { isWorldDir, isPreNamesDir, isSwapUnfinished, swapRecovery } from "./livehost.ts";
 
 export type OldWorldKind = "translatable" | "pre-names";
 export type OldWorld = {
@@ -72,7 +73,7 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   if (!NAME.test(name)) return null;
   const d = path.join(dir, name);
   let st: fs.Stats; try { st = fs.lstatSync(d); } catch { return null; }
-  if (!st.isDirectory() || isWorldDir(d)) return null;   // lstat: a symlinked world dir is never followed (backup, translate)
+  if (!st.isDirectory() || isWorldDir(d) || isSwapUnfinished(d)) return null;   // an unfinished swap is its own case (interruptedSwapsIn); lstat: a symlinked world dir is never followed (backup, translate)
   const suggestedName = freeName(dir, name);
   const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`;
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
@@ -95,10 +96,19 @@ export function oldWorldsIn(dir: string): OldWorld[] {
   return names.map((n) => oldWorldAt(dir, n)).filter((o): o is OldWorld => !!o);
 }
 
+/** Every world in `dir` whose in-place translation stopped mid-swap (it holds livehost's SWAP_MARKER), by name. */
+export function interruptedSwapsIn(dir: string): string[] {
+  let names: string[]; try { names = fs.readdirSync(dir).sort(); } catch { return []; }
+  return names.filter((n) => NAME.test(n) && isSwapUnfinished(path.join(dir, n)));
+}
+/** What a visitor is told about a world whose conversion was interrupted. */
+export const interruptedVisitorText = (name: string) => `"${name}" is in the middle of a one-time conversion that was interrupted, so it can't open yet. Whoever runs this server needs to finish it. Nothing is lost.`;
+
 /** What the server logs at boot about `dir`'s old worlds: one block per world and one summary line ("" when there are none). */
 export function bootNotice(dir: string): string {
+  const half = interruptedSwapsIn(dir).map((n) => `[boot] world "${n}" is NOT being served: ${swapRecovery(n, `WORLDS_DIR=${shellWord(dir)} ${TOOL}`)}`).join("\n");
   const old = oldWorldsIn(dir);
-  if (!old.length) return "";
+  if (!old.length) return half;
   const blocks = old.map((o) => {
     const at = path.relative(dir, o.file).split(path.sep).join("/");
     return o.kind === "translatable"
@@ -119,5 +129,5 @@ export function bootNotice(dir: string): string {
          `    ${o.refound}`,
          `  ${KEPT}`].join("\n");
   });
-  return `${blocks.join("\n")}\n[boot] ${old.length} world(s) need translating — see above`;
+  return `${half ? `${half}\n` : ""}${blocks.join("\n")}\n[boot] ${old.length} world(s) need translating — see above`;
 }
