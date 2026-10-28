@@ -96,7 +96,7 @@ function commit(w, actor, verb, args, build) {
       ...(plan.vacate.length ? { vacates: plan.vacate.map((u) => ({ who: u.who, socket: u.socket })) } : {}),
       ...(settle?.occupants?.length ? { resettles: settle.occupants } : {}), ...(woke.length ? { wakes: woke } : {}), ...(lifted.length ? { lifts: lifted } : {}),
       ...warnOrNot(warnings(plan.after, [...ctx.refs])) }; }
-  const actE = actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra);   // an operator's repair says so, in the act
+  const actE = { ...actOf(w, actor, verb, sent, CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra), ...(ctx.cause !== undefined ? { cause: ctx.cause } : {}) };   // an operator's repair says so, in the act; cause: a script's world.use (use.js scriptUse)
   const changeE = changeShape(plan, w.entries.length, w);
   // what a delete woke (buildDelete: things resting on what it removed as well as on their parent) falls from rest after the
   // change, caused by the act; only things the write leaves standing (a later batch op may have removed one)

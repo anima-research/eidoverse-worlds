@@ -67,7 +67,7 @@ export function sponsorAt(L, id, comp, upto) {
   for (let k = 0; k < W.length; k++) if (k === W.length - 1 || W[k].value === undefined || W[k + 1].value === undefined || jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);
   return null;
 }
-export function depthOf(L, seq) { let n = 0, e = L[seq], g = 0; while (isE(e) && isScriptActor(e.actor) && g++ < 10000) { if (e.kind === "act") n++; e = L[e.cause]; } return n; }
+export function depthOf(L, seq) { let n = 0, e = L[seq], g = 0; while (isE(e) && isScriptActor(e.actor) && g++ < 10000) { if (e.kind === "act" && e.verb === "script") n++; e = L[e.cause]; } return n; }
 const norm = (ops) => jcs(ops.map(({ verb, id, comp, value }) => ({ verb, id, ...(comp !== undefined ? { comp } : {}), ...(value !== undefined ? { value } : {}) })));
 
 /**
@@ -116,6 +116,8 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const got = state ? quiet(state) : [];
     const says = outs.filter((e) => e.kind === "say").map((e) => e.body?.text);
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says);
+    // world.use proposals are recorded in the act (each target's outcome is its own act): a re-run must propose the same
+    if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) { flags.push({ seq, check: "rerun-use", why: "the re-run's world.use calls differ from the act's" }); return; }
     if (sameW && sameS) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
     if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no

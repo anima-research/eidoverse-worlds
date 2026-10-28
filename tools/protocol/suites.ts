@@ -104,6 +104,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["txn-mutants", "txn-check.ts --mutants", 1], // …and each of its rows turns red under the mutation it exists to catch (a scratch copy of the tree per mutant; the control stays green)
   ["blockers-mutants", "blockers-mutants.ts", 1], // review of PR #260 (10-18): the RED side of every blocker's row, run: one mutation of each fix (B1–B10, M1–M9, r14) in a scratch tree turns its named row red; the control stays green. Its output is the PR's red/green table
   ["scripts", "scripts-check.ts", 1],   // research 41: scripts in QuickJS on sponsor rights; use → script; a timer through a real server
+  ["scripting", "scripting-check.ts", 1], // the script kit (scripting/): world.d.ts = the sandbox's API; each example through the local runner
   ["grab", "grab-check.ts", 1],         // grabbable (research grab 10-06): the gate, release modes, the hold record, use while held
   ["shove", "shove-check.ts", 1],       // body shove at the authority: punt {contact: true}'s own gate (a body against it, at a walk's speed, away from the body, at rest)
   ["shove-walker", "../shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved

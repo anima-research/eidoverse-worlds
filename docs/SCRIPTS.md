@@ -37,6 +37,14 @@ that runs as it stands). Create sends `upload`, then ONE batch: `script:<name>` 
 (`use`, or the script's own name when the thing's `use` already does something else). One act, so Ctrl+Z takes it off.
 Refusals show on the card in these same words. (shared/protocol/newscript.js plans it; client/lib/scriptnew.js is the card.)
 
+## Developer kit
+
+`scripting/` holds what you need to write one before installing it: `world.d.ts` (types for the API below, kept equal to
+the sandbox's by `tools/protocol/scripting-check.ts`), `run.ts` (runs a script locally in the real sandbox:
+`bun scripting/run.ts <file> --self id --knobs json --use json --say json --enter id --tick n --people json`; it prints the
+writes, says, uses and console, and carries state between events; scope, rights and budgets are the authority's, not
+checked there) and `examples/` (greeter, bellkeeper with `world.use`, lighthouse with `world.nearby`).
+
 ## The component
 
 ```jsonc
@@ -57,6 +65,13 @@ Refusals show on the card in these same words. (shared/protocol/newscript.js pla
   "paused": false                    // set by its sponsor or an owner
 }
 ```
+
+## World-level scripts
+
+A script on `@world` is world-level: with `on: ["use"]` it hears every logged use in the world (a visitor's, a
+reaction's, a script's `world.use`), after the thing's own reaction, with `id` naming the thing. It never hears a dry
+or refused use, a seat (presence), or its own `world.use`. Installing on `@world` is the owner's (every `@world` key
+but the look, roles, blueprints and assets is), and its scope still bounds what it writes.
 
 ## Whose rights
 
@@ -97,6 +112,7 @@ always the right one to keep.)
 | `world.children(id)` | the ids parented to it (≤ 1000) |
 | `world.ids()` | every id in the world (≤ 1000, sorted) |
 | `world.near(r)` | identities of people within `r` m of the thing (the act records `r` and how many, never who) |
+| `world.nearby(r)` | the same people as `[{id, d}]`, `d` their distance in metres (3 dp), nearest first; recorded as `near` is, never who or how far (`near` keeps its bare ids, so older scripts run unchanged) |
 | `world.count()` | how many people are here (recorded in the act) |
 | `world.name(id)` | a person's display name (identities are opaque ids; the act counts the call, never records the name), or `null` |
 | `world.set(id, comp, value)` | propose a write (must be inside `scope`) |
@@ -104,12 +120,13 @@ always the right one to keep.)
 | `world.create(components)` | propose a new thing (needs `scope.create`); returns the id it was minted (opaque: a script never chooses an id, and an id never carries a word; API 2) |
 | `world.param(id, name, number)` | write `params.<name>` on a thing (merged into what's there; needs `params` in the scope's comps): a signal something else reads (a seat pose blends by `param.<name>`) |
 | `world.say(text)` | a say entry (needs `scope.say`) |
+| `world.use(id, action, args?)` | set off another thing's reaction (the id must be in `scope.ids`; ≤ 4): after the batch lands it meets that thing's own gate as a visitor's use would, with the sponsor's rights; its script hears `use` with `by: "script:<thing>"`. The act records the call, the use is its own act, and the cascade depth bounds a loop |
 | `world.shove(who)`, `world.pose(who, spec)` | effects on a person (needs `scope.bodies`, then their consent) |
 | `console.log(...parts)` | its console (`scripts {id}` shows the last lines; never logged). `world.log` is the old spelling, kept for one version |
 
 Events (`e`): every event has `on`.
 - `use`: `by` (who), `seq` (their act), `action`, `args` (what they sent); used while held (a `grabbable`'s use
-  button), also `held: true`, `hand` and `phase` (`"down"` or `"up"`);
+  button), also `held: true`, `hand` and `phase` (`"down"` or `"up"`). A world-level script also gets `id` (the thing used);
 - `grab`: `by`, `id` (the thing), `hand`, `grip?`, `seq?` (the grab's act, when the sim had to be told). A grab is
   presence: like `enter`, when the grab itself isn't logged its activation's cause is the entry that made the script's
   sponsor, and the act records no identity (no `trigger`, no `event.by`; the script still hears `by` live). A grab with
@@ -162,12 +179,14 @@ it rides. A script that counts shots counts presses (`use.down`), within the rat
                                                          head, seed, depth, engine, api, reads?, bodies?}
 814 change actor=script:bell1  cause=813    the batch: every write, all or nothing
 815 say    actor=script:bell1  cause=813
+816 act    actor=script:bell1  verb=use  cause=813  body={request: {id, action, args?}, sponsor, …}   a world.use: then the
+                                                         target's change or script act, caused by 816
 ```
 A timer's or a presence event's act has `cause` = the entry that made its sponsor. Replay never runs code: the fold
 reads 814. An auditor may: `shared/protocol/scriptaudit.js` folds to `head`, re-runs the source with the recorded event,
 clock (the act's `ts`), `seed` and presence `reads`, and compares the writes. An act's `reads` say what was asked and
-how much came back (`{near: [{r, n}], count: [n], names: k}`), never who: so a re-run answers `world.near` with stand-ins
-and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
+how much came back (`{near: [{r, n}], count: [n], names: k}`; `nearby` is recorded under `near`), never who: so a re-run
+answers `world.near` and `world.nearby` with stand-ins (each `r` away) and `world.name` with `null`. When the writes and says still match, the act is verified; when they differ and the script
 read who was near or a name, the auditor lists it as `skipped` (it can't be re-run to that result), never as verified.
 
 ## Auditing a script
@@ -180,7 +199,7 @@ Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that 
 - `Math.random()` is seeded from the activation (`seed` in the act): re-running it gives the same numbers.
 - The time zone is always UTC: local-time methods (`getHours`, `new Date(2026, 0, 1)`) are the UTC ones, and a
   date-time string with no zone is read as UTC. The host's zone never leaks in.
-- What a script reads from outside the log (`world.near`, `world.count`, `world.name`), and who arrived or left (`enter`,
+- What a script reads from outside the log (`world.near`, `world.nearby`, `world.count`, `world.name`), and who arrived or left (`enter`,
   `leave`), is recorded in its act as what it asked and how much came back, never who or what they're called: the log is
   permanent and public, and the authority's own record of an activation never becomes an attendance list. What the
   script WRITES is another matter: it receives identities live, and a value it sets or a `say` it makes can name them
@@ -204,7 +223,7 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
 | wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process (where scripts run isolated: not on Windows, see Isolation) |
 | memory / native stack | 24 MB / 256 KB per activation |
-| reads per activation | 64; writes 32; says 4; body effects 4 |
+| reads per activation | 64; writes 32; says 4; body effects 4; uses 4 |
 | logged activations | 6 per minute per script (server) |
 | process script time | 500 ms per rolling second across every world on the authority (host-settable); past it, `busy` |
 | waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |

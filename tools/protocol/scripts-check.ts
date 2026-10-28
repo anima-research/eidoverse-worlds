@@ -67,8 +67,11 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& C.tableOf(P, to).overrides[`scripts-by:${extra.sponsor}`]?.[cls]) d = C.decide(P, `scripts-by:${extra.sponsor}`, to, cls, now);", "&& false) d = null;", ["C3"]],
   ["frozen clock", "sandbox.js", "FrozenDate.now = () => NOW;", "FrozenDate.now = () => RealDate.now();", ["D2"]],
   ["seeded randomness", "sandbox.js", "Math.random = function random() { return sfc(); };", "", ["D2"]],
-  ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);", "const ids = x.near ? x.near(r) : [];", ["D1"]],
-  ["a near() read records who (ids)", "sandbox.js", "nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }", "nearAt++; reads.near.push({ r, n: ids.length, ids: ids.slice() }); return ids.slice(); }", ["D4"]],
+  ["presence reads replayed from the act (stand-ins for who)", "sandbox.js", "const got = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)).map((id) => ({ id, d: r }))", "const got = false ? []", ["D1"]],
+  ["a near() read records who (ids)", "sandbox.js", "nearAt++; reads.near.push({ r, n: got.length });", "nearAt++; reads.near.push({ r, n: got.length, ids: got.map((p) => p.id) });", ["D4"]],
+  ["a nearby() read records how far", "sandbox.js", "nearAt++; reads.near.push({ r, n: got.length });", "nearAt++; reads.near.push({ r, n: got.length, ...(verb === \"nearby\" ? { d: got.map((p) => p.d) } : {}) });", ["N1"]],
+  ["nearby() is nearest first", "sandbox.js", "got.sort((p, q) => p.d - q.d ||", "got.sort((p, q) => 0 ||", ["N1"]],
+  ["a re-run's nearby() stand-ins carry a number for d", "sandbox.js", ".map((id) => ({ id, d: r }))", ".map((id) => ({ id, d: null }))", ["N1"]],
   ["a name() read records the name", "sandbox.js", "nameAt++; reads.names++; return n; }", "nameAt++; reads.names++; reads.near.push({ r: 0, n: 0, ids: [n] }); return n; }", ["D4"]],
   ["the auditor counts an identity-dependent act verified (or flags it)", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (false) { skipped.push(", ["D4"]],
   ["the auditor checks the read shape", "scriptaudit.js", "if (jcs(readShape(res.reads)) !== jcs(readShape(b.reads))) {", "if (false) {", ["D4"]],
@@ -111,6 +114,13 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["a starved process isn't the script's failure", "sandbox.js", "export const STARVED = 0.3;", "export const STARVED = 0;", ["I8"]],
   ["end of file means the process died", "sandbox.js", "if ((n === 0 && c.opened) || c.proc.exitCode !== null", "if (c.proc.exitCode !== null", ["I6"]],
   ["the process's script duty", "authority/scriptrun.js", "if (dutyLeft(w.worldId) <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2", "I4", "I7"]],
+  ["world.use stays inside scope.ids", "authority/scriptrun.js", "for (const u of uses) if (!cap.ids.includes(u.id)) return mark(", "for (const u of uses) if (false) return mark(", ["W2"]],
+  ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
+  ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
+  ["the auditor compares world.use calls", "scriptaudit.js", "if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) {", "if (false) {", ["W1"]],
+  ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"act\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"act\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
+  ["a script on @world hears every use (world-level)", "authority/use.js", "out.push(activate(w, \"@world\", name,", "out.push(void (w, \"@world\", name,", ["WL1"]],
+  ["a script on @world is the owner's to install", "authority/gate.js", "if (base === \"roles\") return \"grant\";\n  return \"owner\";", "if (base === \"roles\") return \"grant\";\n  return base === \"script\" ? \"thing\" : \"owner\";", ["WL2"]],
   ["CONTROL (no-op: must stay green)", "authority/scripts.js", "// ---------- behaviours (L4, L7 as revised;", "// ---------- behaviours (L4, L7  as revised;", []],
 ];
 async function runSelf(tree: string, only: string[] | null, extra: string[] = []) {
@@ -228,6 +238,14 @@ world.on("use", (e) => {
 function bell(s: any, who: string) { s.call(who, "create", { id: "bell1", model: "bell", place: { at: [0, 0] } });
   const r = install(s, who, "bell1", "bell", BELL, { scope: { ids: "self", comps: ["t/bell"], say: true }, on: ["use"] });
   s.call(who, "set", { id: "bell1", component: "reactions", value: { ring: { kind: "script", script: "bell" } } }); return r; }
+// a gate (a toggle reaction, `who` optional) and bob's lever whose script world.use()s it, with the given scope
+function gateAndLever(s: any, scope: any, who?: string) {
+  s.call("bob", "create", { id: "gate", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } });
+  s.call("bob", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open", ...(who ? { who } : {}) } } });
+  s.call("bob", "create", { id: "lever", model: "crate", place: { at: [2, 0] } });
+  install(s, "bob", "lever", "pull", onUse(`world.use("gate", "open");`), { scope, on: ["use"] });
+  s.call("bob", "set", { id: "lever", component: "reactions", value: { pull: { kind: "script", script: "pull" } } });
+}
 const NAMES: Record<string, string> = { vic: "Vic" }; // a stand-in for the authority's directory (M1)
 const onUse = (body: string) => `world.on("use", (e) => {\n${body}\n});\n`;
 // A sponsor's cpu limit, reached by the time the runs actually record, not by a count a host's speed decides: vic says
@@ -906,6 +924,74 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
       bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
       return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
     good: (o) => o.status === "unavailable" && /operator can repair/.test(o.why ?? "") && /asking again won't/.test(o.why ?? "") && !/stand-in/.test(o.why ?? "") && o.sandbox === "unavailable" },
+  // ---------------- W: world.use (a script sets off another thing's reaction) ----------------
+  { id: "W1", what: "world.use: a lever's script opens a gate in its scope through the gate's own reaction; the script act records the use, the use is its own act (actor the script, cause the script act), the auditor re-runs it, and a forged use is flagged", run(s) { cast(s);
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] });
+      const r = useSteady(s, "vic", { id: "lever", action: "pull" }); const L = s.entries();
+      const act = L[r.script?.act], use = L.find((e: any) => e.kind === "act" && e.verb === "use" && e.actor === "script:lever"), change = L.find((e: any) => e.kind === "change" && e.cause === L.indexOf(use));
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(L, s.w().getBlob, { run: SB.runScript });
+      const forged = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n")); const k = forged.findIndex((e: any) => e.actor === "script:lever" && e.verb === "script"); if (forged[k]?.body?.uses) forged[k].body.uses[0].action = "close";
+      return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
+        audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
+    good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
+  { id: "W2", what: "world.use outside scope.ids is refused whole: the gate stays shut and nothing is logged for the script", run(s) { cast(s);
+      gateAndLever(s, { ids: "self", comps: [] }); const n0 = s.entries().length;
+      const r = useSteady(s, "vic", { id: "lever", action: "pull" });
+      return { r: st(s, r), why: r.script?.why, open: comp(s, "gate", "openable")?.open, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
+    good: (o) => o.r === "refused scope" && /gate/.test(o.why ?? "") && o.open === false && o.scripted === 0 },
+  { id: "W3", what: "world.use meets the target's gate with the SPONSOR's rights: a builder-only gate a visitor can't open opens through bob's lever; an owner-only one refuses it (on the script's console), and stays shut", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "inhabitant" } });   // so a script actor's own default role can't pass for its sponsor's
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] }, "builder");
+      const direct = s.call("vic", "use", { id: "gate", action: "open" });
+      const r = useSteady(s, "vic", { id: "lever", action: "pull" }); const open1 = comp(s, "gate", "openable")?.open;
+      s.call("olive", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open", who: "owner" } } });
+      const r2 = useSteady(s, "vic", { id: "lever", action: "pull" });
+      return { direct: code(direct), r: st(s, r), open1, r2: st(s, r2), use2: r2.script?.uses?.[0] ? `${r2.script.uses[0].status} ${r2.script.uses[0].code}` : null, open2: comp(s, "gate", "openable")?.open }; },
+    good: (o) => o.direct === "rights" && o.r === "ran" && o.open1 === true && o.r2 === "ran" && o.use2 === "refused rights" && o.open2 === true },
+  { id: "W4", what: "world.use script to script: the target's script hears use by script:<thing>; two things that use each other stop at cascade depth 8, and the auditor re-runs every act at the depth it recomputes", run(s) { cast(s);
+      for (const [me, other, x] of [["pa", "pb", 0], ["pb", "pa", 2]] as const) { s.call("bob", "create", { id: me, model: "crate", place: { at: [x, 0] } });
+        install(s, "bob", me, "ping", onUse(`world.set("self", "t/n", { n: (world.get("self", "t/n")?.n ?? 0) + 1, by: e.by }); world.use("${other}", "ping");`), { scope: { ids: ["self", other], comps: ["t/n"] }, on: ["use"] });
+        s.call("bob", "set", { id: me, component: "reactions", value: { ping: { kind: "script", script: "ping" } } }); }
+      useSteady(s, "vic", { id: "pa", action: "ping" }); const L = s.entries();
+      const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
+      return { acts: L.filter((e: any) => isScriptActor(e.actor) && e.verb === "script").length, uses: L.filter((e: any) => isScriptActor(e.actor) && e.verb === "use").length,
+        pa: comp(s, "pa", "t/n"), pb: comp(s, "pb", "t/n"), audit: A ? `${A.reran}/${A.acts} max ${A.maxDepth} ${A.flags.map((f: any) => f.check).join(",")}` : null, ninth: Object.values(s.w().presence.scripts ?? {}).flatMap((x: any) => x.console).find((l: any) => l.code === "depth")?.why ?? null }; },
+    good: (o) => o.acts === 8 && o.uses === 8 && o.pa?.n === 4 && o.pb?.n === 4 && o.pa?.by === "script:pb" && o.pb?.by === "script:pa" && o.audit === "8/8 max 8 " && /depth 9 > 8/.test(o.ninth ?? "") },
+  { id: "WL1", what: "world-level: a script on @world with on: [use] hears every logged use in the world (a reaction's, a script's, a script's world.use), with id and action; never a dry or refused one; its acts name the use as cause and trigger, as a thing's do, and the auditor re-runs them", run(s) { cast(s);
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] });
+      const tally = install(s, "olive", "@world", "tally", onUse(`const t = world.get("self", "t/uses") ?? { n: 0, seen: [] }; world.set("self", "t/uses", { n: t.n + 1, seen: [...t.seen, e.id + "." + e.action + " by " + e.by] });`), { scope: { ids: "self", comps: ["t/uses"] }, on: ["use"] }).r;
+      const g = s.call("vic", "use", { id: "gate", action: "open" }); const n1 = comp(s, "@world", "t/uses")?.n ?? 0;
+      s.call("vic", "use", { id: "gate", action: "open", dry: true }); s.call("vic", "use", { id: "gate", action: "nope" });
+      useSteady(s, "vic", { id: "lever", action: "pull" });
+      const L = s.entries(); const acts = L.filter((e: any) => e.actor === "script:@world" && e.verb === "script");
+      const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
+      return { tally: show(tally), n1, t: comp(s, "@world", "t/uses"), causes: acts.map((e: any) => [L[e.cause]?.verb, L[e.cause]?.actor, e.body?.trigger?.actor, e.body?.trigger?.seq === e.cause]), gate: g.ok, audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null }; },
+    good: (o) => o.tally === "ok" && o.gate && o.n1 === 1 && o.t?.n === 3 && JSON.stringify(o.t?.seen) === JSON.stringify(["gate.open by vic", "gate.open by script:lever", "lever.pull by vic"])
+      && JSON.stringify(o.causes) === JSON.stringify([["use", "vic", "vic", true], ["use", "script:lever", "script:lever", true], ["use", "vic", "vic", true]]) && o.audit === "4/4 " },
+  { id: "WL2", what: "world-level stays the owner's: a builder can't install a script on @world; a script on a thing with on: [use] still hears only its own thing's uses", run(s) { cast(s);
+      gateAndLever(s, { ids: ["self", "gate"], comps: [] });
+      const bob = install(s, "bob", "@world", "tally", onUse(`world.say("used");`), { scope: { ids: "self", comps: [], say: true }, on: ["use"] }).r;   // no comps: the key's own gate
+      s.call("bob", "create", { id: "post", model: "crate", place: { at: [4, 0] } });
+      install(s, "bob", "post", "ear", onUse(`world.set("self", "t/heard", e.action);`), { scope: { ids: "self", comps: ["t/heard"] }, on: ["use"] });
+      s.call("vic", "use", { id: "gate", action: "open" });
+      return { bob: code(bob), stored: !!comp(s, "@world", "script:tally"), heard: comp(s, "post", "t/heard") ?? null }; },
+    good: (o) => o.bob === "rights" && !o.stored && o.heard === null },
+  { id: "N1", what: "world.nearby(r): the people within r m with how far (metres, 3 dp), nearest first; world.near(r) still gives bare ids; the act records only {r, n} for each, never who or how far; the auditor skips a who-dependent result and verifies one that only counts (its stand-ins carry a number for d)", run(s) { cast(s);
+      s.call("bob", "create", { id: "dial", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "dial", "look", onUse(`world.set("self", "t/near", { by: world.nearby(3), ids: world.near(3) });`), { scope: { ids: "self", comps: ["t/near"] }, on: ["use"] });
+      install(s, "bob", "dial", "count", onUse(`world.set("self", "t/count", world.nearby(3).filter((p) => p.d.toFixed(1) !== "x").length);`), { scope: { ids: "self", comps: ["t/count"] }, on: ["use"] });
+      s.call("bob", "set", { id: "dial", component: "reactions", value: { look: { kind: "script", script: "look" }, count: { kind: "script", script: "count" } } });
+      s.call("ann", "move", { to: [0, 0, 2.5] }); s.call("vic", "move", { to: [0, 0, 1.23456] });
+      const me = s.w().state().entities.dial.c.transform?.pos ?? [0, 0, 0];
+      const r1 = useSteady(s, "olive", { id: "dial", action: "look" }), r2 = useSteady(s, "olive", { id: "dial", action: "count" });
+      const L = s.entries(), acts = L.filter((e: any) => e.actor === "script:dial" && e.verb === "script");
+      const A = AU ? AU.auditScripts(L, s.w().getBlob, { run: SB.runScript }) : null;
+      return { r1: st(s, r1), r2: st(s, r2), me, near: comp(s, "dial", "t/near"), count: comp(s, "dial", "t/count"), reads: acts.map((e: any) => e.body.reads), actText: JSON.stringify(acts),
+        audit: A ? `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}` : null, skipped: A?.skipped?.length ?? null }; },
+    good: (o) => { const d = (z: number) => Math.round(Math.hypot(o.me[0], o.me[1], z - o.me[2]) * 1000) / 1000;
+      return o.r1 === "ran" && o.r2 === "ran" && JSON.stringify(o.near?.by) === JSON.stringify([{ id: "vic", d: d(1.23456) }, { id: "ann", d: d(2.5) }]) && JSON.stringify(o.near?.ids) === '["ann","vic"]'
+        && o.count === 2 && JSON.stringify(o.reads) === JSON.stringify([{ near: [{ r: 3, n: 2 }, { r: 3, n: 2 }] }, { near: [{ r: 3, n: 2 }] }]) && !/"d"|vic|ann/.test(o.actText) && o.audit === "1/2 " && o.skipped === 1; } },
   // ---------------- E: events ----------------
   { id: "E1", what: "say events: a script that lists `say` hears a visitor's say (and never its own)", run(s) { cast(s);
       s.call("bob", "create", { id: "parrot", model: "crate", place: { at: [0, 0] } });

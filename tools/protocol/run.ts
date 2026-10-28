@@ -52,7 +52,7 @@ const EXPECT: Record<string, number> = {
   "editcommit": 0.8, "hierarchy-commit": 0.6, "verbclasses": 0.0, "authority-layers": 0.0, "authority": 9.0,
   "ids": 1.4, "scars": 1.0, "r8": 0.9, "r9": 1.5, "r10": 1.7, "r11": 0.6, "names": 2.1, "parity": 5.4,
   "directory": 13, "keyhints": 0.0, "client": 60, "refusedjoin": 150, "upgrade": 70, "server": 40, "identity": 42,
-  "fork-reset": 6.0, "reset-race": 0.4, "txn": 0.8, "txn-mutants": 11, "blockers-mutants": 420, "scripts": 48, "grab": 3.8, "shove": 2.0, "shove-walker": 0.1,
+  "fork-reset": 6.0, "reset-race": 0.4, "txn": 0.8, "txn-mutants": 11, "blockers-mutants": 420, "scripts": 48, "scripting": 2, "grab": 3.8, "shove": 2.0, "shove-walker": 0.1,
   "agentshove": 165, "hands": 1.2, "reset": 1.7, "settle": 5.4, "disabled": 1.2, "histdiff": 0.3, "reachgate": 22,
   "consent": 0.0, "history-rows": 0.6, "scale": 125, "roles": 3.1, "access": 8.3, "batch2": 1.9,
   "describe-particles": 1.1, "client-b2": 19, "build": 1.5, "counter": 2.2, "build-client": 8.1, "shiplist": 1.7,

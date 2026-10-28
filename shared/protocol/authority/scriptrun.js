@@ -15,9 +15,11 @@ import { CTX, UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { readback, delOp, holdsCustody, isE, opsQuiet, setOp, versionSeq } from "./storage.js";
 import { worldT } from "./math.js";
+import { r3 } from "../round.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
 import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
 import { bodyGate, expireAsks } from "./bodyconsent.js";
+import { scriptUse } from "./use.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
@@ -96,7 +98,7 @@ function activate(w, id, name, ev) {
     D0.push(now0); w.presenceDirty = true; }
   const t0 = performance.now();
   const res = w.scripts.run({ text: blob.text, self: id, key, event, knobs: v.knobs ?? {}, now, seed, api: SR.API, st,
-    near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k]) => k).sort(), count: () => here.size,
+    near: (r) => [...here].filter(([, at]) => at && dist(at, me) <= r).map(([k, at]) => ({ id: k, d: r3(dist(at, me)) })).sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)), count: () => here.size,
     name: (who) => (typeof who === "string" && (isIdentity(who) || isScriptActor(who)) ? CTX.nameOf?.(who) ?? dec(who) ?? null : null) });
   { const ms = performance.now() - t0; dutyLog.push({ at: performance.now(), ms, w: w.worldId }); } // dry runs spend the thread too
   if (!dry) { const ms = performance.now() - t0;
@@ -104,15 +106,17 @@ function activate(w, id, name, ev) {
   if (!res.ok) return fail(res.code, res.why, res.logs);
   const logs = res.logs.length ? { logs: res.logs } : {};
   const ops = SR.elide(st, SR.stampMotions(st, res.ops, now));   // a motion on the authority's clock, then the script batch's elision of no-op writes
-  if (!ops.length && !res.says.length && !res.bodies.length) { if (!dry) rt.fails = 0; return out("nothing", { why: res.ran ? "nothing changed: no entry" : `it has no handler for '${ev.on}'`, ...logs }); }
+  const uses = res.uses ?? [];
+  if (!ops.length && !res.says.length && !res.bodies.length && !uses.length) { if (!dry) rt.fails = 0; return out("nothing", { why: res.ran ? "nothing changed: no entry" : `it has no handler for '${ev.on}'`, ...logs }); }
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
-  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length); if (why) return mark("budget", why); } // what it would actually write
+  for (const u of uses) if (!cap.ids.includes(u.id)) return mark("scope", `${key} on ${id} may use only ${cap.ids.join(", ") || "nothing"}, not ${u.id}`);
+  { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length + uses.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
-  if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
+  if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, ...(uses.length ? { uses } : {}), sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
   for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
   // an arrival or departure, and a hand event whose own entry isn't on the record (an unlogged grab: presence), record no
@@ -125,7 +129,7 @@ function activate(w, id, name, ev) {
       event: anon ? anonEvent(recorded(event)) : recorded(event), head: actSeq - 1, seed, depth, engine: SR.ENGINE, api: SR.API, ...(res.reads ? { reads: res.reads } : {}),
       // a body effect is recorded as WHAT and ON WHOM, never which consent let it through: "allowed" (a per-person allow) vs
       // "standing" is a relationship fact, and consent is presence, never appended (consent gaps 6c, R 10-17 02:45)
-      ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}) } };
+      ...(gates.length ? { bodies: gates.map((g) => ({ kind: g.kind, to: `body:${g.to}` })) } : {}), ...(uses.length ? { uses } : {}) } };
   const sayE = (t, c) => ({ kind: "say", actor: `script:${id}`, cause: c, verb: "say", body: { text: t } });
   let act, state = null;
   w.pinTs = now;
@@ -135,7 +139,8 @@ function activate(w, id, name, ev) {
     for (const t of res.says) (w.sayQ ??= []).push(w.append(sayE(t, act)));
   } finally { w.pinTs = null; }
   for (const g of gates) g.deliver();
-  rt.fails = 0; return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...logs });
+  rt.fails = 0; const used = uses.map((u) => scriptUse(w, id, sp.sponsor, act, u));   // after its own batch, each through the target's gate
+  return out("ran", { act, ...(state !== null ? { state } : {}), ops: ops.length, sponsor: sp.sponsor, ...(used.length ? { uses: used.map(({ script: _s, ...u }) => u) } : {}), ...logs });
 }
 function withAuthority(w, fn) {
   const exit = enter(w, null);

@@ -9,7 +9,7 @@ import { PURGED } from "../fold.js";
 import { COMPONENTS, PENDULUM, unitTransform } from "../componentspec.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
-import { refuse, said } from "./refuse.js";
+import { Refusal, refuse, said } from "./refuse.js";
 import { OLD_READINGS } from "../shaperepair.js";
 import { delOp, isE, lockedC, setOp } from "./storage.js";
 import { aabb, ancestors, qrot, worldT } from "./math.js";
@@ -49,6 +49,7 @@ function reactionCap(ctx, id, comp, action) {
   ctx.actExtra = { capability: { reaction: action, author: lt.actor, grantedAt: lt.seq } };
   ctx.cap = { kind: "reaction", ids: [id], comps: [comp], author: lt.actor, action };
 }
+// ctx.asker: whose rights a `who` is judged by when the actor isn't a person (a script's sponsor, scriptUse)
 function buildUse(ctx, a) {
   const e = ctx.st.entities[a.id]; if (!e) refuse("not-found", `no '${a.id}'`, "", { didYouMean: guess(a.id, Object.keys(ctx.st.entities)) });
   offRefuse(ctx.st, a.id, "used");
@@ -59,10 +60,11 @@ function buildUse(ctx, a) {
   const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
   if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });
   const action = a.action ?? mine[0] ?? offers[0];   // none you may do: the first, so the refusal says why
+  ctx.action = action;
   if (!offers.includes(action)) refuse("no-action", `${a.id} doesn't '${action}'`, `it offers: ${offers.join(", ") || "nothing"}`, { didYouMean: guess(action, offers) });
   const socks = bodySockets(ctx.st, a.id).filter((x) => x.body.action === action);
   if (socks.length && !e.c.reactions?.[action]) {
-    const may = (x) => !x.body.who || admits(ctx.st, ctx.actor, x.body.who);
+    const may = (x) => !x.body.who || admits(ctx.st, ctx.asker ?? ctx.actor, x.body.who);
     const socket = a.args?.socket;
     if (socket != null) { const named = socks.find((x) => x.slot === socket);
       if (!named) refuse("no-action", `${a.id} has no '${action}' socket called '${socket}'`, `its ${action} sockets: ${socks.map((x) => x.slot).join(", ")}`, { didYouMean: guess(String(socket), socks.map((x) => x.slot)) });
@@ -87,7 +89,7 @@ function buildUse(ctx, a) {
     return { presence: true, near, attach: { to: pick.id, host: pick.host, socket: pick.slot, ...body }, note: `you ${action} on ${pick.host} (${pick.slot}): presence — your frames carry it; nothing recorded${body.leaveBy === "script" ? " (this seat lets you go only when a script does)" : ""}` };
   }
   const h = handlerOf(e, action);
-  if (h?.who && !admits(ctx.st, ctx.actor, h.who)) refuse("rights", `only ${whoWords(h.who)} may ${action} ${a.id}`, "ask someone who can");
+  if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who)) refuse("rights", `only ${whoWords(h.who)} may ${action} ${a.id}`, "ask someone who can");
   if (h?.kind === "script") return { script: h.script, action }; // VERBS.use logs the visitor's act, then activates it
   if (h?.kind === "reset") {
     reactionCap(ctx, a.id, "transform", action); ctx.refs.add(a.id);
@@ -243,9 +245,41 @@ const USE_VERBS = {
       const ev = { on: "use", action: probe.action, ...(a.args !== undefined ? { args: a.args } : {}), ...(held ?? {}) };
       if (a.dry) return { ok: true, dry: true, script: activate(w, a.id, probe.script, { ...ev, by: actor, dry: true, requester: actor }) };
       rateCheck(w, actor); const act = w.append(actOf(w, actor, "use", sent, { runs: key, ...(held ? { held, action: probe.action } : {}) }));
-      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script: activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }) };
+      const script = activate(w, a.id, probe.script, { ...ev, by: actor, seq: act, cause: act }), world = worldHears(w, a.id, probe.action, actor, act, a.args, held, probe.script);
+      return { ok: true, act, recorded: true, ...(held ? { held } : {}), script, ...(world.length ? { world } : {}) };
     }
-    return commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
+    let action = a.action;
+    const r = commit(w, actor, "use", sent, (ctx) => { const ops = buildUse(ctx, a); action = ctx.action; if (held) ctx.actExtra = { ...(ctx.actExtra ?? {}), held, action: a.action }; return ops; });
+    if (!r.ok || r.dry || r.act === undefined) return r;
+    const world = worldHears(w, a.id, action, actor, r.act, a.args, held, null);
+    return world.length ? { ...r, world } : r;
   },
 };
-export { USE_VERBS, actionsOf, offersFor, pivotOf, reactionCap, toggleOf };
+// A script on @world that lists `use` is world-level (docs/SCRIPTS.md): it hears every logged use after the thing's own
+// reaction, never its own use nor the @world script that use just ran. `ran`: the script name the use ran on @world
+function worldHears(w, id, action, by, act, args, held, ran) {
+  const wc = w.state().entities["@world"]?.c ?? {}, out = [];
+  for (const [k, v] of Object.entries(wc)) { const name = k.slice(7);
+    if (!k.startsWith("script:") || !v || typeof v !== "object" || Array.isArray(v) || v === PURGED || !(Array.isArray(v.on) && v.on.includes("use"))) continue;
+    if (by === "script:@world" || (id === "@world" && name === ran)) continue;
+    out.push(activate(w, "@world", name, { on: "use", id, action, ...(args !== undefined ? { args } : {}), ...(held ?? {}), by, seq: act, cause: act })); }
+  return out;
+}
+// A script's world.use (docs/SCRIPTS.md): the target's own gate as a visitor's use, asked with the sponsor's rights; the
+// use is its own act (actor the script, cause the script's act), so a cascade's depth and the audit follow it
+function scriptUse(w, sid, sponsor, cause, u) {
+  const actor = `script:${sid}`, req = { id: u.id, action: u.action, ...(u.args !== undefined ? { args: u.args } : {}) }, out = { id: u.id, action: u.action };
+  try {
+    const probe = buildUse({ st: w.state(), actor, asker: sponsor, w, notes: [], refs: new Set() }, req);
+    if (probe.presence) refuse("no-action", `a script can't take a seat: ${u.id}'s '${u.action}' seats a body`, "a seat is a person's presence");
+    if (probe.script) { const key = `script:${probe.script}`; const v = w.state().entities[u.id].c[key];
+      if (!v || typeof v !== "object") refuse("no-handler", `${u.id}'s '${probe.action}' runs ${key}, which isn't installed on it`, "scripts {id} lists what runs here");
+      const act = w.append({ ...actOf(w, actor, "use", req, { runs: key, sponsor }), cause });
+      const script = activate(w, u.id, probe.script, { on: "use", action: probe.action, ...(u.args !== undefined ? { args: u.args } : {}), by: actor, seq: act, cause: act });
+      worldHears(w, u.id, probe.action, actor, act, u.args, null, probe.script); return { ...out, status: "ran", act, script }; }
+    let action = u.action;
+    const r = commit(w, actor, "use", req, (ctx) => { ctx.asker = sponsor; ctx.cause = cause; const ops = buildUse(ctx, req); action = ctx.action; ctx.actExtra = { ...(ctx.actExtra ?? {}), sponsor }; return ops; });
+    worldHears(w, u.id, action, actor, r.act, u.args, null, null); return { ...out, status: "ran", act: r.act };
+  } catch (e) { if (!(e instanceof Refusal)) throw e; return { ...out, status: "refused", code: e.code, why: e.reason }; }
+}
+export { USE_VERBS, actionsOf, offersFor, pivotOf, reactionCap, scriptUse, toggleOf };

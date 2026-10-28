@@ -140,9 +140,9 @@ function installCheck(w, st, s, who, op) {
 const rtKey = (id, name) => `${id}|${name}`;
 const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });
 const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...line }); if (rt.console.length > 20) rt.console.shift(); w.presenceDirty = true; };
-// how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
+// how many behaviour acts (verb script; a world.use act is a link, not a level) sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
 function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
-  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
+  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act" && e.verb === "script") n++; e = w.entries[e.cause]; } return n; }
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
   const out = []; let restored = false;
