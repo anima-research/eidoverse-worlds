@@ -89,6 +89,8 @@ export function decide(P, from, to, cls, worldDefault) {
 const BAD_KEY = new Set(["__proto__", "constructor", "prototype"]);
 const isWho = (w) => typeof w === "string" && /^[A-Za-z0-9_.:@+-]{1,64}$/.test(w) && !BAD_KEY.has(w);
 const bag = () => Object.create(null);
+/** An identity that will never return (a guest who left: their id is per connection): its table and every list naming it go (L8). */
+export function forgetIdentity(P, who) { if (!P?.consent) return; delete P.consent[who]; for (const t of Object.values(P.consent)) { if (t?.allow) delete t.allow[who]; if (t?.block) delete t.block[who]; } }
 export const PERSON_OPS = ["allow", "block", "unlist"];
 /** Arguments of earlier shapes, refused with a pointer: the switch and its ask (to 10-28), the table before it (to 10-20). */
 export const RETIRED_CONSENT = ["switch", "deny", "class", "for", "answer", "yes", "preset", "set", "pause", "friend", "unfriend", "delegate", "undelegate", "of"];

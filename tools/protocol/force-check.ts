@@ -30,6 +30,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the target is told once a minute per asker", "protocol/authority/bodyconsent.js", "if (n[key] > now - C.TRIED_NOTE_MS) return false;", "if (false) return false;", ["F10"]],
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
+  ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F14"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -85,7 +86,7 @@ function openWorld(name: string) {
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
-    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
+    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null, kindOf: (id: string) => (id.startsWith("guest") ? "anon" : "account"),
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 const clock = labClock(); let N = 0;
@@ -170,6 +171,12 @@ const cases: Case[] = [
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       return { ...t, cooled: cooled(s) }; },
     good: (o) => o.ok && o.cooled === 1 },
+  { id: "F14", what: "a guest who leaves takes their consent table and every list entry naming them (review full-260 L8: an anon id never returns); an account's stays", run(s) { cast(s, { physics: false });
+      for (const who of ["guest1", "ann", "vic"]) s.call(who, "move", { to: [0, 0, 0] });
+      s.call("guest1", "consent", { move: false }); s.call("ann", "consent", { move: false }); s.call("vic", "consent", { block: "guest1" }); s.call("vic", "consent", { allow: "ann" });
+      s.call("guest1", "leave"); s.call("ann", "leave"); const P = s.w().presence;
+      return { g: !!P.consent?.guest1, ann: P.consent?.ann?.move, vicBlock: Object.keys(P.consent?.vic?.block ?? {}), vicAllow: Object.keys(P.consent?.vic?.allow ?? {}) }; },
+    good: (o) => !o.g && o.ann === false && o.vicBlock.length === 0 && o.vicAllow.join() === "ann" },
 ];
 function optedOut(s: any) { cast(s, { physics: false });
   const ok = ["vic", "ida", "cy"].map((who, k) => { s.call(who, "move", { to: [Math.cos(k * 2), 0, Math.sin(k * 2)] }); return s.call(who, "consent", { move: false }).ok; }).every(Boolean);
