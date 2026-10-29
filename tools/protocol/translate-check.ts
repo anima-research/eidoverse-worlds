@@ -125,20 +125,21 @@ row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
 row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9, probes: 4 } }],
     ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed: 2.4 } }], ["olga", "sky", { world: "earth", audio: true }]]);
   const v = r.stats.unmapped?.find((x) => x.component === "vehicle"), w = r.stats.unmapped?.find((x) => x.component === "water"), s = r.stats.unmapped?.find((x) => x.component === "sky");
-  ok(/invisible wall below/.test(v?.becomes?.minY) && /invisible wall above/.test(v?.becomes?.maxY) && /retired: the authority's hull sweep/.test(v?.becomes?.probes)
-    && /physics-area/.test(w?.becomes?.speed) && s === undefined && !("sky.audio" in TV1.FATES),
-    "F50 the report says, in words, what becomes of vehicle minY/maxY/probes and water speed; sky audio is mapped, not carried (@25)", { v, w, s }); });
+  const json = JSON.stringify(r.out), walls = (json.match(/"blocks":\["hulls"\]/g) ?? []).length;
+  ok(JSON.stringify(v?.fields) === '["probes"]' && /retired: the authority's hull sweep/.test(v?.becomes?.probes) && v?.becomes?.minY === undefined && w === undefined && !("vehicle.minY" in TV1.FATES) && !("water.speed" in TV1.FATES)
+    && walls === 2 && /walking and wading too/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && json.includes('"comp":"physics-area","value":{"kind":"speed","factor":1}') && s === undefined && !("sky.audio" in TV1.FATES),
+    "F50 the report says, in words, what becomes of vehicle probes; minY/maxY are two hull-only walls and water speed a physics-area (@29); sky audio is mapped, not carried (@25)", { v, w, s, walls }); });
 
 // ================= V5: the version, and a stale review refused =================
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@25" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@26" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 26 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 26 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@26/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @26; a report reviewed under @25 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 29 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 29 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@29/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @29; a report reviewed under @26 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);

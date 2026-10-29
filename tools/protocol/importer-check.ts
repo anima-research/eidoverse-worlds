@@ -241,8 +241,8 @@ row("IM-W1", () => {
   const sigma = kid?.water?.attenuationColor?.map((c: number) => -Math.log(c) / kid.water.attenuationDistance);
   ok(TV1.deferredFeatures(L).length === 0 && r.stats.divergences === 0 && !T.pool.water && !T.pool.zone && kid?.parent?.to === "pool" && JSON.stringify(kid.transform.pos) === "[0,-2,0]"
     && JSON.stringify(kid.zone) === JSON.stringify({ shape: "box", size: [10, 4, 10] }) && sigma?.every((x: number, i: number) => Math.abs(x - water.absorption[i]) < 1e-15) && JSON.stringify(kid.water.scatterColor) === JSON.stringify(water.scatter)
-    && JSON.stringify(kid.water.waves) === JSON.stringify(water.waves) && kid["imported:water"]?.speed === 2.4 && JSON.stringify(T.pond.zone) === JSON.stringify({ shape: "box", size: [4, 2, 4] }) && !!T.pond.water,
-    "IM-W1 a water volume on a thing with a model becomes a child at its centre with zone {box, size} + water (σ as attenuationColor e^−σ over 1 m, scatter as scatterColor, waves as they were, speed in imported:water); on a bare thing at its origin, the thing itself", { pool: T.pool, kid, pond: T.pond, mapped: r.stats.mapped });
+    && JSON.stringify(kid.water.waves) === JSON.stringify(water.waves) && kid["imported:water"] === undefined && JSON.stringify(kid["physics-area"]) === JSON.stringify({ kind: "speed", factor: 1 }) && T.pond["physics-area"] === undefined && JSON.stringify(T.pond.zone) === JSON.stringify({ shape: "box", size: [4, 2, 4] }) && !!T.pond.water,
+    "IM-W1 a water volume on a thing with a model becomes a child at its centre with zone {box, size} + water (σ as attenuationColor e^−σ over 1 m, scatter as scatterColor, waves as they were, main's speed a physics-area {kind: speed} on it, × the stroke here: @29); on a bare thing at its origin, the thing itself", { pool: T.pool, kid, pond: T.pond, mapped: r.stats.mapped });
 });
 row("IM-W2", () => {
   const q = [0, Math.sin(0.3), 0, Math.cos(0.3)];
@@ -270,12 +270,14 @@ row("IM-V1", () => {
     { actor: "Ann", verb: "spawn", args: { id: "raft", lib: "r.glb", pos: [0, 0, 0] } }, { actor: "Ann", verb: "comp", args: { id: "raft", type: "vehicle", data: { helm: [0, 0.5, 0], speed: 99, turnRate: 0 } } }]);
   const r = TV1.translate(L), T = r.final.translated, h = T[TV1.helmChildId?.("sub")], h2 = T[TV1.helmChildId?.("raft")];
   ok(r.stats.divergences === 0 && JSON.stringify(T.sub?.drive) === JSON.stringify({ maxSpeed: 4, turnRate: 0.4, climbRate: 4 }) && !("vehicle" in (T.sub ?? {}))
-    && JSON.stringify(T.sub["imported:vehicle"]) === JSON.stringify({ minY: -230, maxY: -4, probes: veh.probes })
+    && JSON.stringify(T.sub["imported:vehicle"]) === JSON.stringify({ probes: veh.probes }) && !T.raft["imported:vehicle"]
+    && [["floor", -240], ["ceiling", -4]].every(([k, y]) => { const w = T[TV1.wallChildId?.("sub", k)]; return w && w.hidden === true && !w.parent && JSON.stringify(w.collider?.blocks) === '["hulls"]' && w.transform.pos[1] === y && w.transform.pos[0] === 26 && w.transform.pos[2] === 60; })
+    && !T[TV1.wallChildId?.("raft", "floor")]
     && h?.parent?.to === "sub" && h.socket?.name === "helm" && JSON.stringify(h.transform?.pos) === JSON.stringify(veh.helm) && h.station?.action === "drive" && JSON.stringify(h.station.input) === JSON.stringify({ move: "drive" }) && h.station.leaveBy === "menu" && JSON.stringify(h.station.exit) === JSON.stringify(veh.exit)
     && JSON.stringify(T.raft?.drive) === JSON.stringify({ maxSpeed: 15, turnRate: 0.1, climbRate: 15 }) && h2 && h2.station.exit === undefined
-    && r.stats.mapped?.some((m: any) => m.component === "vehicle" && m.id === "sub" && m.into.length === 2)
-    && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "vehicle" && u.id === "sub")?.fields) === JSON.stringify(["minY", "maxY", "probes"]),
-    "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY, maxY and probes ride imported:vehicle, listed under unmapped",
+    && r.stats.mapped?.some((m: any) => m.component === "vehicle" && m.id === "sub" && m.into.length === 4)
+    && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "vehicle" && u.id === "sub")?.fields) === JSON.stringify(["probes"]),
+    "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY/maxY two hidden hull-only walls at the band (@29: the floor's top at minY, 10 m thick), probes ride imported:vehicle, listed under unmapped",
     { sub: T.sub, h, raft: T.raft, h2, mapped: r.stats.mapped, unmapped: r.stats.unmapped });
 });
 // ---- IM-C / IM-E: main #248's collision toggle, climb routes and environment, each to its home ----

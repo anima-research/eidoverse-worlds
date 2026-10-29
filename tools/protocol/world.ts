@@ -32,7 +32,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
-import { translateV1World, reportV1World, approvalProblem, makeApproval, ownerWarning, ownerRecognised, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
+import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
@@ -393,6 +393,7 @@ if (cmd === "found") {
   if (!rest.includes("--no-founder-key")) die(`translate needs --no-founder-key, said knowingly: ${NO_FOUNDER}, so the new world's tier 0 stays empty (the reserved governance draft, §13, must allow one attested fill of it later). Nothing was changed.`);
   const srcDir = path.join(WORLDS_DIR, src);
   if (!fs.existsSync(path.join(srcDir, "log.jsonl"))) die(`"${src}" holds no old log (${path.join(srcDir, "log.jsonl")}): there's nothing to translate here. Nothing was changed.`);
+  await warmHulls(srcDir);   // the vehicle hulls' boxes, measured once: the report and the translation read the same walls
   if (rest.includes("--dry-run")) { dryRun(srcDir, dest ?? src); process.exit(0); }
   const { approval, source: approvedSource } = approvalFor(srcDir, dest ?? src);
   if (process.env.WORLD_TS_TOUCH_SOURCE_AFTER_APPROVAL)   // tests only: a writer appends between the approval's read and the importer's (inplace-check IP21b)

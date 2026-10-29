@@ -70,9 +70,18 @@ report lists each one):
   (range/2)^0.3 (main's rig fell off as d^-1.7).
 - *Ranges.* A value outside the component registry's ranges is brought inside
   them and listed (`adjusted`), so the world's next edit isn't refused.
-- *Carried, with their fate said:* vehicle `minY`/`maxY` (invisible hull-only
-  walls once collision layers exist), `probes` (retired: the authority's hull
-  sweep), water `speed` (a physics-area speed factor once that exists).
+- *Vehicle bands and swim speed* (translate-v1@29, R 10-28 item 50): a
+  vehicle's `minY`/`maxY` are two hidden walls only hulls meet (`collider
+  {blocks: ['hulls']}`, 10 km square around it), set off by the hull's box as
+  this host measures it, so the hull's origin keeps main's band exactly (a hull
+  the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
+  band). One hull layer: every vehicle meets every band. Water `speed` is a
+  `physics-area {kind: 'speed'}` on the water's zone, its factor main's speed
+  over the volume stroke this protocol swims at there (2.4 m/s), so main's
+  swimmer and this one keep the same pace; it scales walking and wading in that
+  zone too, where main changed only the swim (the report says so).
+- *Carried, with their fate said:* vehicle `probes` (retired: the authority's
+  hull sweep).
 - *Sky audio* (the weather's own sounds) is `@world.sky.audio`, as main's.
 
 A report reviewed under an earlier translator is never approvable: each

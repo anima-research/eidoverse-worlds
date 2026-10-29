@@ -14,7 +14,8 @@ import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, DIALECT, VERSION
 import { unNegZero } from "../../../shared/protocol/round.js";
 // an old log's names are never ids, so a name in the hashed form is escaped too (encRaw; house 6340433633, @19)
 import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
-import { qNorm } from "../../../shared/rot.js";
+import { qNorm, qRotate } from "../../../shared/rot.js";
+import { waterParams } from "../../../shared/water.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
@@ -122,7 +123,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@26";
+export const TRANSLATOR = "eidoverse/translate-v1@29";
+// @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}),
+// set off by the hull's measured box (translate's boxOf: the host's catalogue), and its water.speed a physics-area {kind: speed} on
+// the water's zone; neither rides imported:* any more. Output differs from @26 there.
 // @26 (R 10-28): the base rung is written member, the word @17–@25 used is gone (no alias). Output differs from @25 wherever a rung is named.
 // @25 (R 10-28): main's sky.audio is @world.sky.audio (the sky takes it again), where @24 carried it as imported:sky.
 // @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
@@ -213,7 +217,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@26";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@29";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -296,7 +300,7 @@ export const DEFERRED = {};
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
-  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY, maxY, probes → imported:vehicle, listed with what becomes of each (FATES)" },
+  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only hulls meet (collider {blocks: ['hulls']}), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls span 10 km, so every vehicle meets every band; probes → imported:vehicle, listed with what becomes of it (FATES)" },
   picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
@@ -310,16 +314,30 @@ export function materialOf(d) {
 }
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
-/** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, left (no home: imported:vehicle)}; main's clamps */
-export function vehiclePartsOf(host, d) {
+/** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, walls: [[id, components]], left (no
+ *  home: imported:vehicle)}; main's clamps. `at` is the host's position: the walls span WALL_SPAN m around it */
+export function vehiclePartsOf(host, d, at = [0, 0, 0], hull = null) {
   const v = d && typeof d === "object" && !Array.isArray(d) ? d : {}, v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
-  const { helm, exit, speed, turnRate, ...rest } = v, s = clampN(speed, 0.1, 15, 4);
+  const { helm, exit, speed, turnRate, minY, maxY, ...rest } = v, s = clampN(speed, 0.1, 15, 4);
+  // main clamped the hull's origin; a wall stops the hull's box, so each wall is set off by the hull's extent (hullExtentOf)
+  const below = hull?.below ?? 0, above = hull?.above ?? 0;
+  const wall = (y, which, said) => [wallChildId(host, which), { transform: { pos: [at[0], y, at[2]], q: [0, 0, 0, 1], scale: [WALL_SPAN / 200, WALL_T, WALL_SPAN / 200] },
+    mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, clickthrough: true, collider: { shape: "box", blocks: ["hulls"] }, label: `${said} (main's vehicle ${which === "floor" ? "minY" : "maxY"})` }];
+  const walls = [...(Number.isFinite(minY) ? [wall(minY - below - WALL_T, "floor", "vehicle floor")] : []), ...(Number.isFinite(maxY) ? [wall(maxY + above, "ceiling", "vehicle ceiling")] : [])];
   const drive = { maxSpeed: s, turnRate: clampN(turnRate, 0.1, 2, 0.45), climbRate: s };   // main normalised (0, ½·rise, thrust) × speed: straight up ran at speed
   const kid = v3(helm) ? [helmChildId(host), { transform: ID_POSE([...helm]), parent: { to: host }, socket: { name: "helm" }, label: "helm",
     station: { action: "drive", input: { move: "drive" }, leaveBy: "menu", ...(v3(exit) ? { exit: [...exit] } : {}) } }] : null;   // main left the helm by its E alone: Space rises
-  const left = { ...rest, ...(kid ? {} : { helm }), ...(exit !== undefined && !v3(exit) ? { exit } : {}) };
-  return { drive, helm: kid, left };
+  const left = { ...rest, ...(kid ? {} : { helm }), ...(exit !== undefined && !v3(exit) ? { exit } : {}), ...(minY !== undefined && !Number.isFinite(minY) ? { minY } : {}), ...(maxY !== undefined && !Number.isFinite(maxY) ? { maxY } : {}) };
+  return { drive, helm: kid, walls, left };
 }
+/** How far a hull's measured box (model frame [[min], [max]]) reaches below and above its origin once posed (q, scale): {below, above} m, or null unmeasured */
+export function hullExtentOf(box, q = [0, 0, 0, 1], scale = [1, 1, 1]) {
+  if (!Array.isArray(box) || box.length !== 2 || ![...box[0], ...box[1]].every(Number.isFinite)) return null;
+  const ys = []; for (const x of [0, 1]) for (const y of [0, 1]) for (const z of [0, 1]) ys.push(qRotate(q, [box[x][0] * scale[0], box[y][1] * scale[1], box[z][2] * scale[2]])[1]);
+  return { below: Math.max(0, -Math.min(...ys)), above: Math.max(0, Math.max(...ys)) };
+}
+export const wallChildId = (host, which) => `${which}-${sha256(`eido-vehicle-${which}\0${host}`).slice(0, 26)}`;
+const WALL_SPAN = 10000, WALL_T = 10;   // m: a 10 km square, 10 m thick (a mesh is at most 200 m: the scale makes the rest)
 export const envChildId = (host, part) => `${part}-${sha256(`eido-environment\0${host}\0${part}`).slice(0, 26)}`;
 const clampN = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
 /** main's traversal {routes} → {children: [[id, components]], left (routes no climb can hold: carried on the host)} */
@@ -389,7 +407,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4} on that zone, which scales every body's speed inside it (walking and wading too, where main changed only the swim)" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform" },
 };
 export const AIR_PRIORITY = 1;
@@ -399,11 +417,13 @@ const vec3 = (v, d) => (Array.isArray(v) && v.length === 3 && v.every(Number.isF
 const ID_POSE = (pos, q = [0, 0, 0, 1]) => ({ pos, q, scale: [1, 1, 1] });
 /** main's water {center, size, absorption?, scatter?, …} → {center, zone, water} (sizes as main's waterParams reads them) */
 export function waterOfOld(d) {
-  const { center, size, absorption, scatter, ...rest } = d;
+  const { center, size, absorption, scatter, speed, ...rest } = d;
   const water = { ...rest };
+  // main's stroke in the volume, as × the one a v4 body swims at there (shared/water.js waterParams' default): a physics-area
+  const area = speed === undefined ? null : { kind: "speed", factor: clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1) };
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
-  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water };
+  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water, ...(area ? { area } : {}) };
 }
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
@@ -412,8 +432,9 @@ export function volumePartsOf(host, comp, c) {
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
     const m = waterOfOld(w);
-    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water });
-    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water }]);
+    const a = m.area ? { "physics-area": m.area } : {};
+    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
+    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
   }
   const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
   boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
@@ -438,7 +459,7 @@ export function carriedMappings(st) {
   { const x = grassExtras(st?.grass); if (x.length) out.push({ component: "grass", feature: "createFlora options the field has no field for (main passed them on)", id: "@world", into: ["@world.grass.strokes[0]"], fields: x }); }
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) out.push({ component: "traversal", feature: CARRIED.traversal.feature, id, into: climbPartsOf(enc(id), comp.traversal).children.map(([cid]) => cid) });
-    if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : [])] }); }
+    if (comp.vehicle != null) { const v = vehiclePartsOf(enc(id), comp.vehicle); out.push({ component: "vehicle", feature: CARRIED.vehicle.feature, id, into: [enc(id), ...(v.helm ? [v.helm[0]] : []), ...v.walls.map(([w]) => w)] }); }
     if (comp.collision != null) out.push({ component: "collision", feature: CARRIED.collision.feature, id, into: comp.collision?.enabled === false ? [enc(id)] : [] });
     if (comp.picture != null && materialOf(comp.picture).material) out.push({ component: "picture", feature: CARRIED.picture.feature, id, into: [enc(id)] });
     if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] });
@@ -448,10 +469,7 @@ export function carriedMappings(st) {
 }
 /** What becomes of a carried field this protocol retires (R 10-28, item 50): plain words for the report, never a silent carry. */
 export const FATES = {
-  "vehicle.minY": "carried for now; once collision layers exist (collider {blocks}) it becomes an invisible wall below the vehicle that only its hull meets",
-  "vehicle.maxY": "carried for now; once collision layers exist (collider {blocks}) it becomes an invisible wall above the vehicle that only its hull meets",
   "vehicle.probes": "retired: the authority's hull sweep (authority/drive.js) does what the probes did; carried only as the record",
-  "water.speed": "carried for now; once physics-area exists it becomes a speed factor on the water's zone (physics-area {kind: speed}), against the body's own swim speed",
 };
 /** What of them has no home here, carried as imported:<component> on its thing: [{component, id, fields, as}] */
 export function unmappedOf(st) {
@@ -460,8 +478,6 @@ export function unmappedOf(st) {
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const comp = st.entities[id]?.comp ?? {};
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
     if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle`, ...fatesOf("vehicle", f) }); }
-    if (comp.water && typeof comp.water === "object" && !Array.isArray(comp.water) && comp.water.speed !== undefined) { const into = volumePartsOf(enc(id), { water: comp.water }, {}).own.water ? enc(id) : waterChildId(enc(id));
-      out.push({ component: "water", id, fields: ["speed"], as: `${into} imported:water`, ...fatesOf("water", ["speed"]) }); }
     for (const p of particlesPlan(id, comp)) if (p.carried.length) out.push({ component: "particles", id, ...(p.emitter ? { emitter: p.emitter } : {}), fields: p.carried.map((c) => c.field), as: `${p.host} imported:particles`, why: p.carried.map((c) => `${c.field}: ${c.why}`).join("; ") });
     if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); }
     if (comp.picture != null) { const m = materialOf(comp.picture);
@@ -752,11 +768,11 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     else if (carried.collision !== undefined) c[keyed("imported", "collision")] = carried.collision;
     const climbs = carried.traversal !== undefined ? climbPartsOf(enc(id), carried.traversal) : { children: [], left: [] };
     if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
-    const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle) : null;
+    const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle, t.pos, hullExtentOf(col?.boxOf?.(e.lib), t.q, t.scale)) : null;
     if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left; }
     const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
     out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
-    for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : [])]) out[cid] = shapeRepaired(cc);
+    for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : []), ...(veh?.walls ?? [])]) out[cid] = shapeRepaired(cc);
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       const p = particlesOf(seeded, ""); if (p.doc) effects?.set(p.effect, p.doc); for (const a of p.adjusted) adjust(emitterChildId(enc(id), name), "particles", a.field, a.was, a.now, a.why);
@@ -888,7 +904,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
@@ -966,7 +982,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
   const effects = new Map(), adjusted = new Map();   // every derived particle effect any state named (world.ts stores each); every value brought to spec
-  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr, { effects, adjusted }), dynamic);
+  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr, { effects, adjusted, boxOf }), dynamic);
   const stepTo = (tick) => { // single steps while anything flies, so each rest's real tick is known
     while (sim.epoch && !sim.epoch.foreign && sim.tick < tick) {
       const flying = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -1025,5 +1041,5 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   stats.rights = mainRights(v1).report; if (effects.size) stats.effects = [...effects.keys()].sort();
   if (adjusted.size) stats.adjusted = [...adjusted.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : `${a.component}.${a.field}` < `${b.component}.${b.field}` ? -1 : 1));
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr, { boxOf }), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }
