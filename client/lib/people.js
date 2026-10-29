@@ -16,7 +16,7 @@ import { CONFIG, bus, report } from './base.js';
 import { net, identities, guests, sendRequest, replica } from './net.js';
 import { contextMenu, closeContextMenu } from './panels.js';
 import * as R from '../../shared/protocol/roles.js';
-import { listOf, setListed } from './consent.js';
+import { listOf, setListed, BLOCK_FOLLOW_WORDS } from './consent.js';
 
 let deps = { mentionPerson: () => {}, presenting: () => false, openModLog: () => {}, toast: () => {} };
 export function initPeople(d) { deps = { ...deps, ...d }; }
@@ -158,7 +158,7 @@ function listPerson(item, display) {
   const list = LIST_ITEMS.find(([k]) => k === item)?.[1] ?? null;
   const changed = setListed(them.id, list, display, { guest: them.anon });
   const visit = them.anon && list ? ' — for this visit: a guest has no account to remember them by, so it ends when they leave (your gates cover everyone)' : '';   // review full-260 #2
-  if (changed) deps.toast((list === 'allow' ? `${display} may always do things with your body, whatever your switches say` : list === 'block' ? `${display} may never do anything with your body` : `your switches answer ${display} again`) + visit, 'info', visit ? 8000 : undefined);
+  if (changed) deps.toast((list === 'allow' ? `${display} may always do things with your body, whatever your switches say` : list === 'block' ? `${display} may never do anything with your body${them.anon ? '' : `: ${BLOCK_FOLLOW_WORDS}`}` : `your switches answer ${display} again`) + visit, 'info', visit ? 8000 : undefined);
   bus.emit('roster');
   return changed;
 }

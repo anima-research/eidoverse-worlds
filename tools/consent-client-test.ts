@@ -199,5 +199,10 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   const H = await fresh('h', { 'ew-body-consent': JSON.stringify(aged) }); H.useWorld('d'); const Wd = auth(); setConsent(Wd.P, 'me', { allow: 'u-y' }); await syncer(H, Wd).sync();
   check('L9i …and stops following after BLOCK_FOLLOW_MS, as a block does', !Wd.sent.some((a) => a.unlist), JSON.stringify(Wd.sent)); }
 
+// review delta-260 L-F: a block's 30 days are said where the lists are (Settings ▸ body, and the toast when I block someone)
+{ const fs = await import('node:fs'), w = String((C as any).BLOCK_FOLLOW_WORDS ?? '');
+  check('L-F the panel and the toast say a block follows into other worlds for 30 days', /30 days/.test(w) && C.BLOCK_FOLLOW_MS === 30 * 86_400_000
+    && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../client/lib/consentpanel.js', import.meta.url), 'utf8')) && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../client/lib/people.js', import.meta.url), 'utf8')), w); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

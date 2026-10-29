@@ -27,6 +27,8 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
  *  ('0' off) and ew-posable → touch ('1' on), each only if that key is present. A stored list from before the queue: its
  *  blocks follow as queued blocks, its unlists follow too but only take someone off allow (never wider), its allows stay where they landed. */
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
+/** what the panel and the toast say of it (review delta-260 L-F) */
+export const BLOCK_FOLLOW_WORDS = `it follows you into the worlds you enter in the next ${BLOCK_FOLLOW_MS / 86_400_000} days; where it has landed, it stays until you remove it`;
 const OPS = ['allow', 'block', 'unlist'];
 /** a change that follows me into every world until BLOCK_FOLLOW_MS: a block, or an unlist from before the queue (its world unknown: it only ever takes someone off allow; review delta-260 #2) */
 const follows = (q) => q.op === 'block' || (q.op === 'unlist' && q.world === null);

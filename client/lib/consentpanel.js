@@ -3,9 +3,9 @@
 // (R 10-28). The lists are set from People Here (right-click a person: people.js). The authority decides every act on
 // my body by these (PROTOCOL §5); consentsync sends them. Same .row.wide / .nm / .ctl markup as the video and audio sections (index.html owns it).
 import { makeSection, flashHint } from './ui.js';
-import { GATES, GATE_WORDS, gate, setGate, listed, setListed, onConsentChange, onHeldChange } from './consent.js';
+import { GATES, GATE_WORDS, BLOCK_FOLLOW_WORDS, gate, setGate, listed, setListed, onConsentChange, onHeldChange } from './consent.js';
 
-const LISTS = [['allow', 'Always allowed', 'always yes, whatever the switches say'], ['block', 'Never allowed', 'always no, whatever the switches say']];
+const LISTS = [['allow', 'Always allowed', 'always yes, whatever the switches say'], ['block', 'Never allowed', `always no, whatever the switches say; ${BLOCK_FOLLOW_WORDS}`]];
 
 export function initConsentPanel() {
   makeSection('🧍 body', (body) => {
@@ -29,6 +29,7 @@ export function initConsentPanel() {
         const people = listed(list); if (!people.length) continue;
         const head = document.createElement('div'); head.className = 'row wide';
         const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = title; nm.title = says; head.append(nm); lists.append(head);
+        if (list === 'block') { const note = document.createElement('div'); note.className = 'row wide'; note.dataset.note = 'block-follow'; note.textContent = `(${BLOCK_FOLLOW_WORDS})`; lists.append(note); }
         for (const p of people) {
           const row = document.createElement('div'); row.className = 'row wide'; row.dataset.list = list; row.dataset.id = p.id;
           const who = document.createElement('span'); who.className = 'nm'; who.textContent = p.visit ? `${p.name} (this visit)` : p.name; who.title = p.visit ? `${p.id}: a guest, kept until they leave` : p.id;
