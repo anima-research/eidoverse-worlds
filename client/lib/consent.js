@@ -17,18 +17,30 @@ const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return nu
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([id, n]) => typeof id === 'string' && typeof n === 'string')) : {});
 
-/** What is stored: {move?, touch?, allow: {id: name}, block: {id: name}, unlist: [id]}; a gate absent = never chosen (the
- *  world's default answers, F2b), unlist = the people I took off a list here (the only ones sync unlists, F2a). A setting
- *  kept under an older key is carried into the gates silently (R 10-28 13:03: "we're keeping their gates"), and written
- *  under KEY on first read. Never broader than it was: the body switch's refuse or ask → both off (F3, R 10-28 16:02), accept →
- *  move on and touch as main's ew-posable stored it (else off); with no switch, main's ew-pushable → move ('0' off) and
- *  ew-posable → touch ('1' on), each only if that key is present. */
-export function readStored(get = lsGet) {
+/** What is stored: {move?, touch?, allow: {id: name}, block: {id: name}, queue: [{op, id, name, at, world, acked}]}; a gate
+ *  absent = never chosen (the world's default answers, F2b). allow/block are my lists as last seen (the authority's, which
+ *  is the source: review full-260 L9); `queue` is my own changes not yet landed, drained as they land (consentsync). A block
+ *  follows me into every world for BLOCK_FOLLOW_MS (narrower); an allow or an unlist lands only in the world it was made in
+ *  (wider). A setting kept under an older key is carried into the gates silently (R 10-28 13:03: "we're keeping their gates"),
+ *  and written under KEY on first read. Never broader than it was: the body switch's refuse or ask → both off (F3, R 10-28
+ *  16:02), accept → move on and touch as main's ew-posable stored it (else off); with no switch, main's ew-pushable → move
+ *  ('0' off) and ew-posable → touch ('1' on), each only if that key is present. A stored list from before the queue: its
+ *  blocks follow as queued blocks, its unlists land once in the next world, its allows stay where they landed. */
+export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
+const OPS = ['allow', 'block', 'unlist'];
+const liveOp = (q, now) => q && OPS.includes(q.op) && typeof q.id === 'string' && Number.isFinite(q.at) && (q.op !== 'block' || now - q.at < BLOCK_FOLLOW_MS);
+export function readStored(get = lsGet, now = Date.now()) {
   let raw = null; try { raw = JSON.parse(get(KEY) ?? 'null'); } catch { /* unreadable: as never chosen */ }
   const bool = (v) => (typeof v === 'boolean' ? v : undefined);
-  if (raw && raw.v === CONSENT_SHAPE) return { move: bool(raw.move), touch: bool(raw.touch), allow: plainList(raw.allow), block: plainList(raw.block), unlist: Array.isArray(raw.unlist) ? raw.unlist.filter((id) => typeof id === 'string') : [] };
+  if (raw && raw.v === CONSENT_SHAPE) {
+    const allow = plainList(raw.allow), block = plainList(raw.block);
+    const queue = Array.isArray(raw.queue) ? raw.queue.filter((q) => liveOp(q, now)).map((q) => ({ op: q.op, id: q.id, name: String(q.name ?? q.id), at: q.at, world: typeof q.world === 'string' ? q.world : null, acked: Array.isArray(q.acked) ? q.acked.filter((w) => typeof w === 'string') : [] }))
+      : [...Object.entries(block).map(([id, name]) => ({ op: 'block', id, name, at: now, world: null, acked: [] })),
+        ...(Array.isArray(raw.unlist) ? raw.unlist.filter((id) => typeof id === 'string') : []).map((id) => ({ op: 'unlist', id, name: id, at: now, world: null, acked: [] }))];
+    return { move: bool(raw.move), touch: bool(raw.touch), allow, block, queue };
+  }
   const sw = get('ew-body-switch'), pushable = get('ew-pushable'), posable = get('ew-posable');
-  const state = { move: undefined, touch: undefined, allow: {}, block: {}, unlist: [] };
+  const state = { move: undefined, touch: undefined, allow: {}, block: {}, queue: [] };
   if (sw === 'refuse' || sw === 'ask') { state.move = false; state.touch = false; }
   else if (sw === 'accept') { state.move = true; state.touch = posable === '1'; }
   else { if (pushable !== null) state.move = pushable !== '0'; if (posable !== null) state.touch = posable === '1'; }
@@ -36,46 +48,74 @@ export function readStored(get = lsGet) {
 }
 
 let current = readStored();
-const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, ...current }));
+// a guest's id is minted per connection, so their entries last for the visit: in memory only, never stored (review full-260 #2)
+const guests = new Set();
+const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, move: current.move, touch: current.touch,
+  allow: Object.fromEntries(Object.entries(current.allow).filter(([id]) => !guests.has(id))), block: Object.fromEntries(Object.entries(current.block).filter(([id]) => !guests.has(id))),
+  queue: current.queue.filter((q) => !guests.has(q.id)) }));
 save();
-// a guest's entries: a guest's id is minted per connection, so they last for the visit, in memory only (review full-260 #2)
-let visit = { allow: {}, block: {}, unlist: [] };
 const listeners = new Set();
 const changed = () => { save(); for (const fn of listeners) fn(current); };
+let world = '';
+/** the world this page syncs with (its authority's lists are the ones shown and sent to) */
+export function useWorld(name) { world = String(name ?? ''); }
 
 /** a gate as it shows: what I chose, else the built-in default (the world's own default is the authority's to apply) */
 export const gate = (g) => (current[g] ?? DEFAULT_GATES[g]) === true;
 export function setGate(g, on) { if (!GATES.includes(g) || current[g] === !!on) return false; current = { ...current, [g]: !!on }; changed(); return true; }
-// the lists this world's authority holds for me (consentsync's read; per world, never stored), shown beside mine so a block
-// it migrated can be seen and removed (F2 follow-up)
-let held = { allow: [], block: [] };
+// the lists this world's authority holds for me (consentsync's read; per world): the source, which my lists then show
+let held = null;
 const heldListeners = new Set();
+const nameOf = (id) => current.allow[id] ?? current.block[id] ?? current.queue.find((q) => q.id === id)?.name ?? id;
 export function noteHeld(t) { const next = { allow: Array.isArray(t?.allow) ? [...t.allow] : [], block: Array.isArray(t?.block) ? [...t.block] : [] };
-  if (JSON.stringify(next) === JSON.stringify(held)) return; held = next; for (const fn of heldListeners) fn(); }
+  const same = JSON.stringify(next) === JSON.stringify(held); held = next;
+  const allow = Object.fromEntries(next.allow.map((id) => [id, nameOf(id)])), block = Object.fromEntries(next.block.map((id) => [id, nameOf(id)]));
+  if (JSON.stringify([allow, block]) !== JSON.stringify([current.allow, current.block])) { current = { ...current, allow, block }; save(); }
+  if (!same) for (const fn of heldListeners) fn(); }
 export function onHeldChange(fn) { heldListeners.add(fn); return () => heldListeners.delete(fn); }
-/** the authority's word on a person I never listed or unlisted here */
-const mine = (id) => Object.hasOwn(current.allow, id) || Object.hasOwn(current.block, id) || current.unlist.includes(id) || Object.hasOwn(visit.allow, id) || Object.hasOwn(visit.block, id) || visit.unlist.includes(id);
-const heldOf = (id) => (mine(id) ? null : held.block.includes(id) ? 'block' : held.allow.includes(id) ? 'allow' : null);
-/** a person's list: 'allow' | 'block' | null (neither: the gates answer them); mine first, else the authority's */
-export const listOf = (id) => (Object.hasOwn(current.block, id) || Object.hasOwn(visit.block, id) ? 'block' : Object.hasOwn(current.allow, id) || Object.hasOwn(visit.allow, id) ? 'allow' : heldOf(id));
-const without = (t, id) => { const allow = { ...t.allow }, block = { ...t.block }; delete allow[id]; delete block[id]; return { ...t, allow, block, unlist: t.unlist.filter((x) => x !== id) }; };
+/** my change still to land in this world, if any */
+const pendingOf = (id) => current.queue.find((q) => q.id === id && !q.acked.includes(world) && (q.op === 'block' || q.world === world || q.world === null));
+/** a person's list: 'allow' | 'block' | null (neither: the gates answer them); my change not yet landed here first, else the
+ *  authority's (or, before its first read, my lists as last seen) */
+export function listOf(id) {
+  const p = pendingOf(id); if (p) return p.op === 'unlist' ? null : p.op;
+  const l = held ?? { allow: Object.keys(current.allow), block: Object.keys(current.block) };
+  return l.block.includes(id) ? 'block' : l.allow.includes(id) ? 'allow' : null;
+}
 /** put a person on a list ('allow' | 'block') or take them off both (null). `name` is how the list shows them; a `guest`'s
  *  entry is for this visit only (never stored). */
 export function setListed(id, list, name = id, { guest = false } = {}) {
   if (typeof id !== 'string' || !id || !['allow', 'block', null].includes(list)) return false;
-  if (listOf(id) === list && (!list || (guest ? visit : current)[list][id] === name)) return false;
-  current = without(current, id); visit = without(visit, id);
-  const where = guest ? visit : current;
-  if (list) where[list][id] = String(name); else where.unlist.push(id);
-  changed(); return true;
+  if (listOf(id) === list && (!list || nameOf(id) === name)) return false;
+  if (guest) guests.add(id);
+  const allow = { ...current.allow }, block = { ...current.block }; delete allow[id]; delete block[id];
+  if (list) (list === 'allow' ? allow : block)[id] = String(name);
+  const queue = [...current.queue.filter((q) => q.id !== id), { op: list ?? 'unlist', id, name: String(name), at: Date.now(), world, acked: [] }];
+  current = { ...current, allow, block, queue }; changed(); return true;
+}
+/** consentsync: my change for `id` (`op`) holds in this world now. An allow or unlist is drained; a block is marked landed
+ *  here and keeps following until BLOCK_FOLLOW_MS. */
+export function landed(op, id) {
+  const now = Date.now();
+  const queue = current.queue.flatMap((q) => (q.id !== id || q.op !== op ? [q] : op === 'block' ? [{ ...q, acked: [...new Set([...q.acked, world])] }] : [])).filter((q) => liveOp(q, now));
+  if (held) { held = { allow: held.allow.filter((x) => x !== id), block: held.block.filter((x) => x !== id) }; if (op !== 'unlist') held[op].push(id); }
+  const allow = { ...current.allow }, block = { ...current.block }; delete allow[id]; delete block[id]; if (op !== 'unlist') (op === 'allow' ? allow : block)[id] = nameOf(id);
+  current = { ...current, allow, block, queue }; save();
 }
 /** drop an identity no one wears any more (the server's "gone"), from storage too, with nothing sent */
-export function forget(id) { if (!mine(id)) return false; current = without(current, id); visit = without(visit, id); changed(); return true; }
-/** a list as [{id, name}], for the panel: mine, then the authority's that I never listed or unlisted here (named by id) */
-export const listed = (list) => [...Object.entries(current[list] ?? {}).map(([id, name]) => ({ id, name })), ...Object.entries(visit[list] ?? {}).map(([id, name]) => ({ id, name, visit: true })), ...(held[list] ?? []).filter((id) => heldOf(id) === list).map((id) => ({ id, name: id }))];
+export function forget(id) {
+  if (!(id in current.allow) && !(id in current.block) && !current.queue.some((q) => q.id === id)) return false;
+  const allow = { ...current.allow }, block = { ...current.block }; delete allow[id]; delete block[id];
+  if (held) held = { allow: held.allow.filter((x) => x !== id), block: held.block.filter((x) => x !== id) };
+  current = { ...current, allow, block, queue: current.queue.filter((q) => q.id !== id) }; changed(); return true;
+}
+/** a list as [{id, name}] for the panel (a guest's marked visit: true) */
+export const listed = (list) => [...new Set([...Object.keys(current.allow), ...Object.keys(current.block), ...(held?.allow ?? []), ...(held?.block ?? []), ...current.queue.map((q) => q.id)])]
+  .filter((id) => listOf(id) === list).map((id) => ({ id, name: nameOf(id), ...(guests.has(id) ? { visit: true } : {}) }));
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-/** what consentsync sends: the gates I chose (undefined = never chosen), the lists' identities, and who I unlisted */
-export const bodyTable = () => ({ move: current.move, touch: current.touch, allow: [...Object.keys(current.allow), ...Object.keys(visit.allow)], block: [...Object.keys(current.block), ...Object.keys(visit.block)], unlist: [...current.unlist, ...visit.unlist] });
+/** what consentsync sends to this world: the gates I chose (undefined = never chosen) and my changes not yet landed here */
+export const bodyTable = () => { const now = Date.now(), mine = (op) => current.queue.filter((q) => q.op === op && liveOp(q, now) && pendingOf(q.id) === q).map((q) => q.id);
+  return { move: current.move, touch: current.touch, allow: mine('allow'), block: mine('block'), unlist: mine('unlist') }; };
 
 export const pushable = () => gate('move');
 export const posable = () => gate('touch');

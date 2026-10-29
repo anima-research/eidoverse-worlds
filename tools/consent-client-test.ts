@@ -167,5 +167,27 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   check('a stored id the server says is gone is pruned from storage, with no failure toast', !(store.get('ew-body-consent') ?? '').includes('u-dead') && C.listOf('u-dead') === null && !C.bodyTable().unlist.includes('u-dead') && toasts.length === 0 && !s.failing(), JSON.stringify({ toasts, st: store.get('ew-body-consent') }));
   sent.length = 0; await s.sync(); check('…and is not sent again', !sent.some((a) => a.block === 'u-dead'), JSON.stringify(sent)); }
 
+// review full-260 L9: the authority's lists are the source; local keeps a queue of my own changes, drained as they land.
+// Two devices no longer overwrite each other's lists on arrival, and an unlist isn't kept and replayed forever. A block
+// (narrower) follows me into other worlds for BLOCK_FOLLOW_MS; an allow or unlist (wider) lands only in the world I made it
+// in. Mutation: replay the whole local list (the old sync), never drain an unlist, or stop a block following.
+{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../client/lib/consent.js?dev=${tag}`); };
+  const auth = (P: any = { consent: Object.create(null) }) => { const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; };
+  const syncer = (D: any, A: any) => makeConsentSync({ table: D.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: D.noteHeld, landed: D.landed, gone: D.forget });
+  // device B was told "always allow X" long ago (stored, before queues); device A since blocked X in this world
+  const B = await fresh('b', { 'ew-body-consent': JSON.stringify({ v: 4, allow: { 'u-xxx': 'X' }, block: {}, unlist: ['u-old'] }) }); B.useWorld('w1');
+  const A1 = auth(); setConsent(A1.P, 'me', { block: 'u-xxx' }); setConsent(A1.P, 'me', { allow: 'u-old' }); await syncer(B, A1).sync();
+  check('L9a a second device\'s stale allow does not overwrite the block the world holds (no allow sent), and it shows the world\'s block', !A1.sent.some((a) => a.allow === 'u-xxx') && tableOf(A1.P, 'me').block.includes('u-xxx') && B.listOf('u-xxx') === 'block', JSON.stringify({ sent: A1.sent, l: B.listOf('u-xxx') }));
+  check('L9b …and a stored unlist from before lands once, in the first world, then is not kept to replay forever', A1.sent.filter((a) => a.unlist === 'u-old').length === 1 && !tableOf(A1.P, 'me').allow.includes('u-old') && !(store.get('ew-body-consent') ?? '').includes('u-old'), JSON.stringify({ sent: A1.sent, st: store.get('ew-body-consent') }));
+  const D = await fresh('d'); D.useWorld('w1'); const W1 = auth(); const s1 = syncer(D, W1);
+  D.setListed('u-yyy', 'block', 'Y'); D.setListed('u-zzz', 'allow', 'Z'); await s1.sync(); D.setListed('u-zzz', null); await s1.sync();
+  check('L9c my own changes land, then drain: the unlist is sent once and not kept', W1.sent.filter((a) => a.unlist === 'u-zzz').length === 1 && !tableOf(W1.P, 'me').allow.includes('u-zzz') && !D.bodyTable().unlist.includes('u-zzz') && !(store.get('ew-body-consent') ?? '').includes('"unlist":["u-zzz"'), JSON.stringify({ sent: W1.sent, t: D.bodyTable() }));
+  W1.sent.length = 0; await s1.sync(); check('L9d …and a synced world is sent nothing again', W1.sent.length === 1, JSON.stringify(W1.sent));
+  D.setListed('u-zzz', 'allow', 'Z'); await s1.sync(); D.useWorld('w2'); const W2 = auth(); setConsent(W2.P, 'me', { allow: 'u-ppp' }); await syncer(D, W2).sync();
+  check('L9e in another world, my block follows me (narrower), my allow does not (wider), and its own lists stand', tableOf(W2.P, 'me').block.includes('u-yyy') && !tableOf(W2.P, 'me').allow.includes('u-zzz') && tableOf(W2.P, 'me').allow.includes('u-ppp') && !W2.sent.some((a) => a.unlist), JSON.stringify({ sent: W2.sent, t: tableOf(W2.P, 'me') }));
+  const old = JSON.parse(store.get('ew-body-consent') ?? '{}'); for (const q of old.queue ?? []) q.at -= 31 * 86_400_000;
+  const E = await fresh('e', { 'ew-body-consent': JSON.stringify(old) }); E.useWorld('w3'); const W3 = auth(); await syncer(E, W3).sync();
+  check('L9f a block older than BLOCK_FOLLOW_MS has stopped following (the queue is bounded)', !W3.sent.some((a) => a.block === 'u-yyy') && !(store.get('ew-body-consent') ?? '').includes('"queue":[{'), JSON.stringify({ sent: W3.sent, st: store.get('ew-body-consent') })); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
