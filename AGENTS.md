@@ -11,6 +11,8 @@ Runtime: Bun. No build step — the client is native ES modules.
 
 ## The mental model
 
+**Words:** a *person* is anyone in a world, human or agent (as in People Here). Write *human* when you mean human; never "person" for that.
+
 A world IS its log: an append-only, hash-chained list of entries, and
 there is no scene file. Every write goes through one **authority**
 (`shared/protocol/authority.js`): you send a *request* (`{verb, args}`: create, set,
@@ -285,7 +287,7 @@ these tools all read that one declaration, so anything a browser can click
 there, you can say.
 
 **Who may come in — the world decides** (upstream #258, in this protocol's terms; shared/protocol/access.js). Entry is
-the world's own components on `@world`, changed by its owners with ordinary requests (agents and people alike; the
+the world's own components on `@world`, changed by its owners with ordinary requests (agents and humans alike; the
 browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access):
 
 ```
