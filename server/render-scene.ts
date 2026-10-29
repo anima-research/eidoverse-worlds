@@ -12,7 +12,8 @@ import { since } from "../client/lib/motioneval.js";
 import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
-import { waterParams, vector, MAX_AIR } from "../shared/water.js";
+import { waterParams } from "../shared/water.js";
+import { absorptionOf } from "../shared/zone.js";
 import { resolveParticles } from "../shared/particle_effects.js";
 import { normalizePicture } from "../shared/picture.js";
 import { normalizeSound } from "../shared/sound.js";
@@ -66,9 +67,11 @@ export function projectEnvironment(state: any) {
     sky: state.sky ?? null, grass: state.grass ?? null, flora: projectFlora(state.grass,height) };
 }
 
-// Renderer-facing component parameters (tools/water/README.md). Water is
-// normalized by the same law the browser uses; the rest pass through bounded.
-const PASS_THROUGH = ["environment", "vehicle", "traversal", "collision"] as const;
+// Renderer-facing component parameters (tools/water/README.md), in the shapes main's native renderer read, projected from
+// v4's components (translate-v1.js VOLUMES / CARRIED, inverted; review L24): zone+water, zone+water-exclusion, drive, climb, collider.
+const PASS_THROUGH = ["environment"] as const;
+const zoneBox = (z: any) => z?.shape === "box" && z.global !== true && Array.isArray(z.size) && z.size.length === 3 && z.size.every(Number.isFinite) ? z.size.map(Math.abs) : null;
+const num = (x: unknown, d: number) => (Number.isFinite(x) ? x as number : d);
 export function projectComponentData(comp: any, entityId = "") {
   const data: Record<string, unknown> = {};
   // Presentation components, normalized by the same shared laws the browser uses
@@ -85,11 +88,18 @@ export function projectComponentData(comp: any, entityId = "") {
     else if (k === "motion" && typeof (v as any).part === "string") parts[(v as any).part.slice(0, 64)] = v;
   }
   if (Object.keys(parts).length) data.parts = Object.fromEntries(Object.entries(parts).slice(0, 32));
-  if (comp?.water) { const { center, size, absorption, scatter, speed, waves } = waterParams(comp.water);
+  // a water body is its zone's box in its own frame, the surface at water.level (shared/zone.js zonesOf, unscaled)
+  const box = zoneBox(comp?.zone), w = comp?.water;
+  if (box && w && typeof w === "object") { const bottom = -box[1] / 2, top = Number.isFinite(w.level) ? Math.max(bottom, Math.min(box[1] / 2, w.level)) : box[1] / 2;
+    const { center, size, absorption, scatter, speed, waves } = waterParams({ center: [0, (top + bottom) / 2, 0], size: [box[0], top - bottom, box[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor });
     data.water = { center, size, absorption, scatter, speed, waves }; }
-  if (Array.isArray(comp?.air?.boxes)) data.air = { boxes: comp.air.boxes.slice(0, MAX_AIR).map((b: any) => {
-    const q = Array.isArray(b?.q) && b.q.length === 4 && b.q.every(Number.isFinite) ? b.q : [0, 0, 0, 1];
-    return { center: vector(b?.center), size: vector(b?.size, [1, 1, 1]).map(Math.abs), q }; }) };
+  const dry = comp?.["water-exclusion"];
+  if (box && dry && typeof dry === "object") data.air = { boxes: [{ center: [0, 0, 0], size: box, q: [0, 0, 0, 1] }], ...(Array.isArray(dry.bodies) ? { bodies: dry.bodies.slice(0, 16) } : {}) };
+  const d = comp?.drive;   // the helm is its own thing (socket "helm" + station {action: "drive"}), projected as itself
+  if (d && typeof d === "object") data.vehicle = { speed: num(d.maxSpeed, 4), turnRate: num(d.turnRate, 0.45), climbRate: num(d.climbRate, num(d.maxSpeed, 4)) };
+  const cl = comp?.climb;   // one route per climb thing, in its own frame
+  if (cl && typeof cl === "object" && Array.isArray(cl.points)) data.traversal = { routes: [{ path: cl.points.slice(0, 16), radius: num(cl.reach, 1.4), speed: num(cl.speed, 1.3), ...(typeof comp.label === "string" ? { name: comp.label } : {}) }] };
+  if (comp?.collider?.enabled === false) data.collision = { enabled: false };
   for (const k of PASS_THROUGH) if (comp?.[k] && typeof comp[k] === "object") {
     if (JSON.stringify(comp[k]).length > 16384) throw Error(`component ${k} exceeds native budget`);
     data[k] = comp[k];
