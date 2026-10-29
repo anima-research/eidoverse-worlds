@@ -38,6 +38,8 @@ import { isOwner } from "../shared/protocol/roles.js";
  *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
  *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
 const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+/** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy (review full-260 #1). */
+const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
 
 /** Body consent at the server (PROTOCOL §5; tools audit 10-07 "Body consent"): a presence act on someone else's body is
  *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js: their lists, then the gate
@@ -48,7 +50,7 @@ function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"):
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
-  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls);
+  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, liveBodyDefault(live));
   if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause (a closed gate, a block): the real cause is theirs, not yours; they are told (once per asker per cooldown)
   // a range only where the world sets one (@world.body-default.range; R 10-28 13:44): m between the two bodies' last frames
   const r = bodyRangeOf(live.state?.()?.entities?.["@world"]?.c?.["body-default"]); if (r == null) return null;
@@ -225,7 +227,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const live = c.world.log?.live;
       if (!live || !c.actorId || !tc.actorId) { if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` })); if (endAlone()) return; }
       else {
-      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace");
+      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
       if (d.mode === "deny") {
         if (nail) ws.send(JSON.stringify({ type: "error", error: refusalWords(tc.id, "displace") }));
         if (endAlone()) return;

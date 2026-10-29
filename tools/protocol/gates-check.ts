@@ -36,6 +36,20 @@ const modes = (p: any, wd?: unknown) => Object.fromEntries([...MOVE, ...TOUCH].m
 { const p = P(); set(p, { move: true }); check("W4", "my move on beats a world default of move off", all(p, MOVE, "allow", { move: false })); }
 { const p: any = P(); p.bodyDefault = { move: false, touch: true }; check("W5", "the authority's synced world default applies when the caller passes none", C.decide(p, "pal", "me", "shove").mode === "deny" && C.decide(p, "pal", "me", "pose").mode === "allow"); }
 { const g = ["refuse", "ask", "accept"].map((v) => C.worldGates(v)); check("W6", "a stored world default in the switch's words reads as a person's stored switch does: refuse and ask → both off, accept → move on (touch its default)", JSON.stringify(g) === JSON.stringify([{ move: false, touch: false }, { move: false, touch: false }, { move: true }]), g); }
+// ---- R: the relay (server/messages.ts) reads the live @world.body-default, never a stale copy (review full-260 #1) ----
+{ process.env.WORLDS_DIR ??= require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/gates-relay-"); process.env.JOIN_TOKEN ??= "test-door";
+  const { MESSAGES } = await import("../../server/messages.ts");
+  const relay = (live: any, verb: string, msg: any) => { const got: string[] = [], err: string[] = [];
+    const tc: any = { id: "bea", actorId: "u-bbbbbbbbbbbbbbbbbbbb", ws: { send: (s: string) => got.push(s) } };
+    const c: any = { id: "al", actorId: "u-aaaaaaaaaaaaaaaaaaaa", world: { clients: new Set<any>(), log: { live, noteRefused: () => {} } } }; c.world.clients.add(c).add(tc);
+    MESSAGES[verb]({ c, ws: { send: (s: string) => err.push(s) }, now: Date.now(), expel: () => {} } as any, { type: verb, targetActor: tc.actorId, ...msg }); return { got: got.length, err: err.length }; };
+  const live = (bd: unknown, stale?: unknown) => ({ presence: { consent: Object.create(null), ...(stale !== undefined ? { bodyDefault: stale } : {}) }, state: () => ({ entities: { "@world": { c: bd === undefined ? {} : { "body-default": bd } } } }) });
+  const a = relay(live({ move: false }), "puppet", { ragdoll: true }), b = relay(live({ move: false }), "bodydrag", { grab: { j: "hips" } });
+  check("R1", "a fresh body-default {move: false}, no body verb since: a puppet knock-over and a bodydrag grab are refused, not forwarded", a.got === 0 && a.err === 1 && b.got === 0 && b.err === 1, { a, b });
+  const e = relay(live(undefined, { touch: true }), "puppet", { anim: "wave" });
+  check("R2", "a body-default removed since the last sync: the stale {touch: true} doesn't open a pose", e.got === 0 && e.err === 1, e);
+  const f = relay(live({ move: true }), "puppet", { ragdoll: true });
+  check("R3", "…and a world that leaves move on still forwards the knock-over", f.got === 1 && f.err === 0, f); }
 // ---- S: the shape; only the owner ----
 { const p = P(); const r = set(p, { move: "yes" }); check("S1", "a gate is true or false; anything else is refused and changes nothing", !r.ok && r.code === "shape" && !p.consent.me, r); }
 { const p = P(); const bad = ["switch", "deny", "class", "for", "answer"].map((k) => set(p, { [k]: k === "switch" ? "refuse" : "pal" }));
