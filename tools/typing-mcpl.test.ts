@@ -56,7 +56,7 @@ const world = Bun.spawn([process.execPath, "server/server.ts"], {
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
-         MCPL_TOKENS: tokensPath },
+         MCPL_TOKENS: tokensPath, MCPL_STATE: tokensPath + ".state.json" },
   stdout: "ignore", stderr: "ignore",
 });
 

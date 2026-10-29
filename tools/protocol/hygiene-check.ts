@@ -74,6 +74,12 @@ export function roleWordHits(): string[] {
   go(ENGINE); return out;
 }
 const rel = (p: string) => path.relative(ENGINE, p).split(path.sep).join("/");
+/** A spawn of the mcpl server with no MCPL_STATE writes mcpl/state.json in the checkout (CI 40956937323: client-tools imports
+ *  every test, so a top-level spawn runs). True when the text spawns net-server.ts without naming MCPL_STATE. */
+export const spawnsMcplStateless = (text: string) => /spawn\([^)]*mcpl\/net-server\.ts/.test(text) && !/MCPL_STATE/.test(text);
+export function mcplStatelessHits(): string[] {
+  return walk(path.join(ENGINE, "tools"), []).filter((p) => spawnsMcplStateless(fs.readFileSync(p, "utf8"))).map(rel);
+}
 function walk(dir: string, acc: string[]) {
   if (!fs.existsSync(dir)) return acc;
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -146,6 +152,10 @@ if (import.meta.main) {
   check(`H${i++} role-words: caught in its known-bad form (4), and not in the right way`, roleWords(bareWords) === 4 && roleWords(fineWords) === 0, [roleWords(bareWords), roleWords(fineWords)]);
   const wordHits = roleWordHits();
   check(`H${i++} role-words: no file outside the legacy reader, its test and the migration notes says WORLD_ADMIN, world admin or world operator`, wordHits.length === 0, wordHits.join("\n      "));
+  // mcpl state (10-29): a test that spawns the mcpl server names MCPL_STATE, or it writes the repository's state file
+  check(`H${i++} mcpl-state: caught in its known-bad form, and not with the override`, spawnsMcplStateless('Bun.spawn(["bun", "mcpl/net-server.ts"], { env: { MCPL_TOKENS: t } })') && !spawnsMcplStateless('Bun.spawn(["bun", "mcpl/net-server.ts"], { env: { MCPL_STATE: s } })'), "pattern");
+  const mcplHits = mcplStatelessHits();
+  check(`H${i++} mcpl-state: no test spawns the mcpl server without MCPL_STATE`, mcplHits.length === 0, mcplHits.join("\n      "));
 
   // then the gate's code against the baseline (may only go down)
   const now = measure();

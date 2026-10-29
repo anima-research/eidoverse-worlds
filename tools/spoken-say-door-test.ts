@@ -32,7 +32,7 @@ const world = Bun.spawn(["bun", "server/server.ts"], {
   stdout: "pipe", stderr: "pipe",
 });
 const mcpl = Bun.spawn(["bun", "mcpl/net-server.ts"], {
-  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`, MCPL_TOKENS: tokensPath },
+  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`, MCPL_TOKENS: tokensPath, MCPL_STATE: tokensPath + ".state.json" },
   stdout: "pipe", stderr: "pipe",
 });
 const drain = async (p: ReturnType<typeof Bun.spawn>, name: string) => {

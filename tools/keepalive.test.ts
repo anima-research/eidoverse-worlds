@@ -50,7 +50,7 @@ const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: {
     ...process.env, MCPL_PORT: String(MPORT),
     WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
-    MCPL_PING_SEC: String(PING_SEC), MCPL_PING_MISSES: String(MISSES), MCPL_TOKENS: tokensPath,
+    MCPL_PING_SEC: String(PING_SEC), MCPL_PING_MISSES: String(MISSES), MCPL_TOKENS: tokensPath, MCPL_STATE: tokensPath + ".state.json",
   },
   stdout: "ignore", stderr: "ignore",
 });
