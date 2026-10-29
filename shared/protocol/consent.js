@@ -76,7 +76,7 @@ export function worldGates(v) {
 export function decide(P, from, to, cls, worldDefault) {
   cls = classOf(cls); const t = P.consent?.[to];
   if (listed(t, "block", from)) return { mode: "deny", gate: null, why: `${to} never allows ${from}` };
-  if (listed(t, "allow", from)) return { mode: "allow", why: `${to} always allows ${from}` };
+  if (listed(t, "allow", from)) return { mode: "allow", listed: true, why: `${to} always allows ${from}` };
   const gate = GATE_OF[cls]; if (!gate) return { mode: "allow", why: `no gate covers ${cls}` };
   if (typeof t?.[gate] === "boolean") return { mode: t[gate] ? "allow" : "deny", gate, why: `${to}'s ${gate} gate is ${t[gate] ? "on" : "off"}` };
   const w = worldGates(worldDefault ?? P.bodyDefault)[gate];   // the authority keeps P.bodyDefault = @world.body-default

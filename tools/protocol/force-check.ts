@@ -30,6 +30,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the target is told once a minute per asker", "protocol/authority/bodyconsent.js", "if (n[key] > now - C.TRIED_NOTE_MS) return false;", "if (false) return false;", ["F10"]],
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
+  ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "if (!d.listed && P.throttle?.[`${from}:${cls}`] > now)", "if (P.throttle?.[`${from}:${cls}`] > now)", ["F13"]],
   ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F14"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
@@ -171,6 +172,12 @@ const cases: Case[] = [
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       return { ...t, cooled: cooled(s) }; },
     good: (o) => o.ok && o.cooled === 1 },
+  { id: "F13", what: "allow = yes regardless, a cool-down too (review full-260 L15): a body that always allows bob takes his shove while he's cooled; others still see the cool-down", run(s) { const t = optedOut(s);
+      for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      s.call("dee", "move", { to: [0, 0, 6.5] }); const al = s.call("dee", "consent", { allow: "bob" }); s.call("eve", "move", { to: [0.5, 0, 6] });
+      const yes = s.call("bob", "body", { to: "dee", kind: "shove" }), no = s.call("bob", "body", { to: "eve", kind: "shove" });
+      return { ...t, cooled: cooled(s), al: show(al), yes: show(yes), no: show(no) }; },
+    good: (o) => o.ok && o.cooled === 1 && o.al === "ok" && o.yes === "ok" && /^refused cool-down/.test(o.no) },
   { id: "F14", what: "a guest who leaves takes their consent table and every list entry naming them (review full-260 L8: an anon id never returns); an account's stays", run(s) { cast(s, { physics: false });
       for (const who of ["guest1", "ann", "vic"]) s.call(who, "move", { to: [0, 0, 0] });
       s.call("guest1", "consent", { move: false }); s.call("ann", "consent", { move: false }); s.call("vic", "consent", { block: "guest1" }); s.call("vic", "consent", { allow: "ann" });
