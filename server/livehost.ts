@@ -219,7 +219,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.head !== hit.coversHead ? "chain head" : r.digest !== hit.digest ? "state" : "views"}): discarded it and refolded from the log; please report this`);
     dropCache(dir); cachedAt = -1; atCk = null;
     if (V) { try { loadPrefix(); } catch (x) {   // the file's lines aren't the ones the cache counted: every seq here may be off, so no write until a reopen reads it whole
-        w.wedged.log = `the log on disk isn't the one its fold cache described (${(x as Error).message}); reopen the world`; console.error(`[world:${name}] ${w.wedged.log}: writes refused until then`); return false; }
+        w.wedged.log = `the log on disk isn't the one its fold cache described (${(x as Error).message}); restart the server`; console.error(`[world:${name}] ${w.wedged.log}: writes refused until then`); return false; }
       X = logIndex(); entries.forEach((e, s) => X.add(s, e)); resetViews(w); }   // the seeded views go: every one rebuilt from genesis
     st = fold(entries); resim(); cache?.onRefold?.();
     return false;

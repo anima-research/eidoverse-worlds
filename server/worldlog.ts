@@ -67,6 +67,8 @@ export type LogHost = {
   /** after a request: every standing pose that carries a reach is held to the tables as they are now, so a hand a consent
    *  no longer allows leaves at once */
   regateReaches?(): void;
+  /** the state was replaced under everyone (a fold cache's re-derive disagreed): every client takes a fresh snapshot */
+  resync?(why: string): void;
 };
 
 /** What a person can do about a recheck's refusal (review of #260, server I23): reconnecting and sending again helps only
@@ -118,7 +120,7 @@ export class WorldLog {
     // a host that can't say when someone arrived (none attached yet) hides every say: a floor at the head (fail closed)
     this.live = openLive(this.dir, name, { catalogue: ENGINE_CATALOGUE, rate: RATE_POLICY, present: () => this.host?.present?.() ?? [],
       sayFloor: (a: string) => (this.host?.sayFloor ? this.host.sayFloor(a) : Infinity),
-      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; for (const a of this.live.actors()) this.actors.add(a); } } } : {}),
+      ...(STATE_CACHE_EVERY > 0 ? { stateCache: { every: STATE_CACHE_EVERY, onRefold: () => { this.stale = true; for (const a of this.live.actors()) this.actors.add(a); this.host?.resync?.("the world was refolded from its log"); } } } : {}),
       ...(SIM_CHECKPOINT_EVERY > 0 ? { simCheckpoint: { every: SIM_CHECKPOINT_EVERY } } : {}) });
     for (const a of this.live.actors()) this.actors.add(a);   // the host's index (livehost.ts): never a scan of the prefix
     // a world opened after a crash: what was held when the host stopped is settled now (nobody is connected yet), and

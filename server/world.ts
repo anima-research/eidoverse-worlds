@@ -169,6 +169,7 @@ export class World {
         return n > 0; },
       sayFloor: (actor: string) => this.sayFloor(actor),
       regateReaches: () => this.regateReaches(),
+      resync: (why: string) => { for (const c of this.clients) try { c.ws.close?.(1012, why); } catch { /* gone */ } },   // 1012: they redial and rejoin (review L21)
     };
   }
 

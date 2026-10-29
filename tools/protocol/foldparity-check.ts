@@ -11,7 +11,7 @@
 //   FP4 the byte offsets are checked: a prefix that grew a byte, or a cache whose offset is off by one, boots the whole log (the
 //       state cache still used), equal to the fold
 //   FP5 a stale view (a say dropped from the cache's list) that passes the boot is found by the re-derive: BUG said, the cache
-//       discarded, the views rebuilt from genesis, and the readers agree with the whole-log boot again
+//       discarded, the views rebuilt from genesis, and the readers agree with the whole-log boot again; a WorldLog resyncs its clients
 //   FP6 views are carried only for a log with no purge: a purge after a tail boot reads the prefix in, and the boot after it reads
 //       the whole log, equal to the fold; a stale-guests seed is dropped with it
 //   FP7 a torn last line after a tail boot's covered line is cut, as readLogBytes cuts it
@@ -219,12 +219,15 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
 { const dir = path.join(W, "fp5"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 400, "fp5"); w.saveCache(); grow(w, 10, "fp5");
   const c = cacheOf(dir); const says = c.views.says; ok(says.length > 3, "FP5 (setup) the cache lists says", says.length);
   c.views.says = says.slice(0, -2).concat([says.at(-2) + says.at(-1)]); fs.writeFileSync(cacheP(dir), JSON.stringify(c));   // the second-newest say in the prefix dropped
+  const wl = copyDir(dir, path.join(W, "fp5wl"));   // the same lie, under a WorldLog (review L21)
   const ref = copyDir(dir, path.join(W, "fp5-ref")); SC.dropCache(ref); const r = open(ref);
   const { r: b, lines } = await said(async () => { const b = open(dir); b.lied = J(b.saySeqs?.()); b.checked = await b.cacheChecked; return b; });
   ok(b.lied !== J(r.saySeqs?.()) && b.bootedFromCache === c.coversIndex, "FP5 (setup) a stale view that passes the boot's checks is booted from", { from: b.bootedFromCache });
   const d = first(readers(b), readers(r));
   ok(b.checked === false && lines.some((l) => /BUG: the fold cache.*\(views\)/.test(l)) && !fs.existsSync(cacheP(dir)) && J(b.saySeqs?.()) === J(r.saySeqs?.()) && !d,
-    "FP5 …the re-derive finds it: BUG said (views), the cache discarded, every view rebuilt from genesis, the readers as the whole-log boot", { checked: b.checked, lines, d }); }
+    "FP5 …the re-derive finds it: BUG said (views), the cache discarded, every view rebuilt from genesis, the readers as the whole-log boot", { checked: b.checked, lines, d });
+  const calls = []; const { r: L } = await said(async () => { const L = new WorldLog(path.basename(wl)); L.attach({ broadcast() {}, rightsChanged() {}, debug() {}, resync: (why) => calls.push(why) }); L.checked = await L.live.cacheChecked; return L; });
+  ok(L.checked === false && calls.length === 1, "FP5 …and a WorldLog over it asks its World to resync every client (the state was replaced under them)", { checked: L.checked, calls }); }
 
 // ---- FP6 ----
 { const dir = path.join(W, "fp6"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 300, "fp6"); w.saveCache(); grow(w, 10, "fp6");
