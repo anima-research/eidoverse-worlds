@@ -38,7 +38,7 @@ export const notPlainWords = (rel: string) => `${rel} is a link (or not a plain 
 function filesUnder(d: string, at = ""): string[] {
   const out: string[] = [];
   for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
-    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(path.join(d, rel))); }
+    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(`${path.basename(d)}/${rel}`)); }   // world-relative with "/", as the boot notice says it (Windows printed the temp path)
   return out;
 }
 
