@@ -46,6 +46,9 @@ export function noFoldRefusal(world: string, native: boolean): string {
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first: "-x" would read as a flag to the CLI
 const TOOL = "bun tools/protocol/world.ts";
 export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
+/** Who claims a world with no owner (world.ts --claim): the operator running the commands, as the browser path's upgrader does. */
+export const CLAIMER = "EIDO_UPGRADER_ACCOUNT=<your-account>";
+const CLAIMS = "<your-account> is your account as SERVER_OPERATORS lists it (e.g. human:<provider>:<id>): a world with no owner becomes yours, and everyone else keeps building there as in main; a world with owners keeps them.";
 const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. Read it; then translate it, bound to that hash:";
 const KEPT_IN_PLACE = "It keeps its name, so links to it keep working; the original log is kept untouched beside it as log.original.jsonl.";
 const KEPT = "the original log is kept untouched; translate into a new name, then point links at it (or rename the directories)";
@@ -75,19 +78,19 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   let st: fs.Stats; try { st = fs.lstatSync(d); } catch { return null; }
   if (!st.isDirectory() || isWorldDir(d) || isSwapUnfinished(d)) return null;   // an unfinished swap is its own case (interruptedSwapsIn); lstat: a symlinked world dir is never followed (backup, translate)
   const suggestedName = freeName(dir, name);
-  const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`;
+  const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`, claimHead = `${CLAIMER} ${head}`;
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
     const file = fs.readdirSync(d).filter((f) => f.endsWith(".jsonl")).sort((a, b) => (a === "world.jsonl" ? -1 : b === "world.jsonl" ? 1 : a.localeCompare(b)))[0]!;
     return { name, kind: "pre-names", file: path.join(d, file), suggestedName,
-      command: `${head} translate <its-original-old-world> ${suggestedName} --dry-run --no-founder-key`,
-      approve: `${head} translate <its-original-old-world> ${suggestedName} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner`,
+      command: `${claimHead} translate <its-original-old-world> ${suggestedName} --dry-run --no-founder-key --claim`,
+      approve: `${claimHead} translate <its-original-old-world> ${suggestedName} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner --claim`,
       refound: `${head} found ${suggestedName} --owner <your id>`, visitor: visitorText(name, "pre-names") };
   }
   const file = path.join(d, "log.jsonl");
   if (!fs.existsSync(file)) return null;
   return { name, kind: "translatable", file, suggestedName,
-    command: `${head} translate ${name} --dry-run --no-founder-key`,
-    approve: `${head} translate ${name} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner`, visitor: visitorText(name, "translatable") };
+    command: `${claimHead} translate ${name} --dry-run --no-founder-key --claim`,
+    approve: `${claimHead} translate ${name} --no-founder-key --approved ${HASH_PLACEHOLDER} --operator-only-no-owner --claim`, visitor: visitorText(name, "translatable") };
 }
 
 /** Every old world in `dir`, by name. */
@@ -117,6 +120,7 @@ export function bootNotice(dir: string): string {
          `    ${o.command}`,
          `  ${APPROVAL}`,
          `    ${o.approve}`,
+         `  ${CLAIMS}`,
          `  A translation names no founder: nothing can yet bind a key to the old world's owner (an old-format log records accounts, not keys), so the world's top governance tier (tier 0) stays empty, the operator's countersignature is the only signature, and the record says no owner was attested.`,
          `  ${KEPT_IN_PLACE}`,
          `  The translation first copies the whole directory, verified, to BACKUPS_DIR (backups/ beside the worlds directory). Or open it in the browser signed in as a server operator (an account in SERVER_OPERATORS, or the one that opened the setup link): its splash offers Upgrade world…, the same steps.`].join("\n")
@@ -125,6 +129,7 @@ export function bootNotice(dir: string): string {
          `    ${o.command}`,
          `  ${APPROVAL}`,
          `    ${o.approve}`,
+         `  ${CLAIMS}`,
          `  or, if that original is gone, refound it empty:`,
          `    ${o.refound}`,
          `  ${KEPT}`].join("\n");

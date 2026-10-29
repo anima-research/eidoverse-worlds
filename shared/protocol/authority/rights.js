@@ -140,8 +140,9 @@ export function lastSetterOf(w, id, comp) {
   return null;
 }
 /** A lock's strength (recut B2): the rank its setter holds NOW; a lock nobody set by hand (translated, or its setter
- *  unknown) is builder-strength. */
-export function lockStrength(w, st, id) { const by = lastSetterOf(w, id, "lock"); return by && !by.deleted && by.rights ? Math.max(R.RANK.builder, rankOf(st, by.rights)) : R.RANK.builder; }
+ *  unknown) is builder-strength. A world with no owner caps it at member, the rank everyone holds there (§2.3: no lockout). */
+export function lockStrength(w, st, id) { const by = lastSetterOf(w, id, "lock"); const s = by && !by.deleted && by.rights ? Math.max(R.RANK.builder, rankOf(st, by.rights)) : R.RANK.builder;
+  return ownersOf(st).length ? s : R.RANK.member; }
 // Who made a thing: the view inspect shows (no stored `placer`).
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 

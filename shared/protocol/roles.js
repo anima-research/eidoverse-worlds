@@ -161,6 +161,13 @@ export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
   return !hasOwner && rankOfRole(wc, r) > RANK.member ? "member" : r;
 }
+/** The role-defs a world's first owner brings (the upgrade's claim, operator-repair set): where member held generate while
+ *  the world had no owner (translate-v1 mainRights), builder keeps it once the cap lifts; else null (nothing to write). */
+export function firstOwnerRoleDefs(wc) {
+  const rd = isObj(wc?.["role-defs"]) ? wc["role-defs"] : {};
+  if (rd.member?.can?.generate !== true || rd.builder?.can?.generate === true) return null;
+  return { ...rd, builder: { ...(rd.builder ?? {}), can: { ...(rd.builder?.can ?? {}), generate: true } } };
+}
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
  *  never above the default role; else member (R 10-21: guests start as members even where newcomers build). */
 export function guestRoleOf(wc) {

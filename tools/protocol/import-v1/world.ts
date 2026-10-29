@@ -364,11 +364,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (claiming) { const acct = claim!.account;
       let id = dir.idOfSub(acct) ?? Object.entries(planned).find(([, e]) => e.subs.includes(acct))?.[0] ?? null;
       if (!id) { id = mintId(); planned[id] = { name: String(claim!.name || "someone").slice(0, 64), subs: [acct], kind: "account", since: Date.now() }; }
-      const set = (component: string, value: Any) => { const x: Any = operatorRepair(live, id!, "set", { id: "@world", component, value });
-        if (!x?.ok) throw new Error(`the claim was refused (${component}): ${x?.refused?.code}: ${x?.refused?.reason}`); };
-      set(`roles:${id}`, { role: "owner" });
-      const rd = live.state().entities?.["@world"]?.c?.["role-defs"] ?? {};
-      set("role-defs", { ...rd, builder: { ...(rd.builder ?? {}), can: { ...(rd.builder?.can ?? {}), generate: true } } });
+      // operatorRepair: the first owner's builder keeps generate (roles.js firstOwnerRoleDefs)
+      const x: Any = operatorRepair(live, id!, "set", { id: "@world", component: `roles:${id}`, value: { role: "owner" } });
+      if (!x?.ok) throw new Error(`the claim was refused: ${x?.refused?.code}: ${x?.refused?.reason}`);
       claimed = { id, name: planned[id]?.name ?? dir.nameOf(id) ?? "someone", account: acct.split(":").slice(0, 2).join(":") };
       people.unshift({ name: claimed.name, role: "owner", account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
     for (const [h, p] of addressed) recordEido(h, p);

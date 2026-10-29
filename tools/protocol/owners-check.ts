@@ -27,6 +27,8 @@
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
+//   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
+//   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -37,6 +39,9 @@ import { directoryAt } from "../../server/directory.ts";
 import { directoryFileIn } from "../../server/keyfiles.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
 import * as R from "../../shared/protocol/roles.js";
+import { openLive } from "../../server/livehost.ts";
+import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
+import { request, operatorRepair } from "../../shared/protocol/authority.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -182,6 +187,20 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   row("CL3", () => ok(rb.code === 0 && directoryAt(directoryFileIn(W)).idOfSub("human:test:op") === null && !fs.existsSync(path.join(W, "barn", "world.jsonl")) && fs.existsSync(path.join(W, "barn", "log.jsonl"))
     && fs.readdirSync(path.join(root, "backups")).some((f) => f.startsWith("barn-")),
     "CL3 rollback of a claimed upgrade forgets the claimant's identity with the rest; the old world is back and its backup kept", { code: rb.code, out: rb.out.slice(-300) }));
+}
+
+{ const root = scratch("owners-cl5"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "yard", [["Pip", "spawn", { id: "shed", lib: "x.glb" }], ["Pip", "comp", { id: "shed", type: "lock", data: true }],
+    ["Pip", "spawn", { id: "gate", lib: "x.glb" }], ["Pip", "comp", { id: "gate", type: "guard", data: true }]]);
+  const u = upgrade(root, "yard"); const live = () => openLive(path.join(W, "yard"), "yard", { catalogue: ENGINE_CATALOGUE, scripts: null });
+  const pip = u.roles.Pip?.[0] ?? u.dir.resolve({ sub: "human:test:pip", name: "Pip" }), rue = u.dir.resolve({ sub: "human:test:rue", name: "Rue" });
+  const a = request(live(), rue, "delete", { id: "shed", component: "lock" }), b = request(live(), pip, "delete", { id: "gate", component: "lock" });
+  row("CL5", () => ok(u.up.code === 0 && a?.ok && b?.ok && live().state().entities.shed.c.lock === undefined,
+    "CL5 no --claim: the ownerless world's lock and guard are member strength, so a regular (a newcomer, the placer) lifts them; nobody is locked out", { code: u.up.code, a: a?.refused, b: b?.refused }));
+  const w = live(), set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } });
+  const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
+  row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok,
+    "CL6 operator-repair set of an ownerless world's first owner: builder keeps generate (as the claim gives it), so regulars keep main's rights once the cap lifts", { set: set?.refused, n: n.permissions, rd: wc["role-defs"] }));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

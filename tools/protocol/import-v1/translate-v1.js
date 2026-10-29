@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@26";
+export const TRANSLATOR = "eidoverse/translate-v1@27";
+// @27 (fixB 10-28): the ownerless rights note says a lock is member strength there (rights.js lockStrength). Report differs from @26.
 // @26 (R 10-28): the base rung is written member, the word @17–@25 used is gone (no alias). Output differs from @25 wherever a rung is named.
 // @25 (R 10-28): main's sky.audio is @world.sky.audio (the sky takes it again), where @24 carried it as imported:sky.
 // @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
@@ -213,7 +214,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@26";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@27";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -702,7 +703,7 @@ export function mainRights(st) {
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
   if (!owned) { world["role-defs"] = { member: { can: { ...OPEN_CAN } } };
     notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at member (roles.js roleIdOf), so member's permissions here are builder's and generate. "
-      + "Rank stays member: a lock (builder strength) and a who: builder gate refuse everyone until the world has an owner (operator-repair set)");
+      + "Rank stays member: a lock is member strength while there is no owner (anyone may lift it, as in main), and a who: builder gate refuses everyone until the world has an owner (the upgrader's claim, or operator-repair set)");
     if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`); }
   const dr = world["default-role"];
   return { world, report: { owned, newcomers: dr?.role ?? "member", guests: world.access ? "listed only" : dr?.guests ?? "member", ...(world["role-defs"] ? { memberCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };

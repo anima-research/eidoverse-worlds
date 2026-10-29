@@ -467,7 +467,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@26`, §14) writes its
+  its name). The translator (`translate-v1@27`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1043,7 +1043,8 @@ checked: anyone at that rank or above who may delete the `lock` component may
 lift it, re-set it, or send a request with `throughLock: true` (the log
 records only the edit); anyone lower is refused. A setter who is demoted takes
 their locks' strength down with them; a lock whose setter is unknown is
-builder strength. It is a soft barrier, not ownership: clients ask before
+builder strength. In a world with no owner every lock is member strength
+(everyone is member there, §2.3), so no lock outlasts everyone's reach. It is a soft barrier, not ownership: clients ask before
 acting through one. A lock has no level of its own; a stored `{rank}` (an
 older log) reads as locked and its rank is ignored.
 

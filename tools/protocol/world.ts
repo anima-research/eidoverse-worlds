@@ -1,8 +1,9 @@
 // tools/protocol/world.ts — found a world, or translate an old (v1) world once, in place or into a new name.
 //
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts found <name> --owner <your id> [--title "…"]
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --dry-run --no-founder-key
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --no-founder-key --approved <report hash> --operator-only-no-owner
+//   [EIDO_UPGRADER_ACCOUNT=<your account>] WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --dry-run --no-founder-key [--claim]
+//   [EIDO_UPGRADER_ACCOUNT=<your account>] WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --no-founder-key --approved <report hash> --operator-only-no-owner [--claim]
+//                    (--claim: a world with no owner becomes that account's; server/oldworlds.ts prints both with it)
 //                    (a translation names no founder: nothing can yet bind a key to the old world's owner, so --founder-key and
 //                    --approve-sig are refused; tier 0 stays empty, and the act records that no owner was attested)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world> [--discard-changes]       (undo an in-place translation: the old files back, everything it made removed)
@@ -131,7 +132,7 @@ function dryRun(D: string, name: string) {
   console.log(`report-hash ${hash}`);
   if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
-  console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
+  console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
 }
 const sourceOf = (f: string) => { const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
 const sourceChanged = (f: string, was: { size: number; sha256: string }) => { const now = sourceOf(f); return now.size !== was.size || now.sha256 !== was.sha256 ? now : null; };
