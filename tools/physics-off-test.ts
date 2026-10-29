@@ -45,7 +45,9 @@ check('switched off mid-flight: drawn back at its committed pose, collider back'
 check('…and the choice is kept on this device (ew-phys)', store.get('ew-phys') === '0');
 const c0 = clones; S.replica.simVersion = 2; frame(); frame();
 check('off: no copy of the sim is folded or drawn; the thing stays at its committed pose', clones === c0 && crate.position.x === 0 && !S.suspended.has('crate'), JSON.stringify({ clones: clones - c0, at: crate.position.toArray() }));
-check('…and nothing was sent (harmless to everyone else)', S.sent.length === 0, JSON.stringify(S.sent));
+// my own body's track (thingphysics tickTrack, a real-clock 200 ms tick) isn't about things' physics: counting it made this row load-dependent
+const thingSends = S.sent.filter(([v]: any) => v !== 'move');
+check('…and nothing was sent (harmless to everyone else)', thingSends.length === 0, JSON.stringify(thingSends));
 tp.setPhysicsEnabled(true); frame();
 check('on again: the flight is drawn again', crate.position.x === 5 && clones > c0 && store.get('ew-phys') === '1', JSON.stringify([crate.position.toArray(), clones - c0]));
 
