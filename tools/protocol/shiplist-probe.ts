@@ -127,7 +127,7 @@ try {
   const fenceAll = await evalJson(`import('/lib/edge.js').then((e) => e.worldEdgeShown())`); const fence = fenceAll?.box;
   check("WB0 the edge is drawn: a fence at exactly this world's bounds", Array.isArray(fence) && fence[0]?.[0] === edge && fence[1]?.[0] === 60, fenceAll);
   const r = await page(`const c = await import('/lib/controller.js'), n = await import('/lib/net.js'), t = await import('/lib/thingphysics.js');
-    const why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); await new Promise((z) => setTimeout(z, 800));
+    let why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); if (c.myState.pos.x > ${edge} + 0.6) why = await c.walkTo(${me0[0] - 12}, ${me0[1]}, { ms: 6000 }); /* a slow runner's stall reads as stuck short of the edge (macOS 40956937323): keep walking, as a person keeps the key held */ await new Promise((z) => setTimeout(z, 800));
     const mk = await n.sendRequest('create', { id: 'wbcrate', model: '${CRATE}', components: { label: 'Edge crate', grabbable: { enabled: true }, physics: { kind: 'dynamic', who: 'member' }, transform: { pos: [c.myState.pos.x + 0.6, 0, c.myState.pos.z], scale: 0.25 } } });
     await new Promise((z) => setTimeout(z, 1500)); const g = await t.physicsApi.grab('wbcrate'); await new Promise((z) => setTimeout(z, 800));
     const p = await t.physicsApi.put('wbcrate');
