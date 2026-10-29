@@ -35,6 +35,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
   ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack, dt)", "slack = slackNow(null, dt)", ["D13"]],
   ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why, free);   // a throw keeps", "  try { commitLease(w, st, host, why, free); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
+  ["a drive step's failed commit unseats its driver", "protocol/authority/drive.js", 'commitLease(w, st, a.id, "periodic", false)', 'commitLease(w, st, a.id, "periodic")', ["D19"]],
   ["a failing commit retries forever", "protocol/authority/drive.js", "if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;", "throw x;", ["D18"]],
   ["a hull meets no hull-only wall", "protocol/authority/drive.js", "for (const k of hullOnly(st)) if (!fam.has(k))", "for (const k of []) if (!fam.has(k))", ["D15"]],
   ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\") && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
@@ -265,4 +266,10 @@ await C("D18", "a commit that keeps throwing is bounded (review delta-260 L-A): 
   try { for (let i = 0; i < 12; i++) { try { s.sweep(LEASE_BEAT); beats.push("ok"); } catch (e) { beats.push("threw"); } } } finally { diskFails.on = false; console.warn = warn; }
   const occ = s.w().presence.occupants ?? {}, said = warns.filter((m) => /drive-commit|commit/.test(m));
   return [!s.w().presence.drives?.hull && occ.vic?.to !== "helm" && beats.includes("threw") && beats.slice(-3).every((b) => b === "ok") && said.length === 1, { beats, said, occ, lease: s.w().presence.drives?.hull }]; });
+await C("D19", "a drive step whose inline commit keeps failing keeps its driver at the helm and says the lease went (review delta2 L2-A)", () => {
+  const s = session(); s.board("vic"); const warn = console.warn; console.warn = () => {};
+  diskFails.on = true; const rs: any[] = [];
+  try { for (let i = 1; i <= 40; i++) { try { rs.push(s.call("drive", { id: "hull", pos: [0, 1, 3 + i * 0.1], q: [0, 0, 0, 1] }, "vic")); } catch (e) { rs.push({ threw: true }); } } } finally { diskFails.on = false; console.warn = warn; }
+  const occ = s.w().presence.occupants ?? {};
+  return [rs.some((r) => r.dropped === true) && occ.vic?.to === "helm", { rs: rs.map((r) => r.threw ? "threw" : r.dropped ? "dropped" : r.ok ? "ok" : (r.refused?.code ?? JSON.stringify(r).slice(0, 80))), occ }]; });
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
