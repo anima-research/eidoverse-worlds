@@ -7,11 +7,13 @@
 //   SU5 with SERVER_OPERATORS set, or an operators file, no link is printed and /setup is a missing page
 //   SU6 an agent claims with its Bearer (aid1 and enrolled): the stored account is the one its ws join proves (that join says operator)
 //   SU7 more than five tries a minute from one address are refused (429)
+//   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
+//   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 
 const root = scratch("setup");
@@ -65,6 +67,13 @@ const operatorAtJoin = (port, { headers, agentToken }: any = {}) => new Promise(
 });
 const stored = (W) => { const f = path.join(W, ".operators.json"); return fs.existsSync(f) ? { list: JSON.parse(fs.readFileSync(f, "utf8")).operators, mode: fs.statSync(f).mode & 0o777 } : null; };
 const replies = [];   // every reply body, to look for the token in
+/** Run the setup page's script against a fake location: what it posted (null: nothing) and what it said. */
+async function runPage(html, { hash = "", search = "" }) {
+  const js = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? ""; let posted = null; const m = { textContent: "" };
+  const fetchStub = async (_u, o) => { posted = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ words: "done" }) }; };
+  await new Function("location", "document", "fetch", "history", `return ${js.trim().replace(/;$/, "")}`)({ hash, search }, { getElementById: () => m }, fetchStub, { replaceState() {} });
+  return { posted, said: m.textContent };
+}
 
 // ---- a person claims it ----
 const W1 = worldsDir("w1");
@@ -76,6 +85,9 @@ const t1 = tokenOf(s.log());
     "SU1 no operator: one boot line, '<base>/setup#token=…' with ≥128 bits, signed in (person or agent)", lines); }
 { const page = await get(s.port); replies.push(page.text);
   ok(page.status === 200 && /\/setup/.test(page.text) && !page.text.includes(t1) && /sha256-/.test(page.csp ?? ""), "SU1 GET /setup is the page that posts the link's token back (its script hashed in the CSP), without the token", { status: page.status }); }
+{ const page = await get(s.port), q = await runPage(page.text, { search: "?token=abc" }), f = await runPage(page.text, { hash: "#token=abc" });
+  ok(q.posted === null && /incomplete/.test(q.said) && /#token=/.test(q.said) && f.posted?.token === "abc" && f.said === "done",
+    "SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says to open the whole #token= link; the fragment's is posted", { q, f }); }
 { const before = await operatorAtJoin(s.port, { headers: cookie(ANN) });
   const guest = await post(s.port, { token: t1 }); replies.push(guest.text);
   ok(guest.status === 401 && /Sign in first/.test(guest.text) && /agent/.test(guest.text) && stored(W1) === null, "SU2 a guest (no sign-in) with the right token is refused, and nothing is stored", guest);
@@ -130,6 +142,22 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
     `SU6 an agent (${tag === "w3" ? "aid1" : "enrolled"}) claims with its Bearer: stored as ${account}, the account its ws join proves (operator at that join, no restart)`, { claim, before, after, viaQuery });
   await a.stop();
 }
+
+// ---- a planted symlink beside the operators file (SU9) ----
+{ const W = worldsDir("w10"), victim = path.join(root, "victim-tmp"); fs.writeFileSync(victim, "victim\n", { mode: 0o644 });
+  linkInto(victim, path.join(W, ".operators.json.tmp")); const a = await start(W);
+  const claim = await post(a.port, { token: tokenOf(a.log()) }, cookie(ANN)), st = stored(W);
+  ok(claim.status === 200 && fs.readFileSync(victim, "utf8") === "victim\n" && (fs.statSync(victim).mode & 0o777) === 0o644 && !fs.lstatSync(path.join(W, ".operators.json")).isSymbolicLink()
+    && JSON.stringify(st?.list) === JSON.stringify(["human:test:ann"]) && st.mode === 0o600,
+    "SU9 a planted .operators.json.tmp symlink is never followed: the claim stores a fresh 0600 file, the symlink's target untouched", { claim, st, victim: fs.readFileSync(victim, "utf8") });
+  await a.stop(); }
+{ const W = worldsDir("w11"), victim = path.join(root, "victim-target"), body = JSON.stringify({ operators: [] }); fs.writeFileSync(victim, body, { mode: 0o644 });
+  linkInto(victim, path.join(W, ".operators.json")); const a = await start(W);
+  const claim = await post(a.port, { token: tokenOf(a.log()) }, cookie(ANN));
+  ok(claim.status === 500 && fs.lstatSync(path.join(W, ".operators.json")).isSymbolicLink() && fs.readFileSync(victim, "utf8") === body && (fs.statSync(victim).mode & 0o777) === 0o644
+    && (await operatorAtJoin(a.port, { headers: cookie(ANN) })) === false && /symlink/.test(a.log()),
+    "SU9 a symlinked .operators.json is refused (not stored, not operator, the console says why), the link and its target unchanged", { claim, log: a.log().slice(-300) });
+  await a.stop(); }
 
 // ---- rate limit ----
 { const W7 = worldsDir("w7"); const r = await start(W7); const codes = [];

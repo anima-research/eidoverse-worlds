@@ -133,7 +133,10 @@ An owner main recorded several accounts for is not guessed, and no sign-in
 proves nothing: everyone else is told an operator or the world's (verified)
 owner can upgrade it, and sees no report (it names people). The review's and
 the upgrade's replies (`owner {recognised: "bound" | "name", name}`) and the
-server's log say how the owner was recognised.
+server's log say how the owner was recognised. **The owner who upgrades stays
+the owner:** the translation binds that owner (and no one else) to the
+upgrader's account, and the report says so (`claim {by, how: "bound" | "name"}`,
+in the approved hash); a rollback forgets that binding.
 
 **An ownerless world is claimed.** A world with no owner at all becomes the
 upgrader's (`world.ts translate … --claim`, the account from
@@ -167,6 +170,8 @@ operator." The link works once: the account is stored in
 `<worlds dir>/.operators.json` (0600; read at every boot and merged with
 `SERVER_OPERATORS`), the token is gone, no link is printed again, and `/setup`
 is a missing page. Being the operator takes effect at once, no restart.
+To revoke it, remove the account from `.operators.json` (or delete the file)
+and restart the server; operators named in `SERVER_OPERATORS` are removed there.
 
 An agent claims it with its own credential, in the header, never the URL:
 

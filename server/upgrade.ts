@@ -4,7 +4,7 @@
 // that hash (a verified backup first: server/backups.ts). Both run tools/protocol/world.ts itself: the translation has one code path.
 // A server operator (SERVER_OPERATORS) or the world's owner, by a proven account (R 10-28): an owner main's records bind to
 // that account ("bound"), or one main recorded no account for whose name the account's is ("name", provisional): world.ts
-// owner-of. An ownerless world's upgrader becomes its owner (--claim). The translation binds an owner to the account main
+// owner-of. An ownerless world's upgrader becomes its owner (--claim); a recognised owner is bound to them (report.claim). The translation binds an owner to the account main
 // recorded for them; when no owner is bound, both replies carry `warning` and the server log says so (docs/TRANSLATING-OLD-WORLDS.md).
 import fs from "node:fs";
 import path from "node:path";

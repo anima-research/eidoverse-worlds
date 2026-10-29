@@ -72,7 +72,7 @@ function readOld(srcBytes: Buffer) {
  *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
  *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
  *  the report counts exactly what the real run renames and nothing in it varies. */
-function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true, known = null }: { mint?: boolean; known?: ((name: string) => Known | null) | null } = {}) {
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true, known = null, owner = null }: { mint?: boolean; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null } = {}) {
   const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
   const fromOf = new Map<string, string>();   // account → where this translation learned it (the report says, per role)
   const unbound = new Map<string, string>();  // name → why main's records bind it to no one account
@@ -121,6 +121,8 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
     if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub });
     if ((e?.verb === "spawn" || e?.verb === "light") && typeof a.placer?.id === "string" && isAccount(a.placer.sub)) who(a.placer.id, { sub: a.placer.sub });
     if (e?.verb === "behavior" && typeof e.actor === "string" && !["door", "world", "sim"].includes(e.actor) && !/^bhv:/i.test(e.actor) && isAccount(a.bySub)) who(e.actor, { sub: a.bySub }); }
+  // the upgrader recognised as this owner by name (ownerClaimOf): that owner's name is their account, and no one else's is
+  if (owner?.how === "name") who(owner.by, { sub: owner.account, from: "bound by name (provisional): they upgraded it as its owner" });
   // a name this log pairs with no account: the one account main recorded for it elsewhere on this server (mainknew.ts), as
   // main's own grant resolved a name (one match binds); several, or none that is an account here, stay imported and are listed
   if (known && !TRUST_NAMES) for (const n of [...names].sort()) {
@@ -171,6 +173,13 @@ export function ownerRecognised(srcDir: string, account: string | null, name: st
   const several = name ? owners.find((o) => o.unbound === "several" && o.name.toLowerCase() === name.toLowerCase()) : undefined;
   return { recognised: null, ownerless, why: several ? `main recorded several accounts for the owner ${several.name}: which one is yours isn't guessed` : "main's records don't make this account one of the world's owners" };
 }
+type OwnerClaim = { by: string; how: "bound" | "name"; account: string };
+/** The upgrader recognised as an owner of the old world (ownerRecognised, its guards): bound to that owner in the translation (R 10-28). */
+function ownerClaimOf(srcDir: string, claim?: { account: string; name: string } | null): OwnerClaim | null {
+  if (!claim?.account) return null;
+  const o = ownerRecognised(srcDir, claim.account, claim.name || null);
+  return o.recognised ? { by: o.owner!, how: o.recognised, account: claim.account } : null;
+}
 /** What the report says when the upgrader claims an ownerless world (R 10-28): hashed, so the same for whoever approves it. */
 export const CLAIM = "this world has no owner: whoever performs this upgrade becomes its owner (an operator-repair set by them, recorded); everyone else keeps main's rights here, builder's permissions and generate";
 
@@ -201,7 +210,7 @@ export function ownerWarning(world: string, people: Any[] = []): string | null {
 }
 /** Whether a claim applies: asked for, and no owner in the translated world (people). */
 const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false) {
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
@@ -223,12 +232,12 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     ...(r.stats.adjusted ? { adjusted: r.stats.adjusted } : {}),   // values brought to main's reading or the registry's ranges, each with why (translate-v1 toSpec, lightParity)
     people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
     ownerWarning: claim ? null : ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
-    ...(claim ? { claim: CLAIM } : {}),   // an ownerless world's upgrader becomes its owner (translateV1World claim)
+    ...(claim ? { claim: CLAIM } : owner ? { claim: { by: owner.by, how: owner.how } } : {}),   // the upgrader becomes (or is) its owner (translateV1World claim)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
   };
   return { report, hash: sha256(JSON.stringify(report)) };
 }
-export function reportV1World(srcDir: string, { name, content, claim = false }: { name?: string; content?: (p: string) => string | null; claim?: boolean } = {}) {
+export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
   const srcBytes = fs.readFileSync(src);
@@ -237,10 +246,11 @@ export function reportV1World(srcDir: string, { name, content, claim = false }: 
   // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
   const worlds = path.dirname(path.resolve(srcDir));
-  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }) });
+  const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
+  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent });
   const people = peopleOf(world, r, m.describe);
-  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people));
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner);
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -277,7 +287,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // (world.ts): a failed translation leaves no identities behind.
   const dir = directoryFor(path.dirname(destDir));
   const srcWorlds = path.dirname(path.resolve(srcDir));
-  const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }) });
+  const owner = ownerClaimOf(srcDir, claim);   // the upgrader recognised as its owner: bound to that owner here (planned, so a rollback forgets it)
+  const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
   // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
   // recorded so this server answers /eido/sha256/<hex> for them
@@ -294,7 +305,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
-  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming).hash;
+  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner).hash;
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now} (the old log or the tool changed since the dry run). Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
