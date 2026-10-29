@@ -1,6 +1,7 @@
 // server/statecache-verify.ts — the background re-derive (a Worker, off the event loop): the log's first coversIndex+1 lines folded
 // from genesis and chained, and their views built from genesis (server/foldviews.ts), for server/livehost.ts to compare with the
-// cache it booted from (server/statecache.ts).
+// cache it booted from (server/statecache.ts). It holds the covered lines parsed until it answers, so a cached boot's peak RAM is
+// still about an eager boot's: the cache buys boot latency, not peak RAM (review L16; a streaming fold is the fix if that matters).
 import fs from "node:fs";
 import { readLog, fold } from "../shared/protocol/fold.js";
 import { chainStep } from "../shared/protocol/authority/storage.js";

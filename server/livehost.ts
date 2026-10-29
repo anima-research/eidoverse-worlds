@@ -212,9 +212,10 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.bootedFromCache = resumed ? hit!.coversIndex : null;
   // the background re-derive: a Worker folds and chains the covered lines from genesis; a disagreement is a bug, never an outage
   w.cacheChecked = !hit || !resumed ? Promise.resolve(null) : verifyCache(path.join(dir, "world.jsonl"), hit.coversIndex, V ? { sim: !!V.sim } : null).then((r: Any) => {
-    const agrees = !r.error && r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1 && (!V || r.views === hit.viewsDigest);
+    if (r.error) { console.warn(`[world:${name}] the fold cache (line ${hit.coversIndex}) couldn't be verified (${r.error}): kept, checked again at the next boot`); return null; }
+    const agrees = r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1 && (!V || r.views === hit.viewsDigest);
     if (agrees) return true;
-    console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.error ?? (r.head !== hit.coversHead ? "chain head" : r.digest !== hit.digest ? "state" : "views")}): discarded it and refolded from the log; please report this`);
+    console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.head !== hit.coversHead ? "chain head" : r.digest !== hit.digest ? "state" : "views"}): discarded it and refolded from the log; please report this`);
     dropCache(dir); cachedAt = -1; atCk = null;
     if (V) { try { loadPrefix(); } catch (x) {   // the file's lines aren't the ones the cache counted: every seq here may be off, so no write until a reopen reads it whole
         w.wedged.log = `the log on disk isn't the one its fold cache described (${(x as Error).message}); reopen the world`; console.error(`[world:${name}] ${w.wedged.log}: writes refused until then`); return false; }

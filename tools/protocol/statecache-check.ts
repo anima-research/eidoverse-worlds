@@ -3,7 +3,7 @@
 //   SC1 a boot from a valid cache uses it, folds the tail, equals the fold from genesis, and the background re-derive agrees;
 //       it is rewritten every N entries, atomically
 //   SC2 a corrupted cache: unparseable → folded from genesis; a tampered state → the re-derive finds it, says BUG, discards it,
-//       and the live state is the fold from genesis again
+//       and the live state is the fold from genesis again; SC2b a re-derive that can't run is "couldn't verify", not a BUG
 //   SC3 a cache written by another fold (foldKey) is never read; SC3b nor one whose fold sources can't be read (no throw)
 //   SC4 a log cut back and regrown past the cache (another line at coversIndex) → not read
 //   SC5 a purge: the cache holding the purged value leaves the disk at once; a purge after coversIndex → not read
@@ -78,6 +78,12 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
   ok(x.bootedFromCache === c.coversIndex && x.lied === "a lie", "SC2 (setup) a tampered cache that passes the boot checks is booted from", { from: x.bootedFromCache, lied: x.lied });
   ok(x.checked === false && canon(x.state()) === truth(dir) && x.state().entities["t-0"].c.label === "thing 0" && !fs.existsSync(cacheP(dir)) && l2.some((l) => /BUG: the fold cache/.test(l)),
     "SC2 …the re-derive finds it: BUG said, the cache discarded, the live state the fold from genesis", { checked: x.checked, label: x.state().entities["t-0"].c.label, lines: l2 }); }
+
+// ---- SC2b (review L16): a re-derive that can't run (here: the log away when the Worker reads it) is not a disagreement ----
+{ const { dir, w } = world("b2", 3, 1000); w.saveCache(); const log = path.join(dir, "world.jsonl");
+  const { r: x, lines } = await said(async () => { const x = reopen(dir); fs.renameSync(log, `${log}.away`); x.checked = await x.cacheChecked; fs.renameSync(`${log}.away`, log); return x; });
+  ok(x.bootedFromCache != null && x.checked === null && fs.existsSync(cacheP(dir)) && !lines.some((l) => /BUG/.test(l)) && lines.some((l) => /couldn't be verified/.test(l)),
+    "SC2b a re-derive that fails to run says it couldn't verify, keeps the cache and the booted state (no BUG, no refold)", { checked: x.checked, from: x.bootedFromCache, lines }); }
 
 // ---- SC3 ----
 { const { dir, w } = world("c", 3, 1000); w.saveCache();
