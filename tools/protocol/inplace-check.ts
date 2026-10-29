@@ -479,7 +479,11 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 // finishes it, the ban holds
 { const name = "halfbanned"; oldWorld(name, { extra: [{ actor: "Ann", verb: "ban", args: { id: "Troll", reason: "spam" } }] });
   const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" });
-  const srv = await boot("bootHalf"); const j = await joinAs(srv.port, name, "Troll"); const bootLog = fs.readFileSync(srv.log, "utf8");
+  const srv = await boot("bootHalf");
+  // /worlds answers before boot has printed (and registered) the half-swapped world: wait for that line, not a time (16-shard load red)
+  const said = () => { try { return fs.readFileSync(srv.log, "utf8"); } catch { return ""; } };
+  await tryUntil(`boot names ${name} as not served`, () => new RegExp(`world "${name}".*NOT being served`).test(said()), { ms: 30_000, step: 100 });
+  const j = await joinAs(srv.port, name, "Troll"); const bootLog = said();
   try { srv.proc.kill(); } catch {}
   ok(died.code !== 0 && !j.snap && /interrupted/.test(j.err ?? ""), "IP13s a half-swapped world is not served: the banned account's join is refused (the world isn't open), in words saying its conversion was interrupted", j.types);
   ok(new RegExp(`world "${name}".*NOT being served`).test(bootLog) && bootLog.includes(`translate ${name}`) && /rollback/.test(bootLog), "IP13s …and boot lists it as needing recovery, naming `translate <world>` (and rollback)", bootLog.slice(-800));
