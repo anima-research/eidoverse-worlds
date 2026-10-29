@@ -61,6 +61,8 @@ export function copyTree(src: string, dst: string) {
 
 /** Link the directory `at` to `target` ("junction": no admin rights on Windows; POSIX ignores the type): hygiene raw-symlink. */
 export const linkInto = (target: string, at: string) => fs.symlinkSync(target, at, "junction");
+/** A symlink to a FILE (a junction is a directory link on Windows; a file symlink there needs Developer Mode). */
+export const linkFile = (target: string, at: string) => fs.symlinkSync(target, at, "file");
 
 /** A list of directories from one environment variable, split on the platform's own separator (`:` on POSIX, `;` on
  *  Windows, like PATH). Splitting on ":" cut `C:\\…` at its drive letter (pretrans K21, CI Windows 10-22). */
