@@ -101,7 +101,7 @@ try {
       const g = h.quad.children[0].geometry.parameters; return Math.abs(g.width - 2) < 1e-6 && Math.abs(g.height - 1) < 0.01 && h.quad.children.length === 2; })`, 12000),
     await page(`const p = await import('/lib/pictures.js'); const h = p._hung.get('moon'); return h ? { aspect: h.aspect, kids: h.quad?.children.length, g: h.quad?.children[0]?.geometry.parameters } : null;`));
 
-  // ---- SND: the limiter, silent at radius, 8 voices ----
+  // ---- SND: the limiter, silent at radius, 32 voices (R 10-28, 55435d86d) ----
   await empty("radio", [0, 0, 40], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 12 } });
   await waitFor(`import('/lib/sounds.js').then((s) => s._playing.has('radio'))`);
   const me = await page(`const c = await import('/lib/core.js'); const v = c.camera.getWorldPosition(new c.THREE.Vector3()); return [v.x, v.y, v.z];`);
@@ -110,10 +110,10 @@ try {
   check("SND1 a store sound 40 m away with radius 12 is exactly silent (gain 0), and the limiter is in the graph", far.g === 0 && far.limiter && far.ratio === 20, { far, me });
   await req("set", { id: "radio", component: "transform", value: { pos: [me[0] + 1, 0, me[2]], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
   check("SND2 …moved beside you, it's heard", await waitFor(`import('/lib/sounds.js').then((s) => (s.tickSounds(), s._playing.get('radio').gain.gain.value > 0.1))`), await page(`const s = await import('/lib/sounds.js'); return s._playing.get('radio')?.gain.gain.value;`));
-  for (let i = 0; i < 10; i++) await empty(`loop${i}`, [me[0] + 1 + i * 0.1, 0, me[2] + 1], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 30 } });
-  await waitFor(`import('/lib/sounds.js').then((s) => [...Array(10).keys()].every((i) => s._playing.has('loop' + i)))`);
+  for (let i = 0; i < 34; i++) await empty(`loop${i}`, [me[0] + 1 + i * 0.1, 0, me[2] + 1], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 30 } });
+  await waitFor(`import('/lib/sounds.js').then((s) => [...Array(34).keys()].every((i) => s._playing.has('loop' + i)))`);
   const heard = await page(`const s = await import('/lib/sounds.js'); s.tickSounds(); return [...s._playing.values()].filter((h) => (h.gain ? h.gain.gain.value : h.el.volume) > 0).length;`);
-  check("SND3 eleven sounds in reach: 8 are heard (the voice cap)", heard === 8, heard);
+  check("SND3 thirty-five sounds in reach: 32 are heard (the voice cap)", heard === 32, heard);
 
   // ---- TXT: signs ----
   await empty("sign", [3, 1.5, -3], { text: { text: "Welcome · ようこそ · مرحبا", size: 0.2 } });
