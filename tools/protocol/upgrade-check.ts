@@ -6,6 +6,8 @@
 //   UB4  rollback leaves the backup exactly as it was
 //   UB5  a BACKUPS_DIR inside WORLDS_DIR is refused (the server lists every directory there as a world)
 //   UB10 a backup is fsynced before it's returned: every copied file, SHA256SUMS, each directory and BACKUPS_DIR's entry (review L5)
+//   UB11 a link inside an old world refuses its upgrade: the boot notice says so (which, and the way past it), the CLI's refusal says the same, nothing moved (review L6)
+//   US14 …and the browser's upgrade is refused in those words (the splash shows the reason)
 //   UB9  a translation that fails after its backup (an injected swap failure) names the kept backup, still verified (review L5)
 //   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may}: false for a visitor, true for an operator's session
 //   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused, "an operator or the world's owner", nothing written
@@ -32,6 +34,7 @@ import { ENGINE, scratch, linkInto } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { isWorldDir } from "../../server/livehost.ts";
 import { backupWorld } from "../../server/backups.ts";
+import { bootNotice } from "../../server/oldworlds.ts";
 
 const root = scratch("upgrade");
 let pass = 0, fail = 0;
@@ -101,6 +104,12 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   const files = Object.keys(tree(b.dir)).map((f) => path.join(b.dir, f)), dirs = process.platform === "win32" ? [] : [b.dir, path.join(b.dir, "extra"), BB];
   const missing = [...files, ...dirs].filter((f) => !synced.has(path.resolve(f)));
   ok(files.length === 4 && !missing.length, "UB10 a backup is fsynced before it's returned: every copied file and SHA256SUMS, each of its directories and BACKUPS_DIR's entry for it (none of the directories on win32)", { missing, files: files.length }); }
+
+const rafters = oldWorld("rafters"); { const to = path.join(root, "elsewhere-link"); fs.mkdirSync(to, { recursive: true }); linkInto(to, path.join(rafters, "extra", "shared")); }
+{ const before = tree(rafters), n = bootNotice(W).split(/\n(?=\[boot\] )/).find((b) => /"rafters"/.test(b)) ?? "", r = xlate("rafters");
+  const words = /rafters\/extra\/shared is a link .*the upgrade refuses until it is replaced by the file it points to, or moved out of the world's folder/;
+  ok(words.test(n) && /can't be upgraded as it stands/.test(n) && r.code !== 0 && /extra\/shared is a link .*follows no link/.test(r.out) && same(tree(rafters), before) && !isWorldDir(rafters),
+    "UB11 a link inside an old world: the boot notice says it can't be upgraded as it stands, which entry and the way past it; the CLI refuses in the same words; nothing moved", { n: n.slice(-400), out: r.out.slice(-400) }); }
 
 // ================= UB6-8: names and paths the CLI must not take (review finding 4) =================
 const elsewhere = path.join(root, "elsewhere"); fs.mkdirSync(elsewhere, { recursive: true });
@@ -218,6 +227,9 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
   const after = await ask(OP4, "world-upgrade-review", { world: "cellar" }), none = await ask(VIS, "world-upgrade-review", { world: "nowhere-at-all" });
   ok(seen.every((x) => x === "shape") && after.ok === true && none.refused?.code === "not-old" && /no world saved in an older format called "nowhere-at-all"/.test(none.refused.reason),
     "US13 RATE_N+1 malformed world-upgrades (approved not a hash) are each refused 'shape' and spend no rate slot (the next review runs); a visitor asking about a world that doesn't exist is told not-old", { seen, after: after.ok ?? after.refused, none: none.refused }); }
+{ const r = await ask(OP4, "world-upgrade-review", { world: "rafters" }), u = r.ok ? await ask(OP4, "world-upgrade", { world: "rafters", approved: r.hash }, 120_000) : r;
+  ok(u.ok === false && u.refused?.code === "refused" && /extra\/shared is a link .*replaced by the file it points to/.test(u.refused.reason) && !isWorldDir(rafters),
+    "US14 the browser's upgrade of a world holding a link is refused in the boot notice's words (the splash shows the reason)", u.refused ?? u); }
 { oldWorld("loft");
   const { WorldAgent } = await import("../../mcpl/agent.ts");
   const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });

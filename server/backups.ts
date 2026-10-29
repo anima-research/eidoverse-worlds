@@ -26,11 +26,19 @@ export function backupsDirProblem(worldsDir: string, backupsDir = BACKUPS_DIR): 
 /** UTC yyyymmddThhmmssZ */
 export const stampOf = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 
+/** The first entry under `d` (relative, "/") that is a link or anything but a plain file or directory: a backup refuses it. */
+export function notPlainIn(d: string, at = ""): string | null {
+  for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
+    const bad = st.isDirectory() ? notPlainIn(d, rel) : st.isFile() ? null : rel; if (bad) return bad; }
+  return null;
+}
+/** What a world holding `rel` is told: why the upgrade refuses, and the way past it. */
+export const notPlainWords = (rel: string) => `${rel} is a link (or not a plain file or directory): the backup copies plain files byte for byte and follows no link, so the upgrade refuses until it is replaced by the file it points to, or moved out of the world's folder`;
 /** Every file under `d` as relative paths with "/" (a symlink or anything that isn't a file or directory is refused). */
 function filesUnder(d: string, at = ""): string[] {
   const out: string[] = [];
   for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
-    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(`${path.join(d, rel)} is not a plain file or directory (a link?): it can't be copied byte for byte`); }
+    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(path.join(d, rel))); }
   return out;
 }
 

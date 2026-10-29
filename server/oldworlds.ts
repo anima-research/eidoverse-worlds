@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isWorldDir, isPreNamesDir, isSwapUnfinished, swapRecovery } from "./livehost.ts";
+import { notPlainIn, notPlainWords } from "./backups.ts";
 
 export type OldWorldKind = "translatable" | "pre-names";
 export type OldWorld = {
@@ -111,6 +112,7 @@ export function bootNotice(dir: string): string {
   if (!old.length) return half;
   const blocks = old.map((o) => {
     const at = path.relative(dir, o.file).split(path.sep).join("/");
+    let link: string | null = null; try { link = o.kind === "translatable" ? notPlainIn(path.join(dir, o.name)) : null; } catch { /* unreadable: the upgrade says */ }
     return o.kind === "translatable"
       ? [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved by an older version of Eidoverse (a log.jsonl of the first protocol). Translate it once, in place. First the dry run:`,
@@ -119,7 +121,8 @@ export function bootNotice(dir: string): string {
          `    ${o.approve}`,
          `  A translation names no founder: nothing can yet bind a key to the old world's owner (an old-format log records accounts, not keys), so the world's top governance tier (tier 0) stays empty, the operator's countersignature is the only signature, and the record says no owner was attested.`,
          `  ${KEPT_IN_PLACE}`,
-         `  The translation first copies the whole directory, verified, to BACKUPS_DIR (backups/ beside the worlds directory). Or open it in the browser signed in as a server operator (an account in SERVER_OPERATORS, or the one that opened the setup link): its splash offers Upgrade world…, the same steps.`].join("\n")
+         `  The translation first copies the whole directory, verified, to BACKUPS_DIR (backups/ beside the worlds directory). Or open it in the browser signed in as a server operator (an account in SERVER_OPERATORS, or the one that opened the setup link): its splash offers Upgrade world…, the same steps.`,
+         ...(link ? [`  It can't be upgraded as it stands: ${notPlainWords(`${o.name}/${link}`)}.`] : [])].join("\n")
       : [`[boot] old-format world "${o.name}" (${at}) is NOT being served.`,
          `  It was saved before this server's protocol names changed (2026-10-07), so it can't be translated as it stands. Re-translate it from its original old log (the directory its first-protocol log.jsonl is in) into a new world. First the dry run:`,
          `    ${o.command}`,
