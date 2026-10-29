@@ -34,8 +34,9 @@
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
 //   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
+//   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
 //   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
-//   CL6b …in one write: the owner and the role-defs are one act and one change
+//   CL6b …in one write (one act, one change); an @24-@29 world's first owner still gives builder member's generate
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -229,12 +230,26 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const a = request(live(), rue, "delete", { id: "shed", component: "lock" }), b = request(live(), pip, "delete", { id: "gate", component: "lock" });
   row("CL5", () => ok(u.up.code === 0 && a?.ok && b?.ok && live().state().entities.shed.c.lock === undefined,
     "CL5 no --claim: the ownerless world's lock and guard are member strength, so a regular (a newcomer, the placer) lifts them; nobody is locked out", { code: u.up.code, a: a?.refused, b: b?.refused }));
+  { // (fixF, row 22) main let everyone build an ownerless world: here everyone is builder, rank and all; never moderator
+    const w = live(), q = (who: string, verb: string, args: any) => request(w, who, verb, args);
+    const mk = q(rue, "create", { id: "$lever", components: { label: "lever", reactions: { yank: { kind: "set", component: "label", value: "yanked", who: "builder" } } } });
+    const lever = mk?.ok ? (mk.ids?.$lever ?? mk.id ?? Object.keys(w.state().entities).find((k) => w.state().entities[k].c.label === "lever")) : null;
+    const use = lever ? q(pip, "use", { id: lever, action: "yank" }) : null;
+    row("CL8", () => ok(mk?.ok && use?.ok && w.state().entities[lever]?.c.label === "yanked",
+      "CL8 a who: builder gate admits a regular in a translated ownerless world (a newcomer made it, the placer of another thing used it)", { mk: mk?.refused ?? mk?.ok, use: use?.refused ?? use?.ok, lever }));
+    const lk = q(rue, "set", { id: lever ?? "shed", component: "lock", value: true }), lift = q(pip, "delete", { id: lever ?? "shed", component: "lock" });
+    row("CL9", () => ok(lk?.ok && lift?.ok, "CL9 …a lock a regular set (builder strength by its setter) is lifted by another regular: no lockout", { lk: lk?.refused, lift: lift?.refused }));
+    const ban = q(rue, "ban", { who: pip, days: 1 }), up = q(rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "moderator" } });
+    row("CL10", () => ok(ban?.ok === false && up?.ok === false && R.roleIdOf(w.state().entities["@world"].c, rue) === "builder",
+      "CL10 …and moderation stays refused: a regular can't ban, nor make themselves moderator; their role is builder, never above", { ban: ban?.refused?.code, up: up?.refused?.code, role: R.roleIdOf(w.state().entities["@world"].c, rue) })); }
   const w = live(), n0 = w.entries.length, set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } }), wrote = w.entries.slice(n0);
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
   row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok,
     "CL6 operator-repair set of an ownerless world's first owner: builder keeps generate (as the claim gives it), so regulars keep main's rights once the cap lifts", { set: set?.refused, n: n.permissions, rd: wc["role-defs"] }));
-  row("CL6b", () => ok(wrote.filter((e: any) => e.kind === "change").length === 1 && wrote.filter((e: any) => e.kind === "act").length === 1 && JSON.stringify(wrote).includes(`roles:${rue}`) && JSON.stringify(wrote).includes("role-defs"),
-    "CL6b …the owner and builder's generate are ONE write (one act, one change): neither lands without the other (review delta-260 L-I)", wrote.map((e: any) => [e.kind, e.verb])));
+  const old = { "role-defs": { member: { can: { build: true, generate: true } } } };   // an @24-@29 translation's ownerless shape
+  row("CL6b", () => ok(wrote.filter((e: any) => e.kind === "change").length === 1 && wrote.filter((e: any) => e.kind === "act").length === 1 && JSON.stringify(wrote).includes(`roles:${rue}`)
+    && R.firstOwnerRoleDefs(old)?.builder?.can?.generate === true && R.firstOwnerRoleDefs(wc) === null,
+    "CL6b …ONE write (one act, one change; review delta-260 L-I); builder already generates since @30, and an @24-@29 world's first owner still moves member's generate to builder", { wrote: wrote.map((e: any) => [e.kind, e.verb]), old: R.firstOwnerRoleDefs(old) }));
 }
 
 // ================= BN: a main-era ban still holds after the upgrade =================

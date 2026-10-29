@@ -19,7 +19,6 @@ import { waterParams } from "../../../shared/water.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
-import { BUILTIN } from "../../../shared/protocol/roles.js";
 import { CSS_NAMES } from "./cssnames.js";
 import { mapGrassArgs } from "../../../shared/flora_args.js";
 import { repairComps, repairWorld, renameFields, SHAPES_VERSION, OLD_LIGHT_DECAY } from "../../../shared/protocol/shaperepair.js";
@@ -123,7 +122,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@29";
+export const TRANSLATOR = "eidoverse/translate-v1@30";
+// @30 (fixF 10-29, item 22): an ownerless world is builder for everyone (default-role, guests, every grant below it) with builder's
+// generate in role-defs, its '*' unread, under roles.js's cap at builder; @24-@29 widened member's role-defs instead. Output differs there.
 // @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}) at [0, y, 0],
 // set off by the hull's measured box (translate's boxOf: the host's catalogue), and its water.speed a physics-area {kind: speed} on
 // the water's zone; neither rides imported:* any more. Output differs from @28 there.
@@ -220,7 +221,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@29";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@30";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -704,28 +705,29 @@ function toSpec(id, c, adjust) {
       const P = v.points, now = Array.from({ length: 64 }, (_, i) => P[Math.round((i * (P.length - 1)) / 63)]); put("points", now, `${P.length} points: resampled to 64 (every ~${((P.length - 1) / 63).toFixed(1)}th, both ends kept)`); }
     if (o) c[k] = o; }
 }
-// main's world with no owner was open: everyone builder + gen, its '*' unread (shared/rightsfold.js rightsIn, at ccd5c53f)
-const OPEN_CAN = Object.freeze({ ...Object.fromEntries(Object.entries(BUILTIN.builder.can).filter(([, x]) => x)), generate: true });
+// main's world with no owner was open: everyone builder + gen, its '*' and grants unread (shared/rightsfold.js rightsIn, at ccd5c53f)
+const ownedIn = (st) => Object.entries(st?.roles ?? {}).some(([k, r]) => k !== "*" && r?.role === "owner");
 /** main's effective rights as this protocol's @world components (R 10-28, item 22): {world, report}. Owned: newcomers and
- *  guests hold main's '*' (builder when none). Ownerless: roles.js caps everyone at member, so member's role-defs
- *  carry builder's permissions and generate; rank stays member (report.notes says what that leaves out). */
+ *  guests hold main's '*' (builder when none). Ownerless: everyone is builder, guests too (project lifts each grant below it),
+ *  and builder's role-defs carry generate; roles.js caps an ownerless world at builder, so nobody is more. */
 export function mainRights(st) {
-  const roles = st?.roles ?? {}, owned = Object.entries(roles).some(([k, r]) => k !== "*" && r?.role === "owner");
+  const roles = st?.roles ?? {}, owned = ownedIn(st);
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
   const DOOR_OF = { none: { join: "listed" }, spectator: { join: "listed", watch: "anyone" } };
   const world = {}, notes = [], star = roles["*"];
   if (owned && DOOR_OF[star?.role]) { world.access = { ...DOOR_OF[star.role] }; const { role: _r, until: _u, ...rest } = toCan(star); if (Object.keys(rest).length) world["default-role"] = { role: "member", ...rest }; }
-  else { const { until: _u, ...dr } = toCan(star && typeof star === "object" && !DOOR_OF[star.role] ? star : { role: "builder" }) ?? {}; const role = dr.role === "visitor" ? "member" : dr.role;
+  else if (owned) { const { until: _u, ...dr } = toCan(star && typeof star === "object" && !DOOR_OF[star.role] ? star : { role: "builder" }) ?? {}; const role = dr.role === "visitor" ? "member" : dr.role;
     world["default-role"] = { ...dr, role, ...(role && role !== "owner" ? { guests: role } : {}) };
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
-  if (!owned) { world["role-defs"] = { member: { can: { ...OPEN_CAN } } };
-    notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at member (roles.js roleIdOf), so member's permissions here are builder's and generate. "
-      + "Rank stays member: a lock is member strength while there is no owner (anyone may lift it, as in main), and a who: builder gate refuses everyone until the world has an owner (the upgrader's claim, or operator-repair set)");
-    if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`); }
+  else { world["default-role"] = { role: "builder", guests: "builder" }; world["role-defs"] = { builder: { can: { generate: true } } };
+    notes.push("main gave everyone builder and generate in a world with no owner, whatever its grants said: here everyone is builder (newcomers, guests, and anyone granted less) and builder generates, never flies. "
+      + "This protocol caps an ownerless world at builder (roles.js roleIdOf), so a moderator's grant reads builder until the world has an owner (the upgrader's claim, or operator-repair set); a lock is member strength until then (anyone who may build lifts it, as in main)");
+    if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`);
+    else if (star) notes.push(`main ignored '*' while the world had no owner: it is not written`); }
   const dr = world["default-role"];
-  return { world, report: { owned, newcomers: dr?.role ?? "member", guests: world.access ? "listed only" : dr?.guests ?? "member", ...(world["role-defs"] ? { memberCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };
+  return { world, report: { owned, newcomers: dr?.role ?? "member", guests: world.access ? "listed only" : dr?.guests ?? "member", ...(world.access ? { access: world.access } : {}), notes } };
 }
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null, col = null) {
   const effects = col?.effects, adjust = (id, component, field, was, now, why) => col?.adjusted?.set(`${id}\0${component}\0${field}`, { id, component, field, was: brief(was), now: brief(now), why });
@@ -804,6 +806,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
   // in, they watch only where the world lets everyone watch). A timed grant keeps its `until` (the load's sweep ends one
   // already past).
   Object.assign(w, mainRights(st).world);   // @24 (R 10-28): main's effective rights, written out
+  const open = !ownedIn(st);   // @30: main read no grant in an ownerless world, so a grant below builder is builder (mainRights)
   for (const [k, v] of Object.entries(st.roles ?? {})) {
     if (k === "*") continue;   // the door and the newcomers: mainRights, below
     else { let r = toCan(unsub(v)); const id = person(k, v);
@@ -815,7 +818,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
         const ids = screen.captioners?.ids ?? []; screen.captioners = { ids: ids.includes(id) ? ids : [...ids, id] };
         const { caption: _c, ...rest } = r; r = rest; }
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below member (@17): carried, not granted
-      else w[`roles:${id}`] = r && r.role === "visitor" ? { ...r, role: "member" } : r; }
+      else w[`roles:${id}`] = r && open && (r.role === undefined || r.role === "visitor" || r.role === "member") ? { ...r, role: "builder" } : r && r.role === "visitor" ? { ...r, role: "member" } : r; }
   }
   // the v1 fold lowercased a ban's key. Its `by` is who banned, the act's actor as v1 kept it: a name stays as it was, and
   // one that is itself an account is that person's id, as their acts' actor is (dropped without a mapper)

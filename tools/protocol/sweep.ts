@@ -177,10 +177,11 @@ function oldNorm(st: any, phys: any = null) {
     ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(k === "bans" && v && typeof v === "object" && /^(human|agent|aid1):/.test(v.by) ? (({ by: _b, ...r }) => r)(v) : v)]))
     : noAccounts(world[k]);
   // declared (translate-v1@24, R 10-28): main's effective rights written out, read here from main's rule (rightsfold.js rightsIn):
-  // an unwritten '*' is builder; with no owner, '*' is unread (builder) and everyone holds builder's permissions and generate
+  // an unwritten '*' is builder; with no owner (@30), '*' and every grant are unread: everyone is builder, and builder generates
   { const R = world.roles ?? {}, owned = Object.entries<any>(R).some(([k, r]) => k !== "*" && r?.role === "owner");
-    if (!R["*"] || (!owned && ["none", "spectator"].includes(R["*"]?.role))) world.roles = { ...R, "*": { role: "builder" } };
-    if (!owned) world["??role-defs"] = { member: { can: { build: true, editOthers: true, scripts: true, generate: true } } }; }
+    if (!R["*"] || !owned) world.roles = { ...R, "*": { role: "builder" } };
+    if (!owned) { for (const [k, r] of Object.entries<any>(world.roles)) if (k !== "*" && r && typeof r === "object" && (r.role === undefined || r.role === "visitor")) world.roles[k] = { ...r, role: "builder" };
+      world["??role-defs"] = { builder: { can: { generate: true } } }; } }
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }

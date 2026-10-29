@@ -1,12 +1,13 @@
 // tools/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
-//   R22a-e  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
+//   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
+//           (everyone builder, rank and all; the cap at builder)
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
-//   V5      the translator is @28, and a report reviewed under @27 is refused, naming the earlier translator
+//   V5      the translator is @30, and a report reviewed under @29 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -46,9 +47,19 @@ row("R22d", () => { const { W } = tr([OWNER, ["olga", "grant", { id: "*", role: 
   ok(W.access?.join === "listed" && W["role-defs"] === undefined, "R22d an owned world's '*' none still closes it (access listed)", { access: W.access }); });
 row("R22e", () => { const { r, W } = tr([["ann", "spawn", { id: "c", lib: "x.glb" }], ["world", "grant", { id: "*", role: "none" }]]);
   const a = eff(W, "ann"), g = eff(W, "guest", true);
-  ok(r.stats.divergences === 0 && a.role === "member" && a.can.build && a.can.editOthers && a.can.generate && !a.can.fly && g.can.build && g.can.generate && W.access === undefined
-    && r.stats.rights.owned === false && r.stats.rights.notes.some((x) => /Rank stays member/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)),
-    "R22e an ownerless world: everyone, guests too, builds and generates (member's role-defs, under roles.js's cap), never flies; its '*' none is unread, as main; the report names the rank it can't give", { a: a.can, g: g.can, access: W.access, notes: r.stats.rights.notes }); });
+  ok(r.stats.divergences === 0 && a.role === "builder" && a.rank === R.RANK.builder && g.role === "builder" && ["build", "editOthers", "generate"].every((k) => a.can[k] && g.can[k]) && !a.can.fly && !g.can.fly && W.access === undefined
+    && JSON.stringify(W["default-role"]) === JSON.stringify({ role: "builder", guests: "builder" }) && W["role-defs"]?.builder?.can?.generate === true && W["role-defs"]?.member === undefined
+    && r.stats.rights.owned === false && r.stats.rights.newcomers === "builder" && r.stats.rights.guests === "builder" && !r.stats.rights.notes.some((x) => /Rank stays member/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)),
+    "R22e an ownerless world: everyone, guests too, is builder (rank and all: main let everyone build) and generates, never flies; its '*' none is unread, as main", { a: [a.role, a.can], g: [g.role, g.can], dr: W["default-role"], rd: W["role-defs"], access: W.access, rights: r.stats.rights }); });
+row("R22g", () => { const { r, W } = tr([["world", "grant", { id: "vee", role: "visitor" }], ["world", "grant", { id: "mo", role: "moderator" }], ["world", "grant", { id: "*", role: "visitor", fly: true }]]);
+  const v = eff(W, "vee"), m = eff(W, "mo"), n = eff(W, "newcomer");
+  ok(r.stats.divergences === 0 && v.role === "builder" && v.can.build && m.role === "builder" && m.rank === R.RANK.builder && !m.can.ban && n.role === "builder" && !n.can.fly,
+    "R22g …a person main named below builder there is builder (main read no grant without an owner), '*' visitor too; a moderator's grant is kept but reads builder until there is an owner: nobody is moderator in an ownerless world", { v: v.role, m: [m.role, m.permissions], n: [n.role, n.can.fly], roles: Object.keys(W).filter((k) => k.startsWith("roles:")).map((k) => [k, W[k]]) }); });
+row("R22h", () => { const wc = (o: any) => ({ "default-role": { role: "builder", guests: "builder" }, ...o });
+  const at = (o: any, id = "x", anon = false) => R.roleIdOf(wc(o), id, { anon });
+  ok(at({ "roles:x": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "member" } }) === "member" && at({}, "g", true) === "builder"
+    && at({ "roles:o": { role: "owner" }, "roles:x": { role: "moderator" } }) === "moderator",
+    "R22h roles.js: a world with no owner caps everyone at builder (never moderator), raises nobody, and lets a guest be builder; an owner lifts the cap"); });
 row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind === "change");
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });
@@ -162,12 +173,12 @@ row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@28" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@29" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 29 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 29 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@29/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @29; a report reviewed under @28 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 30 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 30 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@30/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @30; a report reviewed under @29 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

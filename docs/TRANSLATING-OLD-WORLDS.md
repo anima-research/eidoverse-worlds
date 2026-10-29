@@ -54,14 +54,16 @@ report lists each one):
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
   none was written, guests included; a world with no owner let everyone build
   and generate. The translation writes that out: `default-role` with
-  `guests` the same role, and for an ownerless world the member role's
-  permissions (`role-defs`) set to the builder's plus generate, since this
-  protocol caps an ownerless world at member. Rank stays member there, so
-  a lock is member strength (anyone may lift it, as in main), and a
-  `who: builder` gate refuses everyone until the world has an owner (the
-  upgrader's claim, below, or operator-repair set, which gives builder
-  generate the same way). The report's `rights` says which, and its notes
-  what can't be said (generate for guests). Worlds founded new keep this
+  `guests` the same role. An ownerless world (translate-v1@30) is builder
+  for everyone, rank and all: `default-role` builder for newcomers and
+  guests, every grant below builder written builder (main read none), and
+  builder's `role-defs` carrying generate; its `'*'` is unread, as main's
+  was. This protocol caps an ownerless world at builder, so a `who: builder`
+  gate admits everyone, a moderator's grant reads builder until the world
+  has an owner (the upgrader's claim, below, or operator-repair set), and a
+  lock is member strength until then (anyone who may build lifts it). The
+  report's `rights` says which, and its notes what can't be said (generate
+  for guests in an owned world). Worlds founded new keep this
   protocol's defaults.
 - *Particles.* A preset retuned with main's knobs (wobble, up, spread, gravity,
   grow, swirl, twinkle, converge, rotate, color, blending) becomes a derived
