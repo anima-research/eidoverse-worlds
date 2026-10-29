@@ -68,7 +68,7 @@ export function projectEnvironment(state: any) {
 }
 
 // Renderer-facing component parameters (tools/water/README.md), in the shapes main's native renderer read, projected from
-// v4's components (translate-v1.js VOLUMES / CARRIED, inverted; review L24): zone+water, zone+water-exclusion, drive, climb, collider.
+// the components (translate-v1.js VOLUMES / CARRIED, inverted; review L24): zone+water, zone+water-exclusion, drive, climb, collider.
 const PASS_THROUGH = ["environment"] as const;
 const zoneBox = (z: any) => z?.shape === "box" && z.global !== true && Array.isArray(z.size) && z.size.length === 3 && z.size.every(Number.isFinite) ? z.size.map(Math.abs) : null;
 const num = (x: unknown, d: number) => (Number.isFinite(x) ? x as number : d);
