@@ -74,6 +74,17 @@ export function sessionOfRequest(req: Request): HnSession | null {
   return site === null || site === "same-origin" ? sessionFromCookie(req.headers.get("cookie")) : null;
 }
 
+/** A browser upgrade from a page that isn't this server's (cross-site WebSocket hijacking; OWASP, web.dev Fetch Metadata):
+ *  Sec-Fetch-Site decides when sent (same-origin only); else an Origin must be this server's (Host, X-Forwarded-Host, or
+ *  HN_NATIVE_ORIGIN behind a proxy that rewrites Host). No Origin at all: a native client. */
+export function crossSiteUpgrade(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site"); if (site !== null) return site !== "same-origin";
+  const origin = req.headers.get("origin"); if (origin === null) return false;
+  let host: string; try { host = new URL(origin).host.toLowerCase(); } catch { return true; }   // "null" (an opaque origin) too
+  const ours = [req.headers.get("host"), req.headers.get("x-forwarded-host"), process.env.HN_NATIVE_ORIGIN ? new URL(process.env.HN_NATIVE_ORIGIN).host : null];
+  return !ours.some((h) => h && h.toLowerCase() === host);
+}
+
 // ---- session persistence ----------------------------------------------------
 // Sessions used to be memory-only, so every deploy logged the whole show out
 // and sent verified humans back to the door mid-event. They survive restarts
