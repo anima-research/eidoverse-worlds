@@ -48,7 +48,7 @@ no frame to hold one (`water` on `@world` without one is the world's water
 level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
-**What a translation keeps of main's meaning** (translate-v1@27, R 10-28; the
+**What a translation keeps of main's meaning** (translate-v1@28, R 10-28; the
 report lists each one):
 
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
