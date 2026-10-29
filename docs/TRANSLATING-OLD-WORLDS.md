@@ -11,7 +11,9 @@ be translated once, one way, into a world of this protocol, in two steps.
 `bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`
 writes nothing and prints the **dry-run report** — the old log's size and
 sha256, the translator and fold build, `founderKey: null`, the counts
-(entries, changes, guards that become locks, models without bytes here), the
+(entries, changes, guards that become locks, models without bytes here),
+`output` (the digest of the state the translation writes, so new code or new
+model bytes between the review and the apply refuse it), the
 translator's DROPPED table (what every translation drops or renames by
 design), and `deferred`: every use of a feature this protocol does not carry
 yet — and the report's sha256. The translation itself takes `--approved <that

@@ -221,7 +221,10 @@ export function ownerWarning(world: string, people: Any[] = []): string | null {
 }
 /** Whether a claim applies: asked for, and no owner in the translated world (people). */
 const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = []) {
+/** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
+ *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
+const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r)) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
@@ -230,6 +233,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed },
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
     entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
+    output,                      // the translated state's digest (outputOf): a pull or new model bytes between review and apply changes it
     actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
     guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
     ...(r.stats.launches !== undefined ? { physics: { launches: r.stats.launches, rests: r.stats.rests } } : {}),
@@ -317,8 +321,10 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
-  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe)).hash;
-    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now} (the old log or the tool changed since the dry run). Nothing written`); }
+  if (approval) { const dry = identityMapper(old, directoryFor(srcWorlds), { mint: false, known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });   // the dry run's ids: its output digest
+    const output = outputOf(translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: dry.who, content: hostContent }));
+    const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output).hash;
+    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
