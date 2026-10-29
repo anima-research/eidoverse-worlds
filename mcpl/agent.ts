@@ -114,6 +114,7 @@ import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
+import { physicsAreasOf, speedFactorAt, foldOfView } from "../shared/zone.js";
 import { spawnOf, belowWorld, FELL } from "../shared/spawn.js";
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 const solidOffRecord = (e: any) => solidOff(e, "bodies");
@@ -1699,6 +1700,9 @@ export class WorldAgent {
    *  what shared/editschema.js expects. */
   /** Every placed thing's id in the fold (the hierarchy tools walk them). */
   foldedIds(): string[] { return Object.keys(this.st.entities); }
+  /** × my speed at p: a physics-area {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
+  private areas: { st: unknown; a: any[] } | null = null;
+  speedAt = (p: number[]): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p); };
   /** The world's half of the fold — state.sky / terrain / grass — which
    *  shared/worldentity.js reads as the world entity `@world`. */
   worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {
@@ -2701,7 +2705,7 @@ export class WorldAgent {
       if (!colliding0 && !this.flight && !this.draggedBy && this.pins.size === 0) { const g0 = floorAt(this.pos.x, this.pos.z); if (Number.isFinite(g0) && (!water || g0 >= water.level)) this.pos.y = g0; }
       const r = walkToward({ pos: [this.pos.x, this.pos.y, this.pos.z], target: [T.x, T.z], dt, run: T.run, tolerance: T.tolerance ?? MOVER.arrive.tolerance, room,
         ...(water ? { height: this.stature() } : {}) },
-        water ? { floorAt, waterAt: () => water.level } : { floorAt });
+        water ? { floorAt, waterAt: () => water.level, speedAt: this.speedAt } : { floorAt, speedAt: this.speedAt });
       if (r.arrived) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body

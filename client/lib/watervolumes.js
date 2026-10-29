@@ -4,7 +4,7 @@ import { THREE, TSL, scene, camera, sun } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
 import { MAX_WATER, MAX_AIR, mediumAt } from '../../shared/water.js';
-import { zonesOf, waterVolumes, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches, waterBox, headingOf } from '../../shared/zone.js';
+import { zonesOf, waterVolumes, physicsAreasOf, speedFactorAt, zoneChangeTouches, foldOfView, fogSlots, worldLevelAt, lookOf, lookChangeTouches, waterBox, headingOf } from '../../shared/zone.js';
 import { worldPose } from '../../shared/protocol/simlayer.js';
 import { levelWaterInfo, surfaceHeightAt, waterAt as levelWaterAt } from './water.js';
 // the sky's under-water switch, injected by main.js (setSkyHider): importing sky.js here pulled the whole sky (assets,
@@ -20,7 +20,7 @@ export function setWaterObjects(fn) { objects = fn; }
 let serverNow = () => Date.now();
 export function setWaterClock(fn) { serverNow = fn; }
 const waters = [], airs = [], airMasks = [], surfaces = [];
-let zonesNow = { bodies: [], exclusions: [] }, volumesNow = { waters: [], airs: [] };   // the whole of the last build, for the CPU readers
+let zonesNow = { bodies: [], exclusions: [] }, volumesNow = { waters: [], airs: [] }, areasNow = [];   // the whole of the last build, for the CPU readers
 const clock = uniform(0), waterCount = uniform(0,'int'), airCount = uniform(0,'int');
 // fog slots: 0 is the world water level's (an empty box unless the camera is under it), 1..MAX_WATER the volumes'
 const SLOTS = MAX_WATER + 1;
@@ -124,6 +124,8 @@ export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],wa
 /** @world's `level` at p, or null in a pocket that keeps it out (zone.js worldLevelAt: mediumOf) */
 export function levelAt(p, level) { return worldLevelAt(Array.isArray(p)?p:[p.x,p.y,p.z],zonesNow,level,{volumes:volumesNow}); }
 export function waterTime() { return clock.value; }
+/** × a body's own speed at p: a physics-area {kind: speed} (zone.js speedFactorAt, the authority's and the agent's reading) */
+export function speedAt(p) { return speedFactorAt(areasNow,Array.isArray(p)?p:[p.x,p.y,p.z]); }
 let rebuilds = 0;
 export function waterDebug() { return { waters:waters.length, air:airs.length, enabled:installed, time:clock.value, rebuilds, slots:waterCount.value, under:underLevelNow, background:backgroundOn, dryPocket:dryIdx.value }; }
 // a body's pose: its live object's (a moving carrier draws between records), else the record's (simlayer worldPose)
@@ -254,7 +256,8 @@ export function updateWater() {
   waters.length=0;airs.length=0;airMasks.length=0;
   if(rebuild)fold=foldOfView(state.st);
   const zones=zonesOf(fold,{poseOf:id=>poseFor(fold,id)});
-  if(rebuild)for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);
+  areasNow=physicsAreasOf(fold,{poseOf:id=>poseFor(fold,id)});
+  if(rebuild){for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);for(const a of areasNow)volumeIds.add(a.id);}
   const vol=waterVolumes(zones);zonesNow=zones;volumesNow=vol;
   const fog=fogSlots(vol);   // the kept bodies and pockets, and which slots each pocket clears (the combine law)
   if(vol.waters.length>MAX_WATER)warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);

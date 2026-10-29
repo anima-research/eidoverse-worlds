@@ -577,12 +577,19 @@ export const COMPONENTS = {
                  size: "a box's full size [x, y, z], metres, before the thing's scale", radius: "a sphere's, capsule's or cylinder's radius, metres", height: "a capsule's or cylinder's full height along its y, metres (a capsule's includes its caps)",
                  priority: "which of two overlapping zones' effects wins: the higher (Godot Area3D); a tie goes to the later id", blend: "how far outside its shape a look effect fades out, metres (Unity Volume blend distance); look only, never the medium",
                  weight: "how strongly a look effect applies, 0..1 (Unity Volume weight); look only, never the medium", global: "true: everywhere in the world, its shape unused (Unity Volume global, Unreal unbound)" },
-               help: "a volume that effects (water, water-exclusion) ride on as siblings on the same thing: {shape: box|sphere|capsule|cylinder, size? [x, y, z] m (a box), radius? m (sphere, capsule, cylinder), height? m (capsule, cylinder), priority? int (higher wins; absent 0), blend? m (absent 0), weight? 0..1 (absent 1), global? (true: everywhere)}, centred on the thing's origin" },
+               help: "a volume that effects (water, water-exclusion, physics-area) ride on as siblings on the same thing: {shape: box|sphere|capsule|cylinder, size? [x, y, z] m (a box), radius? m (sphere, capsule, cylinder), height? m (capsule, cylinder), priority? int (higher wins; absent 0), blend? m (absent 0), weight? 0..1 (absent 1), global? (true: everywhere)}, centred on the thing's origin" },
   // a dry pocket carved out of water bodies, after Unreal's Water Body Exclusion Volume
   "water-exclusion": { on: "thing", fields: { bodies: "refs" }, ranges: { bodies: { maxItems: 16 } },
                absentMeans: { bodies: "every water body its zone overlaps, @world's level included" },
                docs: { bodies: "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)" },
                help: "a dry pocket on a thing with a zone {shape: 'box', size}: inside it there is no water from the bodies it names (bodies? [ids]; absent: every body it overlaps) whose zone's priority is at or below its own" },
+  // R 10-28 item 50: a zone effect that changes how bodies move inside it (Godot Area3D's overrides, Unreal Physics Volume); one kind now
+  "physics-area": { on: "thing", fields: { kind: "string", factor: "number" }, required: ["kind"], enums: { kind: ["speed"] },
+               ranges: { factor: { min: 0.05, max: 10 } }, units: { factor: "×" },
+               absentMeans: { factor: "1: no change" },
+               docs: { kind: "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
+                 factor: "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows" },
+               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1)}. Where speed areas overlap the zone's priority decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.

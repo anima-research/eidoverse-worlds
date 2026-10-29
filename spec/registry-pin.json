@@ -2597,6 +2597,38 @@
   },
   "on": "thing"
  },
+ "physics-area": {
+  "status": "trial",
+  "fields": {
+   "kind": "string",
+   "factor": "number"
+  },
+  "enums": {
+   "kind": [
+    "speed"
+   ]
+  },
+  "ranges": {
+   "factor": {
+    "min": 0.05,
+    "max": 10
+   }
+  },
+  "required": [
+   "kind"
+  ],
+  "absentMeans": {
+   "factor": "1: no change"
+  },
+  "docs": {
+   "kind": "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
+   "factor": "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows"
+  },
+  "units": {
+   "factor": "×"
+  },
+  "on": "thing"
+ },
  "terrain-grid": {
   "status": "reserved",
   "on": "world"

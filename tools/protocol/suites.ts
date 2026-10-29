@@ -34,6 +34,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["zone-water", "zone-water-check.ts", 1], // zone + water (either side) + water-exclusion: the door, shared/zone.js's bodies (the combine law), the client's rebuild rule
   ["climb-env", "climb-env-check.ts", 1], // collider.enabled (collision off), climb routes (shared/climb.js), arrivals and KillZ (shared/spawn.js), the sky gradient and the directional sun
   ["drive", "drive-check.ts", 1], // a hull driven from its helm: drive + station.input at the door, one driver, plausibility, the hull's own collision, the lease's commits and end (shared/drive.js, authority/drive.js)
+  ["physics-area", "physics-area-check.ts", 1], // physics-area {kind: speed} on a zone (R 10-28 item 50): the door, shared/zone.js's reader, the one mover (walk, wade, swim, 3D stroke), the authority's track agreeing with it
   ["water-vectors", "../water-vectors.ts --check", 1], // shared/conformance/water.json still what shared/water.js computes (waterParams, waveHeight, swimStep)
   ["water-import", "../water/import-golden-check.ts", 1], // upstream #248's manifest through tools/water/import.ts --dry: its zone/water/water-exclusion things, taken by a real authority, and mediumOf = main's mediumAt
   ["level-dive", "../water/level-dive-check.ts", 1], // a real browser in the lake: C dives, looking down with W dives (R 10-28), surfacing hands back to the float

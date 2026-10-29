@@ -269,7 +269,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `collider {shape, enabled?, blocks?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, `zone`, `water` (a body),
-  `water-exclusion`,
+  `water-exclusion`, `physics-area`,
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -321,6 +321,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `hulls` (driven vehicles: the authority's hull sweep) and `things` (loose things: the engine). Absent, it stops all
   three, as before. `hidden` with `blocks: ['hulls']` is an invisible wall only vehicles meet. A dynamic thing must
   block `things`. `solidOff(c, layer)` is the one reading.
+- **A physics area is `physics-area {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
+  overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
+  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where areas overlap the zone's priority decides.
+  The authority's track widens inside a boost and never narrows. shared/zone.js `physicsAreasOf`/`speedFactorAt`
+  is the one reader; shared/mover.js `stepWalk` (env.speedAt) and `stepSwim` (water.factor) apply it. Other kinds
+  (direction, point, vortex) are planned, not open.
 - **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
   speed?, face?, ends?}`, straight lines between its points (Godot Path3D +
   PathFollow3D); its name is its `label`. A climber's presence is `{host,
