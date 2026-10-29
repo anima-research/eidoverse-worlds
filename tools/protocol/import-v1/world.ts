@@ -1,6 +1,7 @@
 // tools/protocol/import-v1/world.ts — translate an OLD (v1) world on disk into a NEW v4 world, once. The operator runs it
 // (bun tools/protocol/world.ts translate <v1 world> <new world>); nothing at runtime imports this directory
 // (tools/protocol/nov1-check.ts enforces it). The v1 log is read, never written (R9).
+import { warmLamps, lampsOf } from "./lamps.ts";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
@@ -228,6 +229,11 @@ export function ownerWarning(world: string, people: Any[] = []): string | null {
 }
 /** Whether a claim applies: asked for, and no owner in the translated world (people). */
 const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
+/** Every translation ends with an owner (LEGACY-PINS item 9): world.ts translate refuses a world with none and no claim, naming the fix; else null. */
+export function ownerlessRefusal(world: string, people: Any[], claim: unknown): string | null {
+  if (claim || people.some((p) => p.role === "owner")) return null;
+  return `"${world}" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=<the account that will own it> (yours, as SERVER_OPERATORS lists it), as the browser's upgrade does; everyone else keeps what main gave them (build and generate). Nothing was changed.`;
+}
 /** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
  *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
 const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
@@ -267,6 +273,7 @@ export async function warmHulls(srcDir: string) {
   const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
   const veh = new Set(old.filter((e: Any) => e?.verb === "comp" && e.args?.type === "vehicle").map((e: Any) => String(e.args.id)));
   await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
+  await warmLamps(old.filter((e: Any) => e?.verb === "spawn").map((e: Any) => e.args?.lib));   // main's inferred lamps (lamps.ts), measured once too
 }
 /** The dry run's translation (ids minted by nothing, this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
 function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, content: (p: string) => string | null = hostContent) {
@@ -275,7 +282,7 @@ function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerC
   return { m, r: translateOld(old, world, { who: m.who, content }) };
 }
 /** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
-const translateOld = (old: Any[], world: string, opts: Any) => translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, ...opts });
+const translateOld = (old: Any[], world: string, opts: Any) => translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, lampsOf, ...opts });
 export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);

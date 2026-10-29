@@ -49,6 +49,8 @@ const WINGED = [
   'L_Wing_Lower', 'R_Wing_Lower',
 ];
 const ag: any = new WorldAgent({ name: 'mythos', world: 'is-error-bench' });
+// a world's bounds fence flight and cap it at their top (shared/flight.js bounds): the founded stage's, ±110 m under 60 m
+const STAGE_BOX = { min: [-110, -10, -110], max: [110, 60, 110] }; ag.worldBox = () => STAGE_BOX;
 ag.bodyBoneNames = WINGED;
 ag.loadBodyBones = async () => ag.bodyBoneNames;
 /** An act's answer as the door gives it: failed when it didn't do what it asked (tools.ts act()). */
@@ -210,12 +212,16 @@ const climbs = (altitude: number) => midway(ag, call('climb_to', { altitude }), 
   ag.flight.pos.y = ag.flight.climbTo; ag.flight.climbTo = null;
 });
 ag.flight.stamina = 1e6;
-const ceiling = ag.flightCfg.bounds.ceiling;
+const ceiling = STAGE_BOX.max[1];   // the world's bounds' top
 r = await climbs(ceiling + 50);
 check('a climb asked above the ceiling stops there and is failed, naming the ceiling',
   failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${(ceiling + 50).toFixed(1)}m you asked for`).test(said(r)), said(r));
 r = await climbs(ceiling - 1);
 check('a climb that gets there is done, at the height asked', ok(r) && new RegExp(`^at ${(ceiling - 1).toFixed(1)}m.*stamina spent`).test(said(r)), said(r));
+ag.worldBox = () => null;   // no @world.bounds: no ceiling (LEGACY-PINS item 3; main's 60 m was every world's)
+r = await climbs(ceiling + 50);
+check('with no bounds, a climb asked above 60 m gets there: the world has no ceiling', ok(r) && new RegExp(`^at ${(ceiling + 50).toFixed(1)}m`).test(said(r)), said(r));
+ag.worldBox = () => STAGE_BOX;
 // A wait answered before its time clears its timer, so an answered act holds nothing open. The flight waits'
 // timers are the ones of 8 s and more; the test's own polling waits are a few milliseconds.
 {

@@ -2479,7 +2479,7 @@
    "attenuationDistance": "the reader's own look for its kind, as attenuationColor",
    "scatterColor": "the reader's own look (a level by kind and daylight; a body [0.015, 0.12, 0.18]: shared/water.js waterParams)",
    "density": "1000 kg/m³ (fresh water)",
-   "drag": "the mover's own swim law (shared/mover.js)"
+   "drag": "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)"
   },
   "docs": {
    "level": "its surface height, metres, in its entity's frame (the world's on @world; on a thing, absent: its zone's top)",
@@ -2492,7 +2492,7 @@
    "attenuationDistance": "the distance, metres, at which light has become attenuationColor (KHR_materials_volume)",
    "scatterColor": "the colour the water scatters back, linear [r, g, b] 0..1 (Unity HDRP scatteringColor)",
    "density": "how dense the water is, kg/m³ (what a body floats against)",
-   "drag": "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction)"
+   "drag": "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction): a swimmer strokes at 5 / drag of its pace, and walkers on its floor are untouched"
   },
   "units": {
    "level": "m",

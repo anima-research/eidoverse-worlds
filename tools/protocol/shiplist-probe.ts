@@ -609,17 +609,17 @@ try {
   const down = await waitFor(`import('/lib/thingphysics.js').then((m) => !m.physicsApi.mine().includes('acbox'))`, 9000); await sleep(1500);
   const at = await where();
   check("AC1 holding it, a click on a spot 3.7 m away walks me over and sets it down THERE (within 0.4 m), not at my feet", cg?.on && !cg.over && down && Math.hypot(at[0] - spot[0], at[2] - spot[1]) < 0.4, { cg, spot, at });
-  // C throws at the spot under the cursor
+  // Q throws at the spot under the cursor
   await page(`const t = await import('/lib/thingphysics.js'); await t.physicsApi.grab('acbox'); return true;`); await sleep(1000);
   const me2 = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const tgt = [me2[0] + dir[0] * 5 - dir[1] * 2, me2[1] + dir[1] * 5 + dir[0] * 2];
   const mv = await page(`const c = await import('/lib/core.js'), T = c.THREE; const p = new T.Vector3(${tgt[0]}, 0, ${tgt[1]}).project(c.camera), r = c.canvas.getBoundingClientRect(), x = r.left + (p.x + 1) / 2 * r.width, y = r.top + (1 - p.y) / 2 * r.height;
     c.canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: y })); return (await import('/lib/clickuse.js')).clickUseApi.aimPoint();`);
-  await key("KeyC");
+  await key("KeyQ");
   // where it first comes down: the lowest-y moment near the ground, sampled in the page
   const land = await page(`const w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE; const o = w.entities.get('acbox'), v = new T.Vector3(); let up = false, hit = null;
     for (let i = 0; i < 80 && !hit; i++) { o.updateWorldMatrix(true, false); o.getWorldPosition(v); const lo = new T.Box3().setFromObject(o).min.y; if (v.y > 0.5) up = true; else if (up && (lo < 0.06 || v.y < 0.12)) hit = [v.x, lo, v.z]; await new Promise((z) => setTimeout(z, 33)); } return { up, hit };`);
-  check("AC2 C throws it at the spot under the cursor: it rises, and first comes down within 0.9 m of that spot (5.4 m away, off to one side)", mv && land?.up && land.hit && Math.hypot(land.hit[0] - tgt[0], land.hit[2] - tgt[1]) < 0.9, { aim: mv, tgt, land });
+  check("AC2 Q throws it at the spot under the cursor: it rises, and first comes down within 0.9 m of that spot (5.4 m away, off to one side)", mv && land?.up && land.hit && Math.hypot(land.hit[0] - tgt[0], land.hit[2] - tgt[1]) < 0.9, { aim: mv, tgt, land });
   await sleep(2500);
   // the menu: the name bare, in its own span
   await page(`const c = await import('/lib/core.js'), cu = await import('/lib/clickuse.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('acbox'); o.updateWorldMatrix(true, true);

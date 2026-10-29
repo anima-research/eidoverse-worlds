@@ -10,6 +10,7 @@
 //   CL  nearbyClimb follows a route's changes: found, gone when disabled, found where its points moved
 //   KU  U opens People Here; Ctrl+U (the browser's view-source) does not (review r3 F9)
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
+//   PF  a glowing library model places with its light children in one act (client/lib/prefabs.js); one undo takes all
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
 //   X   Esc mid-drag: the thing goes back, and nothing is written (0 acts)
 //   L   a lock refusal (the cup rides a table someone else locked): the dialog offers Move anyway; it re-sends the
@@ -214,6 +215,21 @@ try {
   await sleep(1500);
   check("X2 …and the release after it wrote nothing (0 acts)", myActs().length === n0, myActs().slice(n0).map((a) => a.e.verb));
   check("X3 Esc left the selection alone (it cancelled the drag, not the edit)", await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`));
+
+  // ---- PF: a prefab (a Godot scene, a Unity prefab): a glowing library model places WITH its lights, one act; one undo takes all ----
+  { const POST = "eidoverse/assets/models/streetlight_lamp_light_street_blade_runner_cyberpunk.glb"; n0 = myActs().length;
+    await page(`const b = await import('/lib/build.js'); await b.holdGhost('${POST}', 'streetlight'); return b.hasGhost();`);
+    await waitFor(`import('/lib/build.js').then((m) => m.hasGhost())`, 45000);
+    await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 700, clientY: 470 })), true))`);
+    const placed = await waitDisk(() => myActs().length === n0 + 1), st = disk(), act = myActs().at(-1);
+    const post = Object.keys(st.entities).find((k) => st.entities[k].c.model === POST), kids = Object.entries<any>(st.entities).filter(([, x]) => post && x.c.parent?.to === post && x.c.light);
+    check("PF1 placing the palette's streetlight is ONE act that makes the model and its two light children (main's lamps at their spots, as translate-v1@31 writes them: range 12, decay 2)",
+      placed && !!post && kids.length === 2 && kids.every(([, x]) => x.c.light.range === 12 && x.c.light.decay === 2 && x.c.label === "lamp") && Math.abs(kids.map(([, x]) => x.c.transform.pos[1]).sort()[1] - 2.5521) < 1e-3,
+      { acts: myActs().slice(n0).map((a) => a.e.verb), post, kids, refused: await evalJson(`__refused.slice(-2).map((r) => r.text)`) });
+    check("PF2 …the page draws both lights' children under the post", kids.length === 2 && await waitFor(`import('/lib/world.js').then((m) => ${JSON.stringify(kids.map(([k]) => k))}.every((k) => m.entities.get(k)?.parent && m.entities.has('${post}')))`));
+    await waitFor(`globalThis.__editWrites().undo.at(-1) === ${act?.seq ?? -1}`);
+    await key("KeyZ", { ctrlKey: true });
+    check("PF3 one Ctrl+Z takes the post and its lights away together", await waitDisk(() => kids.length === 2 && !disk().entities[post!] && kids.every(([k]) => !disk().entities[k])), myActs().at(-1)?.e.body); }
 
   // ---- L: a lock refusal and Move anyway ----
   check("(setup) bob builds a table with a cup on it and locks the table", (await bobReq("create", { id: "tbl", model: RED, components: { transform: { pos: [6, 0, 0] }, label: "tbl" } })).ok

@@ -651,7 +651,7 @@ for now), never a stream of acts. Scripts hear `grab` and `release` (docs/SCRIPT
 (or volleys one in the air beside you); it is never `kick`, which is
 moderation's remove-a-person. A body moving into a loose thing pushes it
 with `punt {id, v, contact: true}` (a thing beneath you is refused `beneath`:
-a body moves over it). In a browser: T (pick up / put down), C (throw
+a body moves over it). In a browser: T (pick up / put down), Q (throw
 / punt), the left button to use what you hold, `/grab /put /drop /throw
 /punt`, and in VR the grip (near, or the laser out to `range`) and the
 trigger. `grabbable.who` says who may pick it up (default member),

@@ -16,11 +16,11 @@ import { unNegZero } from "../../../shared/protocol/round.js";
 import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm, qRotate } from "../../../shared/rot.js";
 import { waterParams } from "../../../shared/water.js";
+import { MOVER } from "../../../shared/mover.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
 import { CSS_NAMES } from "./cssnames.js";
-import { OWNERLESS_OPEN } from "../../../shared/protocol/roles.js";
 import { mapGrassArgs } from "../../../shared/flora_args.js";
 import { repairComps, repairWorld, renameFields, SHAPES_VERSION, OLD_LIGHT_DECAY } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
@@ -123,7 +123,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@30";
+export const TRANSLATOR = "eidoverse/translate-v1@31";
+// @31 (LEGACY-PINS 10-29, items 2, 6, 8, 9): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
+// (stageBoundsOf); main's inferred lamps are light children (lampPartsOf); water.speed is the water's own drag (waterOfOld), not a
+// physics-area; an ownerless world no longer carries imported:ownerless (the upgrader's claim is its owner). Output differs there.
 // @30 (fixF 10-29, item 22): an ownerless world is builder for everyone (default-role, guests, every grant below it) with builder's
 // generate in role-defs, its '*' unread, and @world imported:ownerless lifting roles.js's ownerless cap to builder; @24-@29 widened member's role-defs instead. Output differs there.
 // @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}) at [0, y, 0],
@@ -222,7 +225,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@30";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@31";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -413,7 +416,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4} on that zone, which scales every body's speed inside it (walking and wading too, where main changed only the swim)" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → the water's own drag (1/s, Godot linear_damp: a swimmer there strokes at main's speed, walkers are untouched), drag = 5 × 2.4 / speed; a speed within 5% of 2.4 is dropped" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform" },
 };
 export const AIR_PRIORITY = 1;
@@ -425,12 +428,16 @@ const ID_POSE = (pos, q = [0, 0, 0, 1]) => ({ pos, q, scale: [1, 1, 1] });
 export function waterOfOld(d) {
   const { center, size, absorption, scatter, speed, ...rest } = d;
   const water = { ...rest };
-  // main's stroke in the volume, as × the one a v4 body swims at there (shared/water.js waterParams' default): a physics-area
-  const area = speed === undefined ? null : { kind: "speed", factor: clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1) };
+  // main's stroke in the volume as the water's drag (@31): the stroke reaches ease / drag of itself (shared/mover.js stepSwim)
+  const f = speed === undefined ? 1 : clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1);
+  if (Math.abs(f - 1) > SPEED_NEAR) water.drag = MOVER.swim.ease / f;
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
-  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water, ...(area ? { area } : {}) };
+  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water,
+    ...(speed !== undefined ? { speed: water.drag !== undefined ? { drag: water.drag } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };
 }
+/** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a drag. */
+export const SPEED_NEAR = 0.05;
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
 export function volumePartsOf(host, comp, c) {
@@ -438,15 +445,33 @@ export function volumePartsOf(host, comp, c) {
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
     const m = waterOfOld(w);
-    const a = m.area ? { "physics-area": m.area } : {};
-    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
-    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
+    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water });
+    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water }]);
   }
   const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
   boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
     children.push([airChildId(host, i), { transform: ID_POSE(vec3(b.center, [0, 0, 0]), qNorm(b.q) ?? [0, 0, 0, 1]), parent: { to: host }, label: `dry box ${i + 1}`,
       zone: { shape: "box", size: vec3(b.size, [1, 1, 1]).map((x) => Math.max(0.001, Math.min(1e4, Math.abs(x)))), priority: AIR_PRIORITY }, "water-exclusion": {} }]); });
   return { own, children };
+}
+/** main's empty-world edge: a body walked or swam no further than 78 m from the origin where the world had no bounds (main
+ *  client/lib/controller.js constrainMovement, "the legacy stage boundary"), and flew under 60 m. Here @world.bounds is the only
+ *  edge, so a main world with neither bounds nor terrain gets this box (@31); grown past any thing, arrival, water volume or
+ *  vehicle band outside it (the authority refuses a move outside bounds; below them is a fall). Else null. */
+export const STAGE = { half: 78, floor: -2, ceiling: 60, margin: 2 };
+export function stageBoundsOf(st) {
+  const plan = environmentPlan(st);
+  if (st?.terrain != null || plan.some((x) => x.parts.world.bounds || x.parts.world.terrain)) return null;
+  const ok = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
+  const pts = [...plan.map((x) => x.parts.world.spawn?.pos)];
+  for (const e of Object.values(st?.entities ?? {})) { const p = ok(e?.pos) ? e.pos : [0, 0, 0], w = e?.comp?.water, v = e?.comp?.vehicle; pts.push(e?.pos);
+    if (w && ok(w.center) && ok(w.size)) for (const k of [-0.5, 0.5]) pts.push(p.map((x, i) => x + w.center[i] + k * Math.abs(w.size[i])));   // a volume main swam in (no edge there)
+    for (const y of [v?.minY, v?.maxY]) if (Number.isFinite(y)) pts.push([p[0], y, p[2]]); }   // a vehicle's band
+  const m = STAGE.margin;
+  pts.splice(0, pts.length, ...pts.filter(ok));
+  const lo = [-STAGE.half, STAGE.floor, -STAGE.half], hi = [STAGE.half, STAGE.ceiling, STAGE.half];
+  for (const p of pts) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i] - m); hi[i] = Math.max(hi[i], p[i] + m); }
+  return { min: lo, max: hi };
 }
 /** The water volumes and air boxes a v1 state holds, as the report lists them: [{component, feature, id (as written), into (ids)}] */
 export function volumeMappings(st) {
@@ -455,7 +480,8 @@ export function volumeMappings(st) {
     if (e?.comp?.[k] == null) continue;
     const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
-    out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)] });
+    const sp = k === "water" && e.comp.water && typeof e.comp.water === "object" ? waterOfOld(e.comp.water).speed : undefined;   // @31: what main's speed became
+    out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}) });
   }
   return out;
 }
@@ -471,6 +497,16 @@ export function carriedMappings(st) {
     if (env.has(id)) out.push({ component: "environment", feature: CARRIED.environment.feature, id, into: [...new Set(env.get(id).fields.map(([, to]) => to).filter(Boolean))] });
     for (const p of particlesPlan(id, comp)) if (p.effect) out.push({ component: "particles", feature: "particle preset retuned by main's knobs", id, ...(p.emitter ? { emitter: p.emitter } : {}), into: [p.host], effect: p.effect, knobs: p.knobs });
     if (env.get(id)?.lowered) out.push({ component: "environment", feature: "bounds.min.y lowered to 2 m below the floor (the floor lay below the bounds)", id, into: ["@world.bounds"], ...env.get(id).lowered }); }
+  { const sb = stageBoundsOf(st); if (sb) out.push({ component: "stage", id: "@world", into: ["@world.bounds"], bounds: sb,
+    feature: `main's stage edge: with no bounds and no terrain, main kept walkers and swimmers within 78 m of the origin and fliers under 60 m; this world's only edge is @world.bounds, so it is written as the box x/z ±78 m, y ${STAGE.floor}..${STAGE.ceiling} m (2 m under the stage floor to main's flight ceiling), grown ${STAGE.margin} m past anything placed outside it` }); }
+  return out;
+}
+/** The lamps main inferred from glowing models, as the report lists them (@31): [{component: "lamp", feature, id, into, lamps}] */
+export function lampMappings(st, lampsOf) {
+  const out = [];
+  for (const id of Object.keys(st?.entities ?? {}).sort()) { const e = st.entities[id], L = e?.kind === "light" ? [] : lampsOf?.(e?.lib) ?? [];
+    if (L.length) out.push({ component: "lamp", id, into: lampPartsOf(enc(id), L).map(([cid]) => cid), lamps: L.length,
+      feature: "main lit a glowing model with up to two lamps it inferred from its emissive surfaces; this protocol infers none (an emissive material glows, a light is a light component, as in Godot, Unity and Unreal), so each is a light child at its spot with main's colour, range 12 m and brightness at half that range (decay 2)" }); }
   return out;
 }
 /** What becomes of a carried field this protocol retires (R 10-28, item 50): plain words for the report, never a silent carry. */
@@ -617,6 +653,13 @@ const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:s
 // upstream #256's emitter name, and the id of the child thing a named emitter becomes (@15): readable (its name first), the
 // same from every translation of the same world, never a person's id
 const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
+/** main's inferred lamps (import-v1/lamps.ts: up to two per glowing model, measured from its GLB) as light children at their spots,
+ *  main's numbers through light parity (decay 2, × (range/2)^0.3), dimmed by day as main's were (@31, LEGACY-PINS item 6). */
+export const lampChildId = (host, i) => `lamp-${i}-${sha256(`eido-lamp\0${host}\0${i}`).slice(0, 26)}`;
+export function lampPartsOf(host, lamps) {
+  return (Array.isArray(lamps) ? lamps.slice(0, 2) : []).map((L, i) => [lampChildId(host, i), { transform: { pos: [...L.at], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: host }, label: "lamp",
+    light: { kind: "point", color: L.color, intensity: parityIntensity(L.intensity, L.range), range: L.range, decay: 2, daytime: "dim" } }]);
+}
 export const emitterChildId = (host, name) => `${name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20).replace(/-+$/, "") || "emitter"}-${sha256(`eido-emitter\0${host}\0${name}`).slice(0, 26)}`;
 // upstream #256's knobs as main's normalizeParticles bounded them (shared/particles.js NUMERIC_BOUNDS, at ccd5c53f)
 const KNOBS = { wobble: [0, 4], up: [-8, 8], spread: [0, 8], grow: [-4, 8], swirl: [0, 8], twinkle: [0, 1], converge: [0, 1], rotate: [0, 8] };
@@ -710,7 +753,7 @@ function toSpec(id, c, adjust) {
 const ownedIn = (st) => Object.entries(st?.roles ?? {}).some(([k, r]) => k !== "*" && r?.role === "owner");
 /** main's effective rights as this protocol's @world components (R 10-28, item 22): {world, report}. Owned: newcomers and
  *  guests hold main's '*' (builder when none). Ownerless: everyone is builder, guests too (project lifts each grant below it),
- *  and builder's role-defs carry generate; roles.js caps an ownerless world at builder, so nobody is more. */
+ *  and builder's role-defs carry generate; the upgrader's claim is the owner (import-v1/world.ts refuses a translation without one). */
 export function mainRights(st) {
   const roles = st?.roles ?? {}, owned = ownedIn(st);
   const toCan = (v) => { if (!v || typeof v !== "object" || !("fly" in v || "gen" in v)) return v; const { fly, gen, ...rest } = v;
@@ -723,9 +766,8 @@ export function mainRights(st) {
     world["default-role"] = { ...dr, role, ...(role && role !== "owner" ? { guests: role } : {}) };
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
   else { world["default-role"] = { role: "builder", guests: "builder" }; world["role-defs"] = { builder: { can: { generate: true } } };
-    world[OWNERLESS_OPEN] = { role: "builder", why: "main let everyone build a world with no owner" };   // lifts roles.js's ownerless cap to builder
     notes.push("main gave everyone builder and generate in a world with no owner, whatever its grants said: here everyone is builder (newcomers, guests, and anyone granted less) and builder generates, never flies. "
-      + "This protocol caps an ownerless world at member unless its translation says otherwise (roles.js OWNERLESS_OPEN, written here: the cap is builder), so a moderator's grant reads builder until the world has an owner (the upgrader's claim, or operator-repair set); a lock is member strength until then (anyone who may build lifts it, as in main)");
+      + "Every translation ends with an owner (the upgrader's claim: world.ts translate --claim), so these are ordinary grants under that owner");
     if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`);
     else if (star) notes.push(`main ignored '*' while the world had no owner: it is not written`); }
   const dr = world["default-role"];
@@ -781,6 +823,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
     out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
     for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : []), ...(veh?.walls ?? [])]) out[cid] = shapeRepaired(cc);
+    if (!c.light) for (const [cid, cc] of lampPartsOf(enc(id), col?.lampsOf?.(e.lib))) out[cid] = shapeRepaired(cc);   // @31: main's inferred lamps
     for (const [name, v] of emitters) {
       const seeded = v && typeof v === "object" && !Array.isArray(v) && !Number.isFinite(v.seed) ? { ...v, seed: hashSeed(`${id}:particles:${name}:${v.preset ?? ""}`) } : v;
       const p = particlesOf(seeded, ""); if (p.doc) effects?.set(p.effect, p.doc); for (const a of p.adjusted) adjust(emitterChildId(enc(id), name), "particles", a.field, a.was, a.now, a.why);
@@ -843,6 +886,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (parts.world.sky) w.sky = { ...(w.sky && typeof w.sky === "object" ? w.sky : {}), ...parts.world.sky };
     for (const [cid, cc] of parts.things) out[cid] = shapeRepaired(cc);
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
+  { const sb = stageBoundsOf(st); if (sb) w.bounds = sb; }   // @31: main's 78 m stage island as the world's box (stageBoundsOf)
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's
   // clock as tz, radians, transition; the terrain's int colours and the sim's defaults, its water as the water component;
   // grass in the flora spelling, a preset kept by its name)
@@ -913,7 +957,7 @@ export const changeBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => (
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export { unNegZero };
 
-export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild, key, operator, nonce, who, founder, namespace, content, approved, boxOf, lampsOf } = {}) {
   if (founder !== undefined) throw new Error("a translation names no founder: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys); tier 0 stays empty");
   const ns = namespace === undefined ? NAMESPACE : namespaceOf(namespace);
   const seenModels = new Map();   // path → its hash (or null): each path hashed once, and counted
@@ -991,7 +1035,7 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   const diverged = (kind, e, extra) => { stats.divergences++; if (physics) stats[kind]++;
     if (!stats.firstDivergence) { stats.firstDivergence = { oldSeq: e?.seq ?? null, verb: e?.verb ?? null, ...(physics ? { kind } : {}), ...extra }; } };
   const effects = new Map(), adjusted = new Map();   // every derived particle effect any state named (world.ts stores each); every value brought to spec
-  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr, { effects, adjusted, boxOf }), dynamic);
+  const view = () => physical(v1, sim, recorded, project(v1, seen, who, ns, addr, { effects, adjusted, boxOf, lampsOf }), dynamic);
   const stepTo = (tick) => { // single steps while anything flies, so each rest's real tick is known
     while (sim.epoch && !sim.epoch.foreign && sim.tick < tick) {
       const flying = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
@@ -1045,10 +1089,10 @@ export function translate(oldEntries, { onDivergence, foldBuild, key, operator, 
   }
   stats.out = out.length;
   if (addr) { stats.modelsHashed = [...seenModels.values()].filter(Boolean).length; stats.modelsUnhashed = [...seenModels].filter(([, a]) => !a).map(([p]) => p); }
-  const mapped = [...volumeMappings(v1), ...carriedMappings(v1)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
+  const mapped = [...volumeMappings(v1), ...carriedMappings(v1), ...lampMappings(v1, lampsOf)]; if (mapped.length) stats.mapped = mapped;   // main's volumes, climb routes, collision, environment (VOLUMES, CARRIED)
   const unmapped = unmappedOf(v1); if (unmapped.length) stats.unmapped = unmapped;   // …and what of them has no home (imported:<component>), never silent
   stats.rights = mainRights(v1).report; if (effects.size) stats.effects = [...effects.keys()].sort();
   if (adjusted.size) stats.adjusted = [...adjusted.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : `${a.component}.${a.field}` < `${b.component}.${b.field}` ? -1 : 1));
   stats.guards = seen.guards.size; stats.guardsLive = Object.values(v1.entities ?? {}).filter((e) => e?.comp?.guard && !e.comp.lock).length;
-  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr, { boxOf }), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
+  return { out, stats, effects, final: { v1: physical(v1, sim, recorded, project(v1, null, who, ns, addr, { boxOf, lampsOf }), dynamic), translated: v4project(v4) }, ...(physics ? { theirs: sim } : {}) };
 }

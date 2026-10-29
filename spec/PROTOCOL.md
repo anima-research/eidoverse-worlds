@@ -480,7 +480,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@30`, §14) writes its
+  its name). The translator (`translate-v1@31`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1007,7 +1007,7 @@ world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused while `@world.keep-owner` is absent or true (starter config, on); an
 owner who sets it false may leave the world ownerless on purpose. A world with
-no owner gives nobody more than member (nobody could have granted more), or builder where its operator-approved translation carried `imported:ownerless {role: builder}` (main let everyone build there); its host operator can mend it. A role
+no owner gives nobody more than member (nobody could have granted more); its host operator can mend it. A translation always ends with an owner (§14: the upgrader's claim). A role
 MAY carry `until` (epoch ms, the authority's clock): the grant ends then. The
 authority writes the end itself, as the system's act `expire-roles {ids}` and
 its change deleting each `roles:<id>` whose `until` has passed, within a second

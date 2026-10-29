@@ -101,11 +101,8 @@ console.log('\nT2 (partial) -- the polar is honest; no glide_to verb yet');
 
   // T2: fly at the polar's real best-glide speed and confirm the distance
   // matches what glideRange() predicts from the same curve.
-  // R3 bounds turn a flier back at 80 m, and best glide from 30 m is ~388 m --
-  // so a range test inside the default world measures the FENCE, not the
-  // polar. Widen the bounds for this test only: T2 is a claim about the glide
-  // curve, and the fence has its own tests.
-  const openSky = makeConfig({ bounds: { radius: 100000, ceiling: 100000 } });
+  // T2 is a claim about the glide curve, not the fence: no box is passed, so nothing fences it (R3 has the fence's tests).
+  const openSky = makeConfig();
   const alt = 30;
   const predicted = glideRange(openSky, alt);
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: alt, z: 0 },
@@ -518,17 +515,19 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
 console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft');
 {
   const cfg = makeConfig();
+  // the world's @world.bounds is the fence and its top the ceiling (LEGACY-PINS item 3); no bounds, no fence
+  const box = { min: [-110, -10, -110], max: [110, 60, 110] }, ceil = box.max[1];
   const lift = () => 3;   // strong enough to climb through a lid that is not enforced
   for (const phase of ['GLIDE', 'PILOT'] as const) {
     let s = initialState({ phase, pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
     let peak = 0, fired = false;
     for (let i = 0; i < 3000; i++) {
-      s = step(cfg, s, DT, { groundY: flat, lift, input: { bank: 0, pitch: 0, yawRate: 0 } });
+      s = step(cfg, s, DT, { groundY: flat, lift, box, input: { bank: 0, pitch: 0, yawRate: 0 } });
       peak = Math.max(peak, s.pos.y);
       if (s.events.some(e => e.kind === 'reflex.r3_ceiling')) fired = true;
     }
-    check(`${phase} is held at the ceiling (peak ${peak.toFixed(2)} <= ${cfg.bounds.ceiling})`,
-          peak <= cfg.bounds.ceiling + 0.05, `reached ${peak.toFixed(2)}`);
+    check(`${phase} is held at the ceiling (peak ${peak.toFixed(2)} <= ${ceil})`,
+          peak <= ceil + 0.05, `reached ${peak.toFixed(2)}`);
     check(`${phase} publishes the R3 ceiling reflex`, fired);
   }
   // SOFT, not a wall: the climb bleeds out across the margin instead of the
@@ -536,24 +535,34 @@ console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
   const climbs: number[] = [];
   for (let i = 0; i < 1200; i++) {
-    s = step(cfg, s, DT, { groundY: flat, lift });
-    if (s.pos.y > cfg.bounds.ceiling - cfg.bounds.softMargin) climbs.push(s.vel.y);
+    s = step(cfg, s, DT, { groundY: flat, lift, box });
+    if (s.pos.y > ceil - cfg.bounds.softMargin) climbs.push(s.vel.y);
   }
   check('the ceiling is SOFT (climb decays, never snaps to zero)',
         climbs.length > 60 && climbs.some(v => v > 0.01) && Math.min(...climbs) >= -0.01);
 
   // Lateral bounds turn a flier back rather than stopping it.
-  let b = initialState({ phase: 'GLIDE', pos: { x: cfg.bounds.radius - 2, y: 40, z: 0 },
+  let b = initialState({ phase: 'GLIDE', pos: { x: box.max[0] - 2, y: 40, z: 0 },
                          airspeed: 12, yaw: 0 }, cfg);
   let turned = false, maxR = 0;
   for (let i = 0; i < 3000; i++) {
-    b = step(cfg, b, DT, { groundY: flat });
-    maxR = Math.max(maxR, Math.hypot(b.pos.x, b.pos.z));
+    b = step(cfg, b, DT, { groundY: flat, box });
+    maxR = Math.max(maxR, Math.abs(b.pos.x), Math.abs(b.pos.z));
     if (b.events.some(e => e.kind === 'reflex.r3_bounds')) turned = true;
   }
   check('flying at the fence publishes R3 bounds', turned);
-  check(`and is banked back rather than walled (max r ${maxR.toFixed(1)})`,
-        maxR < cfg.bounds.radius + cfg.bounds.softMargin + 2);
+  check(`and is banked back rather than walled (max |x|, |z| ${maxR.toFixed(1)})`,
+        maxR < box.max[0] + cfg.bounds.softMargin + 2);
+  // the fence and the ceiling are the world's, not a stage's: a 10 km box, and none at all
+  const far = (env: any) => { let f = initialState({ phase: 'GLIDE', pos: { x: 150, y: 58, z: 0 }, airspeed: 12, yaw: 0 }, cfg), peak = 0, banked = false;
+    for (let i = 0; i < 1200; i++) { f = step(cfg, f, DT, { groundY: flat, lift, ...env }); peak = Math.max(peak, f.pos.y); if (f.events.some(e => e.kind.startsWith('reflex.r3'))) banked = true; }
+    return { x: +f.pos.x.toFixed(1), peak: +peak.toFixed(1), banked }; };
+  const big = far({ box: { min: [-5000, -10, -5000], max: [5000, 400, 5000] } }), none = far({});
+  check('R3b a 10 km box: 150 m out and climbing past 60 m, nothing banks or caps the flier (main\'s 110 m / 60 m stage fence is gone)',
+        !big.banked && big.x > 160 && big.peak > 61, JSON.stringify(big));
+  check('R3c no @world.bounds: no fence and no ceiling at all', !none.banked && none.x > 160 && none.peak > 61, JSON.stringify(none));
+
+
 
   // A LIMP body is NOT steered: the leaf must be free to land where it falls.
   let l = initialState({ phase: 'GLIDE', pos: { x: 0, y: 30, z: 0 }, airspeed: 11 }, cfg);

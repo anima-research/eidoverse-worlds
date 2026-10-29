@@ -608,7 +608,7 @@ export async function grab(name) {
   await track(true);
   const r = await sendRequest('grab', { id });
   if (!r?.ok) return refused('grab', r, id);
-  flashHint(`holding ${called(id)}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, C throws`);
+  flashHint(`holding ${called(id)}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, Q throws`);
   return r;
 }
 /** Set down what you hold (straight down onto what's below your hand). */
@@ -882,16 +882,17 @@ async function vrLetGo(side, id) {
   } finally { H.busy = false; }
 }
 
-// ---------------------------------------------------------------- keys: T take/put · C throw/punt
+// ---------------------------------------------------------------- keys: T take/put · Q throw/punt
+// Q, not C: C / Ctrl are down and G folds wings; Q is Minecraft's drop (notes LEGACY-PINS item 1)
 const KEYS = [
   { code: 'KeyT', key: 'T', id: 'body:take', title: 'pick up / put down', keywords: ['grab', 'carry', 'hold', 'take', 'put'], icon: 'hand',
     run: () => (myHolds().length ? put() : grab()) },
-  { code: 'KeyC', key: 'C', id: 'body:throw', title: 'throw what you hold / punt what\'s beside you', keywords: ['throw', 'kick', 'punt', 'toss'],
+  { code: 'KeyQ', key: 'Q', id: 'body:throw', title: 'throw what you hold / punt what\'s beside you', keywords: ['throw', 'kick', 'punt', 'toss'],
     run: () => (myHolds().length ? throwHeld(hooks?.aim?.() ?? undefined) : punt()) },   // at the spot under the cursor (main.js hands me aim())
 ];
 for (const { code, ...a } of KEYS) registerAction({ ...a, group: 'body' });
 bus.on('key', (e) => {
-  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || hooks?.editing?.()) return;
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || hooks?.editing?.() || hooks?.photo?.()) return;   // photo mode's Q flies the camera down
   KEYS.find((k) => k.code === e.code)?.run();
 });
 
@@ -901,7 +902,7 @@ bus.on('key', (e) => {
 export function handsHint() {
   if (!replica.active || hooks?.editing?.() || xrActive()) return null;
   const held = myHolds()[0];
-  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click a spot to set it down there · <kbd>T</kbd> at your feet · <kbd>C</kbd> throws at the cursor · right-click for more`;
+  if (held) return html`holding <b>${nameOf(held) ?? held}</b> — click a spot to set it down there · <kbd>T</kbd> at your feet · <kbd>Q</kbd> throws at the cursor · right-click for more`;
   const near = nearest(inHand, grabbableIds(), prioOf);
   return near ? html`click or <kbd>T</kbd> to pick up <b>${nameOf(near) ?? near}</b>` : null;
 }

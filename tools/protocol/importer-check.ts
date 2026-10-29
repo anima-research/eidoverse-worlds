@@ -243,8 +243,8 @@ row("IM-W1", () => {
   const sigma = kid?.water?.attenuationColor?.map((c: number) => -Math.log(c) / kid.water.attenuationDistance);
   ok(TV1.deferredFeatures(L).length === 0 && r.stats.divergences === 0 && !T.pool.water && !T.pool.zone && kid?.parent?.to === "pool" && JSON.stringify(kid.transform.pos) === "[0,-2,0]"
     && JSON.stringify(kid.zone) === JSON.stringify({ shape: "box", size: [10, 4, 10] }) && sigma?.every((x: number, i: number) => Math.abs(x - water.absorption[i]) < 1e-15) && JSON.stringify(kid.water.scatterColor) === JSON.stringify(water.scatter)
-    && JSON.stringify(kid.water.waves) === JSON.stringify(water.waves) && kid["imported:water"] === undefined && JSON.stringify(kid["physics-area"]) === JSON.stringify({ kind: "speed", factor: 1 }) && T.pond["physics-area"] === undefined && JSON.stringify(T.pond.zone) === JSON.stringify({ shape: "box", size: [4, 2, 4] }) && !!T.pond.water,
-    "IM-W1 a water volume on a thing with a model becomes a child at its centre with zone {box, size} + water (σ as attenuationColor e^−σ over 1 m, scatter as scatterColor, waves as they were, main's speed a physics-area {kind: speed} on it, × the stroke here: @29); on a bare thing at its origin, the thing itself", { pool: T.pool, kid, pond: T.pond, mapped: r.stats.mapped });
+    && JSON.stringify(kid.water.waves) === JSON.stringify(water.waves) && kid["imported:water"] === undefined && kid["physics-area"] === undefined && kid.water.drag === undefined && T.pond["physics-area"] === undefined && JSON.stringify(T.pond.zone) === JSON.stringify({ shape: "box", size: [4, 2, 4] }) && !!T.pond.water,
+    "IM-W1 a water volume on a thing with a model becomes a child at its centre with zone {box, size} + water (σ as attenuationColor e^−σ over 1 m, scatter as scatterColor, waves as they were; main's 2.4 speed is today's stroke there, so no drag is written: @31); on a bare thing at its origin, the thing itself", { pool: T.pool, kid, pond: T.pond, mapped: r.stats.mapped });
 });
 row("IM-W2", () => {
   const q = [0, Math.sin(0.3), 0, Math.cos(0.3)];
@@ -254,7 +254,7 @@ row("IM-W2", () => {
   ok(TV1.deferredFeatures(L).length === 0 && r.stats.divergences === 0 && !("air" in T.sub) && !Object.keys(T.sub).some((k) => /air/.test(k))
     && a0?.parent?.to === "sub" && JSON.stringify(a0.zone) === JSON.stringify({ shape: "box", size: [2, 2, 4], priority: TV1.AIR_PRIORITY }) && JSON.stringify(a0["water-exclusion"]) === "{}" && JSON.stringify(a0.transform.pos) === "[0,0,-2]"
     && a1 && a1.transform.q.every((x: number, i: number) => Math.abs(x - q[i]) < 1e-12) && TV1.AIR_PRIORITY === 1
-    && JSON.stringify(r.stats.mapped?.map((m: any) => [m.component, m.id, m.into.length])) === JSON.stringify([["air", "sub", 2]]),
+    && JSON.stringify(r.stats.mapped?.filter((m: any) => m.component !== "stage").map((m: any) => [m.component, m.id, m.into.length])) === JSON.stringify([["air", "sub", 2]]),   // stage: no terrain here (@31)
     "IM-W2 an air {boxes} becomes one child per box: zone {box, size, priority 1 (above the bodies)} + water-exclusion {}, its centre and q its transform; the report's mapped lists them", { sub: T.sub, a0, a1, mapped: r.stats.mapped });
 });
 row("IM-W3", () => {

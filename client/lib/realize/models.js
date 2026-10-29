@@ -29,7 +29,7 @@ import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPre
   lodNegotiable, negotiationReady } from '../assets.js';
 import { makeModelQuality, chooseTier } from '../lod_policy.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
-import { attachLamps, releaseOwner, registerCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
+import { registerCaster, requestLight, updateRequest, releaseLight } from '../lightrig.js';
 import { makeLightGizmo } from '../lights.js';
 // ../../../ — not ../../ — so the path resolves to the repo's shared/ on disk
 // (bun tests) and still clamps to /shared/ in the browser (server/routes.ts)
@@ -256,11 +256,10 @@ function scheduleLoad(id, ent, gen, tier = null) {
 // misses the brand-new object — accepted (§16.2.C).
 /** Everything a realized object holds that its replacement must not
  *  inherit — the demote teardown, factored so a tier swap (real → real) and
- *  a demote (real → placeholder) release identically. The collider, the
- *  caster and the lamps let go on the lifecycle's word (lifecycle.js release). */
+ *  a demote (real → placeholder) release identically. The collider and the
+ *  caster let go on the lifecycle's word (lifecycle.js release). */
 function teardownRealized(id, obj, phase) {
   promoteTail.delete(id);   // a pending heavy tail dies — the replacement earns its own
-  lampsOn.delete(id);
   indexSceneMount(id, null);
   releaseGLB(obj.userData?.glbKey ?? obj.userData?.lib);
   cancelOwner(`entity:${id}`);
@@ -380,21 +379,7 @@ function runPromoteTail(id, obj) {
     // tail landing an interior is the same news, announced when it exists
     if (colliders.get(id)?.interior) bus.emit('entity', { id, kind: 'collider' });
   }
-  // emissive surfaces become lamp REQUESTS — a request costs nothing until
-  // the rig assigns it a slot, and that is uniform writes.
-  //
-  // NO SHADOWS, by the seam's default and on purpose: a placed prop glows, it
-  // does not claim the one casting slot. That slot belongs to a body lit from
-  // inside (avatar.js passes shadows:true), and until this default existed a
-  // closer glowing prop could take it off the avatar standing next to it.
-  //
-  // AUTHORED BEATS INFERRED (design §3): an entity with a Light component (a
-  // lamp: Model + comp.light) is lit by that light alone — its emissive
-  // shade must not add inferred lamps on top, or it double-lights.
-  if (lampsOn.get(id)) releaseOwner(`entity:${id}`);   // a re-run tail on the same id: never two sets
-  const infer = !lightOf(cur);
-  if (infer) attachLamps(obj, `entity:${id}`);
-  lampsOn.set(id, infer);
+  // a glowing model glows and lights nothing: a light is a light component (Godot, Unity, Unreal; LEGACY-PINS item 6)
   // mounts that were waiting on this id — as child or carrier
   for (const mid of mountsTouching(state.st.entities, id, childrenOf)) execMount(mid);
 }
@@ -567,24 +552,6 @@ function dropCompLight(id) {
   compLights.delete(id);
 }
 
-// id -> are its inferred lamps (attachLamps, owner `entity:<id>`) standing?
-// Present only once the promote tail has decided (it reads lightOf at
-// landing); a Light component added to or removed from a STANDING model then
-// flips them here — released when an authored light arrives, re-inferred
-// when it goes. Lamp requests are the only requests a model id owns (a
-// light-verb light owns `entity:<its own id>`), so releaseOwner takes
-// nothing else. Cleared with the realized object (teardown, retire).
-const lampsOn = new Map();
-function syncInferredLamps(id) {
-  if (!lampsOn.has(id)) return;   // the tail has not landed: it will decide
-  const obj = entities.get(id);
-  if (!obj) return;
-  const ent = state.st.entities[id];
-  const want = !!ent && !lightOf(ent);
-  if (want && !lampsOn.get(id)) attachLamps(obj, `entity:${id}`);
-  else if (!want && lampsOn.get(id)) releaseOwner(`entity:${id}`);
-  lampsOn.set(id, want);
-}
 
 /** Make the realized light match the fold for this id: create, update, move
  *  to the current realized object, or release. Idempotent; called whenever
@@ -602,7 +569,6 @@ export function previewLight(id, patch) {
   updateRequest(cl.key, { ...lightSpec(ent, L, entities.get(id) ?? null), ...patch }); return true;
 }
 function syncCompLight(id) {
-  syncInferredLamps(id);
   const ent = state.st.entities[id];
   const L = ent ? lightOf(ent) : null;
   if (!L || offIn(state.st.entities, id)) { dropCompLight(id); return; }   // a switched-off thing casts nothing (I34)
@@ -663,7 +629,6 @@ function refreshModel(id, ent) {
 
 function retire(id) {
   dropCompLight(id);
-  lampsOn.delete(id);
   cancelOwner(`entity:${id}`);
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);

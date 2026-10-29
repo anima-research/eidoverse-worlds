@@ -36,7 +36,7 @@ import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
   bodyDown as flightDown, bodyRecovered as flightRecovered, takeOff as flightTakeOff,
   foldDown as flightFold, unfold as flightUnfold,
-  bestGlide, glideRange,
+  bestGlide, glideRange, ceilingOf,
 } from "../shared/flight.js";
 import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
@@ -2093,6 +2093,8 @@ export class WorldAgent {
   heightAt(x: number, z: number): number {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
+  /** This world's @world.bounds as written (the edge flight banks at; shared/flight.js boxOf reads it), else null. */
+  worldBox(): unknown { return this.replica?.st?.entities?.["@world"]?.c?.bounds ?? null; }
 
   /** Each structure's plan, per entity id, for the revision it holds now: the same object is a hit without a read;
    *  else the same content (JSON) is (the view clones every component every view, view.js viewOf, so a received
@@ -3147,6 +3149,7 @@ export class WorldAgent {
     this.flight = flightStep(this.flightCfg, this.flight, dt, {
       lift: () => climbLift,
       groundY: (x: number, z: number) => this.heightAt(x, z),
+      box: this.worldBox(),   // @world.bounds fences and caps flight; none, no fence (shared/flight.js bounds)
     });
     if (this.flight.climbTo != null &&
         Math.abs(this.flight.climbTo - this.flight.pos.y) < 0.4) {
@@ -3416,7 +3419,7 @@ export class WorldAgent {
     if (isDown(this.flight.phase)) return refused(downRefusal(this.flight));
     const f = this.flight, cfg = this.flightCfg;
     const from = f.pos.y;
-    const want = Math.min(alt, cfg.bounds.ceiling);
+    const ceiling = ceilingOf(this.worldBox()), want = Math.min(alt, ceiling);
     const gain = Math.max(0, want - from);
     const cost = gain * cfg.stamina.climbPerMetre;
     // A SHORT CLIMB IS STILL A CLIMB. This branch used to assign `f.pos.y =
@@ -3456,7 +3459,7 @@ export class WorldAgent {
       if (st.phase === "LANDED" || st.phase === "GROUND") return Math.abs(st.pos.y - alt) < 0.4 ? "touched down" : "landed";
       if (st.climbTo == null) return "there";
       return null;
-    }, legWaitMs(Math.max((reach - from) / (climbRate - cfg.polar.sinkAtMinSink), (cfg.bounds.ceiling - reach) / climbRate)));
+    }, legWaitMs(Math.max((reach - from) / (climbRate - cfg.polar.sinkAtMinSink), ((Number.isFinite(ceiling) ? ceiling : Math.max(from, reach)) - reach) / climbRate)));   // no bounds: no ceiling, a descent from here
     // A later climb_to, or a take-off's fresh flight, has the climb now, so this call's answer leaves it alone.
     if (got !== "cut" && this.climbCourse !== climb) {
       return refused(`taken over at ${(this.flight?.pos.y ?? this.pos.y).toFixed(1)}m by a later call`);
@@ -3528,7 +3531,7 @@ export class WorldAgent {
     // flare can still be rising on take-off's launch, and is never shorter than the 60 s main's flare had, so a flare
     // that begins over high ground and comes down on lower, or one the launch holds at the ceiling, gets at least the
     // wait main gave it. A flare that begins well above where its circle comes down can still outlast it.
-    const fall = Math.max(0, this.flightCfg.bounds.ceiling - this.heightAt(f.pos.x, f.pos.z));
+    const top = ceilingOf(this.worldBox()), fall = Math.max(0, (Number.isFinite(top) ? top : f.pos.y) - this.heightAt(f.pos.x, f.pos.z));
     const flare = await this.flightAwait((s) => isDown(s.phase) ? "cut"
       : (s.phase === "LANDED" || s.phase === "GROUND") ? "down" : null,
       Math.max(60_000, legWaitMs(fall / this.flightCfg.polar.sinkAtMinSink)));

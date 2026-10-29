@@ -88,7 +88,7 @@ async function take(page, { name, seconds, injectRecoverAt }) {
     window.__flightBench.setTop(startY);
     return window.__flightBench.enableFlight({
       identity: 'mythos', bones, startY,
-      config: { bounds: { ceiling: 100000, radius: 100000 } },  // the fence is not the subject
+      config: {},  // the fence is not the subject: no world box is passed, so none fences it
     });
   }, { bones: FIX.bones, startY: START_Y });
   if (!r?.enabled) throw new Error(`bench refused to enable: ${r?.reason}`);

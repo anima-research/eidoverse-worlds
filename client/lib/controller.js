@@ -632,12 +632,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 let swimVelocity = [0, 0, 0], lastClimbHint = null;
 const _swimProbe = new THREE.Vector3(), _swimOld = new THREE.Vector3();
 const _swimQ = new THREE.Quaternion(), _swimTilt = new THREE.Quaternion();
-/** Keep a swimming body inside the world: @world.bounds as walking keeps them (clampToBounds), and the stage's 78 m
- *  island where the world has none (as walking does). (Upstream's authored `environment.bounds` box is a #248 water-volume
- *  world's, deferred with those components.) */
+/** Keep a swimming body inside the world: @world.bounds, as walking (clampToBounds); no bounds, no edge (componentspec bounds). */
 export function constrainMovement(pos) {
   const [x, z] = clampToBounds(pos.x, pos.z); pos.x = x; pos.z = z;
-  if (!worldBounds()) { const r = Math.hypot(pos.x, pos.z); if (r > 78) { pos.x *= 78 / r; pos.z *= 78 / r; } }
 }
 // DIVING in the world's water LEVEL (water.js: lakes, rivers, the sea). Swimming there is a surface float
 // (shared/buoyancy.js, below in updateMe); diving takes the body under it into the same 3D swim the authored volumes
@@ -839,10 +836,6 @@ export function updateMe(dt, me) {
       wl == null ? { speedAt } : { speedAt, floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
     myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
-    if (!worldBounds()) {   // the stage's 78 m island, where the world authored no bounds of its own (as swimming: I32)
-      const R = 78, r = Math.hypot(myState.pos.x, myState.pos.z);
-      if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }
-    }
   }
 
   // ---- vertical
@@ -889,7 +882,7 @@ export function updateMe(dt, me) {
   }
   if (flight) {
     const input = pilotInput(keys, flight, dt);
-    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
+    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input, box: worldBounds() });   // @world.bounds fences flight
     // the world's bounds hold in the air too (house review I13): the flight state itself is clamped, or the next step
     // carries on from outside them
     const [fx, fz] = clampToBounds(flight.pos.x, flight.pos.z);
