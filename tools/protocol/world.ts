@@ -73,11 +73,11 @@ const TEMP_ONLY = new Set([SOURCE, IDENTITIES]);
 const MANIFEST = "translation.json";
 const APPROVAL_TEXT = "approval";
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
-// --claim: an ownerless world's upgrader becomes its owner (R 10-28); who, from the environment (server/upgrade.ts), never argv
+// --claim: an ownerless world's upgrader becomes its owner, and one recognised as its owner is bound to them (R 10-28); who, from the environment (server/upgrade.ts), never argv
 const CLAIM = rest.includes("--claim") ? { account: process.env.EIDO_UPGRADER_ACCOUNT ?? "", name: process.env.EIDO_UPGRADER_NAME ?? "" } : undefined;
 if (CLAIM && !CLAIM.account) die("--claim needs EIDO_UPGRADER_ACCOUNT (the account that becomes the owner of a world that has none). Nothing was changed.");
 /** The dry-run report of an old world as it stands now, hashed (import-v1/world.ts reportV1World). */
-const reportNow = (D: string, name: string) => reportV1World(D, { name, content: hostContent, claim: !!CLAIM });
+const reportNow = (D: string, name: string) => reportV1World(D, { name, content: hostContent, claim: CLAIM });
 /** The approval of THIS translation, or a refusal (PROTOCOL §14; review of PR #260, Mica, item 6; rereview blocker 1).
  *  Bound to the dry-run report's hash: the report is recomputed from the old log as it stands and must hash to what was approved
  *  (else it changed since it was read: refused, both hashes named). No owner can sign (NO_FOUNDER: nothing can yet bind a key to

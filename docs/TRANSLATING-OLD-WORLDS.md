@@ -133,7 +133,10 @@ An owner main recorded several accounts for is not guessed, and no sign-in
 proves nothing: everyone else is told an operator or the world's (verified)
 owner can upgrade it, and sees no report (it names people). The review's and
 the upgrade's replies (`owner {recognised: "bound" | "name", name}`) and the
-server's log say how the owner was recognised.
+server's log say how the owner was recognised. **The owner who upgrades stays
+the owner:** the translation binds that owner (and no one else) to the
+upgrader's account, and the report says so (`claim {by, how: "bound" | "name"}`,
+in the approved hash); a rollback forgets that binding.
 
 **An ownerless world is claimed.** A world with no owner at all becomes the
 upgrader's (`world.ts translate … --claim`, the account from

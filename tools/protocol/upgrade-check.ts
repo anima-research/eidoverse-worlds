@@ -15,8 +15,8 @@
 //   UB6  a world name starting with "-" is refused by the CLI; UB7 a WORLDS_DIR/<name> that is a symlink is refused; UB8 after `--` nothing is a flag
 //   US8  the server refuses a "-x" world and a symlinked one (not-old), nothing written
 //   US9  an ownerless world: the operator who upgrades it is its owner (claim); the result says "You're now this world's owner", no warning
-//   US10 its owner bound by main's records (the grant's sub) may upgrade it: the join says may, owner "bound"; the review and upgrade run, the log says how
-//   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log
+//   US10 its owner bound by main's records (the grant's sub) may upgrade it: the join says may, owner "bound"; the review and upgrade run, the log says how; they join as owner
+//   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log; the report's claim binds that owner to them, and they join as owner
 //   US12 a signed-in account of another name may not: the join says may false, the review is refused, nothing written
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
@@ -173,19 +173,23 @@ let reviewed = "";
 // ================= US10-12: the world's owner may upgrade it (R 10-28) =================
 const ownedWorld = (name: string, grant: any) => { const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), [{ actor: "world", verb: "grant", args: grant }, { actor: grant.id, verb: "say", args: { text: "mine" } }].map((e, k) => JSON.stringify({ seq: k, ts: T0 + k * 1000, ...e })).join("\n") + "\n"); return d; };
-const byOwner = async (sid: string, world: string) => { const j = await joinOld(sid, world), r = await ask(sid, "world-upgrade-review", { world }), u = r.ok ? await ask(sid, "world-upgrade", { world, approved: r.hash }, 120_000) : null; return { j: j.err?.refused, r, u }; };
-{ const d = ownedWorld("byre", { id: "Bo", role: "owner", sub: "human:test:bo" }); const x = await byOwner(BO, "byre");
-  ok(x.j?.may === true && x.j.operator === false && x.j.owner === "bound" && x.r.ok && x.r.owner?.recognised === "bound" && x.u?.ok === true && x.u.owner?.recognised === "bound" && x.u.claimed === undefined && isWorldDir(d)
+const roleIn = async (sid: string, world: string, id: string) => { const s = await sock(sid); s.send({ type: "join", world, id, avatar: "", replica: true });
+  await tryUntil(`${id}'s join to ${world} is answered`, () => s.msgs.some((x) => x.type === "snapshot" || x.type === "error"), { ms: 8000, step: 50 }); s.ws.close();
+  return s.msgs.find((x) => x.type === "snapshot")?.yourRights?.role ?? null; };
+const byOwner = async (sid: string, world: string, id: string) => { const j = await joinOld(sid, world), r = await ask(sid, "world-upgrade-review", { world }), u = r.ok ? await ask(sid, "world-upgrade", { world, approved: r.hash }, 120_000) : null;
+  return { j: j.err?.refused, r, u, role: u?.ok ? await roleIn(sid, world, id) : null }; };
+{ const d = ownedWorld("byre", { id: "Bo", role: "owner", sub: "human:test:bo" }); const x = await byOwner(BO, "byre", "Bo");
+  ok(x.role === "owner" && x.r.report?.claim?.how === "bound" && x.j?.may === true && x.j.operator === false && x.j.owner === "bound" && x.r.ok && x.r.owner?.recognised === "bound" && x.u?.ok === true && x.u.owner?.recognised === "bound" && x.u.claimed === undefined && isWorldDir(d)
     && /byre: upgraded by human:test:bo as owner \(bound\)/.test(fs.readFileSync(slog, "utf8")),
-    "US10 its owner bound by main's records (the grant's sub; another name now): the join says may, owner 'bound'; the review and the upgrade run and say so; the log says 'as owner (bound)'", { j: x.j, r: x.r.owner ?? x.r.refused, u: x.u?.owner ?? x.u?.refused }); }
+    "US10 its owner bound by main's records (the grant's sub; another name now): the join says may, owner 'bound'; the review and the upgrade run and say so (report.claim how 'bound'); the log says 'as owner (bound)'; they join as owner", { j: x.j, r: x.r.owner ?? x.r.refused, claim: x.r.report?.claim, u: x.u?.owner ?? x.u?.refused, role: x.role }); }
 { const d = ownedWorld("nook", { id: "Ann", role: "owner" }), before = tree(d);
   const v = await joinOld(VIS, "nook"), vr = await ask(VIS, "world-upgrade-review", { world: "nook" });
   ok(v.err?.refused?.may === false && v.err.refused.owner === undefined && vr.ok === false && vr.refused?.code === "rights" && !vr.report && same(tree(d), before) && backupsOf("nook").length === 0,
     "US12 a signed-in account of another name (Vee) at Ann's world: the join says may false, the review is refused (rights), nothing written", { j: v.err?.refused, vr: vr.refused ?? vr.ok });
-  const x = await byOwner(ANN, "nook");
-  ok(x.j?.may === true && x.j.owner === "name" && x.r.ok && x.r.owner?.recognised === "name" && x.r.owner.name === "Ann" && x.u?.ok === true && x.u.owner?.recognised === "name" && isWorldDir(d)
+  const x = await byOwner(ANN, "nook", "Ann");
+  ok(x.role === "owner" && x.r.report?.claim?.how === "name" && x.r.report.claim.by === "Ann" && x.u?.warning === undefined && x.j?.may === true && x.j.owner === "name" && x.r.ok && x.r.owner?.recognised === "name" && x.r.owner.name === "Ann" && x.u?.ok === true && x.u.owner?.recognised === "name" && isWorldDir(d)
     && /nook: upgraded by human:test:ann as owner \(name\)/.test(fs.readFileSync(slog, "utf8")),
-    "US11 an owner main recorded no account for (Ann, by name) may upgrade it by the signed-in name: owner 'name' (provisional) in the join, the replies and the log", { j: x.j, r: x.r.owner ?? x.r.refused, u: x.u?.owner ?? x.u?.refused }); }
+    "US11 an owner main recorded no account for (Ann, by name) may upgrade it by the signed-in name: owner 'name' (provisional) in the join, the replies and the log; the report's claim binds Ann to them, and they join as owner", { j: x.j, r: x.r.owner ?? x.r.refused, claim: x.r.report?.claim, u: x.u?.owner ?? x.u?.refused, warn: x.u?.warning, role: x.role }); }
 { oldWorld("cellar"); const RATE_N = 6, seen: any[] = [];   // server/upgrade.ts RATE_N; a fresh account, so no other row spent its slots
   let last: any = null; for (let k = 0; k <= RATE_N; k++) { last = await ask(OP3, "world-upgrade-review", { world: "cellar" }); seen.push(last.ok ? "ok" : last.refused?.code); }
   ok(seen.slice(0, RATE_N).every((x) => x === "ok") && seen[RATE_N] === "rate" && new RegExp(`at most ${RATE_N} `).test(last.refused?.reason ?? ""),
