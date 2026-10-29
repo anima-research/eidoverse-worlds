@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { ENGINE, scratch, linkFile } from "./common.ts";
+import { ENGINE, scratch, linkFile, canLinkFiles } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 
 const root = scratch("setup");
@@ -150,6 +150,8 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
 }
 
 // ---- a planted symlink beside the operators file (SU9) ----
+if (!canLinkFiles()) console.log("  SKIP SU9 (both rows): file symlinks need Developer Mode on Windows, so the planted link can't be made here");
+else {
 { const W = worldsDir("w10"), victim = path.join(root, "victim-tmp"); fs.writeFileSync(victim, "victim\n", { mode: 0o644 });
   linkFile(victim, path.join(W, ".operators.json.tmp")); const vmode = modeOf(victim), a = await start(W);
   const claim = await post(a.port, { token: tokenOf(a.log()) }, cookie(ANN)), st = stored(W);
@@ -165,6 +167,7 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
   ok(got.status === 500 && got.link && got.body && got.mode && got.op === false && got.said,
     "SU9 a symlinked .operators.json is refused (not stored, not operator, the console says why), the link and its target unchanged", { got, log: a.log().slice(-300) });
   await a.stop(); }
+}
 
 // ---- rate limit ----
 { const W7 = worldsDir("w7"); const r = await start(W7); const codes = [];
