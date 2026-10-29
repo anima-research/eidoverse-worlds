@@ -284,7 +284,9 @@ before anything moves. `BACKUPS_DIR` defaults to `backups/` beside the
 worlds directory; it may never be inside it (every directory there is
 served as a world). The translation's output and `translation.json` name
 the backup. Nothing writes to a backup afterwards, and `rollback` never
-touches it.
+touches it. A translation that fails after its backup was made keeps that
+backup (the refusal names it): each try makes another, so delete the ones
+you don't need.
 
 To restore one by hand (stop the server first): check it with
 `cd <backup> && sha256sum -c SHA256SUMS`, move the world's directory

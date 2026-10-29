@@ -5,6 +5,7 @@
 //   UB3  translation.json names the backup's path
 //   UB4  rollback leaves the backup exactly as it was
 //   UB5  a BACKUPS_DIR inside WORLDS_DIR is refused (the server lists every directory there as a world)
+//   UB9  a translation that fails after its backup (an injected swap failure) names the kept backup, still verified (review L5)
 //   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may}: false for a visitor, true for an operator's session
 //   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused, "an operator or the world's owner", nothing written
 //   US3  world-upgrade-review → the dry-run report and its hash (the CLI's), nothing written
@@ -85,6 +86,11 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   ok(r.code !== 0 && /BACKUPS_DIR/.test(r.out) && /inside|within/.test(r.out) && same(tree(d), before) && !fs.existsSync(path.join(W, "backups")),
     "UB5 a BACKUPS_DIR inside WORLDS_DIR is refused (every directory there is served as a world), nothing written", { code: r.code, out: r.out.slice(-400) });
 }
+
+{ const d = oldWorld("shed"); const before = tree(d);
+  const r = xlate("shed", { WORLD_TS_FAULT_AT_STEP: "0" }), b = backupsOf("shed")[0], copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
+  ok(r.code !== 0 && !!b && r.out.includes(`The verified backup made first is kept at ${b}`) && !/nothing was left behind/.test(r.out) && same(copied, before) && same(tree(d), before),
+    "UB9 a translation that fails after its backup (an injected swap failure) says the verified backup is kept, and where; the world as it was", { code: r.code, b, out: r.out.slice(-500) }); }
 
 // ================= UB6-8: names and paths the CLI must not take (review finding 4) =================
 const elsewhere = path.join(root, "elsewhere"); fs.mkdirSync(elsewhere, { recursive: true });
