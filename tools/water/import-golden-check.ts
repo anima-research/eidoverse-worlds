@@ -127,9 +127,13 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
   const up = band([0, 0, 0, 1]), flip = band([1, 0, 0, 0]);   // upright: the box reaches above the origin; upside down: below it
   C("G4o", "with the hull measured, the origin keeps main's band exactly: driven to 0.1 m inside minY and maxY it is taken, 0.4 m past either it is refused solid, upright (the box above its origin) and upside down (below)",
     up.good && flip.good && up.hull?.above > 0.3 && flip.hull?.below > 0.3, { up, flip }); }
+// main's shared/water.js, written and imported ONCE (two copies of the same source: macOS bun failed to resolve the second, CI 10-29)
+let mainWaterP: Promise<any> | undefined;
+const mainWater = () => mainWaterP ??= (async () => { const ref = path.join(root, "main-water.js"), g = spawnSync("git", ["-C", ENGINE, "show", `${MAIN}:shared/water.js`], { encoding: "utf8" });
+  if (g.status !== 0) { C("G5", `main's shared/water.js at ${MAIN} (git show)`, false, g.stderr); console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(1); }
+  fs.writeFileSync(ref, g.stdout); return import(ref); })();
 // main's swim speed: a stroke in the volume (zone.js, the area's factor, the mover) is main's swimStep at that speed, for main's 2.4 and another
-{ const TV1 = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js"), WJ = await import(ENGINE + "shared/water.js"), Mv = path.join(root, "main-water-speed.js");
-  const gs = spawnSync("git", ["-C", ENGINE, "show", `${MAIN}:shared/water.js`], { encoding: "utf8" }); fs.writeFileSync(Mv, gs.stdout); const Mw = await import(Mv);
+{ const TV1 = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js"), WJ = await import(ENGINE + "shared/water.js"), Mw = await mainWater();
   const stroke = (step, water, input) => { let p = [0, -50, 0], v = [0, 0, 0]; for (let i = 0; i < 100; i++) { const n = step(p, v, input, water, 0.05, 0); p = n.pos; v = n.velocity; } return Math.hypot(...v); };
   const vol = Z.waterVolumes(Z.zonesOf(st)).waters[0], fac = Z.speedFactorAt(Z.physicsAreasOf(st), [0, -50, 0]);
   const rows = [2.4, 1.2, 6].map((speed) => { const f = speed === 2.4 ? fac : TV1.waterOfOld({ center: [0, 0, 0], size: [9, 9, 9], speed }).area.factor;
@@ -137,9 +141,7 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
   C("G4s", "main's water.speed is the swim speed here: the volume's stroke × the physics-area's factor is main's swimStep at that speed (2.4, and 1.2 and 6 through the translator's factor)",
     rows.every((r) => Math.abs(r.ours - r.main) < 1e-9 && Math.abs(r.main - r.speed) < 1e-3), rows); }
 // main's reading of the same records (its client's watervolumes: entity matrix × comp centre; air box = matrix × (centre, q))
-const ref = path.join(root, "main-water.js"); const g = spawnSync("git", ["-C", ENGINE, "show", `${MAIN}:shared/water.js`], { encoding: "utf8" });
-if (g.status !== 0) { C("G5", `main's shared/water.js at ${MAIN} (git show)`, false, g.stderr); console.log(`[import-golden-check] ${pass} passed, ${fail} failed`); process.exit(1); }
-fs.writeFileSync(ref, g.stdout); const M = await import(ref);
+const M = await mainWater();
 const { qRotate, qConj, qMul, qFromYaw } = await import(ENGINE + "shared/rot.js");
 const ents = {}; for (const v of manifest.verbs) if (v.verb === "spawn") ents[v.args.id] = { pos: v.args.pos, q: qFromYaw(v.args.yaw ?? 0), comp: {} }; else if (v.verb === "comp") ents[v.args.id].comp[v.args.type] = v.args.data;
 const upWaters = [], upAirs = [];

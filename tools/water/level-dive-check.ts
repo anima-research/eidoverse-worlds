@@ -49,7 +49,7 @@ try {
   const fallingWithC = { diving: await diving(), y: await y() }; await key("delete", "KeyC");
   // afloat after the fall's dunk: near the float line AND at rest (falling through -1.1 on the way down isn't afloat)
   await until("afloat after the fall's dunk", async () => { const a = await y(); await pause("two reads apart", 300); const b = await y();
-    return Math.abs(b + 1.1) <= 0.25 && Math.abs(b - a) < 0.05; }, { ms: 15000 });
+    if (Math.abs(b + 1.1) <= 0.25 && Math.abs(b - a) < 0.05) return true; throw new Error(`y ${a?.toFixed?.(3)} → ${b?.toFixed?.(3)} (want ≈ -1.1 ± 0.25, still)`); }, { ms: 30000 });   // a slow GL runner settles later (macOS CI 10-29); the throw is the evidence
   await put(-1.1); await pause("the float settles", 1500);
   const floating = { y: await y(), diving: await diving() };
   const hintAfloat = await js("return __hints.some((t) => /look down to dive/.test(t));");
