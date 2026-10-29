@@ -5,6 +5,7 @@
 //   UB3  translation.json names the backup's path
 //   UB4  rollback leaves the backup exactly as it was
 //   UB5  a BACKUPS_DIR inside WORLDS_DIR is refused (the server lists every directory there as a world)
+//   UB10 a backup is fsynced before it's returned: every copied file, SHA256SUMS, each directory and BACKUPS_DIR's entry (review L5)
 //   UB9  a translation that fails after its backup (an injected swap failure) names the kept backup, still verified (review L5)
 //   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may}: false for a visitor, true for an operator's session
 //   US2  world-upgrade-review / world-upgrade from someone who is neither an operator nor its owner: refused, "an operator or the world's owner", nothing written
@@ -30,6 +31,7 @@ import crypto from "node:crypto";
 import { ENGINE, scratch, linkInto } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 import { isWorldDir } from "../../server/livehost.ts";
+import { backupWorld } from "../../server/backups.ts";
 
 const root = scratch("upgrade");
 let pass = 0, fail = 0;
@@ -91,6 +93,14 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   const r = xlate("shed", { WORLD_TS_FAULT_AT_STEP: "0" }), b = backupsOf("shed")[0], copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
   ok(r.code !== 0 && !!b && r.out.includes(`The verified backup made first is kept at ${b}`) && !/nothing was left behind/.test(r.out) && same(copied, before) && same(tree(d), before),
     "UB9 a translation that fails after its backup (an injected swap failure) says the verified backup is kept, and where; the world as it was", { code: r.code, b, out: r.out.slice(-500) }); }
+
+{ oldWorld("vault"); const BB = path.join(root, "backups-sync"), o = { openSync: fs.openSync, fsyncSync: fs.fsyncSync }, fds = new Map(), synced = new Set<string>();
+  fs.openSync = function (p: any, ...a: any[]) { const fd = o.openSync.call(fs, p, ...a); fds.set(fd, path.resolve(String(p))); return fd; } as any;
+  fs.fsyncSync = function (fd: number) { if (fds.has(fd)) synced.add(fds.get(fd)); return o.fsyncSync.call(fs, fd); } as any;
+  let b: any = null; try { b = backupWorld(W, "vault", { backupsDir: BB }); } finally { fs.openSync = o.openSync; fs.fsyncSync = o.fsyncSync; }
+  const files = Object.keys(tree(b.dir)).map((f) => path.join(b.dir, f)), dirs = process.platform === "win32" ? [] : [b.dir, path.join(b.dir, "extra"), BB];
+  const missing = [...files, ...dirs].filter((f) => !synced.has(path.resolve(f)));
+  ok(files.length === 4 && !missing.length, "UB10 a backup is fsynced before it's returned: every copied file and SHA256SUMS, each of its directories and BACKUPS_DIR's entry for it (none of the directories on win32)", { missing, files: files.length }); }
 
 // ================= UB6-8: names and paths the CLI must not take (review finding 4) =================
 const elsewhere = path.join(root, "elsewhere"); fs.mkdirSync(elsewhere, { recursive: true });

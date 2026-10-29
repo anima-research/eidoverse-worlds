@@ -6,6 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { BACKUPS_DIR } from "./config.ts";
 import { isCacheFile } from "./statecache.ts";
+import { mkdirDurable, syncDir, syncTree } from "./durable.ts";
 
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 export const SUMS = "SHA256SUMS";
@@ -41,7 +42,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
   const bad = backupsDirProblem(worldsDir, backupsDir); if (bad) throw new Error(bad);
   const src = path.join(worldsDir, name);
   if (!fs.statSync(src, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`there is no world directory ${src} to back up`);
-  fs.mkdirSync(backupsDir, { recursive: true });
+  mkdirDurable(backupsDir);
   let dir = path.join(backupsDir, `${name}-${stampOf(now)}`);
   for (let k = 2; fs.existsSync(dir); k++) dir = path.join(backupsDir, `${name}-${stampOf(now)}-${k}`);
   fs.mkdirSync(dir);
@@ -61,6 +62,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
     for (const rel of files) {
       const h = hashFile(path.join(dir, rel)); if (h !== sums[rel]) throw new Error(`the backup's copy of ${rel} doesn't match the original (sha256 ${h.slice(0, 16)}…, the original ${sums[rel].slice(0, 16)}…)`);
       const o = hashFile(path.join(src, rel)); if (o !== sums[rel]) throw new Error(`${rel} changed while it was being backed up (something is still writing to the world: stop it first)`); }
+    syncTree(dir); syncDir(backupsDir);   // copyFileSync syncs nothing: on disk before anything moves (review L5)
     return { dir, files: files.length, bytes };
   } catch (x) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* named below */ }
