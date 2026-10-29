@@ -6,6 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { BACKUPS_DIR } from "./config.ts";
 import { isCacheFile } from "./statecache.ts";
+import { mkdirDurable, syncDir, syncTree } from "./durable.ts";
 
 const NAME = /^[a-z0-9_-]{1,64}$/i;
 export const SUMS = "SHA256SUMS";
@@ -25,11 +26,19 @@ export function backupsDirProblem(worldsDir: string, backupsDir = BACKUPS_DIR): 
 /** UTC yyyymmddThhmmssZ */
 export const stampOf = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 
+/** The first entry under `d` (relative, "/") that is a link or anything but a plain file or directory: a backup refuses it. */
+export function notPlainIn(d: string, at = ""): string | null {
+  for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
+    const bad = st.isDirectory() ? notPlainIn(d, rel) : st.isFile() ? null : rel; if (bad) return bad; }
+  return null;
+}
+/** What a world holding `rel` is told: why the upgrade refuses, and the way past it. */
+export const notPlainWords = (rel: string) => `${rel} is a link (or not a plain file or directory): the backup copies plain files byte for byte and follows no link, so the upgrade refuses until it is replaced by the file it points to, or moved out of the world's folder`;
 /** Every file under `d` as relative paths with "/" (a symlink or anything that isn't a file or directory is refused). */
 function filesUnder(d: string, at = ""): string[] {
   const out: string[] = [];
   for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
-    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(`${path.join(d, rel)} is not a plain file or directory (a link?): it can't be copied byte for byte`); }
+    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(path.join(d, rel))); }
   return out;
 }
 
@@ -41,7 +50,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
   const bad = backupsDirProblem(worldsDir, backupsDir); if (bad) throw new Error(bad);
   const src = path.join(worldsDir, name);
   if (!fs.statSync(src, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`there is no world directory ${src} to back up`);
-  fs.mkdirSync(backupsDir, { recursive: true });
+  mkdirDurable(backupsDir);
   let dir = path.join(backupsDir, `${name}-${stampOf(now)}`);
   for (let k = 2; fs.existsSync(dir); k++) dir = path.join(backupsDir, `${name}-${stampOf(now)}-${k}`);
   fs.mkdirSync(dir);
@@ -61,6 +70,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
     for (const rel of files) {
       const h = hashFile(path.join(dir, rel)); if (h !== sums[rel]) throw new Error(`the backup's copy of ${rel} doesn't match the original (sha256 ${h.slice(0, 16)}…, the original ${sums[rel].slice(0, 16)}…)`);
       const o = hashFile(path.join(src, rel)); if (o !== sums[rel]) throw new Error(`${rel} changed while it was being backed up (something is still writing to the world: stop it first)`); }
+    syncTree(dir); syncDir(backupsDir);   // copyFileSync syncs nothing: on disk before anything moves (review L5)
     return { dir, files: files.length, bytes };
   } catch (x) {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* named below */ }

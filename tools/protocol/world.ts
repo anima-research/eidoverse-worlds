@@ -161,9 +161,10 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
 function translateInPlace(name: string, approval: Approval, approvedSource: { size: number; sha256: string }) {
   const D = path.join(WORLDS_DIR, name), log = path.join(D, "log.jsonl");
   if (!fs.existsSync(log)) die(`"${name}" holds no old log (${log}): there's nothing to translate here. Nothing was changed.`);
+  let kept = "";   // the verified backup, once made: a failure after it keeps it (review L5; docs/TRANSLATING-OLD-WORLDS.md "Backups")
   const fail = (why: string, T?: string): never => {
     if (T) fs.rmSync(T, { recursive: true, force: true });
-    die(`${why}\nNothing was moved: "${name}" is exactly as it was (its log.jsonl untouched), and nothing was left behind.`);
+    die(`${why}\nNothing was moved: "${name}" is exactly as it was (its log.jsonl untouched)${kept ? `. The verified backup made first is kept at ${kept} (each try makes another: delete the ones you don't need).` : ", and nothing was left behind."}`);
     throw 0; };
   // where the old files go must be free, and so must the names the new world's files take
   const taken = [...Object.values(ORIGINAL), "world.jsonl", "world.mod.jsonl", MANIFEST].filter((f) => fs.existsSync(path.join(D, f)));
@@ -185,6 +186,7 @@ function translateInPlace(name: string, approval: Approval, approvedSource: { si
   let backup: Backup;
   try { backup = backupWorld(WORLDS_DIR, name, process.env.WORLD_TS_CORRUPT_BACKUP ? { afterCopy: (b) => fs.appendFileSync(path.join(b, "log.jsonl"), "x") } : {}); }   // tests only: a copy that doesn't verify (upgrade-check UB2)
   catch (x) { fail(`refused: ${(x as Error).message}`); throw 0; }
+  kept = backup.dir;
   // 2. translate into a temporary sibling (a name the server never serves: it isn't a world name); the importer's own
   //    checks (0 divergences, projection equality, strict read-back) run before it writes anything
   const T = path.join(WORLDS_DIR, `.translating-${name}-${crypto.randomBytes(4).toString("hex")}`);
