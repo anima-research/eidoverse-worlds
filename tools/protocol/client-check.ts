@@ -7,6 +7,7 @@
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
 //   HP  at a helm, P won't start photo mode and a photo mode started anyway ends (the helm owns the keys and camera)
+//   CL  nearbyClimb follows a route's changes: found, gone when disabled, found where its points moved
 //   KU  U opens People Here; Ctrl+U (the browser's view-source) does not (review r3 F9)
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
@@ -35,7 +36,7 @@ import { pause, tryUntil, pageWaiter, WAIT_SCALE } from "./wait.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
-const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse", "hphull", "hphull-helm"];
+const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse", "hphull", "hphull-helm", "clrung"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   // one page drives a whole editing session on ONE connection; the meter is checked elsewhere (scale-check), so here its time cap
   // is the operator knob for a slower host (server/readmeter.ts), not a test subject (windows-latest 10-29: 4804 ms of 3000, HT8 + GR1 refused)
@@ -927,6 +928,17 @@ try {
       check("HP2 …and a photo mode started anyway (not by the key) is ended by the next frame at the helm", atHelm && startedOn === true && await waitFor(`${photo}.then((p) => !p)`, 3000), { startedOn, now: await evalJson(photo) });
       await page(`(await import('/lib/controller.js')).photoMode && (await import('/lib/controller.js')).togglePhotoMode(); await (await import('/lib/net.js')).sendRequest('delete', { id: 'hphull' }); return true;`);
       await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); }
+    // CL: nearbyClimb reads routes from the view; a change to one (disabled, moved) is seen (client/lib/climb.js)
+    { const ok = await page(`return (await (await import('/lib/net.js')).sendRequest('create', { id: 'clrung', model: '${CRATE}', components: { climb: { points: [[0, 0, 0], [0, 3, 0]] } }, place: { at: [-9, 9] } })).ok ?? 'refused';`);
+      const near = (dx: number) => `Promise.all([import('/lib/world.js'), import('/lib/climb.js'), import('/lib/core.js')]).then(([w, c, k]) => { const o = w.entities.get('clrung'); if (!o) return null; o.updateWorldMatrix(true, false);
+        const p = new k.THREE.Vector3(${dx}, 0, 0).applyMatrix4(o.matrixWorld); return c.nearbyClimb(p)?.host ?? null; })`;
+      const found = await waitFor(`${near(0)}.then((h) => h === 'clrung')`);
+      check("CL1 a climb route is found at its start", ok && found, await evalJson(near(0)));
+      await page(`await (await import('/lib/net.js')).sendRequest('set', { id: 'clrung', component: 'disabled', value: true }); return true;`);
+      check("CL2 …switched off, it isn't", found && await waitFor(`${near(0)}.then((h) => h === null)`, 4000), await evalJson(near(0)));
+      await page(`const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'clrung', component: 'disabled' }); await n.sendRequest('set', { id: 'clrung', component: 'climb', value: { points: [[2, 0, 0], [2, 3, 0]] } }); return true;`);
+      check("CL3 …on again with its points moved 2 m, it's found where they are now, not where they were", found && await waitFor(`Promise.all([${near(2)}, ${near(0)}]).then(([a, b]) => a === 'clrung' && b === null)`, 4000), [await evalJson(near(2)), await evalJson(near(0))]);
+      await page(`await (await import('/lib/net.js')).sendRequest('delete', { id: 'clrung' }); return true;`); }
     // CW World Settings › World (R 10-14 14:13): capacity and physics — owner-gated, and opening it
     // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
