@@ -173,9 +173,10 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
   ok(first === "pending", "SC11 the boot returns before the re-derive has run (it is not on the boot's path)", first);
   let maxLag = 0, last = performance.now();
   const tick = setInterval(() => { const t = performance.now(); maxLag = Math.max(maxLag, t - last); last = t; }, 5);
-  const [, p] = time(() => b.cacheChecked); const t0 = performance.now(); const agreed = await p; const tookMs = performance.now() - t0; clearInterval(tick);
+  const [, p] = time(() => b.cacheChecked); const t0 = performance.now(); const agreed = await p; const tookMs = performance.now() - t0; maxLag = Math.max(maxLag, performance.now() - last); clearInterval(tick);   // the last gap too: a block ending in the reply's own task resolves before the next tick
   console.log(`  SC11 the re-derive took ${tookMs.toFixed(0)} ms; the event loop's longest gap meanwhile ${maxLag.toFixed(0)} ms`);
-  ok(agreed === true && maxLag < 100 && tookMs > maxLag * 2, "SC11 the re-derive runs off the event loop (agrees; no long gap while it runs)", { agreed, maxLag, tookMs }); }
+  ok(agreed === true && maxLag * 10 < tookMs,   // relative: on the loop the gap ≈ the re-derive itself; a fixed 100 ms failed windows CI at 140 of 5513 (10-29)
+     "SC11 the re-derive runs off the event loop (agrees; no long gap while it runs)", { agreed, maxLag, tookMs }); }
 
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);
 process.exit(fail ? 1 : 0);
