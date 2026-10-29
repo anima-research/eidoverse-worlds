@@ -5,6 +5,7 @@
 //           enforced, liftable; a malformed record is refused and kept on disk
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
+//   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   V5      the translator is @28, and a report reviewed under @27 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
@@ -152,6 +153,10 @@ row("F50b", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "boat", 
   const walls = Object.entries<any>(E).filter(([k]) => /^(floor|ceiling)-/.test(k)), touched = r.out.filter((e) => e.kind === "change" && /"(floor|ceiling)-[0-9a-f]{26}"/.test(JSON.stringify(e)));
   ok(r.stats.divergences === 0 && walls.length === 2 && walls.every(([, c]) => c.transform.pos[0] === 0 && c.transform.pos[2] === 0 && c.transform.scale[0] * 200 >= 2e4) && touched.length === 1,
     "F50b the vehicle walls stand at [0, y, 0] and span every legal x/z (±1e4 m): moving the vehicle in v1 re-places nothing (review delta-260 L-C)", { walls: walls.map(([k, c]) => [k, c.transform]), touched: touched.length }); });
+row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], minY: 0, maxY: 9 } }]]);
+  const walls = Object.entries<any>(E).filter(([k]) => /^(floor|ceiling)-/.test(k));
+  ok(walls.length === 2 && walls.every(([, c]) => c.lock === true) && /locked \(builder strength/.test(TV1.CARRIED.vehicle.to),
+    "F50c the vehicle walls are locked (no builder moves or deletes one by accident; lifting it is a builder's deliberate act, said in the report: review delta-260 L-B)", { walls: walls.map(([k, c]) => [k, c.lock]) }); });
 
 // ================= V5: the version, and a stale review refused =================
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });

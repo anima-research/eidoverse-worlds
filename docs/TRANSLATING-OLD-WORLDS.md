@@ -79,7 +79,8 @@ report lists each one):
   {blocks: ['hulls']}`, at [0, y, 0], 20 km square: every legal x/z), set off by the hull's box as
   this host measures it, so the hull's origin keeps main's band exactly (a hull
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
-  band). One hull layer: every vehicle meets every band. Water `speed` is a
+  band). One hull layer: every vehicle meets every band. Each wall is locked
+  (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is a
   `physics-area {kind: 'speed'}` on the water's zone, its factor main's speed
   over the volume stroke this protocol swims at there (2.4 m/s), so main's
   swimmer and this one keep the same pace; it scales walking and wading in that
