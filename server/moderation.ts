@@ -6,7 +6,7 @@
 // auth, so the restore-at-boot block runs exactly where it always did.
 
 import { existsSync, readFileSync } from "node:fs";
-import { atomicWrite } from "./fsutil.ts";
+import { writePrivate } from "./fsutil.ts";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 import { ACCOUNT_SHAPE } from "./directory.ts";
@@ -29,7 +29,7 @@ export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the
 export function saveGlobalBans() {
   try {
     const pending = Object.fromEntries(Object.entries(pendingBans).map(([k, { why: _w, ...b }]) => [k, b]));
-    atomicWrite(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2), { mode: 0o600 });
+    writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2));
   } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
 }
 /** The ban list as stored, made current. A record from before accounts carried the principal's bare `sub`: a signed-in
@@ -118,7 +118,7 @@ export const addrSanctions: Record<string, AddrSanction> = {};
 export const addrSanctionKey = (kind: string, world: string, addr: string) => `world:${world}:addr:${addr}:${kind}`;
 export function saveAddrSanctions(now = Date.now()) {
   for (const [k, s] of Object.entries(addrSanctions)) if (!(s.until > now)) delete addrSanctions[k];
-  try { atomicWrite(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2), { mode: 0o600 }); }
+  try { writePrivate(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2)); }
   catch (e) { console.log(`[mod] address sanction save failed: ${e}`); }
 }
 try {

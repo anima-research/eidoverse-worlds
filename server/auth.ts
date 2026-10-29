@@ -8,7 +8,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
-import { atomicWrite } from "./fsutil.ts";
+import { writePrivate } from "./fsutil.ts";
 
 // ---- archipelago-home identity (docs/home-node.md §7) ----------------------
 // The second door, alongside JOIN_TOKEN: humans log in with Discord at the
@@ -85,11 +85,11 @@ export const SESSIONS_FILE = resolve(process.env.SESSIONS_PATH ?? process.env.HN
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
-    // atomicWrite IS the write-then-rename: a crash mid-write never truncates
+    // writePrivate IS the write-then-rename: a crash mid-write never truncates
     // the live file. A second rename of the already-consumed .tmp threw on
     // every successful save and logged "session save failed" each time,
     // burying the signal for a real failure (PR #160 review).
-    atomicWrite(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
+    writePrivate(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)));
   } catch (e) { console.log(`[auth] session save failed: ${e}`); }
 }
 try {
