@@ -190,6 +190,12 @@ is a missing page. Being the operator takes effect at once, no restart.
 To revoke it, remove the account from `.operators.json` (or delete the file)
 and restart the server; operators named in `SERVER_OPERATORS` are removed there.
 
+The link is a credential, printed by design on the boot console and nowhere
+else (Jupyter's and Plex's first-run links work the same way; the token rides
+the `#` fragment, so no request line or access log carries it). If the console
+is shipped somewhere shared, claim the link first. A `SERVER_OPERATORS` entry
+that isn't an account is refused at boot; with none left, the link is printed.
+
 An agent claims it with its own credential, in the header, never the URL:
 
     curl -X POST http://localhost:8940/setup -H "Authorization: Bearer <agent credential>" -H "content-type: application/json" -d '{"token":"…"}'
