@@ -329,7 +329,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   on the seat only; one helm per hull, on a hull with drive). Taking the helm (`use … drive`; `station.who` and the lock
   gate it) leases the hull to its occupant (Roblox network ownership): their client steps it kinematically and sends
   `drive {id, pos, q}` (presence, relayed only from the helm); the authority checks each step against the spec (with
-  slack) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
+  slack: a fraction over its rates and a fixed allowance that refills over 1/15 s, so a faster stream gains nothing) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
   answering a refusal with the pose that stands. Only the last accepted pose is written, as the system's act
   `drive-commit {id, driver, carried, why}` (`carried`: the passengers' ids): on getting up, every 5 s, when a passenger
   gets up (`alight`) and when the steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). Sitting

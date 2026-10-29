@@ -1,7 +1,7 @@
 // shared/protocol/authority/drive.js — the hull's lease (DESIGN.md env-components "Drive"; Roblox network ownership): the helm's
 // occupant streams the hull's pose (presence), the authority checks plausibility and the hull's own collision, and commits only
 // the last accepted pose, as the system's act, on exit, every LEASE.commitMs and when the stream stops (shared/drive.js).
-import { driveOf, helmOf, implausible, LEASE, turnBetween } from "../../drive.js";
+import { driveOf, helmOf, implausible, LEASE, slackAfter, slackNow, turnBetween } from "../../drive.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
@@ -111,12 +111,12 @@ const DRIVE_VERBS = {
     if (!L) { const sat = occupantOf(w, st, actor).t; L = leases(w)[a.id] = { by: actor, pose: poseOf(st, a.id), at: Number.isFinite(sat) ? sat : now, beat: now, committed: now }; w.presenceDirty = true; }   // paced from taking the helm
     L.beat = now;
     const next = { pos: a.pos, q: a.q }, stands = { pose: L.pose };
-    const bad = implausible(L.pose, next, (now - L.at) / 1000, spec);
+    const dt = (now - L.at) / 1000, slack = slackNow(L.slack, dt), bad = implausible(L.pose, next, dt, spec, slack);
     if (bad) refuse(bad.what === "shape" ? "shape" : "too-fast", bad.what === "shape" ? `drive's ${bad.said}` : `${a.id} can't have gone there: ${bad.said}`, "drive from the pose that stands (the reply's pose)", stands);
     const B = boundsOf(st); if (B && outsideWorld(B, next.pos)) refuse("out-of-bounds", `[${next.pos.map(r3).join(", ")}] is outside this world`, "drive back inside its bounds", stands);
     const hit = hullHit(st, a.id, next, L.pose);
     if (hit) refuse("solid", `${a.id} would run into ${hit === "ground" ? "the ground" : hit}`, "steer around it", { ...stands, blocker: hit });
-    L.pose = { pos: next.pos.slice(), q: next.q.slice() }; L.at = now; w.presenceDirty = true;
+    L.slack = slackAfter(slack, L.pose, next, dt, spec); L.pose = { pos: next.pos.slice(), q: next.q.slice() }; L.at = now; w.presenceDirty = true;
     const recorded = now - L.committed >= LEASE.commitMs && commitLease(w, st, a.id, "periodic");
     return { ok: true, recorded, pose: L.pose, driver: said(actor) };
   },
