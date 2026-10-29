@@ -273,7 +273,7 @@ row("IM-V1", () => {
   const r = TV1.translate(L), T = r.final.translated, h = T[TV1.helmChildId?.("sub")], h2 = T[TV1.helmChildId?.("raft")];
   ok(r.stats.divergences === 0 && JSON.stringify(T.sub?.drive) === JSON.stringify({ maxSpeed: 4, turnRate: 0.4, climbRate: 4 }) && !("vehicle" in (T.sub ?? {}))
     && JSON.stringify(T.sub["imported:vehicle"]) === JSON.stringify({ probes: veh.probes }) && !T.raft["imported:vehicle"]
-    && [["floor", -240], ["ceiling", -4]].every(([k, y]) => { const w = T[TV1.wallChildId?.("sub", k)]; return w && w.hidden === true && !w.parent && JSON.stringify(w.collider?.blocks) === '["hulls"]' && w.transform.pos[1] === y && w.transform.pos[0] === 26 && w.transform.pos[2] === 60; })
+    && [["floor", -240], ["ceiling", -4]].every(([k, y]) => { const w = T[TV1.wallChildId?.("sub", k)]; return w && w.hidden === true && !w.parent && JSON.stringify(w.collider?.blocks) === '["hulls"]' && w.transform.pos[1] === y && w.transform.pos[0] === 0 && w.transform.pos[2] === 0; })   // at the origin, spanning every x/z (review delta-260 L-C)
     && !T[TV1.wallChildId?.("raft", "floor")]
     && h?.parent?.to === "sub" && h.socket?.name === "helm" && JSON.stringify(h.transform?.pos) === JSON.stringify(veh.helm) && h.station?.action === "drive" && JSON.stringify(h.station.input) === JSON.stringify({ move: "drive" }) && h.station.leaveBy === "menu" && JSON.stringify(h.station.exit) === JSON.stringify(veh.exit)
     && JSON.stringify(T.raft?.drive) === JSON.stringify({ maxSpeed: 15, turnRate: 0.1, climbRate: 15 }) && h2 && h2.station.exit === undefined

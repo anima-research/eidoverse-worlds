@@ -116,7 +116,7 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
     if (!made.ok) return { hull: null, said: { made: `${made.refused?.code}: ${made.refused?.reason}` }, good: false };
     const sub = made.ids.$sub, helm = made.ids.$helm;
     const H = MATH.aabb(o.state(), sub), hull = TV1.hullExtentOf([H.min.map((v, i) => v - pos[i]), H.max.map((v, i) => v - pos[i])]);
-    const walls = go("batch", { ops: TV1.vehiclePartsOf("sub", m, pos, hull).walls.map(([, c], k) => ({ verb: "create", args: { id: `$w${k}`, components: c } })) });
+    const walls = go("batch", { ops: TV1.vehiclePartsOf("sub", m, hull).walls.map(([, c], k) => ({ verb: "create", args: { id: `$w${k}`, components: c } })) });
     const drive = (y) => { clock.advance(1000); return D.request(o, "olive", "drive", { id: sub, pos: [pos[0], y, pos[2]], q }); }, at = (y) => go("set", { id: sub, component: "transform", value: { pos: [pos[0], y, pos[2]], q, scale: [1, 1, 1] } });
     const leave = () => { go("move", { to: [pos[0] + 30, -100, pos[2]], teleport: true }); clock.advance(5000); D.drives?.(o); };
     const board = () => { const hp = (SLw.worldPose(o.state(), helm)).pos; go("move", { to: [hp[0] + 1, hp[1], hp[2]], teleport: true }); return go("use", { id: sub, action: "drive" }); };

@@ -124,7 +124,7 @@ function newReactions(rx) {
 }
 
 export const TRANSLATOR = "eidoverse/translate-v1@29";
-// @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}),
+// @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}) at [0, y, 0],
 // set off by the hull's measured box (translate's boxOf: the host's catalogue), and its water.speed a physics-area {kind: speed} on
 // the water's zone; neither rides imported:* any more. Output differs from @28 there.
 // @28 (fixB 10-28, review L29): only the first environment (localeCompare id order, as main drew) is mapped; a second no longer
@@ -303,7 +303,7 @@ export const DEFERRED = {};
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
-  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only hulls meet (collider {blocks: ['hulls']}), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls span 10 km, so every vehicle meets every band; probes → imported:vehicle, listed with what becomes of it (FATES)" },
+  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only hulls meet (collider {blocks: ['hulls']}), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls stand at [0, y, 0] and span 20 km (every legal x/z), so every vehicle meets every band wherever it moves; probes → imported:vehicle, listed with what becomes of it (FATES)" },
   picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
@@ -318,13 +318,13 @@ export function materialOf(d) {
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
 /** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, walls: [[id, components]], left (no
- *  home: imported:vehicle)}; main's clamps. `at` is the host's position: the walls span WALL_SPAN m around it */
-export function vehiclePartsOf(host, d, at = [0, 0, 0], hull = null) {
+ *  home: imported:vehicle)}; main's clamps. The walls stand at [0, y, 0] spanning every legal x/z, so a moved host re-places nothing (review delta-260 L-C) */
+export function vehiclePartsOf(host, d, hull = null) {
   const v = d && typeof d === "object" && !Array.isArray(d) ? d : {}, v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   const { helm, exit, speed, turnRate, minY, maxY, ...rest } = v, s = clampN(speed, 0.1, 15, 4);
   // main clamped the hull's origin; a wall stops the hull's box, so each wall is set off by the hull's extent (hullExtentOf)
   const below = hull?.below ?? 0, above = hull?.above ?? 0;
-  const wall = (y, which, said) => [wallChildId(host, which), { transform: { pos: [at[0], y, at[2]], q: [0, 0, 0, 1], scale: [WALL_SPAN / 200, WALL_T, WALL_SPAN / 200] },
+  const wall = (y, which, said) => [wallChildId(host, which), { transform: { pos: [0, y, 0], q: [0, 0, 0, 1], scale: [WALL_SPAN / 200, WALL_T, WALL_SPAN / 200] },
     mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, clickthrough: true, collider: { shape: "box", blocks: ["hulls"] }, label: `${said} (main's vehicle ${which === "floor" ? "minY" : "maxY"})` }];
   const walls = [...(Number.isFinite(minY) ? [wall(minY - below - WALL_T, "floor", "vehicle floor")] : []), ...(Number.isFinite(maxY) ? [wall(maxY + above, "ceiling", "vehicle ceiling")] : [])];
   const drive = { maxSpeed: s, turnRate: clampN(turnRate, 0.1, 2, 0.45), climbRate: s };   // main normalised (0, ½·rise, thrust) × speed: straight up ran at speed
@@ -340,7 +340,7 @@ export function hullExtentOf(box, q = [0, 0, 0, 1], scale = [1, 1, 1]) {
   return { below: Math.max(0, -Math.min(...ys)), above: Math.max(0, Math.max(...ys)) };
 }
 export const wallChildId = (host, which) => `${which}-${sha256(`eido-vehicle-${which}\0${host}`).slice(0, 26)}`;
-const WALL_SPAN = 10000, WALL_T = 10;   // m: a 10 km square, 10 m thick (a mesh is at most 200 m: the scale makes the rest)
+const WALL_SPAN = 20000, WALL_T = 10;   // m: a 20 km square (a transform's pos is within ±1e4), 10 m thick (a mesh is at most 200 m: the scale makes the rest)
 export const envChildId = (host, part) => `${part}-${sha256(`eido-environment\0${host}\0${part}`).slice(0, 26)}`;
 const clampN = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
 /** main's traversal {routes} → {children: [[id, components]], left (routes no climb can hold: carried on the host)} */
@@ -772,7 +772,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     else if (carried.collision !== undefined) c[keyed("imported", "collision")] = carried.collision;
     const climbs = carried.traversal !== undefined ? climbPartsOf(enc(id), carried.traversal) : { children: [], left: [] };
     if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
-    const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle, t.pos, hullExtentOf(col?.boxOf?.(e.lib), t.q, t.scale)) : null;
+    const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle, hullExtentOf(col?.boxOf?.(e.lib), t.q, t.scale)) : null;
     if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left; }
     const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
     out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
