@@ -158,7 +158,14 @@ export function oldOwners(srcDir: string) {
 /** May this signed-in account upgrade the old world as its owner (R 10-28)? "bound": main's records bind an owner to exactly this
  *  account; "name": an owner main recorded NO account for has this name, as the directory folds names (foldName; provisional: an alpha risk the owner
  *  accepted, until durable accounts); else null, and why. `ownerless`: the world has no owner at all (the upgrader claims it). */
+const recognisedSeen = new Map<string, ReturnType<typeof recognise>>();   // per process, by log head: an apply asks twice (report, write)
 export function ownerRecognised(srcDir: string, account: string | null, name: string | null) {
+  let head = ""; try { const st = fs.statSync(path.join(srcDir, "log.jsonl")); head = `${st.size}:${st.mtimeMs}`; } catch { /* oldOwners says */ }
+  const key = JSON.stringify([path.resolve(srcDir), head, account, name]);
+  if (!recognisedSeen.has(key)) recognisedSeen.set(key, recognise(srcDir, account, name));
+  return recognisedSeen.get(key)!;
+}
+function recognise(srcDir: string, account: string | null, name: string | null) {
   const owners = oldOwners(srcDir), ownerless = owners.length === 0;
   if (!account) return { recognised: null, ownerless, why: "not signed in" };
   if (ownerless) return { recognised: null, ownerless, why: "the world has no owner: an operator upgrades it and becomes its owner" };
