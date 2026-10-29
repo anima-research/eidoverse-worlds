@@ -234,8 +234,10 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const k = own.msgs.length;
     fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true }); await sleep(300);
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    own.raw({ type: "voice-moderate", id: "Wren", muted: false }); await sleep(300);
-    const all = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    own.raw({ type: "voice-moderate", id: "Wren", muted: false });
+    const owners = () => own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed 300 ms (windows-latest 10-29 read [] at 300)
+    const all = owners();
     ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
       "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
