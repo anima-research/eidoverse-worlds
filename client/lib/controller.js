@@ -882,7 +882,7 @@ export function updateMe(dt, me) {
   }
   if (flight) {
     const input = pilotInput(keys, flight, dt);
-    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
+    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input, box: worldBounds() });   // @world.bounds fences flight
     // the world's bounds hold in the air too (house review I13): the flight state itself is clamped, or the next step
     // carries on from outside them
     const [fx, fz] = clampToBounds(flight.pos.x, flight.pos.z);
