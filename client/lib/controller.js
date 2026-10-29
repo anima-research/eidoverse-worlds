@@ -647,10 +647,10 @@ let levelDiving = false;
 // the world's level where my feet are: none while flying or in a dry pocket below it (watervolumes levelAt: mediumOf)
 const levelHere = () => { const wl = flight ? null : waterLevel(); return wl == null ? null : levelAt(myState.pos, wl); };
 const levelDiveKeys = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight');
-// pushing forward while looking down is diving, on a desk as in a headset (Minecraft's rule; R 10-28)
 // the swim keys, said once a session the first time the body is in water: afloat on a lake or swimming in a volume (R 10-28)
 let swimHinted = false;
 const swimHint = () => { if (swimHinted) return; swimHinted = true; flashHint('swimming — WASD where you look (look down to dive), Space rise, C / Ctrl sink, Shift faster', 6000); };
+// pushing forward while looking down is diving, on a desk as in a headset (Minecraft's rule; R 10-28)
 const headingDown = (fwd) => fwd * Math.sin(xrIntent.active ? xrIntent.pitchDown : camPitch - .32) > .3;
 function levelDiveWater(me, fwd) {
   const wl = levelHere();
@@ -1250,8 +1250,8 @@ export function updateSpectator(dt, remote) {
   camera.lookAt(eye.clone().addScaledVector(_facing, FP_GAZE_AHEAD).add(new THREE.Vector3(0, -FP_GAZE_DROP, 0)));
 }
 
-export function setCamYaw(v) { camYaw = Math.atan2(Math.sin(v), Math.cos(v)); }
-export function setCamPitch(v) { camPitch = THREE.MathUtils.clamp(v, -0.9, 1.2); }   // probes: the same clamp as the mouse   // wrapped: the body's yaw must never carry a full turn (XR pop, 09-05)
+export function setCamYaw(v) { camYaw = Math.atan2(Math.sin(v), Math.cos(v)); }   // wrapped: the body's yaw must never carry a full turn (XR pop, 09-05)
+export function setCamPitch(v) { camPitch = THREE.MathUtils.clamp(v, -0.9, 1.2); }   // probes: the same clamp as the mouse
 export function setPosture(p) { posture = p; }
 // the action bar's posture tiles (actionbar.js): sit runs the same seat search as X, stand leaves seat and posture.
 // A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —
