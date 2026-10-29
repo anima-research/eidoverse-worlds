@@ -1,6 +1,6 @@
 // client/lib/upgradeview.js — the splash of a world saved in an older format: the server's words, the doc, and (an operator or its owner)
 // Upgrade world… → the dry-run report → Back up and upgrade → where the backup is. The server runs the CLI (server/upgrade.ts).
-import { OLD_FORMAT_DOC } from '../../shared/oldformat.js';
+import { OLD_FORMAT_DOC, IF_YOU_RUN_IT } from '../../shared/oldformat.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; };
 
@@ -53,6 +53,7 @@ export function showOldFormat(root, refused, world) {
   const box = el('div', 'sp-upgrade');
   const doc = el('a', 'sp-up-doc', 'How upgrading works'); doc.href = `/${refused?.doc ?? OLD_FORMAT_DOC}`; doc.target = '_blank'; doc.rel = 'noopener';
   const area = el('div', 'sp-up-area'); box.append(area, doc);   // the action first; "how" is for when it's unclear (R 10-28)
+  if (!refused?.may && !refused?.operator) area.append(el('p', 'sp-up-who', IF_YOU_RUN_IT));   // who can't upgrade it: the runner's way in, else ask (R 10-28)
   if (refused?.may) {   // an operator, or its owner (refused.owner: 'bound' by main's records, 'name' provisionally)
     const review = el('button', 'sp-up-btn sp-up-review', 'Upgrade world…'); area.append(review);
     review.onclick = async () => {

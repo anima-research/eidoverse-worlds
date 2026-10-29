@@ -12,7 +12,7 @@ import { WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ROOT } from "./config.ts";
 import { accountOf } from "./auth.ts";
 import { isOperator } from "./operators.ts";
 import { oldWorldAt, type OldWorldKind } from "./oldworlds.ts";
-import { OLD_FORMAT_DOC, ASK_OPERATOR_OR_OWNER } from "../shared/oldformat.js";
+import { OLD_FORMAT_DOC, IF_YOU_RUN_IT } from "../shared/oldformat.js";
 import type { Client } from "./world.ts";
 
 type Any = any;
@@ -68,7 +68,7 @@ async function admit({ c, ws }: Ctx, msg: Any, type: string) {
   const who = provenWho(c, msg), account = who?.account ?? null, operator = isOperator(account);
   const world = String(msg.world ?? "");
   const old = oldWorldAt(WORLDS_DIR, world);
-  const rights = (why = "") => refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS) or the world's owner, signed in${why ? ` (${why})` : ""}. ${ASK_OPERATOR_OR_OWNER}`, "ask the server's operator or the world's owner");
+  const rights = (why = "") => refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS) or the world's owner, signed in${why ? ` (${why})` : ""}. ${IF_YOU_RUN_IT}`, "ask the server's operator or the world's owner");
   let owner: Owner | null = null;
   if (!operator) { if (!old || old.kind !== "translatable") return rights(account ? "" : "not signed in");
     owner = await ownerOf(world, who); if (!owner?.recognised) return rights(owner?.why ?? (account ? "" : "not signed in")); }

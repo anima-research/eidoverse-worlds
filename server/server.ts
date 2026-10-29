@@ -18,7 +18,8 @@ import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRA
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
 import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, NOT_YET_CLOSE, type Expel } from "./access.ts";
-import { isOperator } from "./operators.ts";
+import { isOperator, mintSetupToken } from "./operators.ts";
+import { setupLine } from "./setup.ts";
 import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
 // The world itself (a log + the embodied plane) and the registry. The boot
@@ -1344,6 +1345,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 console.log(`eidoverse-worlds sequencer on http://${HOST}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
+{ const t = mintSetupToken(); if (t) console.log(`  ${setupLine(t)}`); }   // first run: the one place the token is printed (server/setup.ts)
 if (TRUST_NAMES) console.log(`  ⚠ TRUST_NAMES=1: a typed name IS an account here (local:<name>). Private servers only: anyone who can reach ${HOST}:${PORT} can be anyone.`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the server is OPEN. Fine on a tailnet, wrong on a public box.");
 // A fresh clone without the client's install step serves a client that can

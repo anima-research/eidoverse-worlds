@@ -19,7 +19,7 @@
 //      gets in by itself once there is room (review r3 F6)
 //   W8 while it stays full, the redials back off (each wait longer than the last), not every 5 s in step (review r4 F5)
 //   W9 an agent (mcpl/agent.ts) dialling a full world waits and dials again too, and gets in when a seat frees (r4 C2)
-//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Upgrade world…
+//   W10 an old-format world's splash (a guest): the headline, the server's words, the doc (served), no Upgrade world…; W10b the setup-link words
 //   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command
 //   W12 the world's owner's splash (signed in as "author", its owner by name, not an operator) offers Upgrade world… too; another name's doesn't
 // Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 tools/protocol/refusedjoin-check.ts
@@ -27,7 +27,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { OLD_FORMAT_SPLASH } from "../../shared/oldformat.js";
+import { OLD_FORMAT_SPLASH, IF_YOU_RUN_IT } from "../../shared/oldformat.js";
 import { scratchBench, mkCheck, sleep } from "../harness.ts";
 import { tryUntil } from "./wait.ts";
 
@@ -167,11 +167,13 @@ try {
   {
     await cdp.send("Page.navigate", { url: `${BASE}/?world=old-x&name=T10&earlysock=0` });
     const probe = `(() => { const s = document.getElementById('splash'); const a = s?.querySelector('a.sp-up-doc');
-      return { head: s?.querySelector('.sp-phase')?.textContent, doc: a ? a.getAttribute('href') : null, review: !!s?.querySelector('.sp-up-review') }; })()`;
+      return { head: s?.querySelector('.sp-phase')?.textContent, doc: a ? a.getAttribute('href') : null, review: !!s?.querySelector('.sp-up-review'), who: s?.querySelector('.sp-up-who')?.textContent ?? null }; })()`;
     const st: any = await tryUntil("the old-format splash shows its doc link", async () => { const v = await evalJson(probe).catch(() => null); return v?.doc ? v : null; }, { ms: 20000, step: 250 });
-    const doc = st?.doc ? await fetch(new URL(st.doc, BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 200) })).catch((e) => ({ err: String(e) })) : null;
+    const doc = st?.doc ? await fetch(new URL(st.doc, BASE)).then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 400) })).catch((e) => ({ err: String(e) })) : null;
     check("W10 old-x as a guest: the splash says the world was saved by an older version of the engine and needs a one-time upgrade, links the doc (served), and offers no Upgrade world…",
       st?.head === OLD_FORMAT_SPLASH && st.doc === "/docs/TRANSLATING-OLD-WORLDS.md" && doc?.status === 200 && /Translating a first-protocol world/.test(doc.text) && st.review === false, { st, doc });
+    check("W10b …and says how to get in: the setup link if you run the server, else ask whoever runs it; the doc opens with those two lines (R 10-28)", st?.who === IF_YOU_RUN_IT
+      && /^# Translating[^\n]*\n\nIf you run this server, open the setup link printed in its console \(or add your account to `SERVER_OPERATORS`\)\.\nOtherwise ask whoever runs it\.\n/.test(doc?.text ?? ""), { who: st?.who, doc: doc?.text });
   }
   // W11: the operator's splash: Upgrade world… → the report → Back up and upgrade (the only action) → the backup and the rollback command
   {
@@ -181,6 +183,7 @@ try {
     const shows = (js: string, ms = 30000) => tryUntil(`the page shows ${js.slice(0, 60)}`, () => evalJson(js).catch(() => null), { ms, step: 250 });
     const btn = await shows(`(() => { const b = document.querySelector('#splash .sp-up-review'); if (!b) return null; const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); const doc = document.querySelector('#splash a.sp-up-doc'); return { text: b.textContent, top: top === b, first: !!doc && !!(b.compareDocumentPosition(doc) & Node.DOCUMENT_POSITION_FOLLOWING) }; })()`);
     check("W11b the operator's Upgrade world… comes before the How upgrading works link (R 10-28)", btn?.first === true, btn);
+    check("W11d the operator's splash doesn't tell them to find the setup link", (await evalJson(`!!document.querySelector('#splash .sp-up-who')`).catch(() => null)) === false);
     await evalJson(`(document.querySelector('#splash .sp-up-review')?.click(), true)`).catch(() => null);
     const rep = await shows(`(() => { const r = document.querySelector('#splash .sp-up-report'); if (!r) return null; return { text: r.innerText, buttons: [...document.querySelectorAll('#splash .sp-up-area button')].map((b) => b.textContent) }; })()`, 60000);
     check("W11 old-y as the operator: Upgrade world… (on top) shows the report — carried, mapped, unmapped, dropped, refused, each counted, and its hash — and Back up and upgrade is the only action",
