@@ -86,6 +86,8 @@ try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { httpCaller, visibleTo, doorFor, youAt } from "./access.ts";
+import { setupPage, setupClaim } from "./setup.ts";
+import { setupOpen } from "./operators.ts";
 
 import { recordComponents } from "../shared/protocol/view.js";
 /** What the routes need from Bun's server object, structurally: the WS
@@ -583,6 +585,9 @@ const ROUTES: Route[] = [
       });
     },
   },
+  // the first-run setup link (server/setup.ts): only while no operator exists; after that /setup is any missing page
+  { match: (u, req) => u.pathname === "/setup" && req.method === "GET" && setupOpen(), handler: () => setupPage() },
+  { match: (u, req) => u.pathname === "/setup" && req.method === "POST" && setupOpen(), handler: ({ req, srv }) => setupClaim(req, srv) },
   {
     match: (u) => u.pathname === "/check",
     handler: async ({ req, url, srv }) => {

@@ -1,5 +1,8 @@
 # Translating a first-protocol world — the operator's procedure
 
+If you run this server, open the setup link printed in its console (or add your account to `SERVER_OPERATORS`).
+Otherwise ask whoever runs it.
+
 Informative (recut C19, 2026-10-21): how an operator translates a world, moved out of spec/PROTOCOL.md §14, which keeps
 only what a translated log must be. Where this and §14 disagree, §14 wins.
 
@@ -116,7 +119,7 @@ upgrade: "operator-or-owner", operator, may, owner?}`, so agents read the same t
 A server **operator** or the world's **owner** may upgrade it (R 10-28),
 signed in (a session, or an agent's credential; never a typed name):
 
-- an operator: an account listed in `SERVER_OPERATORS`;
+- an operator: an account listed in `SERVER_OPERATORS`, or the one that opened the setup link (below);
 - an owner **bound** by main's own records: the old log's grant carried the
   account, or main's `.principals.json` or another world's log on this server
   pairs the owner's name with exactly this one account (as below, step 2);
@@ -151,13 +154,37 @@ line are one path. A report that changed since it was reviewed is refused.
 The result screen says where the backup is and how to roll back. The world
 opens on the next join; nobody needs to restart the server.
 
+## Becoming the operator: the setup link
+
+A server with no operator (`SERVER_OPERATORS` empty, and nobody claimed it yet)
+prints one line at boot (R 10-28):
+
+    No operator yet. Open http://localhost:8940/setup#token=… while signed in (person or agent) to become this server's operator.
+
+Open it in a browser where you are signed in to this server (behind a proxy,
+the same `/setup#…` on its public address). The page says "You're this server's
+operator." The link works once: the account is stored in
+`<worlds dir>/.operators.json` (0600; read at every boot and merged with
+`SERVER_OPERATORS`), the token is gone, no link is printed again, and `/setup`
+is a missing page. Being the operator takes effect at once, no restart.
+
+An agent claims it with its own credential, in the header, never the URL:
+
+    curl -X POST http://localhost:8940/setup -H "Authorization: Bearer <agent credential>" -H "content-type: application/json" -d '{"token":"…"}'
+
+It becomes the operator as the same account its join proves (`agent:token:<id>`
+or `aid1:<iss>:<sub>`). A guest (no sign-in) is refused, as is a wrong or used
+token, another site's page, and more than a few tries a minute. The token lives
+only in the server's memory: a restart before it is used prints a new one.
+
 ## Upgrading a main-era server
 
 A server from the main era named its operators in `WORLD_ADMIN`, often by
 display name, and its worlds record their owners by display name. Three
 things change, and nobody is locked out.
 
-**1. Name yourself by account.** The variable is now `SERVER_OPERATORS`, and
+**1. Name yourself by account.** With no operator listed at all, the setup
+link (above) is the quickest way. Otherwise: the variable is now `SERVER_OPERATORS`, and
 it lists accounts, never names. Rewrite
 
     WORLD_ADMIN=Name
