@@ -2,14 +2,15 @@
 //   bun tools/water/level-dive-check.ts   (its own scratch server and world; ENGINE_LIB=<dir> serves upstream's real modules)
 // A terrain with a deep lake is built (the ground from this repo's height law); the body is put afloat in the lake;
 // holding C dives it under (the 3D swim takes over from the float), looking down with W held dives too (R 10-28), and
-// letting go brings it back up to the surface, where the float takes it again.
+// letting go brings it back up to the surface, where the float takes it again. Holding a thing afloat, C sinks and Q throws.
+// With no @world.bounds there is no edge (LD11).
 import { readFileSync, existsSync } from "node:fs";
 import { scratchBench, mkCheck } from "../harness.ts";
 import { until, pause } from "../protocol/wait.ts";
 
 const WORLD = "level-dive";
 const engine = process.env.ENGINE_LIB;
-const bench = await scratchBench("level-dive", { worlds: [WORLD] });
+const bench = await scratchBench("level-dive", { worlds: [WORLD], owner: "diver", serverEnv: { TRUST_NAMES: "1" } });   // the diver owns it (TRUST_NAMES: the typed name is that account): LD9 places a crate
 const { cdp, evalJson, BASE } = bench;
 const { check, tally } = mkCheck();
 const errors: string[] = [];
@@ -70,6 +71,28 @@ try {
   await js(`${C}.setCamPitch(1.1); return true;`); await key("add", "KeyW"); await pause("W held, looking down", 1500);
   const lookDive = { y: await y(), diving: await diving() };
   await key("delete", "KeyW"); await js(`${C}.setCamPitch(0.32); return true;`);
+  // a thing held afloat: C sinks the swimmer and never throws it; Q throws it (LEGACY-PINS item 1: C was throw/punt too)
+  await put(-1.1); await pause("the float settles", 1200);
+  const TP = "(await import('/lib/thingphysics.js'))";
+  const made = await js(`const m = await import('/lib/net.js'), p = ${C}.myState.pos; return await m.sendRequest('create', { model: 'eidoverse/assets/models/crate_large_blue.glb', components: { label: 'Float crate', grabbable: { enabled: true }, transform: { pos: [p.x + 0.7, p.y + 0.6, p.z], scale: 0.2 } } });`);
+  const crateId = () => js("const st = (await import('/lib/net.js')).replica.st; return Object.keys(st?.entities ?? {}).find((k) => st.entities[k]?.c?.label === 'Float crate') ?? null;");
+  await until("the crate is drawn", async () => { const k = await crateId(); return !!k && await js(`return !!(await import('/lib/world.js')).entities.get(${JSON.stringify(k)});`); }, { ms: 45000 }).catch(() => {});
+  const crate = await crateId();
+  await js(`await ${TP}.physicsApi.grab(${JSON.stringify(crate)}); return true;`); await pause("the grab lands", 800);
+  const holding = () => js(`return ${TP}.physicsApi.mine().includes(${JSON.stringify(crate)});`);
+  const press = async (code: string, k: string, vk: number, ms: number) => { await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", code, key: k, windowsVirtualKeyCode: vk });
+    await pause(`${code} held`, ms); await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", code, key: k, windowsVirtualKeyCode: vk }); };
+  const heldAfloat = await holding(); const y0 = await y();
+  await press("KeyC", "c", 67, 1500); await pause("anything thrown leaves the hand", 800);
+  const afterC = { held: await holding(), y0, y: await y() };
+  await put(-1.1); await pause("afloat again, still holding it", 1500);
+  await press("KeyQ", "q", 81, 80); await until("Q let go of it", async () => !(await holding()), { ms: 6000 }).catch(() => {});
+  const afterQ = { held: await holding() };
+  // no @world.bounds: walking 84 m out is not pulled back to main's 78 m stage island (LEGACY-PINS item 2)
+  const unbound = await js("return await (await import('/lib/net.js')).sendRequest('delete', { id: '@world', component: 'bounds' });");   // founding wrote ±20 m
+  await until("the bounds are gone", () => js(`return ${C}.worldBounds() === null;`), { ms: 8000 }).catch(() => {});
+  await js(`${C}.myState.pos.set(0, 0.5, 84); return true;`); await key("add", "KeyW"); await pause("W held, 84 m out", 800); await key("delete", "KeyW");
+  const far = await js(`const p = ${C}.myState.pos; return { r: +Math.hypot(p.x, p.z).toFixed(2), bounds: ${C}.worldBounds() };`), unboundOk = !!unbound?.ok;
 
   check("LD1 afloat at the surface is not diving", floating.diving === false, JSON.stringify(floating));
   check("LD2 falling over the water with C held does not start a swim in the air", fallingWithC.diving === false, JSON.stringify(fallingWithC));
@@ -77,6 +100,9 @@ try {
   check("LD4 back at the surface the float takes the body again, at the floating depth", surfaced.diving === false && Math.abs(surfaced.y - floating.y) < 0.6, JSON.stringify({ floating, surfaced }));
   check("LD5 looking down with W held dives, no key (R 10-28)", lookDive.diving === true && lookDive.y < floating.y - 1, JSON.stringify({ floating, lookDive }));
   check("LD6 the floating clip holds steady, idle and swimming (at most one change in 1.5 s)", idleClips.flips <= 1 && swimClips.flips <= 1 && idleClips.frames > 10, JSON.stringify({ idleClips, swimClips }));
+  check("LD9 holding a thing afloat, holding C sinks me and keeps it in my hand (C is down, never throw)", made?.ok && heldAfloat === true && afterC.held === true && afterC.y < y0 - 0.3, JSON.stringify({ made: made?.ok ? true : made, crate, heldAfloat, afterC }));
+  check("LD10 …and Q throws it (the throw/punt key)", afterC.held === true && afterQ.held === false, JSON.stringify({ afterC, afterQ }));
+  check("LD11 a world with no bounds has no edge: walking 84 m from the origin stays out there (no 78 m stage island)", unboundOk && far.bounds === null && far.r > 80, JSON.stringify({ unbound: unboundOk || unbound, far }));
   check("LD8 afloat on a lake, before any dive, the swim keys are said (look down to dive) (R 10-28)", hintAfloat === true, "");
   // headless Chrome has no working GPU: WebGPU's error scopes complain on every boot (colour-picker-bench, same filter)
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
