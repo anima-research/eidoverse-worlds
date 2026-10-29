@@ -54,7 +54,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a resume restamps", "shared/protocol/authority/followups.js", "if (p && p.playing !== false && p.src === v.src && v.t0 !== undefined) return o;", "if (p && p.src === v.src && v.t0 !== undefined) return o;", ["S3"]],
   ["the play reaction", "shared/protocol/authority/use.js", "if (h?.kind === \"play\") { const cur = e.c.sound;", "if (false) { const cur = e.c.sound;", ["S4"]],
   ["near ≤ radius", "shared/protocol/authority/checks.js", "v.near > v.radius) refuse(\"bounds\"", "false) refuse(\"bounds\"", ["S5"]],
-  ["radius cap 100", "shared/protocol/componentspec.js", "radius: { min: 1, max: 100 }, src:", "radius: { min: 1, max: 200 }, src:", ["S5"]],
+  ["radius cap 200", "shared/protocol/componentspec.js", "radius: { min: 1, max: 200 }, src:", "radius: { min: 1, max: 400 }, src:", ["S5"]],
   ["the falloff reaches silence (no taper)", "shared/sound.js", "return inv * (1 - t) * (1 - t);", "return inv;", ["S6"]],
   ["the falloff is 0 at radius", "shared/sound.js", "if (d >= radius) return 0;", "", ["S6"]],
   ["a sound plays by default (R: no start-paused)", "shared/protocol/componentspec.js", "defaults: { playing: true, loop: true, volume: 0.8,", "defaults: { playing: false, loop: true, volume: 0.8,", ["S7"]],
@@ -332,10 +332,10 @@ const cases: Case[] = [
       const r2 = s.call("vic", "use", { id: "bell", action: "ring" }, 2000); const b = { ...comp(s, "bell", "sound") };
       return { none: code(none), r1: show(r1), r2: show(r2), a, b }; },
     good: (o) => o.none === "no-sound" && o.r1 === "ok" && o.r2 === "ok" && o.a.playing === true && o.b.playing === true && o.b.t0 - o.a.t0 === 2000 },
-  { id: "S5", what: "sound ranges: radius 150 refused (cap 100); near 20 with radius 12 refused; pitch 3 refused", run(s) { cast(s);
+  { id: "S5", what: "sound ranges: radius 250 refused (cap 200, R 10-28); near 20 with radius 12 refused; pitch 3 refused", run(s) { cast(s);
       s.call("olive", "create", { id: "radio", components: { transform: { pos: [0, 0, 0] } } });
       const set = (v: any) => code(s.call("olive", "set", { id: "radio", component: "sound", value: { src: AUD, ...v } }));
-      return { r: set({ radius: 150 }), n: set({ near: 20, radius: 12 }), p: set({ pitch: 3 }) }; },
+      return { r: set({ radius: 250 }), n: set({ near: 20, radius: 12 }), p: set({ pitch: 3 }) }; },
     good: (o) => o.r === "bounds" && o.n === "bounds" && o.p === "bounds" },
   { id: "S6", what: "the falloff (gainAt): 1 inside near, falling with distance, exactly 0 at radius and beyond (today's Web Audio inverse clamps at about −21 dB instead)", run() {
       const g = SN.gainAt; if (!g) return { none: true };

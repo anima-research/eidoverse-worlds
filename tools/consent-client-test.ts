@@ -59,15 +59,15 @@ check('Default: off both lists, the switches answer them again', C.setListed('u-
 check('/pushable and /posable keep main\'s meaning: the move and touch switches', (C.setPushable(false), !C.gate('move') && !C.pushable()) && (C.setPosable(false), !C.posable()) && (C.setPushable(true), C.gate('move')));
 check('it is remembered under ew-body-consent, lists and names too', (C.setListed('u-kit', 'allow', 'Kit'), JSON.parse(store.get('ew-body-consent') ?? '{}').allow?.['u-kit'] === 'Kit') && JSON.parse(store.get('ew-body-consent') ?? '{}').v === 4);
 
-// 1b. an older stored setting (main's two keys, v4's switch) is carried into the gates silently, never wider
+// 1b. an older stored setting (main's two keys, the body switch) is carried into the gates silently, never wider
 const was = (kv: Record<string, string>) => C.readStored((k: string) => kv[k] ?? null);
 const g2 = (s: any) => `${(s.move ?? true) ? 'move' : '-'}/${(s.touch ?? false) ? 'touch' : '-'}`;   // never chosen shows as the defaults
 for (const [kv, want, why] of [
-  [{ 'ew-body-switch': 'refuse' }, '-/-', 'v4 refuse → both off'],
-  [{ 'ew-body-switch': 'ask' }, '-/-', 'v4 ask → both off (F3, R 10-28 16:02: ask was no until yes)'],
-  [{ 'ew-body-switch': 'accept' }, 'move/-', 'v4 accept → Move on, Touch its default (off)'],
-  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/touch', 'v4 accept with main\'s posable on → Touch as stored (on)'],
-  [{ 'ew-body-switch': 'refuse', 'ew-posable': '1', 'ew-pushable': '1' }, '-/-', 'v4 refuse beats main\'s on keys: an opt-out is never lost'],
+  [{ 'ew-body-switch': 'refuse' }, '-/-', 'switch refuse → both off'],
+  [{ 'ew-body-switch': 'ask' }, '-/-', 'switch ask → both off (F3, R 10-28 16:02: ask was no until yes)'],
+  [{ 'ew-body-switch': 'accept' }, 'move/-', 'switch accept → Move on, Touch its default (off)'],
+  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/touch', 'switch accept with main\'s posable on → Touch as stored (on)'],
+  [{ 'ew-body-switch': 'refuse', 'ew-posable': '1', 'ew-pushable': '1' }, '-/-', 'switch refuse beats main\'s on keys: an opt-out is never lost'],
   [{ 'ew-pushable': '0' }, '-/-', 'main pushable off → Move off'],
   [{ 'ew-posable': '1' }, 'move/touch', 'main posable on → Touch on'],
   [{ 'ew-pushable': '0', 'ew-posable': '1' }, '-/touch', 'main pushable off, posable on → Move off, Touch on'],
@@ -75,7 +75,7 @@ for (const [kv, want, why] of [
   [{ 'ew-body-consent': '{"v":4,"move":false,"touch":true,"allow":{"u-a":"A"},"block":{}}', 'ew-body-switch': 'accept' }, '-/touch', 'today\'s key wins over the old ones'],
 ] as const) { const s = was(kv as any); check(`migration: ${why}`, g2(s) === want, `${g2(s)} (want ${want})`); }
 check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world)', ((s) => s.move === undefined && s.touch === true)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
-check('migration carries no lists from the old keys (v4 kept per-person answers only at the authority)', JSON.stringify(was({ 'ew-body-switch': 'accept' }).allow) === '{}');
+check('migration carries no lists from the old keys (the switch kept per-person answers only at the authority)', JSON.stringify(was({ 'ew-body-switch': 'accept' }).allow) === '{}');
 
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
 const T = (o: any = {}) => ({ move: true, touch: false, allow: [] as string[], block: [] as string[], unlist: [] as string[], ...o });

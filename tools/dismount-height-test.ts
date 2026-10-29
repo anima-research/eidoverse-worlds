@@ -36,7 +36,7 @@ const STUBS: Record<string, string> = {
   ragdoll: `export const jointPositions = () => null;`,
   bodydrag: `export const initBodyDrag = () => {}; export const beingDragged = () => false; export const revokeDragged = () => {};`,
   ui: `export const toast = () => {}; export const flashHint = () => {}; export const setAmbientHint = () => {}; export const html = (s, ...v) => s.reduce((a, x, i) => a + x + (v[i] ?? ''), '');`,
-  consent: `export const posable = () => false; export const pushable = () => false; export const bodyTable = () => ({}); export const onConsentChange = () => {};`,
+  consent: `export const posable = () => false; export const pushable = () => false; export const bodyTable = () => ({}); export const onConsentChange = () => {}; export const noteHeld = () => {};`,
   consentsync: `export const makeConsentSync = () => ({});`,
   reachnet: `export const clearMyReach = () => {};`,
   mybody: `export let me = null; export const getMe = () => globalThis.__dm.me ?? null;`,

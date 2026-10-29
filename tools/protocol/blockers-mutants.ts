@@ -40,7 +40,7 @@ const M: Mutant[] = [
   { id: "B8", what: "the old log is not rechecked after the last rename (a write that slipped in mid-swap is kept out)", file: "tools/protocol/world.ts",
     find: "    { const now = sourceChanged(path.join(D, ORIGINAL.log), r!.source); if (now) throw new Error(stillWriting(path.join(D, ORIGINAL.log), r!.source, now)); }", repl: "    { }", suite: "inplace", rows: ["IP15"], expect: 20 },
   { id: "B9", what: "a failed in-place translation leaves its minted identities in the shared directory", file: "tools/protocol/world.ts",
-    find: "deferIdentities: true, approval });", repl: "deferIdentities: false, approval });", suite: "inplace", rows: ["IP17"], expect: 20 },
+    find: "{ name, deferIdentities: true, approval, claim: CLAIM });", repl: "{ name, deferIdentities: false, approval, claim: CLAIM });", suite: "inplace", rows: ["IP17"], expect: 20 },
   { id: "B10", what: "deleting a support skips what is parented elsewhere but rested on it too", file: "shared/protocol/authority/writes.js",
     find: "      if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }", repl: "      if (false) wake.push(k); }", suite: "settle", rows: ["SE18"], expect: 6 },
   // ---- M1–M9: the architecture note's items (M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
@@ -82,7 +82,7 @@ const M: Mutant[] = [
   { id: "r14-M2", what: "the transaction outcome ignores the moderator log's wedge (a ban whose mod-log write threw is rolled-back)", file: "shared/protocol/authority/storage.js",
     find: 'export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });', repl: "export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: false });", suite: "authority", rows: ["ST4"], expect: 9 },
   { id: "r14-M3", what: "rollback ignores files the server made since the translation (world.mod.jsonl is neither refused nor removed)", file: "tools/protocol/world.ts",
-    find: "  const since = fs.readdirSync(D).filter((f) => !known.has(f));", repl: "  const since: string[] = [];", suite: "inplace", rows: ["IP30"], expect: 20 },
+    find: "  const since = fs.readdirSync(D).filter((f) => !known.has(f) && !isCacheFile(f));", repl: "  const since: string[] = [];", suite: "inplace", rows: ["IP30"], expect: 20 },
   // ---- security review (10-18) ----
   { id: "sec-H1", what: "a global ban is filed without the account (a bare name): findBan binds nothing until a restart", file: "server/messages.ts",
     find: "    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };", repl: "    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, ...(reason ? { reason } : {}) };", suite: "access", rows: ["A12"], expect: 12 },

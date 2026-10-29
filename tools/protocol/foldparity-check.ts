@@ -210,7 +210,7 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
   T += 900; const n0 = fs.statSync(logP(dir)).size; let r; try { r = request(b, "rowan", "say", { text: "after it" }); } catch (x) { r = { ok: false, threw: String(x.message) }; }   // refused, or thrown by a prefix read: either way nothing written
   ok(fs.statSync(logP(dir)).size === n0, "FP4 …nothing is written to it", r);
   ok(b.checked === false && lines.some((l) => /BUG: the fold cache/.test(l)) && lines.some((l) => /writes refused until then/.test(l)) && !r.ok && !fs.existsSync(cacheP(dir)),
-    "FP4 …and the re-derive finds the log isn't the one the cache covered: BUG said, the cache gone, writes refused until a reopen", { lines, r: r.refused ?? r }); 
+    "FP4 …and the re-derive finds the log isn't the one the cache covered: BUG said, the cache gone, writes refused until a reopen", { lines, r: r.refused ?? r });
   const again = open(dir); ok(onDisk(again) === 0 && canon(again.state()) === truth(dir), "FP4 …and the reopen reads the whole log, equal to the fold"); }
 
 // ---- FP5 ----

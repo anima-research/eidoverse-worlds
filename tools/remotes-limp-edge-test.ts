@@ -28,10 +28,10 @@ async function drawnBetween(id: string, a: Record<string, unknown>, b: Record<st
     update() {}, setLimp() {}, setClip() {}, setPose(p: unknown) { this.posed = p; }, clearPose() { this.posed = null; } };
   r.avatar = avatar;
   return heldStill(() => {
-    const at = remotesMod.serverNow() - 110;   // v4: bodies are drawn interpDelay (110 ms with no lateness) behind serverNow (remotes.js)
+    const at = remotesMod.serverNow() - 110;   // bodies are drawn interpDelay (110 ms with no lateness) behind serverNow (remotes.js)
     remotesMod.pushPose(id, a, at - 2_000);
     remotesMod.pushPose(id, b, at + 2_000);
-    r.late = null;   // v4: a sample stamped 2 s back reads as a late link and widens interpDelay; this row is about the edge, not lateness
+    r.late = null;   // a sample stamped 2 s back reads as a late link and widens interpDelay; this row is about the edge, not lateness
     remotesMod.updateRemotes(0.016);
     return { y: avatar.root.position.y, yaw: avatar.root.rotation.y, posed: avatar.posed };
   });
