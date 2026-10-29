@@ -6,6 +6,7 @@
 //   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
+//   HP  at a helm, P won't start photo mode and a photo mode started anyway ends (the helm owns the keys and camera)
 //   KU  U opens People Here; Ctrl+U (the browser's view-source) does not (review r3 F9)
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
 //   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
@@ -34,7 +35,7 @@ import { pause, tryUntil, pageWaiter, WAIT_SCALE } from "./wait.ts";
 // R 10-17: the scene's names ride as placeholders and minted ids — bob's through IDS (node), the page's own through the page
 // helper (pageIds); every expression sent to the page reads the quoted names as ids (inPage)
 const IDS = idAliases();
-const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse"];
+const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse", "hphull", "hphull-helm"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   // one page drives a whole editing session on ONE connection; the meter is checked elsewhere (scale-check), so here its time cap
   // is the operator knob for a slower host (server/readmeter.ts), not a test subject (windows-latest 10-29: 4804 ms of 3000, HT8 + GR1 refused)
@@ -904,6 +905,28 @@ try {
       const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
       await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
       check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
+    // HP: the helm owns the keys and the camera, never both with photo mode (main ccd5c53fa main.js:474 and :590)
+    { const made = await page(`const n = await import('/lib/net.js');
+        const a = await n.sendRequest('create', { id: 'hphull', model: '${CRATE}', components: { drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 } }, place: { at: [9, 9] } });
+        const b = await n.sendRequest('create', { id: 'hphull-helm', components: { parent: { to: 'hphull' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'helm' }, station: { action: 'drive', input: { move: 'drive' } } } });
+        return JSON.stringify([a.ok || (a.refused?.code + ": " + a.refused?.reason), b.ok || (b.refused?.code + ": " + b.refused?.reason)]);`);
+      await evalJson(`(document.activeElement?.blur?.(), true)`);   // CP typed in the chat line: a key there is text
+      await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);   // edit mode's P is the pivot tool
+      const footFree = await waitFor(`!document.body.classList.contains('edit-mode')`);
+      const photo = `import('/lib/controller.js').then((c) => c.photoMode)`;
+      const wasOn = await page(`const c = await import('/lib/controller.js'); const was = c.photoMode; if (was) c.togglePhotoMode(); return was;`);   // PT1's P (the pivot, in edit mode) also starts photo mode
+      await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
+      check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, wasOn, onFoot, offAgain, now: await evalJson(photo) });
+      await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('hphull-helm'))`);
+      await page(`(await import('/lib/localbody.js')).trySitOn('hphull'); return true;`);
+      const atHelm = await waitFor(`import('/lib/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
+      // read in the same tick as the press: the next frame's guard (HP2) would hide a P that got through
+      const pAtHelm = await page(`const c = await import('/lib/controller.js'); for (const t of ['keydown', 'keyup']) dispatchEvent(new KeyboardEvent(t, { code: 'KeyP', key: 'KeyP', bubbles: true })); return c.photoMode;`);
+      check("HP1 at the helm, P doesn't start photo mode (not even for a frame)", atHelm && pAtHelm === false, { atHelm, pAtHelm });
+      const startedOn = await page(`const c = await import('/lib/controller.js'); if (!c.photoMode) c.togglePhotoMode(); return c.photoMode;`);
+      check("HP2 …and a photo mode started anyway (not by the key) is ended by the next frame at the helm", atHelm && startedOn === true && await waitFor(`${photo}.then((p) => !p)`, 3000), { startedOn, now: await evalJson(photo) });
+      await page(`(await import('/lib/controller.js')).photoMode && (await import('/lib/controller.js')).togglePhotoMode(); await (await import('/lib/net.js')).sendRequest('delete', { id: 'hphull' }); return true;`);
+      await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); }
     // CW World Settings › World (R 10-14 14:13): capacity and physics — owner-gated, and opening it
     // WRITES NOTHING (defaults written on open would put numbers in the log the owner never chose)
     { const W = `document.querySelector('#__w')`;
