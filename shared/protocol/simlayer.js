@@ -85,7 +85,9 @@ function fixedSet(st) {
 // switched off (componentspec disabled), itself or anything it hangs under: no body, no collider
 export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
 // collision off (componentspec collider.enabled): not solid to anything, itself only (its children keep their own)
-export const solidOff = (c) => !!c && c.collider !== PURGED && c.collider?.enabled === false;
+// `layer` (bodies | hulls | things): also off for a layer its collider.blocks leaves out (collision layers; componentspec collider)
+export const LAYERS = Object.freeze(["bodies", "hulls", "things"]);
+export const solidOff = (c, layer) => !!c && c.collider !== PURGED && (c.collider?.enabled === false || (layer !== undefined && Array.isArray(c.collider?.blocks) && !c.collider.blocks.includes(layer)));
 // a purged physical value is no body: the strict fold holds PURGED there, and this layer follows it (review of #260)
 const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === PURGED);
 // a place the record lost: a transform or parent purged, or stripped to its commit with no purge naming it (§12), on the
@@ -101,12 +103,12 @@ export function lostPlace(st, id) {
 // body either way (collision off, switched off, a model that isn't a collider) is no loss
 function lostBody(st, id, models) {
   const e = st.entities[id], c = e?.c; if (!c || !(purgedPhysical(c) || lostPlace(st, id))) return false;
-  if (solidOff(c)) return false;
+  if (solidOff(c, "things")) return false;
   if (offChain(st, id)) return false;
   return c.model === PURGED || c.physics === PURGED || !!(models[c.model] || engineBox(c.physics) || sphereShape(c.physics));
 }
 function engineEntity(st, id, models = MODELS, fixed = null) {
-  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || solidOff(e.c)) return null;
+  const e = st.entities[id]; if (!e || purgedPhysical(e.c) || lostPlace(st, id) || !(models[e.c.model] || engineBox(e.c.physics) || sphereShape(e.c.physics)) || solidOff(e.c, "things")) return null;
   if (offChain(st, id)) return null;
   const t = worldPose(st, id);
   const sh = e.c.physics?.shape;   // a tagged shape rides along (eidosim reads a sphere from it)

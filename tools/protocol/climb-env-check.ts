@@ -16,9 +16,9 @@ import { labClock, pinned } from "./clock.ts";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the spatial index keeps a collision-off thing", "protocol/authority/spatial.js", "const unindexed = (st, id) => !!offChain(st, id) || solidOff(st.entities[id]?.c);", "const unindexed = (st, id) => !!offChain(st, id);", ["K1"]],
-  ["the engine keeps a collision-off thing", "protocol/simlayer.js", "|| sphereShape(e.c.physics)) || solidOff(e.c)) return null;", "|| sphereShape(e.c.physics))) return null;", ["K1"]],
-  ["physics none is still not solid to the engine", "protocol/simlayer.js", "|| sphereShape(e.c.physics)) || solidOff(e.c)) return null;", "|| sphereShape(e.c.physics)) || solidOff(e.c) || e.c.physics?.kind === \"none\") return null;", ["K3"]],
+  ["the spatial index keeps a collision-off thing", "protocol/authority/spatial.js", "const unindexed = (st, id) => !!offChain(st, id) || solidOff(st.entities[id]?.c, \"bodies\");", "const unindexed = (st, id) => !!offChain(st, id);", ["K1"]],
+  ["the engine keeps a collision-off thing", "protocol/simlayer.js", "|| sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "|| sphereShape(e.c.physics))) return null;", ["K1"]],
+  ["physics none is still not solid to the engine", "protocol/simlayer.js", "|| sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "|| sphereShape(e.c.physics)) || solidOff(e.c, \"things\") || e.c.physics?.kind === \"none\") return null;", ["K3"]],
   ["dynamic + collision off taken", "protocol/authority/checks.js", "if (c.collider?.enabled === false && c.physics?.kind === \"dynamic\") return", "if (false) return", ["K2"]],
   ["climb points unchecked", "protocol/authority/checks.js", "if (comp === \"climb\" && obj && v.points !== undefined && !(", "if (false && !(", ["K4"]],
   ["progress ignores the host's rotation", "climb.js", "const s = v3(pose?.scale) ? pose.scale : [1, 1, 1], r = qRotate(pose?.q ?? [0, 0, 0, 1],", "const s = v3(pose?.scale) ? pose.scale : [1, 1, 1], r = qRotate([0, 0, 0, 1],", ["K5"]],

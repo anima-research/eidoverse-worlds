@@ -7,7 +7,8 @@ import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { holdsCustody, lockedC, qr3, scratch, setOp } from "./storage.js";
 import { ancestors, obbs, satDepth, worldT } from "./math.js";
-import { familyOf, geoOf, groundOf, hitsIx, near } from "./spatial.js";
+import { familyOf, geoOf, groundOf, hitsIx, hullOnly, near, spend } from "./spatial.js";
+import { solidOff } from "../simlayer.js";
 import { clearOccupant, occupantOf } from "./occupants.js";
 import { withAuthority } from "./scriptrun.js";
 const admit = (...a) => UP.admit(...a);
@@ -23,14 +24,16 @@ const poseOf = (st, id) => { const t = st.entities[id]?.c.transform ?? {}; retur
 /** What the hull runs into sweeping `from` → `pose` (sub-steps ≤ its smallest half-extent): an id, "ground", or null; an
  *  overlap it starts in blocks only a sub-step that deepens it (drive-check D10, D11). */
 export function hullHit(st, id, pose, from) {
-  const e = st.entities[id]; if (!e || e.c.collider?.enabled === false) return null;
+  const e = st.entities[id]; if (!e || solidOff(e.c, "hulls")) return null;
   const fam = familyOf(st, id), G = groundOf(st);
   const at = (p) => obbs(scratch(st, [setOp(id, "transform", { ...(e.c.transform ?? {}), pos: p.pos, q: p.q })]), id);
   const ext = (o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; };
   // each overlapped thing's (and the ground's) penetration depth at the hull's boxes H
   const depths = (H) => { const out = new Map();
     for (const o of H) { const x = ext(o);
-      for (const k of near(st, x.min, x.max)) if (!fam.has(k) && hitsIx(st, null, k, 0.01, o)) { const d = Math.max(...geoOf(st, k).obbs.map((b) => satDepth(o, b))); out.set(k, Math.max(out.get(k) ?? 0, d)); }
+      for (const k of near(st, x.min, x.max)) if (!fam.has(k) && !solidOff(st.entities[k].c, "hulls") && hitsIx(st, null, k, 0.01, o)) { const d = Math.max(...geoOf(st, k).obbs.map((b) => satDepth(o, b))); out.set(k, Math.max(out.get(k) ?? 0, d)); }
+      // what only hulls meet (collision layers): outside the bodies' index (spatial.js hullOnly)
+      for (const k of hullOnly(st)) if (!fam.has(k)) { spend(10); const d = Math.max(0, ...(geoOf(st, k)?.obbs ?? []).map((b) => satDepth(o, b))); if (d > 0.01) out.set(k, Math.max(out.get(k) ?? 0, d)); }
       if (G.ready) { const d = G.height(o.c[0], o.c[2]) - x.min[1]; if (d > 0.01) out.set("ground", Math.max(out.get("ground") ?? 0, d)); } }
     return out; };
   const H1 = at(pose); if (!H1.length) return null;

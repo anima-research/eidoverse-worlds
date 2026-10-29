@@ -445,7 +445,10 @@ export function zoneRules(s, ids) {
 export function colliderRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
     if (c.collider?.enabled === false && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id} has collider {enabled: false} and physics {kind: 'dynamic'}: a dynamic thing that collides with nothing would fall forever`,
-      fix: `keep it solid (delete collider.enabled), or don't let the engine move it: physics {kind: 'kinematic'} (moved by its motion or edits) or {kind: 'none'}` }; }
+      fix: `keep it solid (delete collider.enabled), or don't let the engine move it: physics {kind: 'kinematic'} (moved by its motion or edits) or {kind: 'none'}` };
+    const b = c.collider?.blocks, L = COMPONENTS.collider.itemEnums.blocks; if (b === undefined) continue;
+    const odd = b.find((x) => !L.includes(x)); if (odd !== undefined || new Set(b).size !== b.length) return { code: "shape", reason: `${id}.collider.blocks: ${odd !== undefined ? `${JSON.stringify(odd)} isn't a layer` : "a layer is named twice"} (layers: ${L.join(", ")})`, fix: `a list of layers, each once: e.g. blocks: ['hulls'] for a wall only vehicles meet` };
+    if (!b.includes("things") && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id}'s collider.blocks leaves out things, and it has physics {kind: 'dynamic'}: the engine would not carry it`, fix: "add 'things' to blocks, or make it kinematic or none" }; }
   return null;
 }
 export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

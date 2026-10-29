@@ -115,8 +115,8 @@ import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
 import { spawnOf, belowWorld, FELL } from "../shared/spawn.js";
-/** A record (components flat, view.js) whose collision is off: componentspec collider.enabled, the authority's own reading. */
-const solidOffRecord = (e: any) => solidOff(e);
+/** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
+const solidOffRecord = (e: any) => solidOff(e, "bodies");
 import { colliderFor } from "../client/lib/bodyscale.js";
 
 import { recordComponents } from "../shared/protocol/view.js";

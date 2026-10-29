@@ -266,7 +266,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
   on write, and the maintenance command's `lift-sockets` step does the same for a stored world (never the load), and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
-  `collider {shape}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
+  `collider {shape, enabled?, blocks?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, `zone`, `water` (a body),
   `water-exclusion`,
@@ -316,6 +316,11 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   and `motion` say. `physics.kind: none` means not simulated, and is still
   solid. `enabled: false` with `physics.kind: dynamic` is refused (it would fall
   forever). shared/protocol/simlayer.js `solidOff` is the one reading.
+- **Collision layers are `collider {blocks: [...]}`** (Godot collision layers and masks, Unity's layer matrix): the
+  movers it stops, of `bodies` (people and agents walking or swimming: the walkers, the authority's track and index),
+  `hulls` (driven vehicles: the authority's hull sweep) and `things` (loose things: the engine). Absent, it stops all
+  three, as before. `hidden` with `blocks: ['hulls']` is an invisible wall only vehicles meet. A dynamic thing must
+  block `things`. `solidOff(c, layer)` is the one reading.
 - **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
   speed?, face?, ends?}`, straight lines between its points (Godot Path3D +
   PathFollow3D); its name is its `label`. A climber's presence is `{host,

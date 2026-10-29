@@ -72,7 +72,8 @@
   "status": "trial",
   "fields": {
    "shape": "string",
-   "enabled": "bool"
+   "enabled": "bool",
+   "blocks": "array"
   },
   "enums": {
    "shape": [
@@ -81,13 +82,27 @@
     "sphere"
    ]
   },
+  "ranges": {
+   "blocks": {
+    "maxItems": 3
+   }
+  },
+  "itemEnums": {
+   "blocks": [
+    "bodies",
+    "hulls",
+    "things"
+   ]
+  },
   "absentMeans": {
    "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)",
-   "enabled": "true: it is solid"
+   "enabled": "true: it is solid",
+   "blocks": "everything: bodies, hulls and things"
   },
   "docs": {
    "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
-   "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed"
+   "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed",
+   "blocks": "what it stops, a list of layers: bodies (people and agents walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet"
   },
   "on": "thing"
  },
