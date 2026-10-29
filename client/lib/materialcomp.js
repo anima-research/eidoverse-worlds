@@ -38,7 +38,7 @@ function takeOff(id) {
 async function wear(id, m, rev) {
   pending.set(id, m);
   const root = entities.get(id); if (!root) return;
-  if (!clientMayFetch(m.texture, 'image', allowUntrusted())) { pending.delete(id); return; }   // an untrusted link this viewer didn't allow
+  if (!clientMayFetch(m.texture, 'image', allowUntrusted())) { pending.delete(id); takeOff(id); return; }   // an untrusted link this viewer didn't allow (or no longer does: pictures.js takeDown)
   const node = findPart(root, m.node), meshes = node ? meshesOf(node) : [];
   if (!meshes.length) { console.warn(`[material] ${id}: node "${m.node}" is not on its model (or has no mesh): nothing worn`); pending.delete(id); return; }
   let tex;

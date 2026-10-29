@@ -11,7 +11,7 @@ import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHid
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
 import { say } from './lib/net.js';
-import { updateHelm } from './lib/vehicles.js';
+import { updateHelm, helmHull } from './lib/vehicles.js';
 import { chooseClient } from './lib/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
@@ -507,7 +507,7 @@ const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
     guard: () => !isEditing(), run: () => toggleHelp() },
   { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
-  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => togglePhotoMode() },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', guard: () => !isEditing(), run: () => (helmHull() && !photoMode ? flashHint('photo mode needs the controls: get up from the helm first', 4000) : togglePhotoMode()) },   // the helm owns the keys (main ccd5c53fa)
   { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
     prevent: true, run: () => document.body.classList.toggle('photo') },
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
@@ -632,7 +632,7 @@ registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) { myState.q = undefined; myState.locomotion = undefined; const me = getMe(); if (me) me.locomotion = null; stepRagdoll(dt); }     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) { updateHelm(dt); updateMountedMe(dt); }  // seated (or being carried off a seat): derived, not driven; at a helm the hull moves first
+  else if (avatarMounts.has(CONFIG.name) || seatLeaving()) { if (updateHelm(dt) && photoMode) togglePhotoMode(); updateMountedMe(dt); }  // seated (or being carried off a seat): derived, not driven; at a helm the hull moves first, and owns the camera: never photo mode with it
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 });

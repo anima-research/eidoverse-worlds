@@ -7,6 +7,7 @@
 //         machine) and none names the untrusted host; no audio element exists for it. The same detector sees the request
 //         for a trusted host's link (so it would have seen one), and for the untrusted link once the viewer opts in
 //         (Settings › 🛡 safety): that's the gate's own mutant, run live.
+//   MAT   a material's link worn while the viewer allowed untrusted links comes off when they turn it off (materialcomp.js)
 //   PIC   a picture with no part is a quad of its own: its aspect is the image's (a 2:1 moon), width as written
 //   SND   a store sound: the limiter is in the graph; silent past its radius (gain exactly 0), heard inside; of 10 loops,
 //         at most 8 are heard
@@ -27,7 +28,7 @@ let worldsDir = "";
 import { pagedEval } from "./idalias.ts";
 import { pageWaiter } from "./wait.ts";
 // R 10-17: the page names what it makes with placeholders (tools/protocol/idalias.ts pageIds); quoted names in page code are ids
-const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "post", "statue", "kiosk", ...Array.from({ length: 10 }, (_, i) => `loop${i}`)];
+const NAMES = ["linkpic", "linkradio", "hostradio", "moon", "radio", "sign", "post", "statue", "kiosk", "telly", ...Array.from({ length: 10 }, (_, i) => `loop${i}`)];
 const { cdp, cws, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench("batch2", {
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
@@ -44,8 +45,11 @@ const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 const req = (verb: string, args: any) => page(`const m = await import('/lib/net.js'); return await m.sendRequest('${verb}', ${JSON.stringify(args)});`);
 
 // every https request the page makes: caught before it leaves (CDP Fetch), recorded, failed
+const MATHOST = "untrusted-b2mat.example.net", PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const outside: string[] = [], sentWith: { u: string; r: string | null; origin: string | null }[] = [];   // each outside request, with the Referer and Origin it carried (null: none)
 cws.addEventListener("message", (ev) => { const m = JSON.parse(String(ev.data));
+  if (m.method === "Fetch.requestPaused" && new URL(m.params.request.url).hostname === MATHOST) {   // MAT's link: answered here with a 1 px image, never sent
+    cdp.send("Fetch.fulfillRequest", { requestId: m.params.requestId, responseCode: 200, body: PNG1, responseHeaders: [{ name: "Content-Type", value: "image/png" }, { name: "Access-Control-Allow-Origin", value: "*" }] }).catch(() => {}); return; }
   if (m.method === "Fetch.requestPaused") { outside.push(m.params.request.url);
     const hs = m.params.request.headers ?? {}; const hv = (name: string) => { const k = Object.keys(hs).find((h) => h.toLowerCase() === name); return k ? hs[k] : null; };
     sentWith.push({ u: m.params.request.url, r: hv("referer"), origin: hv("origin") }); cdp.send("Fetch.failRequest", { requestId: m.params.requestId, errorReason: "BlockedByClient" }).catch(() => {}); } });
@@ -94,6 +98,18 @@ try {
   await evalJson(`(() => { document.querySelector('#sec-safety-tab')?.click(); return true; })()`);
   check("PRIV6 the setting is a row in Settings › 🛡 safety (off)", await waitFor(`(() => { const b = document.querySelector('#sec-safety'); const cb = b?.querySelector('input[type=checkbox]'); return !!cb && !cb.checked && /Allow untrusted links/.test(b.textContent); })()`, 4000),
     await evalJson(`({ tab: document.querySelector('#sec-safety-tab')?.title ?? null, body: (document.querySelector('#sec-safety')?.textContent ?? '').slice(0, 120) })`));
+
+  // ---- MAT: a material worn from an untrusted link comes off when the viewer stops allowing them ----
+  await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(true); return true;`);
+  await empty("telly", [0, 0, -8]);
+  await waitFor(`import('/lib/world.js').then((m) => m.entities.has('telly'))`);
+  await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'); const mesh = new c.THREE.Mesh(new c.THREE.PlaneGeometry(1, 1), new c.THREE.MeshStandardMaterial());
+    mesh.name = 'screen'; w.entities.get('telly').add(mesh); window.__screen = { mesh, original: mesh.material }; return true;`);
+  await req("set", { id: "telly", component: "material", value: { node: "screen", texture: `https://${MATHOST}/screen.png` } });
+  const wornNow = `import('/lib/materialcomp.js').then((m) => ({ worn: m._worn.has('telly'), own: window.__screen.mesh.material === window.__screen.original, map: !!window.__screen.mesh.material.map }))`;
+  check("MAT1 (setup) with untrusted links allowed, a material on a link is worn: the node's mesh wears a textured clone", await waitFor(`${wornNow}.then((s) => s.worn && !s.own && s.map)`, 8000), await evalJson(wornNow));
+  await page(`(await import('/lib/mediaprefs.js')).setAllowUntrusted(false); return true;`);
+  check("MAT2 …turning untrusted links off takes it off: nothing worn, the mesh's own material back", await waitFor(`${wornNow}.then((s) => !s.worn && s.own)`, 4000), await evalJson(wornNow));
 
   // ---- PIC: a quad of its own, the image's aspect ----
   await empty("moon", [0, 1, -3], { picture: { src: "eidoverse/assets/sky/moon_color_1k.jpg", width: 2, description: "the moon" } });

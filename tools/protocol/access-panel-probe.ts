@@ -5,6 +5,7 @@
 //   AP2  a name search covers only people this world has seen: someone known elsewhere on the server isn't found by name
 //   AP3  an exact identity (u-…) adds someone the world hasn't seen, with the chosen role and time
 //   AP4  a row's role change keeps the grant's end (merge); ✕ deletes the grant
+//   AP7  a row's "ends ▸" changes only the end (merge): a role someone changed since the panel painted is kept; "no end" removes it
 //   AP5  a refusal (an identity this server doesn't know) is shown in the panel in the authority's words; nothing written
 //   AP6  a non-owner sees the list read-only; pressing add anyway is refused by the authority, and the words are shown
 // @ts-nocheck
@@ -90,6 +91,18 @@ try {
   await pick(`.ap-row[data-who="${carol.id}"] select.ap-role`, "member");
   const moved = await waitDisk(() => wc()[`roles:${carol.id}`]?.role === "member");
   check("AP4 the row's role select changes her role and keeps the grant's end (merge)", moved && wc()[`roles:${carol.id}`]?.until === until, wc()[`roles:${carol.id}`]);
+  // AP7 another write lands while the row is in use (focused: the panel doesn't repaint under a hand), then "ends ▸" is picked
+  const rowSel = `.ap-row[data-who="${carol.id}"] select.ap-until`;
+  await waitFor(`!!${P}?.querySelector(${JSON.stringify(rowSel)})`, 6000);
+  await evalJson(`(${P}.querySelector(${JSON.stringify(rowSel)}).focus(), true)`);
+  await page(`await (await import('/lib/net.js')).sendRequest('set', { id: '@world', component: 'roles:${carol.id}', value: { role: 'builder' }, merge: true }); return true;`);
+  const changed = await waitDisk(() => wc()[`roles:${carol.id}`]?.role === "builder");
+  const t7 = Date.now();
+  await pick(rowSel, "86400000");
+  const ended = await waitDisk(() => Math.abs((wc()[`roles:${carol.id}`]?.until ?? 0) - (t7 + 86_400_000)) < 120_000);
+  check("AP7 the row's \"ends ▸\" (1 day) sets only the end: the role another write made since the panel painted (builder) stays", changed && ended && wc()[`roles:${carol.id}`]?.role === "builder", wc()[`roles:${carol.id}`]);
+  await pick(`.ap-row[data-who="${carol.id}"] select.ap-until`, "never");
+  check("AP7b …and \"no end\" removes the end, the role kept", await waitDisk(() => { const g = wc()[`roles:${carol.id}`]; return !!g && !("until" in g) && g.role === "builder"; }), wc()[`roles:${carol.id}`]);
   await waitFor(`!!${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}] button.ap-rm')`, 6000);
   await click(`.ap-row[data-who="${carol.id}"] button.ap-rm`);
   check("AP4b ✕ deletes roles:<carol>, and her row goes", carolIn && await waitDisk(() => !wc()[`roles:${carol.id}`]) && await waitFor(`!${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}]')`, 6000), await panelText());

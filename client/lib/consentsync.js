@@ -26,10 +26,10 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
     const results = [];
     if (!read?.ok || !read.table) results.push(['your consent, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]);
     else {
-      const held = read.table, gates = {}; noteHeld(held);   // the panel shows the authority's lists too
-      for (const g of ['move', 'touch']) if (typeof want[g] === 'boolean' && held[g] !== want[g]) gates[g] = want[g];   // never chosen: the world's default stands (F2b)
+      const authority = read.table, gates = {}; noteHeld(authority);   // the panel shows the authority's lists too
+      for (const g of ['move', 'touch']) if (typeof want[g] === 'boolean' && authority[g] !== want[g]) gates[g] = want[g];   // never chosen: the world's default stands (F2b)
       if (Object.keys(gates).length) results.push([Object.entries(gates).map(([g, v]) => `${g} ${v ? 'on' : 'off'}`).join(', '), await send('consent', gates).then((r) => r, failed)]);
-      const has = (list, id) => Array.isArray(held[list]) && held[list].includes(id);
+      const has = (list, id) => Array.isArray(authority[list]) && authority[list].includes(id);
       // each of my changes not yet landed here, then marked landed (consent.js drains it: review full-260 L9)
       const mark = (op, id) => { try { landed(op, id); } catch { /* the store's, never the sync's */ } };
       for (const list of ['allow', 'block']) for (const id of want[list]) { if (has(list, id)) { mark(list, id); continue; }

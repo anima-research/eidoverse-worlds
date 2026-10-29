@@ -76,7 +76,7 @@ export function paintListed(b) {
   const row = (r) => {
     const bits = [r.role, here.has(r.id) ? 'here now' : null, Number.isSafeInteger(r.until) ? leftWords(r.until, now) : null, r.id === net.you ? 'you' : null].filter(Boolean);
     const ctl = grant && mayChange(r.id, r.role)
-      ? sel('ap-role', opts.filter((x) => x.id !== 'owner' || isOwner()).map((x) => [x.id, x.name]), r.role)
+      ? sel('ap-role', opts.map((x) => [x.id, x.name]), r.role)
         + sel('ap-until', [['', 'ends ▸'], ...SPANS.map(([v, l]) => [v || 'never', l])], '')
         + `<button type="button" class="rp-btn ap-rm" title="take ${esc(nameOf(r.id))} off the list">✕</button>` : '';
     return `<div class="rp-row ap-row" data-who="${esc(r.id)}"><div class="rp-main"><b>${esc(nameOf(r.id))}</b> <span class="rp-dim">${esc(bits.join(' · '))}</span></div>${ctl}</div>`;
@@ -101,10 +101,10 @@ export function paintListed(b) {
   b.querySelector('.ap-add-span')?.addEventListener('change', (e) => { ui.span = e.target.value; });
   b.querySelectorAll('.ap-hit button').forEach((x) => { x.onclick = () => { const id = x.closest('.ap-hit').dataset.who; ui.q = ''; ui.hits = null; ui.note = ''; add(id); }; });
   b.querySelectorAll('.ap-here button[data-who]').forEach((x) => { x.onclick = () => add(x.dataset.who); });
-  b.querySelectorAll('.ap-row').forEach((r) => { const id = r.dataset.who; const cur = wc()[`roles:${id}`] ?? {};
+  b.querySelectorAll('.ap-row').forEach((r) => { const id = r.dataset.who;
     r.querySelector('.ap-role')?.addEventListener('change', (e) => send('set', { id: '@world', component: `roles:${id}`, value: { role: e.target.value }, merge: true }, `make ${nameOf(id)} ${e.target.value}`));
-    r.querySelector('.ap-until')?.addEventListener('change', (e) => { const v = e.target.value; if (!v) return; const { until: _u, ...keep } = cur;
-      send('set', { id: '@world', component: `roles:${id}`, value: v === 'never' ? keep : { ...keep, until: serverUntil(Number(v)) } }, `${nameOf(id)}: ${v === 'never' ? 'no end' : SPANS.find(([s]) => s === v)?.[1]}`); });
+    r.querySelector('.ap-until')?.addEventListener('change', (e) => { const v = e.target.value; if (!v) return;   // only the end (merge; null removes it): never a role painted before someone changed it
+      send('set', { id: '@world', component: `roles:${id}`, value: { until: v === 'never' ? null : serverUntil(Number(v)) }, merge: true }, `${nameOf(id)}: ${v === 'never' ? 'no end' : SPANS.find(([s]) => s === v)?.[1]}`); });
     r.querySelector('.ap-rm')?.addEventListener('click', () => send('delete', { id: '@world', component: `roles:${id}` }, `take ${nameOf(id)} off the list`)); });
 }
 export const _test = { paintListed, ui };

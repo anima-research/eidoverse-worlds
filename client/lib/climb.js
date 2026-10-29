@@ -24,11 +24,16 @@ export function hostPose(id) {
 }
 const routeHere = (id) => { const e = state.st.entities[id]; return e?.disabled === true ? null : routeOf(e?.climb); };
 
+// the hosts with a route, read again only when the view is a new one (state.js: every change is a new view)
+let routesOf = null, routes = [];
+const climbHosts = () => {
+  if (routesOf !== state.st.entities) { routesOf = state.st.entities; routes = Object.keys(routesOf).map((id) => [id, routeHere(id)]).filter(([, r]) => r); }
+  return routes;
+};
 /** The route end nearest `pos` within its reach: {host, progress, dir, distance, name}, or null. */
 export function nearbyClimb(pos) {
   let best = null; const at = [pos.x, pos.y, pos.z];
-  for (const id of Object.keys(state.st.entities)) {
-    const route = routeHere(id); if (!route) continue;
+  for (const [id, route] of climbHosts()) {
     const pose = hostPose(id); if (!pose) continue;
     const b = boardAt(pose, route, at);
     if (b && (!best || b.distance < best.distance)) best = { host: id, ...b, name: typeof state.st.entities[id].label === 'string' ? state.st.entities[id].label : 'ladder' };
