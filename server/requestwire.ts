@@ -59,7 +59,7 @@ export function goneListing(w: World, args: Any) {
   const id = typeof args?.allow === "string" ? args.allow : typeof args?.block === "string" ? args.block : null; if (!id) return null;
   const e = directoryFor(WORLDS_DIR).entry(id);
   if (e && (e.kind !== "anon" || [...w.clients].some((o) => o.actorId === id))) return null;
-  return { code: "gone", reason: "no one wears that identity now (a guest's ends with their visit)", fix: "close your move or touch gate to keep out someone you can't name" };
+  return { code: "gone", reason: e ? "no one wears that identity now: it was a guest's, which ends with their visit" : "this server knows no one by that identity", fix: "close your move or touch gate to keep out someone you can't name" };
 }
 const reads = readMeter(); // per connection: reads and dry runs, by count and authority time (security pass 2 H-A)
 // …and every request by authority time: a refused step or write is cheap now, but nothing else bounds how much of the shared

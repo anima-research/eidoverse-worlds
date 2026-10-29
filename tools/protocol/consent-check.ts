@@ -46,5 +46,8 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   const code = async (a: any) => (await ask(a))?.reply?.refused?.code ?? "ok";
   const got = { left: await code({ block: left }), past: await code({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }), here: await code({ block: here }), acct: await code({ block: acct }) };
   ok(got.left === "gone" && got.past === "gone", "C10 a guest who left, or an id no one has worn since the restart: refused gone", got);
-  ok(got.here !== "gone" && got.acct !== "gone", "C10b …a guest here now, and an account here or not, are not", got); }
+  ok(got.here !== "gone" && got.acct !== "gone", "C10b …a guest here now, and an account here or not, are not", got);
+  const why = async (a: any) => String((await ask(a))?.reply?.refused?.reason ?? "");   // review delta-260 L-H: each says what it is
+  const said = { left: await why({ block: left }), never: await why({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }) };
+  ok(/guest/.test(said.left) && !/guest/.test(said.never) && /knows no one/.test(said.never), "C10c a departed guest is said as one; an id this server never knew is said as that, not as a guest", said); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);
