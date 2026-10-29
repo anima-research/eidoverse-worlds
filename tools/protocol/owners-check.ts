@@ -26,6 +26,7 @@
 //   OU4  an owner main recorded several accounts for is never recognised (even by name or one of those accounts); no sign-in neither
 //   OU5  (a) main's records bind the owner's name to another account (here on a TRUST_NAMES server): refused by name; that account is recognised
 //   OU6  (b) another account on this server already holds the signed-in name: refused by name
+//   OU7  a name is matched as the directory folds it (foldName), the same rule as OU6's check
 //   CL1  --claim on an ownerless world: the upgrader's account is its owner, the report says so (claim), no warning, the result names them
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
@@ -159,6 +160,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OU3 a different name (Annie) is refused; so is a bound owner's name (Bo) on another account, and a builder's name (Cy)", { annie, boName, cy }));
   row("OU4", () => ok(mica.recognised === null && /several accounts for the owner mica/.test(mica.why) && none.recognised === null && /not signed in/.test(none.why),
     "OU4 an owner main recorded several accounts for (mica) is not recognised, by name or by one of those accounts; no sign-in isn't either", { mica, none }));
+  const dotted = of("human:test:new", "A.nn");
+  row("OU7", () => ok(dotted.recognised === "name" && dotted.owner === "Ann", "OU7 the name is matched as the directory folds names (foldName: case, punctuation, format characters), one rule for both checks: 'A.nn' is owner Ann", dotted));
   directoryAt(directoryFileIn(W)).resolve({ sub: "human:test:ann2", name: "ANN" });   // someone else signed in here as "ANN"
   const ann2 = of("human:test:new", "Ann"), own2 = of("human:test:ann2", "ann");
   row("OU6", () => ok(ann2.recognised === null && /held by more than one account/.test(ann2.why ?? "") && own2.recognised === "name",

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, mintId, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { directoryFor, mintId, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
 import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
@@ -156,7 +156,7 @@ export function oldOwners(srcDir: string) {
     return { name: byName ? k : a.name, account: byName ? null : a.account, unbound: byName ? "none" as const : a.unbound }; });
 }
 /** May this signed-in account upgrade the old world as its owner (R 10-28)? "bound": main's records bind an owner to exactly this
- *  account; "name": an owner main recorded NO account for has exactly this name, any case (provisional: an alpha risk the owner
+ *  account; "name": an owner main recorded NO account for has this name, as the directory folds names (foldName; provisional: an alpha risk the owner
  *  accepted, until durable accounts); else null, and why. `ownerless`: the world has no owner at all (the upgrader claims it). */
 export function ownerRecognised(srcDir: string, account: string | null, name: string | null) {
   const owners = oldOwners(srcDir), ownerless = owners.length === 0;
@@ -164,7 +164,7 @@ export function ownerRecognised(srcDir: string, account: string | null, name: st
   if (ownerless) return { recognised: null, ownerless, why: "the world has no owner: an operator upgrades it and becomes its owner" };
   const bound = owners.find((o) => o.account !== null && o.account === account);
   if (bound) return { recognised: "bound" as const, owner: bound.name, ownerless };
-  const named = name ? owners.find((o) => o.unbound === "none" && o.name.toLowerCase() === name.toLowerCase()) : undefined;
+  const named = name ? owners.find((o) => o.unbound === "none" && foldName(o.name) === foldName(name)) : undefined;   // the directory's one rule for a name (accountsNamed)
   if (named) {   // R 10-28: only if main never bound the name to another account, and only one account here holds the name
     const worlds = path.dirname(path.resolve(srcDir));
     const main = mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) })(named.name)?.subs ?? [];
@@ -172,7 +172,7 @@ export function ownerRecognised(srcDir: string, account: string | null, name: st
     // a local:<name> (TRUST_NAMES) is the name itself, not another person holding it
     if (directoryFor(worlds).accountsNamed(name!).some((s) => s !== account && !s.startsWith("local:"))) return { recognised: null, ownerless, why: `the name ${name} is held by more than one account on this server: which one is the owner isn't guessed` };
     return { recognised: "name" as const, owner: named.name, ownerless }; }
-  const several = name ? owners.find((o) => o.unbound === "several" && o.name.toLowerCase() === name.toLowerCase()) : undefined;
+  const several = name ? owners.find((o) => o.unbound === "several" && foldName(o.name) === foldName(name)) : undefined;
   return { recognised: null, ownerless, why: several ? `main recorded several accounts for the owner ${several.name}: which one is yours isn't guessed` : "main's records don't make this account one of the world's owners" };
 }
 type OwnerClaim = { by: string; how: "bound" | "name"; account: string };
