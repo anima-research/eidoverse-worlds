@@ -29,4 +29,11 @@ for (const [old, { to }] of Object.entries(TOOL_RENAMED)) {
 const MAIN_TOOLS = "body_state look snapshot walk_to name_place check_model take_off climb_to glide_to land_at rehearse_down rehearse_recover fold_wings unfold_wings flight_status face stop say catch_up activity pose clear_pose reach clear_reach posture ragdoll animate set_avatar library_sheet library_preview list_library spawn place light remove worlds travel measure world_history world_debug kick ban unban list_bans".split(" ");
 const lost = [...MAIN_TOOLS, "world_verb"].filter((n) => !HANDLERS[n] && !TOOL_RENAMED[n] && !TOOL_FOLDS[n] && !TOOL_REMOVED[n]);
 ok(lost.length === 0, "every tool main served is served, taught, folded or refused as removed", lost);
+// the docs teach today's names (review full-260 #8, #9): AGENTS.md's "refused as removed" verbs are REMOVED_VERBS; no doc here calls an old tool name
+{ const { REMOVED_VERBS } = await import("../shared/protocol/verbspec.js"); const fs = await import("node:fs");
+  const read = (f: string) => fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+  const said = /\(((?:`[a-z_-]+`, )+)[^)]*\) is refused as `removed`/.exec(read("AGENTS.md"))?.[1].match(/`([a-z_-]+)`/g)?.map((x) => x.slice(1, -1)) ?? [];
+  ok(said.length > 0 && said.every((v) => v in REMOVED_VERBS), "AGENTS.md lists only removed verbs as refused (REMOVED_VERBS)", said.filter((v) => !(v in REMOVED_VERBS)));
+  const calls = Object.keys(TOOL_RENAMED).filter((old) => new RegExp("`" + old + " \\{").test(read("docs/REMOTE-SCREENSHOTS.md")));
+  ok(calls.length === 0, "docs/REMOTE-SCREENSHOTS.md calls no renamed tool (screenshot, not snapshot)", calls); }
 console.log(`alias-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

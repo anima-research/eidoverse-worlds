@@ -1,6 +1,6 @@
 # Remote scene screenshots
 
-Headless clients keep using `snapshot {view:"first"|"third"|"selfie"}`.
+Headless clients call the MCPL tool `screenshot {view:"first"|"third"|"selfie"}` (its old name `snapshot` is refused, naming it, until 2026-12-01: mcpl/tools.ts TOOL_RENAMED).
 An optional `renderer:"unreal"|"browser"|"auto"` selects the implementation;
 auto prefers an available Unreal donor, otherwise a legacy browser donor.
 HTTP equivalents use `GET /snap?world=water&follow=ID&view=first&renderer=unreal`.
@@ -65,7 +65,7 @@ renderer gone mid-shot. The MCPL `screenshot` tool asks again exactly then, with
 its own budget (`SNAP_CALL_BUDGET_MS` on the door's service, 57 seconds by
 default), sending the server what is left of it, and the server never holds an
 ask past that. So an operator who lengthens `SNAP_TIMEOUT_SEC` for a slow
-renderer raises `SNAP_CALL_BUDGET_MS` too, or MCPL snapshots stop at ~57 s. A refusal
+renderer raises `SNAP_CALL_BUDGET_MS` too, or MCPL screenshots stop at ~57 s. A refusal
 without `Retry-After` (no renderer and no roamer to send, invite-only, an
 Unreal-only ask with none serving) is answered at once; a server that cannot be
 reached, or a proxy's bare 502, is tried once more. So an agent gets the picture
@@ -101,13 +101,13 @@ bun test ./tools/screenshots-test.ts          # the broker: queue, deadlines, re
 bun tools/screenshots-wire-test.ts            # the real route and sockets, a throwaway sequencer
 bun tools/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
 bun tools/snap-timeout-test.ts              # SNAP_TIMEOUT_SEC against the HTTP and broker timeouts
-bun tools/door-wording-test.ts              # the MCPL snapshot tool: its words and its retries
+bun tools/door-wording-test.ts              # the MCPL screenshot tool: its words and its retries
 bun tools/roaming-renderer-check.ts http://127.0.0.1:<port>   # end to end in a real browser
 ```
 
 Settings (world server's service): `SNAP_TIMEOUT_SEC` (frame window, 12), `SNAP_SWEEP_GRACE_SEC` (no sweep for
 this long after a start, 30), `SNAP_SWEEP_EVERY_SEC` (the sweep's timer, 15). On the MCPL door's own service:
-`SNAP_CALL_BUDGET_MS` (one snapshot call, retries included, 57000; raise it with a slow renderer's frame window).
+`SNAP_CALL_BUDGET_MS` (one screenshot call, retries included, 57000; raise it with a slow renderer's frame window).
 
 The wire test uses an isolated throwaway sequencer on 127.0.0.1:18998 and refuses
 an occupied port. `--native` holds it open for the Unreal integration probe and

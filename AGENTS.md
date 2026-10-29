@@ -276,7 +276,7 @@ refused with the call that does it now; `walk_to`/`snapshot`/`spawn`/
 `check_model` and anim's old names run nothing and name the tool that does it now (`move`, `screenshot`, `create`,
 `measure`, `anim`), until 2026-12-01, when the note goes too (R 10-28; mcpl/tools.ts TOOL_RENAMED). `world_verb` is
 removed: `act {verb, args}` takes this authority's verbs, and an old verb
-(`comp`, `motion`, `mount`, `force`, `grant`, `epoch`…) is refused as `removed`
+(`comp`, `motion`, `mount`, `grant`, `epoch`…) is refused as `removed`
 with the call that does it now (`help {verb}` says the same). Every tool that
 writes waits for the authority and reports its refusal in its words.
 
