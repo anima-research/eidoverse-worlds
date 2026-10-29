@@ -38,6 +38,8 @@ export function readStored(get = lsGet) {
 let current = readStored();
 const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, ...current }));
 save();
+// a guest's entries: a guest's id is minted per connection, so they last for the visit, in memory only (review full-260 #2)
+let visit = { allow: {}, block: {}, unlist: [] };
 const listeners = new Set();
 const changed = () => { save(); for (const fn of listeners) fn(current); };
 
@@ -52,23 +54,28 @@ export function noteHeld(t) { const next = { allow: Array.isArray(t?.allow) ? [.
   if (JSON.stringify(next) === JSON.stringify(held)) return; held = next; for (const fn of heldListeners) fn(); }
 export function onHeldChange(fn) { heldListeners.add(fn); return () => heldListeners.delete(fn); }
 /** the authority's word on a person I never listed or unlisted here */
-const heldOf = (id) => (Object.hasOwn(current.allow, id) || Object.hasOwn(current.block, id) || current.unlist.includes(id) ? null : held.block.includes(id) ? 'block' : held.allow.includes(id) ? 'allow' : null);
+const mine = (id) => Object.hasOwn(current.allow, id) || Object.hasOwn(current.block, id) || current.unlist.includes(id) || Object.hasOwn(visit.allow, id) || Object.hasOwn(visit.block, id) || visit.unlist.includes(id);
+const heldOf = (id) => (mine(id) ? null : held.block.includes(id) ? 'block' : held.allow.includes(id) ? 'allow' : null);
 /** a person's list: 'allow' | 'block' | null (neither: the gates answer them); mine first, else the authority's */
-export const listOf = (id) => (Object.hasOwn(current.block, id) ? 'block' : Object.hasOwn(current.allow, id) ? 'allow' : heldOf(id));
-/** put a person on a list ('allow' | 'block') or take them off both (null). `name` is how the list shows them. */
-export function setListed(id, list, name = id) {
+export const listOf = (id) => (Object.hasOwn(current.block, id) || Object.hasOwn(visit.block, id) ? 'block' : Object.hasOwn(current.allow, id) || Object.hasOwn(visit.allow, id) ? 'allow' : heldOf(id));
+const without = (t, id) => { const allow = { ...t.allow }, block = { ...t.block }; delete allow[id]; delete block[id]; return { ...t, allow, block, unlist: t.unlist.filter((x) => x !== id) }; };
+/** put a person on a list ('allow' | 'block') or take them off both (null). `name` is how the list shows them; a `guest`'s
+ *  entry is for this visit only (never stored). */
+export function setListed(id, list, name = id, { guest = false } = {}) {
   if (typeof id !== 'string' || !id || !['allow', 'block', null].includes(list)) return false;
-  if (listOf(id) === list && (!list || current[list][id] === name)) return false;
-  const allow = { ...current.allow }, block = { ...current.block }; delete allow[id]; delete block[id];
-  if (list) (list === 'allow' ? allow : block)[id] = String(name);
-  const unlist = current.unlist.filter((x) => x !== id); if (!list) unlist.push(id);
-  current = { ...current, allow, block, unlist }; changed(); return true;
+  if (listOf(id) === list && (!list || (guest ? visit : current)[list][id] === name)) return false;
+  current = without(current, id); visit = without(visit, id);
+  const where = guest ? visit : current;
+  if (list) where[list][id] = String(name); else where.unlist.push(id);
+  changed(); return true;
 }
+/** drop an identity no one wears any more (the server's "gone"), from storage too, with nothing sent */
+export function forget(id) { if (!mine(id)) return false; current = without(current, id); visit = without(visit, id); changed(); return true; }
 /** a list as [{id, name}], for the panel: mine, then the authority's that I never listed or unlisted here (named by id) */
-export const listed = (list) => [...Object.entries(current[list] ?? {}).map(([id, name]) => ({ id, name })), ...(held[list] ?? []).filter((id) => heldOf(id) === list).map((id) => ({ id, name: id }))];
+export const listed = (list) => [...Object.entries(current[list] ?? {}).map(([id, name]) => ({ id, name })), ...Object.entries(visit[list] ?? {}).map(([id, name]) => ({ id, name, visit: true })), ...(held[list] ?? []).filter((id) => heldOf(id) === list).map((id) => ({ id, name: id }))];
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 /** what consentsync sends: the gates I chose (undefined = never chosen), the lists' identities, and who I unlisted */
-export const bodyTable = () => ({ move: current.move, touch: current.touch, allow: Object.keys(current.allow), block: Object.keys(current.block), unlist: [...current.unlist] });
+export const bodyTable = () => ({ move: current.move, touch: current.touch, allow: [...Object.keys(current.allow), ...Object.keys(visit.allow)], block: [...Object.keys(current.block), ...Object.keys(visit.block)], unlist: [...current.unlist, ...visit.unlist] });
 
 export const pushable = () => gate('move');
 export const posable = () => gate('touch');

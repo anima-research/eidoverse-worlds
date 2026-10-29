@@ -7,7 +7,7 @@
 // and the table is sent again on a timer and on the next arrival.
 // A leaf like consent.js — everything it touches comes in, so tools/consent-switch-test.ts can drive it.
 export const RETRY_MS = 5000;
-export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true, held = () => {} }) {
+export function makeConsentSync({ table, send, toast, on, later = (fn) => setTimeout(fn, RETRY_MS), enabled = () => true, held = () => {}, gone = () => {} }) {
   let failing = false, retryArmed = false;
   // ONE sync in flight: changes made while it runs collapse into a single follow-up that reads the latest table, so a
   // burst of changes stays under the server's per-connection message cap (10-19), which would refuse some sets.
@@ -30,7 +30,8 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
       for (const g of ['move', 'touch']) if (typeof want[g] === 'boolean' && held[g] !== want[g]) gates[g] = want[g];   // never chosen: the world's default stands (F2b)
       if (Object.keys(gates).length) results.push([Object.entries(gates).map(([g, v]) => `${g} ${v ? 'on' : 'off'}`).join(', '), await send('consent', gates).then((r) => r, failed)]);
       const has = (list, id) => Array.isArray(held[list]) && held[list].includes(id);
-      for (const list of ['allow', 'block']) for (const id of want[list]) if (!has(list, id)) results.push([`${list} one person`, await send('consent', { [list]: id }).then((r) => r, failed)]);
+      for (const list of ['allow', 'block']) for (const id of want[list]) if (!has(list, id)) { const r = await send('consent', { [list]: id }).then((r) => r, failed);
+        if (r?.refused?.code === 'gone') gone(id); else results.push([`${list} one person`, r]); }   // no one wears that id now (a guest who left): pruned, not retried
       for (const id of want.unlist ?? []) if ((has('allow', id) || has('block', id)) && !want.allow.includes(id) && !want.block.includes(id)) results.push(['unlist one person', await send('consent', { unlist: id }).then((r) => r, failed)]);   // only whom I unlisted: the authority's own entries stay (F2a)
     }
     const bad = results.find(([, r]) => !r?.ok);

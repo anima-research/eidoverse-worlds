@@ -152,5 +152,20 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
     && bodyActAsPuppet({ type: 'body', kind: 'anim', spec: { clip: 'wave' } }) === null && bodyActAsPuppet({ type: 'body-revoked', kind: 'pose', spec: { head: q } }) === null && bodyActAsPuppet(null) === null);
 }
 
+// review full-260 #2: a guest has no stable identity (a fresh actor id per connection, server/directory.ts resolve), so a
+// guest's list entry lasts for their visit: kept in memory, never in localStorage; and an id the server says no one wears
+// any more (refused code "gone") is pruned from storage, not retried. Mutation: save the visit lists, or drop the gone prune.
+{ const before = store.get('ew-body-consent');
+  check('a guest on a list is listed and sent, marked for this visit', C.setListed('u-guest', 'block', 'Gus', { guest: true }) && C.listOf('u-guest') === 'block' && C.bodyTable().block.includes('u-guest') && C.listed('block').some((p: any) => p.id === 'u-guest' && p.visit === true), JSON.stringify(C.listed('block')));
+  check('…and never stored: a refresh (theirs gives them a new id; mine reloads storage) keeps no dead id', !(store.get('ew-body-consent') ?? '').includes('u-guest') && before === store.get('ew-body-consent'), store.get('ew-body-consent'));
+  C.setListed('u-guest', null, 'Gus', { guest: true });
+  check('…and taking a guest off keeps no unlist in storage either', !(store.get('ew-body-consent') ?? '').includes('u-guest') && C.listOf('u-guest') === null, store.get('ew-body-consent')); }
+{ C.setListed('u-dead', 'block', 'Old guest');   // as stored before this fix
+  const P: any = { consent: Object.create(null) }; const sent: any[] = []; const toasts: string[] = [];
+  const send = async (_: string, a: any) => { sent.push(a); if (a.block === 'u-dead') return { ok: false, refused: { code: 'gone', reason: 'no one wears that identity now' } }; return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; };
+  const s = makeConsentSync({ table: C.bodyTable, send, toast: (t: string) => toasts.push(t), on: () => {}, later: () => {}, gone: C.forget }); await s.sync();
+  check('a stored id the server says is gone is pruned from storage, with no failure toast', !(store.get('ew-body-consent') ?? '').includes('u-dead') && C.listOf('u-dead') === null && !C.bodyTable().unlist.includes('u-dead') && toasts.length === 0 && !s.failing(), JSON.stringify({ toasts, st: store.get('ew-body-consent') }));
+  sent.length = 0; await s.sync(); check('…and is not sent again', !sent.some((a) => a.block === 'u-dead'), JSON.stringify(sent)); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

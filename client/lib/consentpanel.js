@@ -31,7 +31,7 @@ export function initConsentPanel() {
         const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = title; nm.title = says; head.append(nm); lists.append(head);
         for (const p of people) {
           const row = document.createElement('div'); row.className = 'row wide'; row.dataset.list = list; row.dataset.id = p.id;
-          const who = document.createElement('span'); who.className = 'nm'; who.textContent = p.name; who.title = p.id;
+          const who = document.createElement('span'); who.className = 'nm'; who.textContent = p.visit ? `${p.name} (this visit)` : p.name; who.title = p.visit ? `${p.id}: a guest, kept until they leave` : p.id;
           const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'remove'; rm.title = `take ${p.name} off this list: the switches answer them again`;
           rm.onclick = () => { if (setListed(p.id, null)) flashHint(`${p.name}: the switches answer them again`); };
           const ctl = document.createElement('span'); ctl.className = 'ctl'; ctl.appendChild(rm);
