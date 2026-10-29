@@ -196,7 +196,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     if (x.kind === "purge") atCk = null;
     else if (x.kind === "sim" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
     if (cache) { if (x.kind === "purge") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
-      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }
+      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }   // synchronous on purpose: ~17 ms per 1000 entries at 205k (review L22)
     opts.onAppend?.(seq, x);
     return seq;
   };
