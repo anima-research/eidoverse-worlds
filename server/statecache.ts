@@ -14,14 +14,17 @@ export const isCacheFile = (f: string) => f === CACHE_FILE || f.startsWith(`${CA
 const FORMAT = 2;   // this file's encoding (2: the views and byte offsets, server/foldviews.ts); also in the foldKey through these bytes
 
 const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
-let key: string | null = null;
+let key: string | Error | null = null;
 /** hash(fold.js + its one import + registry-pin.json + this file + every file shaping a view + the runtime): any change and every
- *  cache is refused. */
+ *  cache is refused. Throws (memoised) when a source can't be read: the caller then neither reads nor writes a cache. */
 export function foldKey(): string {
-  if (key) return key;
-  const files = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
-    .map((f) => fs.readFileSync(new URL(f, import.meta.url), "utf8"));
-  return (key = sha256(jcs([FORMAT, process.versions.bun ?? process.version, ...files])));
+  if (key === null) try {
+    const files = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
+      .map((f) => fs.readFileSync(new URL(f, import.meta.url), "utf8"));
+    key = sha256(jcs([FORMAT, process.versions.bun ?? process.version, ...files]));
+  } catch (x) { key = new Error(`the fold's sources can't be read for its key (${(x as Error).message})`); }
+  if (key instanceof Error) throw key;
+  return key;
 }
 
 /** The fold as JSON: a purged value is {purged: true}, a value {v} (canonicalView's shape, plus born and the diagnostics). */
@@ -63,7 +66,8 @@ export function readCacheFile(dir: string, why: (s: string) => void): Any | null
   const p = path.join(dir, CACHE_FILE);
   let text: string; try { text = fs.readFileSync(p, "utf8"); } catch { return null; }
   let c: Any; try { c = JSON.parse(text); } catch { why("it doesn't parse"); return null; }
-  if (c?.format !== FORMAT || c.foldKey !== foldKey()) { why("it was written by another fold, registry or runtime"); return null; }
+  let k: string; try { k = foldKey(); } catch (x) { why((x as Error).message); return null; }
+  if (c?.format !== FORMAT || c.foldKey !== k) { why("it was written by another fold, registry or runtime"); return null; }
   return c;
 }
 /** The cached fold, if it is this log's: format and foldKey current, the same world, and the head at coversIndex the one it
