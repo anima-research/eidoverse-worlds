@@ -25,10 +25,12 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
  *  and written under KEY on first read. Never broader than it was: the body switch's refuse or ask → both off (F3, R 10-28
  *  16:02), accept → move on and touch as main's ew-posable stored it (else off); with no switch, main's ew-pushable → move
  *  ('0' off) and ew-posable → touch ('1' on), each only if that key is present. A stored list from before the queue: its
- *  blocks follow as queued blocks, its unlists land once in the next world, its allows stay where they landed. */
+ *  blocks follow as queued blocks, its unlists follow too but only take someone off allow (never wider), its allows stay where they landed. */
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
 const OPS = ['allow', 'block', 'unlist'];
-const liveOp = (q, now) => q && OPS.includes(q.op) && typeof q.id === 'string' && Number.isFinite(q.at) && (q.op !== 'block' || now - q.at < BLOCK_FOLLOW_MS);
+/** a change that follows me into every world until BLOCK_FOLLOW_MS: a block, or an unlist from before the queue (its world unknown: it only ever takes someone off allow; review delta-260 #2) */
+const follows = (q) => q.op === 'block' || (q.op === 'unlist' && q.world === null);
+const liveOp = (q, now) => q && OPS.includes(q.op) && typeof q.id === 'string' && Number.isFinite(q.at) && (!follows(q) || now - q.at < BLOCK_FOLLOW_MS);
 export function readStored(get = lsGet, now = Date.now()) {
   let raw = null; try { raw = JSON.parse(get(KEY) ?? 'null'); } catch { /* unreadable: as never chosen */ }
   const bool = (v) => (typeof v === 'boolean' ? v : undefined);
@@ -78,9 +80,9 @@ const pendingOf = (id) => current.queue.find((q) => q.id === id && !q.acked.incl
 /** a person's list: 'allow' | 'block' | null (neither: the gates answer them); my change not yet landed here first, else the
  *  authority's (or, before its first read, my lists as last seen) */
 export function listOf(id) {
-  const p = pendingOf(id); if (p) return p.op === 'unlist' ? null : p.op;
-  const l = held ?? { allow: Object.keys(current.allow), block: Object.keys(current.block) };
-  return l.block.includes(id) ? 'block' : l.allow.includes(id) ? 'allow' : null;
+  const p = pendingOf(id), l = held ?? { allow: Object.keys(current.allow), block: Object.keys(current.block) };
+  if (p && !(p.op === 'unlist' && p.world === null)) return p.op === 'unlist' ? null : p.op;
+  return l.block.includes(id) ? 'block' : l.allow.includes(id) && !p ? 'allow' : null;
 }
 /** put a person on a list ('allow' | 'block') or take them off both (null). `name` is how the list shows them; a `guest`'s
  *  entry is for this visit only (never stored). */
@@ -93,13 +95,15 @@ export function setListed(id, list, name = id, { guest = false } = {}) {
   const queue = [...current.queue.filter((q) => q.id !== id), { op: list ?? 'unlist', id, name: String(name), at: Date.now(), world, acked: [] }];
   current = { ...current, allow, block, queue }; changed(); return true;
 }
-/** consentsync: my change for `id` (`op`) holds in this world now. An allow or unlist is drained; a block is marked landed
- *  here and keeps following until BLOCK_FOLLOW_MS. */
+/** consentsync: my change for `id` (`op`) holds in this world now. An allow or unlist is drained; a block, or an old unlist
+ *  ('unallow': off allow only), is marked landed here and keeps following until BLOCK_FOLLOW_MS. */
 export function landed(op, id) {
-  const now = Date.now();
-  const queue = current.queue.flatMap((q) => (q.id !== id || q.op !== op ? [q] : op === 'block' ? [{ ...q, acked: [...new Set([...q.acked, world])] }] : [])).filter((q) => liveOp(q, now));
+  const now = Date.now(), un = op === 'unallow', is = (q) => (un ? q.op === 'unlist' && q.world === null : q.op === op);
+  const queue = current.queue.flatMap((q) => (q.id !== id || !is(q) ? [q] : follows(q) ? [{ ...q, acked: [...new Set([...q.acked, world])] }] : [])).filter((q) => liveOp(q, now));
+  const allow = { ...current.allow }, block = { ...current.block };
+  if (un) { if (held) held = { ...held, allow: held.allow.filter((x) => x !== id) }; delete allow[id]; current = { ...current, allow, queue }; save(); return; }
   if (held) { held = { allow: held.allow.filter((x) => x !== id), block: held.block.filter((x) => x !== id) }; if (op !== 'unlist') held[op].push(id); }
-  const allow = { ...current.allow }, block = { ...current.block }; delete allow[id]; delete block[id]; if (op !== 'unlist') (op === 'allow' ? allow : block)[id] = nameOf(id);
+  delete allow[id]; delete block[id]; if (op !== 'unlist') (op === 'allow' ? allow : block)[id] = nameOf(id);
   current = { ...current, allow, block, queue }; save();
 }
 /** drop an identity no one wears any more (the server's "gone"), from storage too, with nothing sent */
@@ -114,8 +118,8 @@ export const listed = (list) => [...new Set([...Object.keys(current.allow), ...O
   .filter((id) => listOf(id) === list).map((id) => ({ id, name: nameOf(id), ...(guests.has(id) ? { visit: true } : {}) }));
 export function onConsentChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 /** what consentsync sends to this world: the gates I chose (undefined = never chosen) and my changes not yet landed here */
-export const bodyTable = () => { const now = Date.now(), mine = (op) => current.queue.filter((q) => q.op === op && liveOp(q, now) && pendingOf(q.id) === q).map((q) => q.id);
-  return { move: current.move, touch: current.touch, allow: mine('allow'), block: mine('block'), unlist: mine('unlist') }; };
+export const bodyTable = () => { const now = Date.now(), mine = (op, old = false) => current.queue.filter((q) => q.op === op && (op !== 'unlist' || (q.world === null) === old) && liveOp(q, now) && pendingOf(q.id) === q).map((q) => q.id);
+  return { move: current.move, touch: current.touch, allow: mine('allow'), block: mine('block'), unlist: mine('unlist'), unallow: mine('unlist', true) }; };   // unallow: old unlists, off allow only
 
 export const pushable = () => gate('move');
 export const posable = () => gate('touch');

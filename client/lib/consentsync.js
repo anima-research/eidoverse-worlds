@@ -38,6 +38,10 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
       for (const id of want.unlist ?? []) { if (want.allow.includes(id) || want.block.includes(id)) continue;
         if (!has('allow', id) && !has('block', id)) { mark('unlist', id); continue; }   // only whom I unlisted: the authority's own entries stay (F2a)
         const r = await send('consent', { unlist: id }).then((r) => r, failed); results.push(['unlist one person', r]); if (r?.ok) mark('unlist', id); }
+      // an unlist from before the queue (its world unknown): sent only to take someone off allow here, never to lift a block (consent.js follows)
+      for (const id of want.unallow ?? []) { if (want.allow.includes(id) || want.block.includes(id)) continue;
+        if (!has('allow', id)) { mark('unallow', id); continue; }
+        const r = await send('consent', { unlist: id }).then((r) => r, failed); results.push(['unlist one person', r]); if (r?.ok) mark('unallow', id); }
     }
     const bad = results.find(([, r]) => !r?.ok);
     if (!bad) { failing = false; return; }
