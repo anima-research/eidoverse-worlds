@@ -30,6 +30,7 @@
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
+//   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
 //   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
@@ -46,6 +47,7 @@ import { openLive } from "../../server/livehost.ts";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
 import { banOf } from "../../shared/protocol/authority/rights.js";
+import { claimWords } from "../../client/lib/upgradeview.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -187,6 +189,12 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "CL2 …everyone else keeps what main gave them in an ownerless world: newcomers and guests build, edit others' things and generate (builder gains generate), never fly", { n: n.permissions, g: g.permissions, o: o.role }));
   row("CL4", () => ok(d.up.code === 0 && d.report?.claim === undefined && same(Object.values(d.roles).map(([, r]) => r), ["owner"]) && !d.roles.Opal && d.result?.claimed === undefined,
     "CL4 --claim on a world that has an owner changes nothing: no claim in the report, Ann stays its only owner, nobody claimed it", { roles: d.roles, claim: d.report?.claim }));
+  v1(W, "den2", [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "say", { text: "mine" }]]);
+  const own = tagged(tool(root, ["translate", "--dry-run", "--no-founder-key", "--claim", "--json", "--", "den2"], { EIDO_UPGRADER_ACCOUNT: "human:test:ann", EIDO_UPGRADER_NAME: "Ann" }).out, "report-json")?.report;
+  const words = [claimWords(c.report?.claim), claimWords(own?.claim), claimWords({ by: "Ann", how: "name" }), claimWords(d.report?.claim)];
+  row("CL7", () => ok(/has no owner: you will become its owner/.test(words[0] ?? "") && own?.claim?.how === "bound" && !/no owner/.test(words[1] ?? "x") && /owner Ann, by the account main recorded/.test(words[1] ?? "")
+    && /owner Ann, recognised by your name/.test(words[2] ?? "") && !/no owner/.test(words[2] ?? "x") && words[3] === null,
+    "CL7 the splash words each claim: an ownerless world's (you become its owner), an owner recognised by account or by name (never 'no owner'), none", { words, claim: own?.claim }));
   const rb = tool(root, ["rollback", "barn"]);
   row("CL3", () => ok(rb.code === 0 && directoryAt(directoryFileIn(W)).idOfSub("human:test:op") === null && !fs.existsSync(path.join(W, "barn", "world.jsonl")) && fs.existsSync(path.join(W, "barn", "log.jsonl"))
     && fs.readdirSync(path.join(root, "backups")).some((f) => f.startsWith("barn-")),
