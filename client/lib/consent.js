@@ -22,10 +22,13 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
  *  is the source: review full-260 L9); `queue` is my own changes not yet landed, drained as they land (consentsync). A block
  *  follows me into every world for BLOCK_FOLLOW_MS (narrower); an allow or an unlist lands only in the world it was made in
  *  (wider). A setting kept under an older key is carried into the gates silently (R 10-28 13:03: "we're keeping their gates"),
- *  and written under KEY on first read. Never broader than it was: the body switch's refuse or ask → both off (F3, R 10-28
- *  16:02), accept → move on and touch as main's ew-posable stored it (else off); with no switch, main's ew-pushable → move
- *  ('0' off) and ew-posable → touch ('1' on), each only if that key is present. A stored list from before the queue: its
+ *  and written under KEY on first read. Never broader than main allowed: the body switch's refuse or ask → both off (F3,
+ *  R 10-28 16:02), accept → move on, touch off; with no switch, main's ew-pushable → move ('0' off; only if present) and
+ *  ew-posable → touch off if present. Main's posable '1' allowed posing only, and Touch me also opens touch and intimate,
+ *  so it can't carry: Touch me stays off and `notice` is set, kept under KEY until takeNotice says it once (fixF). A stored list from before the queue: its
  *  blocks follow as queued blocks, its unlists follow too but only take someone off allow (never wider), its allows stay where they landed. */
+/** what a person whose old "allow posing" couldn't carry over is told, once (takeNotice) */
+export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Touch me now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Touch me.";
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
 /** what the panel and the toast say of it (review delta-260 L-F) */
 export const BLOCK_FOLLOW_WORDS = `it follows you into the worlds you enter in the next ${BLOCK_FOLLOW_MS / 86_400_000} days; where it has landed, it stays until you remove it`;
@@ -41,25 +44,27 @@ export function readStored(get = lsGet, now = Date.now()) {
     const queue = Array.isArray(raw.queue) ? raw.queue.filter((q) => liveOp(q, now)).map((q) => ({ op: q.op, id: q.id, name: String(q.name ?? q.id), at: q.at, world: typeof q.world === 'string' ? q.world : null, acked: Array.isArray(q.acked) ? q.acked.filter((w) => typeof w === 'string') : [] }))
       : [...Object.entries(block).map(([id, name]) => ({ op: 'block', id, name, at: now, world: null, acked: [] })),
         ...(Array.isArray(raw.unlist) ? raw.unlist.filter((id) => typeof id === 'string') : []).map((id) => ({ op: 'unlist', id, name: id, at: now, world: null, acked: [] }))];
-    return { move: bool(raw.move), touch: bool(raw.touch), allow, block, queue };
+    return { move: bool(raw.move), touch: bool(raw.touch), allow, block, queue, notice: raw.notice === true };
   }
   const sw = get('ew-body-switch'), pushable = get('ew-pushable'), posable = get('ew-posable');
-  const state = { move: undefined, touch: undefined, allow: {}, block: {}, queue: [] };
-  if (sw === 'refuse' || sw === 'ask') { state.move = false; state.touch = false; }
-  else if (sw === 'accept') { state.move = true; state.touch = posable === '1'; }
-  else { if (pushable !== null) state.move = pushable !== '0'; if (posable !== null) state.touch = posable === '1'; }
+  const state = { move: undefined, touch: undefined, allow: {}, block: {}, queue: [], notice: false };
+  if (sw === 'refuse' || sw === 'ask') { state.move = false; state.touch = false; return state; }
+  if (sw === 'accept') { state.move = true; state.touch = false; } else { if (pushable !== null) state.move = pushable !== '0'; if (posable !== null) state.touch = false; }
+  state.notice = posable === '1';   // main's posable was posing only; Touch me is wider, so off and told (fixF)
   return state;
 }
 
 let current = readStored();
 // a guest's id is minted per connection, so their entries last for the visit: in memory only, never stored (review full-260 #2)
 const guests = new Set();
-const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, move: current.move, touch: current.touch,
+const save = () => lsSet(KEY, JSON.stringify({ v: CONSENT_SHAPE, move: current.move, touch: current.touch, ...(current.notice ? { notice: true } : {}),
   allow: Object.fromEntries(Object.entries(current.allow).filter(([id]) => !guests.has(id))), block: Object.fromEntries(Object.entries(current.block).filter(([id]) => !guests.has(id))),
   queue: current.queue.filter((q) => !guests.has(q.id)) }));
 save();
 const listeners = new Set();
 const changed = () => { save(); for (const fn of listeners) fn(current); };
+/** the migration's notice (TOUCH_NOTICE) the first time it's asked for, then null; taken is remembered */
+export function takeNotice() { if (!current.notice) return null; current = { ...current, notice: false }; save(); return TOUCH_NOTICE; }
 let world = '';
 /** the world this page syncs with (its authority's lists are the ones shown and sent to) */
 export function useWorld(name) { world = String(name ?? ''); }

@@ -59,23 +59,42 @@ check('Default: off both lists, the switches answer them again', C.setListed('u-
 check('/pushable and /posable keep main\'s meaning: the move and touch switches', (C.setPushable(false), !C.gate('move') && !C.pushable()) && (C.setPosable(false), !C.posable()) && (C.setPushable(true), C.gate('move')));
 check('it is remembered under ew-body-consent, lists and names too', (C.setListed('u-kit', 'allow', 'Kit'), JSON.parse(store.get('ew-body-consent') ?? '{}').allow?.['u-kit'] === 'Kit') && JSON.parse(store.get('ew-body-consent') ?? '{}').v === 4);
 
-// 1b. an older stored setting (main's two keys, the body switch) is carried into the gates silently, never wider
+// 1b. an older stored setting (main's two keys, the body switch) is carried into the gates never wider; one that can't carry is told once
 const was = (kv: Record<string, string>) => C.readStored((k: string) => kv[k] ?? null);
 const g2 = (s: any) => `${(s.move ?? true) ? 'move' : '-'}/${(s.touch ?? false) ? 'touch' : '-'}`;   // never chosen shows as the defaults
 for (const [kv, want, why] of [
   [{ 'ew-body-switch': 'refuse' }, '-/-', 'switch refuse → both off'],
   [{ 'ew-body-switch': 'ask' }, '-/-', 'switch ask → both off (F3, R 10-28 16:02: ask was no until yes)'],
   [{ 'ew-body-switch': 'accept' }, 'move/-', 'switch accept → Move on, Touch its default (off)'],
-  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/touch', 'switch accept with main\'s posable on → Touch as stored (on)'],
+  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/-', 'switch accept with main\'s posable on → Touch off (posable was posing only; Touch me is touch and intimate too)'],
   [{ 'ew-body-switch': 'refuse', 'ew-posable': '1', 'ew-pushable': '1' }, '-/-', 'switch refuse beats main\'s on keys: an opt-out is never lost'],
   [{ 'ew-pushable': '0' }, '-/-', 'main pushable off → Move off'],
-  [{ 'ew-posable': '1' }, 'move/touch', 'main posable on → Touch on'],
-  [{ 'ew-pushable': '0', 'ew-posable': '1' }, '-/touch', 'main pushable off, posable on → Move off, Touch on'],
+  [{ 'ew-posable': '1' }, 'move/-', 'main posable on → Touch off (never wider: main\'s posable never opened touch or intimate)'],
+  [{ 'ew-pushable': '0', 'ew-posable': '1' }, '-/-', 'main pushable off, posable on → Move off, Touch off'],
+  [{ 'ew-pushable': '1' }, 'move/-', 'main pushable on → Move on (as main: shove and drag), Touch its default'],
   [{}, 'move/-', 'nothing stored → the defaults'],
   [{ 'ew-body-consent': '{"v":4,"move":false,"touch":true,"allow":{"u-a":"A"},"block":{}}', 'ew-body-switch': 'accept' }, '-/touch', 'today\'s key wins over the old ones'],
 ] as const) { const s = was(kv as any); check(`migration: ${why}`, g2(s) === want, `${g2(s)} (want ${want})`); }
-check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world)', ((s) => s.move === undefined && s.touch === true)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
+check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world, and Touch me chosen off)', ((s) => s.move === undefined && s.touch === false)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
 check('migration carries no lists from the old keys (the switch kept per-person answers only at the authority)', JSON.stringify(was({ 'ew-body-switch': 'accept' }).allow) === '{}');
+// (fixF) main's posable '1' can't carry over (wider), so the person is told once, in plain words, and how to turn it on
+{ const words = (C as any).TOUCH_NOTICE ?? '';
+  check('the notice says the old setting could not carry over, why, and where Touch me is', /allow posing/.test(words) && /couldn't carry over/.test(words) && /intimate/.test(words) && /Settings ▸ body/.test(words) && /Touch me/.test(words), words);
+  check('migration: a notice is due only where main\'s posable on was not carried (not for switch refuse, not for posable off, not for nothing stored)', was({ 'ew-posable': '1' }).notice === true && was({ 'ew-body-switch': 'accept', 'ew-posable': '1' }).notice === true
+    && !was({ 'ew-body-switch': 'refuse', 'ew-posable': '1' }).notice && !was({ 'ew-posable': '0' }).notice && !was({}).notice && !was({ 'ew-body-switch': 'accept' }).notice);
+  const saved = store.get('ew-body-consent'); store.clear(); store.set('ew-posable', '1');
+  const M = await import('../client/lib/consent.js?fixF=posable');   // a fresh page whose storage holds only main's posable on
+  check('…on that page Touch me is off and a stranger may not pose (the authority sees touch:false)', !M.gate('touch') && M.bodyTable().touch === false);
+  const first = M.takeNotice?.(), second = M.takeNotice?.();
+  check('…the page is told once: the first take is the notice, the second nothing', first === words && second === null, JSON.stringify([first, second]));
+  const M2 = await import('../client/lib/consent.js?fixF=reload');   // the next page load, same storage
+  check('…and not again on the next load (taken is remembered), with Touch me still off', M2.takeNotice?.() === null && !M2.gate('touch'), store.get('ew-body-consent'));
+  store.clear(); store.set('ew-posable', '1'); const M3 = await import('../client/lib/consent.js?fixF=unseen');
+  const M4 = await import('../client/lib/consent.js?fixF=unseen2');   // a reload before anything took the notice
+  check('…a notice not yet taken survives a reload (said once, never zero times)', M4.takeNotice?.() === words && M3 !== M4, store.get('ew-body-consent'));
+  store.clear(); if (saved) store.set('ew-body-consent', saved); }
+{ const src = await Bun.file(new URL('../client/lib/localbody.js', import.meta.url)).text();
+  check('…and the page says it: localbody takes the notice at start and toasts it (not on a renderer)', /if \(!\(CONFIG\.renderer \|\| CONFIG\.spectate\)\) \{ const told = takeNotice\(\); if \(told\) toast\(told,/.test(src)); }
 
 // 2. a refused sync is heard (toast) and retried: on the next hydration, and on a timer before that
 const T = (o: any = {}) => ({ move: true, touch: false, allow: [] as string[], block: [] as string[], unlist: [] as string[], ...o });

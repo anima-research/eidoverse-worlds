@@ -49,4 +49,15 @@ Consent is presence: never logged, never a grant, never a property of what kind 
 | Ask | `ask` filed a live question to the owner (the People Here row was marked, a toast said it, the person's menu answered Allow this once / Not now / Never); no answer in 20 s was no; one ask at a time per pair, two a minute per asker, a doubling cool-down after a no; a yes covered one act (a touch at most 10 min) |
 | Per-person | an allow or a deny for one person, per class or all; an allow could name `for` |
 
-Why it went (R 10-28): asking was the wrong shape for most bodies most of the time. "Keep main's shape of binary switches", with per-person lists that carve out around them. A stored switch became gates, never wider: refuse or ask → both off (R 10-28 16:02: ask was no until yes); accept → move on, touch as stored (main's `ew-posable`) or off. A per-person deny became a block, a standing allow an allow; an allow with an end was dropped.
+Why it went (R 10-28): asking was the wrong shape for most bodies most of the time. "Keep main's shape of binary switches", with per-person lists that carve out around them. A stored switch became gates, never wider: refuse or ask → both off (R 10-28 16:02: ask was no until yes); accept → move on, touch off. A per-person deny became a block, a standing allow an allow; an allow with an end was dropped.
+
+What a browser's stored keys become (client/lib/consent.js readStored; nothing comes out wider than main allowed):
+
+| Stored | Move me | Touch me | Notes |
+|---|---|---|---|
+| `ew-body-switch` `refuse` or `ask` | off | off | beats main's keys below |
+| `ew-body-switch` `accept` | on | off | main's posable on with it: told, as below |
+| main's `ew-pushable` `0` / any other value | off / on | (as below) | main's pushable was shove and drag: Move me |
+| main's `ew-posable` `0` | (as above) | off | |
+| main's `ew-posable` `1` | (as above) | **off**, and told once | main allowed posing only, and intimate contact was never a default; Touch me covers touch and intimate too, so it can't carry. The page says so once (`TOUCH_NOTICE`: how to turn it on), remembered under `ew-body-consent` until said |
+| nothing | never chosen | never chosen | the world's `body-default`, else move on, touch off |

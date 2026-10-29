@@ -31,7 +31,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
-import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorld } from './consent.js';
+import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorld, takeNotice } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
 import { bodyActAsPuppet, refusedNotice } from './bodyact.js';
 import { clearMyReach } from './reachnet.js';
@@ -524,6 +524,8 @@ export function initLocalBody({ logChat: logChatFn }) {
   useWorld(CONFIG.world);
   const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate), held: noteHeld, gone: forget, landed });
   onConsentChange(consentSync.sync);
+  // main's "allow posing" couldn't carry into Touch me (wider): said once, to a person, never a renderer (consent.js TOUCH_NOTICE)
+  if (!(CONFIG.renderer || CONFIG.spectate)) { const told = takeNotice(); if (told) toast(told, 'info', 15000); }
 
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to
