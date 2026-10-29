@@ -41,9 +41,9 @@ const root = scratch("upgrade");
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 700)}` : ""}`); } };
 const W = path.join(root, "worlds"), B = path.join(root, "backups"), OPT = path.join(root, "opt"); fs.mkdirSync(OPT, { recursive: true });
-const tool = (args: string[], env: Record<string, string> = {}) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
+const tool = (args: string[], env: Record<string, string> = {}) => { const t0 = performance.now(); const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE,
   env: { ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, timeout: 45_000 });
-  return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  return { code: r.exitCode, signal: r.signalCode, ms: Math.round(performance.now() - t0), out: r.stdout.toString() + r.stderr.toString() }; };
 const dryHash = (name: string, env: Record<string, string> = {}) => /^report-hash ([0-9a-f]{64})$/m.exec(tool(["translate", name, "--dry-run", "--no-founder-key"], env).out)?.[1] ?? "no-hash";
 const xlate = (name: string, env: Record<string, string> = {}) => tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(name, env)], env);
 const sha = (b: Buffer) => crypto.createHash("sha256").update(b).digest("hex");
@@ -80,7 +80,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
   ok(!!b && m.backup === b, "UB3 translation.json names the backup's path", { backup: m.backup, b });
   const bt = b ? tree(b) : {};
   const rb = tool(["rollback", "porch"]);
-  ok(rb.code === 0 && same(tree(d), before) && same(b ? tree(b) : null, bt) && backupsOf("porch").length === 1, "UB4 rollback puts the world back and leaves the backup exactly as it was", { code: rb.code, out: rb.out.slice(-300) });
+  ok(rb.code === 0 && same(tree(d), before) && same(b ? tree(b) : null, bt) && backupsOf("porch").length === 1, "UB4 rollback puts the world back and leaves the backup exactly as it was", { code: rb.code, signal: rb.signal, ms: rb.ms, out: rb.out.slice(-300) });
 }
 { const d = oldWorld("cracked"); const before = tree(d);
   const r = xlate("cracked", { WORLD_TS_CORRUPT_BACKUP: "1" });

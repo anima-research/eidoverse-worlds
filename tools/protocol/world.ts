@@ -430,7 +430,7 @@ if (cmd === "found") {
   console.log(`owner-json ${JSON.stringify(ownerRecognised(D, process.env.EIDO_UPGRADER_ACCOUNT || null, process.env.EIDO_UPGRADER_NAME || null))}`);
 } else if (cmd === "rollback") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: rollback <world> [--discard-changes]");
-  rollback(name);
+  rollback(name); process.exit(0);   // synchronous and done: exit now (windows-latest once sat 45 s after the last line, CI 10-29)
 } else if (cmd === "info") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: info <name>");
   if (!isWorldSaved(name)) die(`${name} is not a world (no world.jsonl with a genesis)`);
