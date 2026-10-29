@@ -100,7 +100,7 @@ try {
     }
     if (hnSessions.size) console.log(`[auth] restored ${hnSessions.size} live session(s)`);
     const odd = [...hnSessions.values()].filter((s) => !String(s.sub).startsWith("human:"));
-    if (odd.length) console.log(`[auth] ${odd.length} session(s) refused (sub isn't human:…; kept on disk, proves nobody): ${odd.map((s) => s.name).join(", ")}`);
+    if (odd.length) console.log(`[auth] ${odd.length} session(s) refused (sub isn't human:…; proves nobody; kept on disk until it expires): ${odd.map((s) => s.name).join(", ")}`);
   }
 } catch (e) { console.log(`[auth] session restore failed (starting empty): ${e}`); }
 

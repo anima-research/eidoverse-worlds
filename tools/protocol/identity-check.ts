@@ -103,6 +103,13 @@ for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [
   ok(mixed.code === 0 && mixed.set === JSON.stringify(["human:test:a"]) && /REFUSED: SERVER_OPERATORS lists "Marigold"/.test(mixed.err)
     && torn.code === 0 && torn.set === JSON.stringify(["human:test:a"]) && /REFUSED .*\.operators\.json: it doesn't read/.test(torn.err),
     "C3b a bad entry beside a good one: the good one operates, the bad is refused loudly; an operators file that doesn't read is refused, not fatal", { mixed, torn }); }
+// C3s (review full-260 L13): a refused session (not human:) is kept on disk, as its boot line says, until it expires
+{ const sf = path.join(root, "sessions-c3s.json"); const H = "1".repeat(64), A = "2".repeat(64);
+  fs.writeFileSync(sf, JSON.stringify({ [H]: { sub: "human:test:h", name: "Hu", exp: Date.now() + 3600_000 }, [A]: { sub: "agent:token:x", name: "Ag", exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/auth.ts"); m.saveSessions();`], { cwd: ENGINE, env: env({ SESSIONS_PATH: sf }) });
+  const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(sf, "utf8"));
+  ok(/1 session\(s\) refused .*kept on disk until it expires/.test(said) && disk[A]?.sub === "agent:token:x" && disk[H]?.sub === "human:test:h",
+    "C3s a refused session's boot line is true: after a save it is still on disk (until it expires), proving nobody", { said: said.slice(-300), keys: Object.keys(disk).length }); }
 // C3m (R 10-27): SERVER_OPERATORS is the variable; WORLD_ADMIN is still read for one release, merged in, with one deprecation line
 { const ops = (e) => { const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`],
     { cwd: ENGINE, env: env(e) }); return { set: r.stdout.toString().trim().split("\n").pop(), err: r.stderr.toString() + r.stdout.toString() }; };
