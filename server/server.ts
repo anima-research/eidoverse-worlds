@@ -1324,7 +1324,9 @@ startTick(FRAME_MS);
 // On the way out, everyone connected sleeps where they stand (every log line is already on disk: the authority appends
 // and fsyncs each one before its request returns).
 let shuttingDown = false;
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
+// Windows has no SIGTERM: Ctrl+C, Ctrl+Break (SIGBREAK) and closing the console (SIGHUP) run this; taskkill /F can't be caught
+// (the next boot then folds the whole log: correct, slower). SIGHUP is Windows-only: nohup's ignore stays on POSIX (review L23)
+for (const sig of ["SIGINT", "SIGTERM", ...(process.platform === "win32" ? ["SIGBREAK", "SIGHUP"] : [])]) {
   process.on(sig, () => {
     if (shuttingDown) process.exit(0);
     shuttingDown = true;
