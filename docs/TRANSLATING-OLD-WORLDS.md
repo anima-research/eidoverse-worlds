@@ -11,7 +11,9 @@ be translated once, one way, into a world of this protocol, in two steps.
 `bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`
 writes nothing and prints the **dry-run report** — the old log's size and
 sha256, the translator and fold build, `founderKey: null`, the counts
-(entries, changes, guards that become locks, models without bytes here), the
+(entries, changes, guards that become locks, models without bytes here),
+`output` (the digest of the state the translation writes, so new code or new
+model bytes between the review and the apply refuse it), the
 translator's DROPPED table (what every translation drops or renames by
 design), and `deferred`: every use of a feature this protocol does not carry
 yet — and the report's sha256. The translation itself takes `--approved <that
@@ -46,7 +48,7 @@ no frame to hold one (`water` on `@world` without one is the world's water
 level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
-**What a translation keeps of main's meaning** (translate-v1@25, R 10-28; the
+**What a translation keeps of main's meaning** (translate-v1@28, R 10-28; the
 report lists each one):
 
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
@@ -54,9 +56,11 @@ report lists each one):
   and generate. The translation writes that out: `default-role` with
   `guests` the same role, and for an ownerless world the member role's
   permissions (`role-defs`) set to the builder's plus generate, since this
-  protocol caps an ownerless world at member. Rank stays member there:
-  a lock and a `who: builder` gate refuse everyone until the world has an
-  owner (operator-repair set, or the upgrader's claim: below). The report's `rights` says which, and its notes
+  protocol caps an ownerless world at member. Rank stays member there, so
+  a lock is member strength (anyone may lift it, as in main), and a
+  `who: builder` gate refuses everyone until the world has an owner (the
+  upgrader's claim, below, or operator-repair set, which gives builder
+  generate the same way). The report's `rights` says which, and its notes
   what can't be said (generate for guests). Worlds founded new keep this
   protocol's defaults.
 - *Particles.* A preset retuned with main's knobs (wobble, up, spread, gravity,
@@ -144,8 +148,11 @@ upgrader's (`world.ts translate … --claim`, the account from
 the upgrader's identity is set owner as their own recorded operator repair,
 and the builder role gains generate, so everyone else keeps what main gave
 them there (build and generate). The result and the success page say "You're
-now this world's owner". Without `--claim` (the command line) it stays
-ownerless, warned. Existing owners always stay owners.
+now this world's owner". The boot notice's commands carry `--claim` with
+`EIDO_UPGRADER_ACCOUNT=<your-account>` (yours, as `SERVER_OPERATORS` lists
+it), so the command line claims as the browser does. Without `--claim` it
+stays ownerless, warned; its locks stay member strength, so nobody is
+locked out of their builds. Existing owners always stay owners.
 
 The splash of anyone who may upgrade has a **Upgrade world…** button. It shows the dry-run
 report (what carries, what is mapped, what has no home and is kept as
@@ -221,6 +228,11 @@ run lists every role holder, bound or not (`people` in the report), and says
 for each unbound one why and how to bind it:
 
     owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons "fable" <their account>
+
+Bans come over the same way: a banned name is bound to main's one account for
+it, so that account stays banned, and the report lists every ban (`bans`,
+in the approved hash) with the account it holds against or why none. A ban
+bound by name alone says "check it": a guest who wore the name was someone else.
 
 If no owner is bound to any account, the dry run, the report
 (`ownerWarning`), the browser's review and result, and the server's log all

@@ -400,7 +400,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         ...(old ? { refused: oldFormatRefused(old.kind, old.visitor, operator, owner) } : {}) }));
         c.ws.close?.(4005, old ? "old-format world" : "no such world"); };
       // a signed-in non-operator may be its owner: world.ts owner-of answers (cached), then the refusal goes
-      if (old?.kind === "translatable" && who && !operator) void ownerOf(wname, who).then((o) => refuse(o?.recognised ?? null), () => refuse(null));
+      if (old?.kind === "translatable" && who && !operator) void ownerOf(wname, who, { join: true }).then((o) => refuse(o?.recognised ?? null), () => refuse(null));
       else refuse(null);
       return null;
     }

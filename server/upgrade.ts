@@ -46,14 +46,20 @@ const tagged = (out: string, tag: string): Any => { const l = out.split("\n").fi
 
 type Owner = { recognised: "bound" | "name" | null; owner?: string; ownerless: boolean; why?: string };
 const OWNER_MS = 30_000, ownerSeen = new Map<string, { at: number; p: Promise<Owner | null> }>();
-/** world.ts owner-of: is this proven account an owner of the old world? Cached briefly per (world, account, name, log); null when the check didn't run. */
-export function ownerOf(world: string, who: { account: string; name: string } | null): Promise<Owner | null> {
+/** At most this many owner checks (CLI runs) at once for joins (review full-260 L2): a burst of refused joins can't fork the server. */
+export const JOIN_CHECKS = 2; let joinChecks = 0;
+/** world.ts owner-of: is this proven account an owner of the old world? Cached briefly per (world, account, name, log); null when
+ *  the check didn't run. `join`: a refused join's check, skipped (null) while JOIN_CHECKS are already running. */
+export function ownerOf(world: string, who: { account: string; name: string } | null, { join = false } = {}): Promise<Owner | null> {
   if (!who) return Promise.resolve(null);
   let st: { size: number; mtimeMs: number }; try { st = fs.statSync(path.join(WORLDS_DIR, world, "log.jsonl")); } catch { return Promise.resolve(null); }
   const key = JSON.stringify([world, who.account, who.name, st.size, st.mtimeMs]), now = Date.now(), hit = ownerSeen.get(key);
   if (hit && now - hit.at < OWNER_MS) return hit.p;
+  if (join && joinChecks >= JOIN_CHECKS) return Promise.resolve(null);
   for (const [k, v] of ownerSeen) if (now - v.at >= OWNER_MS) ownerSeen.delete(k);
-  const p = runCli(["owner-of", "--", world], { EIDO_UPGRADER_ACCOUNT: who.account, EIDO_UPGRADER_NAME: who.name }).then((r) => tagged(r.out, "owner-json") as Owner | null).catch(() => null);
+  if (join) joinChecks++;
+  const p = runCli(["owner-of", "--", world], { EIDO_UPGRADER_ACCOUNT: who.account, EIDO_UPGRADER_NAME: who.name }).then((r) => tagged(r.out, "owner-json") as Owner | null).catch(() => null)
+    .finally(() => { if (join) joinChecks--; });
   ownerSeen.set(key, { at: now, p }); return p;
 }
 
@@ -71,14 +77,17 @@ async function admit({ c, ws }: Ctx, msg: Any, type: string, shape?: () => [stri
   const rights = (why = "") => refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS) or the world's owner, signed in${why ? ` (${why})` : ""}. ${IF_YOU_RUN_IT}`, "ask the server's operator or the world's owner");
   let owner: Owner | null = null;
   if (!old) return refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`);   // to anyone: a join says as much
-  if (!operator) { if (old.kind !== "translatable") return rights(account ? "" : "not signed in");
-    owner = await ownerOf(world, who); if (!owner?.recognised) return rights(owner?.why ?? (account ? "" : "not signed in")); }
-  if (old.kind !== "translatable") return refuse("cli", `"${world}" was saved before this protocol's names changed; it is re-translated from its original old log on the command line (the boot notice gives the commands): ${OLD_FORMAT_DOC}`);
+  if (!account) return rights("not signed in");
   const bad = shape?.(); if (bad) return refuse("shape", bad[0], bad[1]);   // before the rate slot: a malformed request runs nothing
-  if (running.has(world)) return refuse("busy", `"${world}" is already being reviewed or upgraded`, "wait for that to finish");
-  const now = Date.now(), mine = (recent.get(account!) ?? []).filter((t) => now - t < RATE_MS);
+  // the rate next (review full-260 L2): an owner check runs the CLI (a read and fold of the old log), so it is spent on the slot
+  const now = Date.now(), mine = (recent.get(account) ?? []).filter((t) => now - t < RATE_MS);
   if (mine.length >= RATE_N) return refuse("rate", `at most ${RATE_N} upgrade requests in ${RATE_MS / 60_000} minutes`, "try again later");
-  recent.set(account!, [...mine, now]); running.add(world);   // taken here, in the same turn as the check (admit awaits above)
+  recent.set(account, [...mine, now]);   // taken in the same turn as the check, before the await below
+  if (!operator) { if (old.kind !== "translatable") return rights();
+    owner = await ownerOf(world, who); if (!owner?.recognised) return rights(owner?.why ?? ""); }
+  if (old.kind !== "translatable") return refuse("cli", `"${world}" was saved before this protocol's names changed; it is re-translated from its original old log on the command line (the boot notice gives the commands): ${OLD_FORMAT_DOC}`);
+  if (running.has(world)) return refuse("busy", `"${world}" is already being reviewed or upgraded`, "wait for that to finish");
+  running.add(world);   // in the same turn as the busy check
   // as: how they may (an operator, or the owner and how recognised); claim: an ownerless world's upgrader becomes its owner
   const as = operator ? "operator" : `owner (${owner!.recognised})`;
   return { id, world, account: account!, name: who?.name ?? "", refuse, as, owner: owner?.recognised ? { recognised: owner.recognised, name: owner.owner } : null };

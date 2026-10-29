@@ -3,7 +3,8 @@
 //   C1  a credential proven on one join never carries to a second join on the same socket
 //   C2  an aid1 credential is an agent only if its kind says agent; an enrolment's listed aid1 subject is that agent;
 //       C2f (10-18 L11) a reserved name is matched folded ("Wre n", "wren." are Wren) and refused without the enrolment's proof
-//   C3  SERVER_OPERATORS (or legacy WORLD_ADMIN) naming a bare display name refuses to boot; C3m the legacy var merges, warned once
+//   C3  SERVER_OPERATORS (or legacy WORLD_ADMIN) naming a bare display name is refused loudly, the server boots with the setup link
+//       (C3b: good entries still operate; an unreadable operators file is refused, not fatal); C3m the legacy var merges, warned once
 //   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
 //   H3  a world name nobody founded is refused, and nothing appears on disk
 //   H4  a guest is never given the world's default role; a door ban removes the person now; a guest's ban names the
@@ -90,9 +91,25 @@ const you = (j) => j.snapshot?.cut?.you;
 const bootErr = (s) => (fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "") + (fs.existsSync(s.log) ? fs.readFileSync(s.log, "utf8") : "");
 const namesBoth = (err) => /SERVER_OPERATORS/.test(err) && /WORLD_ADMIN/.test(err) && /SERVER_OPERATORS=human:discord:/.test(err);
 for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [v]: "Marigold" }); const err = bootErr(s);
-  ok(s.dead && /isn't an account|aren't accounts/.test(err) && namesBoth(err),
-    `C3 ${v}=<a display name> refuses to boot, naming both variables and the exact form to write`, err.slice(-400));
-  try { s.proc.kill(); } catch {} }
+  ok(!s.dead && /REFUSED: .*isn't an account/.test(err) && namesBoth(err) && /\/setup#token=/.test(err),
+    `C3 ${v}=<a display name> is refused loudly, naming both variables and the exact form to write; the server still boots (no lockout) and, with no operator left, prints the setup link`, err.slice(-400));
+  try { s.proc.kill(); await s.proc.exited; } catch {}
+  for (const f of [s.log, s.log + ".err"]) fs.rmSync(f, { force: true }); }   // it booted: its port and log name are the next start's
+// C3b (review full-260 L10): the good entries still operate beside a bad one; an operators file that doesn't read is refused, not fatal
+{ const ops = (e, file = null) => { const W2 = path.join(root, `w-ops-${Math.random().toString(36).slice(2)}`); fs.mkdirSync(W2, { recursive: true }); if (file !== null) fs.writeFileSync(path.join(W2, ".operators.json"), file);
+    const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`], { cwd: ENGINE, env: env({ WORLDS_DIR: W2, ...e }) });
+    return { set: r.stdout.toString().trim().split("\n").pop(), err: r.stderr.toString(), code: r.exitCode }; };
+  const mixed = ops({ SERVER_OPERATORS: "human:test:a, Marigold" }), torn = ops({ SERVER_OPERATORS: "human:test:a" }, "{ not json");
+  ok(mixed.code === 0 && mixed.set === JSON.stringify(["human:test:a"]) && /REFUSED: SERVER_OPERATORS lists "Marigold"/.test(mixed.err)
+    && torn.code === 0 && torn.set === JSON.stringify(["human:test:a"]) && /REFUSED .*\.operators\.json: it doesn't read/.test(torn.err),
+    "C3b a bad entry beside a good one: the good one operates, the bad is refused loudly; an operators file that doesn't read is refused, not fatal", { mixed, torn }); }
+// C3s (review full-260 L13): a refused session (not human:) is kept on disk, as its boot line says, until it expires
+{ const sf = path.join(root, "sessions-c3s.json"); const H = "1".repeat(64), A = "2".repeat(64);
+  fs.writeFileSync(sf, JSON.stringify({ [H]: { sub: "human:test:h", name: "Hu", exp: Date.now() + 3600_000 }, [A]: { sub: "agent:token:x", name: "Ag", exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/auth.ts"); m.saveSessions();`], { cwd: ENGINE, env: env({ SESSIONS_PATH: sf }) });
+  const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(sf, "utf8"));
+  ok(/1 session\(s\) refused .*kept on disk until it expires/.test(said) && disk[A]?.sub === "agent:token:x" && disk[H]?.sub === "human:test:h",
+    "C3s a refused session's boot line is true: after a save it is still on disk (until it expires), proving nobody", { said: said.slice(-300), keys: Object.keys(disk).length }); }
 // C3m (R 10-27): SERVER_OPERATORS is the variable; WORLD_ADMIN is still read for one release, merged in, with one deprecation line
 { const ops = (e) => { const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`],
     { cwd: ENGINE, env: env(e) }); return { set: r.stdout.toString().trim().split("\n").pop(), err: r.stderr.toString() + r.stdout.toString() }; };

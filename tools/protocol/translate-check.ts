@@ -1,9 +1,11 @@
 // tools/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-e  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
-//   B24a-d  name-only global bans: bound to main's one account at boot, else kept pending, listed, never enforced, liftable
+//   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
+//           enforced, liftable; a malformed record is refused and kept on disk
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
-//   V5      the translator is @25, and a report reviewed under @24 is refused, naming the earlier translator
+//   V5      the translator is @28, and a report reviewed under @27 is refused, naming the earlier translator
+//   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
 //           sky audio onto @world.sky.audio (SA); a light with no intensity brightened once, landing on the registry default (LD)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/translate-check.ts
@@ -118,6 +120,19 @@ row("B24c", () => { const root = scratch("translate-b24"), W = path.join(root, "
   ok(/G \["acct:human:test:g1"\] P \["twin"\]/.test(said) && /1 pre-account global ban\(s\) bound/.test(said) && /pre-account global ban\(s\): bind to a person/.test(said)
     && disk["acct:human:test:g1"]?.reason === "spam" && disk.twin && !disk.griefer,
     "B24c at boot: main's .principals.json and another world's log bind 'griefer' to its account (written back, reason kept); 'twin' (two accounts) stays on disk, pending, said in the boot log", { said: said.slice(-700), disk }); });
+row("B24e", () => { const root = scratch("translate-b24e"), W = path.join(root, "worlds"); fs.mkdirSync(W, { recursive: true });
+  fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ odd: { by: 7, ts: T0, name: "Odd" }, junk: "x", "acct:human:test:z": { by: "op", ts: T0, account: "human:test:z" } }));
+  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); M.saveGlobalBans(); console.log("G " + JSON.stringify(Object.keys(M.globalBans)));`],
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
+  ok(/G \["acct:human:test:z"\]/.test(said) && disk.odd?.by === 7 && disk.junk === "x" && /2 global ban\(s\) refused \(malformed/.test(said),
+    "B24e a malformed ban record (no string by, not an object) is refused, said at boot, and still on disk after a save (never dropped)", { said: said.slice(-400), disk }); });
+row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === "griefer" ? { subs: ["human:test:g1"], from: [".principals.json"] } : null);
+  const log0 = console.log; const lines: string[] = []; console.log = (...a: any[]) => lines.push(a.join(" "));
+  let out: any; try { out = M.restoreBans({ griefer: { by: "op", ts: T0, name: "griefer" } }, {}, { known, pending: {} }); } finally { console.log = log0; }
+  const text = M.globalBansText(out, {});
+  ok(lines.some((l) => /WARNING 1 pre-account global ban\(s\) bound .*check it: the name was typed, so a guest who wore it may have been someone else/.test(l)) && /griefer \(human:test:g1\).*check it/.test(text),
+    "B24f a ban bound by name alone is never silent: the boot line is a WARNING saying check it (a guest namesake was someone else), and the operators' list marks it", { lines, text }); });
 row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
   ok(!/name-only global ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
 
@@ -133,12 +148,23 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@25" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@27" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 26 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 26 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@26/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @26; a report reviewed under @25 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 28 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 28 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@28/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @28; a report reviewed under @27 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+
+row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  fs.writeFileSync(path.join(opt, "store", "boat.glb"), "the model the owner reviewed");
+  const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: opt, BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
+  const run = (a: string[]) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...a], { cwd: ENGINE, env }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  const dry = run(["translate", "--dry-run", "--no-founder-key", "--", "den"]), hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.out)?.[1] ?? "x";
+  fs.writeFileSync(path.join(opt, "store", "boat.glb"), "other bytes, the same count");   // the output changes, the report's counts don't
+  const up = run(["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", hash, "--", "den"]);
+  ok(/"output": "sha256:[0-9a-f]{64}"/.test(dry.out) && up.code !== 0 && /is not the one that was approved/.test(up.out) && /output digest/.test(up.out) && /Run --dry-run again/.test(up.out) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V6 the approved report pins the output (its digest): model bytes changed between the dry run and the apply (same counts) refuse it, saying run the dry run again; nothing written", { code: up.code, out: up.out.slice(-500) }); });
 
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);

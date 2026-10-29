@@ -23,6 +23,7 @@
 //   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log; the report's claim binds that owner to them, and they join as owner
 //   US12 a signed-in account of another name may not: the join says may false, the review is refused, nothing written
 //   US13 a malformed world-upgrade (approved not 64 hex) spends no rate slot; a visitor asking about no such world is told not-old (review L3)
+//   US15 a non-owner's requests are rate-limited before the owner check runs (review full-260 L2)
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
@@ -124,7 +125,7 @@ function linkedWorld(name: string) { const real = oldWorld(name); const to = pat
 // ================= US: the join refusal and the operator's upgrade, on a real server =================
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64), OP4 = "9".repeat(64);
+const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64), OP4 = "9".repeat(64), NOB = "8".repeat(64);
 const sf = path.join(root, "sessions.json");
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
@@ -132,7 +133,8 @@ fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal"
   [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [ANN]: { sub: "human:test:ann", name: "Ann", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [BO]: { sub: "human:test:bo", name: "Robert", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
-  [OP4]: { sub: "human:test:op4", name: "Oren", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  [OP4]: { sub: "human:test:op4", name: "Oren", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [NOB]: { sub: "human:test:nob", name: "Nobody", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3,human:test:op4", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
@@ -230,6 +232,9 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
 { const r = await ask(OP4, "world-upgrade-review", { world: "rafters" }), u = r.ok ? await ask(OP4, "world-upgrade", { world: "rafters", approved: r.hash }, 120_000) : r;
   ok(u.ok === false && u.refused?.code === "refused" && /extra\/shared is a link .*replaced by the file it points to/.test(u.refused.reason) && !isWorldDir(rafters),
     "US14 the browser's upgrade of a world holding a link is refused in the boot notice's words (the splash shows the reason)", u.refused ?? u); }
+{ oldWorld("granary"); const RATE_N = 6, seen: any[] = [];   // review full-260 L2: the rate is checked before the owner check (a CLI run) it pays for
+  for (let k = 0; k <= RATE_N; k++) { const r = await ask(NOB, "world-upgrade-review", { world: "granary" }); seen.push(r.ok ? "ok" : r.refused?.code); }
+  ok(seen.slice(0, RATE_N).every((x) => x === "rights") && seen[RATE_N] === "rate", "US15 a signed-in non-owner's requests spend the rate too: RATE_N refused 'rights' (each an owner check), then 'rate' with no check run", seen); }
 { oldWorld("loft");
   const { WorldAgent } = await import("../../mcpl/agent.ts");
   const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });

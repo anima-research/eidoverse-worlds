@@ -10,6 +10,9 @@
 //   OB3  the upgrade's result carries the same list (the approved report's)
 //   OB4  a name another world's log on this server paired with an account is bound
 //   OB5  an account that already wears an id here: the owner role goes to that id (one person, one identity)
+//   BN1  a main-era world ban of a name nothing else in the log names: bound to main's one account for it, so that account is
+//        still banned after the upgrade (the authority's ban check, as at join); the hashed report lists it, with "check it"
+//   BN2  …a ban-only name main recorded no account for is listed unbound, with why and the bind command
 //   OR1  operator-repair bind <world> <name> <account>: the imported owner is worn by that account (signing in is them, with
 //        their roles); by id too; recorded in world.mod.jsonl as an operator repair, no account printed or logged
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
@@ -23,10 +26,15 @@
 //   OU4  an owner main recorded several accounts for is never recognised (even by name or one of those accounts); no sign-in neither
 //   OU5  (a) main's records bind the owner's name to another account (here on a TRUST_NAMES server): refused by name; that account is recognised
 //   OU6  (b) another account on this server already holds the signed-in name: refused by name
+//   OU7  a name is matched as the directory folds it (foldName), the same rule as OU6's check
+//   OC1  ownerRecognised is computed once per log head in a process; OC2 a refused join's owner check is capped (JOIN_CHECKS)
 //   CL1  --claim on an ownerless world: the upgrader's account is its owner, the report says so (claim), no warning, the result names them
 //   CL2  …everyone else keeps main's ownerless rights (newcomers and guests build, edit others, generate; never fly)
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
+//   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
+//   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
+//   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -37,6 +45,11 @@ import { directoryAt } from "../../server/directory.ts";
 import { directoryFileIn } from "../../server/keyfiles.ts";
 import { readLog, fold } from "../../shared/protocol/fold.js";
 import * as R from "../../shared/protocol/roles.js";
+import { openLive } from "../../server/livehost.ts";
+import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
+import { request, operatorRepair } from "../../shared/protocol/authority.js";
+import { banOf } from "../../shared/protocol/authority/rights.js";
+import { claimWords } from "../../client/lib/upgradeview.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -148,6 +161,8 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OU3 a different name (Annie) is refused; so is a bound owner's name (Bo) on another account, and a builder's name (Cy)", { annie, boName, cy }));
   row("OU4", () => ok(mica.recognised === null && /several accounts for the owner mica/.test(mica.why) && none.recognised === null && /not signed in/.test(none.why),
     "OU4 an owner main recorded several accounts for (mica) is not recognised, by name or by one of those accounts; no sign-in isn't either", { mica, none }));
+  const dotted = of("human:test:new", "A.nn");
+  row("OU7", () => ok(dotted.recognised === "name" && dotted.owner === "Ann", "OU7 the name is matched as the directory folds names (foldName: case, punctuation, format characters), one rule for both checks: 'A.nn' is owner Ann", dotted));
   directoryAt(directoryFileIn(W)).resolve({ sub: "human:test:ann2", name: "ANN" });   // someone else signed in here as "ANN"
   const ann2 = of("human:test:new", "Ann"), own2 = of("human:test:ann2", "ann");
   row("OU6", () => ok(ann2.recognised === null && /held by more than one account/.test(ann2.why ?? "") && own2.recognised === "name",
@@ -160,6 +175,21 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const other = of("human:test:other", "Lu"), lu = of("human:test:lu", "Lu");
   row("OU5", () => ok(other.recognised === null && /bind the owner Lu to another account/.test(other.why ?? "") && lu.recognised === "name",
     "OU5 (a) main's .principals.json binds Lu to an account (a TRUST_NAMES server, where a name is its account): another account named Lu is refused; Lu's own account is recognised", { other, lu }));
+}
+
+// ================= OC: the owner check's cost (review full-260 L2) =================
+{ const root = scratch("owners-oc"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  const d = v1(W, "mews", [["world", "grant", { id: "Ann", role: "owner" }], ["Ann", "say", { text: "hi" }]]), logf = path.join(d, "log.jsonl");
+  const { ownerRecognised } = await import("./import-v1/world.ts");
+  const read0 = fs.readFileSync; let reads = 0; (fs as any).readFileSync = (f: any, ...a: any[]) => { if (path.resolve(String(f)) === logf) reads++; return (read0 as any)(f, ...a); };
+  let a: any, b: any, n1 = 0; try { a = ownerRecognised(d, "human:test:x", "Ann"); n1 = reads; b = ownerRecognised(d, "human:test:x", "Ann"); } finally { (fs as any).readFileSync = read0; }
+  row("OC1", () => ok(a?.recognised === "name" && same(a, b) && n1 >= 1 && reads === n1, "OC1 an apply asks twice (its report, then the write): the second answer is the first, by the log's head, with no second read and fold", { n1, reads, a }));
+  const q = Bun.spawnSync(["bun", "-e", `const U = await import("./server/upgrade.ts"); const who = (k) => ({ account: "human:test:j" + k, name: "J" + k });
+    const r = await Promise.all([0, 1, 2, 3, 4].map((k) => U.ownerOf("mews", who(k), { join: true }))); console.log("R " + JSON.stringify(r.map((x) => x === null ? "skipped" : "checked")) + " " + U.JOIN_CHECKS);`],
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 120_000 });
+  const got = /^R (\[.*\]) (\d+)$/m.exec(q.stdout.toString());
+  row("OC2", () => ok(got && same(JSON.parse(got[1]), ["checked", "checked", "skipped", "skipped", "skipped"]) && got[2] === "2",
+    "OC2 a burst of refused joins runs at most JOIN_CHECKS owner checks at once (each a CLI read and fold); the rest are skipped (may: false), not queued", { out: q.stdout.toString().slice(-300), err: q.stderr.toString().slice(-300) }));
 }
 
 // ================= CL: an ownerless world is claimed by whoever upgrades it (R 10-28) =================
@@ -178,10 +208,42 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "CL2 …everyone else keeps what main gave them in an ownerless world: newcomers and guests build, edit others' things and generate (builder gains generate), never fly", { n: n.permissions, g: g.permissions, o: o.role }));
   row("CL4", () => ok(d.up.code === 0 && d.report?.claim === undefined && same(Object.values(d.roles).map(([, r]) => r), ["owner"]) && !d.roles.Opal && d.result?.claimed === undefined,
     "CL4 --claim on a world that has an owner changes nothing: no claim in the report, Ann stays its only owner, nobody claimed it", { roles: d.roles, claim: d.report?.claim }));
+  v1(W, "den2", [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "say", { text: "mine" }]]);
+  const own = tagged(tool(root, ["translate", "--dry-run", "--no-founder-key", "--claim", "--json", "--", "den2"], { EIDO_UPGRADER_ACCOUNT: "human:test:ann", EIDO_UPGRADER_NAME: "Ann" }).out, "report-json")?.report;
+  const words = [claimWords(c.report?.claim), claimWords(own?.claim), claimWords({ by: "Ann", how: "name" }), claimWords(d.report?.claim)];
+  row("CL7", () => ok(/has no owner: you will become its owner/.test(words[0] ?? "") && own?.claim?.how === "bound" && !/no owner/.test(words[1] ?? "x") && /owner Ann, by the account main recorded/.test(words[1] ?? "")
+    && /owner Ann, recognised by your name/.test(words[2] ?? "") && !/no owner/.test(words[2] ?? "x") && words[3] === null,
+    "CL7 the splash words each claim: an ownerless world's (you become its owner), an owner recognised by account or by name (never 'no owner'), none", { words, claim: own?.claim }));
   const rb = tool(root, ["rollback", "barn"]);
   row("CL3", () => ok(rb.code === 0 && directoryAt(directoryFileIn(W)).idOfSub("human:test:op") === null && !fs.existsSync(path.join(W, "barn", "world.jsonl")) && fs.existsSync(path.join(W, "barn", "log.jsonl"))
     && fs.readdirSync(path.join(root, "backups")).some((f) => f.startsWith("barn-")),
     "CL3 rollback of a claimed upgrade forgets the claimant's identity with the rest; the old world is back and its backup kept", { code: rb.code, out: rb.out.slice(-300) }));
+}
+
+{ const root = scratch("owners-cl5"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "yard", [["Pip", "spawn", { id: "shed", lib: "x.glb" }], ["Pip", "comp", { id: "shed", type: "lock", data: true }],
+    ["Pip", "spawn", { id: "gate", lib: "x.glb" }], ["Pip", "comp", { id: "gate", type: "guard", data: true }]]);
+  const u = upgrade(root, "yard"); const live = () => openLive(path.join(W, "yard"), "yard", { catalogue: ENGINE_CATALOGUE, scripts: null });
+  const pip = u.roles.Pip?.[0] ?? u.dir.resolve({ sub: "human:test:pip", name: "Pip" }), rue = u.dir.resolve({ sub: "human:test:rue", name: "Rue" });
+  const a = request(live(), rue, "delete", { id: "shed", component: "lock" }), b = request(live(), pip, "delete", { id: "gate", component: "lock" });
+  row("CL5", () => ok(u.up.code === 0 && a?.ok && b?.ok && live().state().entities.shed.c.lock === undefined,
+    "CL5 no --claim: the ownerless world's lock and guard are member strength, so a regular (a newcomer, the placer) lifts them; nobody is locked out", { code: u.up.code, a: a?.refused, b: b?.refused }));
+  const w = live(), set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } });
+  const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
+  row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok,
+    "CL6 operator-repair set of an ownerless world's first owner: builder keeps generate (as the claim gives it), so regulars keep main's rights once the cap lifts", { set: set?.refused, n: n.permissions, rd: wc["role-defs"] }));
+}
+
+// ================= BN: a main-era ban still holds after the upgrade =================
+{ const root = scratch("owners-bn"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:zed": ["Zed", "human"] });
+  v1(W, "hall", [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "ban", { id: "Zed", reason: "griefing" }], ["Ann", "ban", { id: "Nemo" }]]);
+  const u = upgrade(root, "hall"); const zed = u.dir.resolve({ sub: "human:test:zed", name: "Zed" });
+  const live = openLive(path.join(W, "hall"), "hall", { catalogue: ENGINE_CATALOGUE, scripts: null }); const B = Object.fromEntries((u.report?.bans ?? []).map((b) => [b.name, b]));
+  row("BN1", () => ok(u.up.code === 0 && banOf(live, zed)?.reason === "griefing" && B.Zed?.account === "human:test" && /principals/.test(B.Zed?.from) && /check|someone else/.test(B.Zed?.check ?? "") && /^banned Zed: holds against their account/m.test(u.dry.out),
+    "BN1 banned in main (a name nothing else in the log names) → after the upgrade that account is still banned (the authority's check, as at join); the approved report and the dry run list it, saying to check a by-name binding", { code: u.up.code, ban: banOf(live, zed), B, out: u.up.code ? u.up.out.slice(-400) : undefined }));
+  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && /operator-repair\.ts bind hall "Nemo"/.test(B.Nemo?.bind ?? ""),
+    "BN2 a ban-only name main recorded no account for is listed unbound, with why and the bind command", B.Nemo));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

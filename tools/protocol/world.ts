@@ -1,8 +1,9 @@
 // tools/protocol/world.ts — found a world, or translate an old (v1) world once, in place or into a new name.
 //
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts found <name> --owner <your id> [--title "…"]
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --dry-run --no-founder-key
-//   WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --no-founder-key --approved <report hash> --operator-only-no-owner
+//   [EIDO_UPGRADER_ACCOUNT=<your account>] WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --dry-run --no-founder-key [--claim]
+//   [EIDO_UPGRADER_ACCOUNT=<your account>] WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <v1 world> [<new name>] --no-founder-key --approved <report hash> --operator-only-no-owner [--claim]
+//                    (--claim: a world with no owner becomes that account's; server/oldworlds.ts prints both with it)
 //                    (a translation names no founder: nothing can yet bind a key to the old world's owner, so --founder-key and
 //                    --approve-sig are refused; tier 0 stays empty, and the act records that no owner was attested)
 //   WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world> [--discard-changes]       (undo an in-place translation: the old files back, everything it made removed)
@@ -98,7 +99,7 @@ Nothing was changed.`);
 (The approval of ${approved} can't override this: a refusal is not a loss to approve.)`);
   if (hash !== approved) die(`the dry-run report of "${name}" is not the one that was approved: approved ${approved}, but the report of log.jsonl as it stands now hashes to ${hash} `
     + `(${report.source.size} bytes, sha256 ${report.source.sha256.slice(0, 16)}…; translator ${report.translator}, fold ${report.fold}). `
-    + `The old log or the tool changed since it was read: a report reviewed under an earlier translator than ${report.translator} is never approvable (each version translates differently). Run --dry-run again, read the new report, and approve THAT hash. If log.jsonl is still being written to (an old server running), stop it first. Nothing was changed.`);
+    + `The old log, the tool or the model bytes changed since it was read, so what would be written (the report's output digest) isn't what was approved: a report reviewed under an earlier translator than ${report.translator} is never approvable (each version translates differently). Run --dry-run again, read the new report, and approve THAT hash. If log.jsonl is still being written to (an old server running), stop it first. Nothing was changed.`);
   if (!noOwner) die(`"${name}": ${NO_FOUNDER}, so no owner can sign this approval. A translation runs on the operator's countersignature alone, and only when you say so: `
     + `translate ${name} --no-founder-key --approved ${approved} --operator-only-no-owner. The act will record that no owner was attested. Nothing was changed.`);
   // the operator's countersignature: this host's custody operator key signs the approval text (never the sequencer key)
@@ -127,11 +128,12 @@ function dryRun(D: string, name: string) {
   console.log(`dry-run report of "${name}" (nothing was written):`); console.log(JSON.stringify(report, null, 1));
   console.log(`trial period: ${report.trial}`);
   sayPeople(report.people);
+  for (const b of report.bans ?? []) console.log(b.account ? `banned ${b.name}: holds against their account (${b.account}:…, from ${b.from})${b.check ? `; check it: ${b.check}` : ""}` : `banned ${b.name} has no account yet (${b.why}), so the ban holds against no one who signs in: bind with ${b.bind}`);
   if (report.ownerWarning) console.log(`WARNING: ${report.ownerWarning}`);
   console.log(`report-hash ${hash}`);
   if (rest.includes("--json")) console.log(`report-json ${JSON.stringify({ report, hash })}`);   // one line for a program (the server's world-upgrade-review)
   if (report.refused) { console.error(report.refused); process.exit(1); }
-  console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
+  console.log(`to translate: approve exactly this report. translate ${name} --no-founder-key --approved ${hash} --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's operator key countersigns, the act records that no owner was attested, and tier 0 stays empty)`);
 }
 const sourceOf = (f: string) => { const b = fs.readFileSync(f); return { size: b.length, sha256: crypto.createHash("sha256").update(b).digest("hex") }; };
 const sourceChanged = (f: string, was: { size: number; sha256: string }) => { const now = sourceOf(f); return now.size !== was.size || now.sha256 !== was.sha256 ? now : null; };

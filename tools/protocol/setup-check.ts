@@ -129,10 +129,11 @@ await s.stop();
   await e.stop(); }
 { const W5 = worldsDir("w5"); fs.writeFileSync(path.join(W5, ".operators.json"), JSON.stringify({ operators: ["Ann"] }));
   const e = await start(W5);
-  ok(e.dead && /isn't an account/.test(e.log()) && /\.operators\.json/.test(e.log()), "SU5 a bare name in the operators file refuses to boot, naming the file", e.log().slice(-300));
+  ok(!e.dead && /REFUSED: .*\.operators\.json lists "Ann", which isn't an account/.test(e.log()) && setupLines(e.log()).length === 1,
+    "SU5 a bare name in the operators file is refused loudly, naming the file; the server boots (no lockout) and, with no operator left, prints the setup link", e.log().slice(-300));
   await e.stop(); }
 { const W6 = worldsDir("w6"); const e = await start(W6, { SERVER_OPERATORS: "Ann" });
-  ok(e.dead && /setup link/.test(e.log()) && /SERVER_OPERATORS=human:discord:/.test(e.log()), "SU5 the boot error for a bare SERVER_OPERATORS name mentions the setup link", e.log().slice(-300));
+  ok(!e.dead && /setup link/.test(e.log()) && /SERVER_OPERATORS=human:discord:/.test(e.log()) && setupLines(e.log()).length === 1, "SU5 the refusal of a bare SERVER_OPERATORS name mentions the setup link, and the link is printed", e.log().slice(-300));
   await e.stop(); }
 
 // ---- an agent claims it, by Bearer ----

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { TRUST_NAMES } from "../../../server/config.ts";
-import { directoryFor, mintId, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { directoryFor, mintId, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
 import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
 import { agentTokens, HN_ISS } from "../../../server/auth.ts";
 import { custodyAt, modLogAt } from "../../../server/custody.ts";
@@ -125,7 +125,9 @@ function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null,
   if (owner?.how === "name") who(owner.by, { sub: owner.account, from: "bound by name (provisional): they upgraded it as its owner" });
   // a name this log pairs with no account: the one account main recorded for it elsewhere on this server (mainknew.ts), as
   // main's own grant resolved a name (one match binds); several, or none that is an account here, stay imported and are listed
-  if (known && !TRUST_NAMES) for (const n of [...names].sort()) {
+  // …a ban's target too, when nothing else names them (a ban-only name), or their main-era ban would name no account here
+  const banOnly = [...banned].filter((b) => ![...names].some((n) => n.toLowerCase() === b.toLowerCase()));
+  if (known && !TRUST_NAMES) for (const n of [...names, ...banOnly].sort()) {
     if (isAccount(n) || ["door", "world", "sim", "*"].includes(n) || /^bhv:/i.test(n) || memo.has(nameKey(n)) || agents.names.has(n.toLowerCase())) continue;
     const k = known(n); if (!k) { unbound.set(n, "main recorded no account for this name"); unboundCode.set(n, "none"); continue; }
     const accts = [...new Set(k.subs.map(liveAccount))];
@@ -154,15 +156,22 @@ export function oldOwners(srcDir: string) {
     return { name: byName ? k : a.name, account: byName ? null : a.account, unbound: byName ? "none" as const : a.unbound }; });
 }
 /** May this signed-in account upgrade the old world as its owner (R 10-28)? "bound": main's records bind an owner to exactly this
- *  account; "name": an owner main recorded NO account for has exactly this name, any case (provisional: an alpha risk the owner
+ *  account; "name": an owner main recorded NO account for has this name, as the directory folds names (foldName; provisional: an alpha risk the owner
  *  accepted, until durable accounts); else null, and why. `ownerless`: the world has no owner at all (the upgrader claims it). */
+const recognisedSeen = new Map<string, ReturnType<typeof recognise>>();   // per process, by log head: an apply asks twice (report, write)
 export function ownerRecognised(srcDir: string, account: string | null, name: string | null) {
+  let head = ""; try { const st = fs.statSync(path.join(srcDir, "log.jsonl")); head = `${st.size}:${st.mtimeMs}`; } catch { /* oldOwners says */ }
+  const key = JSON.stringify([path.resolve(srcDir), head, account, name]);
+  if (!recognisedSeen.has(key)) recognisedSeen.set(key, recognise(srcDir, account, name));
+  return recognisedSeen.get(key)!;
+}
+function recognise(srcDir: string, account: string | null, name: string | null) {
   const owners = oldOwners(srcDir), ownerless = owners.length === 0;
   if (!account) return { recognised: null, ownerless, why: "not signed in" };
   if (ownerless) return { recognised: null, ownerless, why: "the world has no owner: an operator upgrades it and becomes its owner" };
   const bound = owners.find((o) => o.account !== null && o.account === account);
   if (bound) return { recognised: "bound" as const, owner: bound.name, ownerless };
-  const named = name ? owners.find((o) => o.unbound === "none" && o.name.toLowerCase() === name.toLowerCase()) : undefined;
+  const named = name ? owners.find((o) => o.unbound === "none" && foldName(o.name) === foldName(name)) : undefined;   // the directory's one rule for a name (accountsNamed)
   if (named) {   // R 10-28: only if main never bound the name to another account, and only one account here holds the name
     const worlds = path.dirname(path.resolve(srcDir));
     const main = mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) })(named.name)?.subs ?? [];
@@ -170,7 +179,7 @@ export function ownerRecognised(srcDir: string, account: string | null, name: st
     // a local:<name> (TRUST_NAMES) is the name itself, not another person holding it
     if (directoryFor(worlds).accountsNamed(name!).some((s) => s !== account && !s.startsWith("local:"))) return { recognised: null, ownerless, why: `the name ${name} is held by more than one account on this server: which one is the owner isn't guessed` };
     return { recognised: "name" as const, owner: named.name, ownerless }; }
-  const several = name ? owners.find((o) => o.unbound === "several" && o.name.toLowerCase() === name.toLowerCase()) : undefined;
+  const several = name ? owners.find((o) => o.unbound === "several" && foldName(o.name) === foldName(name)) : undefined;
   return { recognised: null, ownerless, why: several ? `main recorded several accounts for the owner ${several.name}: which one is yours isn't guessed` : "main's records don't make this account one of the world's owners" };
 }
 type OwnerClaim = { by: string; how: "bound" | "name"; account: string };
@@ -198,6 +207,15 @@ export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
       : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; });
   return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
+/** Who the translated world bans (its imported-bans, filed in world.mod.jsonl), as peopleOf says who holds a role: bound
+ *  {name, account, from, check?} or {name, account: null, why, bind}. `check`: bound by name alone, so a guest namesake isn't them. */
+export function bansOf(world: string, r: Any, describe: (id: string) => Any) {
+  return Object.keys(r.final?.translated?.["@world"] ?? {}).filter((k) => k.startsWith("imported-bans:")).map((k) => {
+    const d = describe(k.slice("imported-bans:".length)); const name = d?.name ?? k.slice(14);
+    return d?.account ? { name, account: d.account, from: d.from, ...(/^main's /.test(d.from ?? "") ? { check: `bound by name through ${d.from}: if the one banned was a guest wearing the name, this is someone else (lift it: operator-repair unban)` } : {}) }
+      : { name, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
 /** The upgrade's safety net (R 10-27 "don't lock anyone out of their worlds"): words when no owner of the translated world is
  *  bound to an account, naming them, else null. A warning, never a refusal: an old-format world admits nobody until it is
  *  upgraded, and after it a server operator enters every world and can bind its owner (operator-repair bind) or set one. */
@@ -210,7 +228,10 @@ export function ownerWarning(world: string, people: Any[] = []): string | null {
 }
 /** Whether a claim applies: asked for, and no owner in the translated world (people). */
 const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null) {
+/** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
+ *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
+const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r)) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
@@ -219,6 +240,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed },
     translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
     entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
+    output,                      // the translated state's digest (outputOf): a pull or new model bytes between review and apply changes it
     actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
     guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
     ...(r.stats.launches !== undefined ? { physics: { launches: r.stats.launches, rests: r.stats.rests } } : {}),
@@ -231,6 +253,7 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     ...(r.stats.effects ? { effects: r.stats.effects } : {}),   // the derived particle effects stored with the world (translate-v1 particlesOf)
     ...(r.stats.adjusted ? { adjusted: r.stats.adjusted } : {}),   // values brought to main's reading or the registry's ranges, each with why (translate-v1 toSpec, lightParity)
     people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
+    bans,                        // who stays banned, and the account each ban holds against (bansOf)
     ownerWarning: claim ? null : ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
     ...(claim ? { claim: CLAIM } : owner ? { claim: { by: owner.by, how: owner.how } } : {}),   // the upgrader becomes (or is) its owner (translateV1World claim)
     refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
@@ -250,7 +273,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
   const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent });
   const people = peopleOf(world, r, m.describe);
-  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner);
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe));
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -305,8 +328,10 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
-  if (approval) { const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner).hash;
-    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now} (the old log or the tool changed since the dry run). Nothing written`); }
+  if (approval) { const dry = identityMapper(old, directoryFor(srcWorlds), { mint: false, known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });   // the dry run's ids: its output digest
+    const output = outputOf(translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: dry.who, content: hostContent }));
+    const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output).hash;
+    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
   // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
@@ -364,11 +389,9 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (claiming) { const acct = claim!.account;
       let id = dir.idOfSub(acct) ?? Object.entries(planned).find(([, e]) => e.subs.includes(acct))?.[0] ?? null;
       if (!id) { id = mintId(); planned[id] = { name: String(claim!.name || "someone").slice(0, 64), subs: [acct], kind: "account", since: Date.now() }; }
-      const set = (component: string, value: Any) => { const x: Any = operatorRepair(live, id!, "set", { id: "@world", component, value });
-        if (!x?.ok) throw new Error(`the claim was refused (${component}): ${x?.refused?.code}: ${x?.refused?.reason}`); };
-      set(`roles:${id}`, { role: "owner" });
-      const rd = live.state().entities?.["@world"]?.c?.["role-defs"] ?? {};
-      set("role-defs", { ...rd, builder: { ...(rd.builder ?? {}), can: { ...(rd.builder?.can ?? {}), generate: true } } });
+      // operatorRepair: the first owner's builder keeps generate (roles.js firstOwnerRoleDefs)
+      const x: Any = operatorRepair(live, id!, "set", { id: "@world", component: `roles:${id}`, value: { role: "owner" } });
+      if (!x?.ok) throw new Error(`the claim was refused: ${x?.refused?.code}: ${x?.refused?.reason}`);
       claimed = { id, name: planned[id]?.name ?? dir.nameOf(id) ?? "someone", account: acct.split(":").slice(0, 2).join(":") };
       people.unshift({ name: claimed.name, role: "owner", account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
     for (const [h, p] of addressed) recordEido(h, p);

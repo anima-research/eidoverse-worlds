@@ -24,6 +24,12 @@ function section(title, items) {
   else { const ul = el('ul'); for (const t of items) ul.append(el('li', null, t)); s.append(ul); }
   return s;
 }
+/** The report's claim in words: a string (world.ts CLAIM) is an ownerless world's, {by, how} an owner recognised as the upgrader. */
+export function claimWords(claim) {
+  if (typeof claim === 'string') return 'This world has no owner: you will become its owner when you upgrade it.';
+  if (!claim || typeof claim !== 'object') return null;
+  return `You're its owner ${claim.by}${claim.how === 'name' ? ', recognised by your name (provisional, until durable accounts)' : ', by the account main recorded'}: the upgrade keeps ${claim.by}'s role on your account.`;
+}
 /** The dry-run report as a person reads it: what carries, what is mapped, what has no home, what is refused. */
 export function reportView(report, hash) {
   const R = report ?? {}, box = el('div', 'sp-up-report');
@@ -38,7 +44,8 @@ export function reportView(report, hash) {
   box.append(section('Unmapped, kept as imported', (R.unmapped ?? []).map((u) => `${u.component} on ${u.id}: ${(u.fields ?? []).join(', ')} (${u.as})`)));
   box.append(section('Dropped by design', Object.entries(R.dropped ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)));
   box.append(section('People with a role', (R.people ?? []).map((p) => p.account ? `${p.role} ${p.name}: bound to their account (${p.account}, from ${p.from})` : `${p.role} ${p.name}: no account yet (${p.why}); bind with ${p.bind}`)));
-  if (R.claim) box.append(el('p', 'sp-up-claim', 'This world has no owner: you will become its owner when you upgrade it.'));
+  box.append(section('Banned', (R.bans ?? []).map((b) => b.account ? `${b.name}: holds against their account (${b.account}, from ${b.from})${b.check ? `; check it: ${b.check}` : ''}` : `${b.name}: no account yet (${b.why}), so it holds against no one who signs in; bind with ${b.bind}`)));
+  const cw = claimWords(R.claim); if (cw) box.append(el('p', 'sp-up-claim', cw));
   if (R.ownerWarning) box.append(el('p', 'sp-up-err sp-up-owners', `Warning: ${R.ownerWarning}`));
   box.append(section('Refused', R.refused ? [R.refused] : []));
   if (R.trial) box.append(el('div', 'sp-up-note', R.trial));
@@ -61,7 +68,6 @@ export function showOldFormat(root, refused, world) {
       const r = await ask('world-upgrade-review', { world });
       area.textContent = '';
       if (!r.ok) { area.append(el('p', 'sp-up-err', `Couldn't review the upgrade: ${refusedWords(r)}`)); return; }
-      if (r.owner) area.append(el('p', 'sp-up-note', r.owner.recognised === 'name' ? `You're recognised as its owner ${r.owner.name} by your name (provisional, until durable accounts).` : `You're its owner ${r.owner.name}, by the account main recorded.`));
       area.append(reportView(r.report, r.hash));
       if (r.report?.refused) { area.append(el('p', 'sp-up-err', 'This world can\'t be upgraded yet (see Refused).')); return; }
       const go = el('button', 'sp-up-btn sp-up-go', 'Back up and upgrade'); area.append(go);

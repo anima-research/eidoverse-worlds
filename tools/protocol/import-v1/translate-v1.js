@@ -122,7 +122,10 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@26";
+export const TRANSLATOR = "eidoverse/translate-v1@28";
+// @28 (fixB 10-28, review L29): only the first environment (localeCompare id order, as main drew) is mapped; a second no longer
+// overwrites the sky or adds a sun, it rides imported:environment. Output differs from @27 on a log with two environments.
+// @27 (fixB 10-28): the ownerless rights note says a lock is member strength there (rights.js lockStrength). Report differs from @26.
 // @26 (R 10-28): the base rung is written member, the word @17–@25 used is gone (no alias). Output differs from @25 wherever a rung is named.
 // @25 (R 10-28): main's sky.audio is @world.sky.audio (the sky takes it again), where @24 carried it as imported:sky.
 // @24 (R 10-28): main's rights written out (mainRights), its particle knobs a derived effect (particlesOf), FATES in the report.
@@ -213,7 +216,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@26";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@28";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -372,13 +375,14 @@ export function environmentPartsOf(host, env, has = {}) {
   if (Object.keys(rest).length) { Object.assign(left, rest); fields.push([Object.keys(rest).join(", "), null]); }
   return { world, things, left, fields };
 }
-/** Every environment in a v1 state, in id order, as project() places it: [{id (as written), host, parts}]. The first one's spawn
- *  and bounds go to @world; a later one's spawn is a spawn-point and its bounds ride imported:environment. */
+/** Every environment in a v1 state, as project() places it: [{id (as written), host, parts}]. Main drew only the first, by id in
+ *  localeCompare order (watervolumes.js environmentSettings): it is mapped; any other rides whole as imported:environment, listed. */
 export function environmentPlan(st) {
   const out = [], has = { terrain: st?.terrain != null };
-  for (const id of Object.keys(st?.entities ?? {}).sort()) { const env = st.entities[id]?.comp?.environment; if (env == null) continue;
-    const parts = environmentPartsOf(enc(id), env, { ...has }); if (parts.world.spawn) has.spawn = true; if (parts.world.bounds) has.bounds = true; if (parts.world.terrain) has.terrain = true;
-    out.push({ id, host: enc(id), parts }); }
+  const ids = Object.keys(st?.entities ?? {}).filter((id) => st.entities[id]?.comp?.environment).sort((a, b) => a.localeCompare(b, "en"));
+  for (const id of ids) { const env = st.entities[id].comp.environment;
+    if (out.length) { out.push({ id, host: enc(id), parts: { world: {}, things: [], left: env && typeof env === "object" && !Array.isArray(env) ? { ...env } : { value: env }, fields: [[`all of it (main drew only the first environment, ${out[0].id})`, null]] } }); continue; }
+    out.push({ id, host: enc(id), parts: environmentPartsOf(enc(id), env, { ...has }) }); }
   // a flat ground below the bounds' floor would count everyone standing on it as fallen (#248): bounds.min.y goes 2 m under it
   const b = out.find((x) => x.parts.world.bounds), t = out.find((x) => x.parts.world.terrain);
   const ground = t ? t.parts.world.terrain.height : st?.terrain?.kind === "flat" && Number.isFinite(st.terrain.height) ? st.terrain.height : undefined;
@@ -702,7 +706,7 @@ export function mainRights(st) {
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
   if (!owned) { world["role-defs"] = { member: { can: { ...OPEN_CAN } } };
     notes.push("main gave everyone builder and generate in a world with no owner; this protocol caps an ownerless world at member (roles.js roleIdOf), so member's permissions here are builder's and generate. "
-      + "Rank stays member: a lock (builder strength) and a who: builder gate refuse everyone until the world has an owner (operator-repair set)");
+      + "Rank stays member: a lock is member strength while there is no owner (anyone may lift it, as in main), and a who: builder gate refuses everyone until the world has an owner (the upgrader's claim, or operator-repair set)");
     if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`); }
   const dr = world["default-role"];
   return { world, report: { owned, newcomers: dr?.role ?? "member", guests: world.access ? "listed only" : dr?.guests ?? "member", ...(world["role-defs"] ? { memberCan: Object.keys(OPEN_CAN) } : {}), ...(world.access ? { access: world.access } : {}), notes } };
