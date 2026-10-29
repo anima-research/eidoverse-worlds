@@ -633,8 +633,8 @@ const cases: Case[] = [
       fs.writeFileSync(f, `import { runScript } from ${JSON.stringify(TREE + "shared/protocol/sandbox.js")};
 const r = runScript({ self: "b", key: "script:x", now: 1800000000000, seed: "ab".repeat(32), st: { entities: { b: { born: 1, c: {} } } }, event: { on: "use" },
   text: 'world.on("use", () => { const d = new Date(); world.set("self", "t/t", [d.getHours(), d.getTimezoneOffset(), String(d), Date(), new Date(2020, 0, 1).getTime(), Date.parse("2020-01-01T00:00"), new Date("2020-01-01 12:30").getTime(), d.toLocaleString(), d.toTimeString()]); })' });
-console.log(JSON.stringify(r.ops?.[0]?.value ?? r));\n`);
-      const out = (tz: string) => Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }).stdout.toString().trim();
+console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // done: exit (windows-latest held a finished bun child to the suite's 240 s, 10-29)
+      const out = (tz: string) => { const r = Bun.spawnSync(["bun", f], { env: { ...process.env, TZ: tz, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 }); return r.stdout.toString().trim() || `(no output: exit ${r.exitCode} signal ${r.signalCode})`; };
       return { utc: out("UTC"), tokyo: out("Asia/Tokyo") }; },
     good: (o) => o.utc.startsWith("[8,0,") && o.utc === o.tokyo },
   { id: "B23", what: "the authority's own cost is metered, written or not: a script whose runs write nothing is held to `runs` a minute (the server's configuration, and its refusal says so), and a sponsor to `cpu` ms of sandbox time (the owner tightens it in script-settings)", run(s) { cast(s);

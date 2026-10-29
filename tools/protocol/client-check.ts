@@ -36,6 +36,9 @@ import { pause, tryUntil, pageWaiter, WAIT_SCALE } from "./wait.ts";
 const IDS = idAliases();
 const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
+  // one page drives a whole editing session on ONE connection; the meter is checked elsewhere (scale-check), so here its time cap
+  // is the operator knob for a slower host (server/readmeter.ts), not a test subject (windows-latest 10-29: 4804 ms of 3000, HT8 + GR1 refused)
+  serverEnv: { EIDO_METER_SCALE: "3" },
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
     const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", "found", WORLD, "--owner", ME, "--title", "client check"], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: worldsDir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
@@ -405,8 +408,8 @@ try {
     const move = (m: number[]) => evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${m?.[0]}, clientY: ${m?.[1]} })), true)`);
     await move(m0); await sleep(400);
     const p0 = (await geo(0, 0)).P;
-    await move(m1); await sleep(400);
-    const p1 = (await geo(0, 0)).P;
+    await move(m1);   // the pebble's move, not a fixed 400 ms (macOS CI 10-29 read dp 0 at 400); a miss is F2's evidence
+    const p1 = (await tryUntil("the pebble moved", async () => { const P = (await geo(0, 0)).P; return P && Math.hypot(P[0] - p0[0], P[2] - p0[2]) > 0.01 ? P : null; }, { ms: 5000 })) ?? (await geo(0, 0)).P;
     const d = (u: number[], v: number[]) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
     const dp = d(p1, p0), da = A0 && A1 ? d(A1, A0) : null;
     check("F2 the pebble follows the pointer in the world's frame: its move = the pointer's on the plinth's top", !!da && Math.hypot(...d(dp, da)) < 0.02 && Math.hypot(...da) > 0.03, { dp, da, A0, A1, drag: await evalJson(`globalThis.__buildDrag?.()`) });
