@@ -324,7 +324,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A physics area is `physics-area {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
   overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
   running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where areas overlap the zone's priority decides.
-  The authority's track widens inside a boost and never narrows. shared/zone.js `physicsAreasOf`/`speedFactorAt`
+  The authority's track widens inside a boost and never narrows: a slow area is the honest client's and agent's
+  pace, not a rule the authority holds a modified client to (falls and jumps aren't slowed, so a narrower 3D
+  track would refuse an honest landing in mud). shared/zone.js `physicsAreasOf`/`speedFactorAt`
   is the one reader; shared/mover.js `stepWalk` (env.speedAt) and `stepSwim` (water.factor) apply it. Other kinds
   (direction, point, vortex) are planned, not open.
 - **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
