@@ -63,6 +63,13 @@ export function copyTree(src: string, dst: string) {
 export const linkInto = (target: string, at: string) => fs.symlinkSync(target, at, "junction");
 /** A symlink to a FILE (a junction is a directory link on Windows; a file symlink there needs Developer Mode). */
 export const linkFile = (target: string, at: string) => fs.symlinkSync(target, at, "file");
+/** Whether this process may make file symlinks: Windows without Developer Mode throws EPERM (a junction still works). */
+export function canLinkFiles(): boolean {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "canlink-"));
+  try { fs.writeFileSync(path.join(d, "t"), ""); linkFile(path.join(d, "t"), path.join(d, "l")); return true; }
+  catch (e: any) { if (e?.code === "EPERM") return false; throw e; }
+  finally { fs.rmSync(d, { recursive: true, force: true }); }
+}
 
 /** A list of directories from one environment variable, split on the platform's own separator (`:` on POSIX, `;` on
  *  Windows, like PATH). Splitting on ":" cut `C:\\…` at its drive letter (pretrans K21, CI Windows 10-22). */
