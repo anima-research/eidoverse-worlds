@@ -11,13 +11,15 @@
 //   FP4 the byte offsets are checked: a prefix that grew a byte, or a cache whose offset is off by one, boots the whole log (the
 //       state cache still used), equal to the fold
 //   FP5 a stale view (a say dropped from the cache's list) that passes the boot is found by the re-derive: BUG said, the cache
-//       discarded, the views rebuilt from genesis, and the readers agree with the whole-log boot again
+//       discarded, the views rebuilt from genesis, and the readers agree with the whole-log boot again; a WorldLog resyncs its clients
 //   FP6 views are carried only for a log with no purge: a purge after a tail boot reads the prefix in, and the boot after it reads
 //       the whole log, equal to the fold; a stale-guests seed is dropped with it
 //   FP7 a torn last line after a tail boot's covered line is cut, as readLogBytes cuts it
 //   FP8 a log replaced under a live world: a prefix read throws, never reads the other file
-//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster)
+//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster);
+//       a reader walking the prefix loads the rest at once (lazylog BULK)
 //   FP10 the readers rewritten not to scan (creatorOf, modlog, chat pages, client cuts) answer as their whole-log formulas
+//   FP11 the boot sweep's script peek (durable.ts fileIncludes) reads in chunks and finds a needle across a chunk's edge
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -217,12 +219,15 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
 { const dir = path.join(W, "fp5"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 400, "fp5"); w.saveCache(); grow(w, 10, "fp5");
   const c = cacheOf(dir); const says = c.views.says; ok(says.length > 3, "FP5 (setup) the cache lists says", says.length);
   c.views.says = says.slice(0, -2).concat([says.at(-2) + says.at(-1)]); fs.writeFileSync(cacheP(dir), JSON.stringify(c));   // the second-newest say in the prefix dropped
+  const wl = copyDir(dir, path.join(W, "fp5wl"));   // the same lie, under a WorldLog (review L21)
   const ref = copyDir(dir, path.join(W, "fp5-ref")); SC.dropCache(ref); const r = open(ref);
   const { r: b, lines } = await said(async () => { const b = open(dir); b.lied = J(b.saySeqs?.()); b.checked = await b.cacheChecked; return b; });
   ok(b.lied !== J(r.saySeqs?.()) && b.bootedFromCache === c.coversIndex, "FP5 (setup) a stale view that passes the boot's checks is booted from", { from: b.bootedFromCache });
   const d = first(readers(b), readers(r));
   ok(b.checked === false && lines.some((l) => /BUG: the fold cache.*\(views\)/.test(l)) && !fs.existsSync(cacheP(dir)) && J(b.saySeqs?.()) === J(r.saySeqs?.()) && !d,
-    "FP5 …the re-derive finds it: BUG said (views), the cache discarded, every view rebuilt from genesis, the readers as the whole-log boot", { checked: b.checked, lines, d }); }
+    "FP5 …the re-derive finds it: BUG said (views), the cache discarded, every view rebuilt from genesis, the readers as the whole-log boot", { checked: b.checked, lines, d });
+  const calls = []; const { r: L } = await said(async () => { const L = new WorldLog(path.basename(wl)); L.attach({ broadcast() {}, rightsChanged() {}, debug() {}, resync: (why) => calls.push(why) }); L.checked = await L.live.cacheChecked; return L; });
+  ok(L.checked === false && calls.length === 1, "FP5 …and a WorldLog over it asks its World to resync every client (the state was replaced under them)", { checked: L.checked, calls }); }
 
 // ---- FP6 ----
 { const dir = path.join(W, "fp6"); fs.mkdirSync(dir, { recursive: true }); const w = open(dir); grow(w, 300, "fp6"); w.saveCache(); grow(w, 10, "fp6");
@@ -263,7 +268,16 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
   const [offW, offOk] = wr(off.b), [onW, onOk] = wr(on.b); const read = left - onDisk(on.b);
   console.log(`  FP9 ${E.length} entries (${(fs.statSync(logP(dir)).size / 1e6).toFixed(1)} MB): boot ${off.ms.toFixed(0)} ms (+${off.rss.toFixed(0)} MB RSS) reading the whole log, ${on.ms.toFixed(0)} ms (+${on.rss.toFixed(0)} MB) from the tail (${left} lines left on disk); first write to a thing with ${K / ids.length | 0} sets ${offW.toFixed(1)} ms vs ${onW.toFixed(1)} ms (${read} prefix lines read)`);
   ok(left >= K && on.ms * 3 < off.ms, "FP9 the tail boot leaves the prefix on disk and is under a third of the whole-log boot", { on: on.ms, off: off.ms, left, from: on.b.bootedFromCache, sim: on.b.simFromCache });
-  ok(offOk && onOk && read < 20, `FP9 the first write to a thing with a long history reads its create line and the rate window, not its ${K / ids.length | 0} sets (creatorOf's born shortcut)`, { read }); }
+  ok(offOk && onOk && read < 20, `FP9 the first write to a thing with a long history reads its create line and the rate window, not its ${K / ids.length | 0} sets (creatorOf's born shortcut)`, { read }); 
+  { const t0 = performance.now(); let same = true; for (let q = 1; q <= 5000; q++) same &&= J(on.b.entries[q]) === J(off.b.entries[q]); const walk = performance.now() - t0;   // review L20
+    console.log(`  FP9 a reader walking 5000 prefix lines: ${walk.toFixed(0)} ms, ${onDisk(on.b)} lines left on disk after it`);
+    ok(same && onDisk(on.b) === 0, "FP9 a reader walking the prefix line by line loads the rest at once after a few thousand (lazylog BULK), and reads what the whole-log boot reads", { left: onDisk(on.b) }); } }
+
+// ---- FP11 (review L18): the boot sweep's script peek reads the log in chunks, and finds the bytes across a chunk's edge ----
+{ const D = await import("../../server/durable.ts"), f = path.join(root, "peek.jsonl"), M = 1 << 20, N = '"script:', E = M + N.length;   // E: the first read's size
+  const at = (bytes) => { fs.writeFileSync(f, bytes); return D.fileIncludes?.(f, N); };
+  const got = [at(""), at(N), at("x".repeat(E - 3) + N + "y"), at("x".repeat(3 * M) + N), at("x".repeat(3 * M) + N.slice(0, -1)), at("x".repeat(E - 4) + N.slice(0, 4) + "\n" + N.slice(4))];
+  ok(JSON.stringify(got) === JSON.stringify([false, true, true, true, false, false]), "FP11 fileIncludes: none, all, across the first read's edge, chunks later, a cut needle, a split one", got); }
 
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);
 process.exit(fail ? 1 : 0);

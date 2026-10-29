@@ -6,7 +6,8 @@
 // No world manifest: everything about a world arrives through its log.
 
 import { nameAtDoor } from "./names.ts";
-import { existsSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, appendFileSync, readdirSync } from "node:fs";
+import { fileIncludes } from "./durable.ts";
 import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
@@ -286,7 +287,7 @@ try { custodyFileIn(WORLDS_DIR); directoryFileIn(WORLDS_DIR); } catch (err) { co
 // Boot sweep: worlds load lazily on first touch, but a world with scripts
 // must wake WITH the server, not with its first visitor — otherwise a
 // restart leaves every timer dark until someone happens to sail past. Cheap
-// peek before paying for a real load: a byte-scan of the log for a script
+// peek before paying for a real load: a chunked byte-scan of the log for a script
 // component. (A world whose scripts were all since removed may load once for
 // nothing — harmless.)
 try {
@@ -294,7 +295,7 @@ try {
   for (const name of readdirSync(WORLDS_DIR)) {
     try {
       if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !isWorldSaved(name)) continue;
-      if (readFileSync(join(WORLDS_DIR, name, "world.jsonl"), "utf8").includes('"script:')) { getWorld(name); woken++; }
+      if (fileIncludes(join(WORLDS_DIR, name, "world.jsonl"), '"script:')) { getWorld(name); woken++; }
     } catch (err) { console.error(`[boot] world ${name} peek failed`, err); }
   }
   if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their scripts run without visitors`);
@@ -1323,7 +1324,9 @@ startTick(FRAME_MS);
 // On the way out, everyone connected sleeps where they stand (every log line is already on disk: the authority appends
 // and fsyncs each one before its request returns).
 let shuttingDown = false;
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
+// Windows has no SIGTERM: Ctrl+C, Ctrl+Break (SIGBREAK) and closing the console (SIGHUP) run this; taskkill /F can't be caught
+// (the next boot then folds the whole log: correct, slower). SIGHUP is Windows-only: nohup's ignore stays on POSIX (review L23)
+for (const sig of ["SIGINT", "SIGTERM", ...(process.platform === "win32" ? ["SIGBREAK", "SIGHUP"] : [])]) {
   process.on(sig, () => {
     if (shuttingDown) process.exit(0);
     shuttingDown = true;

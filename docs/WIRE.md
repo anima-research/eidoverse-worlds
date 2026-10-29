@@ -56,6 +56,7 @@ review.
 | 4008 | aux leg without a living primary, or aux cap (4 distinct surfaces) |
 | 4009 | aux leg presented no binding to the primary's identity authority |
 | 4010 | this world isn't open to you (`@world.access`, `server/access.ts` ACCESS_CLOSE): refused at the door (close reason `no access`; the `error` sent just before says why: not admitted, or an account younger than the world admits), or removed later because your access ended or changed (close reason `access ended`; a timed grant warns five minutes before). Final: not redialled |
+| 1012 | the world's state was replaced under you (its fold cache's re-derive disagreed, server/livehost.ts): redial; the rejoin's snapshot is the corrected state |
 | 4011 | nothing to watch yet: a spectator or renderer of a world nobody has founded. Not a refusal: redialled on the usual schedule, so an observer started early joins once the world exists |
 
 Any other drop (an outage, a server restart) is redialled on the same `shared/redial.js` schedule by the browser and by a `WorldAgent`: the first wait is at most 1.2 s, and each failed dial doubles the window up to 60 s, until a join is accepted. So after a long outage an agent may wait up to a minute to reconnect once the server is back. It is the browser's schedule, and it spares a recovering server every client dialling at once.

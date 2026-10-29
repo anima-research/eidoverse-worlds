@@ -3,8 +3,8 @@
 //   SC1 a boot from a valid cache uses it, folds the tail, equals the fold from genesis, and the background re-derive agrees;
 //       it is rewritten every N entries, atomically
 //   SC2 a corrupted cache: unparseable → folded from genesis; a tampered state → the re-derive finds it, says BUG, discards it,
-//       and the live state is the fold from genesis again
-//   SC3 a cache written by another fold (foldKey) is never read
+//       and the live state is the fold from genesis again; SC2b a re-derive that can't run is "couldn't verify", not a BUG
+//   SC3 a cache written by another fold (foldKey) is never read; SC3b nor one whose fold sources can't be read (no throw)
 //   SC4 a log cut back and regrown past the cache (another line at coversIndex) → not read
 //   SC5 a purge: the cache holding the purged value leaves the disk at once; a purge after coversIndex → not read
 //   SC6 a fork carries no cache, and the source's cache dropped in a fork is not read
@@ -79,11 +79,29 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
   ok(x.checked === false && canon(x.state()) === truth(dir) && x.state().entities["t-0"].c.label === "thing 0" && !fs.existsSync(cacheP(dir)) && l2.some((l) => /BUG: the fold cache/.test(l)),
     "SC2 …the re-derive finds it: BUG said, the cache discarded, the live state the fold from genesis", { checked: x.checked, label: x.state().entities["t-0"].c.label, lines: l2 }); }
 
+// ---- SC2b (review L16): a re-derive that can't run (here: the log away when the Worker reads it) is not a disagreement ----
+{ const { dir, w } = world("b2", 3, 1000); w.saveCache(); const log = path.join(dir, "world.jsonl");
+  const { r: x, lines } = await said(async () => { const x = reopen(dir); fs.renameSync(log, `${log}.away`); x.checked = await x.cacheChecked; fs.renameSync(`${log}.away`, log); return x; });
+  ok(x.bootedFromCache != null && x.checked === null && fs.existsSync(cacheP(dir)) && !lines.some((l) => /BUG/.test(l)) && lines.some((l) => /couldn't be verified/.test(l)),
+    "SC2b a re-derive that fails to run says it couldn't verify, keeps the cache and the booted state (no BUG, no refold)", { checked: x.checked, from: x.bootedFromCache, lines }); }
+
 // ---- SC3 ----
 { const { dir, w } = world("c", 3, 1000); w.saveCache();
   const c = cacheOf(dir); c.foldKey = "another fold"; c.state.entities["t-0"].c.label = { v: "read by another fold" }; fs.writeFileSync(cacheP(dir), JSON.stringify(c));
   const { r: b, lines } = await said(() => reopen(dir));
   ok(b.bootedFromCache == null && canon(b.state()) === truth(dir) && lines.some((l) => /another fold/.test(l)), "SC3 a cache from another fold (foldKey) is not read: the boot is the fold from genesis", { from: b.bootedFromCache, lines }); }
+
+// ---- SC3b (review L17): a fold source that can't be read refuses the cache (said once, the failure memoised), never throws ----
+{ const { dir, w } = world("c2", 3, 1000); w.saveCache();
+  const code = `import fs from "node:fs"; let n = 0; const r = fs.readFileSync;
+    fs.readFileSync = (p, ...a) => String(p).endsWith("/shared/protocol/fold.js") ? (n++, (() => { throw new Error("EACCES: unreadable"); })()) : r(p, ...a);
+    const SC = await import(${JSON.stringify(new URL("../../server/statecache.ts", import.meta.url).href)}); const why = [];
+    const a = SC.readCacheFile(${JSON.stringify(dir)}, (s) => why.push(s)), b = SC.readCacheFile(${JSON.stringify(dir)}, (s) => why.push(s));
+    console.log(JSON.stringify({ a, b, why, n }));`;
+  const p = Bun.spawnSync([process.execPath, "-e", code], { env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  let o = null; try { o = JSON.parse(p.stdout.toString().trim().split("\n").pop()); } catch { /* says below */ }
+  ok(p.exitCode === 0 && o?.a === null && o.b === null && o.why.length === 2 && o.why.every((l) => /can't be read/.test(l)) && o.n === 1,
+    "SC3b an unreadable fold source: the cache is refused with why (no throw), and the failure is memoised (one read)", { exit: p.exitCode, o, err: p.stderr.toString().slice(0, 300) }); }
 
 // ---- SC4 ----
 { const { dir, w, call } = world("d", 4, 1000); const t0 = now;

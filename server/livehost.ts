@@ -147,7 +147,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
   // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
   const useCk = ckpt && !simCover ? ckpt : null;
-  const ckptSt = useCk ? (resumed?.snap ?? atCover ?? fold(entries, { until: useCk.seq })) : null;
+  // no fold at the checkpoint in hand: it and the sim's replay read the prefix, so a tail boot loads it in one read (review L19)
+  const ckptSt = useCk ? (resumed?.snap ?? atCover ?? (lazy?.prefix.loadAll(), fold(entries, { until: useCk.seq }))) : null;
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
   let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : purgesIn(entries), ...(simFrom ? { from: simFrom } : {}) });
@@ -195,7 +196,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     if (x.kind === "purge") atCk = null;
     else if (x.kind === "sim" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
     if (cache) { if (x.kind === "purge") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
-      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }
+      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }   // synchronous on purpose: ~17 ms per 1000 entries at 205k (review L22)
     opts.onAppend?.(seq, x);
     return seq;
   };
@@ -212,12 +213,13 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   w.bootedFromCache = resumed ? hit!.coversIndex : null;
   // the background re-derive: a Worker folds and chains the covered lines from genesis; a disagreement is a bug, never an outage
   w.cacheChecked = !hit || !resumed ? Promise.resolve(null) : verifyCache(path.join(dir, "world.jsonl"), hit.coversIndex, V ? { sim: !!V.sim } : null).then((r: Any) => {
-    const agrees = !r.error && r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1 && (!V || r.views === hit.viewsDigest);
+    if (r.error) { console.warn(`[world:${name}] the fold cache (line ${hit.coversIndex}) couldn't be verified (${r.error}): kept, checked again at the next boot`); return null; }
+    const agrees = r.digest === hit.digest && r.head === hit.coversHead && r.n === hit.coversIndex + 1 && (!V || r.views === hit.viewsDigest);
     if (agrees) return true;
-    console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.error ?? (r.head !== hit.coversHead ? "chain head" : r.digest !== hit.digest ? "state" : "views")}): discarded it and refolded from the log; please report this`);
+    console.error(`[world:${name}] BUG: the fold cache (${CACHE_FILE}, line ${hit.coversIndex}) disagrees with the log folded from genesis (${r.head !== hit.coversHead ? "chain head" : r.digest !== hit.digest ? "state" : "views"}): discarded it and refolded from the log; please report this`);
     dropCache(dir); cachedAt = -1; atCk = null;
     if (V) { try { loadPrefix(); } catch (x) {   // the file's lines aren't the ones the cache counted: every seq here may be off, so no write until a reopen reads it whole
-        w.wedged.log = `the log on disk isn't the one its fold cache described (${(x as Error).message}); reopen the world`; console.error(`[world:${name}] ${w.wedged.log}: writes refused until then`); return false; }
+        w.wedged.log = `the log on disk isn't the one its fold cache described (${(x as Error).message}); restart the server`; console.error(`[world:${name}] ${w.wedged.log}: writes refused until then`); return false; }
       X = logIndex(); entries.forEach((e, s) => X.add(s, e)); resetViews(w); }   // the seeded views go: every one rebuilt from genesis
     st = fold(entries); resim(); cache?.onRefold?.();
     return false;

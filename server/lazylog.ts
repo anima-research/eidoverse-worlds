@@ -8,6 +8,7 @@ import type { At } from "./statecache.ts";
 type Any = any;
 const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
 const CHUNK = 8 << 20;
+const BULK = 4096;   // single prefix lines read before the rest load at once: a reader walking the prefix (review L20)
 
 function readAt(fd: number, pos: number, len: number) {
   const b = Buffer.allocUnsafe(len); let off = 0;
@@ -38,10 +39,10 @@ export function openTail(logPath: string, coversIndex: number, coversHead: strin
   } finally { fs.closeSync(fd); }
 }
 
-/** Lines 1..hi-1 of E (on disk before byte `end`) load on first read. → {onDisk(), loadAll()}: how many are still on disk,
+/** Lines 1..hi-1 of E (on disk before byte `end`) load on first read (after BULK of them, all at once). → {onDisk(), loadAll()}: how many are still on disk,
  *  and read the rest at once (a purge, a refold from genesis). */
 function lazyPrefix(E: Any[], logPath: string, hi: number, end: number, ident: { dev: number; ino: number }) {
-  let offs: Float64Array | null = null, left = Math.max(0, hi - 1), fd: number | null = null;
+  let offs: Float64Array | null = null, left = Math.max(0, hi - 1), fd: number | null = null, reads = 0;
   const open = () => {
     if (fd !== null) return fd;
     const f = fs.openSync(logPath, "r"); const s = fs.fstatSync(f);
@@ -58,7 +59,11 @@ function lazyPrefix(E: Any[], logPath: string, hi: number, end: number, ident: {
     return (offs = o);
   };
   const put = (n: number, e: Any) => { Object.defineProperty(E, n, { value: posAt(e, n), writable: true, enumerable: true, configurable: true }); if (--left === 0) Object.setPrototypeOf(E, Array.prototype); return e; };
-  const load = (n: number) => { const o = lineStarts(); const [e] = readLog(readAt(open(), o[n], o[n + 1] - o[n] - 1)); return put(n, e); };
+  const load = (n: number) => { if (++reads > BULK) { loadAll(); return E[n]; }
+    const o = lineStarts(); const [e] = readLog(readAt(open(), o[n], o[n + 1] - o[n] - 1)); return put(n, e); };
+  const loadAll = () => { if (!left) return; const f = open(); const all = readLog(readAt(f, 0, end));
+    if (all.length !== hi) throw new Error(`${logPath}: ${all.length} lines before byte ${end}, and the fold cache covered ${hi}`);
+    for (let n = 1; n < hi && left; n++) if (!Object.hasOwn(E, n)) put(n, all[n]); };
   const slot = (k: string | symbol) => { if (typeof k !== "string") return -1; const n = +k; return n >= 1 && n < hi && String(n) === k && !Object.hasOwn(E, k) ? n : -1; };
   if (left) Object.setPrototypeOf(E, new Proxy(Array.prototype, {
     get(t, k, r) { const n = r === E ? slot(k) : -1; return n < 0 ? Reflect.get(t, k, r) : load(n); },
@@ -66,8 +71,6 @@ function lazyPrefix(E: Any[], logPath: string, hi: number, end: number, ident: {
   }));
   return {
     onDisk: () => left,
-    loadAll() { if (!left) return; const f = open(); const all = readLog(readAt(f, 0, end));
-      if (all.length !== hi) throw new Error(`${logPath}: ${all.length} lines before byte ${end}, and the fold cache covered ${hi}`);
-      for (let n = 1; n < hi && left; n++) if (!Object.hasOwn(E, n)) put(n, all[n]); },
+    loadAll,
   };
 }
