@@ -181,7 +181,7 @@ function oldNorm(st: any, phys: any = null) {
   { const R = world.roles ?? {}, owned = Object.entries<any>(R).some(([k, r]) => k !== "*" && r?.role === "owner");
     if (!R["*"] || !owned) world.roles = { ...R, "*": { role: "builder" } };
     if (!owned) { for (const [k, r] of Object.entries<any>(world.roles)) if (k !== "*" && r && typeof r === "object" && (r.role === undefined || r.role === "visitor")) world.roles[k] = { ...r, role: "builder" };
-      world["??role-defs"] = { builder: { can: { generate: true } } }; } }
+      world["??role-defs"] = { builder: { can: { generate: true } } }; world.ownerless = { role: "builder", why: "main let everyone build a world with no owner" }; } }
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }

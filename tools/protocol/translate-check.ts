@@ -55,11 +55,13 @@ row("R22g", () => { const { r, W } = tr([["world", "grant", { id: "vee", role: "
   const v = eff(W, "vee"), m = eff(W, "mo"), n = eff(W, "newcomer");
   ok(r.stats.divergences === 0 && v.role === "builder" && v.can.build && m.role === "builder" && m.rank === R.RANK.builder && !m.can.ban && n.role === "builder" && !n.can.fly,
     "R22g …a person main named below builder there is builder (main read no grant without an owner), '*' visitor too; a moderator's grant is kept but reads builder until there is an owner: nobody is moderator in an ownerless world", { v: v.role, m: [m.role, m.permissions], n: [n.role, n.can.fly], roles: Object.keys(W).filter((k) => k.startsWith("roles:")).map((k) => [k, W[k]]) }); });
-row("R22h", () => { const wc = (o: any) => ({ "default-role": { role: "builder", guests: "builder" }, ...o });
-  const at = (o: any, id = "x", anon = false) => R.roleIdOf(wc(o), id, { anon });
+row("R22h", () => { const wc = (o: any, open = true) => ({ "default-role": { role: "builder", guests: "builder" }, ...(open ? { [R.OWNERLESS_OPEN]: { role: "builder" } } : {}), ...o });
+  const at = (o: any, id = "x", anon = false, open = true) => R.roleIdOf(wc(o, open), id, { anon });
   ok(at({ "roles:x": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "member" } }) === "member" && at({}, "g", true) === "builder"
-    && at({ "roles:o": { role: "owner" }, "roles:x": { role: "moderator" } }) === "moderator",
-    "R22h roles.js: a world with no owner caps everyone at builder (never moderator), raises nobody, and lets a guest be builder; an owner lifts the cap"); });
+    && at({ "roles:o": { role: "owner" }, "roles:x": { role: "moderator" } }) === "moderator"
+    && at({ "roles:x": { role: "builder" } }, "x", false, false) === "member" && at({}, "n", false, false) === "member" && at({ [R.OWNERLESS_OPEN]: { role: "moderator" } }, "y") === "member"
+    && R.effectiveOf(TV1.translate(log([])).final.translated["@world"], "n").role === "builder",
+    "R22h roles.js: an ownerless world its translation opened (imported:ownerless builder) caps at builder (never moderator) and raises nobody; any other ownerless world caps at member, whatever its grants or default-role say; an owner lifts the cap"); });
 row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind === "change");
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });

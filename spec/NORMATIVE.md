@@ -68,7 +68,7 @@ does, and no role overrides it).
 | Built-in roles | member: none · builder: build, editOthers, scripts · moderator: those + pauseScripts, mute, kick, ban, grantRoles · owner: all | trial · lead |
 | Granting | only roles ranked below yours, with only permissions you hold | trial · lead |
 | What a thing admits (`who`) | on grabbable, physics, station and each reaction handler: a role id (that rank or above), `{permission}` (anyone holding it, whatever the role is called) or `{roles: [...]}` (exactly those; an owner always). Absent: anyone who may use the thing | trial · lead (house markup) |
-| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than builder | default · house 22:03Z (starter config, switched on) |
+| Last owner | `@world.keep-owner` absent or true: a change leaving no owner is refused (`last-owner`); false: a world may be ownerless on purpose (the host operator can mend it); a world with no owner gives nobody more than member, or builder where its translation wrote `imported:ownerless` | default · house 22:03Z (starter config, switched on) |
 | Timed roles | `until` up to a year; never on owner; ended by the authority's logged act | trial · lead |
 | Locks | `lock: true`; its strength is its setter's rank now (read from the log), member in a world with no owner; that rank or above may act through it (`throughLock`) or lift it; lower is refused; no levels | default · lead (R 10-20; house 21:59Z) |
 | Caps | mute ≤ 7 days · a kick has no length (out now, back at once: R 10-28; a timed exclusion is a ban) · reason ≤ 500 characters | trial · lead |

@@ -20,6 +20,7 @@ import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
 import { CSS_NAMES } from "./cssnames.js";
+import { OWNERLESS_OPEN } from "../../../shared/protocol/roles.js";
 import { mapGrassArgs } from "../../../shared/flora_args.js";
 import { repairComps, repairWorld, renameFields, SHAPES_VERSION, OLD_LIGHT_DECAY } from "../../../shared/protocol/shaperepair.js";
 import * as eidosim from "./eidosim-v1.js";   // HER engine (the first eidosim, dialect 3): what a v1 punt did. Importer-only.
@@ -124,7 +125,7 @@ function newReactions(rx) {
 
 export const TRANSLATOR = "eidoverse/translate-v1@30";
 // @30 (fixF 10-29, item 22): an ownerless world is builder for everyone (default-role, guests, every grant below it) with builder's
-// generate in role-defs, its '*' unread, under roles.js's cap at builder; @24-@29 widened member's role-defs instead. Output differs there.
+// generate in role-defs, its '*' unread, and @world imported:ownerless lifting roles.js's ownerless cap to builder; @24-@29 widened member's role-defs instead. Output differs there.
 // @29 (R 10-28 item 50; @27/@28 are fixB's): main's vehicle minY/maxY are two hidden hull-only walls (collider {blocks: ['hulls']}) at [0, y, 0],
 // set off by the hull's measured box (translate's boxOf: the host's catalogue), and its water.speed a physics-area {kind: speed} on
 // the water's zone; neither rides imported:* any more. Output differs from @28 there.
@@ -722,8 +723,9 @@ export function mainRights(st) {
     world["default-role"] = { ...dr, role, ...(role && role !== "owner" ? { guests: role } : {}) };
     if (dr.can && Object.keys(dr.can).length) notes.push(`main let guests (no account) ${Object.keys(dr.can).join(" and ")} here too; this protocol's default-role.can reaches people with an account only`); }
   else { world["default-role"] = { role: "builder", guests: "builder" }; world["role-defs"] = { builder: { can: { generate: true } } };
+    world[OWNERLESS_OPEN] = { role: "builder", why: "main let everyone build a world with no owner" };   // lifts roles.js's ownerless cap to builder
     notes.push("main gave everyone builder and generate in a world with no owner, whatever its grants said: here everyone is builder (newcomers, guests, and anyone granted less) and builder generates, never flies. "
-      + "This protocol caps an ownerless world at builder (roles.js roleIdOf), so a moderator's grant reads builder until the world has an owner (the upgrader's claim, or operator-repair set); a lock is member strength until then (anyone who may build lifts it, as in main)");
+      + "This protocol caps an ownerless world at member unless its translation says otherwise (roles.js OWNERLESS_OPEN, written here: the cap is builder), so a moderator's grant reads builder until the world has an owner (the upgrader's claim, or operator-repair set); a lock is member strength until then (anyone who may build lifts it, as in main)");
     if (DOOR_OF[star?.role]) notes.push(`main ignored '*' ${star.role} while the world had no owner (everyone came in): no access is written`);
     else if (star) notes.push(`main ignored '*' while the world had no owner: it is not written`); }
   const dr = world["default-role"];

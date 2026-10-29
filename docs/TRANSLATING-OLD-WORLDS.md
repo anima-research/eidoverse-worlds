@@ -58,7 +58,9 @@ report lists each one):
   for everyone, rank and all: `default-role` builder for newcomers and
   guests, every grant below builder written builder (main read none), and
   builder's `role-defs` carrying generate; its `'*'` is unread, as main's
-  was. This protocol caps an ownerless world at builder, so a `who: builder`
+  was, and `imported:ownerless {role: builder}`, which lifts this protocol's
+  ownerless cap (member: nobody could have granted more) to builder for
+  that world alone. So a `who: builder`
   gate admits everyone, a moderator's grant reads builder until the world
   has an owner (the upgrader's claim, below, or operator-repair set), and a
   lock is member strength until then (anyone who may build lifts it). The

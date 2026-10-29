@@ -1007,7 +1007,7 @@ world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused while `@world.keep-owner` is absent or true (starter config, on); an
 owner who sets it false may leave the world ownerless on purpose. A world with
-no owner gives nobody more than builder; its host operator can mend it. A role
+no owner gives nobody more than member (nobody could have granted more), or builder where its operator-approved translation carried `imported:ownerless {role: builder}` (main let everyone build there); its host operator can mend it. A role
 MAY carry `until` (epoch ms, the authority's clock): the grant ends then. The
 authority writes the end itself, as the system's act `expire-roles {ids}` and
 its change deleting each `roles:<id>` whose `until` has passed, within a second
