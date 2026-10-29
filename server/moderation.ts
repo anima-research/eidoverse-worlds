@@ -25,6 +25,8 @@ export const globalBans: Record<string, BanRec> = {};
 const refusedBans: Record<string, BanRec> = {};   // refused at boot (restoreBans): never enforced, written back as they were
 /** Pre-account bans (a name alone) main's records bind to no one account: kept on disk, never enforced, listed for operators. */
 export const pendingBans: Record<string, BanRec & { why: string }> = {};
+/** Why a ban bound by name alone is worth a look (review full-260 L11): the name was typed, so its wearer may not be that account. */
+export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may have been someone else; global-unban <the name> lifts it";
 export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
 export function saveGlobalBans() {
   try {
@@ -51,7 +53,7 @@ export function restoreBans(raw: Record<string, BanRec>, refused: Record<string,
         out[`acct:${subs[0]}`] ??= { ...b, name, account: subs[0], ...(legacy(subs[0]) ? { legacySub: true } : {}), boundFrom: `main's ${m!.from.join(" and ")}` }; bound.push(name); }
       else { pending[k] = { ...b, name, why: subs.length > 1 ? `main recorded ${subs.length} accounts under this name` : subs.length ? "main recorded an account that isn't one here" : "main recorded no account for this name" }; dropped.push(name); } }
   }
-  if (bound.length) console.log(`[mod] ${bound.length} pre-account global ban(s) bound to the one account main recorded for the name: ${bound.join(", ")}`);
+  if (bound.length) console.log(`[mod] WARNING ${bound.length} pre-account global ban(s) bound to the one account main recorded for the name — check it: ${BOUND_BY_NAME}: ${bound.join(", ")}`);
   if (dropped.length) console.log(`[mod] ${dropped.length} ${PENDING_WORDS.replace(/^pre-account ban/, "pre-account global ban(s)")}; kept on disk, not enforced (they would hit namesakes): ${Object.values(pending).map((b) => `${b.name} (${b.why})`).join(", ")}`);
   const no = Object.entries(refused);
   if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => b.name ?? k).join(", ")}`);
@@ -71,7 +73,7 @@ try {
 /** The operator's ban list in words (global-bans): the enforced bans, then the pre-account ones, listed and never enforced. */
 export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans): string {
   const day = (ts: number) => new Date(ts).toISOString().slice(0, 10);
-  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
+  const list = Object.entries(map).map(([k, b]) => `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}${b.boundFrom ? ` [bound by name from ${b.boundFrom}; check it: ${BOUND_BY_NAME}]` : ""}`);
   const pre = Object.values(pending).map((b) => `${b.name} — ${PENDING_WORDS} (${b.why}); by ${b.by}, ${day(b.ts)}${b.reason ? `: ${b.reason}` : ""}`);
   return [list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans", ...(pre.length ? [`pre-account bans, not enforced (${pre.length}):\n${pre.join("\n")}`] : [])].join("\n");
 }

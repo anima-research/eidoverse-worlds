@@ -1,7 +1,8 @@
 // tools/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-e  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
-//   B24a-d  name-only global bans: bound to main's one account at boot, else kept pending, listed, never enforced, liftable
+//   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
+//           enforced, liftable; a malformed record is refused and kept on disk
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
 //   V5      the translator is @27, and a report reviewed under @26 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
@@ -119,6 +120,12 @@ row("B24c", () => { const root = scratch("translate-b24"), W = path.join(root, "
   ok(/G \["acct:human:test:g1"\] P \["twin"\]/.test(said) && /1 pre-account global ban\(s\) bound/.test(said) && /pre-account global ban\(s\): bind to a person/.test(said)
     && disk["acct:human:test:g1"]?.reason === "spam" && disk.twin && !disk.griefer,
     "B24c at boot: main's .principals.json and another world's log bind 'griefer' to its account (written back, reason kept); 'twin' (two accounts) stays on disk, pending, said in the boot log", { said: said.slice(-700), disk }); });
+row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === "griefer" ? { subs: ["human:test:g1"], from: [".principals.json"] } : null);
+  const log0 = console.log; const lines: string[] = []; console.log = (...a: any[]) => lines.push(a.join(" "));
+  let out: any; try { out = M.restoreBans({ griefer: { by: "op", ts: T0, name: "griefer" } }, {}, { known, pending: {} }); } finally { console.log = log0; }
+  const text = M.globalBansText(out, {});
+  ok(lines.some((l) => /WARNING 1 pre-account global ban\(s\) bound .*check it: the name was typed, so a guest who wore it may have been someone else/.test(l)) && /griefer \(human:test:g1\).*check it/.test(text),
+    "B24f a ban bound by name alone is never silent: the boot line is a WARNING saying check it (a guest namesake was someone else), and the operators' list marks it", { lines, text }); });
 row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
   ok(!/name-only global ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
 
