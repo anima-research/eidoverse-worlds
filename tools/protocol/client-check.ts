@@ -874,10 +874,13 @@ try {
       carl.send(JSON.stringify({ type: "join", world: WORLD, id: "carl", avatar: "", replica: true }));
       await waitDisk(() => entries().some((e) => e?.kind === "say" && e.body?.text === "carl was here")); carl.close(); await sleep(300); }
     // CP6 a line typed while reconnecting is queued, then sent (the port dropped it as 'offline')
-    { await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(), true))`);
+    // the first redial is random in [0, 1.2 s] (shared/redial.js), so redials are held here until the queued line is seen
+    { await evalJson(`(window.__holdWs = true, window.WebSocket = new Proxy(window.WebSocket, { construct: (W, [u, p]) => new W(window.__holdWs ? String(u).replace('/ws', '/ws-held') : u, p) }), true)`);
+      await evalJson(`import('/lib/net.js').then((m) => (m.net.ws.close(), true))`);
       await waitFor(`import('/lib/net.js').then((m) => !m.net.joined)`, 3000);
       await type("typed while away");
       check("CP6 typed while disconnected: the page says it's queued", await lineLike(`/queued “typed while away” — reconnecting/`, 3000), (await lines() as string[]).slice(-2));
+      await evalJson(`(window.__holdWs = false, true)`);
       check("CP6 …and it reaches the log once the page is back", await waitDisk(() => entries().some((e) => e?.kind === "say" && e.actor === MY() && e.body?.text === "typed while away"), 20000), (await lines() as string[]).slice(-3)); }
     // CP4 /ban someone the page never saw: found by name through the world's lookup; everyone is told who, not why
     { const CARL = carlId;
