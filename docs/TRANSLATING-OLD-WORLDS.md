@@ -76,7 +76,7 @@ report lists each one):
   them and listed (`adjusted`), so the world's next edit isn't refused.
 - *Vehicle bands and swim speed* (translate-v1@29, R 10-28 item 50): a
   vehicle's `minY`/`maxY` are two hidden walls only hulls meet (`collider
-  {blocks: ['hulls']}`, at [0, y, 0], 20 km square: every legal x/z), set off by the hull's box as
+  {blocks: ['hulls']}`, at [0, y, 0], 200 km square: every legal x/z), set off by the hull's box as
   this host measures it, so the hull's origin keeps main's band exactly (a hull
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
   band). One hull layer: every vehicle meets every band. Each wall is locked

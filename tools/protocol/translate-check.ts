@@ -151,8 +151,8 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
 row("F50b", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9 } }],
     ["olga", "place", { id: "boat", pos: [5, 0, 5] }], ["olga", "place", { id: "boat", pos: [50, 0, 7] }], ["olga", "place", { id: "boat", pos: [90, 0, -3] }]]);
   const walls = Object.entries<any>(E).filter(([k]) => /^(floor|ceiling)-/.test(k)), touched = r.out.filter((e) => e.kind === "change" && /"(floor|ceiling)-[0-9a-f]{26}"/.test(JSON.stringify(e)));
-  ok(r.stats.divergences === 0 && walls.length === 2 && walls.every(([, c]) => c.transform.pos[0] === 0 && c.transform.pos[2] === 0 && c.transform.scale[0] * 200 >= 2e4) && touched.length === 1,
-    "F50b the vehicle walls stand at [0, y, 0] and span every legal x/z (±1e4 m): moving the vehicle in v1 re-places nothing (review delta-260 L-C)", { walls: walls.map(([k, c]) => [k, c.transform]), touched: touched.length }); });
+  ok(r.stats.divergences === 0 && walls.length === 2 && walls.every(([, c]) => c.transform.pos[0] === 0 && c.transform.pos[2] === 0 && c.transform.scale[0] * 200 >= 2e5) && touched.length === 1,
+    "F50b the vehicle walls stand at [0, y, 0] and span every legal x/z (±1e5 m): moving the vehicle in v1 re-places nothing (review delta-260 L-C)", { walls: walls.map(([k, c]) => [k, c.transform]), touched: touched.length }); });
 row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], minY: 0, maxY: 9 } }]]);
   const walls = Object.entries<any>(E).filter(([k]) => /^(floor|ceiling)-/.test(k));
   ok(walls.length === 2 && walls.every(([, c]) => c.lock === true) && /locked \(builder strength/.test(TV1.CARRIED.vehicle.to),
