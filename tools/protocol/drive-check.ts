@@ -34,7 +34,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
   ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack, dt)", "slack = slackNow(null, dt)", ["D13"]],
-  ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why);   // a throw keeps", "  try { commitLease(w, st, host, why); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
+  ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why, free);   // a throw keeps", "  try { commitLease(w, st, host, why, free); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
+  ["a failing commit retries forever", "protocol/authority/drive.js", "if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;", "throw x;", ["D18"]],
   ["a hull meets no hull-only wall", "protocol/authority/drive.js", "for (const k of hullOnly(st)) if (!fam.has(k))", "for (const k of []) if (!fam.has(k))", ["D15"]],
   ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\") && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
   ["bodies meet every layer", "protocol/authority/spatial.js", "solidOff(st.entities[id]?.c, \"bodies\");", "solidOff(st.entities[id]?.c);", ["D15"]],
@@ -256,4 +257,12 @@ await C("D17", "the door: blocks is a list of layers (bodies, hulls, things), ea
   return [!r.odd.ok && /isn't a layer/.test(r.odd.refused?.reason ?? "") && !r.twice.ok && !r.str.ok && !r.dyn.ok && /things/.test(r.dyn.refused?.reason ?? "") && r.good.ok && r.empty.ok,
     Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
+const LEASE_BEAT = 3100;   // just past LEASE.heartbeatMs
+await C("D18", "a commit that keeps throwing is bounded (review delta-260 L-A): the stream stops, the disk keeps failing, and after a few beats the lease is dropped, the helm freed, and it is said once, not every beat", () => {
+  const s = session(); s.board("vic"); s.call("drive", { id: "hull", pos: [0, 1, 3], q: [0, 0, 0, 1] }, "vic");
+  const warns: string[] = [], warn = console.warn; console.warn = (m: any) => { warns.push(String(m)); };
+  diskFails.on = true; const beats: string[] = [];
+  try { for (let i = 0; i < 12; i++) { try { s.sweep(LEASE_BEAT); beats.push("ok"); } catch (e) { beats.push("threw"); } } } finally { diskFails.on = false; console.warn = warn; }
+  const occ = s.w().presence.occupants ?? {}, said = warns.filter((m) => /drive-commit|commit/.test(m));
+  return [!s.w().presence.drives?.hull && occ.vic?.to !== "helm" && beats.includes("threw") && beats.slice(-3).every((b) => b === "ok") && said.length === 1, { beats, said, occ, lease: s.w().presence.drives?.hull }]; });
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
