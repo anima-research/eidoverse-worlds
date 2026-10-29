@@ -120,6 +120,13 @@ row("B24c", () => { const root = scratch("translate-b24"), W = path.join(root, "
   ok(/G \["acct:human:test:g1"\] P \["twin"\]/.test(said) && /1 pre-account global ban\(s\) bound/.test(said) && /pre-account global ban\(s\): bind to a person/.test(said)
     && disk["acct:human:test:g1"]?.reason === "spam" && disk.twin && !disk.griefer,
     "B24c at boot: main's .principals.json and another world's log bind 'griefer' to its account (written back, reason kept); 'twin' (two accounts) stays on disk, pending, said in the boot log", { said: said.slice(-700), disk }); });
+row("B24e", () => { const root = scratch("translate-b24e"), W = path.join(root, "worlds"); fs.mkdirSync(W, { recursive: true });
+  fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ odd: { by: 7, ts: T0, name: "Odd" }, junk: "x", "acct:human:test:z": { by: "op", ts: T0, account: "human:test:z" } }));
+  const r = Bun.spawnSync(["bun", "-e", `const M = await import(${JSON.stringify(MOD)}); M.saveGlobalBans(); console.log("G " + JSON.stringify(Object.keys(M.globalBans)));`],
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"));
+  ok(/G \["acct:human:test:z"\]/.test(said) && disk.odd?.by === 7 && disk.junk === "x" && /2 global ban\(s\) refused \(malformed/.test(said),
+    "B24e a malformed ban record (no string by, not an object) is refused, said at boot, and still on disk after a save (never dropped)", { said: said.slice(-400), disk }); });
 row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === "griefer" ? { subs: ["human:test:g1"], from: [".principals.json"] } : null);
   const log0 = console.log; const lines: string[] = []; console.log = (...a: any[]) => lines.push(a.join(" "));
   let out: any; try { out = M.restoreBans({ griefer: { by: "op", ts: T0, name: "griefer" } }, {}, { known, pending: {} }); } finally { console.log = log0; }

@@ -42,7 +42,7 @@ export function saveGlobalBans() {
 export function restoreBans(raw: Record<string, BanRec>, refused: Record<string, BanRec> = {}, { known = () => null, pending = {} }: { known?: (name: string) => Known | null; pending?: Record<string, BanRec & { why: string }> } = {}): Record<string, BanRec> {
   const out: Record<string, BanRec> = {}; const dropped: string[] = [], bound: string[] = [];
   for (const [k, b] of Object.entries(raw ?? {})) {
-    if (!b || typeof b.by !== "string") continue;
+    if (!b || typeof b !== "object" || typeof b.by !== "string") { refused[k] = b; continue; }   // malformed: kept on disk as it was, never enforced
     const sub = (b as any).sub;
     if (b.account && !b.legacySub && !ACCOUNT_SHAPE.test(b.account)) refused[k] = b;   // a legacySub record is matched by its own rule (banHoldsAgainst)
     else if (b.account || b.addr) out[k] = b;
@@ -56,7 +56,7 @@ export function restoreBans(raw: Record<string, BanRec>, refused: Record<string,
   if (bound.length) console.log(`[mod] WARNING ${bound.length} pre-account global ban(s) bound to the one account main recorded for the name — check it: ${BOUND_BY_NAME}: ${bound.join(", ")}`);
   if (dropped.length) console.log(`[mod] ${dropped.length} ${PENDING_WORDS.replace(/^pre-account ban/, "pre-account global ban(s)")}; kept on disk, not enforced (they would hit namesakes): ${Object.values(pending).map((b) => `${b.name} (${b.why})`).join(", ")}`);
   const no = Object.entries(refused);
-  if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => b.name ?? k).join(", ")}`);
+  if (no.length) console.log(`[mod] ${no.length} global ban(s) refused (malformed, or not an account shape; kept on disk, not enforced): ${no.map(([k, b]) => (b as any)?.name ?? k).join(", ")}`);
   return out;
 }
 try {
