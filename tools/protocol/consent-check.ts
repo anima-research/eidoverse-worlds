@@ -35,4 +35,16 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
     await makeConsentSync({ table: () => ({ allow: [], block: [], unlist: [] }), toast: () => {}, on: () => {}, later: () => {}, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(Q, "me", a) : { ok: true, table: tableOf(Q, "me") }; } }).sync();
     ok(sent.length === 1 && Q.consent.me.move === false && Q.consent.me.touch === false, "C9d a never-chosen client sends no gate where the authority holds one (a migrated refuse stays both off)", sent); }
   const c = await run({ "ew-pushable": "1" }); ok(JSON.stringify(c.sent.slice(1)) === '[{"move":true}]' && decide(c.Q, "pal", "me", "shove").mode === "allow", "C9c a client that chose move:true (main's ew-pushable kept) sends it", c.sent); }
+// C10 (review full-260 #2): allow/block naming an identity no one wears now is refused "gone" before the authority: a
+// guest's id is per connection (server/directory.ts), so a block on one who left (or from a past process) means nobody
+{ process.env.WORLDS_DIR ??= require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/consent-gone-"); process.env.JOIN_TOKEN ??= "test-door";
+  const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts"); const { directoryFor } = await import("../../server/directory.ts"); const { WORLDS_DIR } = await import("../../server/config.ts");
+  const dir = directoryFor(WORLDS_DIR); const acct = dir.resolve({ sub: "human:kit", name: "Kit" }), here = dir.resolve({ name: "Gus" }), left = dir.resolve({ name: "Ann" });
+  const me: any = { id: "me", actorId: dir.resolve({ sub: "human:me", name: "me" }) }, gus: any = { id: "Gus", actorId: here };
+  const w: any = { name: "w", clients: new Set([me, gus]), log: { request: async () => ({ ok: true }) }, debug: () => {} }; me.world = w;
+  const ask = (args: any) => new Promise<any>((res) => { REQUEST_MESSAGES.request({ c: me, ws: { send: (s: string) => res(JSON.parse(s)) }, expel: () => {}, sweep: () => {} } as any, { type: "request", id: 1, verb: "consent", args }); setTimeout(() => res(null), 500); });
+  const code = async (a: any) => (await ask(a))?.reply?.refused?.code ?? "ok";
+  const got = { left: await code({ block: left }), past: await code({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }), here: await code({ block: here }), acct: await code({ block: acct }) };
+  ok(got.left === "gone" && got.past === "gone", "C10 a guest who left, or an id no one has worn since the restart: refused gone", got);
+  ok(got.here !== "gone" && got.acct !== "gone", "C10b …a guest here now, and an account here or not, are not", got); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

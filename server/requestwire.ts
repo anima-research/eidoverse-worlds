@@ -53,6 +53,14 @@ export function whois(w: World, args: Any) {
       return { id, name: here.get(id) ?? dir.nameOf(id) ?? id, ...(said.has(id) ? { declares: said.get(id) } : {}), ...(k === "anon" ? { guest: true } : k === "imported" ? { imported: true } : {}), role: log.roleOf(id), here: here.has(id), banned: isBanned(log.live, id) }; });
   return { ok: true, name: q, people, ...(people.length ? {} : { note: `nobody called "${q}" has been in this world (it only knows people who were here)` }) };
 }
+/** allow/block naming an identity no one wears now: a guest's id is per connection, so one who left (or from a past process)
+ *  means nobody (review full-260 #2). The client prunes it on this refusal. */
+export function goneListing(w: World, args: Any) {
+  const id = typeof args?.allow === "string" ? args.allow : typeof args?.block === "string" ? args.block : null; if (!id) return null;
+  const e = directoryFor(WORLDS_DIR).entry(id);
+  if (e && (e.kind !== "anon" || [...w.clients].some((o) => o.actorId === id))) return null;
+  return { code: "gone", reason: "no one wears that identity now (a guest's ends with their visit)", fix: "close your move or touch gate to keep out someone you can't name" };
+}
 const reads = readMeter(); // per connection: reads and dry runs, by count and authority time (security pass 2 H-A)
 // …and every request by authority time: a refused step or write is cheap now, but nothing else bounds how much of the shared
 // thread one connection's stream of them takes (a guest is a fresh identity per connection, so the authority's per-identity
@@ -134,6 +142,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (metered) { const no = reads.check(c, Date.now()); if (no) { metered_no(no); return; } }
     const mark = metered ? reads.record(c, Date.now()) : null;
     if (verb === "whois") { reply(whois(w, args)); return; }   // the server's directory, not the authority's world
+    if (verb === "consent") { const gone = goneListing(w, args); if (gone) { reply({ ok: false, refused: gone }); return; } }
     // a caption carries the connection's leg generation, stamped here (never the client's word): a captioner that was
     // taken over (a newer leg of the same identity) can't write over its successor (shared/captions.js captionRefusal)
     if (verb === "caption") args.gen = c.legGen ?? 0;

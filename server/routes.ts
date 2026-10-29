@@ -27,7 +27,7 @@ import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
-import { hnSessions, hnJti, sessionFromCookie, sessionOfRequest, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
+import { hnSessions, hnJti, sessionFromCookie, sessionOfRequest, crossSiteUpgrade, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { createNativeLogin } from "./native-login.ts";
 const nativeLogin = createNativeLogin({
@@ -456,6 +456,7 @@ const ROUTES: Route[] = [
       // seeing a token. (fkm web-ui precedent: "the WS is the authentication
       // event" — here inverted, the cookie is, and the WS rides it.)
       const session = sessionFromCookie(req.headers.get("cookie"));
+      if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH (review full-260 L7)
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
       const ip = addressOf(req, srv);
       const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);

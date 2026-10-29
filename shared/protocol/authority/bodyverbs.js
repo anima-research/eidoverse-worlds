@@ -9,7 +9,8 @@ import { REACH, HAND_Y, MAX_HELD, KICK, BLAST } from "../physconst.js";
 import { blastArgs, falloff } from "../../blast.js";
 import { r3, noNeg0 } from "../round.js";
 import { unitTransform } from "../componentspec.js";
-import { UP } from "./ctx.js";
+import { UP, CTX } from "./ctx.js";
+import * as C from "../consent.js";
 import { Refusal, refuse, said } from "./refuse.js";
 import { delOp, lockedC, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js";
@@ -396,6 +397,7 @@ const EMBODIED_VERBS = {
         if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
           changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
     endDrivesBy(w, w.state(), actor);   // a driver leaving: the lease commits, the helm frees (shared/protocol/authority/drive.js)
+    if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);   // a guest never returns (review full-260 L8)
     delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearOccupant(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves
     return { ok: true, left: true, dropped: out.map(({ id, r }) => ({ id, ok: r.ok, ...(r.refused ? { refused: r.refused.reason } : {}) })) };
   },

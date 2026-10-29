@@ -31,7 +31,7 @@ import { makeRagdoll } from './bodysim.js';
 import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint, html } from './ui.js';
-import { pushable, bodyTable, onConsentChange, noteHeld } from './consent.js';
+import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorld } from './consent.js';
 import { makeConsentSync } from './consentsync.js';
 import { bodyActAsPuppet, refusedNotice } from './bodyact.js';
 import { clearMyReach } from './reachnet.js';
@@ -521,7 +521,8 @@ export function initLocalBody({ logChat: logChatFn }) {
 
   // my body's consent (two gates, two lists) as the authority takes it (consentsync.js: only what differs): every arrival,
   // every change; a refusal is a toast and a retry
-  const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate), held: noteHeld });
+  useWorld(CONFIG.world);
+  const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate), held: noteHeld, gone: forget, landed });
   onConsentChange(consentSync.sync);
 
   // X reaches the socket system through the controller's hook: mounted → get

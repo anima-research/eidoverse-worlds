@@ -76,7 +76,7 @@ export function worldGates(v) {
 export function decide(P, from, to, cls, worldDefault) {
   cls = classOf(cls); const t = P.consent?.[to];
   if (listed(t, "block", from)) return { mode: "deny", gate: null, why: `${to} never allows ${from}` };
-  if (listed(t, "allow", from)) return { mode: "allow", why: `${to} always allows ${from}` };
+  if (listed(t, "allow", from)) return { mode: "allow", listed: true, why: `${to} always allows ${from}` };
   const gate = GATE_OF[cls]; if (!gate) return { mode: "allow", why: `no gate covers ${cls}` };
   if (typeof t?.[gate] === "boolean") return { mode: t[gate] ? "allow" : "deny", gate, why: `${to}'s ${gate} gate is ${t[gate] ? "on" : "off"}` };
   const w = worldGates(worldDefault ?? P.bodyDefault)[gate];   // the authority keeps P.bodyDefault = @world.body-default
@@ -89,6 +89,8 @@ export function decide(P, from, to, cls, worldDefault) {
 const BAD_KEY = new Set(["__proto__", "constructor", "prototype"]);
 const isWho = (w) => typeof w === "string" && /^[A-Za-z0-9_.:@+-]{1,64}$/.test(w) && !BAD_KEY.has(w);
 const bag = () => Object.create(null);
+/** An identity that will never return (a guest who left: their id is per connection): its table and every list naming it go (L8). */
+export function forgetIdentity(P, who) { if (!P?.consent) return; delete P.consent[who]; for (const t of Object.values(P.consent)) { if (t?.allow) delete t.allow[who]; if (t?.block) delete t.block[who]; } }
 export const PERSON_OPS = ["allow", "block", "unlist"];
 /** Arguments of earlier shapes, refused with a pointer: the switch and its ask (to 10-28), the table before it (to 10-20). */
 export const RETIRED_CONSENT = ["switch", "deny", "class", "for", "answer", "yes", "preset", "set", "pause", "friend", "unfriend", "delegate", "undelegate", "of"];
@@ -113,7 +115,7 @@ export function setConsent(P, actor, a) {
  *  10-28): refuse or ask → both gates off (ask was no until yes); accept → move on, touch left to the world's default. A table
  *  before the switch (to 10-20: preset, cells, pause, friends) is read as the switch it became then: paused or any enforced
  *  class closed for everyone → refuse, else any ask → ask, else accept. Per-person answers become the lists: any class
- *  denied → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). The
+ *  denied or asked → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). The
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
  *  tables changed. In place; idempotent. */
 export const CONSENT_SHAPE = 4;
@@ -134,7 +136,7 @@ export function migratePresence(P) {
     if (sw === "refuse" || sw === "ask") { t.move = false; t.touch = false; } else if (sw === "accept") t.move = true;   // F3, R 10-28 16:02
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
-      if (cells.some(([, c]) => c.mode === "deny")) (t.block ??= bag())[who] = true;
+      if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= bag())[who] = true;   // ask was no until yes (L14, as F3)
       else if (ENFORCED.every((c) => yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28)
     for (const k of old) delete t[k]; n++; }
   for (const k of ["asks", "asked", "askSeq", "cool"]) if (Object.hasOwn(P, k)) { delete P[k]; n++; }

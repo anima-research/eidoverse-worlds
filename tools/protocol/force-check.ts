@@ -31,6 +31,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
   ["a blast within the caster's body reach only", "protocol/authority/bodyverbs.js", "    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", "    { const me = w.presence.bodies[actor]; if (me && Math.hypot(...me.at.map((v, i) => v - a.at[i])) > 2.5) refuse(\"out-of-reach\", \"too far\", \"walk closer\"); }\n    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", ["F13"]],
+  ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "if (!d.listed && P.throttle?.[`${from}:${cls}`] > now)", "if (P.throttle?.[`${from}:${cls}`] > now)", ["F14"]],
+  ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F15"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -86,7 +88,7 @@ function openWorld(name: string) {
     getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
     now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line),
-    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
+    presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null, kindOf: (id: string) => (id.startsWith("guest") ? "anon" : "account"),
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 const clock = labClock(); let N = 0;
@@ -175,6 +177,18 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [0, 0, 15] }); s.call("vic", "move", { to: [-1, 0, 1] }); const at = s.w().presence.bodies.bob?.at;
       const r = s.call("bob", "force", { at: [-1, 0, 0] }); return { at, r: show(r), punted: r.punted?.map((p: any) => p.id), vic: shovesIn(s, "vic").length }; },
     good: (o) => Math.hypot(o.at?.[0] + 1, o.at?.[1], o.at?.[2]) > 14 && o.r === "ok" && o.punted?.join() === "crate" && o.vic === 1 },
+  { id: "F14", what: "allow = yes regardless, a cool-down too (review full-260 L15): a body that always allows bob takes his shove while he's cooled; others still see the cool-down", run(s) { const t = optedOut(s);
+      for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
+      s.call("dee", "move", { to: [0, 0, 6.5] }); const al = s.call("dee", "consent", { allow: "bob" }); s.call("eve", "move", { to: [0.5, 0, 6] });
+      const yes = s.call("bob", "body", { to: "dee", kind: "shove" }), no = s.call("bob", "body", { to: "eve", kind: "shove" });
+      return { ...t, cooled: cooled(s), al: show(al), yes: show(yes), no: show(no) }; },
+    good: (o) => o.ok && o.cooled === 1 && o.al === "ok" && o.yes === "ok" && /^refused cool-down/.test(o.no) },
+  { id: "F15", what: "a guest who leaves takes their consent table and every list entry naming them (review full-260 L8: an anon id never returns); an account's stays", run(s) { cast(s, { physics: false });
+      for (const who of ["guest1", "ann", "vic"]) s.call(who, "move", { to: [0, 0, 0] });
+      s.call("guest1", "consent", { move: false }); s.call("ann", "consent", { move: false }); s.call("vic", "consent", { block: "guest1" }); s.call("vic", "consent", { allow: "ann" });
+      s.call("guest1", "leave"); s.call("ann", "leave"); const P = s.w().presence;
+      return { g: !!P.consent?.guest1, ann: P.consent?.ann?.move, vicBlock: Object.keys(P.consent?.vic?.block ?? {}), vicAllow: Object.keys(P.consent?.vic?.allow ?? {}) }; },
+    good: (o) => !o.g && o.ann === false && o.vicBlock.length === 0 && o.vicAllow.join() === "ann" },
 ];
 function optedOut(s: any) { cast(s, { physics: false });
   const ok = ["vic", "ida", "cy"].map((who, k) => { s.call(who, "move", { to: [Math.cos(k * 2), 0, Math.sin(k * 2)] }); return s.call(who, "consent", { move: false }).ok; }).every(Boolean);

@@ -490,6 +490,19 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(/1 session\(s\) refused/.test(log) && /Notrowan/.test(log) && !!JSON.parse(fs.readFileSync(SF, "utf8"))[sid], "SA3 …it is named at boot and kept on disk", log.slice(-300));
   s.close(); S6.proc.kill(); }
 
+// ---- CS: a cookie upgrade from another site's page is refused (cross-site WebSocket hijacking; review full-260 L7). The
+// HTTP doors' rule at /ws: Sec-Fetch-Site other than same-origin, or an Origin not this host, proves nobody and is refused;
+// no Origin (a native client) and no cookie (a guest, an agent's token) are as before ----
+{ const SF = path.join(root, "cs-sessions.json"), sid = "d".repeat(64), exp = Date.now() + 3600_000;
+  fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "human:test:cs", name: "Cass", scopes: ["worlds:join"], exp } }));
+  const S7 = await start({ SESSIONS_PATH: SF }); const ck = { cookie: `ew_sess=${sid}` }, host = `127.0.0.1:${S7.port}`;
+  const opens = async (h) => { try { const s = await sock(S7.port, h); const j = await s.join("garden", `Cs${Math.random().toString(36).slice(2, 6)}`); s.close(); return j.snapshot ? (j.snapshot.cut?.account ?? j.snapshot.account ?? "joined") : "no-snapshot"; } catch { return "refused"; } };
+  const got = { evil: await opens({ ...ck, origin: "https://evil.example" }), sibling: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-site" }), nul: await opens({ ...ck, origin: "null" }),
+    own: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-origin" }), proxied: await opens({ ...ck, origin: "https://public.example", "sec-fetch-site": "same-origin" }), fwd: await opens({ ...ck, origin: "https://public.example", "x-forwarded-host": "public.example" }), native: await opens(ck), guest: await opens({ origin: "https://evil.example", "sec-fetch-site": "cross-site" }) };
+  ok(got.evil === "refused" && got.sibling === "refused" && got.nul === "refused", "CS1 a cookie upgrade from another origin, a sibling site, or an opaque origin is refused", got);
+  ok(["own", "proxied", "fwd", "native", "guest"].every((k) => got[k] !== "refused" && got[k] !== "no-snapshot"), "CS2 …this server's own page (Sec-Fetch-Site same-origin decides, whatever Host a proxy sends; else an Origin matching X-Forwarded-Host), a client with no Origin, and a cookieless guest from anywhere still join", got);
+  S7.proc.kill(); }
+
 // ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased) and unique lowercased; a refused one proves
 // nobody, its name stays reserved, and the load says which (accounts review 10-28) ----
 { const TF = path.join(root, "tv-tokens.json");
