@@ -6,6 +6,7 @@
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
 //   V5      the translator is @28, and a report reviewed under @27 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
+//   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
 //           sky audio onto @world.sky.audio (SA); a light with no intensity brightened once, landing on the registry default (LD)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/translate-check.ts
@@ -166,6 +167,18 @@ row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "wor
   const up = run(["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", hash, "--", "den"]);
   ok(/"output": "sha256:[0-9a-f]{64}"/.test(dry.out) && up.code !== 0 && /is not the one that was approved/.test(up.out) && /output digest/.test(up.out) && /Run --dry-run again/.test(up.out) && !fs.existsSync(path.join(d, "world.jsonl")),
     "V6 the approved report pins the output (its digest): model bytes changed between the dry run and the apply (same counts) refuse it, saying run the dry run again; nothing written", { code: up.code, out: up.out.slice(-500) }); });
+
+row("V7", () => { const root = scratch("translate-v7"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "sub", lib: "props/ball.glb" }], ["olga", "comp", { id: "sub", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9 } }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const env = { ...process.env, WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };   // OPT_DIR: the repo's, so the real ball.glb is measured
+  const run = (a: string[]) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...a], { cwd: ENGINE, env }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  const dry = run(["translate", "--dry-run", "--no-founder-key", "--", "den"]), hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.out)?.[1] ?? "x";
+  const up = run(["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", hash, "--", "den"]);
+  const text = fs.existsSync(path.join(d, "world.jsonl")) ? fs.readFileSync(path.join(d, "world.jsonl"), "utf8") : "";
+  const ys = (which: string) => [...text.matchAll(new RegExp(`"(${which}-[0-9a-f]{26})"[^\\n]*?"transform","value":\\{"pos":\\[[^,]+,([^,]+),`, "g"))].map((m) => +m[2]);
+  const [floor] = ys("floor"), [ceil] = ys("ceiling");
+  ok(up.code === 0 && Math.abs(floor - (0 - 0.35 - 10)) < 1e-6 && Math.abs(ceil - (9 + 0.35)) < 1e-6,   // ball.glb box ±0.35 m
+    "V7 a vehicle with minY/maxY and a hull this host measures (the repo's ball.glb): the CLI's dry run then --approved applies (one digest for both), and the walls are set off by the ball's box", { code: up.code, out: up.out.slice(-400), floor, ceil }); });
 
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);

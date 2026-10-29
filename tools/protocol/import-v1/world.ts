@@ -268,6 +268,14 @@ export async function warmHulls(srcDir: string) {
   const veh = new Set(old.filter((e: Any) => e?.verb === "comp" && e.args?.type === "vehicle").map((e: Any) => String(e.args.id)));
   await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
 }
+/** The dry run's translation (ids minted by nothing, this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
+function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, content: (p: string) => string | null = hostContent) {
+  const worlds = path.dirname(path.resolve(srcDir));
+  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  return { m, r: translateOld(old, world, { who: m.who, content }) };
+}
+/** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
+const translateOld = (old: Any[], world: string, opts: Any) => translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, ...opts });
 export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
@@ -276,10 +284,8 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const world = name ?? path.basename(srcDir);
   // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
   // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
-  const worlds = path.dirname(path.resolve(srcDir));
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
-  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent, boxOf: hullBox });
+  const { m, r } = dryTranslation(old, srcDir, world, owner, content);
   const people = peopleOf(world, r, m.describe);
   return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe));
 }
@@ -331,13 +337,12 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never reads acts (PROTOCOL §1), so
   // this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
   const approved = approval ? { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } : undefined;
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: world, content, boxOf: hullBox, ...(approved ? { approved } : {}) });
+  const r = translateOld(old, world, { key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, content, ...(approved ? { approved } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);
   if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
-  if (approval) { const dry = identityMapper(old, directoryFor(srcWorlds), { mint: false, known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });   // the dry run's ids: its output digest
-    const output = outputOf(translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: dry.who, content: hostContent }));
+  if (approval) { const output = outputOf(dryTranslation(old, srcDir, world, owner).r);   // the dry run's own translation: its output digest
     const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output).hash;
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
