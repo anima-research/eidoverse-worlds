@@ -18,7 +18,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
 | `CSP_CONNECT_EXTRA` | Extra origins the page may connect to (space-separated `https://`/`wss://` origins: an external voice or TTS endpoint). Absent: the server's own origin and loopback only (server/csp.ts). | unset unless voice runs off-box |
-| `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name refuses to boot. Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
+| `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name is refused loudly at boot (the server still starts with the rest, or with the setup link if none is left). Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
 
 ## URLs
 
