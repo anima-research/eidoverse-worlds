@@ -7,6 +7,7 @@
 //   SU5 with SERVER_OPERATORS set, or an operators file, no link is printed and /setup is a missing page
 //   SU6 an agent claims with its Bearer (aid1 and enrolled): the stored account is the one its ws join proves (that join says operator)
 //   SU7 more than five tries a minute from one address are refused (429)
+//   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -65,6 +66,13 @@ const operatorAtJoin = (port, { headers, agentToken }: any = {}) => new Promise(
 });
 const stored = (W) => { const f = path.join(W, ".operators.json"); return fs.existsSync(f) ? { list: JSON.parse(fs.readFileSync(f, "utf8")).operators, mode: fs.statSync(f).mode & 0o777 } : null; };
 const replies = [];   // every reply body, to look for the token in
+/** Run the setup page's script against a fake location: what it posted (null: nothing) and what it said. */
+async function runPage(html, { hash = "", search = "" }) {
+  const js = /<script>([\s\S]*)<\/script>/.exec(html)?.[1] ?? ""; let posted = null; const m = { textContent: "" };
+  const fetchStub = async (_u, o) => { posted = JSON.parse(o.body); return { ok: true, status: 200, json: async () => ({ words: "done" }) }; };
+  await new Function("location", "document", "fetch", "history", `return ${js.trim().replace(/;$/, "")}`)({ hash, search }, { getElementById: () => m }, fetchStub, { replaceState() {} });
+  return { posted, said: m.textContent };
+}
 
 // ---- a person claims it ----
 const W1 = worldsDir("w1");
@@ -76,6 +84,9 @@ const t1 = tokenOf(s.log());
     "SU1 no operator: one boot line, '<base>/setup#token=…' with ≥128 bits, signed in (person or agent)", lines); }
 { const page = await get(s.port); replies.push(page.text);
   ok(page.status === 200 && /\/setup/.test(page.text) && !page.text.includes(t1) && /sha256-/.test(page.csp ?? ""), "SU1 GET /setup is the page that posts the link's token back (its script hashed in the CSP), without the token", { status: page.status }); }
+{ const page = await get(s.port), q = await runPage(page.text, { search: "?token=abc" }), f = await runPage(page.text, { hash: "#token=abc" });
+  ok(q.posted === null && /incomplete/.test(q.said) && /#token=/.test(q.said) && f.posted?.token === "abc" && f.said === "done",
+    "SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says to open the whole #token= link; the fragment's is posted", { q, f }); }
 { const before = await operatorAtJoin(s.port, { headers: cookie(ANN) });
   const guest = await post(s.port, { token: t1 }); replies.push(guest.text);
   ok(guest.status === 401 && /Sign in first/.test(guest.text) && /agent/.test(guest.text) && stored(W1) === null, "SU2 a guest (no sign-in) with the right token is refused, and nothing is stored", guest);

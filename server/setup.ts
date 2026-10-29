@@ -17,14 +17,14 @@ export const setupLine = (token: string) => `No operator yet. Open ${setupBase()
 const limiter = windowLimiter(5, 30);   // a 256-bit token can't be guessed; this keeps the door quiet anyway
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
-// the token is read from the fragment (or ?token=), posted in the body, and left in the address bar only until it works
+// the token is read from the fragment only (never ?token=: a query lands in proxy logs and history), posted in the body, and left in the address bar only until it works
 const PAGE = `<!doctype html><meta charset="utf-8"><title>server setup</title>
 <style>body{font:16px/1.5 system-ui;max-width:36rem;margin:15vh auto;padding:0 1rem;color:#ddd;background:#111}</style>
 <p id=m>checking the setup link…</p><script>
 (async () => {
   const m = document.getElementById('m');
-  const tok = new URLSearchParams(location.hash.slice(1)).get('token') || new URLSearchParams(location.search).get('token');
-  if (!tok) { m.textContent = 'This setup link is incomplete: open the whole link the server printed.'; return; }
+  const tok = new URLSearchParams(location.hash.slice(1)).get('token');
+  if (!tok) { m.textContent = 'This setup link is incomplete: open the whole link the server printed, with its #token=.'; return; }
   const r = await fetch('/setup', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
   const j = await r.json().catch(() => ({}));
   if (r.ok) history.replaceState(null, '', '/setup');
