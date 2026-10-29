@@ -16,7 +16,8 @@
 //       the whole log, equal to the fold; a stale-guests seed is dropped with it
 //   FP7 a torn last line after a tail boot's covered line is cut, as readLogBytes cuts it
 //   FP8 a log replaced under a live world: a prefix read throws, never reads the other file
-//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster)
+//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster);
+//       a reader walking the prefix loads the rest at once (lazylog BULK)
 //   FP10 the readers rewritten not to scan (creatorOf, modlog, chat pages, client cuts) answer as their whole-log formulas
 //   FP11 the boot sweep's script peek (durable.ts fileIncludes) reads in chunks and finds a needle across a chunk's edge
 // @ts-nocheck
@@ -264,7 +265,10 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
   const [offW, offOk] = wr(off.b), [onW, onOk] = wr(on.b); const read = left - onDisk(on.b);
   console.log(`  FP9 ${E.length} entries (${(fs.statSync(logP(dir)).size / 1e6).toFixed(1)} MB): boot ${off.ms.toFixed(0)} ms (+${off.rss.toFixed(0)} MB RSS) reading the whole log, ${on.ms.toFixed(0)} ms (+${on.rss.toFixed(0)} MB) from the tail (${left} lines left on disk); first write to a thing with ${K / ids.length | 0} sets ${offW.toFixed(1)} ms vs ${onW.toFixed(1)} ms (${read} prefix lines read)`);
   ok(left >= K && on.ms * 3 < off.ms, "FP9 the tail boot leaves the prefix on disk and is under a third of the whole-log boot", { on: on.ms, off: off.ms, left, from: on.b.bootedFromCache, sim: on.b.simFromCache });
-  ok(offOk && onOk && read < 20, `FP9 the first write to a thing with a long history reads its create line and the rate window, not its ${K / ids.length | 0} sets (creatorOf's born shortcut)`, { read }); }
+  ok(offOk && onOk && read < 20, `FP9 the first write to a thing with a long history reads its create line and the rate window, not its ${K / ids.length | 0} sets (creatorOf's born shortcut)`, { read }); 
+  { const t0 = performance.now(); let same = true; for (let q = 1; q <= 5000; q++) same &&= J(on.b.entries[q]) === J(off.b.entries[q]); const walk = performance.now() - t0;   // review L20
+    console.log(`  FP9 a reader walking 5000 prefix lines: ${walk.toFixed(0)} ms, ${onDisk(on.b)} lines left on disk after it`);
+    ok(same && onDisk(on.b) === 0, "FP9 a reader walking the prefix line by line loads the rest at once after a few thousand (lazylog BULK), and reads what the whole-log boot reads", { left: onDisk(on.b) }); } }
 
 // ---- FP11 (review L18): the boot sweep's script peek reads the log in chunks, and finds the bytes across a chunk's edge ----
 { const D = await import("../../server/durable.ts"), f = path.join(root, "peek.jsonl"), M = 1 << 20, N = '"script:';
