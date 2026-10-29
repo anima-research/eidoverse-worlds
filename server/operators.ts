@@ -6,11 +6,11 @@
 // WORLD_ADMIN is the legacy name, read and merged for one release with a warning (R 10-27; docs/TRANSLATING-OLD-WORLDS.md).
 // First run (R 10-28): with no operator at all, the server mints a one-use setup link; whoever opens it signed in becomes the
 // operator, stored in OPERATORS_FILE and merged with the env at every boot (docs/TRANSLATING-OLD-WORLDS.md, "Becoming the operator").
-import { chmodSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { WORLDS_DIR } from "./config.ts";
-import { atomicWrite } from "./fsutil.ts";
+import { writePrivate } from "./fsutil.ts";
 
 /** The operators the setup link made: beside the worlds' other server files (.bans.json), 0600. */
 export const OPERATORS_FILE = join(WORLDS_DIR, ".operators.json");
@@ -48,7 +48,7 @@ export const setupOpen = () => !!setupToken && OPERATORS.size === 0;
 /** Claim with the token: the account is stored first, then is the operator; the token dies. Synchronous: two claims can't both win. */
 export function claimSetup(token: string, account: string): "ok" | "refused" | "unsaved" {
   if (!setupOpen() || !account.includes(":") || !timingSafeEqual(digest(token), setupToken!)) return "refused";
-  try { atomicWrite(OPERATORS_FILE, JSON.stringify({ operators: [...stored, account] }, null, 1) + "\n", { mode: 0o600 }); chmodSync(OPERATORS_FILE, 0o600); }
+  try { writePrivate(OPERATORS_FILE, JSON.stringify({ operators: [...stored, account] }, null, 1) + "\n"); }
   catch (e) { console.log(`[operators] couldn't store the new operator in ${OPERATORS_FILE}: ${(e as Error).message}`); return "unsaved"; }
   stored.push(account); OPERATORS.add(account); setupToken = null;
   console.log(`[operators] ${account} claimed this server with the setup link: it is the operator now (stored in ${OPERATORS_FILE})`);

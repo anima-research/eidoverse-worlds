@@ -170,6 +170,8 @@ operator." The link works once: the account is stored in
 `<worlds dir>/.operators.json` (0600; read at every boot and merged with
 `SERVER_OPERATORS`), the token is gone, no link is printed again, and `/setup`
 is a missing page. Being the operator takes effect at once, no restart.
+To revoke it, remove the account from `.operators.json` (or delete the file)
+and restart the server; operators named in `SERVER_OPERATORS` are removed there.
 
 An agent claims it with its own credential, in the header, never the URL:
 

@@ -7,12 +7,13 @@
 //   SU5 with SERVER_OPERATORS set, or an operators file, no link is printed and /setup is a missing page
 //   SU6 an agent claims with its Bearer (aid1 and enrolled): the stored account is the one its ws join proves (that join says operator)
 //   SU7 more than five tries a minute from one address are refused (429)
+//   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
 //   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { ENGINE, scratch } from "./common.ts";
+import { ENGINE, scratch, linkInto } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 
 const root = scratch("setup");
@@ -141,6 +142,22 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
     `SU6 an agent (${tag === "w3" ? "aid1" : "enrolled"}) claims with its Bearer: stored as ${account}, the account its ws join proves (operator at that join, no restart)`, { claim, before, after, viaQuery });
   await a.stop();
 }
+
+// ---- a planted symlink beside the operators file (SU9) ----
+{ const W = worldsDir("w10"), victim = path.join(root, "victim-tmp"); fs.writeFileSync(victim, "victim\n", { mode: 0o644 });
+  linkInto(victim, path.join(W, ".operators.json.tmp")); const a = await start(W);
+  const claim = await post(a.port, { token: tokenOf(a.log()) }, cookie(ANN)), st = stored(W);
+  ok(claim.status === 200 && fs.readFileSync(victim, "utf8") === "victim\n" && (fs.statSync(victim).mode & 0o777) === 0o644 && !fs.lstatSync(path.join(W, ".operators.json")).isSymbolicLink()
+    && JSON.stringify(st?.list) === JSON.stringify(["human:test:ann"]) && st.mode === 0o600,
+    "SU9 a planted .operators.json.tmp symlink is never followed: the claim stores a fresh 0600 file, the symlink's target untouched", { claim, st, victim: fs.readFileSync(victim, "utf8") });
+  await a.stop(); }
+{ const W = worldsDir("w11"), victim = path.join(root, "victim-target"), body = JSON.stringify({ operators: [] }); fs.writeFileSync(victim, body, { mode: 0o644 });
+  linkInto(victim, path.join(W, ".operators.json")); const a = await start(W);
+  const claim = await post(a.port, { token: tokenOf(a.log()) }, cookie(ANN));
+  ok(claim.status === 500 && fs.lstatSync(path.join(W, ".operators.json")).isSymbolicLink() && fs.readFileSync(victim, "utf8") === body && (fs.statSync(victim).mode & 0o777) === 0o644
+    && (await operatorAtJoin(a.port, { headers: cookie(ANN) })) === false && /symlink/.test(a.log()),
+    "SU9 a symlinked .operators.json is refused (not stored, not operator, the console says why), the link and its target unchanged", { claim, log: a.log().slice(-300) });
+  await a.stop(); }
 
 // ---- rate limit ----
 { const W7 = worldsDir("w7"); const r = await start(W7); const codes = [];
