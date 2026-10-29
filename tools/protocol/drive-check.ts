@@ -34,6 +34,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
   ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack, dt)", "slack = slackNow(null, dt)", ["D13"]],
+  ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why);   // a throw keeps", "  try { commitLease(w, st, host, why); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
   ["CONTROL (no-op: must stay green)", "drive.js", "// shared/drive.js — a hull", "//  shared/drive.js — a hull", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -66,12 +67,13 @@ const DR = await imp("shared/drive.js");
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("drive");
 
+const diskFails = { on: false };   // D14: the log's writes fail while on
 function openWorld(name: string) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`), storeDir = path.join(root, "store");
   const blobPath = (h: string) => path.join(storeDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   return D.worldOf({ name, entries: F.readLog(readLogBytes(logPath)).map(D.posAt), getBlob: (h: string) => JSON.parse(fs.readFileSync(blobPath(h), "utf8")),
     putBlob: (v: unknown) => { const s = F.jcs(v); const h = `sha256:${F.sha256(s)}`; putBlobFile(blobPath(h), s, h); return h; },
-    now: () => pinned(), writeLine: (line: string) => appendDurable(logPath, line), presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
+    now: () => pinned(), writeLine: (line: string) => { if (diskFails.on) throw new Error("EIO: injected (the log's disk)"); appendDurable(logPath, line); }, presence: { bodies: {}, holds: {} }, savePresence: () => {}, scripts: null,
     custody: custodyAt(path.join(root, "keys", "custody.json")), ...modLogAt(path.join(root, "worlds", `${name}.mod.jsonl`)) });
 }
 const clock = labClock(); let N = 0;
@@ -215,5 +217,12 @@ await C("D13", "the fixed slack is a budget, not per message (review L26): a 60 
   const h = session(); h.board("vic"); let hz = 0, refused = 0;
   for (let i = 0; i < 30; i++) { hz += 4 / 15; const r = h.call("drive", { id: "hull", pos: [0, 1, hz], q: [0, 0, 0, 1] }, "vic", i % 2 ? 112 : 20); if (!r.ok) refused++; }
   return [z < 9.5 && took > 0 && refused === 0, { speed: z, took, why, refused }]; });
+
+await C("D14", "a commit that throws (the log's disk fails as the driver gets up) keeps the lease (review L27): the getting-up fails, the driver is still at the helm, the lease holds the hull where it is, and the next step drives on from there (no snap back to the logged pose)", () => {
+  const s = session(); s.board("vic");
+  for (const z of [3, 6]) s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic");
+  diskFails.on = true; const up = s.call("move", { to: [1.8, 1.5, 6] }, "vic"); diskFails.on = false;
+  const L = s.w().presence.drives?.hull, held = JSON.stringify(L?.pose?.pos), next = s.call("drive", { id: "hull", pos: [0, 1, 7], q: [0, 0, 0, 1] }, "vic");
+  return [!!up.crashed && L?.by === "vic" && held === "[0,1,6]" && next.ok, { up: show(up), held, next: show(next), stands: next.refused?.pose }]; });
 
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

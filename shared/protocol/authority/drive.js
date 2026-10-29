@@ -74,9 +74,9 @@ function commitLease(w, st, host, why) {
 /** End the lease: commit, then free the helm (its driver let go); passengers keep their seats. */
 function endLease(w, st, host, why, free = true) {
   const L = leases(w)[host]; if (!L) return;
-  try { commitLease(w, st, host, why); } finally {
-    delete leases(w)[host]; w.presenceDirty = true;
-    const helm = helmOf(st, host); if (free && helm && occupantOf(w, st, L.by)?.to === helm) clearOccupant(w, L.by); }
+  commitLease(w, st, host, why);   // a throw keeps the lease and the helm: the pose is retried, never dropped for the log's (review L27)
+  delete leases(w)[host]; w.presenceDirty = true;
+  const helm = helmOf(st, host); if (free && helm && occupantOf(w, st, L.by)?.to === helm) clearOccupant(w, L.by);
 }
 /** `who` stood up or left: a driver's lease ends and commits; a passenger's hull commits (why alight), so their step off is
  *  measured from the seat where it is now (drive-check D12). The caller lets them off the seat (bodyverbs' stand-up, leave). */
