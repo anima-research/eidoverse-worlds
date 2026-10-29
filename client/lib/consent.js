@@ -11,7 +11,7 @@ export const GATE_WORDS = {
   touch: { label: 'Touch me', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default.' },
 };
 
-// the keys before it, read by readStored and never written: main's two (ew-pushable, ew-posable), v4's one switch (ew-body-switch, to 10-28)
+// the keys before it, read by readStored and never written: main's two (ew-pushable, ew-posable), the body switch (ew-body-switch, to 10-28)
 export const KEY = 'ew-body-consent';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -20,7 +20,7 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
 /** What is stored: {move?, touch?, allow: {id: name}, block: {id: name}, unlist: [id]}; a gate absent = never chosen (the
  *  world's default answers, F2b), unlist = the people I took off a list here (the only ones sync unlists, F2a). A setting
  *  kept under an older key is carried into the gates silently (R 10-28 13:03: "we're keeping their gates"), and written
- *  under KEY on first read. Never broader than it was: v4's switch refuse or ask → both off (F3, R 10-28 16:02), accept →
+ *  under KEY on first read. Never broader than it was: the body switch's refuse or ask → both off (F3, R 10-28 16:02), accept →
  *  move on and touch as main's ew-posable stored it (else off); with no switch, main's ew-pushable → move ('0' off) and
  *  ew-posable → touch ('1' on), each only if that key is present. */
 export function readStored(get = lsGet) {
