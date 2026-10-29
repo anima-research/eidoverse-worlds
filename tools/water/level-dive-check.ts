@@ -60,7 +60,7 @@ try {
   const idleClips = await clips();
   await key("add", "KeyW"); await pause("W held: swimming at the surface", 400); const swimClips = await clips(); await key("delete", "KeyW");
   await put(-1.1); await pause("the float settles", 1200);
-  await key("add", "KeyC"); await pause("C held: the dive", 1500);
+  await key("add", "KeyC"); await until("a metre under, C held", async () => (await y()) < floating.y - 1, { ms: 10000 }).catch(() => {});   // the depth, not a fixed 1.5 s (macOS CI 10-29: -1.63 at 1.5 s); a miss is LD3's evidence
   const dive = await js(`const c = ${C}; return { y: +c.myState.pos.y.toFixed(2), diving: c.isLevelDiving(), medium: c.myState.locomotion?.medium ?? null };`);
   await key("delete", "KeyC"); await key("add", "Space"); await pause("Space held: rising", 3500); await key("delete", "Space");
   await until("back at the surface", async () => !(await diving()) && Math.abs((await y()) - floating.y) < 0.6, { ms: 8000 }).catch(() => {});
