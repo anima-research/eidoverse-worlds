@@ -11,7 +11,8 @@ const sid = process.env.EIDO_SESSION ?? "", agentToken = process.env.EIDO_AGENT_
 if (!sid && !agentToken) { console.error("set EIDO_SESSION (your browser's ew_sess cookie) or EIDO_AGENT_TOKEN: a server operator is a signed-in account"); process.exit(2); }
 let args: unknown; try { args = JSON.parse(json); } catch { console.error(`the args aren't JSON: ${json}`); process.exit(2); }
 const ws = new WebSocket(url.replace(/^http/, "ws").replace(/\/?$/, "/ws"), sid ? { headers: { cookie: `ew_sess=${sid}` } } as any : undefined);
-const done = (code: number, line: unknown) => { console.log(typeof line === "string" ? line : JSON.stringify(line, null, 1)); try { ws.close(); } catch {} process.exit(code); };
+let over = false;   // close() can fire onclose before exit (Windows): one answer, one exit code
+const done = (code: number, line: unknown) => { if (over) return; over = true; console.log(typeof line === "string" ? line : JSON.stringify(line, null, 1)); try { ws.close(); } catch {} process.exit(code); };
 setTimeout(() => done(1, "no answer in 20 s"), 20_000);
 ws.onerror = () => done(1, `couldn't reach ${url}`);
 ws.onclose = (e) => done(1, `the server closed the connection (${e.code}${e.reason ? `: ${e.reason}` : ""})`);
