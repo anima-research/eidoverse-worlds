@@ -545,6 +545,7 @@ try {
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pt'))`, 12000);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); (await import('/lib/build.js')).setTool('select'); return true;`);
   await key("KeyP"); await sleep(400);
+  check("PT0 in edit mode P is the pivot tool's alone: photo mode stays off (main's P has a guard there, as H and R do)", (await evalJson(`import('/lib/controller.js').then((c) => c.photoMode)`)) === false);
   check("PT1 P arms the pivot tool: the handles sit at its origin (no pivot yet)", await waitFor(`import('/lib/build.js').then((B) => { const g = __gizmo(); return B.getTool() === 'pivot' && g.attached === 'pt' && g.viaProxy && Math.abs(g.proxyPos[0] - 14) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })`), await evalJson(`({ g: __gizmo().proxyPos, a: __gizmo().attached })`));
   const ptBefore = JSON.stringify(disk().entities[IDS.of("pt")].c.transform);
   const nPt = myActs().length;
@@ -915,9 +916,8 @@ try {
       await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);   // edit mode's P is the pivot tool
       const footFree = await waitFor(`!document.body.classList.contains('edit-mode')`);
       const photo = `import('/lib/controller.js').then((c) => c.photoMode)`;
-      const wasOn = await page(`const c = await import('/lib/controller.js'); const was = c.photoMode; if (was) c.togglePhotoMode(); return was;`);   // PT1's P (the pivot, in edit mode) also starts photo mode
       await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
-      check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, wasOn, onFoot, offAgain, now: await evalJson(photo) });
+      check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, onFoot, offAgain, now: await evalJson(photo) });
       await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('hphull-helm'))`);
       await page(`(await import('/lib/localbody.js')).trySitOn('hphull'); return true;`);
       const atHelm = await waitFor(`import('/lib/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
