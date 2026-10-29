@@ -68,7 +68,7 @@ export function projectEnvironment(state: any) {
 }
 
 // Renderer-facing component parameters (tools/water/README.md), in the shapes main's native renderer read, projected from
-// the components (translate-v1.js VOLUMES / CARRIED, inverted; review L24): zone+water, zone+water-exclusion, drive, climb, collider.
+// the components (translate-v1.js VOLUMES / CARRIED, inverted; review L24): zone+water (+ physics-area speed), zone+water-exclusion, drive, climb, collider.
 const PASS_THROUGH = ["environment"] as const;
 const zoneBox = (z: any) => z?.shape === "box" && z.global !== true && Array.isArray(z.size) && z.size.length === 3 && z.size.every(Number.isFinite) ? z.size.map(Math.abs) : null;
 const num = (x: unknown, d: number) => (Number.isFinite(x) ? x as number : d);
@@ -91,7 +91,8 @@ export function projectComponentData(comp: any, entityId = "") {
   // a water body is its zone's box in its own frame, the surface at water.level (shared/zone.js zonesOf, unscaled)
   const box = zoneBox(comp?.zone), w = comp?.water;
   if (box && w && typeof w === "object") { const bottom = -box[1] / 2, top = Number.isFinite(w.level) ? Math.max(bottom, Math.min(box[1] / 2, w.level)) : box[1] / 2;
-    const { center, size, absorption, scatter, speed, waves } = waterParams({ center: [0, (top + bottom) / 2, 0], size: [box[0], top - bottom, box[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor });
+    const pa = comp["physics-area"], k = pa?.kind === "speed" && Number.isFinite(pa.factor) ? pa.factor : 1;   // main's speed was the zone's speed factor (translate-v1 VOLUMES.water)
+    const { center, size, absorption, scatter, speed, waves } = waterParams({ center: [0, (top + bottom) / 2, 0], size: [box[0], top - bottom, box[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor, speed: waterParams({}).speed * k });
     data.water = { center, size, absorption, scatter, speed, waves }; }
   const dry = comp?.["water-exclusion"];
   if (box && dry && typeof dry === "object") data.air = { boxes: [{ center: [0, 0, 0], size: box, q: [0, 0, 0, 1] }], ...(Array.isArray(dry.bodies) ? { bodies: dry.bodies.slice(0, 16) } : {}) };
