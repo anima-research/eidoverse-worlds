@@ -147,7 +147,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
   // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
   const useCk = ckpt && !simCover ? ckpt : null;
-  const ckptSt = useCk ? (resumed?.snap ?? atCover ?? fold(entries, { until: useCk.seq })) : null;
+  // no fold at the checkpoint in hand: it and the sim's replay read the prefix, so a tail boot loads it in one read (review L19)
+  const ckptSt = useCk ? (resumed?.snap ?? atCover ?? (lazy?.prefix.loadAll(), fold(entries, { until: useCk.seq }))) : null;
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
   let sim = simFolder(entries, { models: opts.simModels ?? {}, purged: lazy ? new Map() : purgesIn(entries), ...(simFrom ? { from: simFrom } : {}) });
