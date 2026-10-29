@@ -274,10 +274,10 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
     ok(same && onDisk(on.b) === 0, "FP9 a reader walking the prefix line by line loads the rest at once after a few thousand (lazylog BULK), and reads what the whole-log boot reads", { left: onDisk(on.b) }); } }
 
 // ---- FP11 (review L18): the boot sweep's script peek reads the log in chunks, and finds the bytes across a chunk's edge ----
-{ const D = await import("../../server/durable.ts"), f = path.join(root, "peek.jsonl"), M = 1 << 20, N = '"script:';
+{ const D = await import("../../server/durable.ts"), f = path.join(root, "peek.jsonl"), M = 1 << 20, N = '"script:', E = M + N.length;   // E: the first read's size
   const at = (bytes) => { fs.writeFileSync(f, bytes); return D.fileIncludes?.(f, N); };
-  const got = [at(""), at(N), at("x".repeat(M - 3) + N + "y"), at("x".repeat(M) + N), at("x".repeat(3 * M) + N.slice(0, -1)), at("x".repeat(M - 4) + N.slice(0, 4) + "\n" + N.slice(4))];
-  ok(JSON.stringify(got) === JSON.stringify([false, true, true, true, false, false]), "FP11 fileIncludes: none, all, across the 1 MiB edge, after it, a cut needle, a split one", got); }
+  const got = [at(""), at(N), at("x".repeat(E - 3) + N + "y"), at("x".repeat(3 * M) + N), at("x".repeat(3 * M) + N.slice(0, -1)), at("x".repeat(E - 4) + N.slice(0, 4) + "\n" + N.slice(4))];
+  ok(JSON.stringify(got) === JSON.stringify([false, true, true, true, false, false]), "FP11 fileIncludes: none, all, across the first read's edge, chunks later, a cut needle, a split one", got); }
 
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);
 process.exit(fail ? 1 : 0);
