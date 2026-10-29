@@ -13,7 +13,7 @@ import { custodyFileIn } from "../../../server/keyfiles.ts";
 import { seal, maintain, operatorRepair } from "../../../shared/protocol/authority.js";
 import { emptyState as v1Empty, foldEntry } from "./fold.js";
 import { openLive } from "../../../server/livehost.ts";
-import { ENGINE_CATALOGUE } from "../../../server/modelcatalogue.ts";
+import { ENGINE_CATALOGUE, warm } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
 import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
@@ -260,6 +260,14 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
   };
   return { report, hash: sha256(JSON.stringify(report)) };
 }
+/** A vehicle hull's measured box (model frame) from this host's catalogue, or null: the translator sets main's minY/maxY walls off by it. */
+const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
+/** Measure the models of every thing a v1 world gives a vehicle, so the report and the translation read the same boxes (warm before either). */
+export async function warmHulls(srcDir: string) {
+  const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
+  const veh = new Set(old.filter((e: Any) => e?.verb === "comp" && e.args?.type === "vehicle").map((e: Any) => String(e.args.id)));
+  await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
+}
 export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
   const src = path.join(srcDir, "log.jsonl");
   if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
@@ -271,7 +279,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const worlds = path.dirname(path.resolve(srcDir));
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
   const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
-  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent });
+  const r = translate(old, { foldBuild: v1FoldBuild(), namespace: world, who: m.who, content: content ?? hostContent, boxOf: hullBox });
   const people = peopleOf(world, r, m.describe);
   return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe));
 }
@@ -323,7 +331,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never reads acts (PROTOCOL §1), so
   // this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
   const approved = approval ? { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } : undefined;
-  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: world, content, ...(approved ? { approved } : {}) });
+  const r = translate(old, { foldBuild: v1FoldBuild(), key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, namespace: world, content, boxOf: hullBox, ...(approved ? { approved } : {}) });
   if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
   // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
   const people = peopleOf(world, r, describe), claiming = claims(claim, people);

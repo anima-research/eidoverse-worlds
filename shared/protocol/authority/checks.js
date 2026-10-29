@@ -434,6 +434,8 @@ const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
   && { code: "shape", reason: `${id} has water on a global zone: world-wide water goes on @world`, fix: "world-wide water goes on @world: set {id:'@world', component:'water', value: {level, …}}" };
 export function zoneRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
+    // physics-area reads a box zone or a global one (shared/zone.js physicsAreasOf)
+    if (c["physics-area"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-area: ${c.zone === undefined ? "a physics-area on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
     const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
     if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
     if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
@@ -445,7 +447,10 @@ export function zoneRules(s, ids) {
 export function colliderRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
     if (c.collider?.enabled === false && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id} has collider {enabled: false} and physics {kind: 'dynamic'}: a dynamic thing that collides with nothing would fall forever`,
-      fix: `keep it solid (delete collider.enabled), or don't let the engine move it: physics {kind: 'kinematic'} (moved by its motion or edits) or {kind: 'none'}` }; }
+      fix: `keep it solid (delete collider.enabled), or don't let the engine move it: physics {kind: 'kinematic'} (moved by its motion or edits) or {kind: 'none'}` };
+    const b = c.collider?.blocks, L = COMPONENTS.collider.itemEnums.blocks; if (b === undefined) continue;
+    const odd = b.find((x) => !L.includes(x)); if (odd !== undefined || new Set(b).size !== b.length) return { code: "shape", reason: `${id}.collider.blocks: ${odd !== undefined ? `${JSON.stringify(odd)} isn't a layer` : "a layer is named twice"} (layers: ${L.join(", ")})`, fix: `a list of layers, each once: e.g. blocks: ['hulls'] for a wall only vehicles meet` };
+    if (!b.includes("things") && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id}'s collider.blocks leaves out things, and it has physics {kind: 'dynamic'}: the engine would not carry it`, fix: "add 'things' to blocks, or make it kinematic or none" }; }
   return null;
 }
 export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

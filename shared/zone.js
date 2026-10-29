@@ -1,4 +1,4 @@
-// shared/zone.js — a world's water bodies and dry pockets in world space (zone + water / water-exclusion: componentspec.js),
+// shared/zone.js — a world's water bodies, dry pockets and physics areas in world space (zone + water / water-exclusion / physics-area: componentspec.js),
 // and the waters/airs shared/water.js reads (mediumAt, inBox, waterPath, swimStep). Pure.
 import { worldPose, offChain } from "./protocol/simlayer.js";
 import { qRotate, qConj } from "./rot.js";
@@ -34,6 +34,29 @@ export function zonesOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
     }
   }
   return { bodies: bodies.sort(cmp), exclusions: exclusions.sort(cmp) };
+}
+
+/** The physics areas (componentspec physics-area on a box or global zone; Godot Area3D's overrides) in world space, in the
+ *  order they apply (cmp: the last one a point is in wins): [{id, global, priority, kind, factor, toLocal, size}]. */
+export function physicsAreasOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
+  const out = [];
+  for (const id of Object.keys(st?.entities ?? {})) {
+    const c = st.entities[id]?.c ?? {}, a = c["physics-area"];
+    if (id === "@world" || !a || typeof a !== "object" || !c.zone || offChain(st, id)) continue;
+    const priority = Number.isInteger(c.zone.priority) ? c.zone.priority : 0, factor = fin(a.factor) && a.factor > 0 ? a.factor : 1;
+    if (c.zone.global === true) { out.push({ id, global: true, priority, kind: a.kind, factor }); continue; }
+    if (c.zone.shape !== "box" || !v3(c.zone.size)) continue;
+    const pose = poseOf(id); if (!pose) continue;
+    const scale = v3(pose.scale) ? pose.scale.map(Math.abs) : [1, 1, 1], q = pose.q ?? [0, 0, 0, 1], center = [...pose.pos];
+    out.push({ id, global: false, priority, kind: a.kind, factor, size: c.zone.size.map((x, i) => Math.abs(x) * scale[i]), toLocal: (p) => qRotate(qConj(q), [p[0] - center[0], p[1] - center[1], p[2] - center[2]]) });
+  }
+  return out.sort(cmp);
+}
+/** × a body's own speed at p (physics-area kind speed): the highest-priority speed area holding p decides; none: 1. */
+export function speedFactorAt(areas, p) {
+  for (let i = (areas?.length ?? 0) - 1; i >= 0; i--) { const a = areas[i]; if (a.kind !== "speed") continue;
+    if (a.global) return a.factor; const l = a.toLocal(p); if (l.every((v, k) => Math.abs(v) <= a.size[k] / 2)) return a.factor; }
+  return 1;
 }
 
 /** KHR_materials_volume's attenuation as the per-metre absorption σ shared/water.js reads: σ = −ln(c) / d (absent → undefined). */
@@ -96,7 +119,7 @@ export function fogSlots({ waters = [], airs = [] } = {}, { maxWater = MAX_WATER
 }
 
 // the components and change kinds a rebuild of the bodies reads (client/lib/watervolumes.js; state.js's events)
-const READS = new Set(["zone", "water", "water-exclusion", "disabled"]);
+const READS = new Set(["zone", "water", "water-exclusion", "physics-area", "disabled"]);
 /** Does a world change touch what zonesOf read? `entities`: the view's (state.st.entities); `owners`: the ids that held a body
  *  or an exclusion at the last build (a removed one still counts). */
 export function zoneChangeTouches(ev, entities, owners) {
@@ -105,7 +128,7 @@ export function zoneChangeTouches(ev, entities, owners) {
   if (ev?.type !== "change") return false;
   const { what, comp: name } = ev; if (what === "comp" && !READS.has(name)) return false;
   const id = ev.id; if (owners.has(id)) return true;
-  const c = entities?.[id]; if (c && (c.zone || c.water || c["water-exclusion"])) return true;
+  const c = entities?.[id]; if (c && (c.zone || c.water || c["water-exclusion"] || c["physics-area"])) return true;
   for (const v of owners) for (let p = entities?.[v]?.parent?.to, n = 0; p && n < 33; p = entities?.[p]?.parent?.to, n++) if (p === id) return true;   // a carrier above one
   return false;
 }

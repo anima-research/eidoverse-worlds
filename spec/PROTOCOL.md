@@ -266,10 +266,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   map spelling, is reserved and lift-only: the authority lifts it into socket children with their stations
   on write, and the maintenance command's `lift-sockets` step does the same for a stored world (never the load), and a socket's old `body` block into its station),
   `params`, `reactions`, `lock`, `hidden`, `disabled`, `clickthrough`,
-  `collider {shape}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
+  `collider {shape, enabled?, blocks?}` (mesh, box or sphere; absent, its size decides), `places` (named places to walk to, in the
   thing's own frame; on `@world`, world coordinates),
   `openable`, `physics`, `grabbable`, `particles`, `script:<name>`, `zone`, `water` (a body),
-  `water-exclusion`,
+  `water-exclusion`, `physics-area`,
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
@@ -316,6 +316,17 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   and `motion` say. `physics.kind: none` means not simulated, and is still
   solid. `enabled: false` with `physics.kind: dynamic` is refused (it would fall
   forever). shared/protocol/simlayer.js `solidOff` is the one reading.
+- **Collision layers are `collider {blocks: [...]}`** (Godot collision layers and masks, Unity's layer matrix): the
+  movers it stops, of `bodies` (people and agents walking or swimming: the walkers, the authority's track and index),
+  `hulls` (driven vehicles: the authority's hull sweep) and `things` (loose things: the engine). Absent, it stops all
+  three, as before. `hidden` with `blocks: ['hulls']` is an invisible wall only vehicles meet. A dynamic thing must
+  block `things`. `solidOff(c, layer)` is the one reading.
+- **A physics area is `physics-area {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
+  overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
+  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where areas overlap the zone's priority decides.
+  The authority's track widens inside a boost and never narrows. shared/zone.js `physicsAreasOf`/`speedFactorAt`
+  is the one reader; shared/mover.js `stepWalk` (env.speedAt) and `stepSwim` (water.factor) apply it. Other kinds
+  (direction, point, vortex) are planned, not open.
 - **A climb route is a thing**: `climb {points (2–16, its own frame), reach?,
   speed?, face?, ends?}`, straight lines between its points (Godot Path3D +
   PathFollow3D); its name is its `label`. A climber's presence is `{host,
@@ -467,7 +478,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@28`, §14) writes its
+  its name). The translator (`translate-v1@29`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1447,8 +1458,11 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   is listed under the report's `unmapped`.
 - **Main's vehicle is carried**: `vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}` is `drive {maxSpeed: speed,
   turnRate, climbRate: speed}` on its thing (main's clamps) and a helm child, a socket at `helm` with `station {action:
-  'drive', input: {move: 'drive'}, exit}`; `minY`, `maxY` and `probes` ride `imported:vehicle`, listed under `unmapped`
-  (vertical limits come from the medium and colliders, collision from the hull's own collider). Driving is not
+  'drive', input: {move: 'drive'}, exit}`; `minY` and `maxY` are two hidden walls only hulls meet (`collider {blocks:
+  ['hulls']}`) set off by the hull's measured box, so its origin keeps main's band (unmeasured: at `minY`/`maxY`, the
+  whole hull in it); `probes` ride `imported:vehicle`, listed under `unmapped` (collision is the hull's own collider). A
+  water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4}` on its zone (2.4 m/s: the volume
+  stroke here, shared/water.js; it scales walking and wading there too). Driving is not
   bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume
   or air box on `@world`, which has no frame to hold one (`water` on `@world` without one is the world's water level and

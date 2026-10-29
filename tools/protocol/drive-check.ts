@@ -35,6 +35,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
   ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack, dt)", "slack = slackNow(null, dt)", ["D13"]],
   ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why);   // a throw keeps", "  try { commitLease(w, st, host, why); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
+  ["a hull meets no hull-only wall", "protocol/authority/drive.js", "for (const k of hullOnly(st)) if (!fam.has(k))", "for (const k of []) if (!fam.has(k))", ["D15"]],
+  ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\") && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
+  ["bodies meet every layer", "protocol/authority/spatial.js", "solidOff(st.entities[id]?.c, \"bodies\");", "solidOff(st.entities[id]?.c);", ["D15"]],
+  ["the engine carries every layer", "protocol/simlayer.js", "sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "sphereShape(e.c.physics)) || solidOff(e.c)) return null;", ["D15"]],
+  ["blocks unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(b).size !== b.length) return", "if (false) return", ["D17"]],
+  ["a dynamic thing may skip things", "protocol/authority/checks.js", "if (!b.includes(\"things\") && c.physics?.kind === \"dynamic\") return", "if (false) return", ["D17"]],
   ["CONTROL (no-op: must stay green)", "drive.js", "// shared/drive.js — a hull", "//  shared/drive.js — a hull", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -64,6 +70,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const DR = await imp("shared/drive.js");
+const SL = await import(TREE + "shared/protocol/simlayer.js");
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("drive");
 
@@ -224,5 +231,29 @@ await C("D14", "a commit that throws (the log's disk fails as the driver gets up
   diskFails.on = true; const up = s.call("move", { to: [1.8, 1.5, 6] }, "vic"); diskFails.on = false;
   const L = s.w().presence.drives?.hull, held = JSON.stringify(L?.pose?.pos), next = s.call("drive", { id: "hull", pos: [0, 1, 7], q: [0, 0, 0, 1] }, "vic");
   return [!!up.crashed && L?.by === "vic" && held === "[0,1,6]" && next.ok, { up: show(up), held, next: show(next), stands: next.refused?.pose }]; });
+
+// collision layers (componentspec collider.blocks, R 10-28 item 50): a wall only hulls meet, a wall only bodies meet
+const slab = (blocks: any, z = 6) => ({ transform: tf([0, 0, z]), mesh: { shape: "box", size: [6, 3, 0.2] }, hidden: true, collider: { blocks } });
+await C("D15", "a hull-only wall (collider {blocks: ['hulls']}) stops the hull, refused solid naming it; a body walks clean through it; it is not in the physics engine's view", () => {
+  const s = session(); const made = s.call("create", { id: "wall", components: slab(["hulls"]) }); s.board("vic");
+  const ok = s.call("drive", { id: "hull", pos: [0, 1, 3.5], q: [0, 0, 0, 1] }, "vic"), into = s.call("drive", { id: "hull", pos: [0, 1, 4.5], q: [0, 0, 0, 1] }, "vic");
+  const t = session({ hull: null, seats: false }); t.call("create", { id: "wall", components: slab(["hulls"], 3) });
+  const walks = [1, 2, 3, 4, 5].map((z) => t.call("move", { to: [0, 0, z] }, "vic"));
+  const S = SL.engineViewM({ entities: { crateH: { c: { transform: tf([8, 0, 8]), model: "crate", collider: { blocks: ["hulls"] } } }, crateA: { c: { transform: tf([-8, 0, 8]), model: "crate" } } } }, { crate: { size: [1, 1, 1] } });
+  return [made.ok && ok.ok && into.refused?.code === "solid" && into.refused.blocker === "wall" && walks.every((w) => w.ok) && !S.entities.crateH && !!S.entities.crateA,
+    { made: show(made), ok: show(ok), into: show(into), walks: walks.map(show), engine: Object.keys(S.entities) }]; });
+await C("D16", "a bodies-only wall (blocks: ['bodies']) lets the hull through and stops a walking body", () => {
+  const s = session(); s.call("create", { id: "wall", components: slab(["bodies"]) }); s.board("vic");
+  const steps = [3, 6, 9].map((z) => s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic"));
+  const t = session({ hull: null, seats: false }); t.call("create", { id: "wall", components: slab(["bodies"], 3) });
+  const walks = [1, 2, 3, 4].map((z) => t.call("move", { to: [0, 0, z] }, "vic"));
+  return [steps.every((x) => x.ok) && walks.some((w) => w.refused?.code === "solid"), { steps: steps.map(show), walks: walks.map(show) }]; });
+await C("D17", "the door: blocks is a list of layers (bodies, hulls, things), each once; a dynamic thing must block things; absent blocks still stops everything (D4)", () => {
+  const s = session({ hull: null, seats: false }); const mk = (id: string, components: any) => s.call("create", { id, components });
+  const r: any = { odd: mk("a", slab(["boats"])), twice: mk("b", slab(["hulls", "hulls"])), str: mk("c", slab("hulls")),
+    dyn: mk("d", { transform: tf([9, 2, 0]), mesh: { shape: "box", size: [1, 1, 1] }, physics: { kind: "dynamic" }, collider: { blocks: ["bodies"] } }),
+    good: mk("e", slab(["hulls", "things"])), empty: mk("f", slab([])) };
+  return [!r.odd.ok && /isn't a layer/.test(r.odd.refused?.reason ?? "") && !r.twice.ok && !r.str.ok && !r.dyn.ok && /things/.test(r.dyn.refused?.reason ?? "") && r.good.ok && r.empty.ok,
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

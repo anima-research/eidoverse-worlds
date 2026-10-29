@@ -56,12 +56,15 @@ export const COMPONENTS = {
   // shapeFor) and the walker (client/lib/colliders.js decide) read it, and its absence, differently: both written down
   // enabled: collision off is its own axis, apart from how it moves (Godot CollisionShape3D.disabled, Unity Collider.enabled,
   // Roblox CanCollide; DESIGN.md env-components "the laws"); every solidity reader asks shared/protocol/simlayer.js solidOff
-  collider:  { on: "thing", fields: { shape: "string", enabled: "bool" }, enums: { shape: ["mesh", "box", "sphere"] },
+  // blocks: collision layers (R 10-28 item 50; Godot collision_layer/mask, Unity's layer matrix): which movers it stops
+  collider:  { on: "thing", fields: { shape: "string", enabled: "bool", blocks: "array" }, enums: { shape: ["mesh", "box", "sphere"] },
+    itemEnums: { blocks: ["bodies", "hulls", "things"] }, ranges: { blocks: { maxItems: 3 } },
     docs: { shape: "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
-      enabled: "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed" },
+      enabled: "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed",
+      blocks: "what it stops, a list of layers: bodies (people and agents walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet" },
     absentMeans: { shape: "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)",
-      enabled: "true: it is solid" },
-    help: "how it collides: {shape: mesh (its triangles: walked on as they are; physics collides it as its box) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box), enabled? (false: not solid at all, a walk-through thing that still moves; absent true)}; absent shape, its size decides (a room-scale or uneven floor-shaped thing walks as its mesh, else its box; physics uses its box). enabled: false with physics {kind: 'dynamic'} is refused (it would fall forever). exact, the old word for mesh, is taken and stored as mesh" },
+      enabled: "true: it is solid", blocks: "everything: bodies, hulls and things" },
+    help: "how it collides: {shape: mesh (its triangles: walked on as they are; physics collides it as its box) | box (its bounding box) | sphere (a ball: under an engine that carries spheres it rolls; the authority fits one to its box), enabled? (false: not solid at all, a walk-through thing that still moves; absent true), blocks? [bodies|hulls|things] (what it stops; absent: everything; [\'hulls\'] = a wall only vehicles meet)}; absent shape, its size decides (a room-scale or uneven floor-shaped thing walks as its mesh, else its box; physics uses its box). enabled: false with physics {kind: 'dynamic'} is refused (it would fall forever). exact, the old word for mesh, is taken and stored as mesh" },
   stage:     { on: "thing", fields: { speaker: "string" }, ranges: { speaker: { maxLen: 80 } }, docs: { speaker: "who is speaking here, a name (≤ 80; the caption bot's mark, WebVTT's <v Name>)" },
     absentMeans: { speaker: "no stage cue: the caption bot uses its own speaker" }, help: "the caption bot's stage mark: {speaker?: who is speaking here, a name ≤ 80}" },
   // recut B2 (R 10-20; house 21:59Z): a lock is just true. Its strength is its setter's rank NOW (read from the log), so
@@ -574,12 +577,19 @@ export const COMPONENTS = {
                  size: "a box's full size [x, y, z], metres, before the thing's scale", radius: "a sphere's, capsule's or cylinder's radius, metres", height: "a capsule's or cylinder's full height along its y, metres (a capsule's includes its caps)",
                  priority: "which of two overlapping zones' effects wins: the higher (Godot Area3D); a tie goes to the later id", blend: "how far outside its shape a look effect fades out, metres (Unity Volume blend distance); look only, never the medium",
                  weight: "how strongly a look effect applies, 0..1 (Unity Volume weight); look only, never the medium", global: "true: everywhere in the world, its shape unused (Unity Volume global, Unreal unbound)" },
-               help: "a volume that effects (water, water-exclusion) ride on as siblings on the same thing: {shape: box|sphere|capsule|cylinder, size? [x, y, z] m (a box), radius? m (sphere, capsule, cylinder), height? m (capsule, cylinder), priority? int (higher wins; absent 0), blend? m (absent 0), weight? 0..1 (absent 1), global? (true: everywhere)}, centred on the thing's origin" },
+               help: "a volume that effects (water, water-exclusion, physics-area) ride on as siblings on the same thing: {shape: box|sphere|capsule|cylinder, size? [x, y, z] m (a box), radius? m (sphere, capsule, cylinder), height? m (capsule, cylinder), priority? int (higher wins; absent 0), blend? m (absent 0), weight? 0..1 (absent 1), global? (true: everywhere)}, centred on the thing's origin" },
   // a dry pocket carved out of water bodies, after Unreal's Water Body Exclusion Volume
   "water-exclusion": { on: "thing", fields: { bodies: "refs" }, ranges: { bodies: { maxItems: 16 } },
                absentMeans: { bodies: "every water body its zone overlaps, @world's level included" },
                docs: { bodies: "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)" },
                help: "a dry pocket on a thing with a zone {shape: 'box', size}: inside it there is no water from the bodies it names (bodies? [ids]; absent: every body it overlaps) whose zone's priority is at or below its own" },
+  // R 10-28 item 50: a zone effect that changes how bodies move inside it (Godot Area3D's overrides, Unreal Physics Volume); one kind now
+  "physics-area": { on: "thing", fields: { kind: "string", factor: "number" }, required: ["kind"], enums: { kind: ["speed"] },
+               ranges: { factor: { min: 0.05, max: 10 } }, units: { factor: "×" },
+               absentMeans: { factor: "1: no change" },
+               docs: { kind: "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
+                 factor: "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows" },
+               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1)}. Where speed areas overlap the zone's priority decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/RESERVED-SHAPES.md)" },
   // research 41 §3.2: a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is.

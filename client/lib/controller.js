@@ -25,7 +25,7 @@ import { isOverlayOpen, flashHint, html } from './ui.js';
 import { selectClip, AIRBORNE_GRACE } from './locomotion_clip.js';
 import { bodyModeOf } from '../../shared/bodymode.js';
 // the 3D swim (under a water level, and in water volumes where a world has them): the mover's law (shared/mover.js stepSwim)
-import { waterAt as volumeAt, waterTime, levelAt } from './watervolumes.js';
+import { waterAt as volumeAt, waterTime, levelAt, speedAt } from './watervolumes.js';
 import { swimStep, waveHeight } from '../../shared/water.js';
 import { register as registerAction } from './actions.js';
 import {
@@ -693,7 +693,7 @@ function updateSwimming(dt, me, fwd, strafe) {
   // heading down (looking down, pushing forward) is diving: it releases the surface latch, which otherwise snaps
   // the swimmer straight back up (its direction stays where it looks)
   const lookDive=!rise&&headingDown(fwd);   // an explicit rise wins
-  const input={direction:_dir.toArray(),rise,dive:dive||lookDive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight'),stature};
+  const input={direction:_dir.toArray(),rise,dive:dive||lookDive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight'),stature,factor:speedAt(myState.pos)};
   let mode='swim';const steps=Math.max(1,Math.ceil(dt/(1/60)));
   for(let i=0;i<steps;i++){
     _swimOld.copy(myState.pos);
@@ -836,7 +836,7 @@ export function updateMe(dt, me) {
     const stride = stepWalk({ pos: [myState.pos.x, myState.pos.y, myState.pos.z], dir: [_dir.x, _dir.z], dt, run: fast, creep: creeping, scale: me.userScale, gain: myState.speed / full, height: wadeH || undefined },
       // the mover's floor (and so its ledge rule) only where the stride touches water: on dry ground the collider pass
       // owns y as before, so a pond somewhere never changes how a hill walks (review 10-15 #2)
-      wl == null ? {} : { floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
+      wl == null ? { speedAt } : { speedAt, floorAt: (x, z, y) => { const g = groundUnder(_wp.set(x, y, z), wcap); return g < wl || groundHere < wl ? g : NaN; }, waterAt: () => wl });
     myState.pos.x = stride.pos[0]; myState.pos.z = stride.pos[2];
     keepInBounds();
     if (!worldBounds()) {   // the stage's 78 m island, where the world authored no bounds of its own (as swimming: I32)

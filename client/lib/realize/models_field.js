@@ -10,6 +10,7 @@
 
 import { P } from '../scheduler.js';
 import { COMPONENTS } from '../../../shared/protocol/componentspec.js';
+import { solidOff } from '../../../shared/protocol/simlayer.js';
 import { kindOf, isMeshBag } from '../../../shared/protocol/kind.js';
 export { kindOf, isMeshBag };
 
@@ -126,6 +127,6 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
  *  @param {any} ent   the folded entity record
  *  @param {boolean} mounted  whether the scene object rides a carrier */
 export function collisionOwnedElsewhere(ent, mounted = false) {
-  // collision off has no box either: collider {enabled: false} (componentspec; the authority's solidity reads it too, simlayer.js solidOff)
-  return !!mounted || !!ent?.structure || ent?.collider?.enabled === false;
+  // collision off for bodies has no box either: collider {enabled: false} or blocks without bodies (simlayer.js solidOff, the authority's reading)
+  return !!mounted || !!ent?.structure || solidOff(ent, 'bodies');
 }

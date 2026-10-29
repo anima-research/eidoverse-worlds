@@ -1,7 +1,8 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
-import { TRACK, tokensAfter } from "../../mover.js";
+import { TRACK, areaFactor, tokensAfter } from "../../mover.js";
+import { physicsAreasOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
@@ -25,6 +26,8 @@ import { endDrivesBy } from "./drive.js";
 import { arrivalBox, body, dist, facingOf, gripPoint, gripOf, heldQ, pathBlocked, refuseForeign, shearFree, sizeOf, solidAt } from "./physics.js";
 import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnHome, returnPlan, secondGrip, shaped, shoveGate, snapTarget } from "./manipulate.js";
 import * as R from "../roles.js";
+const AREAS = new WeakMap();   // a folded state's physics areas (zone.js physicsAreasOf), once per state
+const areasOf = (st) => { let a = AREAS.get(st.entities); if (!a) AREAS.set(st.entities, (a = physicsAreasOf(st))); return a; };
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
 // owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
 const unlockFix = (w, st, k) => { const by = lastSetterOf(w, k, "lock");
@@ -88,8 +91,10 @@ const EMBODIED_VERBS = {
     // a driver's first step off the helm ends their lease: its last accepted pose commits first, so the track restarts at the helm where it is
     { if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }
     { const sat = occupantOf(w, st, actor); if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }
-    const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now));
-    if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${TRACK.speed} m/s, ${TRACK.cap} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
+    // a speed area that boosts (physics-area {kind: speed}) where the step starts or ends widens the track (mover tokensAfter)
+    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to)));
+    const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now), k);
+    if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${r3(TRACK.speed * Math.max(1, k))} m/s, ${r3(TRACK.cap * Math.max(1, k))} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
     if (block?.ground) refuse("solid", block.reason, "walk around it: a gentler slope, or out of the water where the bank is lower", { at: me.at, blocker: "ground" });
     if (block) refuse("solid", `${thingSaid(st, block)} is in the way`, "walk around it (or through a door someone opens)", { at: me.at, blocker: block });
