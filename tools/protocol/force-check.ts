@@ -30,6 +30,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the target is told once a minute per asker", "protocol/authority/bodyconsent.js", "if (n[key] > now - C.TRIED_NOTE_MS) return false;", "if (false) return false;", ["F10"]],
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
+  ["a blast within the caster's body reach only", "protocol/authority/bodyverbs.js", "    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", "    { const me = w.presence.bodies[actor]; if (me && Math.hypot(...me.at.map((v, i) => v - a.at[i])) > 2.5) refuse(\"out-of-reach\", \"too far\", \"walk closer\"); }\n    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", ["F13"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -170,6 +171,10 @@ const cases: Case[] = [
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       return { ...t, cooled: cooled(s) }; },
     good: (o) => o.ok && o.cooled === 1 },
+  { id: "F13", what: "a blast needs no reach from the caster to `at` (R 10-28 13:44: body ranges are a future world setting, consent decides; shove's BODY_REACH is the body verb's): bob 15 m away (his body there, asserted) punts the crate and shoves vic", run(s) { cast(s);
+      s.call("bob", "move", { to: [0, 0, 15] }); s.call("vic", "move", { to: [-1, 0, 1] }); const at = s.w().presence.bodies.bob?.at;
+      const r = s.call("bob", "force", { at: [-1, 0, 0] }); return { at, r: show(r), punted: r.punted?.map((p: any) => p.id), vic: shovesIn(s, "vic").length }; },
+    good: (o) => Math.hypot(o.at?.[0] + 1, o.at?.[1], o.at?.[2]) > 14 && o.r === "ok" && o.punted?.join() === "crate" && o.vic === 1 },
 ];
 function optedOut(s: any) { cast(s, { physics: false });
   const ok = ["vic", "ida", "cy"].map((who, k) => { s.call(who, "move", { to: [Math.cos(k * 2), 0, Math.sin(k * 2)] }); return s.call(who, "consent", { move: false }).ok; }).every(Boolean);

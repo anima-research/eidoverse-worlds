@@ -352,6 +352,7 @@ const EMBODIED_VERBS = {
   },
   // a blast (R 10-28, /boom): each body in radius is shoved through its own consent (bodyGate, as the body verb), each loose
   // thing gets the punt's radial launch from the centre (its own gates); one act. Builders and up. Falloff: shared/blast.js
+  // No reach from the caster to `at`, on purpose: body ranges become a world setting, consent decides meanwhile (R 10-28 13:44)
   force(w, actor, a) {
     if (!Array.isArray(a.at) || a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "force needs at: [x, y, z]", `force {at: [x, y, z], radius?: ${BLAST.radius.min}–${BLAST.radius.max} m (${BLAST.radius.dflt}), power?: ${BLAST.power.min}–${BLAST.power.max} m/s (${BLAST.power.dflt})}`);
     const st = w.state();
