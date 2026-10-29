@@ -227,6 +227,11 @@ for each unbound one why and how to bind it:
 
     owner fable has no account yet (main recorded no account for this name): bind with bun tools/operator-repair.ts bind commons "fable" <their account>
 
+Bans come over the same way: a banned name is bound to main's one account for
+it, so that account stays banned, and the report lists every ban (`bans`,
+in the approved hash) with the account it holds against or why none. A ban
+bound by name alone says "check it": a guest who wore the name was someone else.
+
 If no owner is bound to any account, the dry run, the report
 (`ownerWarning`), the browser's review and result, and the server's log all
 say so, naming them. The upgrade still runs: refusing it would leave the

@@ -10,6 +10,9 @@
 //   OB3  the upgrade's result carries the same list (the approved report's)
 //   OB4  a name another world's log on this server paired with an account is bound
 //   OB5  an account that already wears an id here: the owner role goes to that id (one person, one identity)
+//   BN1  a main-era world ban of a name nothing else in the log names: bound to main's one account for it, so that account is
+//        still banned after the upgrade (the authority's ban check, as at join); the hashed report lists it, with "check it"
+//   BN2  …a ban-only name main recorded no account for is listed unbound, with why and the bind command
 //   OR1  operator-repair bind <world> <name> <account>: the imported owner is worn by that account (signing in is them, with
 //        their roles); by id too; recorded in world.mod.jsonl as an operator repair, no account printed or logged
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
@@ -42,6 +45,7 @@ import * as R from "../../shared/protocol/roles.js";
 import { openLive } from "../../server/livehost.ts";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
+import { banOf } from "../../shared/protocol/authority/rights.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -201,6 +205,18 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
   row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok,
     "CL6 operator-repair set of an ownerless world's first owner: builder keeps generate (as the claim gives it), so regulars keep main's rights once the cap lifts", { set: set?.refused, n: n.permissions, rd: wc["role-defs"] }));
+}
+
+// ================= BN: a main-era ban still holds after the upgrade =================
+{ const root = scratch("owners-bn"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  principals(W, { "human:test:zed": ["Zed", "human"] });
+  v1(W, "hall", [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "ban", { id: "Zed", reason: "griefing" }], ["Ann", "ban", { id: "Nemo" }]]);
+  const u = upgrade(root, "hall"); const zed = u.dir.resolve({ sub: "human:test:zed", name: "Zed" });
+  const live = openLive(path.join(W, "hall"), "hall", { catalogue: ENGINE_CATALOGUE, scripts: null }); const B = Object.fromEntries((u.report?.bans ?? []).map((b) => [b.name, b]));
+  row("BN1", () => ok(u.up.code === 0 && banOf(live, zed)?.reason === "griefing" && B.Zed?.account === "human:test" && /principals/.test(B.Zed?.from) && /check|someone else/.test(B.Zed?.check ?? "") && /^banned Zed: holds against their account/m.test(u.dry.out),
+    "BN1 banned in main (a name nothing else in the log names) → after the upgrade that account is still banned (the authority's check, as at join); the approved report and the dry run list it, saying to check a by-name binding", { code: u.up.code, ban: banOf(live, zed), B, out: u.up.code ? u.up.out.slice(-400) : undefined }));
+  row("BN2", () => ok(B.Nemo?.account === null && /no account/.test(B.Nemo?.why ?? "") && /operator-repair\.ts bind hall "Nemo"/.test(B.Nemo?.bind ?? ""),
+    "BN2 a ban-only name main recorded no account for is listed unbound, with why and the bind command", B.Nemo));
 }
 
 // ================= OR: the operator binds an imported identity to an account =================

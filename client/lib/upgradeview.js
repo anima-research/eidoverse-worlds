@@ -38,6 +38,7 @@ export function reportView(report, hash) {
   box.append(section('Unmapped, kept as imported', (R.unmapped ?? []).map((u) => `${u.component} on ${u.id}: ${(u.fields ?? []).join(', ')} (${u.as})`)));
   box.append(section('Dropped by design', Object.entries(R.dropped ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)));
   box.append(section('People with a role', (R.people ?? []).map((p) => p.account ? `${p.role} ${p.name}: bound to their account (${p.account}, from ${p.from})` : `${p.role} ${p.name}: no account yet (${p.why}); bind with ${p.bind}`)));
+  box.append(section('Banned', (R.bans ?? []).map((b) => b.account ? `${b.name}: holds against their account (${b.account}, from ${b.from})${b.check ? `; check it: ${b.check}` : ''}` : `${b.name}: no account yet (${b.why}), so it holds against no one who signs in; bind with ${b.bind}`)));
   if (R.claim) box.append(el('p', 'sp-up-claim', 'This world has no owner: you will become its owner when you upgrade it.'));
   if (R.ownerWarning) box.append(el('p', 'sp-up-err sp-up-owners', `Warning: ${R.ownerWarning}`));
   box.append(section('Refused', R.refused ? [R.refused] : []));
