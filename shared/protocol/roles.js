@@ -149,8 +149,9 @@ export function brokenNeed(can) {
   return null;
 }
 
-/** The @world record a translation writes for main's ownerless world ({role: "builder"}: everyone built there); imported
- *  records are owner-only and never written by hand (gate.js IMPORTED_ONLY), so in an ownerless world only the translation set it. */
+/** The @world record a translation writes for main's ownerless world ({role: "builder"}: everyone built there). Only an owner
+ *  may write an imported record (gate.js IMPORTED_ONLY), and the first owner's operator repair deletes it, so in an ownerless
+ *  world it stands only if the translation set it and nobody has owned the world since. */
 export const OWNERLESS_OPEN = "imported:ownerless";
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
  *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member,

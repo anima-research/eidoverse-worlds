@@ -365,7 +365,9 @@ export function operatorRepair(w, actor, verb, args = {}) {
   const wc = () => w.state().entities?.["@world"]?.c ?? {};
   const first = verb === "set" && String(args.component).startsWith("roles:") && R.isOwner(args.value) && !Object.keys(wc()).some((k) => k.startsWith("roles:") && R.isOwner(wc()[k]));
   const rd = first ? R.firstOwnerRoleDefs(wc()) : null;   // the first owner: builder keeps member's generate, in the same write (review delta-260 L-I)
-  CTX.operator = actor; try { return rd ? request(w, actor, "batch", { ops: [{ verb, args }, { verb: "set", args: { id: "@world", component: "role-defs", value: rd } }] }) : request(w, actor, verb, args); } finally { CTX.operator = false; }
+  const lift = first && Object.hasOwn(wc(), R.OWNERLESS_OPEN);   // …and the translation's ownerless lift ends: only an owner grants from here (roles.js OWNERLESS_OPEN)
+  const ops = [{ verb, args }, ...(rd ? [{ verb: "set", args: { id: "@world", component: "role-defs", value: rd } }] : []), ...(lift ? [{ verb: "delete", args: { id: "@world", component: R.OWNERLESS_OPEN } }] : [])];
+  CTX.operator = actor; try { return ops.length > 1 ? request(w, actor, "batch", { ops }) : request(w, actor, verb, args); } finally { CTX.operator = false; }
 }
 // the leaves reach the layers above them through UP (authority/ctx.js): bound here, once every module has loaded
 Object.assign(UP, { actEntry, actOf, activate, admit, body, boundsOf, changeEntry, changeShape, commit, danglingRefs, dist, enter, guess, gripPoint, historyDiff, holdsRefs, homeScale, isNum, lacks, lastTouch, letGoEdited, lockCheck, mint, nearMiss, needThing, needWords, notAThing, offRefuse, opsTouching, outsideWorld, rateCheck, request, resolve, restampEngine, returnDue, returnHome, returnPlan, sameHome, occupantOf, occupyRights, serverWritten, setOccupant, settleSim, occupantOn, touchedOf, unknownKeys, vec3s, warnings, withoutRefs });

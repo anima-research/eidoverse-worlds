@@ -35,6 +35,7 @@
 //   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
 //   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
+//   CL11 the claim drops imported:ownerless: a builder granted after it, once the owner leaves, reads member
 //   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
 //   CL6b …in one write (one act, one change); an @24-@29 world's first owner still gives builder member's generate
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
@@ -251,6 +252,18 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     && R.firstOwnerRoleDefs(old)?.builder?.can?.generate === true && R.firstOwnerRoleDefs(wc) === null,
     "CL6b …ONE write (one act, one change; review delta-260 L-I); builder already generates since @30, and an @24-@29 world's first owner still moves member's generate to builder", { wrote: wrote.map((e: any) => [e.kind, e.verb]), old: R.firstOwnerRoleDefs(old) }));
 }
+
+{ // CL11 (fixF): the translation's ownerless lift (imported:ownerless) ends with the first owner; grants made after it count only while owned
+  const root = scratch("owners-cl11"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "loft", [["Pip", "spawn", { id: "c", lib: "x.glb" }]]);
+  const OPAL = { EIDO_UPGRADER_ACCOUNT: "human:test:op", EIDO_UPGRADER_NAME: "Opal" };
+  const u = upgrade(root, "loft", ["--claim"], OPAL), opal = u.roles.Opal?.[0] ?? "", xid = u.dir.resolve({ sub: "human:test:xan", name: "Xan" });   // known before the world opens
+  const w = openLive(path.join(W, "loft"), "loft", { catalogue: ENGINE_CATALOGUE, scripts: null }), wc = () => w.state().entities["@world"].c;
+  const lifted = R.OWNERLESS_OPEN in wc();
+  const k = request(w, opal, "set", { id: "@world", component: "keep-owner", value: false }), g = request(w, opal, "set", { id: "@world", component: `roles:${xid}`, value: { role: "builder" } });
+  const asOwner = R.roleIdOf(wc(), xid), leave = request(w, opal, "delete", { id: "@world", component: `roles:${opal}` });
+  row("CL11", () => ok(u.up.code === 0 && !lifted && k?.ok && g?.ok && asOwner === "builder" && leave?.ok && !Object.keys(wc()).some((c) => c.startsWith("roles:") && R.isOwner(wc()[c])) && R.roleIdOf(wc(), xid) === "member" && R.roleIdOf(wc(), "u-newcomer000000000000") === "member",
+    "CL11 claimed: imported:ownerless is gone with the first owner; a builder the owner granted, once the owner leaves (keep-owner false), reads member again, newcomers too", { code: u.up.code, lifted, k: k?.refused, g: g?.refused, asOwner, leave: leave?.refused, now: R.roleIdOf(wc(), xid) })); }
 
 // ================= BN: a main-era ban still holds after the upgrade =================
 { const root = scratch("owners-bn"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
