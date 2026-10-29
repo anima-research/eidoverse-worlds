@@ -64,7 +64,7 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
   const s = hnSessions.get(m[1]!);
   if (!s) return null;
   if (s.exp < Date.now()) { hnSessions.delete(m[1]!); return null; }
-  return s.sub.startsWith("human:") ? s : null;   // a session is a person's: anything else proves nobody (/auth refuses to make one)
+  return s.sub.startsWith("human:") ? s : null;   // a cookie session is a human's: anything else proves nobody (/auth refuses to make one)
 }
 
 /** The session a request's cookie proves, as the ws join takes it — refused only from another site's page (a browser says

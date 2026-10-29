@@ -184,7 +184,7 @@ await sleep(300);
 // ---- A3 (idle): after a restart, nobody in it, the invite-only world's door is read from its log without loading it ----
 // A10's sessions (restored at boot): Rowan's account as a cookie session, once from a native pairing made before
 // main #255 (HnSession.nativeWorld) and once not
-// (a session is a person's, human:…: that account is bound to Rowan's identity, so it is a member of keep as Rowan is)
+// (a cookie session is a human's, human:…: that account is bound to Rowan's identity, so it is a member of keep as Rowan is)
 const SID_NATIVE = "a".repeat(64), SID_FULL = "b".repeat(64);
 { const { directoryFor } = await import("../../server/directory.ts"); const d = directoryFor(W); d.bind(d.idOfSub("agent:token:rowan"), "human:test:rowan"); }
 fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({

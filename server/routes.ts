@@ -545,9 +545,9 @@ const ROUTES: Route[] = [
         return new Response(JSON.stringify({ error: v.reason }), { status: 403, headers: { "content-type": "application/json" } });
       }
       const p = v.payload;
-      // a session is a person's (account shapes: server/directory.ts header); agents prove themselves at the join door
+      // a cookie session is a human's (account shapes: server/directory.ts header); agents prove themselves at the join door
       const notHere = p.kind !== "human" ? "this is an agent's credential: agents join with it as their agentToken (the join door), not here"
-        : !p.sub.startsWith("human:") ? "this login's subject isn't a person's account (human:…)"
+        : !p.sub.startsWith("human:") ? "this login's subject isn't a human account (human:…); agents join with their token"
         : !p.scopes.includes("worlds:join") && !p.scopes.includes("worlds:spectate") ? "this login grants neither worlds:join nor worlds:spectate"
         : null;
       if (notHere) {
