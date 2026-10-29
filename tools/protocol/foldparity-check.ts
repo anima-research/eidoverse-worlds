@@ -18,6 +18,7 @@
 //   FP8 a log replaced under a live world: a prefix read throws, never reads the other file
 //   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster)
 //   FP10 the readers rewritten not to scan (creatorOf, modlog, chat pages, client cuts) answer as their whole-log formulas
+//   FP11 the boot sweep's script peek (durable.ts fileIncludes) reads in chunks and finds a needle across a chunk's edge
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -264,6 +265,12 @@ if (process.env.FP_FROM) { const dir = path.join(W, "from"); fs.mkdirSync(dir, {
   console.log(`  FP9 ${E.length} entries (${(fs.statSync(logP(dir)).size / 1e6).toFixed(1)} MB): boot ${off.ms.toFixed(0)} ms (+${off.rss.toFixed(0)} MB RSS) reading the whole log, ${on.ms.toFixed(0)} ms (+${on.rss.toFixed(0)} MB) from the tail (${left} lines left on disk); first write to a thing with ${K / ids.length | 0} sets ${offW.toFixed(1)} ms vs ${onW.toFixed(1)} ms (${read} prefix lines read)`);
   ok(left >= K && on.ms * 3 < off.ms, "FP9 the tail boot leaves the prefix on disk and is under a third of the whole-log boot", { on: on.ms, off: off.ms, left, from: on.b.bootedFromCache, sim: on.b.simFromCache });
   ok(offOk && onOk && read < 20, `FP9 the first write to a thing with a long history reads its create line and the rate window, not its ${K / ids.length | 0} sets (creatorOf's born shortcut)`, { read }); }
+
+// ---- FP11 (review L18): the boot sweep's script peek reads the log in chunks, and finds the bytes across a chunk's edge ----
+{ const D = await import("../../server/durable.ts"), f = path.join(root, "peek.jsonl"), M = 1 << 20, N = '"script:';
+  const at = (bytes) => { fs.writeFileSync(f, bytes); return D.fileIncludes?.(f, N); };
+  const got = [at(""), at(N), at("x".repeat(M - 3) + N + "y"), at("x".repeat(M) + N), at("x".repeat(3 * M) + N.slice(0, -1)), at("x".repeat(M - 4) + N.slice(0, 4) + "\n" + N.slice(4))];
+  ok(JSON.stringify(got) === JSON.stringify([false, true, true, true, false, false]), "FP11 fileIncludes: none, all, across the 1 MiB edge, after it, a cut needle, a split one", got); }
 
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);
 process.exit(fail ? 1 : 0);

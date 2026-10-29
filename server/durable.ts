@@ -8,6 +8,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { sha256 } from "../shared/protocol/hash.js";
 
+/** Does the file at `p` hold `needle`'s bytes? Read in 1 MiB chunks, never whole (the boot sweep's peek, review L18). */
+export function fileIncludes(p: string, needle: string): boolean {
+  const n = Buffer.from(needle), b = Buffer.allocUnsafe((1 << 20) + n.length), fd = fs.openSync(p, "r");
+  try { for (let pos = 0, keep = 0; ;) { const got = fs.readSync(fd, b, keep, b.length - keep, pos); if (got <= 0) return false;
+    pos += got; const end = keep + got; if (b.subarray(0, end).includes(n)) return true;
+    keep = Math.min(n.length - 1, end); b.copy(b, 0, end - keep, end); } }   // a needle across the chunk edge is found next read
+  finally { fs.closeSync(fd); }
+}
+
 /** The log's bytes, with a torn tail (no final newline) cut off the file first. `cut: false` is a reader's: it leaves the
  *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now (review
  *  of #260, server I127: a reader that cut it made the writer's line land broken). Only the log's writer cuts. */
