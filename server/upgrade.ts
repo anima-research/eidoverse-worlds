@@ -62,7 +62,7 @@ const RATE_N = 6, RATE_MS = 10 * 60_000;
 const running = new Set<string>(), recent = new Map<string, number[]>();
 
 /** The checks both requests share; a refusal is answered here and null returned. */
-async function admit({ c, ws }: Ctx, msg: Any, type: string) {
+async function admit({ c, ws }: Ctx, msg: Any, type: string, shape?: () => [string, string] | null) {
   const id = msg.id ?? null;
   const refuse = (code: string, reason: string, fix?: string) => { ws.send(JSON.stringify({ type, id, ok: false, refused: { code, reason, ...(fix ? { fix } : {}) } })); return null; };
   const who = provenWho(c, msg), account = who?.account ?? null, operator = isOperator(account);
@@ -70,10 +70,11 @@ async function admit({ c, ws }: Ctx, msg: Any, type: string) {
   const old = oldWorldAt(WORLDS_DIR, world);
   const rights = (why = "") => refuse("rights", `upgrading a world saved in an older format is for this server's operator (an account in SERVER_OPERATORS) or the world's owner, signed in${why ? ` (${why})` : ""}. ${IF_YOU_RUN_IT}`, "ask the server's operator or the world's owner");
   let owner: Owner | null = null;
-  if (!operator) { if (!old || old.kind !== "translatable") return rights(account ? "" : "not signed in");
+  if (!old) return refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`);   // to anyone: a join says as much
+  if (!operator) { if (old.kind !== "translatable") return rights(account ? "" : "not signed in");
     owner = await ownerOf(world, who); if (!owner?.recognised) return rights(owner?.why ?? (account ? "" : "not signed in")); }
-  if (!old) return refuse("not-old", `there is no world saved in an older format called "${world.slice(0, 64)}" here`);
   if (old.kind !== "translatable") return refuse("cli", `"${world}" was saved before this protocol's names changed; it is re-translated from its original old log on the command line (the boot notice gives the commands): ${OLD_FORMAT_DOC}`);
+  const bad = shape?.(); if (bad) return refuse("shape", bad[0], bad[1]);   // before the rate slot: a malformed request runs nothing
   if (running.has(world)) return refuse("busy", `"${world}" is already being reviewed or upgraded`, "wait for that to finish");
   const now = Date.now(), mine = (recent.get(account!) ?? []).filter((t) => now - t < RATE_MS);
   if (mine.length >= RATE_N) return refuse("rate", `at most ${RATE_N} upgrade requests in ${RATE_MS / 60_000} minutes`, "try again later");
@@ -98,8 +99,8 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "world-upgrade": (ctx, msg) => {
     const type = "world-upgrade";
     const approved = String(msg.approved ?? "");
-    void admit(ctx, msg, type).then((a) => { if (!a) return;
-    if (!/^[0-9a-f]{64}$/.test(approved)) { running.delete(a.world); a.refuse("shape", "approved must be the reviewed report's hash (64 hex)", "review the upgrade first"); return; }
+    const shape = (): [string, string] | null => /^[0-9a-f]{64}$/.test(approved) ? null : ["approved must be the reviewed report's hash (64 hex)", "review the upgrade first"];
+    void admit(ctx, msg, type, shape).then((a) => { if (!a) return;
     void runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--claim", "--approved", approved, "--json", "--", a.world], claimEnv(a)).then((r) => {
       const got = r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();

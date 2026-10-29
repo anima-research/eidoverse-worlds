@@ -18,6 +18,7 @@
 //   US10 its owner bound by main's records (the grant's sub) may upgrade it: the join says may, owner "bound"; the review and upgrade run, the log says how; they join as owner
 //   US11 an owner main recorded no account for may upgrade it by name (owner "name", provisional), said in the replies and the log; the report's claim binds that owner to them, and they join as owner
 //   US12 a signed-in account of another name may not: the join says may false, the review is refused, nothing written
+//   US13 a malformed world-upgrade (approved not 64 hex) spends no rate slot; a visitor asking about no such world is told not-old (review L3)
 //   UD   the doc's "Upgrading a main-era server" (R 10-27), run as written: /whoami names your account; after an upgrade the
 //        operator's whois, then operator-repair set/delete, give the world to the right account (nobody is locked out)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/upgrade-check.ts
@@ -98,17 +99,18 @@ function linkedWorld(name: string) { const real = oldWorld(name); const to = pat
 // ================= US: the join refusal and the operator's upgrade, on a real server =================
 async function freePort(from: number) { for (let p = from; p < from + 200; p++) { if (p === 8968 || p === 8970) continue;
   const free = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (free) return p; } throw new Error("no free port"); }
-const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64);
+const OP = "a".repeat(64), VIS = "b".repeat(64), OP2 = "c".repeat(64), OP3 = "d".repeat(64), ANN = "e".repeat(64), BO = "f".repeat(64), OP4 = "9".repeat(64);
 const sf = path.join(root, "sessions.json");
 fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [VIS]: { sub: "human:test:vis", name: "Vee", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP2]: { sub: "human:test:op2", name: "Otto", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [OP3]: { sub: "human:test:op3", name: "Ona", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [ANN]: { sub: "human:test:ann", name: "Ann", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
-  [BO]: { sub: "human:test:bo", name: "Robert", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
+  [BO]: { sub: "human:test:bo", name: "Robert", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
+  [OP4]: { sub: "human:test:op4", name: "Oren", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
 const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
-  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3,human:test:op4", SESSIONS_PATH: sf, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })))
   { console.log(`  FAIL the server didn't come up: ${fs.existsSync(slog + ".err") ? fs.readFileSync(slog + ".err", "utf8").slice(-500) : ""}`); process.exit(1); }
@@ -195,6 +197,11 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
   ok(seen.slice(0, RATE_N).every((x) => x === "ok") && seen[RATE_N] === "rate" && new RegExp(`at most ${RATE_N} `).test(last.refused?.reason ?? ""),
     "US6 the operator's upgrade requests are rate-limited: from a fresh account, RATE_N taken and the next refused 'rate'", seen);
 }
+{ const RATE_N = 6, seen: any[] = [];   // server/upgrade.ts RATE_N; OP4 is used nowhere else
+  for (let k = 0; k <= RATE_N; k++) seen.push((await ask(OP4, "world-upgrade", { world: "cellar", approved: "nope" })).refused?.code);
+  const after = await ask(OP4, "world-upgrade-review", { world: "cellar" }), none = await ask(VIS, "world-upgrade-review", { world: "nowhere-at-all" });
+  ok(seen.every((x) => x === "shape") && after.ok === true && none.refused?.code === "not-old" && /no world saved in an older format called "nowhere-at-all"/.test(none.refused.reason),
+    "US13 RATE_N+1 malformed world-upgrades (approved not a hash) are each refused 'shape' and spend no rate slot (the next review runs); a visitor asking about a world that doesn't exist is told not-old", { seen, after: after.ok ?? after.refused, none: none.refused }); }
 { oldWorld("loft");
   const { WorldAgent } = await import("../../mcpl/agent.ts");
   const ag: any = new WorldAgent({ name: "Ag", world: "loft", url: `ws://127.0.0.1:${port}/ws` });
