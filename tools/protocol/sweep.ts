@@ -177,11 +177,19 @@ function oldNorm(st: any, phys: any = null) {
     ? Object.fromEntries(Object.entries<any>(world[k]).map(([n, v]) => [n, noAccounts(k === "bans" && v && typeof v === "object" && /^(human|agent|aid1):/.test(v.by) ? (({ by: _b, ...r }) => r)(v) : v)]))
     : noAccounts(world[k]);
   // declared (translate-v1@24, R 10-28): main's effective rights written out, read here from main's rule (rightsfold.js rightsIn):
-  // an unwritten '*' is builder; with no owner (@30), '*' and every grant are unread: everyone is builder, and builder generates
+  // an unwritten '*' is builder; with no owner (@30), '*' and every grant are unread: everyone is builder, and builder generates (the claim is its owner)
   { const R = world.roles ?? {}, owned = Object.entries<any>(R).some(([k, r]) => k !== "*" && r?.role === "owner");
     if (!R["*"] || !owned) world.roles = { ...R, "*": { role: "builder" } };
     if (!owned) { for (const [k, r] of Object.entries<any>(world.roles)) if (k !== "*" && r && typeof r === "object" && (r.role === undefined || r.role === "visitor")) world.roles[k] = { ...r, role: "builder" };
-      world["??role-defs"] = { builder: { can: { generate: true } } }; world.ownerless = { role: "builder", why: "main let everyone build a world with no owner" }; } }
+      world["??role-defs"] = { builder: { can: { generate: true } } }; } }
+  // declared (translate-v1@31, LEGACY-PINS item 2): main kept walkers within 78 m and fliers under 60 m where it had no bounds; with
+  // neither bounds nor terrain the world's box says so, 2 m under the stage floor, grown 2 m past every thing, volume and vehicle band
+  if (st.terrain == null && !Object.values<any>(st.entities ?? {}).some((e) => e?.comp?.environment)) {
+    const lo = [-78, -2, -78], hi = [78, 60, 78], take = (p: any) => { if (Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i] - 2); hi[i] = Math.max(hi[i], p[i] + 2); } };
+    for (const e of Object.values<any>(st.entities ?? {})) { const p = Array.isArray(e?.pos) ? e.pos : [0, 0, 0], w = e?.comp?.water, v = e?.comp?.vehicle; take(e?.pos);
+      if (Array.isArray(w?.center) && Array.isArray(w?.size)) for (const k of [-0.5, 0.5]) take(p.map((x: number, i: number) => x + w.center[i] + k * Math.abs(w.size[i])));
+      for (const y of [v?.minY, v?.maxY]) if (Number.isFinite(y)) take([p[0], y, p[2]]); }
+    world["??bounds"] = { min: lo, max: hi }; }
   // dropped on purpose by translate-v1 (round-2 R8): the sky's echo of who set it and when (the log says so itself)
   if (world.sky && typeof world.sky === "object") { const { seq, by, ...sky } = world.sky;
     if (sky.forecast && typeof sky.forecast === "object") { const { seq: _s, by: _b, ...fc } = sky.forecast; sky.forecast = fc; }

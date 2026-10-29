@@ -48,22 +48,19 @@ no frame to hold one (`water` on `@world` without one is the world's water
 level and is carried) — is **refused**, naming each use (component, entity, actor, seq); an approval
 cannot override the refusal. Nothing of a world is ever dropped quietly.
 
-**What a translation keeps of main's meaning** (translate-v1@28, R 10-28; the
+**What a translation keeps of main's meaning** (translate-v1@31, R 10-28; the
 report lists each one):
 
 - *Rights.* Main gave everyone without a grant its `'*'` rule, builder when
   none was written, guests included; a world with no owner let everyone build
   and generate. The translation writes that out: `default-role` with
-  `guests` the same role. An ownerless world (translate-v1@30) is builder
-  for everyone, rank and all: `default-role` builder for newcomers and
-  guests, every grant below builder written builder (main read none), and
-  builder's `role-defs` carrying generate; its `'*'` is unread, as main's
-  was, and `imported:ownerless {role: builder}`, which lifts this protocol's
-  ownerless cap (member: nobody could have granted more) to builder for
-  that world alone. So a `who: builder`
-  gate admits everyone, a moderator's grant reads builder until the world
-  has an owner (the upgrader's claim, below, or operator-repair set), and a
-  lock is member strength until then (anyone who may build lifts it). The
+  `guests` the same role. An ownerless world is builder for everyone else,
+  rank and all, once its upgrader claims it (every translation ends with an
+  owner: translate-v1@31): `default-role` builder for newcomers and guests,
+  every grant below builder written builder (main read none), and builder's
+  `role-defs` carrying generate; its `'*'` is unread, as main's was. So a
+  `who: builder` gate admits everyone, and anyone who may build lifts a
+  builder-strength lock, as in main. The
   report's `rights` says which, and its notes what can't be said (generate
   for guests in an owned world). Worlds founded new keep this
   protocol's defaults.
@@ -84,11 +81,23 @@ report lists each one):
   this host measures it, so the hull's origin keeps main's band exactly (a hull
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
   band). One hull layer: every vehicle meets every band. Each wall is locked
-  (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is a
-  `physics-area {kind: 'speed'}` on the water's zone, its factor main's speed
-  over the volume stroke this protocol swims at there (2.4 m/s), so main's
-  swimmer and this one keep the same pace; it scales walking and wading in that
-  zone too, where main changed only the swim (the report says so).
+  (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is the
+  water's own `drag` (translate-v1@31; Godot's `linear_damp`): 5 × 2.4 / speed
+  per second, so a swimmer there strokes at main's pace and walkers on its
+  floor are untouched; a speed within 5% of 2.4 m/s (the stroke here) is
+  dropped, and the report says which.
+- *The stage edge* (translate-v1@31): where main had neither bounds nor a
+  terrain it kept walkers and swimmers within 78 m of the origin and fliers
+  under 60 m. Here `@world.bounds` is the only edge, so such a world gets the
+  box x/z ±78 m, y −2..60 m, grown 2 m past anything placed, any water volume
+  and any vehicle band outside it (the report's `stage`). Every other world
+  walks and flies as far as its own bounds allow; with none, anywhere.
+- *Inferred lamps* (translate-v1@31): main lit a glowing model (an emissive
+  surface) with up to two lamps of its own. This protocol infers none (an
+  emissive material glows; a light is a light component, as in Godot, Unity
+  and Unreal), so each lamp main drew is a `light` child at its spot, measured
+  from the model on this host: main's colour, range 12 m, and its brightness
+  at 6 m under decay 2 (the report's `lamp`).
 - *Carried, with their fate said:* vehicle `probes` (retired: the authority's
   hull sweep).
 - *Sky audio* (the weather's own sounds) is `@world.sky.audio`, as main's.
@@ -164,9 +173,9 @@ and the builder role gains generate, so everyone else keeps what main gave
 them there (build and generate). The result and the success page say "You're
 now this world's owner". The boot notice's commands carry `--claim` with
 `EIDO_UPGRADER_ACCOUNT=<your-account>` (yours, as `SERVER_OPERATORS` lists
-it), so the command line claims as the browser does. Without `--claim` it
-stays ownerless, warned; its locks stay member strength, so nobody is
-locked out of their builds. Existing owners always stay owners.
+it), so the command line claims as the browser does. Without `--claim` the
+dry run and the translation refuse, naming the fix: every translation ends
+with an owner. Existing owners always stay owners.
 
 The splash of anyone who may upgrade has a **Upgrade world…** button. It shows the dry-run
 report (what carries, what is mapped, what has no home and is kept as

@@ -117,9 +117,9 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
   check('an imported lamp (Model + light on one record, as the fold keeps it) lands WITHOUT inferred lamps — the authored light alone lights it', !!stub.entities.get('implamp')?.userData?.lib && lamps('implamp') === 0 && rq('implamp')?.obj === stub.entities.get('implamp'),
     JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:implamp')));
-  check('…a model with no Light component still gets its inferred lamps, exactly once', lamps('plain') === 1 && lamps('crate') === 1, JSON.stringify([...stub.lampOwners]));
-  check('…attached once at landing, with no churn (no release, no second attach) before anything changed',
-    ['plain', 'crate'].every((id) => JSON.stringify(stub.lampLog.filter((e: any) => e[1] === `entity:${id}`)) === JSON.stringify([['attach', `entity:${id}`]])), JSON.stringify(stub.lampLog));
+  // a glowing model glows and lights nothing (Godot, Unity, Unreal): its lights are light components (LEGACY-PINS item 6)
+  check('…a model with no Light component lights nothing: no lamp is inferred for it, at landing or after', lamps('plain') === 0 && lamps('crate') === 0
+    && !stub.lampLog.some((e: any) => e[1] === 'entity:plain' || e[1] === 'entity:crate'), JSON.stringify([[...stub.lampOwners], stub.lampLog]));
   const fit = (id: string) => stub.colliders.get(id)?.opts;
   check('colliders: the collider component decides the fit', fit('lamp')?.collide === 'box' && fit('crate')?.collide === 'box', JSON.stringify([fit('lamp'), fit('crate')]));
   check('…and none = undefined (decide by size)', !!fit('plain') && fit('plain').collide === undefined, JSON.stringify(fit('plain')));
@@ -138,12 +138,12 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const onePlace = W.call('set', { id: 'plain', component: 'light', value: { intensity: 9 } });
   check('live: a Light component on a STANDING model is refused at the door (one-place)', !onePlace.ok && onePlace.refused?.code === 'one-place', JSON.stringify(onePlace.refused));
   live('create', { id: 'plain-light', components: { transform: { pos: [0, 1, 0] }, parent: { to: 'plain' }, light: { intensity: 9 } } });
-  check('live: a light child added under a STANDING model casts its own light; the model keeps its inferred lamps (a child is not an authored light ON the model)',
-    rq('plain-light')?.intensity === 9 && rq('plain-light').obj === stub.entities.get('plain-light') && lamps('plain') === 1, JSON.stringify([stub.lampLog.slice(-3), rq('plain-light')?.intensity, lamps('plain')]));
+  check('live: a light child added under a STANDING model casts its own light, and the model still infers none',
+    rq('plain-light')?.intensity === 9 && rq('plain-light').obj === stub.entities.get('plain-light') && lamps('plain') === 0, JSON.stringify([stub.lampLog.slice(-3), rq('plain-light')?.intensity, lamps('plain')]));
   live('set', { id: 'plain-light', component: 'light', value: { intensity: 12 } });
-  check('…changing that light touches no lamps', lamps('plain') === 1 && stub.lampLog.at(-1)?.[1] !== 'entity:plain' && rq('plain-light')?.intensity === 12, JSON.stringify([stub.lampLog.slice(-2), rq('plain-light')?.intensity]));
+  check('…changing that light touches no lamps', lamps('plain') === 0 && stub.lampLog.at(-1)?.[1] !== 'entity:plain' && rq('plain-light')?.intensity === 12, JSON.stringify([stub.lampLog.slice(-2), rq('plain-light')?.intensity]));
   live('delete', { id: 'plain-light' });
-  check('…removing the child releases its request and leaves the model\'s lamps alone', lamps('plain') === 1 && !rq('plain-light'), JSON.stringify(stub.lampLog.slice(-3)));
+  check('…removing the child releases its request and infers no lamp in its place', lamps('plain') === 0 && !rq('plain-light'), JSON.stringify(stub.lampLog.slice(-3)));
   live('delete', { id: 'pivot', component: 'light' });
   check('live: removing the light component releases the request and takes the gizmo off the Empty',
     !rq('pivot') && !piv.children.some((c: any) => c.userData.gizmo));

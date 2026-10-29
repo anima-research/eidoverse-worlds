@@ -19,7 +19,7 @@
 //        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 //   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
-//   UN2  one owner bound: no warning; UN3 no owner at all: warned too
+//   UN2  one owner bound: no warning; UN3 no owner at all and no --claim: refused, naming --claim (every translation ends with an owner)
 //   OU1  world.ts owner-of: a signed-in account main's records bind to an owner is that owner ("bound"), whatever its name
 //   OU2  an owner main recorded NO account for is recognised by the account's name, any case ("name": provisional, R 10-28)
 //   OU3  a different name is refused; so is a bound owner's name on another account, and a builder's name
@@ -33,11 +33,10 @@
 //   CL3  …and rollback forgets the claimant's identity with the rest (the backup and undo as before)
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
 //   CL7  the splash's words for each claim (client/lib/upgradeview.js claimWords): ownerless, owner by account, owner by name
-//   CL5  no --claim: an ownerless world's locks (a v1 lock and a guard) are member strength, so a regular lifts one (no lockout)
+//   CL5  claimed: an ownerless world's locks (a v1 lock and a guard) are lifted by a regular, who is builder (no lockout)
 //   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
-//   CL11 the claim drops imported:ownerless: a builder granted after it, once the owner leaves, reads member
-//   CL6  …and operator-repair set of its first owner gives builder generate, as the claim does (roles.js firstOwnerRoleDefs)
-//   CL6b …in one write (one act, one change); an @24-@29 world's first owner still gives builder member's generate
+//   CL11 the translation writes no imported:ownerless: a builder granted after the claim, once the owner leaves, reads member
+//   CL6  …and operator-repair set of another owner keeps builder's generate (the translation's role-defs), in one write
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -146,8 +145,9 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const named = (w: any) => typeof w === "string" && /no owner of "attic" is bound to an account: fable, mica\./.test(w) && /operator-repair\.ts bind attic /.test(w) && !/Digi_Rat/.test(w);
   row("UN1", () => ok(named(a.report?.ownerWarning) && a.dry.out.includes(`WARNING: ${a.report.ownerWarning}`) && a.up.code === 0 && fs.existsSync(path.join(W, "attic", "world.jsonl")) && named(a.result?.ownerWarning) && /^WARNING: no owner of "attic"/m.test(a.up.out),
     "UN1 no owner bound to any account: the dry run, the approved report and the upgrade's result warn, naming the owners (not the builder) and the bind; the upgrade still runs", { w: a.report?.ownerWarning, r: a.result?.ownerWarning, code: a.up.code }));
-  row("UN3", () => ok(/"shed" has no owner at all/.test(s.report?.ownerWarning ?? "") && s.up.code === 0 && /has no owner at all/.test(s.result?.ownerWarning ?? ""),
-    "UN3 a world with no owner at all after the upgrade is warned about too, and still upgraded", { w: s.report?.ownerWarning, code: s.up.code }));
+  const no = (o: string) => /"shed" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=/.test(o);
+  row("UN3", () => ok(s.dry.code !== 0 && no(s.dry.out) && s.up.code !== 0 && no(s.up.out) && !fs.existsSync(path.join(W, "shed", "world.jsonl")) && fs.existsSync(path.join(W, "shed", "log.jsonl")),
+    "UN3 a world with no owner and no --claim: the dry run and the upgrade refuse, naming --claim and EIDO_UPGRADER_ACCOUNT; nothing is written (LEGACY-PINS item 9)", { dry: s.dry.out.slice(-300), up: s.up.out.slice(-300), code: s.up.code }));
 }
 
 // ================= OU: who may upgrade as the world's owner (R 10-28: "owners or operators can update worlds") =================
@@ -226,11 +226,11 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
 { const root = scratch("owners-cl5"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
   v1(W, "yard", [["Pip", "spawn", { id: "shed", lib: "x.glb" }], ["Pip", "comp", { id: "shed", type: "lock", data: true }],
     ["Pip", "spawn", { id: "gate", lib: "x.glb" }], ["Pip", "comp", { id: "gate", type: "guard", data: true }]]);
-  const u = upgrade(root, "yard"); const live = () => openLive(path.join(W, "yard"), "yard", { catalogue: ENGINE_CATALOGUE, scripts: null });
+  const u = upgrade(root, "yard", ["--claim"], { EIDO_UPGRADER_ACCOUNT: "human:test:op", EIDO_UPGRADER_NAME: "Opal" }); const live = () => openLive(path.join(W, "yard"), "yard", { catalogue: ENGINE_CATALOGUE, scripts: null });
   const pip = u.roles.Pip?.[0] ?? u.dir.resolve({ sub: "human:test:pip", name: "Pip" }), rue = u.dir.resolve({ sub: "human:test:rue", name: "Rue" });
   const a = request(live(), rue, "delete", { id: "shed", component: "lock" }), b = request(live(), pip, "delete", { id: "gate", component: "lock" });
   row("CL5", () => ok(u.up.code === 0 && a?.ok && b?.ok && live().state().entities.shed.c.lock === undefined,
-    "CL5 no --claim: the ownerless world's lock and guard are member strength, so a regular (a newcomer, the placer) lifts them; nobody is locked out", { code: u.up.code, a: a?.refused, b: b?.refused }));
+    "CL5 claimed by its upgrader: a regular (a newcomer, the placer) is builder and lifts the old world's lock and guard; nobody is locked out", { code: u.up.code, out: u.up.out.slice(-300), a: a?.refused, b: b?.refused }));
   { // (fixF, row 22) main let everyone build an ownerless world: here everyone is builder, rank and all; never moderator
     const w = live(), q = (who: string, verb: string, args: any) => request(w, who, verb, args);
     const mk = q(rue, "create", { id: "$lever", components: { label: "lever", reactions: { yank: { kind: "set", component: "label", value: "yanked", who: "builder" } } } });
@@ -245,12 +245,9 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
       "CL10 …and moderation stays refused: a regular can't ban, nor make themselves moderator; their role is builder, never above", { ban: ban?.refused?.code, up: up?.refused?.code, role: R.roleIdOf(w.state().entities["@world"].c, rue) })); }
   const w = live(), n0 = w.entries.length, set = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${rue}`, value: { role: "owner" } }), wrote = w.entries.slice(n0);
   const wc = w.state().entities["@world"].c, n = R.effectiveOf(wc, "u-somebodyelse00000000"), again = operatorRepair(w, rue, "set", { id: "@world", component: `roles:${pip}`, value: { role: "owner" } });
-  row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok,
-    "CL6 operator-repair set of an ownerless world's first owner: builder keeps generate (as the claim gives it), so regulars keep main's rights once the cap lifts", { set: set?.refused, n: n.permissions, rd: wc["role-defs"] }));
-  const old = { "role-defs": { member: { can: { build: true, generate: true } } } };   // an @24-@29 translation's ownerless shape
-  row("CL6b", () => ok(wrote.filter((e: any) => e.kind === "change").length === 1 && wrote.filter((e: any) => e.kind === "act").length === 1 && JSON.stringify(wrote).includes(`roles:${rue}`)
-    && R.firstOwnerRoleDefs(old)?.builder?.can?.generate === true && R.firstOwnerRoleDefs(wc) === null,
-    "CL6b …ONE write (one act, one change; review delta-260 L-I); builder already generates since @30, and an @24-@29 world's first owner still moves member's generate to builder", { wrote: wrote.map((e: any) => [e.kind, e.verb]), old: R.firstOwnerRoleDefs(old) }));
+  row("CL6", () => ok(set?.ok && n.role === "builder" && n.can.generate && n.can.build && wc["role-defs"]?.builder?.can?.generate === true && again?.ok
+    && wrote.filter((e: any) => e.kind === "change").length === 1 && wrote.filter((e: any) => e.kind === "act").length === 1 && JSON.stringify(wrote).includes(`roles:${rue}`) && !JSON.stringify(wrote).includes("role-defs"),
+    "CL6 operator-repair set of another owner is one write (one act, one change), the role alone; builder keeps generate from the translation's role-defs", { set: set?.refused, n: n.permissions, rd: wc["role-defs"], wrote: wrote.map((e: any) => [e.kind, e.verb]) }));
 }
 
 { // CL11 (fixF): the translation's ownerless lift (imported:ownerless) ends with the first owner; grants made after it count only while owned
@@ -259,11 +256,11 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const OPAL = { EIDO_UPGRADER_ACCOUNT: "human:test:op", EIDO_UPGRADER_NAME: "Opal" };
   const u = upgrade(root, "loft", ["--claim"], OPAL), opal = u.roles.Opal?.[0] ?? "", xid = u.dir.resolve({ sub: "human:test:xan", name: "Xan" });   // known before the world opens
   const w = openLive(path.join(W, "loft"), "loft", { catalogue: ENGINE_CATALOGUE, scripts: null }), wc = () => w.state().entities["@world"].c;
-  const lifted = R.OWNERLESS_OPEN in wc();
+  const lifted = "imported:ownerless" in wc();   // @30 wrote it; @31 doesn't
   const k = request(w, opal, "set", { id: "@world", component: "keep-owner", value: false }), g = request(w, opal, "set", { id: "@world", component: `roles:${xid}`, value: { role: "builder" } });
   const asOwner = R.roleIdOf(wc(), xid), leave = request(w, opal, "delete", { id: "@world", component: `roles:${opal}` });
   row("CL11", () => ok(u.up.code === 0 && !lifted && k?.ok && g?.ok && asOwner === "builder" && leave?.ok && !Object.keys(wc()).some((c) => c.startsWith("roles:") && R.isOwner(wc()[c])) && R.roleIdOf(wc(), xid) === "member" && R.roleIdOf(wc(), "u-newcomer000000000000") === "member",
-    "CL11 claimed: imported:ownerless is gone with the first owner; a builder the owner granted, once the owner leaves (keep-owner false), reads member again, newcomers too", { code: u.up.code, lifted, k: k?.refused, g: g?.refused, asOwner, leave: leave?.refused, now: R.roleIdOf(wc(), xid) })); }
+    "CL11 claimed: the translation carries no imported:ownerless; a builder the owner granted, once the owner leaves (keep-owner false), reads member again, newcomers too", { code: u.up.code, lifted, k: k?.refused, g: g?.refused, asOwner, leave: leave?.refused, now: R.roleIdOf(wc(), xid) })); }
 
 // ================= BN: a main-era ban still holds after the upgrade =================
 { const root = scratch("owners-bn"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });

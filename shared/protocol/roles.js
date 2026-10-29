@@ -149,13 +149,9 @@ export function brokenNeed(can) {
   return null;
 }
 
-/** The @world record a translation writes for main's ownerless world ({role: "builder"}: everyone built there). Only an owner
- *  may write an imported record (gate.js IMPORTED_ONLY), and the first owner's operator repair deletes it, so in an ownerless
- *  world it stands only if the translation set it and nobody has owned the world since. */
-export const OWNERLESS_OPEN = "imported:ownerless";
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
- *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member,
- *  or at builder where its translation carried main's open rights (OWNERLESS_OPEN) (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
+ *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member:
+ *  nobody could have granted more (§2.3). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   if (!wc) return "member";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
@@ -163,16 +159,7 @@ export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   let r = isObj(wc[`roles:${id}`]) ? wc[`roles:${id}`].role : anon ? guestRoleOf(wc) : base;
   if (typeof r !== "string" || !roleDef(wc, r)) r = "member";
   const hasOwner = owners ?? Object.keys(wc).some((k) => k.startsWith("roles:") && isOwner(wc[k]));
-  // no owner: nobody could have granted a role, so member caps it; builder only where the operator-approved translation said so (OWNERLESS_OPEN)
-  const cap = isObj(wc[OWNERLESS_OPEN]) && wc[OWNERLESS_OPEN].role === "builder" ? "builder" : "member";
-  return !hasOwner && rankOfRole(wc, r) > rankOfRole(wc, cap) ? cap : r;
-}
-/** The role-defs a world's first owner brings (the upgrade's claim, operator-repair set): where member held generate while
- *  the world had no owner (translate-v1 mainRights), builder keeps it once the cap lifts; else null (nothing to write). */
-export function firstOwnerRoleDefs(wc) {
-  const rd = isObj(wc?.["role-defs"]) ? wc["role-defs"] : {};
-  if (rd.member?.can?.generate !== true || rd.builder?.can?.generate === true) return null;
-  return { ...rd, builder: { ...(rd.builder ?? {}), can: { ...(rd.builder?.can ?? {}), generate: true } } };
+  return !hasOwner && rankOfRole(wc, r) > rankOfRole(wc, "member") ? "member" : r;
 }
 /** What a guest (no account) is here: default-role.guests when the world defines it, never owner, and (GUESTS_AT_MOST_DEFAULT)
  *  never above the default role; else member (R 10-21: guests start as members even where newcomers build). */

@@ -27,9 +27,9 @@ const ops = dry.requests[0].args.ops, creates = ops.filter((o) => o.verb === "cr
 const bodies = creates.filter((a) => a.components.water), pockets = creates.filter((a) => a.components["water-exclusion"]);
 const by = (host) => pockets.filter((a) => a.components.parent?.to === `$${host}`);
 const b = bodies[0]?.components;
-C("G1", "one water body: a child of water-terrain at main's centre, zone {box, 2000 × 250 × 2000} at priority 0, σ as attenuation, main's four waves, main's swim speed a physics-area on it (translate-v1@29: × the body's own stroke there, so 2.4 is 1)",
+C("G1", "one water body: a child of water-terrain at main's centre, zone {box, 2000 × 250 × 2000} at priority 0, σ as attenuation, main's four waves; main's swim speed 2.4 is the stroke here, so no drag is written (translate-v1@31)",
   bodies.length === 1 && b.parent?.to === "$water-terrain" && JSON.stringify(b.transform.pos) === "[0,-125,0]" && JSON.stringify(b.zone) === JSON.stringify({ shape: "box", size: [2000, 250, 2000] })
-  && b.water.attenuationDistance === 1 && b.water.attenuationColor.every((c, i) => Math.abs(-Math.log(c) - [0.1, 0.036, 0.018][i]) < 1e-15) && b.water.waves.length === 4 && b["imported:water"] === undefined && JSON.stringify(b["physics-area"]) === JSON.stringify({ kind: "speed", factor: 1 }), b);
+  && b.water.attenuationDistance === 1 && b.water.attenuationColor.every((c, i) => Math.abs(-Math.log(c) - [0.1, 0.036, 0.018][i]) < 1e-15) && b.water.waves.length === 4 && b["imported:water"] === undefined && b["physics-area"] === undefined && b.water.drag === undefined, b);
 const main = Object.fromEntries(manifest.verbs.filter((v) => v.verb === "comp" && v.args.type === "air").map((v) => [v.args.id, v.args.data.boxes]));
 const sameBoxes = (host) => by(host).length === main[host].length && by(host).every((a, i) => JSON.stringify(a.components.zone.size) === JSON.stringify(main[host][i].size) && JSON.stringify(a.components.transform.pos) === JSON.stringify(main[host][i].center));
 C("G2", "fifteen pockets, one per main air box: 8 under water-habitat, 7 under water-submarine, each zone {box, main's size} + water-exclusion {} at main's centre, priority 1 (above the body's 0)",
@@ -134,11 +134,11 @@ const mainWater = () => mainWaterP ??= (async () => { const ref = path.join(root
   fs.writeFileSync(ref, g.stdout); return import(ref); })();
 // main's swim speed: a stroke in the volume (zone.js, the area's factor, the mover) is main's swimStep at that speed, for main's 2.4 and another
 { const TV1 = await import(ENGINE + "tools/protocol/import-v1/translate-v1.js"), WJ = await import(ENGINE + "shared/water.js"), Mw = await mainWater();
-  const stroke = (step, water, input) => { let p = [0, -50, 0], v = [0, 0, 0]; for (let i = 0; i < 100; i++) { const n = step(p, v, input, water, 0.05, 0); p = n.pos; v = n.velocity; } return Math.hypot(...v); };
-  const vol = Z.waterVolumes(Z.zonesOf(st)).waters[0], fac = Z.speedFactorAt(Z.physicsAreasOf(st), [0, -50, 0]);
-  const rows = [2.4, 1.2, 6].map((speed) => { const f = speed === 2.4 ? fac : TV1.waterOfOld({ center: [0, 0, 0], size: [9, 9, 9], speed }).area.factor;
-    return { speed, ours: stroke(WJ.swimStep, vol, { direction: [1, 0, 0], dive: true, factor: f }), main: stroke(Mw.swimStep, Mw.waterParams({ speed }), { direction: [1, 0, 0], dive: true }) }; });
-  C("G4s", "main's water.speed is the swim speed here: the volume's stroke × the physics-area's factor is main's swimStep at that speed (2.4, and 1.2 and 6 through the translator's factor)",
+  const stroke = (step, water, input) => { let p = [0, -50, 0], v = [0, 0, 0]; for (let i = 0; i < 400; i++) { const n = step(p, v, input, water, 0.05, 0); p = n.pos; v = n.velocity; } return Math.hypot(...v); };
+  const vol = Z.waterVolumes(Z.zonesOf(st)).waters[0];
+  const rows = [2.4, 1.2, 6].map((speed) => { const drag = speed === 2.4 ? vol.drag : TV1.waterOfOld({ center: [0, 0, 0], size: [9, 9, 9], speed }).water.drag;
+    return { speed, drag, ours: stroke(WJ.swimStep, { ...vol, drag }, { direction: [1, 0, 0], dive: true }), main: stroke(Mw.swimStep, Mw.waterParams({ speed }), { direction: [1, 0, 0], dive: true }) }; });
+  C("G4s", "main's water.speed is the swim speed here: the volume's stroke against the water's drag (the translator's, 5 × 2.4 / speed) is main's swimStep at that speed (2.4 with no drag written, 1.2 and 6), walkers untouched",
     rows.every((r) => Math.abs(r.ours - r.main) < 1e-9 && Math.abs(r.main - r.speed) < 1e-3), rows); }
 // main's reading of the same records (its client's watervolumes: entity matrix × comp centre; air box = matrix × (centre, q))
 const M = await mainWater();

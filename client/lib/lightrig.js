@@ -407,9 +407,10 @@ export function releaseOwner(owner) {
 export const isCasting = (key) => (requests.get(key)?.slot ?? -1) >= 0;
 
 // ---- lamps ------------------------------------------------------------------
-// Models that glow shed light: any spawned object with emissive surfaces gets
-// a lamp REQUEST at each emissive mesh's centre (≤2 per object — a chandelier
-// is one fixture, not ten). No budget, no whenBooted deferral: a request
+// A BODY that glows sheds light: an avatar with emissive surfaces gets a lamp
+// REQUEST at each emissive mesh's centre (≤2 — a chandelier is one fixture, not
+// ten). A placed model infers none: its lights are light components (the
+// translator writes main's inferred ones out: import-v1/lamps.ts). No budget, no whenBooted deferral: a request
 // costs nothing until it wins a slot, and winning one is uniform writes.
 // (This was sky.js attachLocalLights, which owned a hard MAX_LAMPS=2 ceiling
 // and a boot deferral that both existed to ration recompiles.)

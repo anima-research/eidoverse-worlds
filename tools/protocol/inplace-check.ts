@@ -346,7 +346,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   const h = /^report-hash ([0-9a-f]{64})$/m.exec(dr.out)?.[1];
   const want = [["air box on @world", "@world", 12, "Bob"]];
   ok(dr.code !== 0 && !!h && rep && same(rep.deferred?.map((u: any) => [u.feature, u.id, u.seq, u.actor]), want) && typeof rep.refused === "string"
-    && same(rep.mapped?.map((m: any) => [m.feature, m.id, m.into.length]), [["water volume", "table_1", 1], ["air box (dry interior)", "table_1", 1], ["climb route", "cup_1", 1], ["vehicle", "cup_1", 2], ["collision on/off toggle", "table_1", 1]]),
+    && same(rep.mapped?.filter((m: any) => m.component !== "stage").map((m: any) => [m.feature, m.id, m.into.length]), [["water volume", "table_1", 1], ["air box (dry interior)", "table_1", 1], ["climb route", "cup_1", 1], ["vehicle", "cup_1", 2], ["collision on/off toggle", "table_1", 1]]),
     "IP26 the dry run lists the deferred use (feature, entity, seq, actor) — not the world's water level, nor the water volume, air box, climb route and collision toggle it carries (listed as mapped) — and says the translation is refused (exit 1)", { code: dr.code, deferred: rep?.deferred, mapped: rep?.mapped });
   const text = rep?.refused ?? "";
   ok(/can't translate "sunk": it uses 1 thing\(s\) this protocol does not carry yet — air box on @world —/.test(text) && !/water volume|air box \(dry|climb route|vehicle|collision/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)

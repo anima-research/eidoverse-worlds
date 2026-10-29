@@ -7,7 +7,8 @@
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
-//   V5      the translator is @30, and a report reviewed under @29 is refused, naming the earlier translator
+//   F51-53  @31: main's slow water is the water's drag; its 78 m stage a bounds box; its inferred lamps light children
+//   V5      the translator is @31, and a report reviewed under @30 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -19,6 +20,9 @@ import path from "node:path";
 import { ENGINE, scratch } from "./common.ts";
 import * as TV1 from "./import-v1/translate-v1.js";
 import { reportV1World } from "./import-v1/world.ts";
+import * as LAMPS from "./import-v1/lamps.ts";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 import * as PE from "../../shared/particle_effects.js";
 import * as R from "../../shared/protocol/roles.js";
 import { sha256 } from "../../shared/protocol/hash.js";
@@ -33,6 +37,8 @@ const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", v
 const tr = (L: [string, string, any][]) => { const r = TV1.translate(log(L)); return { r, W: r.final.translated["@world"] ?? {}, E: r.final.translated }; };
 const eff = (W: any, id: string, anon = false) => R.effectiveOf(W, id, { anon, owners: Object.keys(W).some((k) => k.startsWith("roles:") && W[k]?.role === "owner") });
 const OWNER: [string, string, any] = ["world", "grant", { id: "olga", role: "owner" }];
+/** An ownerless translation as the upgrade leaves it: its upgrader claims it (world.ts translate --claim), so it has an owner (LEGACY-PINS item 9). */
+const claimed = (W: any) => ({ ...W, "roles:u-upgrader0000000000000": { role: "owner" } });
 
 // ================= R22: main's effective rights, written out =================
 row("R22a", () => { const { r, W } = tr([OWNER]); const n = eff(W, "newcomer"), g = eff(W, "guest", true);
@@ -46,22 +52,21 @@ row("R22c", () => { const { W } = tr([OWNER, ["olga", "grant", { id: "*", role: 
 row("R22d", () => { const { W } = tr([OWNER, ["olga", "grant", { id: "*", role: "none" }]]);
   ok(W.access?.join === "listed" && W["role-defs"] === undefined, "R22d an owned world's '*' none still closes it (access listed)", { access: W.access }); });
 row("R22e", () => { const { r, W } = tr([["ann", "spawn", { id: "c", lib: "x.glb" }], ["world", "grant", { id: "*", role: "none" }]]);
-  const a = eff(W, "ann"), g = eff(W, "guest", true);
+  const a = eff(claimed(W), "ann"), g = eff(claimed(W), "guest", true);
   ok(r.stats.divergences === 0 && a.role === "builder" && a.rank === R.RANK.builder && g.role === "builder" && ["build", "editOthers", "generate"].every((k) => a.can[k] && g.can[k]) && !a.can.fly && !g.can.fly && W.access === undefined
     && JSON.stringify(W["default-role"]) === JSON.stringify({ role: "builder", guests: "builder" }) && W["role-defs"]?.builder?.can?.generate === true && W["role-defs"]?.member === undefined
-    && r.stats.rights.owned === false && r.stats.rights.newcomers === "builder" && r.stats.rights.guests === "builder" && !r.stats.rights.notes.some((x) => /Rank stays member/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)),
-    "R22e an ownerless world: everyone, guests too, is builder (rank and all: main let everyone build) and generates, never flies; its '*' none is unread, as main", { a: [a.role, a.can], g: [g.role, g.can], dr: W["default-role"], rd: W["role-defs"], access: W.access, rights: r.stats.rights }); });
+    && r.stats.rights.owned === false && r.stats.rights.newcomers === "builder" && r.stats.rights.guests === "builder" && !r.stats.rights.notes.some((x) => /Rank stays member/.test(x)) && r.stats.rights.notes.some((x) => /ignored '\*' none/.test(x)) && !("imported:ownerless" in W),
+    "R22e an ownerless world, once its upgrader claims it: everyone else, guests too, is builder (rank and all: main let everyone build) and generates, never flies; its '*' none is unread, as main; no imported:ownerless", { a: [a.role, a.can], g: [g.role, g.can], dr: W["default-role"], rd: W["role-defs"], access: W.access, rights: r.stats.rights }); });
 row("R22g", () => { const { r, W } = tr([["world", "grant", { id: "vee", role: "visitor" }], ["world", "grant", { id: "mo", role: "moderator" }], ["world", "grant", { id: "*", role: "visitor", fly: true }]]);
-  const v = eff(W, "vee"), m = eff(W, "mo"), n = eff(W, "newcomer");
-  ok(r.stats.divergences === 0 && v.role === "builder" && v.can.build && m.role === "builder" && m.rank === R.RANK.builder && !m.can.ban && n.role === "builder" && !n.can.fly,
-    "R22g …a person main named below builder there is builder (main read no grant without an owner), '*' visitor too; a moderator's grant is kept but reads builder until there is an owner: nobody is moderator in an ownerless world", { v: v.role, m: [m.role, m.permissions], n: [n.role, n.can.fly], roles: Object.keys(W).filter((k) => k.startsWith("roles:")).map((k) => [k, W[k]]) }); });
-row("R22h", () => { const wc = (o: any, open = true) => ({ "default-role": { role: "builder", guests: "builder" }, ...(open ? { [R.OWNERLESS_OPEN]: { role: "builder" } } : {}), ...o });
-  const at = (o: any, id = "x", anon = false, open = true) => R.roleIdOf(wc(o, open), id, { anon });
-  ok(at({ "roles:x": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "moderator" } }) === "builder" && at({ "default-role": { role: "member" } }) === "member" && at({}, "g", true) === "builder"
-    && at({ "roles:o": { role: "owner" }, "roles:x": { role: "moderator" } }) === "moderator"
-    && at({ "roles:x": { role: "builder" } }, "x", false, false) === "member" && at({}, "n", false, false) === "member" && at({ [R.OWNERLESS_OPEN]: { role: "moderator" } }, "y") === "member"
-    && R.effectiveOf(TV1.translate(log([])).final.translated["@world"], "n").role === "builder",
-    "R22h roles.js: an ownerless world its translation opened (imported:ownerless builder) caps at builder (never moderator) and raises nobody; any other ownerless world caps at member, whatever its grants or default-role say; an owner lifts the cap"); });
+  const v = eff(claimed(W), "vee"), m = eff(claimed(W), "mo"), n = eff(claimed(W), "newcomer"), m0 = eff(W, "mo");
+  ok(r.stats.divergences === 0 && v.role === "builder" && v.can.build && m.role === W["roles:mo"]?.role && !m.can.ban && m0.role === "member" && n.role === "builder" && !n.can.fly,
+    "R22g …a person main named below builder there is builder (main read no grant without an owner), '*' visitor too, once the upgrader owns it; a moderator's grant is written as main read it (no ban); unowned, member caps everyone", { v: v.role, m: [m.role, m.permissions], m0: m0.role, n: [n.role, n.can.fly], roles: Object.keys(W).filter((k) => k.startsWith("roles:")).map((k) => [k, W[k]]) }); });
+row("R22h", () => { const wc = (o: any) => ({ "default-role": { role: "builder", guests: "builder" }, ...o }), at = (o: any, id = "x", anon = false) => R.roleIdOf(wc(o), id, { anon });
+  const W = TV1.translate(log([])).final.translated["@world"];
+  ok(at({ "roles:x": { role: "moderator" } }) === "member" && at({}, "g", true) === "member" && at({ "imported:ownerless": { role: "builder" } }, "y") === "member"
+    && at({ "roles:o": { role: "owner" }, "roles:x": { role: "moderator" } }) === "moderator" && at({ "roles:o": { role: "owner" } }, "n") === "builder"
+    && !("imported:ownerless" in W) && R.effectiveOf(claimed(W), "n").role === "builder" && R.effectiveOf(W, "n").role === "member",
+    "R22h roles.js: a world with no owner caps everyone at member, whatever it carries (an @30 imported:ownerless is inert); an owner lifts the cap; an empty old world's translation, claimed, makes newcomers builder"); });
 row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind === "change");
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });
@@ -158,8 +163,9 @@ row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib:
   const v = r.stats.unmapped?.find((x) => x.component === "vehicle"), w = r.stats.unmapped?.find((x) => x.component === "water"), s = r.stats.unmapped?.find((x) => x.component === "sky");
   const json = JSON.stringify(r.out), walls = (json.match(/"blocks":\["hulls"\]/g) ?? []).length;
   ok(JSON.stringify(v?.fields) === '["probes"]' && /retired: the authority's hull sweep/.test(v?.becomes?.probes) && v?.becomes?.minY === undefined && w === undefined && !("vehicle.minY" in TV1.FATES) && !("water.speed" in TV1.FATES)
-    && walls === 2 && /walking and wading too/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && json.includes('"comp":"physics-area","value":{"kind":"speed","factor":1}') && s === undefined && !("sky.audio" in TV1.FATES),
-    "F50 the report says, in words, what becomes of vehicle probes; minY/maxY are two hull-only walls and water speed a physics-area (@29); sky audio is mapped, not carried (@25)", { v, w, s, walls }); });
+    && walls === 2 && /walkers are untouched/.test(TV1.VOLUMES.water.to) && /set off by the hull's measured box/.test(TV1.CARRIED.vehicle.to) && !json.includes("physics-area") && !json.includes('"drag"')
+    && r.stats.mapped?.find((m) => m.component === "water")?.speed?.dropped !== undefined && s === undefined && !("sky.audio" in TV1.FATES),
+    "F50 the report says, in words, what becomes of vehicle probes; minY/maxY are two hull-only walls; main's 2.4 water speed is today's stroke, so it is dropped and said (@31); sky audio is mapped, not carried (@25)", { v, w, s, walls }); });
 
 row("F50b", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9 } }],
     ["olga", "place", { id: "boat", pos: [5, 0, 5] }], ["olga", "place", { id: "boat", pos: [50, 0, 7] }], ["olga", "place", { id: "boat", pos: [90, 0, -3] }]]);
@@ -171,16 +177,46 @@ row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib
   ok(walls.length === 2 && walls.every(([, c]) => c.lock === true) && /locked \(builder strength/.test(TV1.CARRIED.vehicle.to),
     "F50c the vehicle walls are locked (no builder moves or deletes one by accident; lifting it is a builder's deliberate act, said in the report: review delta-260 L-B)", { walls: walls.map(([k, c]) => [k, c.lock]) }); });
 
+// ================= @31: main's results in today's shapes (LEGACY-PINS 10-29) =================
+row("F51", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed: 1.2 } }]]);
+  const kid = Object.values<any>(E).find((c) => c.water && c.zone), json = JSON.stringify(r.out), M = r.stats.mapped?.find((m) => m.component === "water");
+  ok(kid?.water?.drag === 10 && kid["physics-area"] === undefined && !json.includes("physics-area") && M?.speed?.drag === 10,
+    "F51 main's slow water (speed 1.2, half today's stroke) is the water's own drag (5 × 2.4 / 1.2 = 10 /s: a swimmer there strokes at half), never a physics-area that slows walkers too (item 8)", { kid, mapped: M }); });
+row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
+  const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
+  ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),
+    "F52 a main world with neither bounds nor terrain gets main's stage edge as its box: x/z ±78 m, 2 m under the floor to main's 60 m flight ceiling, grown 2 m past a thing outside it; said in the report; a world with a terrain gets none (item 2)", { B, M, terr: terr.W.bounds }); });
+row("F53", () => { const L = [{ at: [0, 0.39, 0], color: 0xffe8c4, intensity: 11.2, range: 12, decay: 1.7 }], lampsOf = (lib: string) => (lib === "glow.glb" ? L : []);
+  const r = TV1.translate(log([OWNER, ["olga", "spawn", { id: "lamp", lib: "glow.glb", pos: [3, 0, 4] }], ["olga", "spawn", { id: "dull", lib: "x.glb" }], ["olga", "light", { id: "lit", lib: "glow.glb", color: 0xff0000 }]]), { lampsOf }), E = r.final.translated;
+  const kids = Object.entries<any>(E).filter(([, c]) => c.label === "lamp"), [kid, c] = kids[0] ?? [];
+  ok(kids.length === 1 && c.parent?.to === "lamp" && JSON.stringify(c.transform.pos) === "[0,0.39,0]" && JSON.stringify(c.light) === JSON.stringify({ kind: "point", color: 0xffe8c4, intensity: TV1.parityIntensity(11.2, 12), range: 12, decay: 2, daytime: "dim" })
+    && kid === TV1.lampChildId("lamp", 0) && r.stats.mapped?.some((m) => m.component === "lamp" && m.id === "lamp" && /infers none/.test(m.feature)),
+    "F53 a glowing model main lit with an inferred lamp gets that lamp as a light child at its spot (main's colour, range 12, its brightness at 6 m under decay 2); a dull model and a light main placed get none; said in the report (item 6)", { kids, mapped: r.stats.mapped }); });
+
+row("F53b", () => { const { Document } = require("@gltf-transform/core");   // main's attachLamps rule, measured from a GLB (import-v1/lamps.ts)
+  const doc = new Document(), buf = doc.createBuffer(), scene = doc.createScene();
+  const prim = (c: number[], lo: number[], hi: number[]) => doc.createPrimitive().setMaterial(c).setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(new Float32Array([...lo, ...hi])));
+  const mat = (e: number[], map = false) => { const m = doc.createMaterial().setEmissiveFactor(e); if (map) m.setEmissiveTexture(doc.createTexture()); return m; };
+  const node = (t: number[], p: any) => { const n = doc.createNode().setTranslation(t).setMesh(doc.createMesh().addPrimitive(p)); scene.addChild(n); return n; };
+  node([0, 0, 0], prim(mat([0.2, 0.2, 0.2]), [0, 0, 0], [1, 1, 1]));                    // dull: glow 0.2
+  node([0, 0, 0], prim(mat([1, 1, 1], true), [0, 0, 0], [1, 1, 1]));                    // a toon map at strength 1: no lamp
+  node([2, 1, 0], prim(mat([1, 0.9, 0.8]), [-0.1, 0, -0.1], [0.1, 0.4, 0.1]));         // whitish: lamp 1, main's warm bulb at its box centre
+  node([0, 3, 0], prim(mat([0, 0, 1]), [0, 0, 0], [0.2, 0.2, 0.2]));                    // saturated blue: lamp 2, its own colour
+  node([9, 9, 9], prim(mat([1, 1, 1]), [0, 0, 0], [1, 1, 1]));                          // a third: main took two
+  const L = LAMPS.lampsOfDoc(doc), near = (a: number[], b: number[]) => a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
+  ok(L.length === 2 && JSON.stringify(L[0].at) === "[2,1.2,0]" && L[0].color === 0xffd9a0 && Math.abs(L[0].intensity - 8.6) < 1e-9 && near(L[1].at, [0.1, 3.1, 0.1]) && L[1].color === 0x0000ff && L.every((x: any) => x.range === 12 && x.decay === 1.7),
+    "F53b the lamps main inferred, measured from a GLB as its rig did: an emitter is a flat emissive over 0.5 (a map only above strength 1), at most two in scene order, at each one's box centre in the model's frame; a saturated one keeps its colour, a whitish one is main's warm bulb; 6 + 2.6 × glow", L); });
+
 // ================= V5: the version, and a stale review refused =================
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@29" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@30" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 30 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 30 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@30/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @30; a report reviewed under @29 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 31 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 31 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@31/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @31; a report reviewed under @30 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

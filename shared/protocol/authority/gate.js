@@ -87,7 +87,7 @@ function rateOf(w, actor, ms) {
 // world whose owners are gone or locked out. Shape, value, roles and last-owner checks still apply; nothing else is opened.
 export const REPAIR_COMP = (c) => c === "access" || c === "default-role" || c === "role-defs" || (typeof c === "string" && c.startsWith("roles:"));
 // …the operator's OWN ops only: never a capability (a script or handler a repair sets off runs on its own rights)
-const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.actor && !who.cap && op.id === "@world" && (REPAIR_COMP(op.comp) ? op.verb === "set" || op.verb === "delete" : op.comp === R.OWNERLESS_OPEN && op.verb === "delete");   // the lift goes with the first owner (operatorRepair); never set
+const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.actor && !who.cap && op.id === "@world" && REPAIR_COMP(op.comp) && (op.verb === "set" || op.verb === "delete");
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
   if (!cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption") rateCheck(w, actor);
