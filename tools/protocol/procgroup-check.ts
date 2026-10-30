@@ -100,8 +100,21 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const pg = fs.readFileSync(new URL("./procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("./run.ts", import.meta.url), "utf8");
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   check("PG12 the sweep after a suite exits says so (exited), and killChild never blocks or kills an exited child",
-    /killGroup\(child\.pid, "SIGKILL", \{ exited: !stuck \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
+    /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
+
+{ let answered = false, readAfter: boolean | null = null;
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: () => { readAfter = answered; return true; }, query: async () => { answered = true; return "4 0\r\n50 4\r\n100 50\r\n777 100\r\n"; } });
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const pg = src("./procgroup.ts"), rs = src("./run.ts"), rc = src("../run-client.ts");
+  const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
+  const live = {
+    killChild: /exited: \(\) => p\.exitCode != null \|\| p\.signalCode != null/.test(kcBody),
+    gate: /const gone = \(\) => child\.exitCode != null \|\| child\.signalCode != null/.test(rs) && (rs.match(/killGroup\(child\.pid!?, "SIG(?:TERM|KILL)", \{ exited: (?:gone|\(\) => !stuck \|\| gone\(\)) \}\)/g) ?? []).length === 3,
+    client: /const gone = \(\) => ch\.exitCode != null \|\| ch\.signalCode != null/.test(rc) && /"SIGTERM", process\.platform, \{ exited: gone \}/.test(rc) && /\(exited: boolean \| \(\(\) => boolean\) = gone\)/.test(rc),
+  };
+  check("PG16 a Windows sweep reads whether its suite has exited once the process table has answered, and each caller hands it a reading of its own child (killChild, the gate's three sweeps, run-client's two)",
+    readAfter === true && Object.values(live).every(Boolean), { readAfter, live }); }
 
 // PG13: the gate keeps what a failed check SAW, not only its name (scripts I2 failed twice in gate logs with no values, 10-22)
 { const { failLines } = await import("./suites.ts");

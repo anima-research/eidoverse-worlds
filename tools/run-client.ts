@@ -93,9 +93,10 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   // its pipes stayed open, "close" never came and the lane wedged (client-tools, windows-latest, 10-23).
   // On Windows a kill costs a process-table (WMI) query, so only a timed-out file pays it: sweeping after every one of
   // 424 files, six at a time, swamped WMI and the run died (10-23). A finished file's debris goes with the gate's own sweep.
-  const kill = (exited = false) => { void killSuiteAsync(ch.pid!, "SIGKILL", process.platform, { exited }).catch(() => {}); };
+  const gone = () => ch.exitCode != null || ch.signalCode != null;
+  const kill = (exited: boolean | (() => boolean) = gone) => { void killSuiteAsync(ch.pid!, "SIGKILL", process.platform, { exited }).catch(() => {}); };
   // SIGTERM first, so a test with an exit handler cleans up what it wrote; whatever is left a moment later is killed
-  const timer = setTimeout(() => { timedOut = true; void killSuiteAsync(ch.pid!, "SIGTERM").catch(() => {}); setTimeout(() => kill(), 2000); }, TIMEOUT_S * 1000);
+  const timer = setTimeout(() => { timedOut = true; void killSuiteAsync(ch.pid!, "SIGTERM", process.platform, { exited: gone }).catch(() => {}); setTimeout(() => kill(), 2000); }, TIMEOUT_S * 1000);
   ch.on("close", (code) => {
     clearTimeout(timer); if (process.platform !== "win32") kill(true); live.delete(ch.pid!);
     const ms = performance.now() - t0; const tail = out.trim().split("\n").slice(-3).join("\n");

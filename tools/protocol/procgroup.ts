@@ -104,9 +104,10 @@ export function winKillPlan(root: number, table: Row[], exited: boolean, self: n
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
   return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
-export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false }: { exited?: boolean } = {}): Promise<void> {
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
-  for (const pid of winKillPlan(root, await processTableAsync("win32"), exited)) await outputOf("taskkill", ["/PID", String(pid), "/F"], 15_000);
+  const table = await processTableAsync("win32", { query });
+  for (const pid of winKillPlan(root, table, typeof exited === "function" ? exited() : exited)) await outputOf("taskkill", ["/PID", String(pid), "/F"], 15_000);
 }
 /** At exit, where nothing can be awaited: signal the group (POSIX), or start a kill of the still-running root and leave it
  *  running (Windows). The caller passes only a root it knows is still running; its children go with the next sweep. */
@@ -118,6 +119,6 @@ export function killSuiteAtExit(root: number, platform: NodeJS.Platform = proces
  *  where a browser's or server's own children outlive a plain kill. Never blocks, and never aims at an exited child's id. */
 export function killChild(p: { pid?: number; exitCode?: number | null; signalCode?: string | null; kill(): void } | null): void {
   if (!p || p.exitCode != null || p.signalCode != null) return;
-  if (process.platform === "win32" && typeof p.pid === "number") void killSuiteAsync(p.pid, "SIGKILL", "win32");
+  if (process.platform === "win32" && typeof p.pid === "number") void killSuiteAsync(p.pid, "SIGKILL", "win32", { exited: () => p.exitCode != null || p.signalCode != null });
   try { p.kill(); } catch { /* gone */ }
 }

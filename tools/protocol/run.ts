@@ -243,7 +243,7 @@ if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path
 let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
 // Linux, macOS and Windows alike (tools/protocol/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
-const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean }) => killSuiteAsync(pid, sig, process.platform, o);
+const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
 const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
@@ -277,14 +277,15 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let out = "", timedOut = false; const keep = (b: Buffer) => { out += b.toString(); if (out.length > 4e6) out = out.slice(-2e6); };
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
-  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM"); setTimeout(() => void killGroup(child.pid!, "SIGKILL"), 5000).unref(); }, timeoutOf(name) * 1000);
+  const gone = () => child.exitCode != null || child.signalCode != null;
+  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM", { exited: gone }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone }), 5000).unref(); }, timeoutOf(name) * 1000);
   // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
   let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
   const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { out += `\nspawn failed: ${e.message}`; res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
   const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
-  if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: !stuck });
+  if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
