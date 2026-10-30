@@ -656,7 +656,8 @@ copy that was updated and is published again keeps its parts' keys.
 - **Authored plane**: the log. Low frequency, high value, persisted forever.
 - **Presence plane**: bodies and whatever a hand is holding or dragging —
   poses, gestures (`pose.anim`), reach descriptors — ~15 Hz,
-  interpolated, lossy, **never persisted**. Anything at frame rate belongs
+  interpolated, lossy, **never persisted** (body consent's gates and lists,
+  below, are kept across a restart). Anything at frame rate belongs
   here; writing per-frame values into the log is non-conforming. A reach
   travels as a *declarative relation* (`pose.reach`, shared/reachwire.js) —
   a target, not solved bones — and every client re-solves it locally with
@@ -805,7 +806,12 @@ copy that was updated and is published again keeps its parts' keys.
   part of consent: the relay forwards a knock-over, pose or grab of another
   body from any distance unless the world sets `@world.body-default.range`
   (m). Only
-  the owner changes their own answers. Near, follow and voice are classes
+  the owner changes their own answers. The gates and lists are the one part of
+  the presence plane a host keeps across a restart (a block is a safety tool:
+  one that lapsed with the process would leave its person unguarded while their
+  panel says it stands); the reference keeps each world's in `consent.json`
+  beside its log, 0600, written whole (server/livehost.ts). They are never
+  logged. Near, follow and voice are classes
   no gate covers yet; nothing enforces them. The designs this replaced (the
   table of presets, tiers, pause and delegates; then one switch
   `accept|ask|refuse` with live asks) are kept as a record in
