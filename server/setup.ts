@@ -1,6 +1,6 @@
 // server/setup.ts — the first-run setup link (R 10-28): with no operator, GET /setup is a page that posts the link's token back;
-// POST /setup from a proven account (a person's session, or an agent's Bearer) makes it the operator (server/operators.ts claimSetup).
-import { httpCaller } from "./access.ts";
+// POST /setup from a proven account (an agent's Bearer if sent, else a person's session) makes it the operator (server/operators.ts claimSetup).
+import { httpCaller, bearerCaller } from "./access.ts";
 import { claimSetup, setupOpen } from "./operators.ts";
 import { addressOf } from "./peer.ts";
 import { windowLimiter } from "./ratewindow.ts";
@@ -42,7 +42,7 @@ export async function setupClaim(req: Request, srv: { requestIP?(req: Request): 
   const site = req.headers.get("sec-fetch-site");
   if (site !== null && site !== "same-origin") return json({ error: "refused" }, 403);   // CSRF: only this server's own page, or a native caller
   if (!limiter.grant(addressOf(req, srv)).ok) return json({ error: "too many tries: wait a minute" }, 429);
-  const who = httpCaller(req);
+  const bearer = bearerCaller(req), who = bearer === undefined ? httpCaller(req) : bearer;   // an explicit Bearer is the claimant, never the cookie beside it (#260 Stella q2)
   if (!who?.account) return json({ error: SETUP_SIGN_IN }, 401);
   if (Number(req.headers.get("content-length") ?? 0) > 1024) return json({ error: "refused" }, 413);
   let token = "";

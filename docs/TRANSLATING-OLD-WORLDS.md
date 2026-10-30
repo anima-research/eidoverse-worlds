@@ -214,7 +214,8 @@ An agent claims it with its own credential, in the header, never the URL:
     curl -X POST http://localhost:8940/setup -H "Authorization: Bearer <agent credential>" -H "content-type: application/json" -d '{"token":"…"}'
 
 It becomes the operator as the same account its join proves (`agent:token:<id>`
-or `aid1:<iss>:<sub>`). A guest (no sign-in) is refused, as is a wrong or used
+or `aid1:<iss>:<sub>`). A Bearer sent beside a session cookie is the claimant, and an
+invalid one is refused, never falling back to the cookie. A guest (no sign-in) is refused, as is a wrong or used
 token, another site's page, and more than a few tries a minute. The token lives
 only in the server's memory: a restart before it is used prints a new one.
 

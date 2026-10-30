@@ -156,18 +156,18 @@ export function youAt(door: Door, who: Who | null): { you: "enter" | "watch" | "
  *  the door key, not who). Never the URL: credentials in query strings end up in logs. */
 export function httpCaller(req: Request): Who | null {
   const s = sessionOfRequest(req);
-  const dir = directoryFor(WORLDS_DIR);
-  const who = (account: string): Who => ({ account, actorId: dir.idOfSub(account) });
-  if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return who(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
-  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "");
-  if (m) {
-    const tok = m[1]!;
-    if (JOIN_TOKEN && tok === JOIN_TOKEN) return null;
-    const a = accountOf(tok);
-    if (a && "account" in a) return who(a.account);
-  }
-  return null;
+  if (s && (s.scopes.includes("worlds:join") || s.scopes.includes("worlds:spectate"))) return whoAccount(s.sub);   // one sign-in, every world (main #255: a session's old nativeWorld no longer narrows it)
+  return bearerCaller(req) ?? null;
 }
+/** Who an `Authorization: Bearer` proves, ignoring any cookie: undefined when none is sent, null when it proves nobody. */
+export function bearerCaller(req: Request): Who | null | undefined {
+  const h = req.headers.get("authorization") ?? ""; if (!/^Bearer\b/i.test(h)) return undefined;
+  const tok = /^Bearer\s+(\S+)$/i.exec(h)?.[1];
+  if (!tok || (JOIN_TOKEN && tok === JOIN_TOKEN)) return null;
+  const a = accountOf(tok);
+  return a && "account" in a ? whoAccount(a.account) : null;
+}
+const whoAccount = (account: string): Who => ({ account, actorId: directoryFor(WORLDS_DIR).idOfSub(account) });
 
 /** A connection as the door sees it. */
 export function whoOf(c: Client): Who {
