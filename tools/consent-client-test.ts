@@ -234,5 +234,21 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   G.setGate('touch', false); await s.sync();
   check('…and turning it off is one change: it shows off, and the authority refuses a stranger\'s pose', !G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'deny', JSON.stringify(tableOf(P, 'me'))); }
 
+// #260 follow-up B: a gate the server's migration closed stays closed until I turn it on in that world; a browser value I chose before doesn't reopen it
+{ const fresh = async (tag: string, kv: Record<string, string> = {}) => { store.clear(); for (const [k, v] of Object.entries(kv)) store.set(k, v); return await import(`../client/lib/consent.js?reopen=${tag}`); };
+  const migrated = () => { const P: any = { consent: Object.create(null), consentShape: 3 }; P.consent.me = { preset: 'open', cells: { everyone: { pose: 'allow', shove: 'allow', displace: 'allow', touch: 'allow', intimate: 'allow' }, friends: { displace: 'ask', pose: 'allow', intimate: 'allow' } }, friends: ['pal'] }; P.consent.pal = { friends: ['me'] }; migratePresence(P);
+    const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; };
+  const syncer = (D: any, A: any) => makeConsentSync({ table: D.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: D.noteHeld, landed: D.landed, gone: D.forget });
+  const D = await fresh('b1', { 'ew-body-switch': 'accept' }); D.useWorld('w1'); const W1 = migrated(); await syncer(D, W1).sync();
+  check('B1 a stored "accept" (move on) from before never reopens the move gate the server\'s migration closed: nothing sent, a stranger and the friend still can\'t displace, and Move me shows off',
+    D.bodyTable().move === true && !W1.sent.some((a) => 'move' in a) && W1.P.consent.me.move === false && decide(W1.P, 'stan', 'me', 'displace').mode === 'deny' && decide(W1.P, 'pal', 'me', 'displace').mode === 'deny' && !D.gate('move'), JSON.stringify({ sent: W1.sent, t: W1.P.consent.me }));
+  const opened = D.setGate('move', true); await syncer(D, W1).sync();
+  check('B2 …turning Move me on here reopens it (sent once, then landed: not kept)', opened && W1.sent.some((a) => a.move === true) && decide(W1.P, 'stan', 'me', 'displace').mode === 'allow' && D.gate('move') && D.bodyTable().opened.length === 0, JSON.stringify({ sent: W1.sent, b: D.bodyTable() }));
+  D.useWorld('w2'); const W2 = migrated(); await syncer(D, W2).sync();
+  check('B3 …and only here: another world whose migration closed it stays closed (wider lands where it was made)', !W2.sent.some((a) => 'move' in a) && decide(W2.P, 'stan', 'me', 'displace').mode === 'deny' && !D.gate('move'), JSON.stringify(W2.sent));
+  D.setGate('move', false); D.useWorld('w3'); const W3: any = (() => { const P: any = { consent: Object.create(null) }; setConsent(P, 'me', { move: true }); const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; })();
+  await syncer(D, W3).sync();
+  check('B4 …while an off still follows me everywhere (narrower)', W3.sent.some((a) => a.move === false) && decide(W3.P, 'stan', 'me', 'shove').mode === 'deny', JSON.stringify(W3.sent)); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
