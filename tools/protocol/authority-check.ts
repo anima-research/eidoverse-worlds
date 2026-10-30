@@ -196,7 +196,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     call("bob", "create", { id: "hatch6", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked", fix: "ring the bell" } } } });
     call("bob", "create", { id: "hatch7", model: "door", components: { openable: { open: false, locked: true }, reactions: { open: { kind: "toggle", unless: "locked" }, unbolt: { kind: "set", component: "openable", field: "locked", value: false } } } });
     const u8 = call("vic", "use", { id: "hatch6", action: "open" }), u9 = call("vic", "use", { id: "hatch7", action: "open" });
-    ok(code(u8) === "barred" && u8.refused?.fix === "ring the bell" && code(u9) === "barred" && u9.refused?.fix === "someone allowed to may 'use' it with another action first",
+    ok(code(u8) === "barred" && u8.refused?.fix === "ring the bell" && code(u9) === "barred" && u9.refused?.fix === "someone who may use it can 'use' another of its actions first",
       "P37h an authored open handler barred by the lock keeps its own fix, or the general one", { u8: u8.refused?.fix ?? u8.ok, u9: u9.refused?.fix ?? u9.ok });
     // review of #260: a set of locked to true and a whole set that keeps it on don't unlock it, and aren't offered; a whole
     // set that leaves locked off is, and since it also sets whether the door is open, the open step isn't predicted

@@ -634,6 +634,10 @@ const cases: Case[] = [
       s.call("bob", "move", { to: [0, 0, 0.5] }); s.call("vic", "move", { to: [0, 0, 0.5] });
       return { bob: show(s.call("bob", "grab", { id: "ball" })), vic: code(s.call("vic", "grab", { id: "ball" })) }; },
     good: (o) => o.bob === "ok" && o.vic === "rights" },
+  { id: "LW1", what: "a lock's words name the role at its rank (renamed included), else 'rank N and up' (review of #260)", run() {
+      const wc = { "role-defs": { builder: { name: "Maker" }, crew: { name: "Crew", rank: 150, can: {} } } };
+      return { b: RL.lockWord?.(100, wc), c: RL.lockWord?.(150, wc), n: RL.lockWord?.(120, wc), o: RL.lockWord?.(255, wc), d: RL.lockWord?.(100) }; },
+    good: (o) => o.b === "Maker and up" && o.c === "Crew and up" && o.n === "rank 120 and up" && o.o === "owners only" && o.d === "Builder and up" },
   { id: "PL7", what: "the doors: open (newcomers build) · public (newcomers play) · invite-only · watch", async run() {
       const A = await import(TREE + "shared/protocol/access.js");
       return { doors: Object.keys(A.DOORS ?? {}).sort(), open: A.doorWrites?.("open")?.find((x: any) => x.component === "default-role")?.value?.role, pub: A.doorWrites?.("public")?.find((x: any) => x.component === "default-role")?.value?.role,

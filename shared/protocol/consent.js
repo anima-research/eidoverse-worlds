@@ -1,6 +1,6 @@
 // Body consent (PROTOCOL §5, R 10-28): two gates per body and two lists of people. PRESENCE ONLY: nothing here is ever
 // appended to a log or written to world state. The authority keeps one table per body in its presence plane, refuses
-// before delivery, and the target's client has the final word.
+// before delivery: the authority alone decides (decide below; no client gate).
 //   gates   move  = where my body is: shoved (a /boom's force too), dragged, carried, seated or occupied (shove, displace)
 //           touch = everything else done to it: touched (intimate points too) and posed (touch, intimate, pose)
 //           each on or off; never chosen = the world's @world.body-default for that gate, else DEFAULT_GATES

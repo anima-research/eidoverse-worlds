@@ -87,7 +87,7 @@ async function sock(port, headers = undefined) {
 }
 const you = (j) => j.snapshot?.cut?.you;
 
-// ---- C3: a bare name in SERVER_OPERATORS (or the legacy WORLD_ADMIN) refuses to boot (accounts only) ----
+// ---- C3: a bare name in SERVER_OPERATORS (or the legacy WORLD_ADMIN) is refused loudly; the server still boots (accounts only) ----
 const bootErr = (s) => (fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8") : "") + (fs.existsSync(s.log) ? fs.readFileSync(s.log, "utf8") : "");
 const namesBoth = (err) => /SERVER_OPERATORS/.test(err) && /WORLD_ADMIN/.test(err) && /SERVER_OPERATORS=human:discord:/.test(err);
 for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [v]: "Marigold" }); const err = bootErr(s);

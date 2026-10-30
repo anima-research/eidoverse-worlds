@@ -12,14 +12,14 @@
 //             who (consent gaps 6b): the ids near a script and display names stay out of the log. So a re-run answers each
 //             near() with n opaque stand-ins and each name() with null. The reads are inputs the auditor can't replay, and
 //             it treats them so: (1) the re-run must ask the SAME reads (radii, counts, how many names) — a different shape
-//             is flagged `reads`; (2) when the re-run's writes and says equal the logged ones, the act is verified (its
-//             result didn't depend on who was there); (3) when they differ and the act read who was near or what someone
+//             is flagged `reads`; (2) when the re-run's writes and says equal the logged ones, the act is verified: a re-run
+//             with stand-ins matched the log (not proof the result is the same whoever was there); (3) when they differ and the act read who was near or what someone
 //             is called, the act is `skipped` with that reason, never flagged and never counted verified. An act with no
 //             such reads that differs is still flagged `rerun`. Soundness: everything but the identities is still checked
-//             (sponsor, depth, seed, src, the read shape), and an identity-independent result is checked in full.
+//             (sponsor, depth, seed, src, the read shape), and a result matched with stand-ins is checked in full.
 //   arrivals — an `enter` / `leave` activation records no identity (review r8 M4): the script heard `by` live, the act keeps
-//             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
-//             came is verified. One that differs from the log is re-run again with a SECOND stand-in of another shape (a minted-
+//             neither a trigger actor nor event.by. A re-run gets a stand-in identity; one that matches the log is verified
+//             (it can't show the result is the same whoever came). One that differs from the log is re-run again with a SECOND stand-in of another shape (a minted-
 //             shaped one, then one of another valid shape; review r9 M2, r10 M3), and each part that differs from the log
 //             (writes, says, world.use calls) is judged on its own: a part the two re-runs agree on is flagged `rerun-anon`,
 //             naming it (never `rerun`: two inputs can't prove a result is the same for every identity, so it is a mismatch to

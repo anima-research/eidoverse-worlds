@@ -92,8 +92,9 @@ but the look, roles, blueprints and assets is), and its scope still bounds what 
   read from the log (nothing is stored in the value).
 - A lock binds scripts like everyone; a script never acts through one. A thing in flight can't be written.
 - People are presence. A script's `shove`/`pose` lands only where that body's consent allows it (its move or touch gate
-  open, or the script on its allow list), as anyone's does: `consent {allow: "script:<thing>"}` allows one, or all of
-  one sponsor's scripts: `consent {allow: "scripts-by:<sponsor id>"}`; `block` refuses them whatever the gates say.
+  open, or the script on its allow list), as anyone's does: `consent {allow: "script:<thing>"}` allows every script on
+  that thing, or all of one sponsor's scripts: `consent {allow: "scripts-by:<sponsor id>"}`; `block` refuses them
+  whatever the gates say.
 
 ## The API (one global, `world`)
 
@@ -198,7 +199,7 @@ read who was near or a name, the auditor lists it as `skipped` (it can't be re-r
 
 ## Auditing a script
 
-Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that replay never re-runs code). An auditor may re-run the source with the recorded event, clock, seed and stand-ins for the presence reads and for an identity the act doesn't record. A result that doesn't depend on who was there is verified. An arrival whose re-run differs from the log is re-run with a second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2), and each part that differs from the log (writes, says, `world.use` calls) is judged on its own: a part the two agree on is flagged `rerun-anon`, naming it, a difference to look at, never `rerun` (proof of a forgery), since two inputs can't show a result is the same for every identity. The act is reported as not re-runnable when every differing part differs between the two, when the two read differently, or when the second re-run fails. Nothing that depends on who was there is ever reported as verified.
+Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that replay never re-runs code). An auditor may re-run the source with the recorded event, clock, seed and stand-ins for the presence reads and for an identity the act doesn't record. An act whose re-run with stand-ins matches the log is verified: that is all the audit can know, since a result that depends on who was there may still match for the stand-in. An arrival whose re-run differs from the log is re-run with a second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2), and each part that differs from the log (writes, says, `world.use` calls) is judged on its own: a part the two agree on is flagged `rerun-anon`, naming it, a difference to look at, never `rerun` (proof of a forgery), since two inputs can't show a result is the same for every identity. The act is reported as not re-runnable when every differing part differs between the two, when the two read differently, or when the second re-run fails. Nothing that depends on who was there is ever reported as verified.
 
 ## Determinism (why some JavaScript behaves differently here)
 

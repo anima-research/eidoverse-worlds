@@ -5,8 +5,8 @@
 // find out now. The server still boots with the good entries (review full-260 L10: refusing boot locked everyone out of every
 // world), and with none left it mints the setup link as a server with no operator does.
 // WORLD_ADMIN is the legacy name, read and merged for one release with a warning (R 10-27; docs/TRANSLATING-OLD-WORLDS.md).
-// First run (R 10-28): with no operator at all, the server mints a one-use setup link; whoever opens it signed in becomes the
-// operator, stored in OPERATORS_FILE and merged with the env at every boot (docs/TRANSLATING-OLD-WORLDS.md, "Becoming the operator").
+// First run (R 10-28): with no operator at all, the server mints a one-use setup link; whoever claims it signed in (a browser's session, or an
+// agent's Bearer by POST) becomes the operator, stored in OPERATORS_FILE and merged with the env at every boot (docs/TRANSLATING-OLD-WORLDS.md, "Becoming the operator").
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
@@ -29,7 +29,7 @@ if (bad.length) {
   console.error(`[operators] REFUSED: ${from} lists ${bad.map((s) => `"${s}"`).join(", ")}, which ${bad.length > 1 ? "aren't accounts" : "isn't an account"}, so ${bad.length > 1 ? "they operate" : "it operates"} nothing here: `
     + `a server operator is named by account (human:discord:<id>, agent:token:<id>, aid1:<iss>:<sub>), never by a display name anyone can type. `
     + `Write it as SERVER_OPERATORS=human:discord:123456789012345678 (sign in, then open /whoami: its "sub" is your account); WORLD_ADMIN is its old name, read the same way until it is removed. `
-    + `With no operator left, this server prints a one-use setup link below, and whoever opens it signed in becomes the operator: the link is a credential, so keep this boot log to yourself until it is used`);
+    + `With no operator left, this server prints a one-use setup link below, and whoever claims it signed in (in a browser, or an agent by POST with its Bearer) becomes the operator: the link is a credential, so keep this boot log to yourself until it is used`);
 }
 const raw = [...current, ...legacy, ...stored].filter((s) => s.includes(":"));
 if (legacy.length) console.warn(`[operators] WORLD_ADMIN is deprecated and will stop being read: rename it to SERVER_OPERATORS (same accounts, comma-separated)`);

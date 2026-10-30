@@ -154,7 +154,7 @@ function buildUse(ctx, a) {
     const { t0, ...rest } = cur; return [setOp(a.id, "sound", { ...rest, playing: true })]; }
   if (h?.kind === "toggle") {
     const { comp, field } = toggleOf(h); ctx.refs.add(a.id);
-    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.fix ?? (h === IMPLICIT_OPEN ? unlockFix(e, a.id) : `someone allowed to may 'use' it with another action first`));
+    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.fix ?? (h === IMPLICIT_OPEN ? unlockFix(e, a.id) : `someone who may use it can 'use' another of its actions first`));
     reactionCap(ctx, a.id, comp, action);
     return [setOp(a.id, comp, field === undefined ? !e.c[comp] : { ...objOf(e.c[comp]), [field]: !objOf(e.c[comp])[field] })];
   }

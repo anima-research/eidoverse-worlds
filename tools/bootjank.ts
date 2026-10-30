@@ -64,8 +64,8 @@ if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
   console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
 }
 if (!CHROME || !existsSync(CHROME)) { console.error(CHROME ? `✗ no browser at ${CHROME}` : "✗ no Chromium found (set CHROME=/path/to/chrome)"); process.exit(2); }
-if (!WIDE && !existsSync(join(ROOT, "worlds", "commons", "log.jsonl"))) {
-  console.error("✗ worlds/commons/log.jsonl not found — bootjank replays the real commons"); process.exit(2);
+if (!WIDE && !existsSync(join(ROOT, "worlds", "commons", "world.jsonl"))) {
+  console.error("✗ worlds/commons/world.jsonl not found — bootjank replays the real commons"); process.exit(2);
 }
 
 // --wide: the libs an arrival should and should NOT fetch. Distinct sets, so
@@ -127,11 +127,17 @@ const WORLDS = join(SCRATCH, "worlds");
 mkdirSync(WORLDS, { recursive: true });
 if (!WIDE) cpSync(join(ROOT, "worlds", "commons"), join(WORLDS, "commons"), { recursive: true });
 const WORLD = WIDE ? `wide-${Math.random().toString(36).slice(2, 7)}` : "commons";
+const SEQ_ENV = { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, WORLDS_DIR: WORLDS, ...(WIDE ? { HOST: "127.0.0.1", TRUST_NAMES: "1", SERVER_OPERATORS: "" } : {}) };
+// --wide: a founded world its driver owns (a typed name is an account on this loopback-only server)
+if (WIDE) {
+  const r = Bun.spawnSync([process.execPath, "tools/protocol/world.ts", "found", WORLD, "--owner", "widedriver"], { cwd: ROOT, env: SEQ_ENV });
+  if (r.exitCode !== 0) await die(2, `✗ founding ${WORLD} failed: ${r.stderr.toString().slice(-300)}`);
+}
 
 console.log(`\n${bold("bootjank")} — ${WIDE ? "far-city world" : "commons replica"} on :${PORT}${MBIT ? ` at ${MBIT}mbit` : ""}, ${SECS}s window`);
 seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, WORLDS_DIR: WORLDS },
+  env: SEQ_ENV,
   stdout: Bun.file(join(SCRATCH, "sequencer.log")),
   stderr: Bun.file(join(SCRATCH, "sequencer.log")),
 });
@@ -143,34 +149,29 @@ seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
   if (!up) await die(2, `✗ sequencer never came up on :${PORT}`);
 }
 
-// ---- --wide: author the far city (driver socket, lightbench's pattern) ------
+// ---- --wide: author the far city (one batch from its owner) ----------------
 if (WIDE) {
-  const verbs: Array<[string, unknown]> = [
-    ["terrain", { seed: 7, size: 1200, segments: 200, amplitude: 6, flatRadius: 16 }],
-    ["sky", { clouds: "clear", hours: 12, azimuth: 180 }],
-    ...NEAR_LIBS.map((lib, i): [string, unknown] =>
-      ["spawn", { id: `near${i}`, lib, pos: [3 + i * 3, 0, -8 - i * 2], yaw: 0 }]),
-    ...FAR_LIBS.map((lib, i): [string, unknown] =>
-      ["spawn", { id: `far${i}`, lib, pos: [300 + i * 40, 0, 300 + i * 40], yaw: 0 }]),
+  const at = (pos: number[]) => ({ transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const ops = [
+    { verb: "set", args: { id: "@world", component: "terrain", value: { kind: "noise", seed: 7, size: 1200, segments: 200, amplitude: 6, flatRadius: 16 } } },
+    { verb: "set", args: { id: "@world", component: "sky", value: { clouds: "clear", hours: 12, azimuth: Math.PI } } },
+    ...NEAR_LIBS.map((model, i) => ({ verb: "create", args: { id: `$near${i}`, model, components: at([3 + i * 3, 0, -8 - i * 2]) } })),
+    ...FAR_LIBS.map((model, i) => ({ verb: "create", args: { id: `$far${i}`, model, components: at([300 + i * 40, 0, 300 + i * 40]) } })),
   ];
   await new Promise<void>((resolve, reject) => {
     const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", token: "" }));
-    dws.onmessage = async (ev) => {
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", avatar: "", replica: true }));
+    dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
-      if (m.type === "snapshot") {
-        for (const [verb, args] of verbs) {
-          dws.send(JSON.stringify({ type: "verb", verb, args }));
-          await sleep(150);
-        }
-        await sleep(400);
+      if (m.type === "snapshot") dws.send(JSON.stringify({ type: "request", id: "wide", verb: "batch", args: { ops } }));
+      if (m.type === "reply" && m.id === "wide") {
         try { dws.close(); } catch { /* fine */ }
-        resolve();
+        if (m.ok) resolve(); else reject(new Error(`batch refused: ${JSON.stringify(m.reply?.refused ?? m).slice(0, 400)}`));
       }
       if (m.type === "error") reject(new Error(`driver refused: ${m.error}`));
     };
     dws.onerror = () => reject(new Error("driver socket failed"));
-    setTimeout(() => reject(new Error("driver never got a snapshot")), 15_000);
+    setTimeout(() => reject(new Error("driver never got a reply")), 15_000);
   }).catch((e) => die(2, `✗ wide-world authoring failed: ${e.message}`));
 }
 
@@ -259,6 +260,7 @@ if (MBIT > 0) {
 
 const RECORDER = `(() => {
   if (globalThis.__jank) return;
+  performance.setResourceTimingBufferSize(20000);   // the default 250 fills with modules before any model, blinding the far-city gate
   const J = globalThis.__jank = {
     frames: [], gpu: [], bills: [], longtasks: [],
     _up: 0, _tex: 0, _pipe: 0, _pipeMs: 0, _shad: 0, _shadMs: 0, _bmp: 0,
@@ -351,7 +353,7 @@ if (HEAVYJOIN) {
   const heavyJoin = (id: string) => {
     const hws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     hws.onopen = () => hws.send(JSON.stringify({
-      type: "join", world: WORLD, id, token: "",
+      type: "join", world: WORLD, id, token: "", replica: true,
       avatar: "eidoverse/assets/vrms/aletheia.vrm",   // library-relative, like resolveMyAvatarPath
     }));
     return hws;
@@ -505,7 +507,7 @@ let wideFailed = 0;
 if (WIDE) {
   console.log(`\n${bold("── far-city gate")}`);
   const fetched = new Set(resources.map((r) => r.name.split("?")[0]));
-  const base = (model: string) => lib.split("/").at(-1)!.slice(0, 60);
+  const base = (model: string) => model.split("/").at(-1)!.slice(0, 60);
   for (const lib of FAR_LIBS) {
     const hit = fetched.has(base(lib));
     if (hit) wideFailed++;

@@ -1,9 +1,13 @@
 # Native world projection (version 1)
 
-Implemented locally, not deployed. Browser flora placement has been extracted
-unchanged into `shared/flora-placement.js`; browser and native projection import it.
+**Not served by this server.** Join snapshots carry no `renderSceneVersion`:
+`server/render-scene.ts` reads the first protocol's fold, so this server doesn't offer
+the lane (server/server.ts `buildSnapshot`). The native client reaches this server through
+its bridge. What follows describes upstream #248's projection. Browser flora placement
+has been extracted unchanged into `shared/flora-placement.js`; browser and native
+projection import it.
 
-Join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
+Upstream, join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
 may send `{type:"render-scene",version:1,reset:true}` for a full projection and
 subsequent requests without reset for geometry deltas. World, socket generation
 and membership bind the delta cursor. Requests are limited to once per 250 ms
