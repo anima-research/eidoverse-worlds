@@ -141,6 +141,17 @@ export function rebuildAsset(rel: string): { queued: string[]; cooldownS?: numbe
   if (queued.length) { lastRebuild.set(src, Date.now()); pumpOptimize(); }
   return { queued };
 }
+// a child's stderr up to EOF, or up to graceMs once asked: a grandchild that inherited the pipe holds EOF off forever
+const STDERR_GRACE_MS = 2000;
+function drain(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader(), dec = new TextDecoder(); let text = "";
+  const eof = (async () => { for (let r; !(r = await reader.read()).done;) text += dec.decode(r.value, { stream: true }); })().catch(() => {});
+  return async (graceMs: number) => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([eof, new Promise((r) => { t = setTimeout(r, graceMs); })]); clearTimeout(t);
+    reader.cancel().catch(() => {}); return text;
+  };
+}
 let optPump: Promise<void> = Promise.resolve();
 /** Resolves when the pump has drained (a harness awaits this; the server never does). */
 export const optIdle = () => optPump;
@@ -206,7 +217,12 @@ async function pumpOptimize() {
         console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
         optQueue.length = 0; break;
       }
-      const code = await proc.exited;
+      // never wait forever on a child: one that never answers is killed and deferred (tools/optimize-pump-test.ts 6b)
+      const stderr = drain(proc.stderr as ReadableStream<Uint8Array>), limitMs = Number(process.env.OPT_CHILD_TIMEOUT_MS ?? 1_800_000);
+      let timedOut = false;
+      const killer = limitMs > 0 ? setTimeout(() => { timedOut = true; proc.kill("SIGKILL"); }, limitMs) : null;
+      const code = await proc.exited; if (killer) clearTimeout(killer);
+      if (timedOut) { await stderr(STDERR_GRACE_MS); defer(dest, `no answer in ${Math.round(limitMs / 1000)}s — killed (OPT_CHILD_TIMEOUT_MS)`); continue; }
       // what a new variant was built FROM (freshOver), recorded the moment the child is gone — before anything else
       // is awaited: until then the new bytes sit beside the previous build's sidecar and read stale (the safe
       // direction: provisional, never old bytes answered as fresh). A store original's needs none.
@@ -214,7 +230,7 @@ async function pumpOptimize() {
         if (srcId) try { writeFileSync(sourceSidecar(dest), JSON.stringify(srcId)); } catch { /* best effort: reads stale until rebuilt */ }
         else if (existsSync(sourceSidecar(dest))) try { rmSync(sourceSidecar(dest)); } catch { /* best effort */ }
       }
-      const err = (await new Response(proc.stderr).text()).trim();
+      const err = (await stderr(STDERR_GRACE_MS)).trim();
       if (capped && (code === 126 || code === 127)) {
         // environmental, like a missing dep: no marker, and no point grinding on
         console.error(`[optimize] cap wrapper failed (exit ${code}: ${err.split("\n").pop() || "sh"}) — set OPT_MEM_BUDGET_MB within this process's hard RLIMIT_DATA, or 0`);

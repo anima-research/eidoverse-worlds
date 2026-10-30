@@ -10,14 +10,20 @@ const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); 
 const root = mkdtempSync(join(tmpdir(), "optpump-"));
 const fake = join(root, "fake-optimizer.ts");   // TS, run by bun (upload.ts OPT_CMD): a #!/bin/sh fake is no executable on Windows
 // the fake child reads its verdict from a file beside the source: "0" writes dest, "2" exits 2, "sig" dies by a signal
-writeFileSync(fake, `import { readFileSync, appendFileSync, mkdirSync, writeFileSync, writeSync } from "node:fs";
+writeFileSync(fake, `import { readFileSync, appendFileSync, mkdirSync, writeFileSync, writeSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 const [src, dest] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 let v = "0"; try { v = readFileSync(src + ".verdict", "utf8").trim(); } catch { /* none: success */ }
 if (process.env.OPT_RECEIPTS) appendFileSync(process.env.OPT_RECEIPTS, dest + "\\n");   // every invocation leaves a receipt the harness can count
 const err = (s: string) => writeSync(2, s + "\\n");
-if (v === "0") { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, "tiny"); process.exit(0); }
 if (v === "sig") process.kill(process.pid, "SIGKILL");   // a signal death; SIGSEGV made bun dump core (~13 s a run). Linux-only row
+if (v === "hang") { setInterval(() => {}, 1 << 30); await new Promise(() => {}); }   // never answers
+if (v === "orphan" && !existsSync(src + ".orphan")) {   // first run: a grandchild keeps our stderr open past our exit
+  const { spawn } = await import("node:child_process");
+  const g = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: ["ignore", "ignore", "inherit"] }); g.unref();
+  writeFileSync(src + ".orphan", String(g.pid)); mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, "tiny"); process.exit(0);
+} else if (v === "orphan") v = "0";
+if (v === "0") { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, "tiny"); process.exit(0); }
 if (v === "long") {
   for (let i = 0; i < 30; i++) err(\`[optimize] per-texture note \${i}: no sharp to resize it — a long line padded out to well over one hundred characters of text\`);
   err("[optimize] not smaller (1.00x) recipe=texel1024 __TOOLS__"); process.exit(2);
@@ -79,6 +85,26 @@ if (process.platform === "linux") {
     catch { console.log("(126 case: bun could not start under the hard limit — skipped: " + (sh.stderr + sh.stdout).split("\n").pop() + ")"); }
   } else console.log("(126 case: cannot set a hard data limit here — skipped)");
 } else console.log("(non-Linux: capped-death and 126 cases skipped)");
+// 6b. the pump never waits forever on a child (it would hold optIdle and every pass behind it): one that never answers is
+//     killed at OPT_CHILD_TIMEOUT_MS and deferred; one whose grandchild keeps its stderr open is read up to a grace past
+//     its exit; one that cannot start marks nothing. Each settles, and the item queued behind it runs.
+const settles = async () => { let t: any; const r = await Promise.race([optIdle().then(() => true), new Promise<boolean>((res) => { t = setTimeout(() => res(false), 30_000); })]); clearTimeout(t); return r; };
+{ process.env.OPT_CHILD_TIMEOUT_MS = "1500";
+  const s9 = src("s9.glb", 1000, "hang"), s10 = src("s10.glb", 1000, "0"); queueOptimize(s9); queueOptimize(s10);
+  ok(await settles(), "a child that never answers: optIdle still resolves");
+  ok(existsSync(storeDest(s9) + ".deferred") && /no answer/.test(readFileSync(storeDest(s9) + ".deferred", "utf8")) && !existsSync(storeDest(s9) + ".failed"), "…it is killed and deferred (no verdict)");
+  ok(existsSync(storeDest(s10)), "…and the item behind it ran");
+  delete process.env.OPT_CHILD_TIMEOUT_MS; }
+{ const s11 = src("s11.glb", 1000, "orphan"), s12 = src("s12.glb", 1000, "0"); queueOptimize(s11); queueOptimize(s12);
+  const t0 = Date.now(), settled = await settles();
+  try { process.kill(Number(readFileSync(s11 + ".orphan", "utf8"))); } catch { /* gone */ }
+  ok(settled, `a child whose grandchild holds its stderr open: optIdle still resolves (${Date.now() - t0} ms)`);
+  ok(existsSync(storeDest(s11)) && !existsSync(storeDest(s11) + ".failed") && existsSync(storeDest(s12)), "…its success is recorded, and the item behind it ran"); }
+{ const real = process.env.OPT_CMD; process.env.OPT_CMD = join(root, "no-such-optimizer");
+  const s13 = src("s13.glb", 1000, "0"); queueOptimize(s13);
+  ok(await settles(), "a child that cannot start: optIdle still resolves");
+  ok(!existsSync(storeDest(s13)) && !existsSync(storeDest(s13) + ".failed") && !existsSync(storeDest(s13) + ".deferred"), "…and nothing is marked");
+  process.env.OPT_CMD = real; }
 // 7. SKIP_OPT_SWEEP: with it set, both sweeps queue NOTHING even with a GLB planted in the store; without it,
 //    the same store queues the planted GLB (the positive control). Each direction is its own subprocess: the
 //    flag is a config constant read at import.
