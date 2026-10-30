@@ -3,6 +3,7 @@
 // that gate > move on, touch off. A stored switch or table becomes gates and lists only ever NARROWER (migratePresence).
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/gates-check.ts
 import * as C from "../../shared/protocol/consent.js";
+import * as S from "../../shared/protocol/authority/storage.js";
 let pass = 0, fail = 0;
 const check = (id: string, what: string, ok: boolean, got?: unknown) => { ok ? pass++ : fail++; console.log(`${ok ? "ok  " : "FAIL"} ${id} ${what}${ok ? "" : "  " + JSON.stringify(got)}`); };
 const P = (): any => ({ consent: Object.create(null) });
@@ -102,4 +103,16 @@ const UNG = ["near", "follow", "voice"], ung = (p: any, wd?: unknown, from = "pa
 { const p = P(); check("M13", "a world's stored body-default refuse or ask (the switch's words) keeps near, follow and voice deny; the gates' {move, touch} default leaves them allow",
     ung(p, "refuse").every((m) => m === "deny") && ung(p, "ask").every((m) => m === "deny") && ung(p, { move: true, touch: true }).every((m) => m === "allow") && ung(p, "accept").every((m) => m === "allow"),
     { refuse: ung(p, "refuse"), obj: ung(p, { move: true, touch: true }) }); }
+// M14 (#260, Stella item 3): a friends-row cell v4 can't hold narrows that class off for everyone; the world still loads
+const load = (consent: any) => { const w: any = S.worldOf({ name: "w", entries: [], now: () => 0, presence: { bodies: {}, holds: {}, consent: JSON.parse(JSON.stringify(consent)) } }); return w; };
+{ const pal = { friends: ["me"] }, stella = load({ me: { cells: { friends: { displace: "ask" }, everyone: { displace: "allow" } }, friends: ["pal"] }, pal });
+  const ALL = { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" };
+  const open = load({ me: { preset: "open", cells: { everyone: ALL, friends: { displace: "ask", intimate: "allow", pose: "allow" } }, friends: ["pal"] }, pal });
+  const oneWay = load({ me: { preset: "open", cells: { everyone: ALL, friends: { displace: "ask", intimate: "allow", pose: "allow" } }, friends: ["pal"] } });
+  const dw = (w: any, from: string) => C.decide(w.presence, from, "me", "displace").mode;
+  check("M14", "friends-row displace:ask + everyone-row displace:allow: the world loads, and displace is refused for a stranger and the friend (move off, touch untouched); a friend who never befriended back changes nothing",
+    stella.presenceDirty && dw(stella, "stan") === "deny" && dw(stella, "pal") === "deny"
+    && open.presenceDirty && dw(open, "stan") === "deny" && dw(open, "pal") === "deny" && open.presence.consent.me.move === false && open.presence.consent.me.touch === undefined
+    && dw(oneWay, "stan") === "allow" && oneWay.presence.consent.me.move === true,
+    { stella: stella.presence.consent.me, open: open.presence.consent.me, oneWay: oneWay.presence.consent.me }); }
 console.log(`[gates-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

@@ -123,7 +123,8 @@ export function setConsent(P, actor, a) {
  *  before the switch (to 10-20: preset, cells, pause, friends) is read as the switch it became then: paused or any enforced
  *  class closed for everyone → refuse, else any ask → ask, else accept. Per-person answers become the lists: any class
  *  denied or asked → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). A no
- *  (or ask) to near, follow or voice from the switch, a pause or the everyone row is kept in `closed` (UNGATED). The
+ *  (or ask) to near, follow or voice from the switch, a pause or the everyone row is kept in `closed` (UNGATED); one in the
+ *  friends row of a body with a mutual friend closes that class for everyone (its gate off, or `closed`). The
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
  *  tables changed. In place; idempotent. */
 export const CONSENT_SHAPE = 4;
@@ -151,11 +152,16 @@ function switchOf(t) {
 export function migratePresence(P) {
   if (!P || typeof P !== "object" || P.consentShape === CONSENT_SHAPE) return 0;
   let n = 0;
-  for (const t of Object.values(P.consent ?? {})) { if (!t || typeof t !== "object") continue;
+  const C0 = P.consent ?? {}, friendsOf = (w) => (Array.isArray(C0[w]?.friends) ? C0[w].friends : []);
+  const befriended = new Set(Object.keys(C0).filter((w) => friendsOf(w).some((f) => f !== w && friendsOf(f).includes(w))));   // the old isFriend: mutual
+  for (const [who, t] of Object.entries(C0)) { if (!t || typeof t !== "object") continue;
     const old = ["switch", "over", "preset", "cells", "paused", "friends", "delegates"].filter((k) => Object.hasOwn(t, k)); if (!old.length) continue;
     const sw = switchOf(t);
     if (sw === "refuse" || sw === "ask") { t.move = false; t.touch = false; } else if (sw === "accept") t.move = true;   // F3, R 10-28 16:02
     for (const c of closedOf(t, sw)) (t.closed ??= bag())[c] = true;   // never wider for the ungated three too (UNGATED)
+    // v4 has no per-friend slot: a friends-row no or ask turns that class off for everyone (its gate; F3's ask → off), never refuses the load
+    if (befriended.has(who) && isTable(t)) { const row = rowOf(t, "friends");
+      for (const c of CLASSES) if (row[c] !== "allow") { if (GATE_OF[c]) t[GATE_OF[c]] = false; else (t.closed ??= bag())[c] = true; } }
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
       if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= bag())[who] = true;   // ask was no until yes (L14, as F3)
