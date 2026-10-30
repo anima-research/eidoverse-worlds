@@ -558,20 +558,20 @@ export function deferredFeatures(oldEntries) {
   });
   return [...standing.values()].flat().sort((x, y) => x.at - y.at).map(({ at: _a, ...u }) => u);
 }
-/** The people main let watch a closed world on their own grant (owned, '*' none, a live spectator grant): v4 has no watch-only
+/** The people main held to watching on their own grant (owned, a live spectator grant, '*' not spectator): v4 has no watch-only
  *  grant for one person (access.js entryOf), so the translation is refused naming them (#260, Stella item 1). `st`: the v1 fold. */
 export function watchGrants(st, now = null) {
   const roles = st?.roles ?? {};
-  if (!ownedIn(st) || roles["*"]?.role !== "none") return [];
+  if (!ownedIn(st) || roles["*"]?.role === "spectator") return [];   // '*' spectator: everyone watches, so the door says it
   return Object.keys(roles).filter((k) => k !== "*" && roles[k]?.role === "spectator" && !(now != null && typeof roles[k].until === "number" && roles[k].until <= now)).sort();
 }
 /** watchGrants' refusal in words, with the owner's choices; null when there is none. */
 export function watchRefusal(names, world = "this world") {
   if (!names.length) return null;
   const who = names.map((n) => `'${n}'`).join(", ");
-  return `can't translate ${world}: main let ${who} watch it on their own spectator grant while '*' was none, and this protocol has no watch-only grant for one person. `
-    + `Translating would take that watching away silently, and letting them in with a body would widen it. Nothing was written. `
-    + `On the old server, choose one and translate again: grant them visitor (they come in with a body), grant '*' spectator (everyone may watch), or revoke their grant (they no longer watch).`;
+  return `can't translate ${world}: main let ${who} only watch it, on their own spectator grant, and this protocol has no watch-only grant for one person. `
+    + `Translating would either drop that or let them in with a body, wider than it was. Nothing was written. `
+    + `On the old server, choose one and translate again: grant them visitor (they come in with a body), grant '*' spectator (everyone may watch), or revoke their grant (they come in as everyone else does, or not at all where '*' is none).`;
 }
 /** The refusal, in words: which feature, on what, by whom, when (seq). One line per use; null when nothing is deferred. */
 export function deferredRefusal(uses, world = "this world") {

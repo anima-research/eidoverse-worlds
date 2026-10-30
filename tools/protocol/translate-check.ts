@@ -1,7 +1,7 @@
 // tools/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //           (everyone builder, rank and all; the cap at builder)
-//   W1a-b   #260 item 1: a person's own watch grant on a closed old world is refused by name, never dropped or widened
+//   W1a-c   #260 item 1: a person's own watch grant (closed or open old world) is refused by name, never dropped or widened
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
@@ -88,6 +88,11 @@ row("W1a", () => { const L = [OWNER, NONE, BOB("spectator")], { W } = tr(L), bob
     && TV1.watchGrants(v1st([OWNER, NONE, BOB("visitor")]), T0).length === 0 && ACC.entryOf(vis, { actor: bob }).may === "embody"
     && TV1.watchGrants(v1st(star), T0).length === 0 && TV1.watchGrants(v1st([OWNER, NONE, BOB("spectator", { until: T0 - 1 })]), T0).length === 0,
     "W1a '*' none + Bob:spectator: v4's door would give Bob none, so the grant is named with the owner's choices; Bob:visitor still embodies; '*' spectator or an ended grant refuses nothing", { names, why, door: ACC.entryOf(W, { actor: bob }) }); });
+row("W1c", () => { const L = [OWNER, BOB("spectator")], { W } = tr(L), bob = TV1.enc("Bob"), names = TV1.watchGrants(v1st(L), T0);
+  const vis = [OWNER, ["olga", "grant", { id: "*", role: "visitor" }], BOB("spectator")] as any;
+  ok(ACC.entryOf(W, { actor: bob }).may === "embody" && JSON.stringify(names) === '["Bob"]' && JSON.stringify(TV1.watchGrants(v1st(vis), T0)) === '["Bob"]'
+    && TV1.watchGrants(v1st([OWNER, BOB("visitor")]), T0).length === 0 && TV1.watchGrants(v1st([BOB("spectator")]), T0).length === 0,
+    "W1c an owned world with no '*' restriction: Bob:spectator (who main held to watching) would embody in v4, so he is named too; Bob:visitor and an ownerless world refuse nothing", { names, door: ACC.entryOf(W, { actor: bob }) }); });
 row("W1b", () => { const root = scratch("translate-w1"), Wd = path.join(root, "worlds"), d = path.join(Wd, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, NONE, BOB("spectator")]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const out = Bun.spawnSync(["bun", "-e", `import { reportV1World, translateV1World } from "./tools/protocol/import-v1/world.ts"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("R " + JSON.stringify({ refused: report.refused, watching: report.watching })); try { translateV1World(${JSON.stringify(d)}, ${JSON.stringify(path.join(Wd, "new"))}); console.log("T wrote"); } catch (e) { console.log("T " + JSON.stringify(String(e.message))); }`],
