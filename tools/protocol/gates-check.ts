@@ -76,6 +76,13 @@ const mig = (consent: any) => { const p: any = { consent, consentShape: 3, asks:
   check("M7", "a partial allow (touch only) is not allow-listed: under refuse Bob may not shove, drag, pose or touch", !t.allow.includes("bob") && !t.block.includes("bob") && ["shove", "displace", "pose", "intimate", "touch"].every((c) => d(p, c, undefined, "bob") === "deny"), { t, m: ["shove", "displace", "pose", "touch"].map((c) => d(p, c, undefined, "bob")) }); }
 { const p = mig({ me: { switch: "refuse", over: { bob: { touch: { mode: "allow" }, intimate: { mode: "allow" }, pose: { mode: "allow" }, shove: { mode: "allow" }, displace: { mode: "allow" } } } } }); const t = C.tableOf(p, "me");
   check("M8", "a full allow (every enforced class, no end) is allow-listed", JSON.stringify(t.allow) === '["bob"]' && ["shove", "displace", "pose"].every((c) => d(p, c, undefined, "bob") === "allow"), t); }
+{ const full = Object.fromEntries(["near", "follow", "touch", "intimate", "pose", "shove", "displace", "voice"].map((c) => [c, { mode: "allow" }]));
+  const paused = mig({ me: { preset: "normal", paused: true, over: { pal: full } } });
+  const unpaused = mig({ me: { preset: "normal", paused: false, over: { pal: full } } });
+  check("M11", "a paused stored table denies its standing full allowance; without pause it remains allowed",
+    all(paused, [...MOVE, ...TOUCH], "deny") && !C.tableOf(paused, "me").allow.includes("pal")
+    && all(unpaused, [...MOVE, ...TOUCH], "allow") && C.tableOf(unpaused, "me").allow.includes("pal"),
+    { paused: paused.consent.me, unpaused: unpaused.consent.me }); }
 { const p = mig({ me: { switch: "accept", over: { bob: { touch: { mode: "allow" }, intimate: { mode: "allow" }, pose: { mode: "allow" }, shove: { mode: "allow" }, displace: { mode: "allow" }, voice: { mode: "deny" } } } } }); const t = C.tableOf(p, "me");
   check("M9", "a deny anywhere in the row (voice too) keeps them blocked, whatever else it allowed", JSON.stringify(t.block) === '["bob"]' && !t.allow.includes("bob") && d(p, "shove", undefined, "bob") === "deny", t); }
 { const p = mig({ me: { switch: "accept", over: { bob: { pose: { mode: "ask" } } } } }); const t = C.tableOf(p, "me");   // review full-260 L14
