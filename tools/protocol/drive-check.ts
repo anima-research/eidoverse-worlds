@@ -43,6 +43,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the engine carries every layer", "protocol/simlayer.js", "sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "sphereShape(e.c.physics)) || solidOff(e.c)) return null;", ["D15"]],
   ["blocks unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(b).size !== b.length) return", "if (false) return", ["D17"]],
   ["a dynamic thing may skip things", "protocol/authority/checks.js", "if (!b.includes(\"things\") && c.physics?.kind === \"dynamic\") return", "if (false) return", ["D17"]],
+  ["a hull's own blocks makes it a ghost", "protocol/authority/drive.js", "if (!e || solidOff(e.c)) return null;", "if (!e || solidOff(e.c, \"hulls\")) return null;", ["D20"]],
   ["CONTROL (no-op: must stay green)", "drive.js", "// shared/drive.js — a hull", "//  shared/drive.js — a hull", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -259,6 +260,11 @@ await C("D17", "the door: blocks is a list of layers (bodies, hulls, things), ea
     Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
 const LEASE_BEAT = 3100;   // just past LEASE.heartbeatMs
+await C("D20", "a hull's own blocks says what it stops, not what stops it (review 1.8): a boat with blocks ['bodies'] is stopped by a wall; only collider.enabled false drives through", () => {
+  const run = (collider: any) => { const s = session({ hull: { ...HULL, collider } }); s.call("create", { id: "wall", components: { transform: tf([0, 0, 6]), mesh: { shape: "box", size: [6, 3, 0.2] }, hidden: true } }); s.board("vic");
+    return [3, 6, 9].map((z) => s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic")); };
+  const boat = run({ blocks: ["bodies"] }), ghost = run({ enabled: false });
+  return [boat.some((r) => r.refused?.code === "solid" && r.refused.blocker === "wall") && ghost.every((r) => r.ok), { boat: boat.map(show), ghost: ghost.map(show) }]; });
 await C("D18", "a commit that keeps throwing is bounded (review delta-260 L-A): the stream stops, the disk keeps failing, and after a few beats the lease is dropped, the helm freed, and it is said once, not every beat", () => {
   const s = session(); s.board("vic"); s.call("drive", { id: "hull", pos: [0, 1, 3], q: [0, 0, 0, 1] }, "vic");
   const warns: string[] = [], warn = console.warn; console.warn = (m: any) => { warns.push(String(m)); };

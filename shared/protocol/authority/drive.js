@@ -24,7 +24,7 @@ const poseOf = (st, id) => { const t = st.entities[id]?.c.transform ?? {}; retur
 /** What the hull runs into sweeping `from` → `pose` (sub-steps ≤ its smallest half-extent): an id, "ground", or null; an
  *  overlap it starts in blocks only a sub-step that deepens it (drive-check D10, D11). */
 export function hullHit(st, id, pose, from) {
-  const e = st.entities[id]; if (!e || solidOff(e.c, "hulls")) return null;
+  const e = st.entities[id]; if (!e || solidOff(e.c)) return null;   // only enabled: false passes through; its own blocks says what IT stops (review 1.8)
   const fam = familyOf(st, id), G = groundOf(st);
   const at = (p) => obbs(scratch(st, [setOp(id, "transform", { ...(e.c.transform ?? {}), pos: p.pos, q: p.q })]), id);
   const ext = (o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; };
