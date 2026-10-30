@@ -10,7 +10,9 @@ const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('swim-lists', {
 const { check, tally } = mkCheck();
 try {
   await cdp.send('Page.navigate', { url: `${BASE}/?name=swimmer&world=${WORLD}&spectate=1&webgl=1` });
-  if (!(await tryUntil('the water module', () => evalJson('!!globalThis.__waterDebug').catch(() => false), { ms: 30000 }))) await die(1, 'the water module never loaded');
+  // 80 s: the house budget for a cold page boot (access-panel-probe); a Windows runner overran 30 s (fork run 41014912934)
+  if (!(await tryUntil('the water module', () => evalJson('!!globalThis.__waterDebug').catch(() => false), { ms: 80000 })))
+    await die(1, `the water module never loaded: ${JSON.stringify(await evalJson('({ ready: document.readyState, scripts: document.scripts.length, url: location.pathname })').catch((e) => String(e)))}`);
   await pageWaiter(evalJson)(`import('/lib/state.js').then((m) => !!m.state.hydrated)`, 10000);
   const out = await evalJson(`(async () => {
     const st = await import('/lib/state.js');
