@@ -131,10 +131,10 @@ console.log("\n=== C2: aid1 human token as agent → refused; subs match ===");
   alice.close();
 }
 
-console.log("\n=== C3: SERVER_OPERATORS bare name → boot refused ===");
+console.log("\n=== C3: SERVER_OPERATORS bare name → refused loudly, the server still boots ===");
 // C3: the server operator list matched on display id (rights.ts), ban bypass + global ban/unban/expel
 // Attack: set SERVER_OPERATORS="Alice" (bare name) → Alice can ban/unban across all worlds
-// Fix: subs only, refuse boot if entry has no ':'
+// Fix: subs only; an entry with no ':' is refused loudly and the server still boots (server/operators.ts)
 {
   const alice = await client(srv.port, "sec-test", "Alice", { replica: true });
   // Alice is the founder, so she CAN ban

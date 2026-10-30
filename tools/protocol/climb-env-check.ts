@@ -176,7 +176,7 @@ await C("K8", "arrivals: @world.spawn's yaw read; with spawn-points, @world.spaw
   return [def?.id === "@world" && def.yaw === 1.25 && red?.id === "red-gate" && Math.abs(red.yaw - -0.5) < 1e-9 && atRed.ok && atNone.refused?.code === "spawn" && first?.id === "blue-gate" && Math.abs(first.yaw - 2) < 1e-9,
     { def, red, atRed: show(atRed), atNone: show(atNone), first }]; });
 
-await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason; elsewhere, without bounds, or without teleport, refused", () => {
+await C("K9", "KillZ: below the kill line (KILL_MARGIN under @world.bounds.min.y) a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason; elsewhere, without bounds, or without teleport, refused", () => {
   if (SP.__missing) return [false, SP.__missing];
   const s = session();
   s.call("delete", { id: "@world", component: "bounds" });   // the lab's world comes bounded
