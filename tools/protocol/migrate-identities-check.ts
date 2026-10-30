@@ -82,9 +82,16 @@ const idWithSub = (root: string, sub: string) => Object.entries<any>(entriesOf(d
 // ================= MI5: the reader's malformed diagnostics are a refusal =================
 { const root = scratch("migmal"); const d = oldWorld(root, "yard"); const before = fs.readFileSync(path.join(d, "world.jsonl"));
   // a python3 that answers the reference reader with status ok and one malformed diagnostic, and runs everything else
-  const fake = path.join(root, "python3"); fs.writeFileSync(fake, `#!/bin/sh\ncase "$*" in *reader.py*) echo '{"status":"ok","digest":"x","diagnostics":[[5,"malformed:shape","a line it skipped"]]}';; *) exec python3 "$@";; esac\n`); fs.chmodSync(fake, 0o755);
+  // the fake is TS behind a launcher (.cmd on Windows: a #!/bin/sh file is no executable there, and the row passed vacuously)
+  const js = path.join(root, "fake-python.ts"); fs.writeFileSync(js, `const a = process.argv.slice(2);
+if (a.some((x) => x.endsWith("reader.py"))) { console.log(JSON.stringify({ status: "ok", digest: "x", diagnostics: [[5, "malformed:shape", "a line it skipped"]] })); process.exit(0); }
+process.exit(Bun.spawnSync([${JSON.stringify(process.env.PYTHON || "python3")}, ...a], { stdio: ["inherit", "inherit", "inherit"] }).exitCode ?? 1);
+`);
+  const fake = path.join(root, process.platform === "win32" ? "python3.cmd" : "python3");
+  if (process.platform === "win32") fs.writeFileSync(fake, `@echo off\r\n"${process.execPath}" run "${js}" %*\r\nexit /b %ERRORLEVEL%\r\n`);
+  else { fs.writeFileSync(fake, `#!/bin/sh\nexec "${process.execPath}" run "${js}" "$@"\n`); fs.chmodSync(fake, 0o755); }
   const r = tool(["--apply", d], { PYTHON: fake });
-  ok(r.code !== 0 && r.o?.written === false && fs.readFileSync(path.join(d, "world.jsonl")).equals(before) && !fs.existsSync(path.join(d, "world.jsonl.before-identities")),
+  ok(r.code !== 0 && r.o?.written === false && r.o?.reader === "ok" && r.o?.malformed === 1 && fs.readFileSync(path.join(d, "world.jsonl")).equals(before) && !fs.existsSync(path.join(d, "world.jsonl.before-identities")),
     "MI5 a rewritten log the reader says ok to but reports malformed is not written (I307)", r.o ?? r.out.slice(-300)); }
 
 // ================= MI6: the directory before the logs =================
