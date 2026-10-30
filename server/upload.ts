@@ -480,7 +480,7 @@ export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a
 
 
 /** The 415 for main's `/upload?as=script`: a script is the world authority's `upload {text}` request now. */
-export const SCRIPT_MOVED = "not stored: /upload?as=script went with protocol v1. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
+export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
 
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   const upTok = url.searchParams.get("token") ?? "";
@@ -508,7 +508,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
   const body = new Uint8Array(await req.arrayBuffer());
   if (body.length > UPLOAD_CAP) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
-  // main's script store left with protocol v1: say where a script goes now (decision table row 12)
+  // main's script store left with the old protocol: say where a script goes now (decision table row 12)
   if (url.searchParams.get("as") === "script") return new Response(SCRIPT_MOVED, { status: 415 });
   if (url.searchParams.get("as") === "image") {
     // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
