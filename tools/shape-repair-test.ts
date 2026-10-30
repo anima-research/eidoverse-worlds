@@ -291,6 +291,14 @@ await tryRow('RP15', () => {
   b.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
   const outB = liftWorld(b); const needB = outB.find((x) => x.repairNeeded)?.repairNeeded; const wB = request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' });
   check('RP15 a stored grabbable.pose blocks writes (repair-needed names rename-components) until the command renames it to anim', needB?.blocking.includes('rename-components') && !wB.ok && wB.refused.code === 'repair-needed' && maintain(b).steps.rename.renamed.length === 1 && C(b, 'cup').grabbable?.anim === 'pistol' && request(b, 'olive', 'set', { id: 'cup', component: 'label', value: 'cup' }).ok, [outB, wB.refused, C(b, 'cup')]);
+  for (const [id, comp, value] of [['frame', 'picture', { src: 'store/images/0123456789abcdef.png', alt: 'a red door' }], ['radio', 'sound', { src: 'store/audio/0123456789abcdef.ogg', look: 'rain' }]] as const) {
+    const c = legacyWorld({ [id]: { model: 'crate', [comp]: value } });
+    c.append({ kind: 'act', actor: 'system', verb: 'repair-shapes', body: { v: SHAPES_VERSION, ids: [], founding: true } });
+    const outC = liftWorld(c); const needC = outC.find((x) => x.repairNeeded)?.repairNeeded; const wC = request(c, 'olive', 'set', { id, component: 'label', value: id });
+    check(`RP15 a stored ${comp} ${'alt' in value ? 'alt' : 'look'} blocks writes (${comp}.js reads description only), and the load doesn't say its readers serve it`, needC?.blocking.includes('rename-components') && !/serve the old spelling/.test(needC?.why ?? '') && !wC.ok && wC.refused?.code === 'repair-needed', [needC, wC.refused]);
+    const rC = maintain(c); const v = C(c, id)[comp] ?? {};
+    check(`RP15 …until the command renames the ${comp}'s to description; then writes are taken`, rC.steps.rename.renamed.length === 1 && v.description === ('alt' in value ? value.alt : value.look) && !('alt' in v) && !('look' in v) && request(c, 'olive', 'set', { id, component: 'label', value: id }).ok, [rC.steps.rename, v]);
+  }
 });
 
 await tryRow('RP16', async () => {

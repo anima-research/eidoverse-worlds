@@ -18,7 +18,7 @@
   },
   "repair-needed": {
    "meaning": "the world's stored values are in an old spelling no reader serves; the maintenance command must run first",
-   "when": "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"
+   "when": "any write (not a read, not leave) to a world needing lift-sockets, a grabbable, picture or sound rename, or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"
   },
   "ambiguous": {
    "meaning": "the request's result is unknown: some or all of it may be written; never ok, never a plain failure",

@@ -426,7 +426,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   which steps it needs, naming the command, and **fails closed** where
   today's readers don't serve the old shape: a world needing `lift-sockets`
   (no reader serves an un-lifted seat), a grabbable rename (`shared/grab.js`
-  reads `anim` and `grasp` only) or `repair-shapes` (a sky's azimuth in
+  reads `anim` and `grasp` only), a picture's or a sound's `alt` or `look`
+  (`shared/picture.js` and `shared/sound.js` read `description` only) or
+  `repair-shapes` (a sky's azimuth in
   degrees would read as radians) loads and reads, but refuses every write
   (not `leave`) with the registered code `repair-needed`, whose text names
   the command. Renames whose old spelling the readers serve (`@world`
