@@ -4,6 +4,7 @@ node_modules/
 
 # secrets & live tokens — NEVER commit
 .sessions.json
+/.sessions.json.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].tmp
 mcpl/tokens.json
 mcpl/state.json
 tools/voicebot/voices.json
