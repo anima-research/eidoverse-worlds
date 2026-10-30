@@ -238,6 +238,16 @@ try {
   // a thing with no model still has a frame (its transform), so a light holds a place as a model does
   await tryUntil("the lamp has its glow place", () => a.entities.get(sceneId(a, "lamp"))?.places?.glow, { ms: 2000, step: 50 });
   check("a light carries places too — named in its frame, and saved", /named this spot "glow" on \[lamp\]/.test(r) && !!a.entities.get(sceneId(a, "lamp"))?.places?.glow, r);
+  // decision table row 13: main's 8 KB places guard is the authority's general value cap now (gate.js: values under 64 KiB)
+  { const lamp = sceneId(a, "lamp"), glow = a.entities.get(lamp).places.glow, bag: Record<string, unknown> = { glow };
+    for (let i = 0; JSON.stringify(bag).length < 65_500; i++) bag[`p_${i}`] = { at: [i % 7, 0, 0] };
+    const filled = await a.request("set", { id: lamp, component: "places", value: bag });
+    await tryUntil("the lamp holds the full bag", () => Object.keys(a.entities.get(lamp)?.places ?? {}).length === Object.keys(bag).length, { ms: 3000, step: 50 });
+    r = await tool("name_place", { name: "one_more", on: "lamp" });
+    check("a name that takes the places bag past 64 KiB is refused by the general value cap, and nothing is named",
+      filled?.ok && /not named — the world refused: .*keeps values under 64 KiB/.test(r) && !("one_more" in a.entities.get(lamp).places), `${JSON.stringify(filled).slice(0, 200)} | ${r.slice(0, 300)}`);
+    await a.request("set", { id: lamp, component: "places", value: { glow } });
+    await tryUntil("the lamp's bag is back to its glow", () => Object.keys(a.entities.get(lamp)?.places ?? {}).length === 1, { ms: 3000, step: 50 }); }
   // two names in a row, before the first echo: both land
   const [r1, r2] = await Promise.all([
     tool("name_place", { name: "west_end", x: 45, z: -20, on: "rug" }),
