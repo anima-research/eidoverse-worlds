@@ -17,7 +17,7 @@ import { colliderFor, deskEyeY, canMantle, mantleStep } from './bodyscale.js';  
 // with and the authority checks; this file keeps the keys, the camera and the collider pass. Water too: the mover
 // drags a wading stride and swims past the chest (waterStance); what's here is only how the float LOOKS.
 import { walkSpeed, stickSpeed, easeSpeed, stepWalk, waterStance, floatDepth, MOVER } from '../../shared/mover.js';
-import { waterLevel, waterAt, waveTime } from './water.js';
+import { waterLevel, waterAt, waterDrag, waveTime } from './water.js';
 import { surfaceOffset } from '../../shared/waves.js';
 import { floatStep, footprintSurface } from '../../shared/buoyancy.js';
 import { chat } from './chat.js';
@@ -666,7 +666,7 @@ function levelDiveWater(me, fwd) {
     levelDiving = true; swimVelocity = [0, -0.6, 0];
   }
   return { level: true, top: wl + surfaceOffset(w, myState.pos.x, myState.pos.z, waveTime()), waves: [],
-    speed: MOVER.swim.speed * MOVER.swim.dive * (me?.userScale ?? 1) };
+    speed: MOVER.swim.speed * MOVER.swim.dive * (me?.userScale ?? 1), drag: waterDrag() };
 }
 export const isLevelDiving = () => levelDiving;   // probes and tests
 function updateSwimming(dt, me, fwd, strafe) {

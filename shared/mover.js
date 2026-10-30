@@ -184,6 +184,8 @@ export const floatDepth = (height = MOVER.body.height) => MOVER.swim.at * height
 
 /** A physics-area's speed factor as every mover reads it (componentspec physics-area; zone.js speedFactorAt): a positive number, else 1. */
 export const areaFactor = (f) => (typeof f === "number" && Number.isFinite(f) && f > 0 ? f : 1);
+export const swimDrag = (drag) => (Number.isFinite(drag) && drag > 0 ? drag : MOVER.swim.ease);
+export const swimThick = (drag) => MOVER.swim.ease / swimDrag(drag);
 /** One step of the THREE-DIMENSIONAL swim (upstream #248 swimStep; diving under a water level, #254). The caller
  *  substeps it for collision. `input`: {direction:[x,y,z] (any length; > 1 is clamped), dive?, rise?, fast?, height? (m,
  *  the body's own stature; absent: MOVER.body.height)}. `water`: {speed (m/s, the stroke here), factor? (× it: a physics-area), drag? (1/s: the water's; absent, ease), surfaceAt(x, z) →
@@ -193,7 +195,7 @@ export function stepSwim(pos, velocity, input, water, dt) {
   const S = MOVER.swim, fin = (x, d) => (Number.isFinite(x) ? x : d);
   dt = Math.max(0, Math.min(0.1, fin(dt, 0)));
   // the water's drag (1/s, Godot linear_damp): the stroke pushes against it, so it eases at D and reaches ease / D of the stroke
-  const D = fin(water.drag, 0) > 0 ? water.drag : S.ease, thick = S.ease / D;
+  const D = swimDrag(water.drag), thick = S.ease / D;
   const speed = fin(water.speed, S.speed) * areaFactor(water.factor) * (input.fast ? S.fast : 1);
   const raw = Array.isArray(input.direction) && input.direction.length === 3 && input.direction.every(Number.isFinite) ? input.direction : [0, 0, 0];
   const length = Math.max(1, Math.hypot(raw[0], raw[1], raw[2]));
