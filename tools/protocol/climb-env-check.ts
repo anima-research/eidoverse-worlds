@@ -195,6 +195,40 @@ await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or c
     && early?.refused?.code === "doesnt-apply" && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
     { fell, riding, above, early: show(early), back: show(back), acts: acts.map((e: any) => e.body), noBounds: show(noBounds), away: show(away), bare: show(bare) }]; });
 
+await C("K9h", "KillZ while holding (review of #260): a body that fell below @world.bounds holding a thing is taken back to an arrival place, and lets go of it as a disconnect's refused drop does: the hold ends, and the thing is where the log had it", () => {
+  const s = session();
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
+  s.call("create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 8.5] } });
+  const at0 = s.st().entities.ball?.c.transform?.pos;
+  s.call("move", { to: [0, 0, 8] }, "vic"); const grab = s.call("grab", { id: "ball" }, "vic");
+  const kz = -10 - SP.KILL_MARGIN;
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
+  const steps: string[] = []; for (let y = -3.5; y > kz - 4; y -= 3.5) steps.push(show(s.call("move", { to: [0, y, 8] }, "vic")));
+  const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
+  const put = s.call("put", { id: "ball" }, "vic");
+  const at1 = s.st().entities.ball?.c.transform?.pos;
+  return [grab.ok && steps.every((x) => x === "ok") && back.ok && put.refused?.code === "not-holding" && near(at1, at0),
+    { grab: show(grab), steps, back: show(back), put: show(put), at0, at1 }]; });
+
+await C("K9p", "KillZ while holding, in a world running physics (review of #260): the fall's let-go is the system's return-held act, saying below-bounds, and puts the ball back where it was picked up", () => {
+  const s = session();
+  const eng = show(s.call("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } }));
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
+  s.call("create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 8.5] } });
+  const at0 = s.st().entities.ball?.c.transform?.pos;
+  s.call("move", { to: [0, 0, 8] }, "vic"); const grab = s.call("grab", { id: "ball" }, "vic");
+  const kz = -10 - SP.KILL_MARGIN;
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
+  const steps: string[] = []; for (let y = -3.5; y > kz - 4; y -= 3.5) steps.push(show(s.call("move", { to: [0, y, 8] }, "vic")));
+  const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
+  const put = s.call("put", { id: "ball" }, "vic");
+  const at1 = s.st().entities.ball?.c.transform?.pos;
+  const acts = s.log().filter((e: any) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").map((e: any) => e.body);
+  return [grab.ok && steps.every((x) => x === "ok") && back.ok && put.refused?.code === "not-holding" && near(at1, at0) && acts.length === 1 && acts[0].why === "below-bounds" && acts[0].holder === "vic",
+    { eng, grab: show(grab), steps, back: show(back), put: show(put), at0, at1, acts }]; });
+
 await C("K10", "@world.sky.gradient {top, horizon, bottom?} (linear 0..1) taken, a bad one refused; lookOf reads it (an absent bottom is the horizon) and the first directional light thing by id as the sun, standing along its +Z", () => {
   const s = session();
   const good = s.call("set", { id: "@world", component: "sky", value: { gradient: { top: [0.03, 0.25, 0.53], horizon: [0.5, 0.7, 0.8] } } });
