@@ -137,7 +137,7 @@ export function migratePresence(P) {
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
       if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= bag())[who] = true;   // ask was no until yes (L14, as F3)
-      else if (ENFORCED.every((c) => yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28)
+      else if (!t.paused && ENFORCED.every((c) => yes.has(c))) (t.allow ??= bag())[who] = true; }   // allow grants every class: only a row that already did (F1, R 10-28)
     for (const k of old) delete t[k]; n++; }
   for (const k of ["asks", "asked", "askSeq", "cool"]) if (Object.hasOwn(P, k)) { delete P[k]; n++; }
   for (const r of P.ring ?? []) if (r && Object.hasOwn(LEGACY_CLASS, r.cls)) r.cls = classOf(r.cls);
