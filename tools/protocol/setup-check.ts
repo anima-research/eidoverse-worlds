@@ -10,7 +10,7 @@
 //   SU7 more than five tries a minute from one address are refused (429)
 //   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
 //   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
-//   SU10 an authenticated valid-token claim accepts 1024 body bytes and refuses 1025, declared or chunked, including before an unfinished sender ends
+//   SU11 an authenticated valid-token claim accepts 1024 body bytes and refuses 1025, declared or chunked, including before an unfinished sender ends
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -160,17 +160,17 @@ await s.stop();
   const declaredOver = await postRaw(a.port, over, cookie(ANN));
   const chunkedOver = await postChunked(a.port, over, cookie(ANN));
   ok(!a.dead && Buffer.byteLength(over) === 1025 && declaredOver.status === 413 && chunkedOver.status === 413 && stored(W) === null,
-    "SU10 a valid-token 1025-byte setup body is refused with or without a declared length, leaving no operator", { declaredOver, chunkedOver, stored: stored(W) });
+    "SU11 a valid-token 1025-byte setup body is refused with or without a declared length, leaving no operator", { declaredOver, chunkedOver, stored: stored(W) });
   const chunkedExact = await postChunked(a.port, exact, cookie(ANN));
   ok(Buffer.byteLength(exact) === 1024 && chunkedExact.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
-    "SU10 a valid-token 1024-byte chunked setup body claims the operator", { chunkedExact, stored: stored(W) });
+    "SU11 a valid-token 1024-byte chunked setup body claims the operator", { chunkedExact, stored: stored(W) });
   await a.stop();
 }
 {
   const W = worldsDir("w13"), a = await start(W), token = tokenOf(a.log());
   const exact = sizedBody(token, 1024), declaredExact = await postRaw(a.port, exact, cookie(ANN));
   ok(!a.dead && Buffer.byteLength(exact) === 1024 && declaredExact.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
-    "SU10 a valid-token 1024-byte declared setup body claims the operator", { declaredExact, stored: stored(W) });
+    "SU11 a valid-token 1024-byte declared setup body claims the operator", { declaredExact, stored: stored(W) });
   await a.stop();
 }
 
@@ -178,10 +178,10 @@ await s.stop();
   const W = worldsDir("w14"), a = await start(W), token = tokenOf(a.log());
   const unfinishedOver = await postChunked(a.port, sizedBody(token, 1025), cookie(ANN), false);
   ok(!a.dead && unfinishedOver.status === 413 && stored(W) === null,
-    "SU10 a 1025-byte chunked body is refused before the sender finishes it", { unfinishedOver, stored: stored(W) });
+    "SU11 a 1025-byte chunked body is refused before the sender finishes it", { unfinishedOver, stored: stored(W) });
   const claim = await postRaw(a.port, sizedBody(token, 1024), cookie(ANN));
   ok(claim.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
-    "SU10 the setup token still works after an unfinished oversize body was refused", { claim, stored: stored(W) });
+    "SU11 the setup token still works after an unfinished oversize body was refused", { claim, stored: stored(W) });
   await a.stop();
 }
 
@@ -213,7 +213,7 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
 }
 
 // ---- both credentials: the explicit Bearer is the claimant; an invalid one refuses, never falling back to the cookie (SU10) ----
-for (const [tag, bearer] of [["w12", "tok-rowan"], ["w13", "tok-nobody"]]) {
+for (const [tag, bearer] of [["w20", "tok-rowan"], ["w21", "tok-nobody"]]) {   // own dirs: w12–w14 are the size rows' (SU11)
   const W = worldsDir(tag); const a = await start(W);
   const r = await post(a.port, { token: tokenOf(a.log()) }, { ...cookie(ANN), authorization: `Bearer ${bearer}` }), j = (() => { try { return JSON.parse(r.text); } catch { return {}; } })();
   if (bearer === "tok-rowan") ok(r.status === 200 && j.account === "agent:token:rowan" && JSON.stringify(stored(W)?.list) === JSON.stringify(["agent:token:rowan"]),
