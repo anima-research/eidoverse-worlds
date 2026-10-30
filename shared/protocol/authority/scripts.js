@@ -130,7 +130,7 @@ function installCheck(w, st, s, who, op) {
   const on = v.on ?? [];
   if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
     refuse("shape", `${at}.on lists ${SCRIPT_EVENTS.join(", ")} and changed:<comp>`, "timers come from every (they deliver tick, and wake after sleeping)");
-  if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine; motion is a function of time");
+  // every's 5 s floor is the registry's range (componentspec script.ranges), refused at the door before this runs
   if (v.knobs !== undefined && utf8Len(jcs(v.knobs)) > 4096) refuse("too-big", `${at}.knobs is ${utf8Len(jcs(v.knobs))} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
   if (v.always === true && prev?.always !== true && !Roles.isOwner(role)) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
