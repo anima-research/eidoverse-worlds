@@ -19,6 +19,7 @@
 //   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
+//   AT11 a timed grant takes main's for: "2h" again through act set (decision table row 14)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -305,6 +306,14 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(!lifted.isError && /done|unban/.test(T(lifted)), "AT6n act unban lifts it", T(lifted));
   const nobody = await call("act", { verb: "ban", args: { who: "Nobody-Here" } });
   ok(nobody.isError && /Nobody-Here/.test(T(nobody)), "AT6o act ban of a name the world never saw is an error naming it", T(nobody));
+  // AT11 (decision table row 14): main's world_access `for: "2h"` again: a timed grant's until is the server's now + 2 h
+  const roleOf = () => ag.replica?.st?.entities?.["@world"]?.c?.[`roles:${vic.actor}`];
+  const t0 = ag.serverNow(), timed = await call("act", { verb: "set", args: { id: "@world", component: `roles:${vic.actor}`, value: { role: "builder", for: "2h" } } });
+  await tryUntil("the agent folds Vic's timed grant", () => Number.isSafeInteger(roleOf()?.until), { ms: 3000, step: 50 });
+  ok(!timed.isError && roleOf()?.role === "builder" && Math.abs(roleOf().until - (t0 + 7_200_000)) < 60_000 && !("for" in roleOf()), "AT11 act set roles:<id> {role, for: \"2h\"} stores until = now + 2 h (epoch ms)", [T(timed).slice(0, 200), roleOf(), t0]);
+  const until0 = roleOf()?.until, badFor = await call("act", { verb: "set", args: { id: "@world", component: `roles:${vic.actor}`, value: { role: "member", for: "2 fortnights" } } });
+  await sleep(300);
+  ok(badFor.isError && /not sent/.test(T(badFor)) && /"30m", "2h", "1d" or "1w"/.test(T(badFor)) && roleOf()?.until === until0 && roleOf()?.role === "builder", "AT11 a malformed for is refused before anything is sent, with the durations it takes", [T(badFor), roleOf()]);
   vic.close(); }
 
 // ---- AT5: look points at the real tool ----
