@@ -58,7 +58,7 @@ function splitUnknown(c) {
   }
 }
 // every v1 socket was a seat: {pos, yaw?, pose?, part?} → {pos, q?, part?, body: {pose?}} (a person attaches by
-// using it). A v1 socket key v4 doesn't define rides in imported:sockets {<slot>: {key: value}}.
+// using it; @33: no pos is main's [0, 0.5, 0], client/lib/world.js). A v1 socket key v4 doesn't define rides in imported:sockets {<slot>: {key: value}}.
 function newSockets(S, c) {
   if (!S || typeof S !== "object" || Array.isArray(S)) return S;
   const out = {}, left = {};
@@ -69,7 +69,7 @@ function newSockets(S, c) {
     // v1's renderer turned the seat by `yaw ?? 0` through three.js, which coerces ("1.5" turns it); what can't turn is carried
     const yaw = yaw0 == null ? 0 : Number(yaw0);
     if (!Number.isFinite(yaw)) rest.yaw = yaw0;
-    out[slot] = { ...(pos !== undefined ? { pos } : {}), ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: { ...(pose !== undefined ? { pose } : {}), ...(seatAnchor === "surface" ? { anchor: "surface" } : {}) } };   // @24: main's seatAnchor is body.anchor
+    out[slot] = { pos: pos ?? [0, 0.5, 0], ...(Number.isFinite(yaw) && yaw !== 0 ? { q: yawQ(yaw) } : {}), ...(part !== undefined ? { part } : {}), body: { ...(pose !== undefined ? { pose } : {}), ...(seatAnchor === "surface" ? { anchor: "surface" } : {}) } };   // @24: main's seatAnchor is body.anchor
     if (Object.keys(rest).length) left[slot] = rest;
   }
   if (Object.keys(left).length) c[keyed("imported", "sockets")] = left;
@@ -123,7 +123,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@32";
+export const TRANSLATOR = "eidoverse/translate-v1@33";
+// @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0] (newSockets), where @32 wrote none (y 0). Output differs there.
 // @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
 // [band-<hash of its id>]}) and its host scans it (collider {mask: [1, that layer]}), so only it meets them; @29-@31's walls stopped every hull. Output differs there.
 // @31 (LEGACY-PINS 10-29, items 2, 6, 8, 9): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
@@ -227,7 +228,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@32";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@33";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key

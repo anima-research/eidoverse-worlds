@@ -8,7 +8,8 @@
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51-53  @31: main's slow water is the water's drag; its 78 m stage a bounds box; its inferred lamps light children
-//   V5      the translator is @32, and a report reviewed under @31 is refused, naming the earlier translator
+//   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
+//   V5      the translator is @33, and a report reviewed under @32 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -211,12 +212,12 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@31" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@32" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 32 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 32 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@32/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @32; a report reviewed under @31 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 33 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 33 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@33/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @33; a report reviewed under @32 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -244,6 +245,11 @@ row("V7", () => { const root = scratch("translate-v7"), W = path.join(root, "wor
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);
   ok(E.a.collider?.shape === "mesh" && E.b.collider?.shape === "box" && E.c.collider === undefined && E.c["imported:collide"] === "boxy", "S3-T1 main's spawn collide: exact → collider mesh, box → box; anything else carried", { a: E.a.collider, b: E.b.collider, c: E.c }); });
+// decision table row 9 (@33): main sat a socket with no pos at [0, 0.5, 0] (client/lib/world.js); the translation writes it
+row("DT9", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { bare: { pose: "sit" }, nul: { pos: null }, set: { pos: [1, 0.2, 0] } } }]]);
+  const S = E.s?.sockets ?? {};
+  ok(JSON.stringify(S.bare?.pos) === "[0,0.5,0]" && JSON.stringify(S.nul?.pos) === "[0,0.5,0]" && JSON.stringify(S.set?.pos) === "[1,0.2,0]",
+    "DT9 a seat with no pos (or a null one) sits at main's [0, 0.5, 0]; a written pos is kept", S); });
 row("S3-T2", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { a: { pos: [0, 0.5, 0], seatAnchor: "surface" }, b: { pos: [1, 0.5, 0], seatAnchor: "hips" } } }]]);
   const S = E.s.sockets ?? {}, kids = Object.values<any>(E).filter((c) => c.socket);
   const body = (n: string) => S[n]?.body ?? kids.find((k) => k.socket?.name === n)?.station;
