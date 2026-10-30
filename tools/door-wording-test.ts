@@ -794,5 +794,11 @@ try {
 } finally {
   world.stop(true);
 }
+// decision table row 12: main's /upload?as=script is a 415 that names upload {text}, not "not a GLB container"
+{ const { handleUpload } = await import("../server/upload.ts");
+  const u = new URL("http://127.0.0.1/upload?as=script");
+  const r = await handleUpload(new Request(u, { method: "POST", body: "export default {}" }), u, { requestIP: () => ({ address: "127.0.0.1" }) });
+  const t = await r.text();
+  check("/upload?as=script is refused 415, naming the upload {text} request that stores a script now", r.status === 415 && /upload \{text\}/.test(t) && /act \{verb: "upload"/.test(t) && !/GLB/.test(t), `${r.status} ${t}`); }
 console.log(`${tally.passed} passed; ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
