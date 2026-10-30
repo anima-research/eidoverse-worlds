@@ -605,6 +605,23 @@ const cases: Case[] = [
       D.settleOrphans(w3, []); const again = s.entries().slice(n1).filter((e: any) => e.kind === "act").map((e: any) => `${e.verb}:${e.body?.id}`);
       return { g: show(g), lift, acts, ends, again }; },
     good: (o) => o.g === "ok" && o.lift && o.acts.includes("return-home:cup") && o.ends && !o.again.length },
+  { id: "O5", what: "a hold a world's load settles is a release its watching scripts hear (review 1.10): the orphan's return-held says how: return, caused by that act", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "flag", model: "book", components: { physics: { kind: "dynamic" }, grabbable: { who: "member" } }, place: { at: [1, 0] } });
+      const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
+      const w2 = s.reopen({ bodies: {}, holds: {} }); clock.advance(100); D.settleOrphans(w2, []);
+      const ran = s.entries().filter((e: any) => e.kind === "act" && e.verb === "script" && e.body?.on === "release"), back = s.entries().findLastIndex((e: any) => e.kind === "act" && e.verb === "return-held");
+      return { h: show(h), g: show(g), how: comp(s, "flag", "t/how") ?? null, cause: ran.at(-1)?.cause ?? null, back }; },
+    good: (o) => o.h === "ok" && o.g === "ok" && o.how === "return" && o.back > 0 && o.cause === o.back },
+  { id: "O5b", what: "…and a hold that just ends at load (past the holders' cap) is heard as how: drop", run(s) { cast(s);
+      s.call("olive", "create", { id: "flag", model: "book", components: { grabbable: { who: "member" } }, place: { at: [1, 0] } });
+      const h = install(s, "olive", "flag", "hear", `world.on("release", (e) => world.set("self", "t/how", e.how));\n`, { scope: { ids: "self", comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0.8, 0, 0.6] }); const g = s.call("vic", "grab", { id: "flag" });
+      const P = JSON.parse(JSON.stringify(s.w().presence)), mine = P.holds.flag;
+      P.holds = { ...Object.fromEntries(Array.from({ length: D.ORPHANS.holders }, (_, i) => [`gone${i}`, { ...mine, by: `h${i}` }])), flag: mine };   // vic is the 17th holder
+      const w2 = s.reopen(P); clock.advance(100); const r = D.settleOrphans(w2, []);
+      return { h: show(h), g: show(g), deferred: r.some((x: any) => x.deferred === 1), held: w2.presence.holds.flag ?? null, how: comp(s, "flag", "t/how") ?? null }; },
+    good: (o) => o.h === "ok" && o.g === "ok" && o.deferred && o.held === null && o.how === "drop" },
   // ---------------- U: use while held, and the grab / release events (slice 5) ----------------
   { id: "U1", what: "use while held: the holder's use with no action fires grabbable.use's down, with phase up its up (each one act, the act saying held/hand/phase); held: true from someone not holding is refused", run(s) { cast(s);
       s.call("olive", "create", { id: "torch", model: "table-lamp", components: { grabbable: { who: "member", use: { down: "on", up: "off" } },

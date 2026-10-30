@@ -131,8 +131,8 @@ Events (`e`): every event has `on`.
   presence: like `enter`, when the grab itself isn't logged its activation's cause is the entry that made the script's
   sponsor, and the act records no identity (no `trigger`, no `event.by`; the script still hears `by` live). A grab with
   its own act names its actor there already, and its activation keeps `trigger`;
-- `release`: `by`, `id`, `how` (`put`, `drop`, `throw`, `stay`, `return` or `snap`), `to?` and `socket?` (the socket it
-  snapped into), `seq` (the settlement's act, which is the activation's cause). `grab` and `release` reach every
+- `release`: `by`, `id`, `how` (`put`, `drop`, `throw`, `stay`, `return`, `snap` or `edited`), `to?` and `socket?` (the socket it
+  snapped into), `seq?` (the settlement's act, which is the activation's cause; a hold a world's load ends with no act has none, and records no identity, as `grab`). `grab` and `release` reach every
   script whose scope covers the thing (`self` on the thing itself; `subtree` or ids for a game that watches its pieces);
 - `say`: `by`, `text`, `to?`, `seq`;
 - `enter` / `leave`: `by`, live only: the act records no identity for an arrival or a departure (no `trigger` actor, no
