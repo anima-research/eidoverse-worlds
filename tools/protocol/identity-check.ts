@@ -517,10 +517,17 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   const S7 = await start({ SESSIONS_PATH: SF }); const ck = { cookie: `ew_sess=${sid}` }, host = `127.0.0.1:${S7.port}`;
   const opens = async (h) => { try { const s = await sock(S7.port, h); const j = await s.join("garden", `Cs${Math.random().toString(36).slice(2, 6)}`); s.close(); return j.snapshot ? (j.snapshot.cut?.account ?? j.snapshot.account ?? "joined") : "no-snapshot"; } catch { return "refused"; } };
   const got = { evil: await opens({ ...ck, origin: "https://evil.example" }), sibling: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-site" }), nul: await opens({ ...ck, origin: "null" }),
-    own: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-origin" }), proxied: await opens({ ...ck, origin: "https://public.example", "sec-fetch-site": "same-origin" }), fwd: await opens({ ...ck, origin: "https://public.example", "x-forwarded-host": "public.example" }), native: await opens(ck), guest: await opens({ origin: "https://evil.example", "sec-fetch-site": "cross-site" }) };
+    own: await opens({ ...ck, origin: `http://${host}`, "sec-fetch-site": "same-origin" }), proxied: await opens({ ...ck, origin: "https://public.example", "sec-fetch-site": "same-origin" }), native: await opens(ck), guest: await opens({ origin: "https://evil.example", "sec-fetch-site": "cross-site" }),
+    ownOrigin: await opens({ ...ck, origin: `http://${host}` }), scheme: await opens({ ...ck, origin: `https://${host}` }), fwd: await opens({ ...ck, origin: "https://public.example", "x-forwarded-host": "public.example" }) };
   ok(got.evil === "refused" && got.sibling === "refused" && got.nul === "refused", "CS1 a cookie upgrade from another origin, a sibling site, or an opaque origin is refused", got);
-  ok(["own", "proxied", "fwd", "native", "guest"].every((k) => got[k] !== "refused" && got[k] !== "no-snapshot"), "CS2 …this server's own page (Sec-Fetch-Site same-origin decides, whatever Host a proxy sends; else an Origin matching X-Forwarded-Host), a client with no Origin, and a cookieless guest from anywhere still join", got);
-  S7.proc.kill(); }
+  ok(["own", "proxied", "native", "guest", "ownOrigin"].every((k) => got[k] !== "refused" && got[k] !== "no-snapshot"), "CS2 …this server's own page (Sec-Fetch-Site same-origin decides, whatever Host a proxy sends; else its exact Origin), a client with no Origin, and a cookieless guest from anywhere still join", got);
+  ok(got.scheme === "refused" && got.fwd === "refused", "CS3 no Sec-Fetch-Site and no HN_NATIVE_ORIGIN: the Origin must be the request's own scheme+host exactly (same host over https, or an X-Forwarded-Host match, is refused)", got);
+  S7.proc.kill();
+  const S8 = await start({ SESSIONS_PATH: SF, HN_NATIVE_ORIGIN: "https://public.example" }), h8 = `127.0.0.1:${S8.port}`;
+  const opens8 = async (h) => { try { const s = await sock(S8.port, h); const j = await s.join("garden", `Cp${Math.random().toString(36).slice(2, 6)}`); s.close(); return j.snapshot ? "joined" : "no-snapshot"; } catch { return "refused"; } };
+  const pub = { pub: await opens8({ ...ck, origin: "https://public.example" }), http: await opens8({ ...ck, origin: "http://public.example" }), port: await opens8({ ...ck, origin: "https://public.example:8443" }), local: await opens8({ ...ck, origin: `http://${h8}` }) };
+  ok(pub.pub === "joined" && pub.http === "refused" && pub.port === "refused" && pub.local === "refused", "CS3 HN_NATIVE_ORIGIN set: that one origin is this server's, exactly (http:// on its host, another port, or the request's own Host is refused)", pub);
+  S8.proc.kill(); }
 
 // ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased) and unique lowercased; a refused one proves
 // nobody, its name stays reserved, and the load says which (accounts review 10-28) ----

@@ -65,7 +65,7 @@ public box). Behind a reverse proxy the client's address rides `X-Real-IP`; the
 server believes that header only from loopback or the peers named in
 `TRUSTED_PROXIES=<addr,addr>` (server/peer.ts), else it uses the socket's own. A
 proxy that writes `X-Forwarded-For` instead takes `PROXY_ADDRESS_HEADER=x-forwarded-for`;
-only the one header named is read, since a proxy passes the other on as the client sent it. `bun tools/protocol/world.ts found <name> --owner <you>` founds a
+only the one header named is read, since a proxy passes the other on as the client sent it. Behind a proxy, set `HN_NATIVE_ORIGIN=https://<public host>`: a signed-in socket from an older browser opens only from that exact origin. `bun tools/protocol/world.ts found <name> --owner <you>` founds a
 world; `bun run test:protocol` runs every protocol suite. AGENTS.md is the
 builder's guide.
 

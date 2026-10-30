@@ -75,14 +75,16 @@ export function sessionOfRequest(req: Request): HnSession | null {
 }
 
 /** A browser upgrade from a page that isn't this server's (cross-site WebSocket hijacking; OWASP, web.dev Fetch Metadata):
- *  Sec-Fetch-Site decides when sent (same-origin only); else an Origin must be this server's (Host, X-Forwarded-Host, or
- *  HN_NATIVE_ORIGIN behind a proxy that rewrites Host). No Origin at all: a native client. */
+ *  Sec-Fetch-Site decides when sent (same-origin only); else the Origin must equal ownOrigin exactly. No Origin: a native client. */
 export function crossSiteUpgrade(req: Request): boolean {
   const site = req.headers.get("sec-fetch-site"); if (site !== null) return site !== "same-origin";
   const origin = req.headers.get("origin"); if (origin === null) return false;
-  let host: string; try { host = new URL(origin).host.toLowerCase(); } catch { return true; }   // "null" (an opaque origin) too
-  const ours = [req.headers.get("host"), req.headers.get("x-forwarded-host"), process.env.HN_NATIVE_ORIGIN ? new URL(process.env.HN_NATIVE_ORIGIN).host : null];
-  return !ours.some((h) => h && h.toLowerCase() === host);
+  try { return new URL(origin).origin !== ownOrigin(req); } catch { return true; }   // "null" (an opaque origin) too
+}
+/** This server's one public origin (scheme, host, port): HN_NATIVE_ORIGIN when set (behind a proxy), else the request's own. */
+export function ownOrigin(req: Request): string {
+  const conf = process.env.HN_NATIVE_ORIGIN, url = new URL(req.url);
+  return new URL(conf || `${url.protocol}//${req.headers.get("host") ?? url.host}`).origin;
 }
 
 // ---- session persistence ----------------------------------------------------
