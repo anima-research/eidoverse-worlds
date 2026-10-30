@@ -80,7 +80,7 @@ export const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
     // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
-    // connection arrived, unless it is an admin's (owner, operator: world.ts sayFloorFor), who reads the master log.
+    // connection arrived, unless it is the owner's, an operator's or a readChat holder's (world.ts isAdmin), who reads the master log.
     // Spectators page like anyone else: what they were present for.
     if (!c.world) return;
     const r = c.world.readHistory({
