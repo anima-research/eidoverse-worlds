@@ -19,8 +19,7 @@ Loading into a running client (import specifiers are absolute `/lib/...`, so
 the module works served from anywhere):
 
 ```
-curl -X POST "$SEQ/upload?as=script&token=$BEARER" --data-binary @tools/seatlab/seatlab.js
-# → {"path": "store/scripts/<hash>.js"}
+# a script is an `upload {text}` request (act {verb: "upload", args: {text}}); bind it as script:<name> (docs/SCRIPTS.md)
 # browser console:
 const lab = await import('/library/store/scripts/<hash>.js');
 ```

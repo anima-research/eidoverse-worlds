@@ -23,9 +23,9 @@ const water = { center: [0, 0, 0], size: [10, 4, 6], absorption: [0.2, 0.1, 0.05
   near(kid.c.transform.pos.map((v: number, i: number) => v + kid.d.water.center[i]), off.center, "R1 an offset water: its thing's place + the projected centre = main's centre"); near(kid.d.water.size, off.size, "size"); }
 { const b = { center: [1, 2, 3], size: [2, 2, 2], q: [0, 0.3826834323650898, 0, 0.9238795325112867] }, kid = at(T.volumePartsOf("hull", { air: { boxes: [b] } }, {}).children, "air")!;
   near(kid.c.transform.pos.map((v: number, i: number) => v + kid.d.air.boxes[0].center[i]), b.center, "R1 an air box: centre"); near(kid.d.air.boxes[0].size, b.size, "size"); near(kid.c.transform.q, b.q, "its q is its thing's"); }
-// main's water speed (translated as the zone's physics-area {kind: speed, factor}: review delta-260 L-D) projects back as water.speed
+// main's water speed (translated as the water's own drag, translate-v1@31) projects back as water.speed
 { const own = T.volumePartsOf("pond", { water: { ...water, speed: 1.2 } }, {}).own, d = m.projectComponentData(own) as any;
-  assert.ok(Math.abs(d.water.speed - 1.2) < 1e-9, `R1 water.speed from its physics-area: ${d.water.speed} vs 1.2`); }
+  assert.ok(Math.abs(d.water.speed - 1.2) < 1e-9, `R1 water.speed from its drag: ${d.water.speed} vs 1.2`); }
 // main's water level below its box's top: the zone + water.level
 { const d = m.projectComponentData({ zone: { shape: "box", size: [4, 4, 4] }, water: { level: 1 } }) as any; near(d.water.center, [0, -0.5, 0], "R1 water.level: the body's centre"); near(d.water.size, [4, 3, 4], "its size"); }
 { const v = T.vehiclePartsOf("boat", { helm: [0, 1, 2], speed: 6, turnRate: 0.8 }), d = m.projectComponentData({ drive: v.drive }) as any;

@@ -414,7 +414,7 @@ export class WorldLog {
   private anon(actor: string) { return directoryFor(WORLDS_DIR).entry(actor)?.kind === "anon"; }
   /** What this identity may do here, from the authority (roles.js effectiveOf): {role, name, rank, can, switches}. */
   rightsOf(actor: string) { return effectiveIn(this.live.state(), actor, { anon: this.anon(actor) }); }
-  /** A kick whose cooldown still runs: {until, by, reason?} or null (join refuses it). */
+  /** A mute in force here (voice or chat): {until, by, reason?} or null. */
   mutedHere(actor: string, channel?: "voice" | "chat"): Any { return muteOf(this.live, actor, channel); }
   /** Everything in force now, per identity (the sweep that re-applies voice mutes reads it). */
   sanctions(): Record<string, Any> { return sanctionsNow(this.live); }

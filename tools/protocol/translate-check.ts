@@ -4,7 +4,7 @@
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
-//   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is no longer carried
+//   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is carried as sky.audio
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51-53  @31: main's slow water is the water's drag; its 78 m stage a bounds box; its inferred lamps light children
