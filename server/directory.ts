@@ -11,7 +11,8 @@
 //   - one id per account per server, the same in every world (R 10-06 14:05: friends, messages and "ask to be invited",
 //     as VRChat does, need a person who stays the same person between worlds; per-world ids — review M6 — were
 //     tried and withdrawn). A world's slice of this file (exportSlice) travels with the world to another server.
-// Accounts (`sub`): "human:<provider>:<id>" from a verified session, "agent:token:<name>" for an operator-enrolled agent,
+// Accounts (`sub`): "human:…" from a verified session (any `human:` subject a trusted issuer signed, once its signature,
+// issuer and audience check out: server/routes.ts /auth; e.g. human:discord:<snowflake>, or the fixtures' human:<name>), "agent:token:<name>" for an operator-enrolled agent,
 // "aid1:<iss>:<sub>" for a home-node-verified agent, "local:<name>" only on a private TRUST_NAMES server. A connection
 // with no account is ANONYMOUS: a fresh id per connection, held in memory only (never written: M2), kind "anon".
 import fs from "node:fs";
@@ -28,7 +29,7 @@ type File = { v: 1 | 2; ids: Record<string, Entry> };
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
 export const mintId = () => "u-" + Array.from(crypto.randomBytes(20), (b) => B32[b & 31]).join("");
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}$/.test(s);
-/** The account shapes above; a stored account outside them is refused at boot (named, kept on disk), never worn. */
+/** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
 /** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
 export const accountTag = (sub: string) => crypto.createHash("sha256").update(`eidoverse-name-tag:${sub}`).digest("hex").slice(0, 4);
