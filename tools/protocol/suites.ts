@@ -205,6 +205,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["last-world", "../last-world-test.ts", 1], // #281 (main, merged 10-27): a bare link goes back to the last world you were in; the real net.js writes it at the door's yes and forgets a refused or empty world
   ["event-wire", "../event-wire-test.ts", 1], // MCPL RFC-001 rev 3 (main, merged 10-27): a world event's tags follow its kind facet; a notice is chat:system, speech never
   ["killz-slumped", "../killz-slumped-test.ts", 1], // a knocked-down agent body is judged by its hips as it falls and lies: on a floor at or above the kill line (KILL_MARGIN under @world.bounds.min.y) it stays; below it, it is sent back once, and arrives standing
+  ["consent-scripts-list", "../consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["client-tools", "../run-client.ts --import-only --skip-suites", 14], // refactor plan 2 D5: every tools/*-{test,check} loads (a stub missing an export, a moved module); the full run is `bun tools/run-client.ts`
 ];
 
