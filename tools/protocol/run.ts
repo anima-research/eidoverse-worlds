@@ -202,8 +202,11 @@ let CHROME: string | null = null;
 if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
   CHROME = findChrome();
   if (CHROME && !fs.existsSync(CHROME)) CHROME = null;
-  let v = CHROME ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
+  let v = CHROME && process.platform !== "win32" ? spawnSync(CHROME, ["--version"], { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "" : "";
   // Chrome on Windows writes nothing to a console for --version; its version is in the executable's file properties
+  // Chrome for Testing keeps a "<version>.manifest" beside the exe: read it before spawning anything (parallel probes outran the spawn timeouts)
+  if (CHROME && !v && process.platform === "win32")
+    v = fs.readdirSync(path.dirname(CHROME)).find((n) => /^\d+\.\d+\.\d+\.\d+\.manifest$/.test(n))?.replace(/\.manifest$/, "") ?? "";
   if (CHROME && !v && process.platform === "win32")
     v = spawnSync("powershell.exe", ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${CHROME.replace(/'/g, "''")}').VersionInfo.ProductVersion`],
       { encoding: "utf8", timeout: 20000 }).stdout?.trim() ?? "";

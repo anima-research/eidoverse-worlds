@@ -9,7 +9,7 @@
 //   - a worker that ignores SIGTERM and never answers is killed after the
 //     grace, the ask fails, the process is gone, and the next check runs;
 //   - output past the cap is no report.
-import { mkdtempSync, writeFileSync, readFileSync, statSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const dir = mkdtempSync(join(tmpdir(), "checkq-"));
@@ -81,17 +81,17 @@ try {
     check("a worker that floods stderr before answering is heard (its stderr is drained)", r.ok && (r as any).r.loud === true, JSON.stringify(r).slice(0, 160));
   }
   {
-    Q.checkConfig.timeoutMs = 1500;
+    Q.checkConfig.timeoutMs = 8000;   // long enough for a cold bun to start and write its pid before the kill it is testing
     Q.checkConfig.runner = worker("stuck", `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
 process.on("SIGTERM", () => {});   // won't stop when asked
 process.stderr.write("y".repeat(1 << 20));
 setInterval(() => {}, 1000);`);
     const t0 = performance.now();
     const r = await outcome(Q.checkFile(f2, 2.5));
-    const ms = performance.now() - t0, pid = Number(readFileSync(pidFile, "utf8"));
+    const ms = performance.now() - t0, pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8")) : NaN;   // no pid: the worker never started, and the rows below fail rather than the file
     check("a worker that ignores SIGTERM and never answers: the ask fails as timed out, within timeout + grace",
-      !r.ok && /timed out/.test((r as any).e) && ms < 1500 + 500 + 1500, `${ms.toFixed(0)}ms ${JSON.stringify(r)}`);
-    check("...and the worker is gone (killed after the grace)", !alive(pid), `pid ${pid}`);
+      !r.ok && /timed out/.test((r as any).e) && ms < 8000 + 500 + 1500, `${ms.toFixed(0)}ms ${JSON.stringify(r)}`);
+    check("...and the worker is gone (killed after the grace)", Number.isFinite(pid) && !alive(pid), `pid ${pid}`);
   }
   {
     Q.checkConfig.runner = worker("chatty", `process.stdout.write("z".repeat(6 << 20)); console.log("{}");`);
