@@ -45,13 +45,13 @@ try {
   // LS2 bob sets a new lock: a builder's
   const set = await bobAsks('set', { id: crate, component: 'lock', value: true });
   check('(setup) bob, a builder, locks it again', set?.ok === true && await folded(`!!e['crate']?.c.lock`), JSON.stringify(set));
-  check('LS2 …and its row says "builders and up", the new lock\'s strength, not the lifted lock\'s', await word('crate', 'builders and up'), JSON.stringify(await evalJson(rowOf('crate'))));
+  check('LS2 …and its row says "Builder and up", the new lock\'s strength, not the lifted lock\'s', await word('crate', 'Builder and up'), JSON.stringify(await evalJson(rowOf('crate'))));
 
   // LS3 a refused ask is asked again: the page's first inspect of the chest goes out naming nothing there, and is refused
   await evalJson(`import('/lib/net.js').then((m) => { window.__refused = 0; const real = m.net.ws.send.bind(m.net.ws); m.net.ws.send = (x) => { const r = JSON.parse(x);
     if (r.type === 'request' && r.verb === 'inspect' && r.args?.id === 'chest' && window.__refused === 0) { window.__refused++; r.args = { id: 'no-such-thing' }; return real(JSON.stringify(r)); } return real(x); }; return true; })`);
   await ask('set', `{ id: 'chest', component: 'lock', value: true }`);
-  check('(setup) the chest\'s first ask is refused', await waitFor(`window.__refused === 1`) && await waitFor(`${rowOf('chest')}.then((r) => r?.lockLevel === 'builders and up')`), JSON.stringify(await evalJson(rowOf('chest'))));
+  check('(setup) the chest\'s first ask is refused', await waitFor(`window.__refused === 1`) && await waitFor(`${rowOf('chest')}.then((r) => r?.lockLevel === 'Builder and up')`), JSON.stringify(await evalJson(rowOf('chest'))));
   check('LS3 …and is asked again: the row comes to say "owners only"', await word('chest', 'owners only'), JSON.stringify(await evalJson(rowOf('chest'))));
   check('no page errors', (await evalJson(`window.__errs`))?.length === 0, JSON.stringify(await evalJson(`window.__errs`)));
 } catch (e: any) { check('the test ran to the end', false, String(e?.stack ?? e).slice(0, 500)); }

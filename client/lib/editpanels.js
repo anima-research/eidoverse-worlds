@@ -324,7 +324,7 @@ function hierarchyFields() {
     // the row says the name; the rest is on hover (and in the row with 'show ids' / 'show kinds')
     const title = [nameOnly(id) ? `${nameOnly(id)}  (id ${id})` : `id ${id}`, sub].filter(Boolean).join(' — ');
     return { id, label: labelOf(id), ...(hopts.kinds ? { sub } : {}), title, depth: t.depth, active: id === sel, multi: id !== sel && Sel.isSelected(id), badges, locked: !!bag.lock, mine: isMineHidden(id),
-      ...(bag.lock ? { lockLevel: lockWord(lockStrengthOf(id)) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
+      ...(bag.lock ? { lockLevel: lockWord(lockStrengthOf(id), bagOf('@world') ?? {}) } : {}), ...(heldBy && !bag.lock ? { heldBy, heldByLabel: labelOf(heldBy) } : {}),
       lockable: Edits.mayLift() && (!bag.lock || mayLiftLevel(id)),   // §5: only builders and owners lock and unlock; a lock above your rank isn't yours to lift
       enabled: !selfOff, ...(off ? { off: true } : {}),
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
@@ -491,7 +491,7 @@ async function toggleLock(id) {
   if (!Edits.mayLift()) { flashHint('only builders and owners can lock or unlock things here'); return; }
   if (!lk) { Edits.lock(id, true); return; }
   // unlocking someone else's lock is a click-through, as moving a locked thing is: say whose it is and at what level
-  const by = lockerOf(id), word = lockWord(lockStrengthOf(id));
+  const by = lockerOf(id), word = lockWord(lockStrengthOf(id), bagOf('@world') ?? {});
   if (by && by !== net.you) {
     const yes = await confirmCenter({ title: 'Unlock it?', body: `${Edits.nameOf(by)} locked this (${word} may lift it). Unlocking lets anyone who may build here move or remove it; History shows who unlocked it.`, ok: 'Unlock', cancel: 'Keep it locked' });
     if (!yes) return;

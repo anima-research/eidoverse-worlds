@@ -81,7 +81,7 @@ check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?
     const m = messages.join(' ');
     check(`/access ${w} sends nothing and teaches the four doors`, sent.length === 0 && new RegExp(`'${w}' isn't one of the doors`).test(m) && ['invite-only', 'watch', 'public', 'open'].every((d) => m.includes(`${d} (`)), m); }
   const m = messages.join(' ');
-  check('…naming the newcomer roles from the registry (a renamed member reads as its name)', /newcomers get the Regular role/.test(m) && /newcomers get the Builder role/.test(m), m);
+  check('…naming the newcomer roles from the registry (a renamed member reads as its name)', /newcomers get the Regular role/.test(m) && /newcomers with an account get the Builder role; guests start as Regular/.test(m), m);
   await cmd('access', 'public');
   check('…and a real door still sets it', sent.length === 1 && JSON.stringify(sent[0]).includes('"join":"anyone"'), JSON.stringify(sent));
   // R 10-28 (item 4): /boom [power] [radius] and /blast are a force request at my feet

@@ -37,8 +37,9 @@ export const BELOW = -1;
 // A lock (recut B2, R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is just `true`; its strength is the rank its
 // SETTER holds now, read from the log at check time (a setter who's demoted takes their locks down with them). Anyone at
 // that rank or above may act through it or lift it; the authority decides (gate.js), the padlock only asks.
-/** The words for a lock's strength: who may lift it (display only). */
-export const lockWord = (rank) => (rank >= RANK.owner ? "owners only" : rank >= RANK.moderator ? "moderators and up" : "builders and up");
+/** The words for a lock's strength: who may lift it, by the role at that rank here, else "rank N and up" (display only). */
+export const lockWord = (rank, wc = {}) => { if (rank >= RANK.owner) return "owners only";
+  const r = rolesOf(wc).find((x) => x.rank === rank); return r ? `${r.name} and up` : `rank ${rank} and up`; };
 export const BUILTIN_IDS = Object.freeze(["member", "builder", "moderator", "owner"]);
 /** A built-in's old name, never an alias: a role written with it is refused, naming the new one (R 10-27). */
 export const RENAMED_ROLES = Object.freeze({ visitor: "member" });
@@ -56,7 +57,7 @@ const LIST = [
   ["scripts", "install and edit scripts (they act with your rights)", ["build"]],
   ["pauseScripts", "pause or resume scripts whose sponsor ranks below you", []],
   ["mute", "mute someone's voice or chat for everyone, for a while (up to 7 days); warn them", []],
-  ["kick", "remove someone now; they can't come back for a while (up to 60 min); warn them", []],
+  ["kick", "remove someone now (they may come back at once); warn them", []],
   ["ban", `keep someone out for up to ${MOD_BAN_MAX_DAYS} days (owners: any length); lift bans you may; warn them`, ["kick"]],
   ["grantRoles", "give or take roles ranked below yours, with only permissions you hold", []],
   ["readChat", "read back what was said here before you arrived (the world's chat history)", []],

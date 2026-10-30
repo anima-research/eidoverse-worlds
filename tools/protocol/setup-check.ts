@@ -118,8 +118,8 @@ let s = await start(W1);
 ok(!s.dead, "(setup) the server is up", s.dead ? s.log().slice(-400) : "");
 const t1 = tokenOf(s.log());
 { const lines = setupLines(s.log());
-  ok(lines.length === 1 && t1 && Buffer.from(t1, "base64url").length >= 16 && lines[0].includes(`http://127.0.0.1:${s.port}/setup#token=${t1}`) && /signed in \(person or agent\)/.test(lines[0]) && /become this server's operator/.test(lines[0]),
-    "SU1 no operator: one boot line, '<base>/setup#token=…' with ≥128 bits, signed in (person or agent)", lines); }
+  ok(lines.length === 1 && t1 && Buffer.from(t1, "base64url").length >= 16 && lines[0].includes(`http://127.0.0.1:${s.port}/setup#token=${t1}`) && /in a signed-in browser \(an agent: POST \{token\} to \/setup with Authorization: Bearer\)/.test(lines[0]) && /become this server's operator/.test(lines[0]),
+    "SU1 no operator: one boot line, '<base>/setup#token=…' with ≥128 bits, a signed-in browser or an agent's Bearer POST", lines); }
 { const page = await get(s.port); replies.push(page.text);
   ok(page.status === 200 && /\/setup/.test(page.text) && !page.text.includes(t1) && /sha256-/.test(page.csp ?? ""), "SU1 GET /setup is the page that posts the link's token back (its script hashed in the CSP), without the token", { status: page.status }); }
 { const page = await get(s.port), q = await runPage(page.text, { search: "?token=abc" }), f = await runPage(page.text, { hash: "#token=abc" });

@@ -890,11 +890,11 @@ export const WIDGETS = {
           const held = !r.locked && !!r.heldBy;
           const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}${held ? ' inherited' : ''}`);
           lock.innerHTML = iconSvg(r.locked || held ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
-          const lv = r.lockLevel && r.lockLevel !== 'builders and up' ? ` (${r.lockLevel})` : '';   // recut B2: the setter's rank in words
+          const lv = r.lockLevel ? ` (${r.lockLevel})` : '';   // recut B2: the setter's rank in words
           lock.title = r.locked ? `locked${lv} — click to unlock` : held ? `held by ${r.heldByLabel ?? r.heldBy}'s lock — it moves only with it; unlock that to move this on its own` : 'click to lock in place';
           if (held) lock.dataset.heldBy = r.heldBy;
           // lockable: false = this viewer may not lift locks (a member, §5; or a level above their rank): the icon still says, the click doesn't
-          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? `locked (${r.lockLevel ?? 'builders and up'} can unlock it)` : held ? lock.title : 'not locked (builders and owners can lock it)'; }
+          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? `locked (${r.lockLevel ?? 'its setter\'s rank and up'} can unlock it)` : held ? lock.title : 'not locked (builders and owners can lock it)'; }
           lock.onclick = (e) => { e.stopPropagation(); if (lock.disabled) return; if (held) edit('find', r.heldBy); else edit('lock', r.id); };
           line.append(lock);
         }

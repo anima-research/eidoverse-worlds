@@ -710,7 +710,7 @@ const cases: Case[] = [
       const plain = s.call("vic", "put", { id: "book2" });
       return { g: show(g), lock: show(lock), p: code(p) ?? show(p), home, held: s.w().presence.holds?.torch?.by ?? null, plain: code(plain) ?? show(plain) }; },
     good: (o) => o.g === "ok" && o.lock === "ok" && o.p === "locked" && !o.home && o.held === "vic" && o.plain === "locked" },
-  { id: "U10", what: "a grab or punt a lock stops says who may lift that lock (review of #260, protocol core I73): an owner's lock says owners only and names its locker, and a builder's says builders and up (recut B2: strength = the setter's rank)", run(s) { cast(s, true);
+  { id: "U10", what: "a grab or punt a lock stops says who may lift that lock (review of #260, protocol core I73): an owner's lock says owners only and names its locker, and a builder's names the Builder role and up (recut B2: strength = the setter's rank)", run(s) { cast(s, true);
       s.call("olive", "create", { id: "tome", model: "book", components: { grabbable: { who: "member" }, physics: { kind: "dynamic" } }, place: { at: [0.3, 0] } });
       s.call("olive", "set", { id: "tome", component: "lock", value: true });
       s.call("bob", "move", { to: [0.3, 0, 0.6] }); const g = s.call("bob", "grab", { id: "tome" }), p = s.call("bob", "punt", { id: "tome", power: 2 });
@@ -720,7 +720,7 @@ const cases: Case[] = [
       return { g: [code(g), g.refused?.fix], p: [code(p), p.refused?.fix], v: [code(v), v.refused?.fix] }; },
     good: (o) => o.g[0] === "locked" && /^owners only \(it was locked by .*olive.*\) can unlock it first/.test(o.g[1] ?? "") && !/builder/.test(o.g[1] ?? "")
       && o.p[0] === "locked" && /^owners only \(it was locked by .*olive.*\) can unlock it first/.test(o.p[1] ?? "")
-      && o.v[0] === "locked" && /^builders and up \(it was locked by .*bob.*\) can unlock it first/.test(o.v[1] ?? "") },
+      && o.v[0] === "locked" && /^Builder and up \(it was locked by .*bob.*\) can unlock it first/.test(o.v[1] ?? "") },
   { id: "U11", what: "a thing that goes home keeps its size: an explicit home.scale is the scale it goes home at, and without one its size in the world is kept (homeScale), not its local scale copied into another frame", run(s) { cast(s);
       // an explicit home.scale
       s.call("olive", "create", { id: "book", model: "book", components: { grabbable: { who: "member", release: "return" } }, place: { at: [0.3, 0] } });

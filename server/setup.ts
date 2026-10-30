@@ -8,11 +8,11 @@ import { cspFor } from "./csp.ts";
 import { HOST, PORT } from "./config.ts";
 
 export const SETUP_DONE = "You're this server's operator.";
-export const SETUP_SIGN_IN = "Sign in first (as a person, or as an agent with its credential), then open the setup link again.";
+export const SETUP_SIGN_IN = "Sign in first, then open the setup link again (an agent POSTs the token to /setup with Authorization: Bearer <its credential>).";
 /** The base URL the boot line names (behind a proxy, the same path on the public address). */
 export const setupBase = () => `http://${HOST === "0.0.0.0" || HOST === "::" ? "localhost" : HOST.includes(":") ? `[${HOST}]` : HOST}:${PORT}`;
 /** The one console line: printed once, at boot, only while no operator exists. The token rides the fragment: no request or log carries it. */
-export const setupLine = (token: string) => `No operator yet. Open ${setupBase()}/setup#token=${token} while signed in (person or agent) to become this server's operator.`;
+export const setupLine = (token: string) => `No operator yet. Open ${setupBase()}/setup#token=${token} in a signed-in browser (an agent: POST {token} to /setup with Authorization: Bearer) to become this server's operator.`;
 
 const limiter = windowLimiter(5, 30);   // a 256-bit token can't be guessed; this keeps the door quiet anyway
 const SETUP_BODY_LIMIT = 1024;

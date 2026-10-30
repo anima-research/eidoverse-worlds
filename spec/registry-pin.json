@@ -253,7 +253,7 @@
    }
   },
   "absentMeans": {
-   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load",
+   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load",
    "intensity": "the default; on a light with no decay (stored before 10-16) 16, the old rig's, written by the same repair",
    "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
   },
@@ -2491,7 +2491,7 @@
    "attenuationColor": "the colour white light becomes after attenuationDistance of water, linear [r, g, b] 0..1 (KHR_materials_volume; absorption σ = −ln(c) / d per metre)",
    "attenuationDistance": "the distance, metres, at which light has become attenuationColor (KHR_materials_volume)",
    "scatterColor": "the colour the water scatters back, linear [r, g, b] 0..1 (Unity HDRP scatteringColor)",
-   "density": "how dense the water is, kg/m³ (what a body floats against)",
+   "density": "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)",
    "drag": "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction): a swimmer strokes at 5 / drag of its pace, and walkers on its floor are untouched"
   },
   "units": {

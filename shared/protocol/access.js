@@ -82,7 +82,7 @@ export function doorWrites(door, wc = {}) {
 export function doorWords(door, wc = {}) {
   const newcomer = (d) => doorWrites(d, wc)?.find((x) => x.component === "default-role")?.value.role;
   const nm = (id) => R.roleDef(wc, id)?.name ?? id;
-  if (door === "open") return `anyone may come in and build: newcomers get the ${nm(newcomer("open"))} role`;
+  if (door === "open") return `anyone may come in: newcomers with an account get the ${nm(newcomer("open"))} role; guests start as ${nm("member")} unless the world sets default-role.guests`;
   if (door === "public") return `anyone may come in and play: newcomers get the ${nm(newcomer("public"))} role; building is for ${nm(newcomer("open"))} and up`;
   return DOORS[door] ?? null;
 }

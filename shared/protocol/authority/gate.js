@@ -195,7 +195,7 @@ function lockCheck(w, st, who, role, k, op, at) {
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
   const fix = CTX.through && who.cap ? `throughLock covers only your own edits, not a handler, a held thing or a script acting for you, so the lock stands for this route; someone who may unlock it can (delete {id: '${k}', component: 'lock'})`
-    : below ? `this lock is ${lockWord(strength)} (its setter's rank); you are ${role}`
+    : below ? `this lock is ${lockWord(strength, wcOf(st))} (its setter's rank); you are ${role}`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; history shows who lifted it`
     : `someone who may build here at its setter's rank can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
   refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), ...(below ? { mayLift: false } : {}) });
@@ -210,7 +210,7 @@ function lockLevelCheck(w, st, s, who, op, at) {
   const cur = st.entities[op.id]?.c.lock;
   if (cur !== undefined && cur !== PURGED && rankOf(st, holder) < lockStrength(w, st, op.id)) {
     const by = lastSetterOf(w, op.id, "lock"); const strength = lockStrength(w, st, op.id);
-    refuse("rank", `${op.id} is locked${by && !by.deleted ? ` by ${said(by.by)}` : ""}: ${lockWord(strength)} may ${op.verb === "delete" ? "unlock" : "change"} it`,
+    refuse("rank", `${op.id} is locked${by && !by.deleted ? ` by ${said(by.by)}` : ""}: ${lockWord(strength, wcOf(st))} may ${op.verb === "delete" ? "unlock" : "change"} it`,
       `ask ${by && !by.deleted ? said(by.by) : "an owner"}`, { lock: op.id, rank: strength, needs: "rank" }); }
 }
 function shapeOneOrRefuse(verb, op, i) {
