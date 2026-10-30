@@ -38,7 +38,7 @@ const pics: any = await import('../client/lib/pictures.js');
 const editor = stub.editors[0];
 check('pictures.js registered its editor', typeof editor === 'function');
 
-// a placed, unguarded model with one named part
+// a placed, unguarded model with one named part (the block offers itself only there)
 const part = { isMesh: true, name: 'screenplane', material: {} };
 const model = { userData: {}, traverse(f: (c: unknown) => void) { f(this); f(part); } };
 stub.entities.set('console', model);
@@ -52,17 +52,17 @@ const paint = () => { const r = editor(ctx()); host.innerHTML = r.html; r.wire(h
 const q = (k: string) => host.querySelector(`[data-pe="${k}"]`) as any;
 /** the world moving: comps first, then the echo, as world.js does */
 const echo = (data: unknown) => { const bag = stub.bagOf('console'); if (data == null) delete bag.picture; else bag.picture = data; stub.bus.emit('comp', { id: 'console', type: 'picture', data }); };
-const refuse = () => { q('src').value = 'https://example.com/x.png'; q('hang').click(); return q('msg').textContent; };
+const refuse = () => { q('src').value = 'http://example.com/x.png'; q('hang').click(); return q('msg').textContent; };
 
 console.log('\n1. a line survives a repaint');
 paint();
-check('a URL is refused in the block', /not an allowed picture source/.test(refuse()));
-check('…and the line is still there after a repaint', /not an allowed picture source/.test(paint()));
+check('an http link is refused in the block', /only https/.test(refuse()));
+check('…and the line is still there after a repaint', /only https/.test(paint()));
 
 console.log('\n2. …and a demote/promote (same entity)');
 stub.bus.emit('entity', { id: 'console', kind: 'demote' });
 stub.bus.emit('entity', { id: 'console', kind: 'spawn' });
-check('after demote + promote the line is still there', /not an allowed picture source/.test(paint()));
+check('after demote + promote the line is still there', /only https/.test(paint()));
 
 console.log('\n3. …but not a remove');
 stub.bus.emit('entity', { id: 'console', kind: 'remove' });
@@ -70,26 +70,27 @@ check('after a remove the next block has no line', paint() === '', JSON.stringif
 
 console.log('\n4. a disagreeing echo retires the line');
 paint(); refuse();
-check('the refusal is back (about: no picture)', /not an allowed/.test(paint()));
-echo({ src: 'store/images/0123456789abcdef.png', part: 'screenplane', description: 'someone else hung this' });
+check('the refusal is back (about: no picture)', /only https/.test(paint()));
+echo({ src: 'store/images/0123456789abcdef.png', description: 'someone else hung this' });
 check('someone else hangs a picture: the line is gone', paint() === '', JSON.stringify(paint()));
 
 console.log('\n5. an agreeing echo keeps it');
 committed.length = 0;
 q('src').value = 'store/images/fedcba9876543210.png'; q('description').value = 'mine'; q('hang').click();
-check('hang commits one comp and says so', committed.length === 1 && committed[0][0] === 'comp' && /hung on screenplane/.test(q('msg').textContent), JSON.stringify(committed));
-const mine = committed[0][1].data;
+check('hang commits one picture and says so', committed.length === 1 && committed[0][0] === 'picture' && /^hung$/.test(q('msg').textContent), JSON.stringify(committed));
+const mine = committed[0][1];
 echo({ ...mine });
-check('the hang\'s own echo keeps "hung on screenplane" through the repaint', /hung on screenplane/.test(paint()));
-echo({ ...mine, flip: false, lit: 'scene' });
-check('…a repeat with server-side defaults spelled out still agrees', /hung on screenplane/.test(paint()));
+check('the hang\'s own echo keeps "hung" through the repaint', /^hung$/.test(paint()));
+const { width: _w, lit: _l, ...bare } = mine;
+echo(bare);
+check('…a repeat that leaves the defaults unsaid still agrees', /^hung$/.test(paint()));
 echo({ ...mine, description: 'changed by another hand' });
 check('…an echo that changed the description retires it', paint() === '', JSON.stringify(paint()));
 q('down').click();
 check('take down says so', /taken down/.test(q('msg').textContent));
 echo(null);
 check('the null echo agrees: "taken down" survives the repaint', /taken down/.test(paint()));
-echo({ src: 'store/images/0123456789abcdef.png', part: 'screenplane' });
+echo({ src: 'store/images/0123456789abcdef.png' });
 check('a later hang by someone else retires "taken down"', paint() === '', JSON.stringify(paint()));
 
 console.log('\n6. update keeps what the block doesn\'t show');

@@ -5,18 +5,17 @@
 //   bun tools/picture-editor-probe.ts     (EIDOVERSE_DIR must point at the library)
 //
 // What must hold, in order:
-//   A. selecting a placed model shows the block with the model's NAMED PARTS
-//      listed (screenplane among them) — no guessing the part name;
+//   A. selecting a placed model shows the block;
 //   B. the upload button lands a PNG in the store and fills `src` with the
 //      store path the door returned;
-//   C. `hang` commits ONE comp with the normalized bag: the picture hangs on
-//      the chosen part with the uploaded image as its map, look line kept;
-//   D. a bad source is refused HERE, before any round-trip (no comp sent) —
+//   C. `hang` commits ONE picture with the normalized bag {src, width, description, lit}:
+//      the thing's own quad shows the uploaded image;
+//   D. a bad source (an http link) is refused HERE, before any round-trip (no comp sent) —
 //      and the refusal OUTLIVES a scene-panel repaint: the block is rebuilt on
 //      every echo, so the message and the `take down` control must both be
 //      there after one (Mica, round 1: 8/9 with the message blank, or the
 //      message kept and the control gone, depending on when the echo landed);
-//   E. `take down` commits null: the material is restored — and its line
+//   E. `take down` commits null: the quad is gone — and its line
 //      survives the echo's repaint too (the echo AGREES with what was said);
 //   F. the line is about ONE entity: remove the console, spawn another under
 //      the same id, reopen — the replacement has no line (Mica, round 2:
@@ -68,10 +67,9 @@ const state = (pg: any) => pg.evaluate(async (id: string) => {
   const h = _hung.get(id);
   let mat: any = null; h?.quad?.traverse((o: any) => { if (o.isMesh && !mat) mat = o.material; });
   const block = document.querySelector('[data-pe-root]');
-  const opts = block ? [...block.querySelectorAll('[data-pe="part"] option')].map((o: any) => o.value) : null;
   return {
     entity: !!root, part: !!part, hung: !!h, mapW: mat?.map?.image?.width ?? 0,
-    block: !!block, parts: opts, src: (block?.querySelector('[data-pe="src"]') as any)?.value ?? null,
+    block: !!block, src: (block?.querySelector('[data-pe="src"]') as any)?.value ?? null,
     msg: block?.querySelector('[data-pe="msg"]')?.textContent ?? null,
     down: !!block?.querySelector('[data-pe="down"]'),   // rendered only when the bag holds a picture: the repaint's receipt
     comp: bagOf(id)?.picture ?? null,
@@ -85,18 +83,17 @@ try {
   pg.on('console', (m) => { const t = m.text(); if (m.type() === 'error' || /\[pictures\]|editor/.test(t)) console.log(`   console.${m.type()}:`, t.slice(0, 300)); });
   pg.on('dialog', (d) => d.dismiss().catch(() => {}));
   await pg.goto(`${world.origin}/?world=piceditprobe&key=${world.key}&name=editor`, { waitUntil: 'domcontentloaded' });
-  await pg.fill('#d-name', 'editor').catch(() => {});
-  await pg.click('#d-go').catch(() => {});
-  await pg.waitForSelector('#micbtn, #mictoggle', { timeout: 30000 });   // the mic badge: #micbtn since the desktop UI (#185); #mictoggle before it
+  await pg.fill('#d-name', 'editor', { timeout: 5000 }).catch(() => {});   // the entry dialog, when it shows
+  await pg.click('#d-go', { timeout: 5000 }).catch(() => {});
+  await pg.waitForSelector('#micbtn', { state: 'attached', timeout: 30000 });   // the mic badge (hidden when not pinned)
   await spawn(pg);
   let s = await until(pg, (x) => x.part, 90_000);
   check('the model spawned and has a part named screenplane', s.part, JSON.stringify(s));
 
-  // A. select it in the scene panel — the block lists the model's parts
+  // A. select it in the scene panel
   await pg.evaluate((id: string) => import('/lib/scenegraph.js').then((m: any) => m.sceneSelect(id)), ID);
   s = await until(pg, (x) => x.block);
   check('A. the picture block appears for the selected model', s.block, JSON.stringify(s));
-  check('A. …listing its named parts, screenplane among them', Array.isArray(s.parts) && s.parts.includes('screenplane') && s.parts.length > 1, JSON.stringify(s.parts));
 
   // B. the upload door fills src with the store path
   await pg.setInputFiles('[data-pe="file"]', pngFile);
@@ -104,8 +101,7 @@ try {
   check('B. upload… lands the PNG in the store and fills src with its path', /^store\/images\/[a-f0-9]{16}\.png$/.test(s.src ?? ''), JSON.stringify({ src: s.src, msg: s.msg }));
   const uploaded = s.src;
 
-  // C. hang: one comp, normalized, on the chosen part
-  await pg.selectOption('[data-pe="part"]', 'screenplane');
+  // C. hang: one picture, normalized
   await pg.fill('[data-pe="description"]', 'a red square, hung by hand');
   await pg.selectOption('[data-pe="lit"]', 'self');
   await pg.click('[data-pe="hang"]');
@@ -116,25 +112,25 @@ try {
   check('C. hang commits the comp — the picture hangs with the uploaded image', s.hung && s.mapW === 2, JSON.stringify(s));
   // the hang's own echo agrees with what the line said, so the repaint it
   // queued (the one that produced `down`) carried the line through
-  check('C. …and the block\'s line survives the echo that agrees with it', s.msg === 'hung on screenplane', JSON.stringify({ msg: s.msg }));
-  check('C. …with the normalized bag in the fold (src, part, look, lit)', s?.src === uploaded && s?.part === 'screenplane' && s?.look === 'a red square, hung by hand' && s?.lit === 'self' && s?.flip === false, JSON.stringify(s.comp));
+  check('C. …and the block\'s line survives the echo that agrees with it', s.msg === 'hung', JSON.stringify({ msg: s.msg }));
+  check('C. …with the normalized bag in the fold (src, width, description, lit)', s.comp?.src === uploaded && s.comp?.width === 1 && s.comp?.description === 'a red square, hung by hand' && s.comp?.lit === 'self', JSON.stringify(s.comp));
 
-  // D. a URL typed into src is refused in the block, and no comp goes out
+  // D. an http link typed into src is refused in the block, and no comp goes out
   const seqBefore = await pg.evaluate((id: string) => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf(id)?.picture)), ID);
-  await pg.fill('[data-pe="src"]', 'https://example.com/trollface.png');
+  await pg.fill('[data-pe="src"]', 'http://example.com/trollface.png');
   await pg.click('[data-pe="hang"]');
-  s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
+  s = await until(pg, (x) => /only https/.test(x.msg ?? ''), 5000);
   const seqAfter = await pg.evaluate((id: string) => import('/lib/world.js').then((m: any) => JSON.stringify(m.bagOf(id)?.picture)), ID);
-  check('D. a URL source is refused in the block, naming the rule, and nothing was sent', /not an allowed picture source/.test(s.msg ?? '') && seqBefore === seqAfter && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter }));
+  check('D. an http source is refused in the block, naming the rule, and nothing was sent', /only https/.test(s.msg ?? '') && seqBefore === seqAfter && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter }));
   // D2. force the repaint a late echo would cause (any comp event queues one)
   // and require the refusal AND the control to survive it. Without the
   // editor-local note this reads a blank message on a fresh block.
   await pg.evaluate((id: string) => import('/lib/base.js').then((m: any) => m.bus.emit('comp', { id, type: 'probe-repaint', data: true })), ID);
   await new Promise((r) => setTimeout(r, 600));   // the repaint is queued 300ms out; this is a deliberate over-wait, not a sync
   s = await state(pg);
-  check('D. …and the refusal outlives a scene-panel repaint, with take down still offered', /not an allowed picture source/.test(s.msg ?? '') && s.down && s.hung, JSON.stringify({ msg: s.msg, down: s.down }));
+  check('D. …and the refusal outlives a scene-panel repaint, with take down still offered', /only https/.test(s.msg ?? '') && s.down && s.hung, JSON.stringify({ msg: s.msg, down: s.down }));
 
-  // E. take down restores the material
+  // E. take down removes the quad
   await pg.click('[data-pe="down"]');
   s = await until(pg, (x) => !x.hung);
   check('E. take down commits null — nothing hung, comp gone', !s.hung && s.comp == null, JSON.stringify(s));
@@ -153,10 +149,10 @@ try {
   check('F. a new console under the same id opens with no inherited line', s.block && (s.msg ?? '') === '' && !s.down && !s.hung, JSON.stringify({ msg: s.msg, down: s.down, hung: s.hung }));
 
   // G. a line about one bag retires when someone else changes the bag
-  await pg.fill('[data-pe="src"]', 'https://example.com/trollface.png');
+  await pg.fill('[data-pe="src"]', 'http://example.com/trollface.png');
   await pg.click('[data-pe="hang"]');
-  s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
-  check('G. a refusal is in the block again', /not an allowed picture source/.test(s.msg ?? ''), JSON.stringify({ msg: s.msg }));
+  s = await until(pg, (x) => /only https/.test(x.msg ?? ''), 5000);
+  check('G. a refusal is in the block again', /only https/.test(s.msg ?? ''), JSON.stringify({ msg: s.msg }));
   // not through the block: a request, as another actor's hand would be
   await req(pg, OP.set(ID, 'picture', { src: uploaded, description: 'hung by someone else' }));
   s = await until(pg, (x) => x.hung && x.down);

@@ -59,9 +59,9 @@ async function joinAs(name: string) {
   pg.on('pageerror', (e) => errs.push(e.message));
   pg.on('dialog', (d) => d.dismiss().catch(() => {}));
   await pg.goto(`${world.origin}/?world=raceprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
-  await pg.fill('#d-name', name).catch(() => {});
-  await pg.click('#d-go').catch(() => {});
-  await pg.waitForSelector('#mictoggle', { timeout: 30000 });
+  await pg.fill('#d-name', name, { timeout: 5000 }).catch(() => {});   // the entry dialog, when it shows
+  await pg.click('#d-go', { timeout: 5000 }).catch(() => {});
+  await pg.waitForSelector('#micbtn', { state: 'attached', timeout: 30000 });   // hidden when not pinned
   return pg;
 }
 const req = async (pg: any, op: any) => {
