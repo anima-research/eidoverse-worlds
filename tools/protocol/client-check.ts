@@ -108,7 +108,7 @@ try {
     const plain = await evalJson(people);
     check("KU1 Ctrl+U leaves People Here alone; U alone opens it", !before.open && !ctrl.open && !ctrl.vis && plain.vis && plain.open, { before, ctrl, plain });
   }
-  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(500);   // replica: a world speaks only to clients that fold its log (3c)
+  bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // a fixed 500 ms raced the snapshot on Windows CI (40976310724): roles: with no id   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
   check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));

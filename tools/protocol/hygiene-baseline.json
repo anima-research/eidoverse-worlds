@@ -72,7 +72,7 @@
   "bare-wait": 5
  },
  "tools/protocol/client-check.ts": {
-  "bare-wait": 54
+  "bare-wait": 53
  },
  "tools/protocol/counter-check.ts": {
   "bare-wait": 1
