@@ -50,7 +50,7 @@ import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 import { inspectBody } from '../../shared/flightbody.js';
 import { applyOwnedWingFold } from '../../shared/wingpresence.js';
 import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
-import { spawnOf, belowWorld, FELL } from '../../shared/spawn.js';
+import { spawnOf, fallBackOf, belowWorld, FELL } from '../../shared/spawn.js';
 
 let flight = null, flightCfg = null, flightProv = null;
 let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
@@ -753,7 +753,7 @@ export function updateMe(dt, me) {
     me.locomotion = null; me.root.position.copy(myState.pos); me.root.rotation.set(0, myState.yaw, 0); me.setClip('climb', climb.speed);
     updateFollowCamera(dt, me); return;
   }
-  // KILLZ (Unreal's; shared/spawn.js): fallen below @world.bounds.min.y, back to an arrival place, and the authority records why
+  // KILLZ (Unreal's; shared/spawn.js): fallen below the kill line under @world.bounds.min.y, back to an arrival place, and the authority records why
   { const fold = worldFold(); if (fold && belowWorld(fold, myState.pos.toArray(), { riding: !!myState.seat || mountedHook() })) respawnMe(fold, FELL); }
   { const near = nearbyClimb(myState.pos), hint = near ? `${near.host}/${near.dir}` : null;
     if (hint && hint !== lastClimbHint) flashHint(`E — ${near.dir < 0 ? 'climb down' : 'climb up'} ${near.name}`);
@@ -1254,9 +1254,9 @@ export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook =
 // the strict fold (replica.st) and the request a respawn sends (thingphysics requestWithBody), injected by main.js
 let worldFold = () => null, respawnSend = () => {};
 export function setRespawnHooks({ fold, send } = {}) { if (typeof fold === 'function') worldFold = fold; if (typeof send === 'function') respawnSend = send; }
-/** Put my body at the world's arrival place (shared/spawn.js spawnOf), facing its yaw; with a reason, the authority records it. */
+/** Put my body at the world's arrival place, if any (shared/spawn.js spawnOf; after a fall, fallBackOf), facing its yaw; with a reason, the authority records it. */
 export function respawnMe(fold = worldFold(), reason) {
-  const sp = fold && spawnOf(fold); if (!sp) return null;
+  const sp = fold && (reason ? fallBackOf(fold) : spawnOf(fold)); if (!sp) return null;
   cancelClimb(); mantle = null; posture = null; myState.seat = null; swimVelocity = [0, 0, 0]; vy = 0; grounded = true; airborneFor = 0;
   if (flight) { flight = null; releaseWings(); }
   myState.pos.fromArray(sp.pos); myState.yaw = sp.yaw; setCamYaw(sp.yaw + Math.PI);

@@ -27,8 +27,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["spawn yaw unread", "spawn.js", "yaw: Number.isFinite(sp.yaw) ? sp.yaw : 0,", "yaw: 0,", ["K8"]],
   ["visitors may arrive only at @world.spawn", "spawn.js", "return !all.length || all.some(", "return !all.length || all.slice(0, 1).some(", ["K8"]],
   ["riding bodies fall out too", "spawn.js", "return !riding && !!B", "return !!B", ["K9"]],
-  ["the fall is the client's word", "protocol/authority/bodyverbs.js", "if (fell && B && !(me && me.at[1] < B.min[1] + TRACK.cap))", "if (false)", ["K13"]],
+  ["the fall is the client's word", "protocol/authority/bodyverbs.js", "if (fell && B && !(me && me.at[1] < B.min[1] - KILL_MARGIN + TRACK.cap))", "if (false)", ["K13"]],
   ["a fall loses its reason on the record", "protocol/authority/bodyverbs.js", "...(fell ? { reason: FELL } : {})", "", ["K9"]],
+  ["no arrival place, nowhere to fall back to", "spawn.js", "spawnOf(st) ?? { id: null, pos: [0, 0, 0], yaw: 0, radius: MOVER.track.spawnR };", "spawnOf(st); if (!sp) return null;", ["K9b"]],
+  ["a place below the kill line given", "spawn.js", "return belowWorld(st, sp.pos) || ", "return ", ["K9c", "K9d"]],
+  ["a place outside the box given", "spawn.js", " || (B && v3(B.min) && v3(B.max) && outsideWorld(B, sp.pos))", "", ["K9c", "K9d"]],
+  ["a place under the floor refused", "spawn.js", "return belowWorld(st, sp.pos) || ", "return sp.pos[1] < B.min[1] || ", ["K9c", "K9d"]],
   ["a flat terrain is noise to the height law", "terrainmath.js", "if (typeof P.flat === 'number') { const h = P.flat; return () => h; }", "", ["K12"]],
   ["a flat terrain takes noise fields", "protocol/authority/checks.js", "if (extra.length) refuse(", "if (false) refuse(", ["K12"]],
   ["the gradient's bottom isn't the horizon", "zone.js", "bottom: rgb(g.bottom) ? [...g.bottom] : [...g.horizon]", "bottom: rgb(g.bottom) ? [...g.bottom] : [0, 0, 0]", ["K10"]],
@@ -176,7 +180,7 @@ await C("K8", "arrivals: @world.spawn's yaw read; with spawn-points, @world.spaw
   return [def?.id === "@world" && def.yaw === 1.25 && red?.id === "red-gate" && Math.abs(red.yaw - -0.5) < 1e-9 && atRed.ok && atNone.refused?.code === "spawn" && first?.id === "blue-gate" && Math.abs(first.yaw - 2) < 1e-9,
     { def, red, atRed: show(atRed), atNone: show(atNone), first }]; });
 
-await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason; elsewhere, without bounds, or without teleport, refused", () => {
+await C("K9", "KillZ: below the kill line, KILL_MARGIN under @world.bounds.min.y, a body has fallen (a seated or climbing one, riding, hasn't); move {teleport, reason: 'below-bounds'} to an arrival place is on the record with its reason; elsewhere, without bounds, or without teleport, refused", () => {
   if (SP.__missing) return [false, SP.__missing];
   const s = session();
   s.call("delete", { id: "@world", component: "bounds" });   // the lab's world comes bounded
@@ -228,6 +232,44 @@ await C("K9p", "KillZ while holding, in a world running physics (review of #260)
   const acts = s.log().filter((e: any) => e.kind === "act" && e.actor === "system" && e.verb === "return-held").map((e: any) => e.body);
   return [grab.ok && steps.every((x) => x === "ok") && back.ok && put.refused?.code === "not-holding" && near(at1, at0) && acts.length === 1 && acts[0].why === "below-bounds" && acts[0].holder === "vic",
     { eng, grab: show(grab), steps, back: show(back), put: show(put), at0, at1, acts }]; });
+
+await C("K9b", "KillZ with no arrival place: in a bounded world that declares no spawn and no spawn-point, fallBackOf is the origin (where a body with none starts), and the authority takes a fall back to it from under the kill line", () => {
+  if (SP.__missing) return [false, SP.__missing];
+  if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf: a fall with no arrival place has nowhere to go (spawnOf is null)"];
+  const s = session();
+  s.call("delete", { id: "@world", component: "spawn" });
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  const kz = -10 - SP.KILL_MARGIN;
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
+  const none = SP.spawnsOf(s.st()).length, home = SP.fallBackOf(s.st());
+  s.call("move", { to: [0, 0, 0] }, "vic"); for (let y = -3.5; y > kz - 4; y -= 3.5) s.call("move", { to: [0, y, 0] }, "vic");
+  const fell = SP.belowWorld(s.st(), [0, kz - 0.5, 0]);
+  const back = s.call("move", { to: home.pos, teleport: true, reason: "below-bounds" }, "vic");
+  return [none === 0 && home.id === null && JSON.stringify(home.pos) === "[0,0,0]" && home.yaw === 0 && fell && back.ok === true,
+    { none, home, fell, back: show(back) }]; });
+
+await C("K9c", "KillZ with no arrival place, the origin: given under a floor above 0, where ground may lie; none below the kill line, or outside the box", () => {
+  if (SP.__missing) return [false, SP.__missing];
+  if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf"];
+  const s = session();
+  s.call("delete", { id: "@world", component: "spawn" });
+  const at = (min: number[], max: number[]) => { s.call("set", { id: "@world", component: "bounds", value: { min, max } }); return SP.fallBackOf(s.st())?.pos ?? null; };
+  const underFloor = at([-50, 5, -50], [50, 50, 50]), belowLine = at([-50, 60, -50], [50, 100, 50]), outside = at([5, -10, -50], [50, 50, 50]);
+  return [SP.spawnsOf(s.st()).length === 0 && JSON.stringify(underFloor) === "[0,0,0]" && belowLine === null && outside === null,
+    { underFloor, belowLine, outside }]; });
+
+await C("K9d", "KillZ, a declared @world.spawn: under the floor but above the kill line, and above the floor, fallBackOf gives it; below the kill line, or outside the box, none", () => {
+  if (SP.__missing) return [false, SP.__missing];
+  if (typeof SP.fallBackOf !== "function") return [false, "shared/spawn.js has no fallBackOf"];
+  const s = session();
+  s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+  const kz = -10 - SP.KILL_MARGIN;
+  const at = (pos: number[]) => { s.call("set", { id: "@world", component: "spawn", value: { pos } }); return { declared: SP.spawnOf(s.st())?.pos ?? null, given: SP.fallBackOf(s.st())?.pos ?? null }; };
+  const killed = at([0, kz - 2, 8]), under = at([0, -12, 8]), above = at([0, -8, 8]), outside = at([60, -8, 8]);
+  const same = (r: any) => JSON.stringify(r.declared) === JSON.stringify(r.given);
+  return [killed.declared?.[1] === kz - 2 && killed.given === null && same(under) && under.given?.[1] === -12 && same(above) && above.given?.[1] === -8
+    && outside.declared?.[0] === 60 && outside.given === null,
+    { kz, killed, under, above, outside }]; });
 
 await C("K10", "@world.sky.gradient {top, horizon, bottom?} (linear 0..1) taken, a bad one refused; lookOf reads it (an absent bottom is the horizon) and the first directional light thing by id as the sun, standing along its +Z", () => {
   const s = session();

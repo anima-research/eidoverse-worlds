@@ -24,6 +24,7 @@ import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, occupantOf, vacateAt, vacateWhy } from "./occupants.js";
 import { buildEpoch, refuseForeign } from "./physics.js";
 import { stampHomes, stampResetHomes } from "./manipulate.js";
+import { outsideWorld } from "../../spawn.js";
 import { isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck } from "./gate.js";
 import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
@@ -185,8 +186,6 @@ function needThing(ctx, id) {
 // are admit's; this only turns what was asked into a plain value.
 // @world.bounds as the readers use it: a malformed one already in a log (written before the authority checked it) is
 // treated as no bounds, never a crash in every create's reply (review T0d)
-// x, z and the sky; the floor is the terrain's (bounds.min[1] sits above the default heightfield)
-const outsideWorld = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 const MOTION_AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1] };   // motioneval.js AXES

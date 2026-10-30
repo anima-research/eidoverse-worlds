@@ -115,7 +115,7 @@ import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf
 import { SHOVE } from "../shared/protocol/physconst.js";
 import { worldPose, solidOff } from "../shared/protocol/simlayer.js";
 import { physicsAreasOf, speedFactorAt, foldOfView } from "../shared/zone.js";
-import { spawnOf, belowWorld, FELL } from "../shared/spawn.js";
+import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 const solidOffRecord = (e: any) => solidOff(e, "bodies");
 import { colliderFor } from "../client/lib/bodyscale.js";
@@ -2515,9 +2515,9 @@ export class WorldAgent {
   /** Every collider query a tick makes is about this agent's own world. */
   private tick() { inWorld(this.world, () => this.tickInWorld()); }
   private respawning = false;
-  /** Back to the world's arrival place after a fall out of it (shared/spawn.js spawnOf), the reason on the record (move teleport). */
+  /** Back to fallBackOf's place, if any, after a fall out of the world (shared/spawn.js), the reason on the record (move teleport). */
   async respawnFell() {
-    const sp = spawnOf(this.replica?.st); if (!sp) return;
+    const sp = this.replica?.st ? fallBackOf(this.replica.st) : null; if (!sp) return;
     this.respawning = true;
     try {
       this.target = null; this.flight = null; this.endFloat(); this.vy = 0;
