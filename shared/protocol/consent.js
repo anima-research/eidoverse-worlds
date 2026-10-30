@@ -94,6 +94,8 @@ export function forgetIdentity(P, who) { if (!P?.consent) return; delete P.conse
 export const PERSON_OPS = ["allow", "block", "unlist"];
 /** Arguments of earlier shapes, refused with a pointer: the switch and its ask (to 10-28), the table before it (to 10-20). */
 export const RETIRED_CONSENT = ["switch", "deny", "class", "for", "answer", "yes", "preset", "set", "pause", "friend", "unfriend", "delegate", "undelegate", "of"];
+/** entries per list (allow, block); one naming a thing or sponsor not here yet is kept (it may arrive later: review 1.7) */
+export const LIST_MAX = 1024;
 export const CONSENT_FIX = "consent {move: true|false, touch: true|false}, or {allow|block|unlist: <who>} for one person";
 export function setConsent(P, actor, a) {
   if (a == null || typeof a !== "object") return { ok: false, code: "shape", reason: "consent takes an object" };
@@ -105,6 +107,8 @@ export function setConsent(P, actor, a) {
   if (ops.length > 1) return { ok: false, code: "shape", reason: `one of ${PERSON_OPS.join(", ")} at a time, got ${ops.join(" and ")}`, fix: CONSENT_FIX };
   const op = ops[0], who = op ? a[op] : undefined;
   if (op && !isWho(who)) return { ok: false, code: "shape", reason: `${op}: an identity`, fix: CONSENT_FIX };
+  const t0 = P.consent?.[actor], size = op && op !== "unlist" ? Object.keys(t0?.[op] ?? {}).filter((k) => k !== who).length : 0;
+  if (size >= LIST_MAX) return { ok: false, code: "bounds", reason: `your ${op} list holds ${LIST_MAX} entries, its limit`, fix: `remove one first: consent {unlist: <who>} (Settings ▸ body: remove)` };
   const t = ((P.consent ??= bag())[actor] ??= bag());
   for (const g of GATES) if (a[g] !== undefined) t[g] = a[g];
   if (op) { if (t.allow) delete t.allow[who]; if (t.block) delete t.block[who];

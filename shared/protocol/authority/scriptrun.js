@@ -266,36 +266,43 @@ export function expireRoles(w) {
 export const ORPHANS = { holders: 16, lifts: 64 };
 export function settleOrphans(w, present = []) {
   if (!w.exists || w.state().status !== "ok") return [];
-  const here = new Set(present); const out = [];
+  const here = new Set(present); const out = [], ended = [];   // ended: holds that end here with no act, heard as a drop (review 1.10)
   const holders = [...new Set(Object.values(w.presence.holds ?? {}).map((h) => h?.by))].filter((who) => !here.has(who));
   if (holders.length > ORPHANS.holders) { const late = new Set(holders.slice(ORPHANS.holders));
-    for (const [id, h] of Object.entries(w.presence.holds)) if (late.has(h?.by)) delete w.presence.holds[id];
+    for (const [id, h] of Object.entries(w.presence.holds)) if (late.has(h?.by)) { ended.push({ id, by: h.by }); delete w.presence.holds[id]; }
     for (const who of late) delete w.presence.bodies[who];
     out.push({ deferred: late.size, why: `more than ${ORPHANS.holders} holders at once: their holds ended; what the log still has lifted settles at the next load` }); }
   for (const who of holders.slice(0, ORPHANS.holders)) {
     const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
     // a holder the authority won't take requests from now (banned since): the hold just ends (presence), and what the log
     // lifted is settled below by the authority, as leave's own refusal is (review 10-06)
-    if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id]; delete w.presence.bodies[who]; } }
-  withAuthority(w, () => {
-    // the holds end above (presence is this server's own); what the log lifted is settled by a server that can sign for the
-    // world, since this one can't log the settlement
-    const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"] || !holdsCustody(w)) return;
-    let settled = 0, waiting = 0;
-    for (const [id, lift] of orphanLifts(w)) {
-      if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;   // a place the record lost stays where it is
-      if (settled++ >= ORPHANS.lifts) { waiting++; continue; }
-      const g = grabOf(st.entities[id].c);
-      if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq); out.push({ id, returned: "home" }); continue; } }
-      const t = w.state().entities[id].c.transform; if (!t) continue;
-      let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
-      changeEntry(w, plan, w.append({ kind: "act", actor: "system", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } }));
-      out.push({ id, returned: "where the log had it" });
-    }
-    if (waiting) out.push({ deferred: waiting, why: `more than ${ORPHANS.lifts} lifted things at once: the rest settle at the next load` });
+    if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) { ended.push({ id, by: who }); delete w.presence.holds[id]; } delete w.presence.bodies[who]; } }
+  if (holdsCustody(w)) withAuthority(w, () => {
+    w.changedQ = []; w.sayQ = []; w.heldQ = [];
+    for (const { id, by } of ended) if (w.state().entities[id]) heldEvent(w, "release", id, { by, how: "drop" });
+    orphanReturns(w, out);
+    drainAll(w);   // watching scripts hear each settlement's release, as a request's are (heldEvent)
   });
   if (out.length) w.savePresence();
   return out;
+}
+function orphanReturns(w, out) {
+  // the holds end above (presence is this server's own); what the log lifted is settled by a server that can sign for the
+  // world, since this one can't log the settlement
+  const st = w.state(); if (!st.entities["@world"]?.c["physics-engine"]) return;
+  let settled = 0, waiting = 0;
+  for (const [id, lift] of orphanLifts(w)) {
+    if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;   // a place the record lost stays where it is
+    if (settled++ >= ORPHANS.lifts) { waiting++; continue; }
+    const g = grabOf(st.entities[id].c);
+    if (g?.release === "return" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { const back = returnHome(w, id, plan, lift.seq); heldEvent(w, "release", id, { by: lift.by, how: "return", seq: back.act }); out.push({ id, returned: "home" }); continue; } }
+    const t = w.state().entities[id].c.transform; if (!t) continue;
+    let plan; try { plan = admit(w, w.state(), { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]); } catch (x) { if (!(x instanceof Refusal)) throw x; continue; }
+    const act = w.append({ kind: "act", actor: "system", verb: "return-held", cause: lift.seq, body: { id, holder: lift.by, why: "orphaned: its holder's hold ended without a settlement (the host stopped)" } });
+    changeEntry(w, plan, act); heldEvent(w, "release", id, { by: lift.by, how: "return", seq: act });
+    out.push({ id, returned: "where the log had it" });
+  }
+  if (waiting) out.push({ deferred: waiting, why: `more than ${ORPHANS.lifts} lifted things at once: the rest settle at the next load` });
 }
 // ---------- maintenance (lead's ruling 2026-10-18: a LOAD NEVER WRITES TO THE LOG) ----------
 // Three rewrites of stored values exist, each a recorded system act: lift-sockets (a pre-socket world's `sockets` maps and
@@ -488,7 +495,7 @@ export function presenceEvent(w, kind, who) {
 // it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
 // when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
 // is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
-// snap | left | fell), socket? and to? (release), seq (the act) when logged.
+// snap | left | fell | edited), socket? and to? (release), seq (the act) when logged.
 const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
 // Everything a write set off, until nothing is left: a hand event's scripts may write (changed:, say), and a changed:
 // script's move may let go of a held thing (letGoEdited), which is a hand event again. So the two queues are drained in

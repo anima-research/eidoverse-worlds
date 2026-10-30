@@ -44,6 +44,6 @@ export function initConsentPanel() {
     };
     paintLists();
     onConsentChange(() => { for (const g of GATES) boxes[g].checked = gate(g); paintLists(); });
-    onHeldChange(paintLists);   // the authority's lists, as each sync reads them
+    onHeldChange(() => { for (const g of GATES) boxes[g].checked = gate(g); paintLists(); });   // the authority's lists and gates in force, as each sync reads them
   }, { id: 'body', host: 'settings' });
 }

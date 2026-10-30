@@ -69,15 +69,19 @@ let world = '';
 /** the world this page syncs with (its authority's lists are the ones shown and sent to) */
 export function useWorld(name) { world = String(name ?? ''); }
 
-/** a gate as it shows: what I chose, else the built-in default (the world's own default is the authority's to apply) */
-export const gate = (g) => (current[g] ?? DEFAULT_GATES[g]) === true;
+// the gates in force at this world's authority (consentsync's read): my table's choice, else the world's body-default
+let heldGates = null;
+/** a gate as it shows, the one in force: what I chose, else what the authority last read (the table's, else the world's), else the built-in */
+export const gate = (g) => (current[g] ?? heldGates?.[g] ?? DEFAULT_GATES[g]) === true;
 export function setGate(g, on) { if (!GATES.includes(g) || current[g] === !!on) return false; current = { ...current, [g]: !!on }; changed(); return true; }
 // the lists this world's authority holds for me (consentsync's read; per world): the source, which my lists then show
 let held = null;
 const heldListeners = new Set();
 const nameOf = (id) => current.allow[id] ?? current.block[id] ?? current.queue.find((q) => q.id === id)?.name ?? id;
-export function noteHeld(t) { const next = { allow: Array.isArray(t?.allow) ? [...t.allow] : [], block: Array.isArray(t?.block) ? [...t.block] : [] };
-  const same = JSON.stringify(next) === JSON.stringify(held); held = next;
+export function noteHeld(t, worldGates) { const next = { allow: Array.isArray(t?.allow) ? [...t.allow] : [], block: Array.isArray(t?.block) ? [...t.block] : [] };
+  const bool = (v) => (typeof v === 'boolean' ? v : undefined);
+  const gates = Object.fromEntries(GATES.map((g) => [g, bool(t?.[g]) ?? bool(worldGates?.[g])]).filter(([, v]) => v !== undefined));
+  const same = JSON.stringify(next) === JSON.stringify(held) && JSON.stringify(gates) === JSON.stringify(heldGates); held = next; heldGates = gates;
   const allow = Object.fromEntries(next.allow.map((id) => [id, nameOf(id)])), block = Object.fromEntries(next.block.map((id) => [id, nameOf(id)]));
   if (JSON.stringify([allow, block]) !== JSON.stringify([current.allow, current.block])) { current = { ...current, allow, block }; save(); }
   if (!same) for (const fn of heldListeners) fn(); }

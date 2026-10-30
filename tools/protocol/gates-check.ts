@@ -57,6 +57,12 @@ const modes = (p: any, wd?: unknown) => Object.fromEntries([...MOVE, ...TOUCH].m
 { const p = P(); const r = set(p, { allow: "pal", block: "kit" }); check("S3", "one list change at a time", !r.ok && !p.consent.me, r); }
 { const p = P(); const r = set(p, { block: "__proto__" }); check("S4", "a list names an identity (never a prototype key)", !r.ok && !(Object.prototype as any).true, r); }
 { const p = P(); const r = C.setConsent(p, "pal", { of: "me", move: false }); check("S5", "only the body's owner sets its gates (of is retired)", !r.ok && d(p, "shove") === "allow", r); }
+// S6 (review 1.7): each list holds 1024 entries; the 1025th is refused with the limit and how to remove one; an entry for a thing or sponsor not here yet is taken
+{ const p = P(); const r1 = Array.from({ length: 1024 }, (_, i) => set(p, { block: `u-${i}` })), over = set(p, { block: "u-1024" }), again = set(p, { block: "u-7" }), other = set(p, { allow: "script:t-later" }), sp = set(p, { allow: "scripts-by:u-later" }), keptOut = !C.tableOf(p, "me").block.includes("u-1024");
+  const fit = (set(p, { unlist: "u-0" }), set(p, { block: "u-1024" }));
+  check("S6", "a list's 1025th entry is refused (bounds, saying the limit and how to remove one), nothing written; re-listing one already there, the other list and a later entry once one is removed are taken; a script: or scripts-by: entry for a target not here yet is taken",
+    r1.every((r) => r.ok) && !over.ok && over.code === "bounds" && /1024/.test(over.reason) && /unlist/.test(over.fix ?? "") && keptOut
+    && again.ok && other.ok && sp.ok && fit.ok && C.tableOf(p, "me").block.length === 1024, { over, again: again.ok, other: other.ok, sp: sp.ok, fit, n: C.tableOf(p, "me").block.length }); }
 // ---- M: a stored switch or table becomes gates and lists, only ever narrower ----
 const mig = (consent: any) => { const p: any = { consent, consentShape: 3, asks: { a: 1 }, asked: { a: 1 }, askSeq: 3, cool: { k: 1 } }; C.migratePresence(p); return p; };
 { const p = mig({ me: { switch: "refuse" } }); check("M1", "a stored switch refuse → both gates off", p.consent.me.move === false && p.consent.me.touch === false && !("switch" in p.consent.me), p.consent.me); }

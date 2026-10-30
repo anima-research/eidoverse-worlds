@@ -22,11 +22,11 @@ export function makeConsentSync({ table, send, toast, on, later = (fn) => setTim
     const want = table();
     const failed = (e) => ({ ok: false, refused: { reason: String(e?.message ?? e) } });
     const read = await send('consent', {}).then((r) => r, failed);
-    const noteHeld = (t) => { try { held(t); } catch { /* the panel's, never the sync's */ } };   // reads, changes nothing: send only what differs
+    const noteHeld = (t, world) => { try { held(t, world); } catch { /* the panel's, never the sync's */ } };   // reads, changes nothing: send only what differs
     const results = [];
     if (!read?.ok || !read.table) results.push(['your consent, read back', read?.ok ? { ok: false, refused: { reason: 'the authority sent no table' } } : read]);
     else {
-      const authority = read.table, gates = {}; noteHeld(authority);   // the panel shows the authority's lists too
+      const authority = read.table, gates = {}; noteHeld(authority, read.world);   // the panel shows the authority's lists and the gates in force
       for (const g of ['move', 'touch']) if (typeof want[g] === 'boolean' && authority[g] !== want[g]) gates[g] = want[g];   // never chosen: the world's default stands (F2b)
       if (Object.keys(gates).length) results.push([Object.entries(gates).map(([g, v]) => `${g} ${v ? 'on' : 'off'}`).join(', '), await send('consent', gates).then((r) => r, failed)]);
       const has = (list, id) => Array.isArray(authority[list]) && authority[list].includes(id);

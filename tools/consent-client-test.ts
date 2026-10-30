@@ -6,7 +6,7 @@
 // refused `consent` sync (DEBT-SURVEY 2026-10-12 #9), leaving the server on its defaults while my switch said otherwise.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/consent-client-test.ts
 // Mutation (must go red): in client/lib/consentsync.js drop the `on('hydrated', …)` line, or the timer retry, or the toast.
-import { setConsent, decide, tableOf, migratePresence } from '../shared/protocol/consent.js';
+import { setConsent, decide, tableOf, migratePresence, worldGates, DEFAULT_GATES } from '../shared/protocol/consent.js';
 import { makeConsentSync } from '../client/lib/consentsync.js';
 
 let pass = 0, fail = 0;
@@ -222,6 +222,17 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
 { const fs = await import('node:fs'), w = String((C as any).BLOCK_FOLLOW_WORDS ?? '');
   check('L-F the panel and the toast say a block follows into other worlds for 30 days', /30 days/.test(w) && C.BLOCK_FOLLOW_MS === 30 * 86_400_000
     && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../client/lib/consentpanel.js', import.meta.url), 'utf8')) && /BLOCK_FOLLOW_WORDS/.test(fs.readFileSync(new URL('../client/lib/people.js', import.meta.url), 'utf8')), w); }
+
+// review 1.3: the switches show the gate in force: mine, else the authority's read (my table's, else the world's body-default), else the built-in
+{ store.clear(); const G = await import('../client/lib/consent.js?gates=world');
+  const P: any = { consent: Object.create(null), bodyDefault: { touch: true } };
+  const send = async (_: string, a: any) => Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me'), world: { ...DEFAULT_GATES, ...worldGates(P.bodyDefault) } };   // bodyconsent.js's read
+  const s = makeConsentSync({ table: G.bodyTable, send, toast: () => {}, on: () => {}, later: () => {}, held: G.noteHeld, landed: G.landed });
+  check('1.3 before any read, a never-chosen Touch me shows the built-in (off)', !G.gate('touch'));
+  await s.sync();
+  check('1.3 in a world whose body-default turns touch on, a never-chosen Touch me shows on (the gate in force)', G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'allow');
+  G.setGate('touch', false); await s.sync();
+  check('…and turning it off is one change: it shows off, and the authority refuses a stranger\'s pose', !G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'deny', JSON.stringify(tableOf(P, 'me'))); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

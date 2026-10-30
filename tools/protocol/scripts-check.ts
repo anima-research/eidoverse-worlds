@@ -45,16 +45,16 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the excess taken from both places", "authority/scripts.js", "if (!ways.length) ways.push(", "if (false) ways.push(", ["Q1d"]],
   ["cascade depth", "authority/scriptrun.js", "if (depth > cfg.depth) return out(\"refused\"", "if (false) return out(\"refused\"", ["B8"]],
   ["locks bind scripts", "authority/gate.js", "if (k) lockCheck(w, st, who, role, k, op, at); }", "if (k && !cap) lockCheck(w, st, who, role, k, op, at); }", ["B9"]],
-  ["in flight binds scripts", "authority.js", "if (inFlight(op.id)) refuse(\"in-flight\"", "if (inFlight(op.id) && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
+  ["in flight binds scripts", "authority/gate.js", "if (inFlight(op.id) && !fu) refuse(\"in-flight\"", "if (inFlight(op.id) && !fu && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
   ["hygiene at install", "authority/scripts.js", "const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", "const dirty = null; if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`", ["H2"]],
   ["hygiene at upload", "authority/scriptrun.js", "const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason", "const dirty = null; if (dirty) refuse(dirty.code, dirty.reason", ["H1"]],
   ["scope names checked for typos at install", "authority/scripts.js", "if (near.length) refuse(\"schema\", `${at}.scope.comps:", "if (false) refuse(\"schema\", `${at}.scope.comps:", ["H4"]],
   ["syntax at install", "authority/scripts.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
   ["banned → suspended", "authority/scriptrun.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
   ["adopt base", "authority/scriptrun.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
-  ["always needs an owner", "authority/scripts.js", "if (v.always === true && prev?.always !== true && role !== \"owner\")", "if (false)", ["B17"]],
+  ["always needs an owner", "authority/scripts.js", "if (v.always === true && prev?.always !== true && !Roles.isOwner(role))", "if (false)", ["B17"]],
   ["install rank", "authority/scripts.js", "if (!may(st, installer, \"scripts\")) refuse(\"rights\"", "if (false) refuse(\"rights\"", ["B17"]],
-  ["timer floor", "authority/scripts.js", "if (v.every !== undefined && !(typeof v.every === \"number\" && v.every >= 5))", "if (false)", ["B17"]],
+  ["timer floor", "componentspec.js", "units: { every: \"s\" }, ranges: { every: { min: 5 } },", "units: { every: \"s\" },", ["B17"]],
   ["paused", "authority/scriptrun.js", "if (v.paused === true) { const pb = pausedBy(w, id, key); return out(\"paused\"", "if (false) { const pb = pausedBy(w, id, key); return out(\"paused\"", ["B20", "PA1"]],
   ["run: false", "authority/scriptrun.js", "if (cfg.run === false) return out(\"stopped\"", "if (false) return out(\"stopped\"", ["B20"]],
   ["pause after repeated failures", "authority/scriptrun.js", "if (!dry && (rt.fails ?? 0) >= cfg.fails) return out(\"paused\"", "if (false) return out(\"paused\"", ["B20"]],
@@ -98,7 +98,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["the auditor reads a say's text from the say", "scriptaudit.js", "event.text = trig.body.text;", "", ["E1"]],
   ["an authority runs activations isolated (in a killable process)", "sandbox.js", "run: (x) => (canIsolate() ? runIsolated(x) : runScript(x))", "run: (x) => runScript(x)", ["I1", "I2"]],
   ["the kill at the deadline", "sandbox.js", "deadline = sentAt + L.wallMs + GRACE,", "deadline = sentAt + L.wallMs + GRACE + 60000,", ["I1"]],
-  ["a pause write adopts nothing (sponsor skips it)", "authority.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) return", "if (true) return", ["PA1"]],
+  ["a pause write adopts nothing (sponsor skips it)", "authority/scripts.js", "if (k === W.length - 1 || !pauseOnly(W[k].value, W[k + 1].value)) {", "if (true) {", ["PA1"]],
   ["the auditor's sponsor skips pause writes too", "scriptaudit.js", "|| jcs(unp(W[k].value)) !== jcs(unp(W[k + 1].value))) return by(L, W[k].seq);", "|| true) return by(L, W[k].seq);", ["PA1"]],
   ["a pause write skips install checks", "authority/gate.js", "&& !pauseOnly(op.value, prevOf.get(op))) installCheck(", ") installCheck(", ["PA2"]],
   ["the inspector's script permission", "../editschema.js", "ops.push(OP.set(id, `script:${k}`, { paused: bool(raw) }, { merge: true }));", "", ["PA3"]],
@@ -112,7 +112,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["read-your-writes without copying the world", "sandbox.js", "const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", "const writable = (id) => { const b = ov.has(id) ? ov.get(id) : base[id]; if (!b) return null; for (const k of Object.keys(base)) JSON.parse(JSON.stringify(base[k])); const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };", ["I5"]],
   // (not a mutation: the check between host answers is defence in depth. A process can't send its next call before its
   // answer arrives, so the authority always finds the pipe empty first and its ordinary deadline check fires: measured, I9)
-  ["time spent answering isn't the process's starvation", "sandbox.js", "if (used !== null && own > 0.5 * wall && used < STARVED * own)", "if (used !== null && used < STARVED * wall)", ["I9"]],
+  ["time spent answering isn't the process's starvation", "sandbox.js", "used !== null ? own > 0.5 * wall && used < STARVED * own :", "used !== null ? used < STARVED * wall :", ["I9"]],
   ["a starved process isn't the script's failure", "sandbox.js", "export const STARVED = 0.3;", "export const STARVED = 0;", ["I8"]],
   ["end of file means the process died", "sandbox.js", "if ((n === 0 && c.opened) || c.proc.exitCode !== null", "if (c.proc.exitCode !== null", ["I6"]],
   ["the process's script duty", "authority/scriptrun.js", "if (dutyLeft(w.worldId) <= 0) return out(\"refused\", { code: \"busy\"", "if (false) return out(\"refused\", { code: \"busy\"", ["I2", "I4", "I7"]],
@@ -797,27 +797,27 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const ms = performance.now() - t0; D.setScriptDuty({ maxMs: 1e9 });
       return { ms: Math.round(ms), rs }; },
     good: (o) => o.ms < DUTY0.maxMs + 500 + 400 && o.rs.some((x: string) => /refused (busy|rate)/.test(x)) },
-  { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (1500 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
+  { id: "I5", what: "review r2 #2: the authority's own work in a host call stays small: on a big world (3000 things with 300-number arrays), 32 writes then a read cost no whole-world copies", run(s) { cast(s);
       const big = Array.from({ length: 300 }, (_, i) => i);
       // a batch the authority finds too costly for one request (its time cap is real time: a slow host reaches it sooner) is
-      // sent again as two halves; the setup only needs the 1500 things
+      // sent again as two halves; the setup only needs the 3000 things
       const refusedBatches: string[] = [];
       const put = (ops: any[]) => { const rb = s.call("olive", "batch", { ops }, 11000);
         if (!rb?.ok && rb?.refused?.code === "too-costly" && ops.length > 1) { refusedBatches.push(`split ${ops.length}`); put(ops.slice(0, ops.length >> 1)); put(ops.slice(ops.length >> 1)); }
         else if (!rb?.ok) refusedBatches.push(show(rb)); };
-      for (let b = 0; b < 15; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
+      for (let b = 0; b < 30; b++) put(Array.from({ length: 100 }, (_, i) => ({ verb: "create", args: { id: `t${b}-${i}`, components: { "t/data": { xs: big } } } }))); // each batch alone in the 10 s byte window: the charge is PRE-paid since C0 (10-15), so 6 s steps held two batches and tripped the cap
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
       // the same script on an empty world, on this host, now: what the run costs without any world to copy. A whole-world
-      // copy per write (the mutants below) costs ~32 copies of 1500 x 300 numbers, far past both bounds
+      // copy per write (the mutants below) costs ~32 copies of 3000 x 300 numbers, far past the bound (4.1: at 1500 a mutant ran in 213 ms, under the old 400 ms floor)
       const s0 = session(); cast(s0); s0.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       install(s0, "bob", "box", "heavy", HEAVY, { scope: { ids: "self", comps: ["t/n", "t/m"] }, on: ["use"] });
       s0.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "heavy" } } });
       warmUp(); const b0 = performance.now(); const r0 = useSteady(s0, "vic", { id: "box", action: "go" }); const ms0 = performance.now() - b0;
       warmUp(); const t0 = performance.now(); const r = useSteady(s, "vic", { id: "box", action: "go" }); const ms = performance.now() - t0;
       return { r: st(s, r), r0: st(s0, r0), ms: Math.round(ms), ms0: Math.round(ms0), m: comp(s, "box", "t/m"), things: Object.keys(s.w().state().entities).length, refusedBatches }; },
-    good: (o) => o.r === "ran" && o.r0 === "ran" && o.ms < Math.max(400, 2 * o.ms0 + 150) && o.m === 1000 && o.things > 1500 },
+    good: (o) => o.r === "ran" && o.r0 === "ran" && o.ms < 3 * o.ms0 + 100 && o.m === 1000 && o.things > 3000 },
   { id: "I6", what: "review r2 #4: a sandbox process that dies mid-run is noticed at once (end of file on its pipe), not at the deadline, even before it's reaped", run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
       warmUp();

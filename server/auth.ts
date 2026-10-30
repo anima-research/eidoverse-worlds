@@ -141,16 +141,16 @@ export function agentTokens() {
       if (mtime) {
         const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
         const entries = Object.entries(raw).filter(([, v]) => typeof v?.id === "string" && v.id);
-        const count = new Map<string, number>(); for (const [, v] of entries) count.set(v.id!.toLowerCase(), (count.get(v.id!.toLowerCase()) ?? 0) + 1);
-        // an id is the account (agent:token:<id>): well-formed and unique lowercased, or it proves nobody (its name stays reserved)
+        const spellings = new Map<string, Set<string>>(); for (const [, v] of entries) { const k = v.id!.toLowerCase(); spellings.set(k, (spellings.get(k) ?? new Set()).add(v.id!)); }
+        // an id is the account (agent:token:<id>): one id on two tokens (a key rotation) is one account; ids differing only in case, or ill-formed, prove nobody (the name stays reserved)
         const refused: string[] = [];
         for (const [tok, v] of entries) {
           const id = v.id!; names.add(id.toLowerCase());
-          if (!ENROLMENT_ID.test(id.toLowerCase()) || count.get(id.toLowerCase())! > 1) { refused.push(id); continue; }
+          if (!ENROLMENT_ID.test(id.toLowerCase()) || spellings.get(id.toLowerCase())!.size > 1) { refused.push(id); continue; }
           byToken.set(tok, id);
           for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, id);
         }
-        if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and be unique lowercased): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
+        if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and no other id may differ from it only in case): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
       }
       agentTokCache = { mtime, byToken, names, bySub };
     }

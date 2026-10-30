@@ -829,6 +829,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(u3.ok && openWorld(root, "undoredo").state().entities.box === undefined, "UR4 …and the next bare undo walks on back past it (the create), not round the undo/redo loop", u3.undid);
   const again = uw("ann", "undo", { act: mv.act });
   ok(again.refused?.code === "nothing" && /already undone \(by undo \d+, then redo \d+, then undo \d+\)/.test(again.refused.reason), "UR5 undo {act} of something already undone names the chain", again.refused); }
+// UR6 (review 2.20): an act whose ops changed nothing isn't undoable: a bare undo steps over it to the act before, undo {act} of it says so
+{ const nw = callAt("noopundo"); nw("ann", "create-world", { title: "noopundo" });
+  const mk = nw("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const nop = nw("ann", "batch", { ops: [{ verb: "set", args: { id: "box", component: "label", value: "x" } }, { verb: "delete", args: { id: "box", component: "label" } }] });
+  const u = nw("ann", "undo", {}), direct = nw("ann", "undo", { act: nop.act });
+  ok(mk.ok && nop.ok && u.ok && u.undid?.act === mk.act && openWorld(root, "noopundo").state().entities.box === undefined && direct.refused?.code === "nothing" && /changed nothing/.test(direct.refused.reason),
+    "UR6 a request whose ops changed nothing (set + delete of a component the thing lacked) is stepped over by a bare undo, which undoes the act before; undo {act} of it says it changed nothing", { nop: nop.act, u: u.undid ?? u.refused, direct: direct.refused }); }
 
 // ---- HG: a hung thing swings from the underside of what's above it, and everyone reads the same hinge (Rowan) ----
 { const hw = callAt("hinge");
