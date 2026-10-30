@@ -92,5 +92,12 @@ check('the null echo agrees: "taken down" survives the repaint', /taken down/.te
 echo({ src: 'store/images/0123456789abcdef.png', part: 'screenplane' });
 check('a later hang by someone else retires "taken down"', paint() === '', JSON.stringify(paint()));
 
+console.log('\n6. update keeps what the block doesn\'t show');
+echo({ src: 'store/images/0123456789abcdef.png', width: 4, lit: 'scene', description: 'four metres wide' });
+paint(); committed.length = 0;
+q('description').value = 'four metres wide, still'; q('hang').click();
+const kept = committed.at(-1)?.[1];
+check('updating a hung picture keeps its stored width', (kept?.data ?? kept)?.width === 4, JSON.stringify(committed));
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

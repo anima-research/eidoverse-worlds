@@ -297,7 +297,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       });
       q('hang')?.addEventListener('click', (ev) => {
         // part and flip went with the shape audit (10-16: shared/picture.js keeps src/width/description/lit), so the block offers neither (I59)
-        const data = { src: q('src').value.trim(), lit: q('lit').value };
+        const data = { src: q('src').value.trim(), lit: q('lit').value, ...(cur?.width !== undefined ? { width: cur.width } : {}) };
         const said = q('description').value.trim();
         if (said) data.description = said;
         const norm = normalizePicture(data);

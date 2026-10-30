@@ -120,7 +120,7 @@ function updateEnvironmentSky(look) {
 let envLight=null;
 export function applyEnvLight(){if(!envLight)return;sun.color.copy(envLight.color);sun.intensity=envLight.intensity;sun.position.copy(envLight.position);}
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion();
-export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],waters,airs,clock.value); }
+export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],volumesNow.waters,volumesNow.airs,clock.value); }
 /** @world's `level` at p, or null in a pocket that keeps it out (zone.js worldLevelAt: mediumOf) */
 export function levelAt(p, level) { return worldLevelAt(Array.isArray(p)?p:[p.x,p.y,p.z],zonesNow,level,{volumes:volumesNow}); }
 export function waterTime() { return clock.value; }
@@ -260,7 +260,7 @@ export function updateWater() {
   if(rebuild){for(const z of [...zones.bodies,...zones.exclusions])if(!z.global)volumeIds.add(z.id);for(const a of areasNow)volumeIds.add(a.id);}
   const vol=waterVolumes(zones);zonesNow=zones;volumesNow=vol;
   const fog=fogSlots(vol);   // the kept bodies and pockets, and which slots each pocket clears (the combine law)
-  if(vol.waters.length>MAX_WATER)warn(`Water renderer supports ${MAX_WATER} water volumes; extra volumes are inactive`);
+  if(vol.waters.length>MAX_WATER)warn(`Water renderer draws ${MAX_WATER} water volumes; the extras, lowest priority first, aren't drawn or fogged, though bodies still swim in them`);
   // the highest-priority bodies are kept (the list runs lowest first)
   for(const w of fog.waters) {
     const i=waters.length;waters.push(w);
@@ -272,7 +272,7 @@ export function updateWater() {
     if(rebuild)makeSurface(w);
     else if(surfaces[i]){surfaces[i].position.set(w.center[0],w.top,w.center[2]);surfaces[i].userData.centre?.value.set(w.center[0],w.center[2]);}
   }
-  if(vol.airs.length>MAX_AIR)warn(`Water renderer supports ${MAX_AIR} dry volumes; extra volumes are inactive`);
+  if(vol.airs.length>MAX_AIR)warn(`Water renderer clears fog for ${MAX_AIR} dry volumes; the extras, lowest priority first, still keep water out but are fogged as if wet`);
   // a pocket clears only the slots its mask names (fogSlots: excludes(), mediumAt's rule)
   fog.airs.forEach((a,i)=>{
     const inv=new THREE.Matrix4().compose(new THREE.Vector3(...a.center),new THREE.Quaternion().fromArray(a.q).normalize(),new THREE.Vector3(1,1,1)).invert();

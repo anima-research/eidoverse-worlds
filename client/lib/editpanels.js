@@ -472,15 +472,17 @@ function duplicate(id) {
 
 // a lock's strength is its setter's rank now (recut B2): the authority's inspect says it (lock.rank); this only keeps
 // the padlock honest, the authority decides
-// asked ONCE per lock, not per component change: authorityInspect keys on the whole bag, so a dragged locked thing
-// re-asked every frame and tripped the rate limit (client-check D1, 10-20). Dropped when the lock goes; a demotion
-// after that can leave it stale, which is fine: the authority decides, the padlock only asks.
-const lockStrength = new Map();
+// asked ONCE per lock (a refused ask again after a backoff), not per component change: authorityInspect keys on the whole
+// bag, so a dragged locked thing re-asked every frame and tripped the rate limit (client-check D1, 10-20). Dropped when the
+// lock changes or goes; a demotion after that can leave it stale, which is fine: the authority decides, the padlock only asks.
+const lockStrength = new Map(), lockAsk = backoff();
 const lockStrengthOf = (id) => {
-  if (!bagOf(id)?.lock) { lockStrength.delete(id); return RANK.builder; }
-  if (!lockStrength.has(id)) { lockStrength.set(id, null);
-    sendRequest('inspect', { id }).then((r) => { const k = r?.lock?.rank; if (r?.ok && Number.isFinite(k) && lockStrength.has(id)) { lockStrength.set(id, k); repaintAll(); } }).catch(() => lockStrength.delete(id)); }
-  return lockStrength.get(id) ?? RANK.builder; };
+  if (!bagOf(id)?.lock) return RANK.builder;
+  if (!lockStrength.has(id)) { const ask = {}; lockStrength.set(id, ask);
+    const again = () => setTimeout(() => { if (lockStrength.get(id) === ask) { lockStrength.delete(id); repaintAll(); } }, lockAsk.next());
+    sendRequest('inspect', { id }).then((r) => { if (lockStrength.get(id) !== ask) return; if (!r?.ok) return again();
+      const k = r.lock?.rank; lockAsk.reset(); lockStrength.set(id, Number.isFinite(k) ? k : RANK.builder); repaintAll(); }).catch(again); }
+  const k = lockStrength.get(id); return Number.isFinite(k) ? k : RANK.builder; };
 const myRank = () => (Number.isFinite(net.myRights?.rank) ? net.myRights.rank : RANK[net.myRights?.role] ?? RANK.builder);
 const lockerOf = (id) => authorityInspect(id)?.touched?.lock?.by ?? null;
 const mayLiftLevel = (id) => myRank() >= lockStrengthOf(id);
@@ -1379,6 +1381,7 @@ export function initEditPanels() {
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])
   onWorldChange((ev) => { if (ev.type !== 'change' && (ev.type !== 'world' || WORLD_KEYS.has(ev.key))) repaintAll(); });
+  onWorldChange(({ type, id, what, comp }) => { if (type === 'reset' || type === 'hydrated') lockStrength.clear(); else if (type === 'change' && (what === 'gone' || comp === 'lock')) lockStrength.delete(id); });
   loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
   // a drag's `before` never outlives its primary; the extras' outlines follow the set
   let lastPrimary = null;
