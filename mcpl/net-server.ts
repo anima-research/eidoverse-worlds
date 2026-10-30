@@ -877,7 +877,7 @@ class Session {
     // greets you as tagged channel traffic — a wake-worthy summary, not
     // just scrollback. Speech is arrival-only (R 10-18): the world reads back
     // says from before this body arrived only to the owner, server operators,
-    // and any role the owner grants readChat, so for everyone else these reads come back empty and nothing
+    // and anyone holding readChat, so for everyone else these reads come back empty and nothing
     // is replayed; the code stays for an admin's door.
     // Every message replayed below is REPLAY, and says so: `eidoverse:catchup`
     // rides alongside each message's ORIGINAL addressing (§16, issue #1). Tagged
