@@ -11,7 +11,8 @@
 //       connection, so reconnecting as a fresh guest is refused
 //   H5  an owner can't demote the founder; default-role can't be owner; an owner can't be banned
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
-//   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$ and unique, lowercased; a refused one proves nobody
+//   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$, and no other id may differ from it only in case (one id
+//       on two tokens is one account); a refused one proves nobody
 //   CS  a collision's tag on a display name carries nothing of the account, and is the same each time
 //   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
 //   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
@@ -56,7 +57,7 @@ const mint = (over = {}) => { const now = Math.floor(Date.now() / 1000);
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
-fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" } }));
+fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-wren": { id: "Wren", subs: ["agent:wren@home.test"] }, "tok-moss": { id: "Moss" }, "tok-fern": { id: "Fern" }, "tok-sage-old": { id: "Sage" }, "tok-sage-new": { id: "Sage" } }));
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", WORLD_ADMIN: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"), HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
@@ -450,6 +451,11 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   const b = await sock(S2.port); const jb = await b.join("orchard", "x", { agentToken: "tok-rowan" });
   ok(you(ja) && you(ja) === you(jb), "ID one account is the same identity in every world on the authority", [you(ja), you(jb)]);
   a.close(); b.close(); }
+// TV5 (review 1.2): one id on two tokens (a key rotation) is one account, whichever key comes
+{ const a = await sock(srv.port); const ja = await a.join("garden", "x", { agentToken: "tok-sage-old" });
+  const b = await sock(srv.port); const jb = await b.join("orchard", "x", { agentToken: "tok-sage-new" });
+  ok(!!ja.snapshot && !!jb.snapshot && you(ja) === you(jb), "TV5 one enrolment id on two tokens (a key rotation): both keys join, as the same account", [you(ja), you(jb), ja.errors, jb.errors]);
+  a.close(); b.close(); }
 
 // ---- AU: POST /auth makes a session for a person only (accounts review 10-28): an agent's kind, a sub outside human:, or
 // a login without worlds:join|spectate is refused. AC: one agent credential is one account at every door ----
@@ -529,15 +535,15 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(pub.pub === "joined" && pub.http === "refused" && pub.port === "refused" && pub.local === "refused", "CS3 HN_NATIVE_ORIGIN set: that one origin is this server's, exactly (http:// on its host, another port, or the request's own Host is refused)", pub);
   S8.proc.kill(); }
 
-// ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased) and unique lowercased; a refused one proves
+// ---- TV: a tokens.json enrolment id is ^[a-z0-9][a-z0-9_-]{0,31}$ (lowercased), no other differing only in case; a refused one proves
 // nobody, its name stays reserved, and the load says which (accounts review 10-28) ----
 { const TF = path.join(root, "tv-tokens.json");
-  fs.writeFileSync(TF, JSON.stringify({ t1: { id: "Ok-1" }, t2: { id: "has space" }, t3: { id: "x".repeat(33) }, t4: { id: "Dup" }, t5: { id: "dup" }, t6: { id: "-lead" } }));
+  fs.writeFileSync(TF, JSON.stringify({ t1: { id: "Ok-1" }, t2: { id: "has space" }, t3: { id: "x".repeat(33) }, t4: { id: "Dup" }, t5: { id: "dup" }, t6: { id: "-lead" }, t7: { id: "pair" }, t8: { id: "pair" } }));
   const code = `const { agentTokens } = await import("./server/auth.ts"); const a = agentTokens();
     console.log("RESULT " + JSON.stringify({ proves: [...a.byToken.values()].sort(), reserved: [...a.names].sort() }));`;
   const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: env({ AGENT_TOKENS_PATH: TF }) }); const out = r.stdout.toString() + r.stderr.toString();
   let res = {}; try { res = JSON.parse(out.split("\n").find((l) => l.startsWith("RESULT ")).slice(7)); } catch {}
-  ok(JSON.stringify(res.proves) === JSON.stringify(["Ok-1"]), "TV1 only a well-formed, unique enrolment id proves anyone (spaces, 33 characters, a leading '-', a case-duplicate refused)", { res, out: out.slice(-400) });
+  ok(JSON.stringify(res.proves) === JSON.stringify(["Ok-1", "pair", "pair"]), "TV1 only a well-formed enrolment id with no case-twin proves anyone (spaces, 33 characters, a leading '-', a case-duplicate refused; one id on two tokens proves)", { res, out: out.slice(-400) });
   ok(["has space", "dup", "-lead", "ok-1"].every((n) => res.reserved?.includes(n)), "TV2 …a refused id's name stays reserved (nobody else may wear it)", res.reserved);
   ok(/5 enrolment\(s\) refused/.test(out) && /has space/.test(out) && /Dup/.test(out) && /\^\[a-z0-9\]/.test(out), "TV3 …and the load says how many, which ids, and the rule", out.slice(-400)); }
 
