@@ -352,12 +352,18 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `spawn-point {title?, team?, group?}` on a thing is another arrival place
   (OMI_spawn_point), facing its rotation. The arrival taken: `@world.spawn` when
   declared, else the first spawn-point by id among those of the team or group
-  asked for; a visitor may arrive at any of them. A body below
-  `@world.bounds.min.y` has fallen out (Unreal's KillZ): its own client sends it
-  back with `move {teleport: true, reason: 'below-bounds'}`, an act on the
-  record; the authority takes it only when it last knew the body below
-  `bounds.min.y` (one step's slack, `TRACK.cap`); a seated or climbing body
-  is exempt.
+  asked for; a visitor may arrive at any of them. A body below the kill line,
+  `KILL_MARGIN` (50 m) under `@world.bounds.min.y`, has fallen out (Unreal's
+  KillZ; the floor itself is the terrain's, so water and ground may lie under
+  `@world.bounds.min.y`): its own client sends it back with `move {teleport:
+  true, reason: 'below-bounds'}`, an act on the record; the authority takes it
+  only when it last knew the body below the kill line (one step's slack,
+  `TRACK.cap`); a seated or climbing body is exempt. A person's client judges
+  a body knocked down only once they get up.
+  An agent, which may never press get-up, judges it as it falls and lies: a body
+  its sim lays down by its hips, not by its root, which the sim keeps the rig's hip
+  height below them, and any other body by its root. A body sent back from a fall
+  arrives standing; only a pose it authored stays.
 - **The look**: `@world.sky.gradient {top, horizon, bottom?}` (linear colours;
   OMI_environment_sky, absent bottom = horizon) paints the sky; `rate: 0`
   already pins its clock. A `light {kind: 'directional'}` thing is a sun

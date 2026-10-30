@@ -718,13 +718,13 @@ export class HeadlessBody {
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */
-  private stepIn(dt: number): { pose: Record<string, number[]>; p: number[]; done: boolean } | null {
+  private stepIn(dt: number): { pose: Record<string, number[]>; p: number[]; hipsY: number; done: boolean } | null {
     if (!this.rd) return null;
     this.rd.step(dt);
     const pose = this.rd.done ? this.rd.finalPose : this.rd.pose;
     if (!pose) return null;
     const r = this.av.root.position;
-    const out = { pose, p: [r.x, r.y, r.z], done: !!this.rd.done };
+    const out = { pose, p: [r.x, r.y, r.z], hipsY: Number(this.rd.p?.hips?.y), done: !!this.rd.done };
     if (this.rd.done && process.env.BODY_DEBUG) {
       // Where did she actually COME TO REST? Build-time numbers say nothing
       // about this: the question "does she settle above the floor" is about the

@@ -466,6 +466,7 @@ export class WorldAgent {
    *  body whose root is still at this height is a canned slump (rootCanned),
    *  and any other has its feet RAGDOLL_ROOT_DROP above its root (feetY). */
   private cannedY: number | null = null;
+  private hipsAboveRoot: number | null = null;
 
   /** The exact pose object that was granted "hold this while I walk".
    *
@@ -2520,6 +2521,11 @@ export class WorldAgent {
     this.respawning = true;
     try {
       this.target = null; this.flight = null; this.endFloat(); this.vy = 0;
+      if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
+        ++this.bodyEpoch; this.body?.stop(); this.stopSim(); this.pins.clear();
+        if (!this.heldPoseAuthored) this.heldPose = null;
+        this.clip = "idle";
+      }
       this.pos.x = sp.pos[0]; this.pos.y = sp.pos[1]; this.pos.z = sp.pos[2]; this.yaw = sp.yaw;
       const r = await this.request("move", { to: sp.pos, teleport: true, reason: FELL });
       if (r?.ok) { this.trackAt = [...sp.pos]; this.trackArrived = true; }
@@ -2789,8 +2795,8 @@ export class WorldAgent {
     // "floating a few feet off the ground" Janus saw. The flight state stays
     // alive (recovery still needs it) -- it just no longer drives.
     if (this.flight && !this.simTicker) this.flightTick(dt);
-    // KILLZ (shared/spawn.js, as the browser's controller): fallen below @world.bounds.min.y, back to an arrival place, on the record
-    if (!this.myOccupancy && !this.draggedBy && !this.respawning && belowWorld(this.replica?.st, [this.pos.x, this.pos.y, this.pos.z])) void this.respawnFell();
+    // KILLZ (shared/spawn.js): fallen below the kill line under @world.bounds.min.y, back to an arrival place, on the record
+    if (!this.myOccupancy && !this.draggedBy && !this.respawning && belowWorld(this.replica?.st, [this.pos.x, this.killzY(), this.pos.z])) void this.respawnFell();
     // keep the `reached` attestation honest at ~2Hz while reaching: the
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
@@ -2965,6 +2971,7 @@ export class WorldAgent {
       if (!out) return;
       this.heldPose = out.pose; this.heldPoseAuthored = false; // a sim frame is physics even once settled
       this.pos.x = out.p[0]; this.pos.y = out.p[1]; this.pos.z = out.p[2];
+      if (Number.isFinite(out.hipsY)) this.hipsAboveRoot = out.hipsY - out.p[1];
       this.tick();
       // The ragdoll's ground truth flows BACK into the flight state, rather
       // than the flight state overwriting it. Recovery reads this to know
@@ -4433,6 +4440,10 @@ export class WorldAgent {
    *  height. */
   private feetY(slumped: boolean): number {
     return slumped && !this.rootCanned() ? this.pos.y + RAGDOLL_ROOT_DROP : this.pos.y;
+  }
+
+  private killzY(): number {
+    return this.clip === "ragdoll" && !this.rootCanned() ? this.pos.y + (this.hipsAboveRoot ?? RAGDOLL_ROOT_DROP) : this.pos.y;
   }
 
   /** A canned slump's root: still at the height knockDown found the feet at. */
