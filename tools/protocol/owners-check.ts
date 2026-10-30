@@ -189,12 +189,12 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const read0 = fs.readFileSync; let reads = 0; (fs as any).readFileSync = (f: any, ...a: any[]) => { if (path.resolve(String(f)) === logf) reads++; return (read0 as any)(f, ...a); };
   let a: any, b: any, n1 = 0; try { a = ownerRecognised(d, "human:test:x", "Ann"); n1 = reads; b = ownerRecognised(d, "human:test:x", "Ann"); } finally { (fs as any).readFileSync = read0; }
   row("OC1", () => ok(a?.recognised === "name" && same(a, b) && n1 >= 1 && reads === n1, "OC1 an apply asks twice (its report, then the write): the second answer is the first, by the log's head, with no second read and fold", { n1, reads, a }));
-  const q = Bun.spawnSync(["bun", "-e", `const U = await import("./server/upgrade.ts"); const who = (k) => ({ account: "human:test:j" + k, name: "J" + k });
+  const t0 = Date.now(), q = Bun.spawnSync(["bun", "-e", `const U = await import("./server/upgrade.ts"); const who = (k) => ({ account: "human:test:j" + k, name: "J" + k });
     const r = await Promise.all([0, 1, 2, 3, 4].map((k) => U.ownerOf("mews", who(k), { join: true }))); console.log("R " + JSON.stringify(r.map((x) => x === null ? "skipped" : "checked")) + " " + U.JOIN_CHECKS);`],
-    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 120_000 });
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 600_000 });   // two concurrent CLI children, cache off: a Windows runner overran 120 s (#260 run 41014925239)
   const got = /^R (\[.*\]) (\d+)$/m.exec(q.stdout.toString());
   row("OC2", () => ok(got && same(JSON.parse(got[1]), ["checked", "checked", "skipped", "skipped", "skipped"]) && got[2] === "2",
-    "OC2 a burst of refused joins runs at most JOIN_CHECKS owner checks at once (each a CLI read and fold); the rest are skipped (may: false), not queued", { out: q.stdout.toString().slice(-300), err: q.stderr.toString().slice(-300) }));
+    "OC2 a burst of refused joins runs at most JOIN_CHECKS owner checks at once (each a CLI read and fold); the rest are skipped (may: false), not queued", { ms: Date.now() - t0, exit: q.exitCode, signal: q.signalCode ?? null, out: q.stdout.toString().slice(-300), err: q.stderr.toString().slice(-300) }));
 }
 
 // ================= CL: an ownerless world is claimed by whoever upgrades it (R 10-28) =================
