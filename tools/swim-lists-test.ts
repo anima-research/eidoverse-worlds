@@ -9,7 +9,9 @@ const WORLD = 'swim';
 const { cdp, evalJson, cleanup, die, BASE } = await scratchBench('swim-lists', { worlds: [WORLD], owner: 'swimmer', serverEnv: { TRUST_NAMES: '1' } });
 const { check, tally } = mkCheck();
 try {
-  await cdp.send('Page.navigate', { url: `${BASE}/?name=swimmer&world=${WORLD}&spectate=1&webgl=1` });
+  // WebGL 2 except on Windows, where the runner's software flags give a null forced WebGL 2 context (as party-probe.ts).
+  const backend = process.platform === 'win32' ? '' : '&webgl=1';
+  await cdp.send('Page.navigate', { url: `${BASE}/?name=swimmer&world=${WORLD}&spectate=1${backend}` });
   // 80 s: the house budget for a cold page boot (access-panel-probe); a Windows runner overran 30 s (fork run 41014912934)
   if (!(await tryUntil('the water module', () => evalJson('!!globalThis.__waterDebug').catch(() => false), { ms: 80000 })))
     await die(1, `the water module never loaded: ${JSON.stringify(await evalJson('({ ready: document.readyState, scripts: document.scripts.length, url: location.pathname })').catch((e) => String(e)))}`);
