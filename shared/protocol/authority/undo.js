@@ -13,6 +13,7 @@ import { obbs, satDepth, worldT } from "./math.js";
 import { isLegacyParent, isSocketC, socketsOf } from "./sockets.js";
 import { RESERVED, admits, may, rankOf, roleOf } from "./rights.js";
 import { reactionCap } from "./use.js";
+import { idOut } from "../view.js";
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
@@ -149,6 +150,17 @@ function buildUndo(ctx, a, w) {
   // asker's own write in the same batch is theirs, and putting it back meets their rights and the locks now, like any undo.
   const goneHere = new Set(flat.filter((o) => o.verb === "delete" && o.comp === undefined).map((o) => o.id));
   const fuHere = new Set([...followUpsOf(res)].map((k) => flat[k]).filter(Boolean));
+  const leftoverFU = (o) => fuHere.has(o) && typeof o.comp === "string" && o.comp.startsWith("imported:");
+  const ownerOf = new Map(), owned = new Map();
+  flat.forEach((o, i) => { if (!leftoverFU(o)) return; const n = idOut(o.comp.slice("imported:".length));
+    const fills = (x) => x.id === o.id && typeof x.comp === "string" && !fuHere.has(x) && idOut(x.comp) === n;
+    const x = flat.slice(0, i).reverse().find(fills) ?? flat.slice(i + 1).find(fills);
+    if (x) { const k = `${o.id}|${x.comp}`; ownerOf.set(o, k); owned.set(k, [...(owned.get(k) ?? []), o]); } });
+  const leftoversBack = (id, comp) => (owned.get(`${id}|${comp}`) ?? []).flatMap((o) => {
+    const by = touchedBy(o.id, o.comp); if (by) { skipped.push({ id: o.id, component: o.comp, why: `${said(by)} changed it since`, by }); return []; }
+    const old = before(o.id)?.c[o.comp]; if (old === PURGED) return [];
+    const g = old === undefined ? (o.comp in (now.entities[o.id]?.c ?? {}) ? delOp(o.id, o.comp) : null) : setOp(o.id, o.comp, old);
+    if (g) g[FOLLOW_UP] = true; return g ? [g] : []; });
   const refRestore = (o) => { if (!goneHere.size || !fuHere.has(o) || o.comp === undefined || o.verb === "create" || goneHere.has(o.id) || !holdsRefs(o.comp)) return false;
     const old = before(o.id)?.c[o.comp]; return old !== undefined && old !== PURGED && refsOf(o.comp, old).some((r) => goneHere.has(r.id)); };
   for (const o of flat) { if (madeHere.has(o.id) && o.verb !== "create") continue;
@@ -156,6 +168,7 @@ function buildUndo(ctx, a, w) {
   const paired = new Set();
   for (const [, o] of [...keys].reverse()) {
     const { id, comp } = o; const whole = o.verb === "create" || (o.verb === "delete" && comp === undefined);
+    if (ownerOf.has(o)) continue;
     // where a thing sat on a socket before the cut, its transform was in the HOST's frame (review 10-12 S2-1): its parent
     // and its transform go back as one group, so the door lifts the parent and re-expresses the pose in the socket child's
     // frame (liftOps' `via`); a bare transform would be read in the socket's frame and land it elsewhere
@@ -180,9 +193,9 @@ function buildUndo(ctx, a, w) {
     else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       // (sockets: a host's socket children stand for the map it held before the cut; their delete is translated at the door)
-      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id, { off: true }).some((x) => x.id)))) groups.push([delOp(id, comp)]); }
+      if (old === undefined) { if (now.entities[id] && (comp in now.entities[id].c || (comp === "sockets" && socketsOf(now, id, { off: true }).some((x) => x.id)))) { const g = delOp(id, comp); if (leftoverFU(o)) g[FOLLOW_UP] = true; groups.push([...leftoversBack(id, comp), g]); } }
       else if (now.entities[id]) {
-        if (!refRestore(o)) groups.push([setOp(id, comp, old)]);
+        if (!refRestore(o)) { const g = setOp(id, comp, old); if (leftoverFU(o)) g[FOLLOW_UP] = true; groups.push([...leftoversBack(id, comp), g]); }
         // a follow-up restore names what this undo brings back; a reference to anything else gone since stays cleared (holes r10 L1:
         // a second delete no longer refuses the whole undo)
         else { const since = new Set(refsOf(comp, old).map((r) => r.id).filter((x) => !now.entities[x] && !goneHere.has(x)));

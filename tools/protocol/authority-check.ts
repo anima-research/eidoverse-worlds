@@ -674,6 +674,76 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const del = iw("ann", "delete", { id: "@world", component: "sky" }); const v = vs();
     ok(other.ok && keptByOther && set.ok && goneBySet && del.ok && !("imported:sky" in wc()) && v.sky == null && v.water?.foam === 1,
       "S3f setting or deleting the world's sky deletes its imported:sky with it: a deleted sky leaves the slot empty (other components and imported:water stay)", { other: other.ok, keptByOther, set: set.ok, goneBySet, del: del.ok, keys: Object.keys(wc()), sky: v.sky, water: v.water }); }
+  { const il = callAt("imp-lamp");
+    il("ann", "create-world", { title: "imp-lamp" });
+    const lamp = il("ann", "create", { components: { light: { color: 0xffd9a0, intensity: 2 }, label: "lamp" } }).refs?.[0]?.id;
+    const lc = () => openWorld(root, "imp-lamp").state().entities[lamp]?.c ?? {}; const lv = () => viewState(fold(openWorld(root, "imp-lamp").entries)).entities[dec(lamp) ?? lamp];
+    il("ann", "set", { id: lamp, component: "imported:light", value: { flicker: 1 } }); il("ann", "set", { id: lamp, component: "imported:label", value: { font: "x" } });
+    const other = il("ann", "delete", { id: lamp, component: "label" }); const keptByOther = "imported:light" in lc();
+    const del = il("ann", "delete", { id: lamp, component: "light" }); const v = lv();
+    ok(!!lamp && other.ok && keptByOther && del.ok && !("imported:light" in lc()) && !!v && v.light === undefined,
+      "S3g deleting a thing's light deletes its imported:light with it: a deleted light shows none (deleting another component leaves it)", { other: other.ok, keptByOther, del: del.ok, keys: Object.keys(lc()), light: v?.light });
+    const swing = il("ann", "create", { model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 } } }).refs?.[0]?.id;
+    const sc = () => openWorld(root, "imp-lamp").state().entities[swing]?.c ?? {}; const left = `imported:${enc("motion:plank")}`;
+    const put = il("ann", "set", { id: swing, component: left, value: { wobble: 1 } });
+    const delK = il("ann", "delete", { id: swing, component: "motion:plank" }); const sv = viewState(fold(openWorld(root, "imp-lamp").entries)).entities[dec(swing) ?? swing];
+    ok(!!swing && put.ok && delK.ok && !(left in sc()) && !!sv && sv["motion:plank"] === undefined,
+      "S3g …and deleting a keyed component (motion:plank) deletes its imported:<encoded name> with it", { put: put.ok, del: delK.ok, keys: Object.keys(sc()), plank: sv?.["motion:plank"] }); }
+  { const ih = callAt("imp-rule"); const res = (r: any) => (r?.ok ? "ok" : r?.refused?.code ?? r);
+    ih("ann", "create-world", { title: "imp-rule" }); ih("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+    const C = (id: string) => openWorld(root, "imp-rule").state().entities[id]?.c;
+    const made = (comps: any) => ih("ann", "create", { components: { label: "lamp", ...comps } }).refs?.[0]?.id;
+    const light = { color: 0xffd9a0, intensity: 2 }, leave = (id: string, comp: string, value: any) => ih("ann", "set", { id, component: comp, value });
+    const a = made({ light }); leave(a, "imported:light", { flicker: 1 });
+    const del = ih("bob", "delete", { id: a, component: "light" }); const afterDel = { ...(C(a) ?? {}) };
+    const undo = ih("bob", "undo", {}); const afterUndo = { ...(C(a) ?? {}) };
+    const redo = ih("bob", "undo", { act: undo.act }); const afterRedo = C(a) ?? {};
+    ok(del.ok && !("light" in afterDel) && !("imported:light" in afterDel) && undo.ok && "light" in afterUndo && afterUndo["imported:light"]?.flicker === 1
+      && Number.isInteger(undo.act) && redo.ok && !("light" in afterRedo) && !("imported:light" in afterRedo),
+      "S3h a builder's delete of a translated light takes the leftover the owner made; the builder's undo puts both back, and their redo takes both again", { del: res(del), afterDel: Object.keys(afterDel), undo: res(undo), afterUndo: Object.keys(afterUndo), redo: res(redo), afterRedo: Object.keys(afterRedo) });
+    const b = made({}); leave(b, "imported:light", { flicker: 2 });
+    const add = ih("bob", "set", { id: b, component: "light", value: light }); const undoAdd = ih("bob", "undo", {}); const cb = C(b) ?? {};
+    ok(add.ok && undoAdd.ok && !("light" in cb) && cb["imported:light"]?.flicker === 2,
+      "S3h undoing the addition of a light leaves the thing as it was, its lone leftover kept", { add: res(add), undo: res(undoAdd), keys: Object.keys(cb) });
+    const c = made({ light }); leave(c, "imported:light", { flicker: 3 });
+    const re = ih("ann", "batch", { ops: [{ verb: "delete", args: { id: c, component: "light" } }, { verb: "set", args: { id: c, component: "light", value: light } }] });
+    ok(re.ok && C(c)?.["imported:light"]?.flicker === 3, "S3h a request that deletes the light and sets it again keeps its leftover, as a set does", { re: res(re), keys: Object.keys(C(c) ?? {}) });
+    const d = made({ light }); leave(d, "imported:light", { flicker: 4 });
+    const gone = ih("ann", "batch", { ops: [{ verb: "delete", args: { id: d, component: "light" } }, { verb: "delete", args: { id: d } }] });
+    ok(gone.ok && C(d) === undefined, "S3h a batch that deletes the light and then the thing is taken", { gone: res(gone) });
+    const d2 = made({ light }); leave(d2, "imported:light", { flicker: 5 });
+    const bobGone = ih("bob", "batch", { ops: [{ verb: "delete", args: { id: d2, component: "light" } }, { verb: "delete", args: { id: d2 } }] }); const cd2 = C(d2) ?? {};
+    ok(res(bobGone) === "rights" && "light" in cd2 && cd2["imported:light"]?.flicker === 5,
+      "S3h …but a builder's batch that deletes the light and then the thing is judged on the thing as it stands: the translation's leftover isn't theirs to delete", { bobGone: res(bobGone), keys: Object.keys(cd2) });
+    const e = made({}); const f = ih("ann", "create", { components: { label: "child", parent: { to: e } } }).refs?.find((r: any) => r.id !== e)?.id; leave(f, "imported:parent", { slot: "x" });
+    const unparent = ih("ann", "delete", { id: f, component: "parent" });
+    ok(!!f && unparent.ok && C(f)?.["imported:parent"]?.slot === "x", "S3h deleting a thing's parent keeps imported:parent, which the view never shows in that slot", { f, unparent: res(unparent), keys: Object.keys(C(f) ?? {}) });
+    ih("ann", "set", { id: "@world", component: "roles:carol", value: { role: "builder" } });
+    const g = made({ light }); leave(g, "imported:light", { flicker: 6 });
+    const steps = [ih("bob", "delete", { id: g, component: "light" }), ih("carol", "set", { id: g, component: "light", value: light }), ih("carol", "delete", { id: g, component: "light" })].map(res);
+    const late = ih("bob", "undo", {}); const cg = C(g) ?? {};
+    ok(steps.every((x) => x === "ok") && res(late) === "conflict" && /"component":"light"[^}]*changed it since/.test(JSON.stringify(late)) && !("light" in cg) && !("imported:light" in cg), "S3h a leftover's undo goes with its light's: where someone else has changed the light since, the undo leaves both as they are, and the view shows no light they deleted", { steps, late: res(late), keys: Object.keys(cg) });
+    const h = made({}); leave(h, "imported:light", { flicker: 7 });
+    const setDel = ih("bob", "batch", { ops: [{ verb: "set", args: { id: h, component: "light", value: light } }, { verb: "delete", args: { id: h, component: "light" } }] }); const ch2 = C(h) ?? {};
+    ok(setDel.ok && !("light" in ch2) && ch2["imported:light"]?.flicker === 7,
+      "S3h a batch that sets a light where there was none and then deletes it keeps the lone leftover", { setDel: res(setDel), keys: Object.keys(ch2) });
+    const m = made({ light }); leave(m, "imported:light", { flicker: 8 });
+    const delM = ih("bob", "delete", { id: m, component: "light" }); leave(m, "imported:light", { flicker: 9 });
+    const undoM = ih("bob", "undo", {}); const cm = C(m) ?? {};
+    ok(delM.ok && undoM.ok && "light" in cm && cm["imported:light"]?.flicker === 9 && /imported:light/.test(JSON.stringify(undoM.notes ?? [])),
+      "S3h where the owner has rewritten the leftover since, the undo puts back the light and leaves the owner's leftover, naming it skipped", { del: res(delM), undo: res(undoM), keys: Object.keys(cm), flicker: cm["imported:light"]?.flicker, notes: undoM.notes });
+    const p = made({ light }); leave(p, "imported:light", { flicker: 10 });
+    const mixed = [ih("bob", "batch", { ops: [{ verb: "delete", args: { id: p, component: "light" } }, { verb: "set", args: { id: p, component: "label", value: "new" } }] }),
+      ih("carol", "set", { id: p, component: "light", value: light }), ih("carol", "delete", { id: p, component: "light" })].map(res);
+    const undoP = ih("bob", "undo", {}); const cp = C(p) ?? {};
+    ok(mixed.every((x) => x === "ok") && undoP.ok && cp.label === "lamp" && !("light" in cp) && !("imported:light" in cp),
+      "S3h an undo that puts back some of an act and skips the rest: the label comes back, the light and its leftover stay as someone else left them", { mixed, undo: res(undoP), keys: Object.keys(cp), label: cp.label });
+    const t = ih("ann", "create", { model: "crate", components: { transform: { pos: [6, 0, 6] } } }).refs?.[0]?.id; leave(t, "imported:transform", { roll: 1 });
+    const delT = ih("bob", "delete", { id: t, component: "transform" });
+    const onIt = ih("carol", "create", { model: "crate", components: { transform: { pos: [6, 0, 6] } } });
+    const undoT = ih("bob", "undo", {}); const ct = C(t) ?? {};
+    ok(delT.ok && onIt.ok && res(undoT) === "conflict" && /"component":"transform"[^}]*would land it on/.test(JSON.stringify(undoT)) && !("transform" in ct) && !("imported:transform" in ct),
+      "S3h a transform put back with its leftover is still checked against someone's later work: the undo names it skipped, and the transform and its leftover stay gone", { delT: res(delT), onIt: res(onIt), undo: res(undoT), pos: ct.transform?.pos ?? null, keys: Object.keys(ct), notes: undoT.notes }); }
 }
 
 // ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
