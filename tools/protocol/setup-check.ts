@@ -9,10 +9,12 @@
 //   SU7 more than five tries a minute from one address are refused (429)
 //   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
 //   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
+//   SU10 an authenticated valid-token claim accepts 1024 body bytes and refuses 1025, declared or chunked, including before an unfinished sender ends
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
+import http from "node:http";
 import { ENGINE, scratch, linkFile, canLinkFiles } from "./common.ts";
 import { tryUntil } from "./wait.ts";
 
@@ -54,6 +56,35 @@ const tokenOf = (log) => /\/setup#token=([A-Za-z0-9_-]+)/.exec(log)?.[1] ?? null
 const setupLines = (log) => log.split("\n").filter((l) => /No operator yet/.test(l));
 const post = (port, body, headers = {}) => fetch(`http://127.0.0.1:${port}/setup`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) })
   .then(async (r) => ({ status: r.status, text: await r.text() }));
+const sizedBody = (token, bytes) => {
+  const blank = JSON.stringify({ token, pad: "" });
+  const padding = bytes - Buffer.byteLength(blank);
+  if (padding < 0) throw new Error("setup body limit test fixture is too small");
+  return JSON.stringify({ token, pad: "x".repeat(padding) });
+};
+const postRaw = (port, body, headers = {}) => fetch("http://127.0.0.1:" + port + "/setup", { method: "POST", headers: { "content-type": "application/json", ...headers }, body })
+  .then(async (r) => ({ status: r.status, text: await r.text() }));
+const postChunked = (port, body, headers = {}, finish = true) => new Promise((resolve, reject) => {
+  const req = http.request({ hostname: "127.0.0.1", port, path: "/setup", method: "POST", agent: false,
+    headers: { "content-type": "application/json", "transfer-encoding": "chunked", connection: "close", ...headers } }, (res) => {
+    let text = "";
+    res.setEncoding("utf8");
+    res.on("data", (chunk) => { text += chunk; });
+    res.on("end", () => {
+      const result = { status: res.statusCode, text };
+      if (finish) return resolve(result);
+      const socket = req.socket;
+      if (socket && !socket.destroyed) socket.once("close", () => resolve(result));
+      else resolve(result);
+      req.destroy();
+    });
+  });
+  req.on("error", reject);
+  req.setTimeout(5000, () => req.destroy(new Error("setup body response timed out")));
+  req.write(body.slice(0, 700));
+  if (finish) req.end(body.slice(700));
+  else req.write(body.slice(700));
+});
 const get = (port, headers = {}) => fetch(`http://127.0.0.1:${port}/setup`, { headers }).then(async (r) => ({ status: r.status, text: await r.text(), csp: r.headers.get("content-security-policy") }));
 const missing = (port) => fetch(`http://127.0.0.1:${port}/no-such-page-here`).then(async (r) => ({ status: r.status, text: await r.text() }));
 const cookie = (sid) => ({ cookie: `ew_sess=${sid}` });
@@ -121,6 +152,37 @@ s = await start(W1);
 ok(!s.dead && setupLines(s.log()).length === 0 && !tokenOf(s.log()) && (await get(s.port)).status === 404 && (await operatorAtJoin(s.port, { headers: cookie(ANN) })) === true,
   "SU4 a restart: no link printed, /setup missing, and Ann is still the operator (read from the file)", s.log().slice(-300));
 await s.stop();
+
+{
+  const W = worldsDir("w12"), a = await start(W), token = tokenOf(a.log());
+  const over = sizedBody(token, 1025), exact = sizedBody(token, 1024);
+  const declaredOver = await postRaw(a.port, over, cookie(ANN));
+  const chunkedOver = await postChunked(a.port, over, cookie(ANN));
+  ok(!a.dead && Buffer.byteLength(over) === 1025 && declaredOver.status === 413 && chunkedOver.status === 413 && stored(W) === null,
+    "SU10 a valid-token 1025-byte setup body is refused with or without a declared length, leaving no operator", { declaredOver, chunkedOver, stored: stored(W) });
+  const chunkedExact = await postChunked(a.port, exact, cookie(ANN));
+  ok(Buffer.byteLength(exact) === 1024 && chunkedExact.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
+    "SU10 a valid-token 1024-byte chunked setup body claims the operator", { chunkedExact, stored: stored(W) });
+  await a.stop();
+}
+{
+  const W = worldsDir("w13"), a = await start(W), token = tokenOf(a.log());
+  const exact = sizedBody(token, 1024), declaredExact = await postRaw(a.port, exact, cookie(ANN));
+  ok(!a.dead && Buffer.byteLength(exact) === 1024 && declaredExact.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
+    "SU10 a valid-token 1024-byte declared setup body claims the operator", { declaredExact, stored: stored(W) });
+  await a.stop();
+}
+
+{
+  const W = worldsDir("w14"), a = await start(W), token = tokenOf(a.log());
+  const unfinishedOver = await postChunked(a.port, sizedBody(token, 1025), cookie(ANN), false);
+  ok(!a.dead && unfinishedOver.status === 413 && stored(W) === null,
+    "SU10 a 1025-byte chunked body is refused before the sender finishes it", { unfinishedOver, stored: stored(W) });
+  const claim = await postRaw(a.port, sizedBody(token, 1024), cookie(ANN));
+  ok(claim.status === 200 && JSON.stringify(stored(W)?.list) === JSON.stringify(["human:test:ann"]),
+    "SU10 the setup token still works after an unfinished oversize body was refused", { claim, stored: stored(W) });
+  await a.stop();
+}
 
 // ---- operators already named ----
 { const W2 = worldsDir("w2"); const e = await start(W2, { SERVER_OPERATORS: "human:test:bea" });
