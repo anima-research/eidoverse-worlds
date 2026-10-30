@@ -23,7 +23,7 @@ const axis = (a, b) => Number(keys.has(a)) - Number(keys.has(b));
 /** One frame at the helm: W/S thrust (or set the throttle), A/D steer, Space/C rise and sink (Space leaves a helm whose leaveBy lets a jump). */
 export function updateHelm(dt) {
   const id = helmHull(), o = id ? entities.get(id) : null, spec = id ? driveOf(bagOf(id)) : null;
-  if (!o || !spec) { if (driving) { driving = null; vel = [0, 0, 0]; level = 0; local = null; } return false; }
+  if (!o || !spec) { leaveHelm(); return false; }
   if (driving !== id) { driving = id; vel = [0, 0, 0]; level = 0; lastSent = 0; local = { pos: o.position.toArray(), q: o.quaternion.toArray() }; }
   const push = axis('KeyW', 'KeyS');
   if (spec.throttle) level = Math.max(-1, Math.min(1, level + push * dt * 0.5));
@@ -33,6 +33,10 @@ export function updateHelm(dt) {
   const now = performance.now(); if (now - lastSent >= SEND_MS) { lastSent = now; sendDrive(id, n.pos, n.q); }
   return true;
 }
+function leaveHelm() { if (driving) { driving = null; vel = [0, 0, 0]; level = 0; local = null; } }
+// my seat ended (I got up, was knocked off, or it went): updateHelm runs only while I'm seated or being carried off a
+// seat (main.js me-drive), so the helm I left is let go here; its hull's relayed moves show again, and a later seat at that helm starts from where the hull is
+bus.on('mount', ({ id, to }) => { if (id === CONFIG.name && !to) leaveHelm(); });
 // the authority's answers: someone else's hull moving (relayed), or my step refused (snap back to the pose that stands)
 bus.on('drive', ({ id, pos, q, by, snap }) => {
   const o = entities.get(id); if (!o || !Array.isArray(pos) || pos.length !== 3 || !Array.isArray(q) || q.length !== 4) return;
