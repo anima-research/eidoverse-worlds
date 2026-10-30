@@ -14,6 +14,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 |---|---|---|
 | `JOIN_TOKEN` | Door key, checked at join + upload. **Empty = OPEN** (boot log shouts). | set it |
 | `TRUSTED_PROXIES` | Comma-separated peer addresses whose forwarded address the server believes (server/peer.ts): `X-Real-IP`, or `X-Forwarded-For` under `PROXY_ADDRESS_HEADER=x-forwarded-for`. Loopback is always trusted; from any other peer the socket address is used — so a guest reaching the port directly can't pick or frame an address (every guest sanction and limiter keys on it). | unset (nginx is on loopback) |
+| `HN_NATIVE_ORIGIN` | This server's public origin, exactly (`https://<host>`, with a port if not the default). A signed-in WebSocket from a browser that sends no `Sec-Fetch-Site` opens only from this Origin (server/auth.ts ownOrigin); unset, it is the request's own scheme and Host, which behind nginx is not the public one. | `https://<host>` |
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |

@@ -6,6 +6,7 @@
 //   SU4 then the link is used up: a second claim and GET /setup are a missing page, the token itself is gone; a restart prints no link and keeps the operator
 //   SU5 with SERVER_OPERATORS set, or an operators file, no link is printed and /setup is a missing page
 //   SU6 an agent claims with its Bearer (aid1 and enrolled): the stored account is the one its ws join proves (that join says operator)
+//   SU10 a Bearer and a cookie both sent: the Bearer is the claimant; an invalid Bearer refuses (never the cookie's account)
 //   SU7 more than five tries a minute from one address are refused (429)
 //   SU9 the operators file is written safely: a planted .operators.json.tmp symlink is never followed, and a symlinked .operators.json is refused, unchanged
 //   SU8 the page reads the token from the fragment only: a ?token= link posts nothing and says so (it would sit in proxy logs and history)
@@ -146,6 +147,16 @@ for (const [tag, cred, account] of [["w3", mint(), "aid1:id.test:agent:quill@hom
   const after = await operatorAtJoin(a.port, { agentToken: cred === "tok-rowan" ? cred : mint() });
   ok(viaQuery === 403 && claim.status === 200 && j.account === account && JSON.stringify(stored(W)?.list) === JSON.stringify([account]) && before === false && after === true,
     `SU6 an agent (${tag === "w3" ? "aid1" : "enrolled"}) claims with its Bearer: stored as ${account}, the account its ws join proves (operator at that join, no restart)`, { claim, before, after, viaQuery });
+  await a.stop();
+}
+
+// ---- both credentials: the explicit Bearer is the claimant; an invalid one refuses, never falling back to the cookie (SU10) ----
+for (const [tag, bearer] of [["w12", "tok-rowan"], ["w13", "tok-nobody"]]) {
+  const W = worldsDir(tag); const a = await start(W);
+  const r = await post(a.port, { token: tokenOf(a.log()) }, { ...cookie(ANN), authorization: `Bearer ${bearer}` }), j = (() => { try { return JSON.parse(r.text); } catch { return {}; } })();
+  if (bearer === "tok-rowan") ok(r.status === 200 && j.account === "agent:token:rowan" && JSON.stringify(stored(W)?.list) === JSON.stringify(["agent:token:rowan"]),
+    "SU10 a valid explicit Bearer beside a session cookie claims as the Bearer's account (agent:token:rowan), not the cookie's", { r, st: stored(W) });
+  else ok(r.status === 401 && stored(W) === null, "SU10 an invalid explicit Bearer beside a valid session cookie is refused (401): the cookie's account is not used, nothing stored", { r, st: stored(W) });
   await a.stop();
 }
 

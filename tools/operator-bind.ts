@@ -6,17 +6,22 @@ import path from "node:path";
 import { directoryFor, foldName, isMinted, accountTag, ACCOUNT_SHAPE } from "../server/directory.ts";
 import { modLogAt } from "../server/custody.ts";
 import { isWorldDir } from "../server/livehost.ts";
+import { readLog, fold } from "../shared/protocol/fold.js";
 
 /** An account as a join wears it (ACCOUNT_SHAPE, with something after the prefix, no spaces). */
 const WELL_FORMED = /^(human:[a-z0-9_-]+:|agent:token:|aid1:\S+:|local:)\S+$/i;
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 type Out = { ok: true; id: string; name: string; account: string; logged: string } | { ok: false; refused: string };
 
-/** The identities world `w` names: every minted id in its log and its moderator log. */
-function idsIn(dir: string): Set<string> {
-  const out = new Set<string>();
-  for (const f of ["world.jsonl", "world.mod.jsonl"]) { const p = path.join(dir, f); if (!fs.existsSync(p)) continue;
-    for (const m of fs.readFileSync(p, "utf8").matchAll(/u-[a-z2-7]{20}/g)) out.add(m[0]); }
+/** The identities with a record of their own in world `dir`: an entry they wrote, a role they hold, a ban or mute on them.
+ *  A third party's mention (a recipient of someone else's speech) is not theirs (#260 Stella q3). */
+function ownIn(dir: string): Set<string> {
+  const out = new Set<string>(), mine = (id: unknown) => { if (typeof id === "string" && isMinted(id)) out.add(id); };
+  const lines = (f: string) => { const p = path.join(dir, f); return fs.existsSync(p) ? fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }) : []; };
+  for (const e of lines("world.jsonl")) mine(e?.actor);
+  for (const m of lines("world.mod.jsonl")) { mine(m?.actor); if (m?.verb === "ban" || m?.verb === "mute") mine(m.who); }
+  const wc = fold(readLog(fs.readFileSync(path.join(dir, "world.jsonl")))).entities?.["@world"]?.c ?? {};
+  for (const k of Object.keys(wc)) if (k.startsWith("roles:")) mine(k.slice(6));
   return out;
 }
 
@@ -26,9 +31,9 @@ export function bindIdentity(worldsDir: string, world: string, who: string, acco
   const wd = path.join(worldsDir, world);
   if (!isWorldDir(wd)) return no(`there is no world "${world}" in ${worldsDir} (an old-format world is upgraded first: docs/TRANSLATING-OLD-WORLDS.md)`);
   if (!ACCOUNT_SHAPE.test(account ?? "") || !WELL_FORMED.test(account)) return no(`"${String(account).slice(0, 80)}" isn't an account: human:<provider>:<id>, agent:token:<id>, aid1:<iss>:<sub> or local:<name> (the "sub" /whoami shows)`);
-  const dir = directoryFor(worldsDir); const named = idsIn(wd);
+  const dir = directoryFor(worldsDir); const named = ownIn(wd);
   const ids = isMinted(who) ? (named.has(who) ? [who] : []) : [...named].filter((id) => { const n = dir.nameOf(id); return n != null && foldName(n) === foldName(who); });
-  if (!ids.length) return no(`nobody called "${who.slice(0, 64)}" is named in "${world}"`);
+  if (!ids.length) return no(`nobody called "${who.slice(0, 64)}" has a record of their own in "${world}" (an entry they wrote, a role, a ban or mute)`);
   const imported = ids.filter((id) => dir.entry(id)?.kind === "imported");
   if (!imported.length) return no(`${ids.map((id) => `${dir.nameOf(id)} (${id})`).join(", ")} in "${world}" ${ids.length > 1 ? "aren't" : "isn't"} an imported identity (${ids.map((id) => dir.entry(id)?.kind ?? "unknown").join(", ")}): only a name with no account yet is bound; to move a role between people, operator-repair set/delete`);
   if (imported.length > 1) return no(`${imported.length} imported identities in "${world}" are called "${who}" (${imported.join(", ")}): name one by its id`);

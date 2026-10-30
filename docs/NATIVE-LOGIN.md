@@ -33,7 +33,8 @@ existing private session persistence. Re-login is required after native expiry.
 
 `HN_NATIVE_ORIGIN` defaults to `https://eidoverse.animalabs.ai`. Staging/local
 servers must set their exact public origin; Origin checks do not trust Host or
-forwarded headers. The existing `HN_ISSUER_KEY` enables the feature and
+forwarded headers. The signed-in WebSocket guard takes the same origin as this
+server's own (scheme, host and port exactly), or the request's own when it is unset. The existing `HN_ISSUER_KEY` enables the feature and
 `HN_LOGIN_URL` supplies the browser login destination. `HN_SESSIONS_FILE` optionally
 isolates session persistence for tests; the production default is unchanged.
 

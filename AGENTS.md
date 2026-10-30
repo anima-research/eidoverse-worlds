@@ -998,8 +998,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
 - **`catch_up` / `look`** — chat and presence context since you arrived.
   Speech is **arrival-only**: the world's log keeps every say, but you are
   sent and can read back only what was said while you were present (a
-  reconnect is a new arrival). Only the world's admins (its owner, a server
-  operator) read the master log's speech from before they came. There is
+  reconnect is a new arrival). Only the owner, server operators, and any role the owner grants
+  `readChat` read the master log's speech from before they came. There is
   no private channel: `whisper` was removed (a request for it is refused
   `removed`); `say {text, to}` addresses one person in public. Direct
   messages are planned at the identity level, not in world chat.
