@@ -18,6 +18,7 @@ import { generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import http from "node:http";
 import { ENGINE, scratch, linkFile, canLinkFiles } from "./common.ts";
 import { tryUntil } from "./wait.ts";
+import { freePort } from "../harness.ts";
 
 const root = scratch("setup");
 let pass = 0, fail = 0;
@@ -42,10 +43,8 @@ const worldsDir = (tag) => { const W = path.join(root, tag); const d = path.join
   fs.writeFileSync(path.join(d, "log.jsonl"), fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean).join("\n") + "\n"); return W; };
 const env = (W, extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, `${path.basename(W)}-backups`), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: SESS, HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", ...extra });
-let nextPort = 9410;
 async function start(W, extra = {}) {
-  let port = nextPort; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
-  nextPort = port + 1;
+  const port = freePort(9410);   // the shared picker: a fixed 9410++ raced access-check in a parallel shard (Windows, 10-30)
   const logf = path.join(root, `srv-${port}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env(W, { PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   const s = { port, proc: p, dead: false, log: () => (fs.existsSync(logf) ? fs.readFileSync(logf, "utf8") : "") + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8") : ""), stop: async () => { try { p.kill(); } catch {} await p.exited; } };

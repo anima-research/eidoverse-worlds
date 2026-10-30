@@ -33,6 +33,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "./common.ts";
 import { tryUntil, pause } from "./wait.ts";
+import { freePort } from "../harness.ts";
 
 const root = scratch("access");
 let pass = 0, fail = 0;
@@ -47,7 +48,7 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/protocol/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
-  let port = 9410; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
+  const port = freePort(9410);   // the shared picker (setup-check took 9410 from a parallel shard, 10-30)
   const logf = path.join(root, `srv-${port}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   for (let i = 0; i < 80; i++) { await sleep(150); if (p.exitCode != null) return { port, proc: p, dead: true, log: logf };
