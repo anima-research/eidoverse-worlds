@@ -275,11 +275,12 @@ row("IM-V1", () => {
     && JSON.stringify(T.sub["imported:vehicle"]) === JSON.stringify({ probes: veh.probes }) && !T.raft["imported:vehicle"]
     && [["floor", -240], ["ceiling", -4]].every(([k, y]) => { const w = T[TV1.wallChildId?.("sub", k)]; return w && w.hidden === true && !w.parent && JSON.stringify(w.collider?.blocks) === '["hulls"]' && w.transform.pos[1] === y && w.transform.pos[0] === 0 && w.transform.pos[2] === 0; })   // at the origin, spanning every x/z (review delta-260 L-C)
     && !T[TV1.wallChildId?.("raft", "floor")]
+    && [["floor"], ["ceiling"]].every(([k]) => JSON.stringify(T[TV1.wallChildId?.("sub", k)]?.collider?.layer) === JSON.stringify([TV1.bandLayerOf?.("sub")])) && JSON.stringify(T.sub.collider?.mask) === JSON.stringify([1, TV1.bandLayerOf?.("sub")]) && T.raft.collider?.mask === undefined   // @32: its own layer (Basil 1.1)
     && h?.parent?.to === "sub" && h.socket?.name === "helm" && JSON.stringify(h.transform?.pos) === JSON.stringify(veh.helm) && h.station?.action === "drive" && JSON.stringify(h.station.input) === JSON.stringify({ move: "drive" }) && h.station.leaveBy === "menu" && JSON.stringify(h.station.exit) === JSON.stringify(veh.exit)
     && JSON.stringify(T.raft?.drive) === JSON.stringify({ maxSpeed: 15, turnRate: 0.1, climbRate: 15 }) && h2 && h2.station.exit === undefined
     && r.stats.mapped?.some((m: any) => m.component === "vehicle" && m.id === "sub" && m.into.length === 4)
     && JSON.stringify(r.stats.unmapped?.find((u: any) => u.component === "vehicle" && u.id === "sub")?.fields) === JSON.stringify(["probes"]),
-    "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY/maxY two hidden hull-only walls at the band (@29: the floor's top at minY, 10 m thick), probes ride imported:vehicle, listed under unmapped",
+    "IM-V1 a vehicle becomes drive on its host (speed → maxSpeed, turnRate, climbRate = speed, main's clamps) + a helm child (a socket at helm, station {action: 'drive', input: {move: 'drive'}, leaveBy: 'menu' (Space rises, as main's), exit}); minY/maxY two hidden hull-only walls at the band (@29: the floor's top at minY, 10 m thick) in the sub's own layer, which only its mask scans (@32), probes ride imported:vehicle, listed under unmapped",
     { sub: T.sub, h, raft: T.raft, h2, mapped: r.stats.mapped, unmapped: r.stats.unmapped });
 });
 // ---- IM-C / IM-E: main #248's collision toggle, climb routes and environment, each to its home ----

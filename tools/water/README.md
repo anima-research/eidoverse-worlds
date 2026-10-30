@@ -29,8 +29,10 @@ to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, `@world.terrain {kind
 directional sun thing and a dust `particles` child, and what has no home (the sky's
 `ambient`, the particles' clamped count and range) rides `imported:environment`, listed
 under `unmapped`. The `vehicle` is `drive` on the submarine and a helm child
-(`station {action: 'drive', input: {move: 'drive'}, exit}`); `minY`, `maxY` and `probes`
-ride `imported:vehicle`, listed under `unmapped`. Nothing is deferred.
+(`station {action: 'drive', input: {move: 'drive'}, exit}`); its `minY` (-230) and `maxY` (-4)
+are two hidden walls in the submarine's own collision layer, which only its collider's
+`mask` scans, so it still can't surface while another vehicle passes them; `probes` ride
+`imported:vehicle`, listed under `unmapped`. Nothing is deferred.
 
 The renderer supports four water bodies, sixteen pockets, and eight waves per body.
 Excess bodies and pockets produce a diagnostic and are inactive (the highest-priority

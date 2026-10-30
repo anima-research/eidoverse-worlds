@@ -37,8 +37,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why, free);   // a throw keeps", "  try { commitLease(w, st, host, why, free); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
   ["a drive step's failed commit unseats its driver", "protocol/authority/drive.js", 'commitLease(w, st, a.id, "periodic", false)', 'commitLease(w, st, a.id, "periodic")', ["D19"]],
   ["a failing commit retries forever", "protocol/authority/drive.js", "if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;", "throw x;", ["D18"]],
-  ["a hull meets no hull-only wall", "protocol/authority/drive.js", "for (const k of hullOnly(st)) if (!fam.has(k))", "for (const k of []) if (!fam.has(k))", ["D15"]],
-  ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\") && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
+  ["a hull meets no hull-only wall", "protocol/authority/drive.js", "for (const k of hullOnly(st)) if (", "for (const k of []) if (", ["D15"]],
+  ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\", mask) && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
+  ["a hull scans [1] whatever its mask", "protocol/authority/drive.js", "mask = maskOf(e.c);", "mask = [1];", ["D25", "D26"]],
+  ["layers unread (blocks alone decides)", "protocol/simlayer.js", "|| (mask !== null && !scans(mask, c))", "", ["D25", "D26"]],
+  ["the band's walls are in layer 1 (every hull meets them, translate-v1@31)", "tools/protocol/import-v1/translate-v1.js", "layer: [bandLayerOf(host)] }", "layer: [1] }", ["D25"]],
+  ["layer and mask unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(v).size !== v.length) return { code: \"shape\", reason: `${id}.collider.${f}", "if (false) return { code: \"shape\", reason: `${id}.collider.${f}", ["D27"]],
+  ["a dynamic thing may leave layer 1", "protocol/authority/checks.js", "if (c.physics?.kind === \"dynamic\" && !scans(LAYER_DEFAULT, c)) return", "if (false) return", ["D27"]],
   ["bodies meet every layer", "protocol/authority/spatial.js", "solidOff(st.entities[id]?.c, \"bodies\");", "solidOff(st.entities[id]?.c);", ["D15"]],
   ["the engine carries every layer", "protocol/simlayer.js", "sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "sphereShape(e.c.physics)) || solidOff(e.c)) return null;", ["D15"]],
   ["blocks unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(b).size !== b.length) return", "if (false) return", ["D17"]],
@@ -56,8 +61,8 @@ async function runSelf(tree: string, only: string[] | null) {
 if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = scratch("dmut"); for (const sub of ["shared", "server"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
-    const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
+    ran++; const d = scratch("dmut"); for (const sub of ["shared", "server", "tools/protocol/import-v1"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
+    const f = file.startsWith("tools/") ? path.join(d, file) : path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
     if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the rule moved?)`); continue; }
     fs.writeFileSync(f, src.replace(find, repl));
     const r = await runSelf(d, cases.length ? cases : null);
@@ -307,4 +312,31 @@ await C("D19", "a drive step whose inline commit keeps failing keeps its driver 
   try { for (let i = 1; i <= 40; i++) { try { rs.push(s.call("drive", { id: "hull", pos: [0, 1, 3 + i * 0.1], q: [0, 0, 0, 1] }, "vic")); } catch (e) { rs.push({ threw: true }); } } } finally { diskFails.on = false; console.warn = warn; }
   const occ = s.w().presence.occupants ?? {};
   return [rs.some((r) => r.dropped === true) && occ.vic?.to === "helm", { rs: rs.map((r) => r.threw ? "threw" : r.dropped ? "dropped" : r.ok ? "ok" : (r.refused?.code ?? JSON.stringify(r).slice(0, 80))), occ }]; });
+// collision layers and masks (componentspec collider.layer/mask: Godot's collision_layer/collision_mask; owner 10-30, Basil 1.1)
+const TV = await imp("tools/protocol/import-v1/translate-v1.js");
+const climb = (s: any, id: string, x: number) => { const out: any[] = []; for (let y = 2; y <= 6; y++) { const r = s.call("drive", { id, pos: [x, y, 0], q: [0, 0, 0, 1] }, id === "hull" ? "vic" : "pat"); out.push(r.ok ? "ok" : `${r.refused?.code}:${r.refused?.blocker ?? ""}`); if (!r.ok) break; } return { steps: out, at: posOf(s, id)?.[1] ?? null, lease: s.w().presence.drives?.[id]?.pose?.pos?.[1] ?? null }; };
+await C("D25", "Basil 1.1, the translator's band (vehiclePartsOf {minY: 0, maxY: 3}): the banded hull still stops at its ceiling, and a second hull climbs past it to 6 m", () => {
+  const v = TV.vehiclePartsOf?.("hull", { helm: [0, 0.5, 0], speed: 4, minY: 0, maxY: 3 }); if (!v) return [false, { missing: TV.__missing }];
+  const s = session({ hull: { ...HULL, ...(v.mask ? { collider: { mask: v.mask } } : {}) } }); const made = v.walls.map(([id, c]: any) => show(s.call("create", { id, components: c })));
+  s.call("create", { id: "hull2", components: { ...HULL, transform: tf([10, 1, 0]) } }); s.call("create", { id: "helm2", components: helm("hull2") });
+  s.board("vic"); s.call("move", { to: [11.5, 0, 0] }, "pat"); const boarded = show(s.call("use", { id: "hull2", action: "drive" }, "pat"));
+  const banded = climb(s, "hull", 0), other = climb(s, "hull2", 10), ceiling = TV.wallChildId("hull", "ceiling");
+  return [made.every((x: string) => x === "ok") && boarded === "ok" && banded.steps.at(-1) === `solid:${ceiling}` && banded.lease < 3 && other.steps.every((x: string) => x === "ok") && other.lease === 6,
+    { made, boarded, banded, other, mask: v.mask, wallLayer: v.walls[0]?.[1]?.collider?.layer }]; });
+await C("D26", "Godot's rule, by hand: a wall in layer 2 (blocks absent) stops a hull whose mask scans 2, lets one scanning [1] through, and a body walks through it (bodies scan [1]); blocks still gates by kind (a [bodies] wall in layer 2 stops no hull)", () => {
+  const wall2 = (blocks?: any) => ({ transform: tf([0, 0, 6]), mesh: { shape: "box", size: [6, 3, 0.2] }, collider: { layer: [2], ...(blocks ? { blocks } : {}) } });
+  const run = (mask: any, blocks?: any) => { const s = session({ hull: { ...HULL, collider: { mask } } }); s.call("create", { id: "wall", components: wall2(blocks) }); s.board("vic");
+    return [3, 4.5, 6].map((z) => show(s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic"))); };
+  const scans2 = run([1, 2]), scans1 = run([1]), kind = run([2], ["bodies"]);
+  const t = session({ hull: null, seats: false }); t.call("create", { id: "wall", components: { ...wall2(), transform: tf([0, 0, 3]) } });
+  const walks = [1, 2, 3, 4, 5].map((z) => show(t.call("move", { to: [0, 0, z] }, "vic")));
+  return [scans2.some((x) => /^solid: .*\bwall$/.test(x)) && scans1.every((x) => x === "ok") && kind.every((x) => x === "ok") && walks.every((x) => x === "ok"),
+    { scans2, scans1, kind, walks }]; });
+await C("D27", "the door: layer and mask are lists of numbers 1..32 or names, each once; a dynamic thing keeps 1 in its layer (the layer loose things scan)", () => {
+  const s = session({ hull: null, seats: false }); const mk = (id: string, collider: any, physics?: any) => s.call("create", { id, components: { transform: tf([9, 2, 0]), mesh: { shape: "box", size: [1, 1, 1] }, collider, ...(physics ? { physics } : {}) } });
+  const r: any = { zero: mk("a", { layer: [0] }), big: mk("b", { mask: [33] }), upper: mk("c", { layer: ["Band"] }), twice: mk("d", { mask: [2, 2] }), str: mk("e", { layer: "band" }),
+    dyn: mk("f", { layer: ["band"] }, { kind: "dynamic" }), good: mk("g", { layer: [1, "band-x"], mask: [3, "band-x"] }), dynOk: mk("h", { layer: [1, 4] }, { kind: "dynamic" }) };
+  return [["zero", "big", "upper", "twice", "str", "dyn"].every((k) => !r[k].ok) && /isn't a layer/.test(r.zero.refused?.reason ?? "") && /twice/.test(r.twice.refused?.reason ?? "") && /layer.*1/.test(r.dyn.refused?.reason ?? "") && r.good.ok && r.dynOk.ok,
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
+
 console.log(`[drive-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

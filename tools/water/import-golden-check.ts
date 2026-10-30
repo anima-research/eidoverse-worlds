@@ -111,7 +111,7 @@ C("G4", "a real authority takes the whole batch: every create and set, its place
   const band = (q) => { const o = openWorld(`water-o${q[0] ? "f" : "u"}`), go = (verb, args) => { clock.advance(1000); return D.request(o, "olive", verb, args); };
     go("create-world", { title: "o" }); const pos = [26, -100, 60];
     go("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -300 } }); go("set", { id: "@world", component: "bounds", value: { min: [-100, -290, -100], max: [100, 50, 150] } });
-    const made = go("batch", { ops: [{ verb: "create", args: { id: "$sub", components: { transform: { pos, q, scale: [1, 1, 1] }, model: CRATE, drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 } } } },
+    const made = go("batch", { ops: [{ verb: "create", args: { id: "$sub", components: { transform: { pos, q, scale: [1, 1, 1] }, model: CRATE, drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 }, collider: { mask: TV1.vehiclePartsOf("sub", m).mask } } } },   // it scans its band's layer (@32)
       { verb: "create", args: { id: "$helm", components: { transform: { pos: [0, 0.3, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: "$sub" }, socket: { name: "helm" }, station: { action: "drive", input: { move: "drive" } } } } }] });
     if (!made.ok) return { hull: null, said: { made: `${made.refused?.code}: ${made.refused?.reason}` }, good: false };
     const sub = made.ids.$sub, helm = made.ids.$helm;

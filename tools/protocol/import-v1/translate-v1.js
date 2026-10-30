@@ -123,7 +123,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@31";
+export const TRANSLATOR = "eidoverse/translate-v1@32";
+// @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
+// [band-<hash of its id>]}) and its host scans it (collider {mask: [1, that layer]}), so only it meets them; @29-@31's walls stopped every hull. Output differs there.
 // @31 (LEGACY-PINS 10-29, items 2, 6, 8, 9): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
 // (stageBoundsOf); main's inferred lamps are light children (lampPartsOf); water.speed is the water's own drag (waterOfOld), not a
 // physics-area; an ownerless world no longer carries imported:ownerless (the upgrader's claim is its owner). Output differs there.
@@ -225,7 +227,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@31";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@32";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -308,7 +310,7 @@ export const DEFERRED = {};
 export const CARRIED = {
   traversal: { feature: "climb route", to: "one child per route: climb {points (path), reach (radius), speed} + label (name)" },
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
-  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only hulls meet (collider {blocks: ['hulls']}), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls stand at [0, y, 0] and span 200 km (every legal x/z), so every vehicle meets every band wherever it moves; each is locked (builder strength, as every translated lock: no edit moves or deletes it by accident, a builder may lift it knowingly); probes → imported:vehicle, listed with what becomes of it (FATES)" },
+  vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only this vehicle meets (collider {blocks: ['hulls'], layer: [its own band layer]}, its host's collider {mask: [1, that layer]}: Godot's collision layers), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls stand at [0, y, 0] and span 200 km (every legal x/z), so the vehicle meets its band wherever it moves, and another vehicle passes through it; each is locked (builder strength, as every translated lock: no edit moves or deletes it by accident, a builder may lift it knowingly); probes → imported:vehicle, listed with what becomes of it (FATES)" },
   picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
   environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
 };
@@ -322,22 +324,25 @@ export function materialOf(d) {
 }
 export const climbChildId = (host, i) => `climb-${i}-${sha256(`eido-climb\0${host}\0${i}`).slice(0, 26)}`;
 export const helmChildId = (host) => `helm-${sha256(`eido-helm\0${host}`).slice(0, 26)}`;
-/** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, walls: [[id, components]], left (no
- *  home: imported:vehicle)}; main's clamps. The walls stand at [0, y, 0] spanning every legal x/z, so a moved host re-places nothing (review delta-260 L-C) */
+/** main's vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes} → {drive, helm: [id, components] | null, walls: [[id, components]], mask (the
+ *  host's collider.mask, null with no walls), left (no home: imported:vehicle)}; main's clamps. The walls stand at [0, y, 0] spanning every legal x/z, so a
+ *  moved host re-places nothing (review delta-260 L-C); they are on the host's own layer (bandLayerOf), which only its mask scans (Basil 1.1) */
 export function vehiclePartsOf(host, d, hull = null) {
   const v = d && typeof d === "object" && !Array.isArray(d) ? d : {}, v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   const { helm, exit, speed, turnRate, minY, maxY, ...rest } = v, s = clampN(speed, 0.1, 15, 4);
   // main clamped the hull's origin; a wall stops the hull's box, so each wall is set off by the hull's extent (hullExtentOf)
   const below = hull?.below ?? 0, above = hull?.above ?? 0;
   const wall = (y, which, said) => [wallChildId(host, which), { transform: { pos: [0, y, 0], q: [0, 0, 0, 1], scale: [WALL_SPAN / 200, WALL_T, WALL_SPAN / 200] },
-    mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, clickthrough: true, lock: true, collider: { shape: "box", blocks: ["hulls"] }, label: `${said} (main's vehicle ${which === "floor" ? "minY" : "maxY"})` }];
+    mesh: { shape: "box", size: [200, 1, 200] }, hidden: true, clickthrough: true, lock: true, collider: { shape: "box", blocks: ["hulls"], layer: [bandLayerOf(host)] }, label: `${said} (main's vehicle ${which === "floor" ? "minY" : "maxY"})` }];
   const walls = [...(Number.isFinite(minY) ? [wall(minY - below - WALL_T, "floor", "vehicle floor")] : []), ...(Number.isFinite(maxY) ? [wall(maxY + above, "ceiling", "vehicle ceiling")] : [])];
   const drive = { maxSpeed: s, turnRate: clampN(turnRate, 0.1, 2, 0.45), climbRate: s };   // main normalised (0, ½·rise, thrust) × speed: straight up ran at speed
   const kid = v3(helm) ? [helmChildId(host), { transform: ID_POSE([...helm]), parent: { to: host }, socket: { name: "helm" }, label: "helm",
     station: { action: "drive", input: { move: "drive" }, leaveBy: "menu", ...(v3(exit) ? { exit: [...exit] } : {}) } }] : null;   // main left the helm by its E alone: Space rises
   const left = { ...rest, ...(kid ? {} : { helm }), ...(exit !== undefined && !v3(exit) ? { exit } : {}), ...(minY !== undefined && !Number.isFinite(minY) ? { minY } : {}), ...(maxY !== undefined && !Number.isFinite(maxY) ? { maxY } : {}) };
-  return { drive, helm: kid, walls, left };
+  return { drive, helm: kid, walls, mask: walls.length ? [1, bandLayerOf(host)] : null, left };
 }
+/** the collision layer a banded vehicle's walls are in: its own, so no other hull's mask scans it (componentspec collider.layer) */
+export const bandLayerOf = (host) => `band-${sha256(`eido-vehicle-band\0${host}`).slice(0, 26)}`;
 /** How far a hull's measured box (model frame [[min], [max]]) reaches below and above its origin once posed (q, scale): {below, above} m, or null unmeasured */
 export function hullExtentOf(box, q = [0, 0, 0, 1], scale = [1, 1, 1]) {
   if (!Array.isArray(box) || box.length !== 2 || ![...box[0], ...box[1]].every(Number.isFinite)) return null;
@@ -819,7 +824,8 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     const climbs = carried.traversal !== undefined ? climbPartsOf(enc(id), carried.traversal) : { children: [], left: [] };
     if (climbs.left.length || (carried.traversal !== undefined && !Array.isArray(carried.traversal?.routes))) c[keyed("imported", "traversal")] = climbs.left.length ? { routes: climbs.left } : carried.traversal;
     const veh = carried.vehicle !== undefined ? vehiclePartsOf(enc(id), carried.vehicle, hullExtentOf(col?.boxOf?.(e.lib), t.q, t.scale)) : null;
-    if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left; }
+    if (veh) { c.drive = veh.drive; if (Object.keys(veh.left).length) c[keyed("imported", "vehicle")] = veh.left;
+      if (veh.mask) c.collider = { ...(c.collider && typeof c.collider === "object" ? c.collider : {}), mask: veh.mask }; }   // @32: it scans its band's layer
     const ownDecay = c.light && typeof c.light === "object" && c.light.decay !== undefined;
     out[enc(id)] = shapeRepaired(c); if (!ownDecay) lightParity(enc(id), out[enc(id)], adjust);
     for (const [cid, cc] of [...vol.children, ...climbs.children, ...(veh?.helm ? [veh.helm] : []), ...(veh?.walls ?? [])]) out[cid] = shapeRepaired(cc);

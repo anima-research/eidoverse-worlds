@@ -50,4 +50,21 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   const why = async (a: any) => String((await ask(a))?.reply?.refused?.reason ?? "");   // review delta-260 L-H: each says what it is
   const said = { left: await why({ block: left }), never: await why({ allow: "u-zzzzzzzzzzzzzzzzzzzz" }) };
   ok(/guest/.test(said.left) && !/guest/.test(said.never) && /knows no one/.test(said.never), "C10c a departed guest is said as one; an id this server never knew is said as that, not as a guest", said); }
+// C11 (Basil 1.4; owner chose (a) 10-30): a landed block survives the live host's restart: the reopened authority still
+// refuses the blocked person and the read returns the block; the rest of presence (bodies) does not survive
+{ const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const { openLive, CONSENT_FILE } = await import("../../server/livehost.ts"); const { request } = await import("../../shared/protocol/authority.js");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "consent-restart-")), dir = path.join(root, "w"); fs.mkdirSync(dir);
+  const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb"; let now = 1800000000000;
+  const open = () => openLive(dir, "w", { now: () => now, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human" });
+  const call = (w: any, actor: string, verb: string, args: any = {}) => { now += 1000; try { return request(w, actor, verb, args); } catch (e: any) { return { crashed: String(e?.message ?? e) }; } };
+  const w1 = open(); call(w1, A, "create-world", { title: "w" });
+  for (const [who, at] of [[A, [0, 0, 0]], [B, [1, 0, 0]]] as const) call(w1, who, "move", { to: at });
+  const set = call(w1, A, "consent", { block: B });
+  const w2 = open(), bodies = Object.keys(w2.presence.bodies ?? {}).length;   // the restart: a new process opens the same directory
+  for (const [who, at] of [[A, [0, 0, 0]], [B, [1, 0, 0]]] as const) call(w2, who, "move", { to: at });
+  const read: any = call(w2, A, "consent"), shove: any = call(w2, B, "body", { to: A, kind: "shove" });
+  const mode = (() => { try { return fs.statSync(path.join(dir, CONSENT_FILE)).mode & 0o777; } catch { return null; } })();
+  ok(set.ok && (read.table?.block ?? []).includes(B) && shove.refused?.code === "consent" && mode === 0o600 && bodies === 0,
+    "C11 a block survives a restart: the reopened authority refuses the blocked person, the read returns it, the file is 0600; bodies don't survive", { set, read: read.table, shove, mode, bodies }); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);

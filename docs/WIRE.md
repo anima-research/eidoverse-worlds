@@ -81,6 +81,8 @@ Every message belongs to exactly one plane:
   was here until it was removed, 2026-10-18: spec/PROTOCOL.md §5 "Speech".)
   Presence crosses into the log only through checked requests
   (arriving, put, throw, drop).
+  A person's consent gates and lists are kept by the host across a restart
+  (spec/PROTOCOL.md §5 "Body consent"), never logged.
 
 ## 3. Client → server messages
 

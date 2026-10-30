@@ -9,13 +9,14 @@
 //   clock   monotonic: max(wall clock, every ts already written). §2.1 says ts never decreases; a monotonic authority
 //           clock also makes "advance the sim for a read, then fold a later entry" equal to folding it first.
 //   presence the authority's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
-//           file because its CLI ran one process per request).
+//           file because its CLI ran one process per request). The one exception is consent (consentFileIn below).
 // The log file is <dir>/world.jsonl (UTF-8 JSONL, §2.4); blobs are <dir>/blobs/sha256-<hex>.json, named by the full
 // hash of their JCS bytes, written once, verified on read (§2.2). Each line is appended and fsynced (durable.ts) before
 // the request returns: the authority has already re-read it with the strict reader.
 import fs from "node:fs";
 import path from "node:path";
 import { custodyFileIn } from "./keyfiles.ts";
+import { writePrivate } from "./fsutil.ts";
 import { readLog, fold, opsOf, applyInPlace, purgesIn, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
@@ -110,7 +111,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     name, entries, getBlob, putBlob, now, pace, catalogue: opts.catalogue, rate: opts.rate,
     scripts: opts.scripts === undefined ? SANDBOX : opts.scripts, present: opts.present, sayFloor: opts.sayFloor,
     writeLine: (line: string) => appendDurable(logPath, line),
-    presence: { bodies: {}, holds: {} }, savePresence: () => {},
+    presence: { bodies: {}, holds: {}, ...loadConsent(dir) }, savePresence: saveConsent(dir),
     custody: custodyAt(opts.custodyFile ?? custodyFileIn(path.dirname(dir))),
     nameOf: opts.nameOf ?? directoryFor(path.dirname(dir)).nameOf,
     kindOf: opts.kindOf ?? ((id: string) => directoryFor(path.dirname(dir)).entry(id)?.kind ?? null),
@@ -252,6 +253,29 @@ function genesisAt(p: string): any {
 }
 /** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
  *  (§2.4: the protocol's number is stated there and nowhere else). */
+// consent outlives a restart, the rest of presence doesn't: a block is a safety tool (review 1.4; PROTOCOL §5 "Consent")
+export const CONSENT_FILE = "consent.json";
+const CONSENT_KEYS = ["consent", "consentShape"] as const;
+/** the world's saved consent tables ({consent, consentShape}); none yet: {}. An unreadable file stops the boot (a block is never dropped quietly). */
+export function loadConsent(dir: string): Any {
+  const f = path.join(dir, CONSENT_FILE); let s: string;
+  try { s = fs.readFileSync(f, "utf8"); } catch (e: Any) { if (e?.code === "ENOENT") return {}; throw e; }
+  let v: Any; try { v = JSON.parse(s); } catch { v = null; }
+  if (!v || typeof v !== "object" || Array.isArray(v) || (v.consent !== undefined && (typeof v.consent !== "object" || Array.isArray(v.consent))))
+    throw new Error(`${f} isn't a consent file (people's blocks live there): fix or remove it, then open the world again`);
+  const tables = Object.create(null); for (const [who, t] of Object.entries<Any>(v.consent ?? {})) tables[who] = protoless(t);
+  return { consent: tables, ...(v.consentShape !== undefined ? { consentShape: v.consentShape } : {}) };
+}
+// the authority's tables are prototype-less (consent.js bag): the loaded ones are too
+const protoless = (v: Any): Any => (v && typeof v === "object" && !Array.isArray(v) ? Object.assign(Object.create(null), Object.fromEntries(Object.entries(v).map(([k, x]) => [k, protoless(x)]))) : v);
+/** savePresence for a live host: writes the consent part, only when it changed (fsutil.writePrivate: 0600, temp + rename) */
+function saveConsent(dir: string) {
+  let last: string | null = null;
+  return (p: Any) => { const s = JSON.stringify(Object.fromEntries(CONSENT_KEYS.filter((k) => p?.[k] !== undefined).map((k) => [k, p[k]])));
+    if (last === null) { try { last = fs.readFileSync(path.join(dir, CONSENT_FILE), "utf8"); } catch { last = "{}"; } }
+    if (s === last) return; writePrivate(path.join(dir, CONSENT_FILE), s); last = s; };
+}
+
 export function isWorldDir(dir: string): boolean {
   const g = genesisAt(path.join(dir, "world.jsonl"));
   return !!g && g.body?.dialect === DIALECT && g.body?.v === VERSION;

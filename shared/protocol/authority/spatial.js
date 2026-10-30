@@ -76,12 +76,12 @@ function fileIx(ix, id, g, cloned) {
   for (const k of cs) { let a = ix.grid.get(k); if (!a) ix.grid.set(k, (a = [])); else if (cloned && !cloned.has(k)) { ix.grid.set(k, (a = a.slice())); } cloned?.add(k); a.push(id); }
 }
 // switched off, or collision off: nothing to stand on, bump into or overlap (componentspec disabled, collider.enabled)
-// the index is what BODIES meet: a wall whose collider.blocks leaves bodies out is outside it (a hull-only wall: hullOnly below)
+// the index is what BODIES meet: a wall whose collider.blocks leaves bodies out, or whose layer bodies don't scan, is outside it (hullOnly below)
 const unindexed = (st, id) => !!offChain(st, id) || solidOff(st.entities[id]?.c, "bodies");
 const HULLONLY = new WeakMap();
-/** The things only a hull meets (collider.blocks has hulls, not bodies), in key order: outside the index, so the hull sweep asks here too. */
+/** The things a hull may meet that bodies don't (by collider.blocks or layer), in key order: outside the index, so the hull sweep asks here too (each hull's mask decides). */
 function hullOnly(st) { let a = HULLONLY.get(st.entities); if (a) return a;
-  a = Object.keys(st.entities).filter((id) => !offChain(st, id) && !solidOff(st.entities[id].c, "hulls") && solidOff(st.entities[id].c, "bodies"));
+  a = Object.keys(st.entities).filter((id) => !offChain(st, id) && !solidOff(st.entities[id].c, "hulls", null) && solidOff(st.entities[id].c, "bodies"));
   if (!VOLATILE.has(st.entities)) HULLONLY.set(st.entities, a); return a; }
 function buildIx(st, ver) {
   const ix = { cat: CTX.cat, ver, ents: st.entities, order: new Map(), next: 0, rec: new Map(), grid: new Map(), big: [], kids: null, memo: new Map() };

@@ -85,9 +85,16 @@ function fixedSet(st) {
 // switched off (componentspec disabled), itself or anything it hangs under: no body, no collider
 export function offChain(st, id) { for (let k = id, n = 0; k && n < 33; k = st.entities[k]?.c.parent?.to, n++) if (st.entities[k]?.c.disabled === true) return k; return null; }
 // collision off (componentspec collider.enabled): not solid to anything, itself only (its children keep their own)
-// `layer` (bodies | hulls | things): also off for a layer its collider.blocks leaves out (collision layers; componentspec collider)
+// `kind` (bodies | hulls | things): also off for a kind its collider.blocks leaves out, or when `mask` (what the mover scans;
+// bodies and engine things scan [1], a hull its own collider.mask; null: unasked) holds none of its collider.layer (componentspec collider)
 export const LAYERS = Object.freeze(["bodies", "hulls", "things"]);
-export const solidOff = (c, layer) => !!c && c.collider !== PURGED && (c.collider?.enabled === false || (layer !== undefined && Array.isArray(c.collider?.blocks) && !c.collider.blocks.includes(layer)));
+export const solidOff = (c, kind, mask = LAYER_DEFAULT) => !!c && c.collider !== PURGED && (c.collider?.enabled === false || (kind !== undefined && ((Array.isArray(c.collider?.blocks) && !c.collider.blocks.includes(kind)) || (mask !== null && !scans(mask, c)))));
+// Godot's collision layers (CollisionObject3D collision_layer / collision_mask; collides_with): a mover meets what is IN a layer its mask SCANS; absent, both are [1]
+export const LAYER_DEFAULT = Object.freeze([1]);
+const listOr1 = (v) => (Array.isArray(v) ? v : LAYER_DEFAULT);
+export const layerOf = (c) => listOr1(c?.collider?.layer);
+export const maskOf = (c) => listOr1(c?.collider?.mask);
+export const scans = (mask, c) => layerOf(c).some((x) => mask.includes(x));
 // a purged physical value is no body: the strict fold holds PURGED there, and this layer follows it (review of #260)
 const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === PURGED);
 // a place the record lost: a transform or parent purged, or stripped to its commit with no purge naming it (§12), on the
