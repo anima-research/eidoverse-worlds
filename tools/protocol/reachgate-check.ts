@@ -232,6 +232,36 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   ok(got3.length === 1 && got3[0].end != null && got3[0].pinAt === undefined && sly.got.slice(ks3).some((m) => m.type === "error"),
     "RG23c a nail (pinAt) sent with an end is refused (Sly is told); the end still reaches Vic, without it", { got3, sly: sly.got.slice(ks3) }); }
 
+{ const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });
+  const final = { end: true, pose: { hips: [0, 0, 0, 1] }, p: [8, 0, 0], yaw: 0.7, sim: { j: ["hips"], p: [8, 1, 0], v: [0, 1, 0] } };
+  req(vic, "consent", { move: true });
+  const kg = vic.got.length; drag({ grab: { joint: "hips" } });
+  ok(vic.got.slice(kg).some((m) => m.type === "bodydrag" && m.grab?.joint === "hips"), "Vic allows Sly's grab before closing move", vic.got.slice(kg));
+  const sample = { pose: { hips: [0, 0, 0, 1] }, p: [1, 0, 0], yaw: 0.2 };
+  const ks = vic.got.length; drag(sample);
+  const ongoing = vic.got.slice(ks).filter((m) => m.type === "bodydrag");
+  ok(ongoing.length === 1 && ongoing[0].end === undefined
+    && JSON.stringify(ongoing[0].pose) === JSON.stringify(sample.pose)
+    && JSON.stringify(ongoing[0].p) === JSON.stringify(sample.p) && ongoing[0].yaw === sample.yaw,
+    "An allowed ongoing drag sample reaches Vic without ending the drag", ongoing);
+  const ka = vic.got.length; drag(final);
+  const allowed = vic.got.slice(ka).find((m) => m.type === "bodydrag");
+  ok(allowed?.end === true && JSON.stringify(allowed.pose) === JSON.stringify(final.pose)
+    && JSON.stringify(allowed.p) === JSON.stringify(final.p) && allowed.yaw === final.yaw
+    && JSON.stringify(allowed.sim) === JSON.stringify(final.sim), "An allowed release carries the final handover", allowed);
+  req(vic, "consent", { move: false });
+  for (const [name, release] of [["final sample", final], ["final sample and nail", { ...final, pinAt: { joint: "hips", at: [8, 1, 0] } }]]) {
+    const k = vic.got.length; drag(release);
+    const got = vic.got.slice(k).filter((m) => m.type === "bodydrag");
+    ok(got.length === 1 && got[0].end === true && Object.keys(got[0]).sort().join(",") === "by,byActor,end,type",
+      `Once Vic closes move, Sly's ${name} becomes a bare release`, got);
+  }
+  const kb = vic.got.length; drag({ end: true });
+  const bare = vic.got.slice(kb).filter((m) => m.type === "bodydrag");
+  ok(bare.length === 1 && bare[0].end === true && Object.keys(bare[0]).sort().join(",") === "by,byActor,end,type",
+    "A bare release still reaches Vic while her move gate is closed", bare);
+}
+
 // RG16c (review of the house fixes): a touch the allow list admitted is let go: once its hand has landed and leaves, it is
 // no longer under way (touchedBy, and no body-revoked later for a hand that isn't there)
 { const rho = person("Rho", "h3", [-16, 0, -16]), sam = person("Sam", "j3", [-16.6, 0, -16]);
