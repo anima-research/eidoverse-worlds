@@ -75,11 +75,13 @@ try {
   writeFileSync(f2, await buildGlb([[-3, 0, -3, 3, 0.2, 3]] as any));
   {
     // 1MB on stderr — far past a pipe's buffer — then a report
+    Q.checkConfig.timeoutMs = 30_000;   // this row is about the drain, not the kill: a cold bun on a Windows runner can take >1.5 s to start
     Q.checkConfig.runner = worker("loud", `process.stderr.write("x".repeat(1 << 20)); console.log(JSON.stringify({ loud: true, levels: [] }));`);
     const r = await outcome(Q.checkFile(f2, 1.5));
     check("a worker that floods stderr before answering is heard (its stderr is drained)", r.ok && (r as any).r.loud === true, JSON.stringify(r).slice(0, 160));
   }
   {
+    Q.checkConfig.timeoutMs = 1500;
     Q.checkConfig.runner = worker("stuck", `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
 process.on("SIGTERM", () => {});   // won't stop when asked
 process.stderr.write("y".repeat(1 << 20));
