@@ -2,30 +2,32 @@
 // continuation, success (+ stale .deferred retired), 'not smaller' marker, capped child death → .deferred and
 // retried, wrapper 126 → environmental (no marker, queue dropped), stale-marker retirement when the variant
 // exists already, and both boot sweeps skipped under SKIP_OPT_SWEEP (subprocess). Each case owns its store.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, chmodSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
 const root = mkdtempSync(join(tmpdir(), "optpump-"));
-const fake = join(root, "fake-optimizer.sh");
-// the fake child reads its verdict from a file beside the source: "0" writes dest, "2" exits 2, "sig" dies by SIGSEGV
-writeFileSync(fake, `#!/bin/sh
-src=""; dest=""
-for a in "$@"; do case "$a" in --*) ;; *) if [ -z "$src" ]; then src="$a"; else dest="$a"; fi;; esac; done
-v=$(cat "$src.verdict" 2>/dev/null || echo 0)
-[ -n "$OPT_RECEIPTS" ] && echo "$dest" >> "$OPT_RECEIPTS"   # every invocation leaves a receipt the harness can count
-case "$v" in
-  0) mkdir -p "$(dirname "$dest")"; printf 'tiny' > "$dest"; exit 0;;
-  sig) kill -SEGV $$;;
-  long) i=0; while [ $i -lt 30 ]; do echo "[optimize] per-texture note $i: no sharp to resize it — a long line padded out to well over one hundred characters of text" >&2; i=$((i+1)); done
-        echo "[optimize] not smaller (1.00x) recipe=texel1024 __TOOLS__" >&2; exit 2;;
-  *) echo "fake verdict $v" >&2; exit "$v";;
-esac
-`); chmodSync(fake, 0o755);
+const fake = join(root, "fake-optimizer.ts");   // TS, run by bun (upload.ts OPT_CMD): a #!/bin/sh fake is no executable on Windows
+// the fake child reads its verdict from a file beside the source: "0" writes dest, "2" exits 2, "sig" dies by a signal
+writeFileSync(fake, `import { readFileSync, appendFileSync, mkdirSync, writeFileSync, writeSync } from "node:fs";
+import { dirname } from "node:path";
+const [src, dest] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+let v = "0"; try { v = readFileSync(src + ".verdict", "utf8").trim(); } catch { /* none: success */ }
+if (process.env.OPT_RECEIPTS) appendFileSync(process.env.OPT_RECEIPTS, dest + "\\n");   // every invocation leaves a receipt the harness can count
+const err = (s: string) => writeSync(2, s + "\\n");
+if (v === "0") { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, "tiny"); process.exit(0); }
+if (v === "sig") process.kill(process.pid, "SIGKILL");   // a signal death; SIGSEGV made bun dump core (~13 s a run). Linux-only row
+if (v === "long") {
+  for (let i = 0; i < 30; i++) err(\`[optimize] per-texture note \${i}: no sharp to resize it — a long line padded out to well over one hundred characters of text\`);
+  err("[optimize] not smaller (1.00x) recipe=texel1024 __TOOLS__"); process.exit(2);
+}
+err("fake verdict " + v); process.exit(Number(v));
+`);
 process.env.SKIP_OPT_SWEEP = "1";   // the parent's own boot timers must not sweep the real library through the fake
 process.env.WORLDS_DIR = join(root, "worlds"); process.env.OPT_DIR = join(root, "opt"); process.env.JOIN_TOKEN = "t"; process.env.OPT_CMD = fake;   // OPT_DIR: NEVER the checkout's store
-process.env.OPT_MEM_BUDGET_MB = "10"; process.env.OPT_COST_FACTOR = "1"; process.env.KTX2_TOKTX = "";
+process.env.OPT_MEM_BUDGET_MB = "4000"; process.env.OPT_COST_FACTOR = "1000";   // a cap bun itself starts under (the fake is a bun)
+ process.env.KTX2_TOKTX = "";
 // the verdict names the tools it was measured with (tools-stamp.ts) — THIS process's, which the pump also reads by
 const { toolsStamp } = await import("../server/tools-stamp.ts");
 writeFileSync(fake, readFileSync(fake, "utf8").replace("__TOOLS__", toolsStamp()));
@@ -35,8 +37,8 @@ const src = (name: string, bytes: number, verdict: string) => {
   const dir = join(root, "src"); mkdirSync(dir, { recursive: true });
   const p = join(dir, name); writeFileSync(p, Buffer.alloc(bytes, 1)); writeFileSync(p + ".verdict", verdict); return p;
 };
-const storeDest = (p: string) => join(STORE_MIN, p.split("/").pop()!);
-// 1. estimate defer: 20 MB × factor 1 > 10 MB budget → .deferred, and the NEXT item still runs
+const storeDest = (p: string) => join(STORE_MIN, basename(p));
+// 1. estimate defer: 20 MB × factor 1000 > 4000 MB budget → .deferred, and the NEXT item still runs
 const big = src("big.glb", 20_000_000, "0"), small = src("small.glb", 1000, "0");
 queueOptimize(big); queueOptimize(small); await optIdle();
 ok(existsSync(storeDest(big) + ".deferred") && /budget/.test(readFileSync(storeDest(big) + ".deferred", "utf8")), "over-budget item deferred with the reason");

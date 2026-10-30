@@ -4,22 +4,24 @@
 // (source in the library, variants in the OPT mirror) and store layout (beside the original) both resolve; anything
 // that is not an original object — traversal, a variant name, a missing file, a non-GLB — is refused, with nothing
 // queued. Then the route: 401 without the token, 400 on a bad path, 200 with the passes named.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, chmodSync, statSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, statSync, utimesSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 let pass = 0, fail = 0;
 const check = (n: string, ok: boolean, d: unknown = "") => { ok ? pass++ : fail++; console.log(`  ${ok ? "\x1b[32m✓" : "\x1b[31m✗"}\x1b[0m ${n}${ok ? "" : `  ${JSON.stringify(d)}`}`); };
 const root = mkdtempSync(join(tmpdir(), "rebuild-"));
-const fake = join(root, "fake.sh"), receipts = join(root, "receipts.txt");
-writeFileSync(fake, `#!/bin/sh
-src=""; dest=""; mode=""
-for a in "$@"; do case "$a" in --*) mode="$a";; *) if [ -z "$src" ]; then src="$a"; else dest="$a"; fi;; esac; done
-echo "$mode $dest" >> "${receipts}"
-if [ -f "${root}/refuse-once" ]; then cat "${root}/refuse-once" >&2; rm -f "${root}/refuse-once"; exit 2; fi
-if [ -f "${root}/refuse$mode" ]; then cat "${root}/refuse$mode" >&2; exit 2; fi
-if [ -f "${root}/crash$mode" ]; then echo "TypeError: boom at parse" >&2; exit 1; fi
-mkdir -p "$(dirname "$dest")"; printf 'rebuilt' > "$dest"; exit 0
-`); chmodSync(fake, 0o755); writeFileSync(receipts, "");
+const fake = join(root, "fake.ts"), receipts = join(root, "receipts.txt");   // TS, run by bun (upload.ts OPT_CMD): a #!/bin/sh fake is no executable on Windows
+writeFileSync(fake, `import { readFileSync, appendFileSync, mkdirSync, writeFileSync, writeSync, existsSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+const root = ${JSON.stringify(root)}, args = process.argv.slice(2);
+const mode = args.filter((a) => a.startsWith("--")).pop() ?? "", [src, dest] = args.filter((a) => !a.startsWith("--"));
+appendFileSync(${JSON.stringify(receipts)}, mode + " " + dest + "\\n");
+const say = (f: string) => writeSync(2, readFileSync(join(root, f)));
+if (existsSync(join(root, "refuse-once"))) { say("refuse-once"); rmSync(join(root, "refuse-once")); process.exit(2); }
+if (existsSync(join(root, "refuse" + mode))) { say("refuse" + mode); process.exit(2); }
+if (existsSync(join(root, "crash" + mode))) { writeSync(2, "TypeError: boom at parse\\n"); process.exit(1); }
+mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, "rebuilt"); process.exit(0);
+`); writeFileSync(receipts, "");
 Object.assign(process.env, { REBUILD_COOLDOWN_MS: "0", SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: join(root, "opt"), EIDOVERSE_DIR: join(root, "lib"),
   JOIN_TOKEN: "t0k", OPT_CMD: fake, OPT_MEM_BUDGET_MB: "0", KTX2_TOKTX: "" });
 const { rebuildAsset, optIdle } = await import("../server/upload.ts");
