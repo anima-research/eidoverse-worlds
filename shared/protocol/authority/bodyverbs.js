@@ -1,8 +1,8 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
-import { TRACK, areaFactor, swimThick, tokensAfter } from "../../mover.js";
-import { mediumOf, physicsAreasOf, speedFactorAt, waterVolumes, zonesOf } from "../../zone.js";
+import { TRACK, areaFactor, tokensAfter } from "../../mover.js";
+import { physicsAreasOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
@@ -28,10 +28,6 @@ import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnH
 import * as R from "../roles.js";
 const AREAS = new WeakMap();   // a folded state's physics areas (zone.js physicsAreasOf), once per state
 const areasOf = (st) => { let a = AREAS.get(st.entities); if (!a) AREAS.set(st.entities, (a = physicsAreasOf(st))); return a; };
-const WATERS = new WeakMap();
-const watersOf = (st) => { let z = WATERS.get(st.entities); if (!z) { const zones = zonesOf(st); WATERS.set(st.entities, (z = { zones, volumes: waterVolumes(zones) })); } return z; };
-const thickAt = (st, p) => { const z = watersOf(st), m = mediumOf(p, z.zones, { volumes: z.volumes });
-  return m.medium === "water" ? swimThick(z.zones.bodies.find((b) => b.id === m.body)?.water?.drag) : 1; };
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
 // owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
 const unlockFix = (w, st, k) => { const by = lastSetterOf(w, k, "lock");
@@ -105,7 +101,7 @@ const EMBODIED_VERBS = {
     { if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }
     { const sat = occupantOf(w, st, actor); if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }
     // a speed area that boosts (physics-area {kind: speed}) where the step starts or ends widens the track (mover tokensAfter)
-    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to))) * Math.max(1, thickAt(st, me.at), thickAt(st, to));
+    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to)));
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now), k);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${r3(TRACK.speed * Math.max(1, k))} m/s, ${r3(TRACK.cap * Math.max(1, k))} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);

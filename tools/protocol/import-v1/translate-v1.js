@@ -16,7 +16,6 @@ import { unNegZero } from "../../../shared/protocol/round.js";
 import { encRaw as enc, encNameRaw as encName, dec, partSlot, motionType } from "../../../shared/protocol/names.js";
 import { qNorm, qRotate } from "../../../shared/rot.js";
 import { waterParams } from "../../../shared/water.js";
-import { MOVER } from "../../../shared/mover.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { COMPONENTS, registered } from "../../../shared/protocol/componentspec.js";
 import { modernize as newParticles, hashSeed, isLegacy, derivedEffect, effectAddress, effectProblem, EFFECT_LIMITS } from "../../../shared/particle_effects.js";
@@ -123,7 +122,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@34";
+export const TRANSLATOR = "eidoverse/translate-v1@35";
+// @35 (owner 10-30, "despaghettify"): main's water.speed is physics-area {kind: speed, factor: speed / 2.4} on the water's zone again,
+// the one way an area changes how fast a body moves; @31-@34 wrote a water.drag field, which is gone. Output differs there.
 // @34 (decision table row 8): main's ambient motes are a derived dust document carrying its count, range and colour (EFFECT_LIMITS bound them: 600, 32 m), its defaults (16 m, #aec8b4) where unset; @33 named the dust Essential capped at 600 over 8 m. Output differs there.
 // @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0] (newSockets), where @32 wrote none (y 0). Output differs there.
 // @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
@@ -229,7 +230,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@34";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@35";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -425,7 +426,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → the water's own drag (1/s, Godot linear_damp: a swimmer there strokes at main's speed, walkers are untouched), drag = 5 × 2.4 / speed; a speed within 5% of 2.4 is dropped" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4} on that zone (2.4 m/s: the stroke a volume swims at here), which scales every body's speed inside it (walking and wading too, where main changed only the swim); a speed within 5% of 2.4 is dropped" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform" },
 };
 export const AIR_PRIORITY = 1;
@@ -437,15 +438,15 @@ const ID_POSE = (pos, q = [0, 0, 0, 1]) => ({ pos, q, scale: [1, 1, 1] });
 export function waterOfOld(d) {
   const { center, size, absorption, scatter, speed, ...rest } = d;
   const water = { ...rest };
-  // main's stroke in the volume as the water's drag (@31): the stroke reaches ease / drag of itself (shared/mover.js stepSwim)
+  // main's stroke in the volume, as × the one a body swims at here (waterParams' default): a physics-area (@35)
   const f = speed === undefined ? 1 : clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1);
-  if (Math.abs(f - 1) > SPEED_NEAR) water.drag = MOVER.swim.ease / f;
+  const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f } : null;
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
-  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water,
-    ...(speed !== undefined ? { speed: water.drag !== undefined ? { drag: water.drag } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };
+  return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water, ...(area ? { area } : {}),
+    ...(speed !== undefined ? { speed: area ? { "physics-area": area } : { dropped: `× ${f.toFixed(3)} of the stroke here, within ${SPEED_NEAR * 100}%` } } : {}) };
 }
-/** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a drag. */
+/** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-area. */
 export const SPEED_NEAR = 0.05;
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
@@ -453,9 +454,9 @@ export function volumePartsOf(host, comp, c) {
   const own = {}, children = [];
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
-    const m = waterOfOld(w);
-    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water });
-    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water }]);
+    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : {};
+    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
+    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
   }
   const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
   boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
@@ -489,7 +490,7 @@ export function volumeMappings(st) {
     if (e?.comp?.[k] == null) continue;
     const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
-    const sp = k === "water" && e.comp.water && typeof e.comp.water === "object" ? waterOfOld(e.comp.water).speed : undefined;   // @31: what main's speed became
+    const sp = k === "water" && e.comp.water && typeof e.comp.water === "object" ? waterOfOld(e.comp.water).speed : undefined;   // @35: what main's speed became
     out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}) });
   }
   return out;

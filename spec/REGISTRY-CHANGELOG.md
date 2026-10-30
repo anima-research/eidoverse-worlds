@@ -373,3 +373,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-30: wording only: water.density documented as reserved (read by nothing yet); light.decay's absence repaired by the maintenance command, never at load (review of #260)
   - light.decay: its meaning of absence "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load" → "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load"
   - water.density: its meaning "how dense the water is, kg/m³ (what a body floats against)" → "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)"
+- 2026-10-30: owner 10-30 ("despaghettify"): water.drag goes; physics-area {kind: speed} on the water's zone is the one way an area changes how fast a body moves, and translate-v1@35 writes main's water.speed as it again. Only test or scratch worlds translated at @31-@34 could carry water.drag (nothing was merged); no compatibility shim
+  - water.drag: type number → gone
+  - water.drag: its meaning of absence "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)" → gone

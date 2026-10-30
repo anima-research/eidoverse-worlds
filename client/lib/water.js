@@ -39,7 +39,6 @@ export const waveTime = () => waveClock(clock());
 
 /** The world's water level, or null when it has none. */
 export const waterLevel = () => current?.level ?? null;
-export const waterDrag = () => current?.drag ?? null;
 /** The level water's look and extent, for the underwater optics (watervolumes.js), or null. */
 export const levelWaterInfo = () => current ? { level: current.level, color: current.color, size: current.size } : null;
 /** Where the water's surface stands at (x, z) this instant — the level plus the same wave swimmers and floating
@@ -69,7 +68,7 @@ export function applyWater(args, heightAt) {
   // x = -size/2 + i·cell, z = -size/2 + j·cell, row by row — the same order waterkind indexes
   const A = analyzeWater(heightAt, size, { level: W.level, kind: args.water?.kind, flow: args.water?.flow }, seg);
   // The level is the world's whether or not the sheet shows: wading, depth and floating read it, not the mesh.
-  current = { mesh: null, level: W.level, analysis: A, color: W.color, size, drag: args.water?.drag ?? null };
+  current = { mesh: null, level: W.level, analysis: A, color: W.color, size };
   // what floats reads the same water (ammodoll.js, through terrain.js's seam)
   setWaterField({ level: W.level, sample: (x, z) => A.sample(x, z), time: waveTime });
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);

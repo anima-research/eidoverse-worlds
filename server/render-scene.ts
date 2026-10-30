@@ -14,7 +14,6 @@ import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
 import { waterParams } from "../shared/water.js";
 import { absorptionOf } from "../shared/zone.js";
-import { MOVER } from "../shared/mover.js";
 import { resolveParticles } from "../shared/particle_effects.js";
 import { normalizePicture } from "../shared/picture.js";
 import { normalizeSound } from "../shared/sound.js";
@@ -92,7 +91,7 @@ export function projectComponentData(comp: any, entityId = "") {
   // a water body is its zone's box in its own frame, the surface at water.level (shared/zone.js zonesOf, unscaled)
   const box = zoneBox(comp?.zone), w = comp?.water;
   if (box && w && typeof w === "object") { const bottom = -box[1] / 2, top = Number.isFinite(w.level) ? Math.max(bottom, Math.min(box[1] / 2, w.level)) : box[1] / 2;
-    const k = Number.isFinite(w.drag) && w.drag > 0 ? MOVER.swim.ease / w.drag : 1;   // main's speed is the water's drag (translate-v1 waterOfOld: drag = ease / speed)
+    const pa = comp["physics-area"], k = pa?.kind === "speed" && Number.isFinite(pa.factor) ? pa.factor : 1;   // main's speed is the zone's speed factor (translate-v1 VOLUMES.water)
     const { center, size, absorption, scatter, speed, waves } = waterParams({ center: [0, (top + bottom) / 2, 0], size: [box[0], top - bottom, box[2]], waves: w.waves, absorption: absorptionOf(w), scatter: w.scatterColor, speed: waterParams({}).speed * k });
     data.water = { center, size, absorption, scatter, speed, waves }; }
   const dry = comp?.["water-exclusion"];

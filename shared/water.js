@@ -77,5 +77,5 @@ export function waterPath(a, b, water, airs = []) {
 export function swimStep(pos, velocity, input, water, dt, time) {
   const stature = Number.isFinite(input.stature) && input.stature > 0 ? input.stature : 1;
   return stepSwim(vector(pos), vector(velocity), { ...input, direction: vector(input.direction), height: MOVER.body.height * stature },
-    { speed: water.speed, factor: input.factor, drag: water.drag, surfaceAt: (x, z) => waveHeight(water, x, z, time) }, dt);
+    { speed: water.speed, factor: input.factor, surfaceAt: (x, z) => waveHeight(water, x, z, time) }, dt);
 }

@@ -337,7 +337,7 @@ await tryRow('TE', async () => {
   r = W.call('set', { id: '@world', component: 'terrain', value: { seed: 4, water: { level: 1 } } });
   check('TE6 terrain.water is refused: water is its own component', code(r) === 'schema' && /water/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
   const Wa = COMPONENTS.water;
-  check('TE7 water: on @world or a thing (no `on`), {level (m), color (int), opacity, kind, flow, waves, attenuationColor/Distance, scatterColor, density, drag}, trial', Wa?.on === undefined && keys(Wa.fields) === keys({ level: 1, color: 1, opacity: 1, kind: 1, flow: 1, waves: 1, attenuationColor: 1, attenuationDistance: 1, scatterColor: 1, density: 1, drag: 1 }) && Wa.fields.color === 'int' && Wa.units?.level === 'm' && statusOf('water') === 'trial', Wa);
+  check('TE7 water: on @world or a thing (no `on`), {level (m), color (int), opacity, kind, flow, waves, attenuationColor/Distance, scatterColor, density}, trial', Wa?.on === undefined && keys(Wa.fields) === keys({ level: 1, color: 1, opacity: 1, kind: 1, flow: 1, waves: 1, attenuationColor: 1, attenuationDistance: 1, scatterColor: 1, density: 1 }) && Wa.fields.color === 'int' && Wa.units?.level === 'm' && statusOf('water') === 'trial', Wa);
   r = W.call('set', { id: '@world', component: 'water', value: { level: 0.5, color: 0x1d5a6e } });
   check('TE8 the door takes a water', r.ok, r.refused);
   check('TE8 …@world needs its level; on a thing, a sibling zone (shared/zone.js)', code(W.call('set', { id: '@world', component: 'water', value: { color: 0x1d5a6e } })) !== 'ok' && /sibling zone/.test(W.call('create', { components: { transform: { pos: [0, 0, 0] }, water: {} } }).refused?.fix ?? ''));

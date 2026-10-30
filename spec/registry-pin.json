@@ -2436,8 +2436,7 @@
    "attenuationColor": "vec3",
    "attenuationDistance": "number",
    "scatterColor": "vec3",
-   "density": "number",
-   "drag": "number"
+   "density": "number"
   },
   "enums": {
    "kind": [
@@ -2479,10 +2478,6 @@
    "density": {
     "gt": 0,
     "max": 20000
-   },
-   "drag": {
-    "min": 0,
-    "max": 100
    }
   },
   "absentMeans": {
@@ -2495,8 +2490,7 @@
    "attenuationColor": "the reader's own look for its kind (a level by kind; a body σ [0.16, 0.055, 0.025] per metre: shared/water.js waterParams)",
    "attenuationDistance": "the reader's own look for its kind, as attenuationColor",
    "scatterColor": "the reader's own look (a level by kind and daylight; a body [0.015, 0.12, 0.18]: shared/water.js waterParams)",
-   "density": "1000 kg/m³ (fresh water)",
-   "drag": "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)"
+   "density": "1000 kg/m³ (fresh water)"
   },
   "docs": {
    "level": "its surface height, metres, in its entity's frame (the world's on @world; on a thing, absent: its zone's top)",
@@ -2508,15 +2502,13 @@
    "attenuationColor": "the colour white light becomes after attenuationDistance of water, linear [r, g, b] 0..1 (KHR_materials_volume; absorption σ = −ln(c) / d per metre)",
    "attenuationDistance": "the distance, metres, at which light has become attenuationColor (KHR_materials_volume)",
    "scatterColor": "the colour the water scatters back, linear [r, g, b] 0..1 (Unity HDRP scatteringColor)",
-   "density": "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)",
-   "drag": "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction): a swimmer strokes at 5 / drag of its pace, and walkers on its floor are untouched"
+   "density": "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)"
   },
   "units": {
    "level": "m",
    "flow": "m/s",
    "attenuationDistance": "m",
-   "density": "kg/m³",
-   "drag": "1/s"
+   "density": "kg/m³"
   }
  },
  "zone": {

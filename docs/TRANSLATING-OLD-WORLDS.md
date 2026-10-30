@@ -82,11 +82,12 @@ report lists each one):
   this host measures it, so the hull's origin keeps main's band exactly (a hull
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
   band). Another vehicle passes through the band (@29-@31 stopped every one). Each wall is locked
-  (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is the
-  water's own `drag` (translate-v1@31; Godot's `linear_damp`): 5 × 2.4 / speed
-  per second, so a swimmer there strokes at main's pace and walkers on its
-  floor are untouched; a speed within 5% of 2.4 m/s (the stroke here) is
-  dropped, and the report says which.
+  (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is
+  `physics-area {kind: 'speed', factor: speed / 2.4}` on the water's zone
+  (translate-v1@35; 2.4 m/s is the stroke a volume swims at here), so a
+  swimmer there strokes at main's pace; it scales walking and wading on that
+  floor too, where main changed only the swim. A speed within 5% of 2.4 m/s
+  is dropped, and the report says which.
 - *The stage edge* (translate-v1@31): where main had neither bounds nor a
   terrain it kept walkers and swimmers within 78 m of the origin and fliers
   under 60 m. Here `@world.bounds` is the only edge, so such a world gets the
