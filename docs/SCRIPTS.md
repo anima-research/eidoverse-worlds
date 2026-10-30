@@ -142,10 +142,13 @@ Events (`e`): every event has `on`.
 - `enter` / `leave`: `by`, live only: the act records no identity for an arrival or a departure (no `trigger` actor, no
   `event.by`), so the log never holds who came and went because a script listened. An auditor re-runs it with a
   minted-shaped stand-in (`u-` and 20 lowercase) and, if the result differs from the log, again with one of another valid
-  shape (both valid identities, nobody's; an id never says what holds it, PROTOCOL §6a): when the two disagree it is
-  listed `skipped`; when they agree the mismatch is flagged `rerun-anon` (a difference to look at, never `rerun`, since
-  two stand-ins can't prove the result is the same for everyone). A script that treats ids of one shape differently from
-  another is fine: its two re-runs differ, and it is listed, not accused;
+  shape (both valid identities, nobody's; an id never says what holds it, PROTOCOL §6a). Each part that differs from the
+  log (its writes, its says, its `world.use` calls) is judged on its own: a part the two agree on is flagged `rerun-anon`,
+  naming it (a difference to look at, never `rerun`, since two stand-ins can't prove the result is the same for
+  everyone); the act is listed `skipped` when every differing part differs between the two, when the two read
+  differently, or when the second re-run fails. A script that treats ids of one shape differently from another is fine:
+  the part that turns on the shape differs between its two re-runs, and is listed, not accused; another part the two
+  agree on and the log doesn't is still flagged `rerun-anon`;
 - `changed:<comp>`: `id`, `comp`, `by` (whose request caused it), `seq` (the change entry). It fires for a change to that
   component on any id in the script's scope, by anyone but the script itself;
 - `tick`: nothing more. `wake`: `slept` (seconds asleep).
@@ -195,7 +198,7 @@ read who was near or a name, the auditor lists it as `skipped` (it can't be re-r
 
 ## Auditing a script
 
-Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that replay never re-runs code). An auditor may re-run the source with the recorded event, clock, seed and stand-ins for the presence reads and for an identity the act doesn't record. A result that doesn't depend on who was there is verified. An arrival whose re-run differs from the log is re-run with a second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2): if the two differ, it is reported as not re-runnable; if they agree, the mismatch is flagged `rerun-anon`, a difference to look at, never `rerun` (proof of a forgery), since two inputs can't show a result is the same for every identity. Nothing that depends on who was there is ever reported as verified.
+Moved from PROTOCOL §8 (one optional tool's procedure; the protocol keeps that replay never re-runs code). An auditor may re-run the source with the recorded event, clock, seed and stand-ins for the presence reads and for an identity the act doesn't record. A result that doesn't depend on who was there is verified. An arrival whose re-run differs from the log is re-run with a second stand-in of another shape (one minted-shaped (`u-` and 20 lowercase) and one of another valid shape, here a short name; both valid identities and nobody's, and neither says what holds it, §6a rule 2), and each part that differs from the log (writes, says, `world.use` calls) is judged on its own: a part the two agree on is flagged `rerun-anon`, naming it, a difference to look at, never `rerun` (proof of a forgery), since two inputs can't show a result is the same for every identity. The act is reported as not re-runnable when every differing part differs between the two, when the two read differently, or when the second re-run fails. Nothing that depends on who was there is ever reported as verified.
 
 ## Determinism (why some JavaScript behaves differently here)
 

@@ -20,9 +20,12 @@
 //   arrivals — an `enter` / `leave` activation records no identity (review r8 M4): the script heard `by` live, the act keeps
 //             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
 //             came is verified. One that differs from the log is re-run again with a SECOND stand-in of another shape (a minted-
-//             shaped one, then one of another valid shape; review r9 M2, r10 M3): if the two re-runs differ from each other it is
-//             `skipped`; if they agree, the mismatch is flagged `rerun-anon` (never `rerun`: two inputs can't prove a result is
-//             the same for every identity, so it is a mismatch to look at, not proof of a forgery).
+//             shaped one, then one of another valid shape; review r9 M2, r10 M3), and each part that differs from the log
+//             (writes, says, world.use calls) is judged on its own: a part the two re-runs agree on is flagged `rerun-anon`,
+//             naming it (never `rerun`: two inputs can't prove a result is the same for every identity, so it is a mismatch to
+//             look at, not proof of a forgery). The act is `skipped` when every differing part differs between the two, when the
+//             two read differently (they took different paths through the script), or when the second re-run fails. An unlogged
+//             grab or release is the same.
 // Replay of the WORLD never runs code (L1); this re-run is an optional audit view.
 import { fold, opsOf, followUpsOf, jcs } from "./fold.js";
 import { elide, seedOf, stampMotions } from "./scriptrules.js";
@@ -118,14 +121,15 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says), sameU = jcs(res.uses ?? []) === jcs(b.uses ?? []);
     if (sameW && sameS && sameU) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
+    // an arrival's mismatch on a part both stand-ins agree on is named as one (review r10 M3): two stand-ins that agree can't prove
+    // it is the same for every identity, so it is never reported as plain `rerun` (a forgery): `rerun-anon` says it differs and the re-run can't know who came
+    if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does a part depend on who came? two stand-ins agree → no
+      const parts = !r2.ok || jcs(readShape(r2.reads)) !== jcs(readShape(res.reads)) ? [] : [[!sameW, "writes", norm(elide(st, stampMotions(st, r2.ops, a.ts))) === norm(want)], [!sameS, "says", jcs(r2.says) === jcs(res.says)],
+        [!sameU, "world.use calls", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]].filter(([differs, , agree]) => differs && agree).map(([, name]) => name);
+      if (!parts.length) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; }
+      flags.push({ seq, check: "rerun-anon", why: `the re-run's ${parts.join(" and ")} differ from the log; it can't know who arrived or left (two stand-ins of different shapes agreed on ${parts.length > 1 ? "them" : "it"}), so this is a mismatch to look at, not proof of a forgery`, ...(parts.includes("writes") ? { want: want.length, got: got.length, at: state ? L.indexOf(state) : null } : {}) }); return; }
     // world.use proposals are recorded in the act (each target's outcome is its own act): a re-run must propose the same
     if (!sameU) { flags.push({ seq, check: "rerun-use", why: "the re-run's world.use calls differ from the act's" }); return; }
-    if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no
-      const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, stampMotions(st, r2.ops, a.ts))) === norm(want) && jcs(r2.says) === jcs(res.says);
-      if (!agree) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; } }
-    // an arrival's mismatch is named as one (review r10 M3): two stand-ins that agree can't prove the result is the same for
-    // every identity, so it is never reported as plain `rerun` (a forgery): `rerun-anon` says it differs and the re-run can't know who came
-    if (anonWho) { flags.push({ seq, check: "rerun-anon", why: `the re-run's ${!sameW ? "writes" : "says"} differ from the log; it can't know who arrived or left (two stand-ins of different shapes agreed), so this is a mismatch to look at, not proof of a forgery`, ...(!sameW ? { want: want.length, got: got.length, at: state ? L.indexOf(state) : null } : {}) }); return; }
     if (!sameW) flags.push({ seq, check: "rerun", why: "the re-run's writes differ from the logged batch", want: want.length, got: got.length, at: state ? L.indexOf(state) : null });
     if (!sameS) flags.push({ seq, check: "rerun-say", why: "the re-run's says differ from the logged ones" });
   });

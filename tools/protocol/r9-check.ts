@@ -36,7 +36,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the fold takes any followUps", "shared/protocol/fold.js", "if (\"followUps\" in body) followUpsCheck(body.followUps, body.ops.length);", "", ["H6"]],
   ["the exemption ignores when the occupant sat", "shared/protocol/authority/occupants.js", "if (own && rootOf(s.to) === own && unchangedSinceSat(s.since)) continue;", "if (own && rootOf(s.to) === own) continue;", ["M1", "M2"]],
   ["no escape from a script seat", "shared/sockbody.js", "if (kind === 'script' || kind === 'escape') return true;", "if (kind === 'script') return true;", ["E1", "E2"]],
-  ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!agree) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
+  ["the auditor skips every arrival mismatch", "shared/protocol/scriptaudit.js", "if (!parts.length) { skipped.push(", "if (true) { skipped.push(", ["A1"]],
   ["the agent ignores unseated", "mcpl/agent.ts", "if (vacatedFromMine(m, this.myOccupancy)) {", "if (false) {", ["U1"]],
   ["unseated from any seat", "shared/sockbody.js", "u.socket === mount.to);", "true);", ["U2"]],
   ["no re-anchor on a step off a seat", "shared/protocol/authority/bodyverbs.js", "if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor];", "", ["T1"]],

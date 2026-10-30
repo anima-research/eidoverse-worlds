@@ -42,7 +42,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the stand tile held does nothing", "client/lib/localbody.js", "if ((keys.has('KeyX') || escapeTile) && !mayLeave(body, 'menu'))", "if (keys.has('KeyX') && !mayLeave(body, 'menu'))", ["E1"]],
   ["creatorOf merges a new life", "shared/protocol/authority/rights.js", "if (o.verb === \"set\" && o.comp === comp) restored = false;", "", ["H3"]],
   ["the second stand-in is minted-shaped", "shared/protocol/scriptaudit.js", "export const ARRIVAL_STAND_IN_2 = \"zq-stand-in\";", "export const ARRIVAL_STAND_IN_2 = \"u-\" + \"b\".repeat(20);", ["A1", "A2"]],
-  ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", "if (anonWho) { flags.push({ seq, check: \"rerun-anon\"", "if (false) { flags.push({ seq, check: \"rerun-anon\"", ["A3"]],
+  ["an arrival mismatch is a forgery", "shared/protocol/scriptaudit.js", ": {}) }); return; }", ": {}) }); }", ["A3"]],
   ["resettle under the asker", "shared/protocol/authority/followups.js", "let after = after0; const actor = \"system\";", "let after = after0; const actor = asker;", ["F1"]],
   ["a created child's pose is read from before the write", "shared/protocol/authority/followups.js", "const was = (k) => (before.entities[k] ? worldT(before, k) : null) ?? worldT(after, k);", "const was = (k) => worldT(before, k);", ["F3"]],
   ["the set-down is the deleter's write", "shared/protocol/authority/writes.js", "ops.push(followUp(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] })));", "ops.push(setOp(id, \"transform\", { ...t, pos: [t.pos[0], r3(t.pos[1] - (b.min[1] - now.y)), t.pos[2]] }));", ["F2"]],
