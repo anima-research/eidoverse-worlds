@@ -91,4 +91,15 @@ const mig = (consent: any) => { const p: any = { consent, consentShape: 3, asks:
   check("M5", "a table from before the switch reads as the switch it became, then as gates: Normal's closed cells → both off; a pause → both off", p.consent.me.move === false && p.consent.me.touch === false && p.consent.eve.move === false && p.consent.eve.touch === false && !/cells|friends|preset|paused/.test(JSON.stringify(p.consent)), p.consent); }
 { const p = mig({ me: { switch: "refuse" } }); const once = JSON.stringify(p); C.migratePresence(p); set(p, { move: true });
   check("M6", "the asks, their cool-downs and rate are dropped, the plane is marked, and a second load changes nothing (a gate chosen since stays chosen)", !("asks" in p) && !("cool" in p) && !("asked" in p) && !("askSeq" in p) && p.consentShape === C.CONSENT_SHAPE && C.CONSENT_SHAPE === 4 && (C.migratePresence(p), p.consent.me.move === true) && JSON.parse(once).consent.me.move === false, p); }
+// M12–M13 (#260, Stella item 2): "never wider" covers near, follow and voice too: an old no stays no after the migration
+const UNG = ["near", "follow", "voice"], ung = (p: any, wd?: unknown, from = "pal") => UNG.map((c) => d(p, c, wd, from));
+{ const paused = mig({ me: { preset: "normal", paused: true } }), refuse = mig({ me: { switch: "refuse" } }), ask = mig({ me: { switch: "ask" } }), accept = mig({ me: { switch: "accept" } });
+  const open = mig({ me: { preset: "open", cells: { everyone: { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" } } } }), fresh = P();
+  check("M12", "a paused table, a refuse or ask switch keep near, follow and voice deny after migration (kept in `closed`); accept, an untouched body and an open row's allows stay allow (open's follow ask → deny)",
+    [paused, refuse, ask].every((p) => ung(p).every((m) => m === "deny") && all(p, [...MOVE, ...TOUCH], "deny")) && JSON.stringify(Object.keys(paused.consent.me.closed ?? {})) === JSON.stringify(UNG)
+    && ung(accept).every((m) => m === "allow") && ung(fresh).every((m) => m === "allow") && JSON.stringify(ung(open)) === '["allow","deny","allow"]',
+    { paused: ung(paused), refuse: ung(refuse), ask: ung(ask), accept: ung(accept), open: ung(open), closed: paused.consent.me.closed }); }
+{ const p = P(); check("M13", "a world's stored body-default refuse or ask (the switch's words) keeps near, follow and voice deny; the gates' {move, touch} default leaves them allow",
+    ung(p, "refuse").every((m) => m === "deny") && ung(p, "ask").every((m) => m === "deny") && ung(p, { move: true, touch: true }).every((m) => m === "allow") && ung(p, "accept").every((m) => m === "allow"),
+    { refuse: ung(p, "refuse"), obj: ung(p, { move: true, touch: true }) }); }
 console.log(`[gates-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

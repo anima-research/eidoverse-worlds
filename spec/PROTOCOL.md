@@ -819,7 +819,10 @@ copy that was updated and is published again keeps its parts' keys.
   panel says it stands); the reference keeps each world's in `consent.json`
   beside its log, 0600, written whole (server/livehost.ts). They are never
   logged. Near, follow and voice are classes
-  no gate covers yet; nothing enforces them. The designs this replaced (the
+  no gate covers yet; nothing enforces them. "Never wider" covers them too: a
+  no (or an ask) to one of them in an old table, switch or world default is
+  kept (the table's `closed`), the decision answers deny, and an act that
+  enforces one reads that first. The designs this replaced (the
   table of presets, tiers, pause and delegates; then one switch
   `accept|ask|refuse` with live asks) are kept as a record in
   `docs/CONSENT-TABLE-RECORD.md`; a stored table or switch is read once as

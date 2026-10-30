@@ -7,7 +7,8 @@
 //   lists   allow = these people always may, every class, whatever the gates say; block = these never may. Block beats allow.
 // Its history: a table of cells per tier (to 10-20), then one switch accept|ask|refuse (to 10-28); `ask` and its inbox are
 // on branch archive/consent-ask. A stored table in either shape is read and rewritten (migratePresence, at load).
-// near, follow and voice are named classes no gate covers yet (nothing here enforces them): the lists still answer them.
+// near, follow and voice are named classes no gate covers yet (nothing here enforces them): the lists still answer them, and
+// so does an old no kept in the table's `closed` (migratePresence), for the act that will enforce one to read first.
 import { CONTACT_POINTS, canonicalPoint } from "../contact.js";
 export const CLASSES = ["near", "follow", "touch", "intimate", "pose", "shove", "displace", "voice"];
 export const ENFORCED = ["touch", "intimate", "pose", "shove", "displace"];
@@ -77,9 +78,11 @@ export function decide(P, from, to, cls, worldDefault) {
   cls = classOf(cls); const t = P.consent?.[to];
   if (listed(t, "block", from)) return { mode: "deny", gate: null, why: `${to} never allows ${from}` };
   if (listed(t, "allow", from)) return { mode: "allow", listed: true, why: `${to} always allows ${from}` };
-  const gate = GATE_OF[cls]; if (!gate) return { mode: "allow", why: `no gate covers ${cls}` };
+  const gate = GATE_OF[cls], wd = worldDefault ?? P.bodyDefault;   // the authority keeps P.bodyDefault = @world.body-default
+  if (!gate) return t?.closed?.[cls] ? { mode: "deny", why: `${to} said no to ${cls} before the gates (kept: migratePresence)` }
+    : wd === "refuse" || wd === "ask" ? { mode: "deny", why: `this world's old default (${wd}) said no to ${cls}` } : { mode: "allow", why: `no gate covers ${cls}` };
   if (typeof t?.[gate] === "boolean") return { mode: t[gate] ? "allow" : "deny", gate, why: `${to}'s ${gate} gate is ${t[gate] ? "on" : "off"}` };
-  const w = worldGates(worldDefault ?? P.bodyDefault)[gate];   // the authority keeps P.bodyDefault = @world.body-default
+  const w = worldGates(wd)[gate];
   const on = typeof w === "boolean" ? w : DEFAULT_GATES[gate];
   return { mode: on ? "allow" : "deny", gate, why: `this world's default for ${gate} is ${on ? "on" : "off"}` };
 }
@@ -119,15 +122,29 @@ export function setConsent(P, actor, a) {
  *  10-28): refuse or ask → both gates off (ask was no until yes); accept → move on, touch left to the world's default. A table
  *  before the switch (to 10-20: preset, cells, pause, friends) is read as the switch it became then: paused or any enforced
  *  class closed for everyone → refuse, else any ask → ask, else accept. Per-person answers become the lists: any class
- *  denied or asked → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). The
+ *  denied or asked → block; else every enforced class allowed with no end → allow (fewer, or one with an end, is dropped: the gates answer). A no
+ *  (or ask) to near, follow or voice from the switch, a pause or the everyone row is kept in `closed` (UNGATED). The
  *  asks, their cool-downs and their rate are dropped, silently (R 10-28 13:03: "we're keeping their gates"). Returns how many
  *  tables changed. In place; idempotent. */
 export const CONSENT_SHAPE = 4;
+/** The classes no gate covers (near, follow, voice): an old no to one is kept in the table's `closed`, which decide reads (#260, Stella item 2). */
+export const UNGATED = Object.freeze(CLASSES.filter((c) => !GATE_OF[c]));
+function closedOf(t, sw) {
+  if (sw === "refuse" || sw === "ask") return UNGATED;   // the switch answered every class; ask was no until yes (F3)
+  if (typeof t.switch === "string" || !isTable(t)) return [];
+  const row = rowOf(t, "everyone"); return UNGATED.filter((c) => row[c] !== "allow");
+}
+/** A table before the switch: its answers for one tier (the preset's, then its cells). */
+function rowOf(t, tier) {
+  const row = { ...(PRESETS[t.preset] ?? PRESETS[DEFAULT_PRESET])[tier] };
+  for (const [k, r] of Object.entries(t.cells ?? {})) if (tierOf(k) === tier && r && typeof r === "object") for (const [c, m] of Object.entries(r)) row[classOf(c)] = modeOf(m);
+  return row;
+}
+const isTable = (t) => !(t.preset === undefined && t.cells === undefined && !t.paused);
 function switchOf(t) {
   if (typeof t.switch === "string") return t.switch;
-  if (t.preset === undefined && t.cells === undefined && !t.paused) return undefined;
-  const row = { ...(PRESETS[t.preset] ?? PRESETS[DEFAULT_PRESET]).everyone };
-  for (const [tier, r] of Object.entries(t.cells ?? {})) if (tierOf(tier) === "everyone" && r && typeof r === "object") for (const [c, m] of Object.entries(r)) row[classOf(c)] = modeOf(m);
+  if (!isTable(t)) return undefined;
+  const row = rowOf(t, "everyone");
   const modes = ENFORCED.map((c) => row[c]);
   return t.paused || modes.includes("deny") ? "refuse" : modes.includes("ask") ? "ask" : "accept";
 }
@@ -138,6 +155,7 @@ export function migratePresence(P) {
     const old = ["switch", "over", "preset", "cells", "paused", "friends", "delegates"].filter((k) => Object.hasOwn(t, k)); if (!old.length) continue;
     const sw = switchOf(t);
     if (sw === "refuse" || sw === "ask") { t.move = false; t.touch = false; } else if (sw === "accept") t.move = true;   // F3, R 10-28 16:02
+    for (const c of closedOf(t, sw)) (t.closed ??= bag())[c] = true;   // never wider for the ungated three too (UNGATED)
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
       const cells = Object.entries(row).filter(([, c]) => c && typeof c === "object"), yes = new Set(cells.filter(([, c]) => c.mode === "allow" && c.until === undefined).map(([k]) => classOf(k)));
       if (cells.some(([, c]) => c.mode === "deny" || c.mode === "ask")) (t.block ??= bag())[who] = true;   // ask was no until yes (L14, as F3)
