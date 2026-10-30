@@ -6,6 +6,7 @@
 //   C3  SERVER_OPERATORS (or legacy WORLD_ADMIN) naming a bare display name is refused loudly, the server boots with the setup link
 //       (C3b: good entries still operate; an unreadable operators file is refused, not fatal); C3m the legacy var merges, warned once
 //   H1  typing someone's name doesn't kick them, take over their session, or show as them; a guest is named a guest
+//   GN  guests typing one name back to back are each their own identity; a guest can't set @world (from the retired security-check)
 //   H3  a world name nobody founded is refused, and nothing appears on disk
 //   H4  a guest is never given the world's default role; a door ban removes the person now; a guest's ban names the
 //       connection, so reconnecting as a fresh guest is refused
@@ -177,6 +178,12 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   await sleep(200);
   ok(ann.closed == null && jg.snapshot && /\(guest\)/.test(jg.snapshot.you) && you(jg) !== you(ja), "H1 a guest typing a present agent's name is a separate guest, shown as one; nobody is kicked", [jg.snapshot?.you, ann.closed]);
   ann.close(); g.close(); }
+// GN (from security-check H1, H2, M2, retired): guests typing one name in quick succession are each their own identity, nobody kicked; a guest can't set @world
+{ const gs = []; for (let i = 0; i < 5; i++) { const g = await sock(S2.port); gs.push([g, await g.join("garden", "Guest")]); }
+  const sky = await gs[0][0].req("set", { id: "@world", component: "sky", value: { hours: 18 } }), ids = gs.map(([, j]) => you(j));   // the reply comes after any kick the joins set off
+  ok(ids.every(Boolean) && new Set(ids).size === 5 && gs.every(([g]) => g.closed == null) && sky.refused?.code === "rights",
+    "GN five guests typing one name back to back: five identities, none kicked; a guest's set of @world is refused (rights)", { ids, closed: gs.map(([g]) => g.closed), sky: sky.refused ?? sky });
+  for (const [g] of gs) g.close(); }
 
 // ---- H4 / H5 on the public door ----
 { // the founder (local:ann) can't reach the public door; make a world whose owner is an agent account we can prove
