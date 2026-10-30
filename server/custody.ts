@@ -88,7 +88,14 @@ function openCustody(file: string) {
       Atomics.wait(wait, 0, 0, 10);
     }
     // only this process removes its own lock: another removes a lock only once its holder has exited
-    try { sync(); if (missing()) { mint(); save(); } } finally { fs.rmSync(lock, { force: true }); }
+    try {
+      sync();
+      if (missing()) {
+        const was = { sequencer: c.sequencer, operator: c.operator, holders: { ...c.holders } };
+        mint();
+        try { save(); } catch (e) { Object.assign(c, was); throw e; }
+      }
+    } finally { fs.rmSync(lock, { force: true }); }
   };
   return {
     sequencer(): string { minting(() => !c.sequencer, () => { c.sequencer = mk(); }); return c.sequencer!.pub; },
