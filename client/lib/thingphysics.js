@@ -920,7 +920,7 @@ const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p &
 /** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
-export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
+export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, tracking: () => !!moving, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
   /** body shove: the lab knob, the shoves sent (and how each was answered), the things my body is against now */
   shove: { on: (on) => (shoveOn = on !== false), log: () => shoveLog.slice(), touching: () => shover.touching(), feel: () => shover.feel,
     against: () => { const f = feet(), cap = colliderFor(hooks?.me?.()?.userScale); if (!f || !replica.st) return [];

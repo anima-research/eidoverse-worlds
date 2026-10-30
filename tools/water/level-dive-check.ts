@@ -86,9 +86,9 @@ try {
   await press("KeyC", "c", 67, 1500); await pause("anything thrown leaves the hand", 800);
   const afterC = { held: await holding(), y0, y: await y() };
   await put(-1.1); await pause("afloat again, still holding it", 1500);
-  await js("const b = (await import('/lib/base.js')).bus; window.__seenKeys = []; b.on('key', (e) => window.__seenKeys.push(e.code)); return true;");
+  await js("const b = (await import('/lib/base.js')).bus; window.__seenKeys = []; b.on('key', (e) => window.__seenKeys.push(e.code)); window.__sent = []; const o = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { try { const m = JSON.parse(d); if (m.type === 'request') window.__sent.push(m.verb); } catch {} return o.call(this, d); }; return true;");
   await press("KeyQ", "q", 81, 80); await until("Q let go of it", async () => !(await holding()), { ms: 15000 }).catch(() => {});
-  const afterQ = { held: await holding(), y: await y(), keys: await js("return window.__seenKeys;"), pending: await js(`return ${TP}.physicsApi.pending?.() ?? null;`), said: await js("return (await import('/lib/chat.js')).recentChat().filter((l) => l.who === '*').slice(-3).map((l) => l.text);") };   // a still-held crate says why (macOS 40976310724)
+  const afterQ = { held: await holding(), y: await y(), keys: await js("return window.__seenKeys;"), pending: await js(`return ${TP}.physicsApi.pending?.() ?? null;`), tracking: await js(`return ${TP}.physicsApi.tracking();`), sent: await js("return window.__sent;"), said: await js("return (await import('/lib/chat.js')).recentChat().filter((l) => l.who === '*').slice(-3).map((l) => l.text);") };   // a still-held crate says why (macOS 40976310724)
   // no @world.bounds: walking 84 m out is not pulled back to main's 78 m stage island (LEGACY-PINS item 2)
   const unbound = await js("return await (await import('/lib/net.js')).sendRequest('delete', { id: '@world', component: 'bounds' });");   // founding wrote ±20 m
   await until("the bounds are gone", () => js(`return ${C}.worldBounds() === null;`), { ms: 8000 }).catch(() => {});
