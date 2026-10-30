@@ -23,9 +23,10 @@ const scenarios = fs.readdirSync(DIR).filter((f) => f.endsWith(".jsonl")).map((f
 
 /** a scenario replayed as `version`: its epoch is set to that engine; the result is what came to rest, and where, and when */
 export function digestOf(text: string, version: string): string {
+  const asVersion = (o: any) => o?.id === "@world" && o.comp === "physics-engine" && o.value ? { ...o, value: { ...o.value, engine: version } } : o;
   const L = readLog(text).map((e: any) => {
-    const ops = e?.body?.ops; if (!Array.isArray(ops)) return e;
-    return { ...e, body: { ...e.body, ops: ops.map((o: any) => o.id === "@world" && o.comp === "physics-engine" && o.value ? { ...o, value: { ...o.value, engine: version } } : o) } };
+    const b = e?.body, body = Array.isArray(b?.ops) ? { ...b, ops: b.ops.map(asVersion) } : asVersion(b);
+    return body === b ? e : { ...e, body };
   });
   const v: any = simFold(L, (L.at(-1) as any).ts + 30000);
   const rests = [...v.rested].sort((a: any, b: any) => (a.id < b.id ? -1 : 1)).map((r: any) => [r.id, r.p.map(r3), r.q.map(r3), r.restTick]);
@@ -54,6 +55,9 @@ for (const ver of carried) {
     check(`EN2 ${ver} reproduces ${s}`, got === d[s], { got, want: d[s] });
   }
 }
+{ const none = "no-such-engine@0";
+  const same = scenarios.filter((s) => { const d = digestOf(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8"), none); return carried.some((ver) => pinned?.[ver]?.[s] === d); });
+  check(`EN5 a scenario replays as the version it's given: as ${none}, which nothing carries, it reproduces no carried version's digest`, !same.length, same); }
 // a scenario must actually exercise the engine: every one ends with something at rest that was thrown
 for (const s of scenarios) {
   const v: any = simFold(readLog(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8")), 1e15);
