@@ -1,6 +1,7 @@
 // tools/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //           (everyone builder, rank and all; the cap at builder)
+//   W1a-b   #260 item 1: a person's own watch grant on a closed old world is refused by name, never dropped or widened
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
@@ -30,6 +31,8 @@ import * as PE from "../../shared/particle_effects.js";
 import * as R from "../../shared/protocol/roles.js";
 import { sha256 } from "../../shared/protocol/hash.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
+import * as ACC from "../../shared/protocol/access.js";
+import * as FOLD1 from "./import-v1/fold.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 900)}` : ""}`); } };
@@ -73,6 +76,25 @@ row("R22h", () => { const wc = (o: any) => ({ "default-role": { role: "builder",
 row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind === "change");
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });
+
+// W1 (#260, Stella item 1): a named watch grant on a closed world has no v4 spelling: refused, named, never dropped or widened
+const v1st = (L: [string, string, any][]) => { const st: any = FOLD1.emptyState(); for (const e of log(L).slice(1)) FOLD1.foldEntry(st, e); return st; };
+const BOB = (role: string, more: any = {}): [string, string, any] => ["olga", "grant", { id: "Bob", role, sub: "human:test:bob", ...more }];
+const NONE: [string, string, any] = ["olga", "grant", { id: "*", role: "none" }];
+row("W1a", () => { const L = [OWNER, NONE, BOB("spectator")], { W } = tr(L), bob = TV1.enc("Bob");
+  const vis = tr([OWNER, NONE, BOB("visitor")]).W, star = [OWNER, ["olga", "grant", { id: "*", role: "spectator" }], BOB("spectator")] as any;
+  const names = TV1.watchGrants(v1st(L), T0), why = TV1.watchRefusal(names, '"den"');
+  ok(v1st(L).roles.Bob?.role === "spectator" && ACC.entryOf(W, { actor: bob }).may === "none" && JSON.stringify(names) === '["Bob"]' && /'Bob'/.test(why) && /visitor/.test(why) && /'\*' spectator/.test(why) && /revoke/.test(why)
+    && TV1.watchGrants(v1st([OWNER, NONE, BOB("visitor")]), T0).length === 0 && ACC.entryOf(vis, { actor: bob }).may === "embody"
+    && TV1.watchGrants(v1st(star), T0).length === 0 && TV1.watchGrants(v1st([OWNER, NONE, BOB("spectator", { until: T0 - 1 })]), T0).length === 0,
+    "W1a '*' none + Bob:spectator: v4's door would give Bob none, so the grant is named with the owner's choices; Bob:visitor still embodies; '*' spectator or an ended grant refuses nothing", { names, why, door: ACC.entryOf(W, { actor: bob }) }); });
+row("W1b", () => { const root = scratch("translate-w1"), Wd = path.join(root, "worlds"), d = path.join(Wd, "den"); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, NONE, BOB("spectator")]).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const out = Bun.spawnSync(["bun", "-e", `import { reportV1World, translateV1World } from "./tools/protocol/import-v1/world.ts"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("R " + JSON.stringify({ refused: report.refused, watching: report.watching })); try { translateV1World(${JSON.stringify(d)}, ${JSON.stringify(path.join(Wd, "new"))}); console.log("T wrote"); } catch (e) { console.log("T " + JSON.stringify(String(e.message))); }`],
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: Wd, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const said = out.stdout.toString() + out.stderr.toString(), rep = JSON.parse(said.split("\n").find((l) => l.startsWith("R "))?.slice(2) ?? "{}"), t = said.split("\n").find((l) => l.startsWith("T ")) ?? "";
+  ok(/'Bob'/.test(rep.refused ?? "") && JSON.stringify(rep.watching) === '["Bob"]' && /'Bob'/.test(t) && /Nothing was written/.test(t) && !fs.existsSync(path.join(Wd, "new", "world.jsonl")),
+    "W1b the dry-run report refuses naming Bob's watch grant, and the translation refuses before writing anything", { said: said.slice(-800) }); });
 
 // ================= P17: main's particle knobs → a derived effect =================
 const fire = (data: any, id = "hearth") => tr([OWNER, ["olga", "spawn", { id, lib: "x.glb" }], ["olga", "comp", { id, type: "particles", data }]]);

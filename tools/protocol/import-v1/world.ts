@@ -17,7 +17,7 @@ import { openLive } from "../../../server/livehost.ts";
 import { ENGINE_CATALOGUE, warm } from "../../../server/modelcatalogue.ts";
 import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
 import { simFold } from "../../../shared/protocol/simlayer.js";
-import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
+import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, watchGrants, watchRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
 import { sha256 } from "../../../shared/protocol/hash.js";
 import { jcs } from "../../../shared/protocol/fold.js";
 import { putBlobFile } from "../../../server/durable.ts";
@@ -193,6 +193,8 @@ function ownerClaimOf(srcDir: string, claim?: { account: string; name: string } 
 /** What the report says when the upgrader claims an ownerless world (R 10-28): hashed, so the same for whoever approves it. */
 export const CLAIM = "this world has no owner: whoever performs this upgrade becomes its owner (an operator-repair set by them, recorded); everyone else keeps main's rights here, builder's permissions and generate";
 
+/** Who main let watch this closed world on their own grant, at this run's clock (translate-v1 watchGrants). */
+const watchOf = (old: Any[]) => { const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e); return watchGrants(st, Date.now()); };
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
  *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
@@ -237,7 +239,7 @@ export function ownerlessRefusal(world: string, people: Any[], claim: unknown): 
 /** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
  *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
 const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
-function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r)) {
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r), watch: string[] = []) {
   const report = {
     v: 1, world,
     // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
@@ -262,7 +264,8 @@ function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: A
     bans,                        // who stays banned, and the account each ban holds against (bansOf)
     ownerWarning: claim ? null : ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
     ...(claim ? { claim: CLAIM } : owner ? { claim: { by: owner.by, how: owner.how } } : {}),   // the upgrader becomes (or is) its owner (translateV1World claim)
-    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : null,
+    ...(watch.length ? { watching: watch } : {}),   // main let them watch a closed world on their own grant: refused (watchGrants)
+    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : watchRefusal(watch, `"${world}"`),
   };
   return { report, hash: sha256(JSON.stringify(report)) };
 }
@@ -294,7 +297,7 @@ export function reportV1World(srcDir: string, { name, content, claim }: { name?:
   const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
   const { m, r } = dryTranslation(old, srcDir, world, owner, content);
   const people = peopleOf(world, r, m.describe);
-  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe));
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe), outputOf(r), watchOf(old));
 }
 
 /** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
@@ -314,6 +317,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
   // features v4 doesn't carry yet are never dropped quietly (DEFERRED): the log is refused, naming each use
   const deferred = deferredFeatures(old);
   if (deferred.length) throw new Error(deferredRefusal(deferred, `"${world}"`)!);
+  const watch = watchOf(old); if (watch.length) throw new Error(watchRefusal(watch, `"${world}"`)!);   // never silently withdrawn (watchGrants)
   // the approval is checked before anything is translated: its countersignature here, its report hash after the run
   if (approval) { const bad = approvalProblem(world, approval);
     if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`); }
