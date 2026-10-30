@@ -197,7 +197,7 @@ const probes = [
     nowGood: (t) => JSON.stringify(t) === JSON.stringify({ pos: [1, 2, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }) },
   // house 6340433633 (corrected 6343218893): the builder turned a malformed transform into a valid one at the origin, which
   // the authority then took. Absent fields still default; a malformed one goes through as it is, for the authority to refuse
-  { id: "R228b", src: "house 6340433633", what: "a create whose transform is malformed (an array, a non-finite pos) is passed on as it is, never turned into the origin", held: false,
+  { id: "R228b", src: "house 6340433633", what: "a create whose transform is malformed (an array, a non-finite pos) is passed on as it is, never turned into the origin", held: true,
     base: () => ({ ok: true, v: "(the baseline has no request builders)" }),
     now: () => ({ arr: createRequest(null, { components: { transform: [1, 0, 2] } }).args.components.transform,
       arg: createRequest(null, { transform: [1, 0, 2] }).args.components.transform,
@@ -227,9 +227,10 @@ const probes = [
 ];
 
 let bad = 0;
+for (const p of probes) if (!p.held && typeof p.baseBad !== "function") { bad++; console.log(`FAIL ${p.id} is neither held nor judged on the baseline (no baseBad), so a control run can't judge it`); }
 for (const p of probes) {
   const b = base ? p.base() : { ok: true, v: "(control skipped)" }; const n = p.now();
-  const baseIsBad = !base || p.held ? true : !!p.baseBad(b); let nowIsGood; try { nowIsGood = !!p.nowGood(n); } catch { nowIsGood = false; }
+  const baseIsBad = !base || p.held ? true : typeof p.baseBad === "function" && !!p.baseBad(b); let nowIsGood; try { nowIsGood = !!p.nowGood(n); } catch { nowIsGood = false; }
   if (!baseIsBad || !nowIsGood) bad++;
   const shownNow = n?.diagnostics ? `${n.status} ${codes(n).filter((c) => !/:purge$/.test(c)).join(" ")}` : JSON.stringify(n?.s ? { status: n.s.status, codes: codes(n.s) } : n);
   console.log(`${baseIsBad && nowIsGood ? "ok  " : "FAIL"} ${p.id.padEnd(4)} ${p.what}\n       baseline: ${b.ok === false ? b.err : JSON.stringify(b.v)}${baseIsBad ? "" : "   <- NOT bad on baseline"}\n       now:      ${shownNow.slice(0, 200)}${nowIsGood ? "" : "   <- NOT good now"}`);
