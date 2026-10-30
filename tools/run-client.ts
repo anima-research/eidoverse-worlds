@@ -29,7 +29,8 @@ const importOnly = flag("--import-only");
 // a load failure comes before a test does any work (a stub plugin, then its import); one later than this is the full run's
 const JOBS = opt("--jobs", importOnly ? 6 : 2);
 const TIMEOUT_S = opt("--timeout", importOnly ? 15 : 90);
-const only = args.filter((a, i) => !a.startsWith("--") && !["--jobs", "--timeout"].includes(args[i - 1]));
+const only = args.filter((a, i) => !a.startsWith("--") && !["--jobs", "--timeout", "--dir"].includes(args[i - 1]));
+const DIR = args.includes("--dir") ? args[args.indexOf("--dir") + 1] : null;   // test files from this dir alone (tools/protocol/run-client-settle-check.ts)
 
 // longer than any sane per-file budget on this box (the 10-12 sweep: still running at 40 s); run with --slow
 const SLOW: Record<string, string> = {
@@ -47,10 +48,7 @@ const SLOW: Record<string, string> = {
 };
 
 const isTest = (n: string) => /-(test|check)\.(ts|mjs|js)$/.test(n);
-const files = [
-  ...readdirSync(join(ROOT, "tools")).filter(isTest).map((n) => join(ROOT, "tools", n)),
-  ...readdirSync(join(ROOT, "tools/protocol")).filter(isTest).map((n) => join(ROOT, "tools/protocol", n)),
-].sort();
+const files = (DIR ? [DIR] : [join(ROOT, "tools"), join(ROOT, "tools/protocol")]).flatMap((d) => readdirSync(d).filter(isTest).map((n) => join(d, n))).sort();
 const rel = (p: string) => relative(ROOT, p);
 const launchesBrowser = (f: string) => browserLauncher(f) !== null;
 
@@ -78,6 +76,7 @@ const linkError = (out: string) => LINK.exec(out)?.[1].split(ROOT + "/").join(""
 const mcplDeps = existsSync(join(ROOT, "mcpl/node_modules"));
 const needsMcpl = (src: string) => /from\s+["'][^"']*\.\.\/mcpl\//.test(src) || /["'][^"']*mcpl\/[\w/-]+\.ts["']/.test(src);
 
+const OUTPUT_GRACE_MS = 2000;
 const live = new Set<number>(), inFlight = new Map<number, [string, number]>();
 // CI: every 60 s, stderr names the files still running, so a lane killed from outside says where it stuck (#260 run 41014925239: 1010 s, no output)
 if (process.env.CI || process.env.RUN_CLIENT_HEARTBEAT) setInterval(() => { if (inFlight.size) process.stderr.write(`[run-client] still running: ${[...inFlight.values()].map(([f, t]) => `${f} ${((performance.now() - t) / 1000).toFixed(0)} s`).join(", ")}\n`); }, Number(process.env.RUN_CLIENT_HEARTBEAT) || 60_000).unref();
@@ -98,8 +97,16 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   const gone = () => ch.exitCode != null || ch.signalCode != null;
   const kill = (exited: boolean | (() => boolean) = gone) => { void killSuiteAsync(ch.pid!, "SIGKILL", process.platform, { exited }).catch(() => {}); };
   // SIGTERM first, so a test with an exit handler cleans up what it wrote; whatever is left a moment later is killed
-  const timer = setTimeout(() => { timedOut = true; void killSuiteAsync(ch.pid!, "SIGTERM", process.platform, { exited: gone }).catch(() => {}); setTimeout(() => kill(), 2000); }, TIMEOUT_S * 1000);
-  ch.on("close", (code) => {
+  // …and if even that never ends it, the file settles as a timeout anyway a few seconds on
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  const timer = setTimeout(() => { timedOut = true; void killSuiteAsync(ch.pid!, "SIGTERM", process.platform, { exited: gone }).catch(() => {}); setTimeout(() => kill(), 2000); grace = setTimeout(() => settle(null), 8000); }, TIMEOUT_S * 1000);
+  // settle on the file's own exit plus a grace for its output, never on "close" alone: a grandchild holding the pipes
+  // holds "close" off for as long as it lives (client-tools, windows-latest, #260 run 41128035464)
+  ch.on("exit", (code) => { clearTimeout(grace); grace = setTimeout(() => settle(code), OUTPUT_GRACE_MS); });
+  ch.on("close", (code) => settle(code));
+  let settled = false;
+  const settle = (code: number | null) => {
+    if (settled) return; settled = true; clearTimeout(grace); ch.stdout.destroy(); ch.stderr.destroy();
     clearTimeout(timer); if (process.platform !== "win32") kill(true); live.delete(ch.pid!); inFlight.delete(ch.pid!);
     const ms = performance.now() - t0; const tail = out.trim().split("\n").slice(-3).join("\n");
     const dead = linkError(out);
@@ -114,7 +121,7 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     const corpus = /ENOENT[^\n]*assets\/opt\/eidoverse|(\w+) fixture required/.exec(out);
     if (corpus) return done({ file, kind: "env", why: corpus[1] ? `the avatar corpus lacks ${corpus[1]}` : "no avatar corpus: ln -s <an asset root>/assets assets/opt/eidoverse/assets", ms, tail });
     done({ file, kind: "red", why: `exit ${code}`, ms, tail });
-  });
+  };
 });
 
 // a test killed at its time limit can't clean up: say what the run left in the tree (nothing here deletes it)

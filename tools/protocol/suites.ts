@@ -15,6 +15,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["gov-reserved", "gov-reserved-check.ts", 1], // reviewer item 8 (10-18): governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
   ["diffcheck", "diffcheck.ts", 1],
   ["hygiene", "hygiene-check.ts", 1],       // patterns that broke the gate site by site (Windows paths, sh -c, symlinks, fixed sleeps), refused as a class; debt only goes down        // review #260 rereview (10-19) blocker 3: the range is clean under `git diff --check`; two documented exemptions only
+  ["run-client-settle", "run-client-settle-check.ts", 1],   // run-client settles a file on its exit, never on its pipes: a grandchild holding them can't wedge client-tools
   ["procgroup", "procgroup-check.ts", 1],  // review #260 rereview (10-19) blocker 2: the gate finds and kills a suite's processes on Linux, macOS and Windows
   ["nov1", "nov1-check.ts", 1],         // R 10-06 "no more v1 anywhere": no runtime file loads the old-world importer or speaks v1
   ["vocab", "vocab-check.ts", 1],       // R 10-14 one vocabulary: a record is read in the protocol's names (model, flat components), never lib / comp
