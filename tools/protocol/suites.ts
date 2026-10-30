@@ -240,6 +240,19 @@ export function browserLauncher(f: string): string | null {
 }
 const SELF = path.resolve(fileURLToPath(import.meta.url));
 
+export function setAside(root: string, files: string[], base: string, prefix: string): { dir: string; moved: string[]; failed: string[] } {
+  const moved: string[] = [], failed: string[] = [];
+  let dir = "";
+  for (const f of files) {
+    try {
+      if (!dir) { fs.mkdirSync(base, { recursive: true }); dir = fs.mkdtempSync(path.join(base, prefix)); }
+      const to = path.join(dir, f);
+      fs.mkdirSync(path.dirname(to), { recursive: true }); fs.renameSync(path.join(root, f), to); moved.push(f);
+    } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") failed.push(f); }
+  }
+  return { dir, moved, failed };
+}
+
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
  *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
  *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */

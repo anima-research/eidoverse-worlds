@@ -32,7 +32,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote } from "./common.ts";
-import { failLines, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, setAside, type Lane, SUITES, CORE, BROWSER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -304,7 +304,7 @@ for (const name of order) {
   const before = untracked();
   const r = await run(name, file);
   const residue = [...untracked()].filter((f) => !before.has(f));
-  for (const f of residue) fs.rmSync(path.join(ENGINE, f), { force: true });
+  const set = residue.length ? setAside(ENGINE, residue, path.resolve(ENGINE, spawnSync("git", ["-C", ENGINE, "rev-parse", "--git-path", "gate-residue"], { encoding: "utf8" }).stdout.trim()), `${name}-`) : { dir: "", moved: [], failed: [] };
   const lines = r.out.trimEnd().split("\n");
   const fails = lines.filter((l) => /^\s*FAIL\b|✗/.test(l));   // the browser probes mark a failed check with ✗, not FAIL
   const rowSkips = lines.filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim());
@@ -314,7 +314,9 @@ for (const name of order) {
   let why = r.stuck ? `timed out after ${timeoutOf(name)} s, and it wouldn't die: left behind after a minute more (its kill didn't land)` : r.timedOut ? `timed out after ${timeoutOf(name)} s (process group killed)` : r.code === 77 ? (rowSkips.at(-1) ?? lines.at(-1)) : r.code === 0 ? undefined : `exit ${r.code ?? r.signal}`;
   if (status === "pass" && rowSkips.length) { status = "skip"; why = `${rowSkips.length} check(s) skipped`; }
   if (r.timedOut) status = "fail";
-  if (residue.length) { status = "fail"; why = `${why ? why + "; " : ""}left ${residue.length} file(s) in the checkout (removed): ${residue.slice(0, 5).join(", ")}`; }
+  if (residue.length) { status = "fail";
+    const where = [set.moved.length ? `${set.moved.length} moved to ${set.dir}` : "", set.failed.length ? `${set.failed.length} couldn't be moved and stayed: ${set.failed.slice(0, 5).join(", ")}` : ""].filter(Boolean).join("; ");
+    why = `${why ? why + "; " : ""}left ${residue.length} file(s) in the checkout${where ? ` (${where})` : ""}: ${residue.slice(0, 5).join(", ")}`; }
   results.push({ name, lane, status, why, ms, rowSkips, optional, leftovers: r.leftovers, outSha256: createHash("sha256").update(r.out).digest("hex") });
   console.log(`\n== ${name} [${lane}] (${file}) ${status.toUpperCase()}${why ? ` (${why})` : ""} ${(ms / 1000).toFixed(1)} s${r.leftovers ? (r.stuck ? ` · ${r.leftovers} process(es) may still be running (the kill didn't land)` : ` · killed ${r.leftovers} leftover process(es)`) : ""}`);
   const evidence = failLines(lines); for (const l of evidence.slice(0, 60)) console.log(l);   // each FAIL with what it saw (10-23)

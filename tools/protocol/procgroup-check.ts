@@ -8,6 +8,8 @@ import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } fr
 import * as PG from "./procgroup.ts";
 import { tryUntil } from "./wait.ts";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 let pass = 0, fail = 0;
 const check = (name: string, ok: unknown, info?: unknown) => { if (ok) { pass++; console.log(`ok   ${name}`); } else { fail++; console.log(`FAIL ${name}`); if (info !== undefined) console.log("     ", JSON.stringify(info)); } };
 const win = process.platform === "win32";
@@ -107,5 +109,22 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const kept = failLines(out);
   check("PG13 the gate keeps the evidence line under each FAIL / \u2717 (and not the next ok row or the tally)",
     kept.length === 4 && kept[1].includes('"ms":1400') && kept[3].includes("reading the log") && !kept.some((l) => /^ok|passed,/.test(l.trim())), kept); }
+
+{ const { setAside } = (await import("./suites.ts")) as any;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pg15-")), root = path.join(tmp, "checkout"), base = path.join(tmp, "residue");
+  fs.mkdirSync(path.join(root, "client"), { recursive: true });
+  for (const [f, s] of [["a.txt", "one"], ["client/b.txt", "two"], ["client/c.txt", "three"]]) fs.writeFileSync(path.join(root, f), s);
+  const fd = fs.openSync(path.join(root, "a.txt"), "a");
+  const r = typeof setAside === "function" ? setAside(root, ["a.txt", "client/b.txt", "gone.txt"], base, "suite-") : null;
+  fs.writeSync(fd, " and more"); fs.closeSync(fd);
+  fs.writeFileSync(path.join(tmp, "a-file"), "");
+  const r2 = typeof setAside === "function" ? setAside(root, ["client/c.txt"], path.join(tmp, "a-file", "residue"), "suite-") : null;
+  const read = (d: string, f: string) => { try { return fs.readFileSync(path.join(d, f), "utf8"); } catch { return null; } };
+  const a = r?.moved?.includes("a.txt") ? read(r.dir, "a.txt") : read(root, "a.txt");
+  check("PG15 a suite's leftover files are moved out of the checkout by rename, each keeping its path and what's written to it later; one that can't be moved stays and is named, and one already gone is in neither list",
+    !!r && a === "one and more" && read(r.dir, "client/b.txt") === "two" && read(root, "client/b.txt") === null && !r.moved.includes("gone.txt") && !r.failed.includes("gone.txt")
+      && !!r2 && r2.moved.length === 0 && JSON.stringify(r2.failed) === '["client/c.txt"]' && read(root, "client/c.txt") === "three",
+    { r, r2, a });
+  fs.rmSync(tmp, { recursive: true, force: true }); }
 
 console.log(`[procgroup-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
