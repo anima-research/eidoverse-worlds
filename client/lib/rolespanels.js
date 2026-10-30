@@ -226,7 +226,7 @@ function paintAccess(body) {
     + `<label class="rp-field">Who can come in ${sel('join', [['anyone', 'Anyone'], ['signed-in', 'Signed-in people'], ['listed', 'Only people with a role here']], a.join ?? 'anyone')}</label>`
     + (a.join === 'listed' ? `<label class="rp-field">Everyone else ${sel('watch', [['', 'can\'t see this world'], ['anyone', 'may watch (no body)']], a.watch ?? '')}</label>` : '')
     + `<label class="rp-field">People who arrive are ${sel('role', roles.map((r) => [r.id, r.name]), dr.role ?? 'member')}</label>`
-    + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), dr.guests ?? 'visitor')}</label>`
+    + `<label class="rp-field">People without an account are ${sel('guests', roles.filter((r) => !R.GUESTS_AT_MOST_DEFAULT || r.rank <= (def?.rank ?? 0)).map((r) => [r.id, r.name]), R.guestRoleOf(wc()))}</label>`
     + `<label class="rp-field">Most people at once <input type="number" min="1" max="200" data-k="max" value="${a.max ?? ''}" placeholder="no limit" ${edit ? '' : 'disabled'}></label>`
     + `<label class="rp-field">Accounts at least <input type="number" min="0" max="365" step="1" data-k="minAccountDays" value="${a.minAccountDays || ''}" placeholder="any age" ${edit ? '' : 'disabled'}> days old</label>`
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
@@ -319,7 +319,7 @@ function paintPlaces(body) {
     if (min === 'partial' || max === 'partial' || (min === null) !== (max === null)) return toast('Bounds: fill in all six numbers (or leave them all empty for no bounds)', 'warn');
     if (pos === null && radius !== '') return toast('Spawn: a radius needs a place (x, y, z)', 'warn');
     const ops = [];
-    if (pos) ops.push({ verb: 'set', args: { id: '@world', component: 'spawn', value: { pos, ...(radius !== '' ? { radius: Number(radius) } : {}) } } });
+    if (pos) ops.push({ verb: 'set', args: { id: '@world', component: 'spawn', value: { pos, radius: radius !== '' ? Number(radius) : null }, merge: true } });
     else if (sp) ops.push({ verb: 'delete', args: { id: '@world', component: 'spawn' } });   // emptied: no spawn (house review I25)
     if (min) ops.push({ verb: 'set', args: { id: '@world', component: 'bounds', value: { min, max } } });
     else if (bd) ops.push({ verb: 'delete', args: { id: '@world', component: 'bounds' } });   // emptied: no bounds, as the toast says

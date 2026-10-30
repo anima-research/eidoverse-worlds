@@ -45,9 +45,9 @@ async function send(verb, args, what) {
   return r;
 }
 function add(id) {
-  const role = ui.role, span = Number(ui.span);
-  const value = { role, ...(span > 0 ? { until: serverUntil(span) } : {}) };
-  return send('set', { id: '@world', component: `roles:${id}`, value, ...(wc()[`roles:${id}`] ? { merge: true } : {}) }, `add ${nameOf(id)} as ${role}`);
+  const role = ui.role, span = Number(ui.span), merge = !!wc()[`roles:${id}`];
+  const value = { role, ...(span > 0 ? { until: serverUntil(span) } : merge ? { until: null } : {}) };
+  return send('set', { id: '@world', component: `roles:${id}`, value, ...(merge ? { merge: true } : {}) }, `add ${nameOf(id)} as ${role}`);
 }
 async function find() {
   const q = ui.q.trim(); ui.hits = null; ui.note = '';

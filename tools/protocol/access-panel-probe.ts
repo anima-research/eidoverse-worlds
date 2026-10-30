@@ -103,6 +103,13 @@ try {
   check("AP7 the row's \"ends ▸\" (1 day) sets only the end: the role another write made since the panel painted (builder) stays", changed && ended && wc()[`roles:${carol.id}`]?.role === "builder", wc()[`roles:${carol.id}`]);
   await pick(`.ap-row[data-who="${carol.id}"] select.ap-until`, "never");
   check("AP7b …and \"no end\" removes the end, the role kept", await waitDisk(() => { const g = wc()[`roles:${carol.id}`]; return !!g && !("until" in g) && g.role === "builder"; }), wc()[`roles:${carol.id}`]);
+  await waitFor(`!!${P}?.querySelector(${JSON.stringify(rowSel)})`, 6000);
+  await pick(rowSel, "3600000");
+  const timed = await waitDisk(() => Number.isSafeInteger(wc()[`roles:${carol.id}`]?.until));
+  await pick("select.ap-add-role", "builder"); await pick("select.ap-add-span", "");
+  await find(carol.id); await waitFor(`!!${P}?.querySelector('.ap-hit[data-who=${JSON.stringify(carol.id)}] button')`, 6000);
+  await click(`.ap-hit[data-who="${carol.id}"] button`);
+  check("AP8 adding someone already listed with a timed grant, for \"no end\", removes the end", timed && await waitDisk(() => { const g = wc()[`roles:${carol.id}`]; return !!g && !("until" in g) && g.role === "builder"; }), wc()[`roles:${carol.id}`]);
   await waitFor(`!!${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}] button.ap-rm')`, 6000);
   await click(`.ap-row[data-who="${carol.id}"] button.ap-rm`);
   check("AP4b ✕ deletes roles:<carol>, and her row goes", carolIn && await waitDisk(() => !wc()[`roles:${carol.id}`]) && await waitFor(`!${P}?.querySelector('.ap-row[data-who=${JSON.stringify(carol.id)}]')`, 6000), await panelText());
@@ -112,6 +119,25 @@ try {
   await find(GHOST); await waitFor(`!!${P}?.querySelector('.ap-hit[data-who=${JSON.stringify(GHOST)}] button')`, 6000);
   await click(`.ap-hit[data-who="${GHOST}"] button`);
   check("AP5 adding an identity this server doesn't know: the authority's refusal is shown in the panel, and nothing is written", await waitFor(`/identity this server doesn't know/.test(${P}?.querySelector('.ap-refused')?.textContent ?? '')`, 6000) && Object.keys(wc()).length === n5, await panelText());
+
+  const owned = (js: string) => page(`await (await import('/lib/net.js')).sendRequest(${js}); return true;`);
+  const folded = (js: string) => waitFor(`import('/lib/net.js').then((m) => { const c = m.replica.st?.entities?.['@world']?.c ?? {}; return ${js}; })`, 6000);
+  const dr0 = wc()["default-role"];
+  await owned(`'set', { id: '@world', component: 'default-role', value: { role: 'builder', guests: null }, merge: true }`);
+  await folded(`c['default-role']?.role === 'builder' && !('guests' in c['default-role'])`);
+  await mount();
+  const guests = await evalJson(`(() => { const s = document.querySelector('#__acc select[data-k=guests]'); return s && { value: s.value, options: [...s.options].map((o) => o.value) }; })()`);
+  check("AP9 with newcomers made builders and no guests role written, the guests select shows member, what a guest is, not the first role it lists", guests?.value === "member" && guests.options.includes("builder"), guests);
+  await owned(dr0 ? `'set', { id: '@world', component: 'default-role', value: ${JSON.stringify(dr0)} }` : `'delete', { id: '@world', component: 'default-role' }`);
+  await waitDisk(() => JSON.stringify(wc()["default-role"]) === JSON.stringify(dr0));
+
+  await owned(`'set', { id: '@world', component: 'spawn', value: { pos: [1, 0, 2], radius: 3, yaw: 1.57 } }`);
+  await folded(`c.spawn?.yaw === 1.57`);
+  await page(`document.getElementById('__places')?.remove(); const m = await import('/lib/rolespanels.js'); const b = document.createElement('div'); b.id = '__places'; document.body.append(b); m._test.paintPlaces(b); return true;`);
+  await evalJson(`(() => { const b = document.getElementById('__places'); b.querySelector('[data-k=spawn][data-i="0"]').value = '4'; b.querySelector('[data-k=radius]').value = ''; b.querySelector('[data-save]').click(); return true; })()`);
+  check("AP10 Places' Save writes the spawn's place and radius and keeps the rest of it: an emptied radius goes, and the arrival's facing (yaw) stays", await waitDisk(() => { const s = wc().spawn; return !!s && s.pos?.[0] === 4 && !("radius" in s) && s.yaw === 1.57; }), wc().spawn);
+  await owned(`'delete', { id: '@world', component: 'spawn' }`);
+  await waitDisk(() => !wc().spawn);
 
   // AP6 a non-owner: the same list, read-only; pressing add anyway is the authority's to refuse
   check("(setup) dave's page is in the world (no role: the newcomer role, no grantRoles)", await boot("dave"));

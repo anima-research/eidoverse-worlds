@@ -40,6 +40,12 @@ check('…and a new exception joins the old ones', r?.args?.value?.can?.fly === 
 r = await run('wren builder for 2h');
 const until = r?.args?.value?.until;
 check('…a new duration replaces the end', typeof until === 'number' && until < 9_000_000_000_000 && r.args.value.can?.fly === true, JSON.stringify(r?.args));
+world.c = { 'roles:u-wren': { role: 'member', can: { fly: true }, until: 1_000 } };
+r = await run('wren builder');
+check('/grant <name> <role> on a grant whose end has passed sends no end (the authority refuses a past one)', r?.args?.value?.role === 'builder' && r.args.value.can?.fly === true && !('until' in r.args.value), JSON.stringify(r?.args));
+r = await run('wren +gen');
+check('…as do exceptions alone', r?.args?.value?.can?.generate === true && !('until' in r.args.value), JSON.stringify(r?.args));
+world.c = { 'roles:u-wren': { role: 'member', can: { fly: true }, until: 9_000_000_000_000 } };
 r = await run('wren forever');
 check('…and forever clears it', r?.args?.value && !('until' in r.args.value) && r.args.value.role === 'member' && r.args.value.can?.fly === true, JSON.stringify(r?.args));
 // I42: exceptions (or a time) for someone with no grant: refused here, with what to do, never a role-less record
