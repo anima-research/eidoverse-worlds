@@ -6,7 +6,7 @@ import { physicsAreasOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
-import { REACH, HAND_Y, MAX_HELD, KICK, BLAST } from "../physconst.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN } from "../physconst.js";
 import { blastArgs, falloff } from "../../blast.js";
 import { r3, noNeg0 } from "../round.js";
 import { unitTransform } from "../componentspec.js";
@@ -65,9 +65,9 @@ const EMBODIED_VERBS = {
     const fell = a.reason !== undefined;
     if (fell && (a.reason !== FELL || a.teleport !== true)) refuse("shape", `move's reason is '${FELL}', with teleport: true (a body that fell below the world's bounds, sent back to an arrival place)`, `move {to: <a spawn>, teleport: true, reason: '${FELL}'}`);
     if (fell && !B) refuse("out-of-bounds", "this world has no bounds to fall out of", "teleport without a reason");
-    // the authority judges the fall from where it last knew the body (one step's slack: the most a body moves between its moves)
-    if (fell && B && !(me && me.at[1] < B.min[1] + TRACK.cap)) refuse("doesnt-apply", me ? `your body was last at y ${r3(me.at[1])}, which isn't below this world's floor of bounds (y ${B.min[1]}): it hasn't fallen out` : "your body isn't in the world yet: it has nowhere to have fallen from",
-      "arrive or teleport without a reason; below-bounds is for a body that fell under @world.bounds.min.y");
+    // the authority judges the fall against the same kill line as belowWorld, from where it last knew the body (one step's slack)
+    if (fell && B && !(me && me.at[1] < B.min[1] - KILL_MARGIN + TRACK.cap)) refuse("doesnt-apply", me ? `your body was last at y ${r3(me.at[1])}, which isn't below this world's kill line (y ${B.min[1] - KILL_MARGIN}, ${KILL_MARGIN} m under its bounds): it hasn't fallen out` : "your body isn't in the world yet: it has nowhere to have fallen from",
+      "arrive or teleport without a reason; below-bounds is for a body that fell under the kill line (@world.bounds.min.y − KILL_MARGIN)");
     if (fell && occupantOf(w, st, actor)) refuse("doesnt-apply", "a seated body rides its seat: it doesn't fall out of the world", "stand up first");
     if (fell && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record

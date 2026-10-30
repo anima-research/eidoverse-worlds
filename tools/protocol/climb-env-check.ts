@@ -185,15 +185,15 @@ await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or c
   s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
   const st = s.st(); const kz = -10 - SP.KILL_MARGIN; const fell = SP.belowWorld(st, [0, kz - 1, 0]), riding = SP.belowWorld(st, [0, kz - 1, 0], { riding: true }), above = SP.belowWorld(st, [0, kz + 1, 0]);   // the kill line: KILL_MARGIN below the floor
   s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });   // ground below the bounds: a body can stand where it has fallen
-  s.call("move", { to: [0, 0, 8] }, "vic"); for (let y = -3.5; y > kz - 4; y -= 3.5) s.call("move", { to: [0, y, 8] }, "vic");
+  s.call("move", { to: [0, 0, 8] }, "vic"); let early: any; for (let y = -3.5; y > kz - 4; y -= 3.5) { s.call("move", { to: [0, y, 8] }, "vic"); if (!early && y < -14) early = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic"); }   // under the floor, above the kill line: not fallen
   const away = s.call("move", { to: [30, 0, 30], teleport: true, reason: "below-bounds" }, "vic");
   const before = s.log().length;
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
   const acts = s.log().slice(before).filter((e: any) => e.kind === "act" && e.verb === "move");
   const bare = s.call("move", { to: [0, 0, 8], reason: "below-bounds" }, "vic");
   return [fell && !riding && !above && back.ok && acts.length === 1 && acts[0].body?.request?.reason === "below-bounds" && acts[0].body?.request?.teleport === true
-    && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
-    { fell, riding, above, back: show(back), acts: acts.map((e: any) => e.body), noBounds: show(noBounds), away: show(away), bare: show(bare) }]; });
+    && early?.refused?.code === "doesnt-apply" && noBounds.refused?.code === "out-of-bounds" && away.refused?.code === "spawn" && bare.refused?.code === "shape",
+    { fell, riding, above, early: show(early), back: show(back), acts: acts.map((e: any) => e.body), noBounds: show(noBounds), away: show(away), bare: show(bare) }]; });
 
 await C("K10", "@world.sky.gradient {top, horizon, bottom?} (linear 0..1) taken, a bad one refused; lookOf reads it (an absent bottom is the horizon) and the first directional light thing by id as the sun, standing along its +Z", () => {
   const s = session();
