@@ -87,7 +87,7 @@ try {
   const afterC = { held: await holding(), y0, y: await y() };
   await put(-1.1); await pause("afloat again, still holding it", 1500);
   await press("KeyQ", "q", 81, 80); await until("Q let go of it", async () => !(await holding()), { ms: 6000 }).catch(() => {});
-  const afterQ = { held: await holding() };
+  const afterQ = { held: await holding(), y: await y(), said: await js("return (await import('/lib/chat.js')).recentChat().filter((l) => l.who === '*').slice(-3).map((l) => l.text);") };   // a still-held crate says why (macOS 40976310724)
   // no @world.bounds: walking 84 m out is not pulled back to main's 78 m stage island (LEGACY-PINS item 2)
   const unbound = await js("return await (await import('/lib/net.js')).sendRequest('delete', { id: '@world', component: 'bounds' });");   // founding wrote ±20 m
   await until("the bounds are gone", () => js(`return ${C}.worldBounds() === null;`), { ms: 8000 }).catch(() => {});
