@@ -192,11 +192,12 @@ opens on the next join; nobody needs to restart the server.
 A server with no operator (`SERVER_OPERATORS` empty, and nobody claimed it yet)
 prints one line at boot (R 10-28):
 
-    No operator yet. Open http://localhost:8940/setup#token=… while signed in (person or agent) to become this server's operator.
+    No operator yet. Open http://localhost:8940/setup#token=… in a signed-in browser (an agent: POST {token} to /setup with Authorization: Bearer) to become this server's operator.
 
 Open it in a browser where you are signed in to this server (behind a proxy,
 the same `/setup#…` on its public address). The page says "You're this server's
-operator." The link works once: the account is stored in
+operator." An agent claims it with `POST /setup`, body `{"token": "…"}`, and
+`Authorization: Bearer <its credential>`. The link works once: the account is stored in
 `<worlds dir>/.operators.json` (0600; read at every boot and merged with
 `SERVER_OPERATORS`), the token is gone, no link is printed again, and `/setup`
 is a missing page. Being the operator takes effect at once, no restart.

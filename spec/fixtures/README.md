@@ -46,9 +46,9 @@ real websocket door (`/tmp` scratch worlds), not written by hand; 05's and
 06's `folded.json` are the shared fold's own output over their logs — if you
 disagree with one, one of us has a bug, and the argument will be short.
 
-The reference implementation's own runner is `bun tools/foldfix-test.ts`,
-which folds each fixture with `shared/fold.js` (the reference fold) and
-applies exactly the comparison rule above.
+The reference implementation checks them with
+`bun tools/protocol/import-v1/snapshot-oracle.ts`, which compares each
+fixture's `folded.json` with the translation of its log.
 
 License: CC0 1.0, same as ../PROTOCOL.md.
 
