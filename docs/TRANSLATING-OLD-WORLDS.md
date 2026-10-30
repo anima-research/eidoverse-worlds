@@ -76,11 +76,12 @@ report lists each one):
 - *Ranges.* A value outside the component registry's ranges is brought inside
   them and listed (`adjusted`), so the world's next edit isn't refused.
 - *Vehicle bands and swim speed* (translate-v1@29, R 10-28 item 50): a
-  vehicle's `minY`/`maxY` are two hidden walls only hulls meet (`collider
-  {blocks: ['hulls']}`, at [0, y, 0], 200 km square: every legal x/z), set off by the hull's box as
+  vehicle's `minY`/`maxY` are two hidden walls only that vehicle meets (`collider
+  {blocks: ['hulls'], layer: [its own band layer]}` and its thing's `collider {mask: [1, that layer]}`,
+  Godot's collision layers, translate-v1@32; at [0, y, 0], 200 km square: every legal x/z), set off by the hull's box as
   this host measures it, so the hull's origin keeps main's band exactly (a hull
   the host can't measure: at `minY`/`maxY` themselves, the whole hull in the
-  band). One hull layer: every vehicle meets every band. Each wall is locked
+  band). Another vehicle passes through the band (@29-@31 stopped every one). Each wall is locked
   (builder strength, as every translated lock: a builder may lift it knowingly). Water `speed` is the
   water's own `drag` (translate-v1@31; Godot's `linear_damp`): 5 × 2.4 / speed
   per second, so a swimmer there strokes at main's pace and walkers on its

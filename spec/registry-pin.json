@@ -73,7 +73,9 @@
   "fields": {
    "shape": "string",
    "enabled": "bool",
-   "blocks": "array"
+   "blocks": "array",
+   "layer": "array",
+   "mask": "array"
   },
   "enums": {
    "shape": [
@@ -85,6 +87,12 @@
   "ranges": {
    "blocks": {
     "maxItems": 3
+   },
+   "layer": {
+    "maxItems": 32
+   },
+   "mask": {
+    "maxItems": 32
    }
   },
   "itemEnums": {
@@ -97,12 +105,16 @@
   "absentMeans": {
    "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (client/lib/supportclass.js)",
    "enabled": "true: it is solid",
-   "blocks": "everything: bodies, hulls and things"
+   "blocks": "everything: bodies, hulls and things",
+   "layer": "[1] (Godot's default): every mover meets it",
+   "mask": "[1] (Godot's default)"
   },
   "docs": {
    "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
    "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed",
-   "blocks": "what it stops, a list of layers: bodies (people and agents walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet"
+   "blocks": "what it stops, a list of layers: bodies (people and agents walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet",
+   "layer": "the collision layers it is IN (Godot's collision_layer): a list of layer numbers 1..32 or names (a lowercase letter, then letters, digits, - or _; ≤ 40), each once. A mover meets it only when the mover's mask scans one of them (Godot: \"Object A can detect a contact with object B only if object B is in any of the layers that object A scans\")",
+   "mask": "the collision layers it SCANS when it moves (Godot's collision_mask), same items as layer: read for a hull (the authority's hull sweep meets only what is in a layer its mask scans). People and agents walking or swimming, and loose things in the physics engine, scan [1] (eidosim carries no layers between things); a still thing's mask is unread"
   },
   "on": "thing"
  },
