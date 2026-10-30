@@ -32,11 +32,14 @@ export function atASpawn(st, p) {
   const all = spawnsOf(st); return !all.length || all.some((s) => Math.hypot(s.pos[0] - p[0], s.pos[1] - p[1], s.pos[2] - p[2]) <= s.radius);
 }
 
-/** Has a body at `p` fallen out of the world (below @world.bounds.min.y: Unreal's KillZ)? False with no bounds. A seated or
- *  climbing body is exempt: the caller says so (`riding`). */
+/** How far below the bounds' floor the kill line sits (Unreal's KillZ, Roblox's FallenPartsDestroyHeight: well below anything
+ *  playable), so water, cellars and a body laid flat under the floor aren't "fallen". A world setting later (WISHLIST 🕳️). */
+export const KILL_MARGIN = 50;
+/** Has a body at `p` fallen out of the world (more than KILL_MARGIN below @world.bounds.min.y)? False with no bounds. A seated
+ *  or climbing body is exempt: the caller says so (`riding`). */
 export function belowWorld(st, p, { riding = false } = {}) {
   const B = st?.entities?.["@world"]?.c.bounds;
-  return !riding && !!B && v3(B.min) && v3(p) && p[1] < B.min[1];
+  return !riding && !!B && v3(B.min) && v3(p) && p[1] < B.min[1] - KILL_MARGIN;
 }
 /** The act's reason for a KillZ respawn (move {teleport: true, reason}). */
 export const FELL = "below-bounds";

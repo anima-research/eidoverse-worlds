@@ -183,9 +183,9 @@ await C("K9", "KillZ: below @world.bounds.min.y a body has fallen (a seated or c
   const noBounds = s.call("move", { to: [0, 0, 0], teleport: true, reason: "below-bounds" }, "vic");
   s.call("set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
   s.call("set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
-  const st = s.st(), fell = SP.belowWorld(st, [0, -11, 0]), riding = SP.belowWorld(st, [0, -11, 0], { riding: true }), above = SP.belowWorld(st, [0, -9, 0]);
-  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: -20 } });   // ground below the bounds: a body can stand where it has fallen
-  s.call("move", { to: [0, 0, 8] }, "vic"); for (const y of [-3.5, -7, -10.5]) s.call("move", { to: [0, y, 8] }, "vic");
+  const st = s.st(); const kz = -10 - SP.KILL_MARGIN; const fell = SP.belowWorld(st, [0, kz - 1, 0]), riding = SP.belowWorld(st, [0, kz - 1, 0], { riding: true }), above = SP.belowWorld(st, [0, kz + 1, 0]);   // the kill line: KILL_MARGIN below the floor
+  s.call("set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });   // ground below the bounds: a body can stand where it has fallen
+  s.call("move", { to: [0, 0, 8] }, "vic"); for (let y = -3.5; y > kz - 4; y -= 3.5) s.call("move", { to: [0, y, 8] }, "vic");
   const away = s.call("move", { to: [30, 0, 30], teleport: true, reason: "below-bounds" }, "vic");
   const before = s.log().length;
   const back = s.call("move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, "vic");
