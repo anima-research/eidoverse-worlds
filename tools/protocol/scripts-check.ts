@@ -118,7 +118,8 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["world.use stays inside scope.ids", "authority/scriptrun.js", "for (const u of uses) if (!cap.ids.includes(u.id)) return mark(", "for (const u of uses) if (false) return mark(", ["W2"]],
   ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
-  ["the auditor compares world.use calls", "scriptaudit.js", "if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) {", "if (false) {", ["W1"]],
+  ["the auditor compares world.use calls", "scriptaudit.js", "if (!sameU) { flags.push({ seq, check: \"rerun-use\"", "if (false) { flags.push({ seq, check: \"rerun-use\"", ["W1"]],
+  ["a who-dependent world.use is flagged, not skipped", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (sameU && whoReads(b.reads)) { skipped.push(", ["W1b"]],
   ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"act\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"act\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
   ["a script on @world hears every use (world-level)", "authority/use.js", "out.push(activate(w, \"@world\", name,", "out.push(void (w, \"@world\", name,", ["WL1"]],
   ["a script on @world is the owner's to install", "authority/gate.js", "if (base === \"roles\") return \"grant\";\n  return \"owner\";", "if (base === \"roles\") return \"grant\";\n  return base === \"script\" ? \"thing\" : \"owner\";", ["WL2"]],
@@ -936,6 +937,20 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
+  { id: "W1b", what: "world.use whose target turns on who was near (a name read): the auditor SKIPS its act as depending on who was near, as D4 does for a set, and never flags it rerun-use, which reads as a forgery (review of #260)", run(s) { cast(s);
+      for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
+        s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
+      s.call("bob", "create", { id: "lever", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "lever", "pick", onUse(`const near = world.near(3); const n = near.length ? world.name(near[0]) : null;\nworld.use(n === "Vic" ? "gatea" : "gateb", "open");`), { scope: { ids: ["self", "gatea", "gateb"], comps: [] }, on: ["use"] });
+      s.call("bob", "set", { id: "lever", component: "reactions", value: { pull: { kind: "script", script: "pick" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = useSteady(s, "vic", { id: "lever", action: "pull" });
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { r: st(s, r), a: comp(s, "gatea", "openable")?.open, b: comp(s, "gateb", "openable")?.open, reads: s.entries()[r.script?.act]?.body?.reads, reran: A.reran,
+        flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.map((x: any) => x.why) ?? null }; },
+    opts: { nameOf: (id: string) => NAMES[id] ?? null },
+    good: (o) => o.r === "ran" && o.a === true && o.b === false && JSON.stringify(o.reads) === JSON.stringify({ near: [{ r: 3, n: 1 }], names: 1 })
+      && o.reran === 0 && o.flags.length === 0 && o.skipped?.length === 1 && /who was near/.test(o.skipped[0]) },
   { id: "W2", what: "world.use outside scope.ids is refused whole: the gate stays shut and nothing is logged for the script", run(s) { cast(s);
       gateAndLever(s, { ids: "self", comps: [] }); const n0 = s.entries().length;
       const r = useSteady(s, "vic", { id: "lever", action: "pull" });

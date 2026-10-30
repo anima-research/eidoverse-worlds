@@ -115,11 +115,11 @@ export function auditScripts(L, getBlob, { run = null, depth: maxD = 8 } = {}) {
     const state = outs.find((e) => e.kind === "change");
     const got = state ? quiet(state) : [];
     const says = outs.filter((e) => e.kind === "say").map((e) => e.body?.text);
-    const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says);
-    // world.use proposals are recorded in the act (each target's outcome is its own act): a re-run must propose the same
-    if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) { flags.push({ seq, check: "rerun-use", why: "the re-run's world.use calls differ from the act's" }); return; }
-    if (sameW && sameS) { reran++; return; }
+    const sameW = norm(want) === norm(got), sameS = jcs(says) === jcs(res.says), sameU = jcs(res.uses ?? []) === jcs(b.uses ?? []);
+    if (sameW && sameS && sameU) { reran++; return; }
     if (whoReads(b.reads)) { skipped.push({ seq, why: "its result depends on who was near or what someone is called, which the act doesn't record (only how many): it can't be re-run to the same result" }); return; }
+    // world.use proposals are recorded in the act (each target's outcome is its own act): a re-run must propose the same
+    if (!sameU) { flags.push({ seq, check: "rerun-use", why: "the re-run's world.use calls differ from the act's" }); return; }
     if (anonWho) { const r2 = rerun({ ...event, by: ARRIVAL_STAND_IN_2 });   // does the result depend on who came? two stand-ins agree → no
       const agree = r2.ok && jcs(readShape(r2.reads)) === jcs(readShape(res.reads)) && norm(elide(st, stampMotions(st, r2.ops, a.ts))) === norm(want) && jcs(r2.says) === jcs(res.says);
       if (!agree) { skipped.push({ seq, why: "its result depends on who arrived or left, which the act doesn't record: it can't be re-run to the same result" }); return; } }
