@@ -38,7 +38,11 @@ import { prepareObject } from '../materials.js';
 import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
 import { planStructure, makeShader } from '../../../shared/structure.js';
+import { colliderOf } from '../../../shared/components.js';
+import { solidOff } from '../../../shared/protocol/simlayer.js';
 import { defsRegistry } from '../defs.js';
+import { applyHidden } from './models.js';
+import { collisionOwnedElsewhere } from './models_field.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from
 // grid-local position, which buys three things this stack specifically needs:
@@ -313,16 +317,21 @@ function hideAnchor(id) {
 }
 
 function retire(id) {
-  // give the anchor back — mesh AND collider — before we stop owning the id,
-  // so removing just the `structure` comp leaves an ordinary solid crate
-  const anchor = entities.get(id);
-  if (anchor) {
-    anchor.visible = true;
-    try { fitCollider(id, anchor, { localFrame: true, scale: anchor.scale?.x || 1 }); }
-    catch (e) { report(`structure anchor restore ${id}`, e); }
-  }
+  // only a building we realized has an anchor to give back: realize() retires every thing born without a structure,
+  // and an anchor restore there showed a thing its `hidden` hid and fitted one its collider switched off
   const t = tracked.get(id);
   if (!t) return;
+  // give the anchor back — mesh AND collider — before we stop owning the id,
+  // so removing just the `structure` comp leaves an ordinary crate, drawn and solid as the models realizer reads it
+  const anchor = entities.get(id);
+  if (anchor) {
+    applyHidden(id);
+    const ent = state.st.entities[id];
+    if (!collisionOwnedElsewhere(ent, anchor.userData?.mountedTo)) {
+      try { fitCollider(id, anchor, { collide: colliderOf(ent), localFrame: true, scale: anchor.scale?.x || 1 }); }
+      catch (e) { report(`structure anchor restore ${id}`, e); }
+    }
+  }
   scene.remove(t.group);
   for (const g of t.geoms) g.dispose();     // palette materials are shared: never disposed
   removeStructureBoxes(id);
@@ -334,7 +343,8 @@ function retire(id) {
 function realize(id, ent) {
   const data = structOf(ent);
   if (!data) { retire(id); return; }
-  const tf = transformOf(ent);
+  // collision off for bodies (collider.enabled false, or blocks without bodies): no box a walker meets
+  const tf = { ...transformOf(ent), solid: !solidOff(ent, 'bodies') };
   const sig = JSON.stringify(data);
   const prev = tracked.get(id);
 
@@ -382,7 +392,7 @@ function onChange({ id, what, comp }) {
   try {
     switch (what) {
       // a `structure` comp arriving on a thing we don't track yet is exactly how a building is born
-      case 'comp': if (comp === 'structure') realize(id, state.st.entities[id]); break;
+      case 'comp': if (comp === 'structure' || (comp === 'collider' && tracked.has(id))) realize(id, state.st.entities[id]); break;
       // re-derive from state rather than assume (a re-born thing may have dropped its structure)
       case 'born': realize(id, state.st.entities[id]); break;
       case 'pose': if (tracked.has(id)) realize(id, state.st.entities[id]); break;

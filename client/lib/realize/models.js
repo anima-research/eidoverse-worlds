@@ -478,7 +478,8 @@ function createMesh(id, ent) {
   entities.set(id, obj);
   scene.add(obj);
   applyHidden(id);
-  fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
+  // collision off for bodies has no box, as runPromoteTail and rebuildMesh read it (collisionOwnedElsewhere)
+  if (!collisionOwnedElsewhere(ent, obj.userData.mountedTo)) fitCollider(id, obj, { collide: colliderOf(ent), scale: ent.scale || 1, localFrame: true });
   registerCaster(id, obj);
   bus.emit('entity', { id, kind: 'spawn' });
   emitCompBag(id);
@@ -656,8 +657,8 @@ function retire(id) {
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
       applyScale(cobj, entScale(cst) ?? 1);   // the fold's scale, not the one attach() baked in
       cobj.userData.base = restOf(cobj, cst);
-      // an Empty owns no collider (its only mesh may be a light gizmo)
-      if (!cobj.userData.empty) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
+      // an Empty owns no collider (its only mesh may be a light gizmo), nor does a thing with collision off for bodies
+      if (!cobj.userData.empty && !collisionOwnedElsewhere(cst)) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
     }
     (holder.parent ?? scene).remove(holder);
     if (holder !== obj) standIns.delete(id);
@@ -681,7 +682,7 @@ function emitCompBag(id) {
 /** comp {type:'hidden', data:true} = not drawn, still there (the collider,
  *  the mounts, the log all stand). The evaluator is one line; the comp is
  *  the convention every surface — inspector, hierarchy, look() — honours. */
-function applyHidden(id) {
+export function applyHidden(id) {
   const obj = entities.get(id);
   if (obj) obj.visible = bagOf(id)?.hidden !== true && !isMineHidden(id) && !isolatedOut(id);   // hidden for everyone, or just in my view (myview.js: the eye, isolate)
   else if (standIns.has(id)) placeStandIn(id);   // its waiting children go and come with it
@@ -840,7 +841,7 @@ function execDismount(id, ent) {
     // builds it from ent.scale — would never see
     applyScale(obj, entScale(ent) ?? 1);
     obj.userData.base = restOf(obj, ent);
-    if (!obj.userData.empty) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
+    if (!obj.userData.empty && !collisionOwnedElsewhere(ent)) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
     pruneStandIn(was);
   }
   bus.emit('mount', { id, to: null });
