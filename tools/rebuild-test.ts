@@ -117,7 +117,7 @@ check("store object: variants rebuilt beside the original, .deferred cleared", !
   const { route: rt } = await import("../server/routes.ts");
   const REL = "eidoverse/assets/models/prop.glb", src = join(lib, "prop.glb");
   const pK = join(opt, ktx2VariantPath(REL)), pL = join(opt, lodVariantPath(REL));
-  writeFileSync(src, "prop v1 bytes");
+  writeFileSync(src, "prop v1 bytes"); { const s0 = new Date(Math.floor(Date.now() / 1000) * 1000); utimesSync(src, s0, s0); }   // a whole second: NTFS cannot restore a fractional mtime exactly
   const lightLine = `[optimize] lod: already light (900 verts < 1000) (3ms) ${recipeStamp(LOD_RECIPE)} — original stays the only representation`;
   writeFileSync(join(root, "refuse--lod"), lightLine);
   rebuildAsset(REL); await optIdle();
@@ -220,7 +220,8 @@ check("…and no refused path ran the optimizer", runs().length === before, runs
 // 4. the route: the /upload sign-ins + a session cookie; the door key as a Bearer header, never in the URL
 const { route } = await import("../server/routes.ts");
 const { hnSessions } = await import("../server/auth.ts");
-const call = async (q: string, headers: Record<string, string> = {}) => await route(new Request(`http://x/rebuild?${q}`, { method: "POST", headers }), {} as any);
+const viaProxy = { requestIP: () => ({ address: "127.0.0.1" }) } as any;   // a loopback peer: the proxy whose x-real-ip is believed (peer.ts)
+const call = async (q: string, headers: Record<string, string> = {}) => await route(new Request(`http://x/rebuild?${q}`, { method: "POST", headers }), viaProxy);
 const bearer = (k: string) => ({ authorization: `Bearer ${k}` });
 const noTok = await call("path=store/abc123.glb");
 check("route: no credential → 401", noTok.status === 401, noTok.status);
@@ -228,12 +229,12 @@ const wrongTok = await call("path=store/abc123.glb", bearer("nope"));
 check("route: wrong key → 401", wrongTok.status === 401, wrongTok.status);
 const inUrl = await call("token=t0k&path=store/abc123.glb");
 check("route: the RIGHT key in the URL → 401 (it would land in access logs)", inUrl.status === 401, inUrl.status);
-const sid = "a".repeat(64); hnSessions.set(sid, { sub: "u_test", name: "tester", scopes: [], exp: Date.now() + 60_000 });
+const sid = "a".repeat(64); hnSessions.set(sid, { sub: "human:u_test", name: "tester", scopes: [], exp: Date.now() + 60_000 });
 const crossSite = await call("path=store/abc123.glb", { cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-site" });
 check("route: a session cookie from ANOTHER origin (a sibling subdomain) → 401", crossSite.status === 401, crossSite.status);
 const viaSession = await call("path=store/abc123.glb", { cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-origin", "x-real-ip": "7.7.7.7" }); await optIdle();
 check("route: a signed-in session with no door key → 200 (home-node sign-ins could not rebuild before)", viaSession.status === 200, viaSession.status);
-hnSessions.set(sid, { sub: "u_test", name: "tester", scopes: [], exp: Date.now() - 1 });
+hnSessions.set(sid, { sub: "human:u_test", name: "tester", scopes: [], exp: Date.now() - 1 });
 const expired = await call("path=store/abc123.glb", { cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-origin" });
 check("route: an EXPIRED session → 401", expired.status === 401, expired.status);
 const badPath = await call("path=store/..%2F..%2Fx.glb", bearer("t0k"));
@@ -243,12 +244,12 @@ const j = good.status === 200 ? await good.json() : null;
 check("route: token + object → 200 naming the passes", j?.ok === true && j.queued.join() === "ktx2,lod", [good.status, j]);
 await optIdle();
 // rate limit: 4 per IP per minute, like /upload; the 5th is refused before anything is queued
-const fromIp = async () => await route(new Request("http://x/rebuild?path=store/abc123.glb", { method: "POST", headers: { "x-real-ip": "9.9.9.9", authorization: "Bearer t0k" } }), {} as any);
+const fromIp = async () => await route(new Request("http://x/rebuild?path=store/abc123.glb", { method: "POST", headers: { "x-real-ip": "9.9.9.9", authorization: "Bearer t0k" } }), viaProxy);
 const st: number[] = []; for (let i = 0; i < 4; i++) { st.push((await fromIp()).status); await optIdle(); }
 const runsBefore5th = runs().length;
 const fifth = await fromIp(); await optIdle();
 check("route: 4 rebuilds per IP per minute pass, the 5th → 429 and queues nothing", st.every((x) => x === 200) && fifth.status === 429 && runs().length === runsBefore5th, [st, fifth.status]);
-const other = await route(new Request("http://x/rebuild?path=store/abc123.glb", { method: "POST", headers: { "x-real-ip": "8.8.8.8", authorization: "Bearer t0k" } }), {} as any);
+const other = await route(new Request("http://x/rebuild?path=store/abc123.glb", { method: "POST", headers: { "x-real-ip": "8.8.8.8", authorization: "Bearer t0k" } }), viaProxy);
 check("…and the window is per IP (another address still passes)", other.status === 200, other.status);
 await optIdle();
 console.log(`${fail ? "\x1b[31m" : "\x1b[32m"}${pass} passed, ${fail} failed\x1b[0m`); process.exit(fail ? 1 : 0);
