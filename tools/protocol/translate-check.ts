@@ -79,7 +79,7 @@ row("R22f", () => { const { r } = tr([]); const first = r.out.find((e) => e.kind
   ok(first?.actor === "system" && r.out[first.cause]?.verb === "translated" && JSON.stringify(first.body).includes("role-defs"),
     "R22f an empty old world's open rights are one change by the system, caused by the translated act", first); });
 
-// W1 (#260, Stella item 1): a named watch grant on a closed world has no v4 spelling: refused, named, never dropped or widened
+// W1 (#260, Stella item 1): a named watch grant on a closed world has no spelling in the new door: refused, named, never dropped or widened
 const v1st = (L: [string, string, any][]) => { const st: any = FOLD1.emptyState(); for (const e of log(L).slice(1)) FOLD1.foldEntry(st, e); return st; };
 const BOB = (role: string, more: any = {}): [string, string, any] => ["olga", "grant", { id: "Bob", role, sub: "human:test:bob", ...more }];
 const NONE: [string, string, any] = ["olga", "grant", { id: "*", role: "none" }];
@@ -89,12 +89,12 @@ row("W1a", () => { const L = [OWNER, NONE, BOB("spectator")], { W } = tr(L), bob
   ok(v1st(L).roles.Bob?.role === "spectator" && ACC.entryOf(W, { actor: bob }).may === "none" && JSON.stringify(names) === '["Bob"]' && /'Bob'/.test(why) && /visitor/.test(why) && /'\*' spectator/.test(why) && /revoke/.test(why)
     && TV1.watchGrants(v1st([OWNER, NONE, BOB("visitor")]), T0).length === 0 && ACC.entryOf(vis, { actor: bob }).may === "embody"
     && TV1.watchGrants(v1st(star), T0).length === 0 && TV1.watchGrants(v1st([OWNER, NONE, BOB("spectator", { until: T0 - 1 })]), T0).length === 0,
-    "W1a '*' none + Bob:spectator: v4's door would give Bob none, so the grant is named with the owner's choices; Bob:visitor still embodies; '*' spectator or an ended grant refuses nothing", { names, why, door: ACC.entryOf(W, { actor: bob }) }); });
+    "W1a '*' none + Bob:spectator: the new door would give Bob none, so the grant is named with the owner's choices; Bob:visitor still embodies; '*' spectator or an ended grant refuses nothing", { names, why, door: ACC.entryOf(W, { actor: bob }) }); });
 row("W1c", () => { const L = [OWNER, BOB("spectator")], { W } = tr(L), bob = TV1.enc("Bob"), names = TV1.watchGrants(v1st(L), T0);
   const vis = [OWNER, ["olga", "grant", { id: "*", role: "visitor" }], BOB("spectator")] as any;
   ok(ACC.entryOf(W, { actor: bob }).may === "embody" && JSON.stringify(names) === '["Bob"]' && JSON.stringify(TV1.watchGrants(v1st(vis), T0)) === '["Bob"]'
     && TV1.watchGrants(v1st([OWNER, BOB("visitor")]), T0).length === 0 && TV1.watchGrants(v1st([BOB("spectator")]), T0).length === 0,
-    "W1c an owned world with no '*' restriction: Bob:spectator (who main held to watching) would embody in v4, so he is named too; Bob:visitor and an ownerless world refuse nothing", { names, door: ACC.entryOf(W, { actor: bob }) }); });
+    "W1c an owned world with no '*' restriction: Bob:spectator (who main held to watching) would embody after the upgrade, so he is named too; Bob:visitor and an ownerless world refuse nothing", { names, door: ACC.entryOf(W, { actor: bob }) }); });
 row("W1d", () => { const U = T0 + 86_400_000, bob = TV1.enc("Bob"), at = (L: any) => tr(L).W;
   const open = at([OWNER, BOB("none", { until: U })]), spec = at([OWNER, ["olga", "grant", { id: "*", role: "spectator" }], BOB("none")]), vis = at([OWNER, BOB("visitor")]), unowned = at([BOB("none")]);
   const root = scratch("translate-w1d"), Wd = path.join(root, "worlds"), d = path.join(Wd, "den"); fs.mkdirSync(d, { recursive: true });

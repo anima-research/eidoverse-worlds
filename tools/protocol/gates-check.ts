@@ -103,7 +103,7 @@ const UNG = ["near", "follow", "voice"], ung = (p: any, wd?: unknown, from = "pa
 { const p = P(); check("M13", "a world's stored body-default refuse or ask (the switch's words) keeps near, follow and voice deny; the gates' {move, touch} default leaves them allow",
     ung(p, "refuse").every((m) => m === "deny") && ung(p, "ask").every((m) => m === "deny") && ung(p, { move: true, touch: true }).every((m) => m === "allow") && ung(p, "accept").every((m) => m === "allow"),
     { refuse: ung(p, "refuse"), obj: ung(p, { move: true, touch: true }) }); }
-// M14 (#260, Stella item 3): a friends-row cell v4 can't hold narrows that class off for everyone; the world still loads
+// M14 (#260, Stella item 3): a friends-row cell the new table can't hold narrows that class off for everyone; the world still loads
 const load = (consent: any) => { const w: any = S.worldOf({ name: "w", entries: [], now: () => 0, presence: { bodies: {}, holds: {}, consent: JSON.parse(JSON.stringify(consent)) } }); return w; };
 { const pal = { friends: ["me"] }, stella = load({ me: { cells: { friends: { displace: "ask" }, everyone: { displace: "allow" } }, friends: ["pal"] }, pal });
   const ALL = { pose: "allow", shove: "allow", displace: "allow", touch: "allow", intimate: "allow" };

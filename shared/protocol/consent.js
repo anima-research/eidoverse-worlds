@@ -159,7 +159,7 @@ export function migratePresence(P) {
     const sw = switchOf(t);
     if (sw === "refuse" || sw === "ask") { t.move = false; t.touch = false; } else if (sw === "accept") t.move = true;   // F3, R 10-28 16:02
     for (const c of closedOf(t, sw)) (t.closed ??= bag())[c] = true;   // never wider for the ungated three too (UNGATED)
-    // v4 has no per-friend slot: a friends-row no or ask turns that class off for everyone (its gate; F3's ask → off), never refuses the load
+    // the new table has no per-friend slot: a friends-row no or ask turns that class off for everyone (its gate; F3's ask → off), never refuses the load
     if (befriended.has(who) && isTable(t)) { const row = rowOf(t, "friends");
       for (const c of CLASSES) if (row[c] !== "allow") { if (GATE_OF[c]) t[GATE_OF[c]] = false; else (t.closed ??= bag())[c] = true; } }
     for (const [who, row] of Object.entries(t.over ?? {})) { if (!isWho(who) || !row || typeof row !== "object") continue;
