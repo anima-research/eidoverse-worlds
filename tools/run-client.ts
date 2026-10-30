@@ -78,7 +78,9 @@ const linkError = (out: string) => LINK.exec(out)?.[1].split(ROOT + "/").join(""
 const mcplDeps = existsSync(join(ROOT, "mcpl/node_modules"));
 const needsMcpl = (src: string) => /from\s+["'][^"']*\.\.\/mcpl\//.test(src) || /["'][^"']*mcpl\/[\w/-]+\.ts["']/.test(src);
 
-const live = new Set<number>();
+const live = new Set<number>(), inFlight = new Map<number, [string, number]>();
+// CI: every 60 s, stderr names the files still running, so a lane killed from outside says where it stuck (#260 run 41014925239: 1010 s, no output)
+if (process.env.CI || process.env.RUN_CLIENT_HEARTBEAT) setInterval(() => { if (inFlight.size) process.stderr.write(`[run-client] still running: ${[...inFlight.values()].map(([f, t]) => `${f} ${((performance.now() - t) / 1000).toFixed(0)} s`).join(", ")}\n`); }, Number(process.env.RUN_CLIENT_HEARTBEAT) || 60_000).unref();
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { for (const pid of live) killSuiteAtExit(pid); process.exit(130); });
 type Res = { file: string; kind: "pass" | "red" | "dead" | "timeout" | "env" | "skip" | "loaded" | "flaky"; why?: string; ms: number; tail?: string };
 const run = (file: string): Promise<Res> => new Promise((done) => {
@@ -87,7 +89,7 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   if (importOnly && flag("--skip-suites") && gateSuite.has(rel(file))) return done({ file, kind: "skip", why: `the gate runs it in full as ${gateSuite.get(rel(file))}`, ms: 0 });
   if (needsMcpl(src) && !mcplDeps) return done({ file, kind: "env", why: "mcpl/node_modules missing: ln -s <a checkout with deps>/mcpl/node_modules mcpl/", ms: 0 });
   const ch = spawn("bun", [file], { cwd: ROOT, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
-  live.add(ch.pid!); let out = ""; let timedOut = false;
+  live.add(ch.pid!); inFlight.set(ch.pid!, [rel(file), t0]); let out = ""; let timedOut = false;
   ch.stdout.on("data", (d) => { out += d; }); ch.stderr.on("data", (d) => { out += d; });
   // killSuiteAsync, not process.kill(-pid): a negative pid throws on Windows, so a child past its budget was never killed,
   // its pipes stayed open, "close" never came and the lane wedged (client-tools, windows-latest, 10-23).
@@ -98,7 +100,7 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   // SIGTERM first, so a test with an exit handler cleans up what it wrote; whatever is left a moment later is killed
   const timer = setTimeout(() => { timedOut = true; void killSuiteAsync(ch.pid!, "SIGTERM", process.platform, { exited: gone }).catch(() => {}); setTimeout(() => kill(), 2000); }, TIMEOUT_S * 1000);
   ch.on("close", (code) => {
-    clearTimeout(timer); if (process.platform !== "win32") kill(true); live.delete(ch.pid!);
+    clearTimeout(timer); if (process.platform !== "win32") kill(true); live.delete(ch.pid!); inFlight.delete(ch.pid!);
     const ms = performance.now() - t0; const tail = out.trim().split("\n").slice(-3).join("\n");
     const dead = linkError(out);
     if (dead && /^error: Cannot find (?:module|package) '[^./]/.test(dead)) return done({ file, kind: "env", why: `a dependency isn't installed here: ${dead.slice(7)}`, ms, tail });
