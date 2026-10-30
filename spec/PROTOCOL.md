@@ -495,7 +495,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@33`, §14) writes its
+  its name). The translator (`translate-v1@34`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1479,7 +1479,8 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   `collider {enabled: false}`; `environment`'s `spawn` is `@world.spawn` (a later one a `spawn-point` thing), `bounds`
   `@world.bounds`, `floor` `@world.terrain {kind: 'flat', height: floor}` (a world with a terrain keeps it, and the floor
   is listed under `unmapped` as the conflict), `sky` `@world.sky.gradient` (sRGB to linear) and
-  a directional `light` thing (main's sun, defaults included), `particles` a `particles {effect: 'dust'}` child. What has
+  a directional `light` thing (main's sun, defaults included), `particles` a `particles` child naming a
+  derived dust document with main's count, range and colour (within the effect limits). What has
   no home (the sky's `ambient`, a value an effect clamps, an unknown key) rides `imported:<component>` on its thing and
   is listed under the report's `unmapped`.
 - **Main's vehicle is carried**: `vehicle {helm, exit, speed, turnRate, minY?, maxY?, probes}` is `drive {maxSpeed: speed,

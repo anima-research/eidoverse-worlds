@@ -123,7 +123,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@33";
+export const TRANSLATOR = "eidoverse/translate-v1@34";
+// @34 (decision table row 8): main's ambient motes are a derived dust document carrying its count, range and colour (EFFECT_LIMITS bound them: 600, 32 m), its defaults (16 m, #aec8b4) where unset; @33 named the dust Essential capped at 600 over 8 m. Output differs there.
 // @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0] (newSockets), where @32 wrote none (y 0). Output differs there.
 // @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
 // [band-<hash of its id>]}) and its host scans it (collider {mask: [1, that layer]}), so only it meets them; @29-@31's walls stopped every hull. Output differs there.
@@ -228,7 +229,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@33";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@34";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -313,7 +314,7 @@ export const CARRIED = {
   collision: { feature: "collision on/off toggle", to: "collider {enabled}" },
   vehicle: { feature: "vehicle", to: "drive {maxSpeed: speed, turnRate, climbRate: speed} on the host + a helm child (socket at helm, station {action: 'drive', input: {move: 'drive'}, exit}); minY/maxY → two hidden walls only this vehicle meets (collider {blocks: ['hulls'], layer: [its own band layer]}, its host's collider {mask: [1, that layer]}: Godot's collision layers), set off by the hull's measured box so its origin keeps main's band (the floor's top at minY less the hull's reach below its origin, the ceiling's bottom at maxY plus its reach above; a hull this host can't measure: at minY/maxY themselves, the whole hull in the band); walls stand at [0, y, 0] and span 200 km (every legal x/z), so the vehicle meets its band wherever it moves, and another vehicle passes through it; each is locked (builder strength, as every translated lock: no edit moves or deletes it by accident, a builder may lift it knowingly); probes → imported:vehicle, listed with what becomes of it (FATES)" },
   picture: { feature: "picture on a model's part", to: "material {node: part, texture: src, description: look, lit} (flip: true has no field there: imported:material, listed); with no part: imported:picture, listed" },
-  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles {effect: 'dust'} child; the rest imported:environment, listed" },
+  environment: { feature: "environment", to: "spawn → @world.spawn (else a spawn-point thing), bounds → @world.bounds (its min.y lowered to 2 m below a flat floor under it), floor → @world.terrain {kind: 'flat', height} (unless the world has a terrain: then listed, unmapped), sky → @world.sky.gradient + a directional light thing (the sun), particles → a particles child naming a derived dust document (main's count, range and colour, within the effect limits); the rest imported:environment, listed" },
 };
 /** main's picture (an image on a named part of its model) → {material, left (imported:material), whole (imported:picture,
  *  when there is no part to put it on: main drew nothing then)}. A flip of false is main's default, the material's own. */
@@ -376,7 +377,7 @@ function qZTo(d) { const n = Math.hypot(...d); if (!(n > 0)) return [0, 0, 0, 1]
  *  imported:environment), fields (what went where, for the report)}. `has`: what @world already holds (spawn, bounds, terrain). Main's own
  *  readings (watervolumes.js) are the defaults: a sky lights a sun at [0.4, 0.8, 0.2], #fff4df, 3. */
 export function environmentPartsOf(host, env, has = {}) {
-  const world = {}, things = [], left = {}, fields = [];
+  const world = {}, things = [], left = {}, fields = [], effects = [];
   const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   const { floor, spawn, bounds, sky, particles, ...rest } = env && typeof env === "object" && !Array.isArray(env) ? env : {};
   const B = bounds && v3(bounds.min) && v3(bounds.max) && [0, 1, 2].every((i) => bounds.min[i] < bounds.max[i]) ? bounds : null;
@@ -395,14 +396,16 @@ export function environmentPartsOf(host, env, has = {}) {
     if (Object.keys(skyRest).length) { left.sky = skyRest; fields.push([Object.keys(skyRest).map((k) => `sky.${k}`).join(", "), null]); } }
   else if (sky !== undefined) { left.sky = sky; fields.push(["sky", null]); }
   if (particles && typeof particles === "object" && !Array.isArray(particles)) { const id = envChildId(host, "particles"), p = particles;
-    const count = clampN(Math.floor(p.count), 1, 600, 600), size = clampN(p.size, 0.005, 4, 0.018), area = clampN(p.range, 0, 8, 8);
-    things.push([id, { transform: ID_POSE([0, 0, 0]), parent: { to: host }, label: "particles", particles: { effect: "dust", params: { count, size, area } } }]); fields.push(["particles", id]);
-    const kept = { count: p.count === count, size: p.size === size, range: p.range === area };   // a clamped value, or one the effect has no knob for, rides along
+    // @34 (decision table row 8): main's count, range and colour in a derived dust document (the effect limits bound it), main's defaults
+    const count = clampN(Math.floor(p.count), 1, EFFECT_LIMITS.amount, EFFECT_LIMITS.amount), size = clampN(p.size, 0.005, 4, 0.018), area = clampN(p.range, 2, EFFECT_LIMITS.extent, 16), hc = hexColor(p.color), color = Number.isInteger(hc) && hc >= 0 && hc <= 0xffffff ? hc : 0xaec8b4;
+    const doc = derivedEffect("dust", { count, size, area, color }), effect = effectAddress(doc); effects.push([effect, doc]);
+    things.push([id, { transform: ID_POSE([0, 0, 0]), parent: { to: host }, label: "particles", particles: { effect, seed: hashSeed(`${host}:environment:particles`) } }]); fields.push(["particles", id]);
+    const kept = { count: p.count === count, size: p.size === size, range: p.range === area, color: p.color === undefined || color === hc };   // a clamped value, or one the effect has no knob for, rides along
     const lost = Object.fromEntries(Object.entries(p).filter(([k]) => !kept[k]));
     if (Object.keys(lost).length) { left.particles = lost; fields.push([Object.keys(lost).map((k) => `particles.${k}`).join(", "), null]); } }
   else if (particles !== undefined) { left.particles = particles; fields.push(["particles", null]); }
   if (Object.keys(rest).length) { Object.assign(left, rest); fields.push([Object.keys(rest).join(", "), null]); }
-  return { world, things, left, fields };
+  return { world, things, left, fields, effects };
 }
 /** Every environment in a v1 state, as project() places it: [{id (as written), host, parts}]. Main drew only the first, by id in
  *  localeCompare order (watervolumes.js environmentSettings): it is mapped; any other rides whole as imported:environment, listed. */
@@ -892,6 +895,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     if (parts.world.spawn) w.spawn = parts.world.spawn; if (parts.world.bounds) w.bounds = parts.world.bounds; if (parts.world.terrain) w.terrain = parts.world.terrain;
     if (parts.world.sky) w.sky = { ...(w.sky && typeof w.sky === "object" ? w.sky : {}), ...parts.world.sky };
     for (const [cid, cc] of parts.things) out[cid] = shapeRepaired(cc);
+    for (const [a, d] of parts.effects ?? []) effects?.set(a, d);   // @34: the motes' derived dust
     if (Object.keys(parts.left).length && out[host]) out[host][keyed("imported", "environment")] = parts.left; }
   { const sb = stageBoundsOf(st); if (sb) w.bounds = sb; }   // @31: main's 78 m stage island as the world's box (stageBoundsOf)
   // @12, wave 2 (render-media-env): the world's look in today's spelling, as the load repairs a stored one (repairWorld: the sky's

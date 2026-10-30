@@ -46,10 +46,10 @@ C("G3c", "each of main's three routes is a climb child of its host: main's path 
     return a && JSON.stringify(a.components.climb) === JSON.stringify({ points: m.path, reach: m.radius, speed: m.speed }) && a.components.label === m.name; })
   && JSON.stringify(creates.find((a) => a.id === "$water-scenery")?.components.collider) === JSON.stringify({ shape: "mesh", enabled: false }), climbs);
 const envMain = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "environment").args.data, setOf = (k) => ops.find((o) => o.verb === "set" && o.args.id === "@world" && o.args.component === k)?.args.value;
-C("G3e", "main's environment: @world.spawn and bounds as main's (min.y 2 m under the floor when the floor lies below it: #248), @world.sky.gradient, @world.terrain flat at main's floor (no floor thing), a directional sun and a dust child; ambient and the particles' count and range (clamped) listed as unmapped; vehicle probes listed with what becomes of them (FATES; minY/maxY and water speed are mapped since translate-v1@29, R 10-28 item 50)",
+C("G3e", "main's environment: @world.spawn and bounds as main's (min.y 2 m under the floor when the floor lies below it: #248), @world.sky.gradient, @world.terrain flat at main's floor (no floor thing), a directional sun and a child naming a derived dust document, uploaded with the batch (translate-v1@34); ambient and the particles' clamped count listed as unmapped; vehicle probes listed with what becomes of them (FATES; minY/maxY and water speed are mapped since translate-v1@29, R 10-28 item 50)",
   JSON.stringify(setOf("spawn")) === JSON.stringify({ pos: envMain.spawn }) && JSON.stringify(setOf("bounds")) === JSON.stringify({ min: [envMain.bounds.min[0], Math.min(envMain.bounds.min[1], envMain.floor - 2), envMain.bounds.min[2]], max: envMain.bounds.max }) && !!setOf("sky")?.gradient
-  && JSON.stringify(setOf("terrain")) === JSON.stringify({ kind: "flat", height: envMain.floor }) && !creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box" && !a.components.collider?.blocks) && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => a.components.particles?.effect === "dust" && a.components.parent?.to === "$water-terrain")
-  && JSON.stringify(dry.unmapped.map(({ becomes, ...u }) => u)) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count, particles.range"], as: "water-terrain imported:environment" },
+  && JSON.stringify(setOf("terrain")) === JSON.stringify({ kind: "flat", height: envMain.floor }) && !creates.some((a) => a.components.hidden === true && a.components.mesh?.shape === "box" && !a.components.collider?.blocks) && creates.some((a) => a.components.light?.kind === "directional") && creates.some((a) => /^sha256:/.test(a.components.particles?.effect) && a.components.parent?.to === "$water-terrain") && dry.uploads?.length === 1
+  && JSON.stringify(dry.unmapped.map(({ becomes, ...u }) => u)) === JSON.stringify([{ component: "environment", id: "water-terrain", fields: ["sky.ambient", "particles.count"], as: "water-terrain imported:environment" },
     { component: "vehicle", id: "water-submarine", fields: ["probes"], as: "water-submarine imported:vehicle" }])
   && dry.unmapped[0].becomes === undefined && /retired: the authority's hull sweep/.test(dry.unmapped[1].becomes?.probes) && dry.unmapped[1].becomes?.minY === undefined,
   { unmapped: dry.unmapped, sets: ops.filter((o) => o.verb === "set").map((o) => o.args.component) });
@@ -68,11 +68,12 @@ const w = openWorld("water"); const call = (verb, args) => { clock.advance(1000)
 call("create-world", { title: "water" });
 // the models as --apply sends them: the library path each upload became (here a stock model; the bundle's GLBs aren't in the repo)
 const CRATE = "crate", swap = (v) => (typeof v === "string" && /^store\/models\//.test(v) ? CRATE : Array.isArray(v) ? v.map(swap) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v);
+const ups = (dry.uploads ?? []).map((u) => call("upload", u.args));   // the derived effects the batch names (translate-v1 @34)
 const r = call("batch", swap(dry.requests[0].args));
 const st = w.state(), id = (name) => r.ids?.[`$${name}`];
 C("G4", "a real authority takes the whole batch: every create and set, its placeholders minted, each pocket and the body under its minted host",
-  r.ok && Object.keys(r.ids ?? {}).length === creates.length && st.entities[id(bodies[0].id.slice(1))]?.c.parent?.to === id("water-terrain") && by("water-submarine").every((a) => st.entities[id(a.id.slice(1))]?.c.parent?.to === id("water-submarine")),
-  { refused: r.refused, ids: Object.keys(r.ids ?? {}).length });
+  ups.length === 1 && ups.every((u) => u.ok) && r.ok && Object.keys(r.ids ?? {}).length === creates.length && st.entities[id(bodies[0].id.slice(1))]?.c.parent?.to === id("water-terrain") && by("water-submarine").every((a) => st.entities[id(a.id.slice(1))]?.c.parent?.to === id("water-submarine")),
+  { refused: r.refused, ups: ups.map((u) => u.refused ?? u.ok), ids: Object.keys(r.ids ?? {}).length });
 { const DRV = await import(ENGINE + "shared/drive.js"), sub = id("water-submarine"), helm = DRV.helmOf?.(st, sub), m = manifest.verbs.find((v) => v.verb === "comp" && v.args.type === "vehicle").args.data;
   C("G4v", "main's vehicle drives here: the authority took drive on the submarine (maxSpeed main's speed, climbRate the same) and its helm child where main's helm was, exit as main's",
     !!helm && JSON.stringify(DRV.driveOf(st.entities[sub]?.c)) === JSON.stringify({ maxSpeed: m.speed, turnRate: m.turnRate, climbRate: m.speed, response: 1 / 1.5, throttle: false })

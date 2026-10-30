@@ -8,8 +8,9 @@
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51-53  @31: main's slow water is the water's drag; its 78 m stage a bounds box; its inferred lamps light children
+//   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
 //   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
-//   V5      the translator is @33, and a report reviewed under @32 is refused, naming the earlier translator
+//   V5      the translator is @34, and a report reviewed under @33 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -212,12 +213,12 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@32" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@33" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 33 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 33 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@33/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @33; a report reviewed under @32 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 34 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 34 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@34/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @34; a report reviewed under @33 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -245,6 +246,14 @@ row("V7", () => { const root = scratch("translate-v7"), W = path.join(root, "wor
 // ================= SWEEP-3: the rest of main's meaning =================
 row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "x.glb", collide: "exact" }], ["olga", "spawn", { id: "b", lib: "x.glb", collide: "box" }], ["olga", "spawn", { id: "c", lib: "x.glb", collide: "boxy" }]]);
   ok(E.a.collider?.shape === "mesh" && E.b.collider?.shape === "box" && E.c.collider === undefined && E.c["imported:collide"] === "boxy", "S3-T1 main's spawn collide: exact → collider mesh, box → box; anything else carried", { a: E.a.collider, b: E.b.collider, c: E.c }); });
+// decision table row 8 (@34): main's ambient motes keep their count, range and colour in a derived dust document
+row("DT8", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", { id: "land", lib: "t.glb" }], ["olga", "comp", { id: "land", type: "environment", data: { particles } }]]);
+  const fx = (o: any) => o.E[TV1.envChildId("land", "particles")]?.particles, em = (o: any) => o.r.effects.get(fx(o)?.effect)?.emitters?.[0];
+  const a = env({ count: 450, range: 24, color: "#336699" }), b = env({ count: 3000, range: 60 }), c = env({});
+  ok(/^sha256:/.test(fx(a)?.effect) && em(a)?.spawn?.amount === 450 && em(a).shape.extents[0] === 24 && em(a).color.base === 0x336699 && a.E.land["imported:environment"] === undefined
+    && em(b)?.spawn?.amount === PE.EFFECT_LIMITS.amount && em(b).shape.extents[0] === PE.EFFECT_LIMITS.extent && em(b).color.base === 0xaec8b4 && JSON.stringify(b.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 3000, range: 60 } })
+    && em(c)?.shape?.extents?.[0] === 16 && em(c).color.base === 0xaec8b4 && !PE.effectProblem(a.r.effects.get(fx(a).effect)),
+    "DT8 main's motes: count, range and colour ride in a derived dust document (main's 16 m and #aec8b4 where unset); past the effect limits (600, 32 m) they're clamped and carried", { a: em(a), b: [em(b)?.spawn, b.E.land["imported:environment"]] }); });
 // decision table row 9 (@33): main sat a socket with no pos at [0, 0.5, 0] (client/lib/world.js); the translation writes it
 row("DT9", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { bare: { pose: "sit" }, nul: { pos: null }, set: { pos: [1, 0.2, 0] } } }]]);
   const S = E.s?.sockets ?? {};

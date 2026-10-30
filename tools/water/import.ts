@@ -22,9 +22,9 @@ for (const f of files) {
   if (createHash('sha256').update(data).digest('hex') !== f.sha256) throw Error(`asset hash mismatch: ${f.file}`);
   bytes.set(f.path, data);
 }
-const req = manifest.requests ? { batch: manifest.requests[0], deferred: manifest.deferred ?? [], mapped: manifest.mapped ?? [], unmapped: manifest.unmapped ?? [] } : requestsOf(manifest.verbs, world ?? 'water');
+const req = manifest.requests ? { batch: manifest.requests[0], uploads: manifest.uploads ?? [], deferred: manifest.deferred ?? [], mapped: manifest.mapped ?? [], unmapped: manifest.unmapped ?? [] } : requestsOf(manifest.verbs, world ?? 'water');
 if (dry) {
-  console.log(JSON.stringify({ requests: [req.batch], mapped: req.mapped, unmapped: req.unmapped ?? [], deferred: req.deferred, files: { checked: bytes.size, absent } }, null, 1));
+  console.log(JSON.stringify({ requests: [req.batch], uploads: req.uploads, mapped: req.mapped, unmapped: req.unmapped ?? [], deferred: req.deferred, files: { checked: bytes.size, absent } }, null, 1));
   process.exit(0);
 }
 const base = new URL(server);
@@ -51,7 +51,9 @@ try {
     const timer = setTimeout(() => rej(Error('no reply in 30 s; look at the world before retrying')), 30000);
     ws.onmessage = (e) => { const m = JSON.parse(String(e.data));
       if (m.type === 'error') { clearTimeout(timer); rej(Error(m.error ?? 'refused')); }
-      if (m.type === 'snapshot') ws.send(JSON.stringify({ type: 'request', id: 'water-import', ...batch }));
+      // the effect documents the batch names go first (upload {effect}), then the batch
+      if (m.type === 'snapshot') { req.uploads.forEach((u, i) => ws.send(JSON.stringify({ type: 'request', id: `water-effect-${i}`, ...u }))); ws.send(JSON.stringify({ type: 'request', id: 'water-import', ...batch })); }
+      if (m.type === 'reply' && /^water-effect-/.test(m.id) && !m.ok) { clearTimeout(timer); rej(Error(`effect upload refused: ${JSON.stringify(m.reply?.refused ?? m)}`)); }
       if (m.type === 'reply' && m.id === 'water-import') { clearTimeout(timer); res(m); } };
     ws.onclose = () => rej(Error('the server closed the connection'));
     ws.send(JSON.stringify({ type: 'join', world, id: 'water-import', token }));
