@@ -18,6 +18,7 @@
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
 //        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
 //   OR7  bind refuses an identity only a third party's entry names (a recipient of translated old speech); OR8 its own entry, role, ban or mute makes it bindable
+//   OR9  …an entry counts only if the reader accepts it: a parseable but invalid row makes nobody bindable
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 //   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
 //   UN2  one owner bound: no warning; UN3 no owner at all and no --claim: refused, naming --claim (every translation ends with an owner)
@@ -325,6 +326,14 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "OR7 bind refuses an identity only another person's entry names (Echo, the recipient of fable's translated old speech), by name and by id, nothing changed", { code: u.up.code, echo, r7 }));
   const r8 = ["Talker", "Roley", "Banned", "Mutey"].map((n) => bind("yard", n, `human:test:${n.toLowerCase()}`));
   row("OR8", () => ok(r8.every((r) => r.code === 0 && /^bound /m.test(r.out)), "OR8 …while its own record makes it bindable: an entry it wrote (Talker), a role (Roley), a ban (Banned), a mute (Mutey)", r8.map((r) => r.out.slice(0, 160))));
+  // OR9 (#260 Stella 10-30): an entry counts only if the reader accepts it; Kept's same row, valid, is the control
+  const wl = path.join(W, "yard", "world.jsonl"), rows = fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const said = rows.find((e) => e.kind === "say"), ts = Math.max(...rows.map((e) => e.ts ?? 0)), d9 = directoryAt(file);
+  const stray = d9.imported("Stray"), kept = d9.imported("Kept");
+  fs.appendFileSync(wl, JSON.stringify({ ...said, actor: stray, ts: ts + 1, stray: true }) + "\n" + JSON.stringify({ ...said, actor: kept, ts: ts + 2 }) + "\n");
+  const r9 = bind("yard", "Stray", "human:test:stray"), k9 = bind("yard", "Kept", "human:test:kept");
+  row("OR9", () => ok(!!said && r9.code === 1 && /nobody called/.test(r9.out) && k9.code === 0 && /^bound /m.test(k9.out),
+    "OR9 bind refuses an identity whose only entry the reader rejects (Stray: a parseable row with an unknown field); the same row, valid, makes Kept bindable", { said: !!said, r9, k9 }));
 }
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);

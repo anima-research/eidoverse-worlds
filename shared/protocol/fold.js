@@ -312,8 +312,8 @@ function governanceTarget(e, op) {
   return !!o && typeof o === "object" && o.verb === "set" && typeof o.comp === "string" && o.comp.startsWith("roles:");
 }
 // The entries the fold reads, in two steps either side of its genesis checks (so its diagnostics keep their order): each line
-// checked alone, then, after genesis, a later genesis and a bad ts nulled. purgesIn reads a log through the same two, so the
-// purges a replay applies are exactly the fold's.
+// checked alone, then, after genesis, a later genesis and a bad ts nulled. acceptedEntries (purgesIn, operator-bind) reads a
+// log through the same two, so the purges a replay applies and the authors a bind counts are exactly the fold's.
 function checkedEntries(entries, d) {
   return entries.map((e, seq) => {
     if (e instanceof Malformed) { d(seq, "malformed:" + e.code, e.detail); return null; }
@@ -417,7 +417,11 @@ export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = fals
 }
 /** every purge in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the purge's seq */
 export function purgesIn(entries) {
+  const none = () => {}, settled = acceptedEntries(entries); return unnamedStubs(settled, purgesOf(settled, none), none);
+}
+/** the entries the strict fold accepts, by seq (null where it rejects one); none without a genesis (#260 Stella 10-30) */
+export function acceptedEntries(entries) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
-  if (!g || g.kind !== "genesis") return new Map();   // the fold reads no world here, so nothing is replayed either
-  const settled = settledEntries(ok, worldIdOf(g), none); return unnamedStubs(settled, purgesOf(settled, none), none);
+  if (!g || g.kind !== "genesis") return [];   // the fold reads no world here, so nothing is replayed either
+  return settledEntries(ok, worldIdOf(g), none);
 }

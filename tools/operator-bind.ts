@@ -6,7 +6,7 @@ import path from "node:path";
 import { directoryFor, foldName, isMinted, accountTag, ACCOUNT_SHAPE } from "../server/directory.ts";
 import { modLogAt } from "../server/custody.ts";
 import { isWorldDir } from "../server/livehost.ts";
-import { readLog, fold } from "../shared/protocol/fold.js";
+import { readLog, fold, acceptedEntries } from "../shared/protocol/fold.js";
 
 /** An account as a join wears it (ACCOUNT_SHAPE, with something after the prefix, no spaces). */
 const WELL_FORMED = /^(human:[a-z0-9_-]+:|agent:token:|aid1:\S+:|local:)\S+$/i;
@@ -18,9 +18,10 @@ type Out = { ok: true; id: string; name: string; account: string; logged: string
 function ownIn(dir: string): Set<string> {
   const out = new Set<string>(), mine = (id: unknown) => { if (typeof id === "string" && isMinted(id)) out.add(id); };
   const lines = (f: string) => { const p = path.join(dir, f); return fs.existsSync(p) ? fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }) : []; };
-  for (const e of lines("world.jsonl")) mine(e?.actor);
+  const log = readLog(fs.readFileSync(path.join(dir, "world.jsonl")));
+  for (const e of acceptedEntries(log)) mine(e?.actor);   // only an entry the reader accepts (#260 Stella 10-30)
   for (const m of lines("world.mod.jsonl")) { mine(m?.actor); if (m?.verb === "ban" || m?.verb === "mute") mine(m.who); }
-  const wc = fold(readLog(fs.readFileSync(path.join(dir, "world.jsonl")))).entities?.["@world"]?.c ?? {};
+  const wc = fold(log).entities?.["@world"]?.c ?? {};
   for (const k of Object.keys(wc)) if (k.startsWith("roles:")) mine(k.slice(6));
   return out;
 }
