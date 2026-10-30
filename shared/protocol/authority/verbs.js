@@ -2,7 +2,7 @@
 // their table order: FOUNDING_VERBS (create-world), SCHEMA_VERBS (schema), WRITE_VERBS (create, set, delete, place,
 // turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, sculpt, batch, fork-copy), and
 // buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Only schema's did-you-mean reads UP (its guess).
-import { cowState, applyCow, DIALECT, VERSION, emptyState, keyOk } from "../fold.js";
+import { cowState, applyCow, DIALECT, VERSION, emptyState, keyOk, utf8Len } from "../fold.js";
 import { valueCheck } from "./checks.js";
 import { COMPONENTS, STATUSES, defOf } from "../componentspec.js";
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from "../../captions.js";
@@ -90,7 +90,7 @@ const SAY_VERBS = {
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
     if (a.to !== undefined && (typeof a.to !== "string" || a.to.length > 64)) refuse("shape", "say.to names one person: a string of at most 64 characters", "say {text, to: '<identity>'}");
     const body = { text: a.text, ...(a.to ? { to: a.to } : {}), ...spokenOf(a, w.now()) };
-    rateCheck(w, actor, "say", JSON.stringify(body).length); const seq = w.append({ kind: "say", actor, verb: "say", body }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
+    rateCheck(w, actor, "say", utf8Len(JSON.stringify(body))); const seq = w.append({ kind: "say", actor, verb: "say", body }); (w.sayQ ??= []).push(seq); return { ok: true, seq }; }, // w.append refuses too-big before writing
   undo: (w, actor, a) => commit(w, actor, "undo", a, (ctx) => buildUndo(ctx, a, w)),
   // ---- captions: one line of what a screen said (a captioner bot, live subtitles). Rights live on the SCREEN: its
   // `captioners {ids}` names who may caption it (anyone who may edit the screen may too); nobody else, and no `set` by

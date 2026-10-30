@@ -1843,5 +1843,11 @@ for (const [name, steps] of [
   const bytes = R({ ...P, bytes: 1024 })("ann", "create", { id: "rb", model: "crate", components: { "t/note": "x".repeat(2000) } });
   ok(def.every((x) => x === "ok") && acts.join() === "ok,ok,ok,rate" && says.join() === "ok,ok,rate" && win.join() === "ok,ok,ok,rate,ok" && bytes === "rate",
     "RP1 the host's rate is the one met: its acts, says, window and bytes (8 acts pass on the defaults)", { def, acts, says, win, bytes }); }
+{ const R = (rate) => (actor, verb, args) => { clock.advance(100); const w = openWorld(root, "ratesay"); if (rate) w.rate = rate; const r = request(w, actor, verb, args); return r.ok ? "ok" : r.refused?.code; };
+  const P = { n: 60, says: 20, ms: 10000, bytes: 1024, anonBytes: 1024 };
+  R(null)("ann", "create-world", { title: "ratesay" }); clock.advance(20000);
+  const ascii = R(P)("ann", "say", { text: "a".repeat(400) }); clock.advance(20000);
+  const wide = R(P)("ann", "say", { text: "\u20ac".repeat(400) });
+  ok(ascii === "ok" && wide === "rate", "RP2 a say's bytes are its UTF-8 bytes, as the log stores them: 400 three-byte characters are refused under a 1 KiB window where 400 ASCII fit", { ascii, wide }); }
 console.log(`[authority-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
