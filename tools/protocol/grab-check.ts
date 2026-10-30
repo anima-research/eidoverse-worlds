@@ -171,6 +171,7 @@ const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");
 const SL = await import(TREE + "shared/protocol/simlayer.js");
+const { KILL_MARGIN = 0 } = await import(TREE + "shared/protocol/physconst.js");
 const G = await import(TREE + "shared/grab.js").catch(() => ({}));   // absent at the base commit (--control)
 const SB = await import(TREE + "shared/protocol/sandbox.js");
 const ST = await import(TREE + "shared/protocol/authority/storage.js");
@@ -654,6 +655,47 @@ const cases: Case[] = [
       const sact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
       return { how: comp(s, "board", "t/how"), cause: s.entries()[sact?.cause]?.verb, bad: code(bad) }; },
     good: (o) => o.how === "throw" && o.cause === "throw" && o.bad === "shape" },
+  { id: "U3b", what: "a hold that ends with no settlement of the holder's is a release too (review of #260): a fall out of the world says fell, caused by the fall's act, with or without physics; a leave whose drop is refused, with no engine, says left and, like a departure, records no identity", run(s) {
+      const fall = (sim: boolean) => { const t = session({ scripts: SB.SANDBOX }); cast(t, sim);
+        t.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50, -10, -50], max: [50, 50, 50] } });
+        t.call("olive", "set", { id: "@world", component: "spawn", value: { pos: [0, 0, 8] } });
+        t.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 8.5] } });
+        t.call("olive", "create", { id: "board", model: "book", place: { at: [3, 3] } });
+        install(t, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "t/how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["t/how"] }, on: ["release"] });
+        t.call("vic", "move", { to: [0, 0, 8] }); const grab = t.call("vic", "grab", { id: "ball" });
+        const kz = -10 - KILL_MARGIN;
+        t.call("olive", "set", { id: "@world", component: "terrain", value: { kind: "flat", height: kz - 10 } });
+        for (let y = -3.5; y > kz - 4; y -= 3.5) t.call("vic", "move", { to: [0, y, 8] }, 1000);
+        const back = t.call("vic", "move", { to: [0, 0, 8], teleport: true, reason: "below-bounds" }, 1000);
+        const sact = t.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+        return { grab: show(grab), back: show(back), how: comp(t, "board", "t/how") ?? null, cause: sact ? t.entries()[sact.cause]?.verb ?? t.entries()[sact.cause]?.kind : null, trigger: sact?.body?.trigger?.actor ?? null }; };
+      const plain = fall(false), sim = fall(true);
+      cast(s);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "member" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "board", model: "book", place: { at: [3, 3] } });
+      install(s, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "t/how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
+      const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });
+      const left = s.call("vic", "leave", {});
+      const lact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+      return { plain, sim, left: { grab: show(grab), lock: show(lock), leave: show(left), holds: Object.keys(s.w().presence.holds), how: comp(s, "board", "t/how") ?? null,
+        trigger: lact?.body?.trigger ?? null, by: lact?.body?.event?.by ?? null } }; },
+    good: (o) => o.plain.grab === "ok" && o.plain.back === "ok" && o.plain.how === "fell" && o.plain.cause === "move" && o.plain.trigger === "vic"
+      && o.sim.grab === "ok" && o.sim.back === "ok" && o.sim.how === "fell" && o.sim.cause === "move" && o.sim.trigger === "vic"
+      && o.left.grab === "ok" && o.left.lock === "ok" && !o.left.holds.length && o.left.how === "left" && o.left.trigger === null && o.left.by === null },
+  { id: "U3c", what: "…in a world running physics, a leave whose drop is refused says left too, caused by the authority's return-held act, which names the holder, so its activation keeps the trigger and by (review of #260)", run(s) { cast(s, true);
+      s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
+      s.call("olive", "create", { id: "board", model: "book", place: { at: [3, 3] } });
+      install(s, "olive", "ball", "watch", `world.on("release", (e) => world.set("board", "t/how", e.how));\n`, { scope: { ids: ["self", "board"], comps: ["t/how"] }, on: ["release"] });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
+      const lock = s.call("olive", "set", { id: "ball", component: "lock", value: true });
+      const left = s.call("vic", "leave", {});
+      const lact = s.entries().filter((e: any) => e.kind === "act" && e.actor === "script:ball").at(-1);
+      const ret = s.entries().filter((e: any) => e.kind === "act" && e.verb === "return-held").map((e: any) => e.body);
+      return { grab: show(grab), lock: show(lock), leave: show(left), holds: Object.keys(s.w().presence.holds), how: comp(s, "board", "t/how") ?? null,
+        cause: lact ? s.entries()[lact.cause]?.verb ?? null : null, trigger: lact?.body?.trigger?.actor ?? null, by: lact?.body?.event?.by ?? null, ret }; },
+    good: (o) => o.grab === "ok" && o.lock === "ok" && o.leave === "ok" && !o.holds.length && o.how === "left" && o.cause === "return-held" && o.trigger === "vic" && o.by === "vic"
+      && o.ret.length === 1 && o.ret[0].holder === "vic" && o.ret[0].why === "locked" },
   { id: "U6", what: "a refused throw leaves the hold where it was: its release point isn't written before the throw is admitted", run(s) { cast(s, true);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const g = s.call("vic", "grab", { id: "ball" });

@@ -5,6 +5,7 @@
 // authority.js's gate section unchanged). guess is above it, reached through UP.
 import { isEntityId, isComponent, utf8Len } from "../fold.js";
 import { mintId } from "../ids.js";
+import { fillsFromImported, idOut } from "../view.js";
 import { COMPONENTS, defOf, isNamespaced, materialize, unitTransform } from "../componentspec.js";
 import { offChain, carried, ENGINES, ends, endsUnder } from "../simlayer.js";
 import { atWrite } from "../assetref.js";
@@ -62,14 +63,23 @@ const actOf = (w, actor, verb, args, extra) => actEntry(w, actor, verb, { reques
 // own one deletes the leftovers in the same change, so a deleted sky leaves the slot empty instead of showing them. A
 // capability's writes are scoped to what they name, so a reaction's or script's write is left as it is.
 const NATIVE_WORLD = ["sky", "terrain", "grass", "water"];
-function dropImportedShadows(ctx, ops) {
-  if (ctx.cap || !ops.length) return ops; const wc = ctx.st.entities["@world"]?.c; if (!wc) return ops;
-  const add = [];
-  for (const k of NATIVE_WORLD) { const imp = `imported:${k}`;
+function dropImportedShadows(ctx, ops, verb) {
+  if (ctx.cap || !ops.length) return ops;
+  const add = []; const wc = ctx.st.entities["@world"]?.c;
+  if (wc) for (const k of NATIVE_WORLD) { const imp = `imported:${k}`;
     if (!(imp in wc) || ops.some((o) => o.id === "@world" && o.comp === imp)) continue;
     if (!ops.some((o) => o.id === "@world" && o.comp === k && (o.verb === "set" || o.verb === "delete"))) continue;
     add.push(delOp("@world", imp)); ctx.notes.push({ id: "@world", component: imp, why: `the imported world's leftover ${k} goes with the world's own ${k}` }); }
-  return add.length ? [...ops, ...add] : ops;
+  if (verb === "undo") return add.length ? [...ops, ...add] : ops;
+  const out = [];
+  ops.forEach((o, i) => { out.push(o);
+    if (o.verb !== "delete" || o.id === "@world" || o.comp === undefined) return;
+    const n = idOut(o.comp);
+    if (!fillsFromImported(n) || !(o.comp in (ctx.st.entities[o.id]?.c ?? {})) || ops.slice(i + 1).some((x) => x.id === o.id && ((x.comp === o.comp && x.verb === "set") || (x.comp === undefined && x.verb === "delete")))) return;
+    for (const k of Object.keys(ctx.st.entities[o.id]?.c ?? {})) {
+      if (!k.startsWith("imported:") || idOut(k.slice(9)) !== n || ops.some((x) => x.id === o.id && x.comp === k)) continue;
+      out.push(followUp(delOp(o.id, k))); ctx.notes.push({ id: o.id, component: k, why: `the imported thing's leftover ${n} goes with its own ${n}` }); } });
+  return [...out, ...add];
 }
 // A write: build ops against the folded state, admit them, then append the act and its one change entry.
 function commit(w, actor, verb, args, build) {
@@ -79,7 +89,7 @@ function commit(w, actor, verb, args, build) {
   const ctx = { st, actor, w, notes: [], refs: new Set() };
   // the old spelling's writes (a sockets map) are lifted here, before the references are cleared below, so a socket child the
   // lift takes away has the references to it cleared too, as a delete's are; admit then takes the ops as lifted
-  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx))))))), w.everIds());
+  const pre = liftOps(st, stampModelHash(ctx, stampMedia(ctx, stampResetHomes(ctx, stampHomes(ctx, stampShapes(ctx, dropImportedShadows(ctx, build(ctx), verb)))))), w.everIds());
   const ops = pre.ops;
   // whatever removes a thing (delete, a batch's delete, an undo of its create) clears the references to it in the same act
   if (ops.some((o) => o.verb === "delete" && o.comp === undefined)) { const after = scratch(st, ops); const gone = new Set(ops.filter((o) => o.verb === "delete" && o.comp === undefined && !after.entities[o.id]).map((o) => o.id));

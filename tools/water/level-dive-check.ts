@@ -96,11 +96,20 @@ try {
   await js(`${C}.myState.pos.set(0, 0.5, 84); return true;`); await key("add", "KeyW"); await pause("W held, 84 m out", 800); await key("delete", "KeyW");
   const far = await js(`const p = ${C}.myState.pos; return { r: +Math.hypot(p.x, p.z).toFixed(2), bounds: ${C}.worldBounds() };`), unboundOk = !!unbound?.ok;
 
+  const lake = (water: any) => js(`(await import('/lib/world.js')).applyTerrainState({ seed: 7, size: 120, amplitude: 0, features: [{ type: 'hill', x: 0, z: 30, radius: 18, height: -8 }], water: ${JSON.stringify(water)} }); return true;`);
+  const forward = async (water: any) => { await lake(water); await put(-1.1); await pause("the float settles", 1200);
+    const p0 = await js(`const p = ${C}.myState.pos; return [p.x, p.z];`);
+    await key("add", "KeyC"); await key("add", "KeyW"); await pause("C and W held: diving ahead", 1500);
+    const at = await js(`const c = ${C}, p = c.myState.pos; return { x: p.x, z: p.z, diving: c.isLevelDiving() };`); await key("delete", "KeyW"); await key("delete", "KeyC");
+    return { diving: at.diving, m: +Math.hypot(at.x - p0[0], at.z - p0[1]).toFixed(3) }; };
+  const plainDive = await forward({ level: 0 }), thickDive = await forward({ level: 0, drag: 50 });
+  await lake({ level: 0 }); await until("the lake's level is 0 again", () => js("return (await import('/lib/water.js')).waterLevel() === 0;"), { ms: 15000 });
   check("LD1 afloat at the surface is not diving", floating.diving === false, JSON.stringify(floating));
   check("LD2 falling over the water with C held does not start a swim in the air", fallingWithC.diving === false, JSON.stringify(fallingWithC));
   check("LD3 holding C in deep level water dives a metre and more under, in the water medium", dive.diving === true && dive.y < floating.y - 1 && dive.medium === "water", JSON.stringify({ floating, dive }));
   check("LD4 back at the surface the float takes the body again, at the floating depth", surfaced.diving === false && Math.abs(surfaced.y - floating.y) < 0.6, JSON.stringify({ floating, surfaced }));
   check("LD5 looking down with W held dives, no key (R 10-28)", lookDive.diving === true && lookDive.y < floating.y - 1, JSON.stringify({ floating, lookDive }));
+  check("LD12 @world.water.drag reaches a level diver: in water of drag 50 a dive ahead covers under a third of what it covers in the default", plainDive.diving === true && thickDive.diving === true && plainDive.m > 0.3 && thickDive.m < plainDive.m / 3, JSON.stringify({ plainDive, thickDive }));
   check("LD6 the floating clip holds steady, idle and swimming (at most one change in 1.5 s)", idleClips.flips <= 1 && swimClips.flips <= 1 && idleClips.frames > 10, JSON.stringify({ idleClips, swimClips }));
   check("LD9 holding a thing afloat, holding C sinks me and keeps it in my hand (C is down, never throw)", made?.ok && heldAfloat === true && afterC.held === true && afterC.y < y0 - 0.3, JSON.stringify({ made: made?.ok ? true : made, crate, heldAfloat, afterC }));
   check("LD10 …and Q throws it (the throw/punt key)", afterC.held === true && afterQ.held === false, JSON.stringify({ afterC, afterQ }));

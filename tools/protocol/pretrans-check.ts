@@ -712,6 +712,15 @@ await C("D12", "every field of an open component has a written meaning, every me
   const caught = f0 ? CAT.pinBreakList(changed).some((b: any) => b.text.startsWith(`light.${f0}: its meaning`)) : false;
   return [!bare.length && !unpinned.length && caught, { bare: bare.slice(0, 8), unpinned: unpinned.length, caught }];
 });
+await C("D14", "a map component's entry fields keep their meanings and units in the pin as a component's fields do (D12): places' at, min, max and label are pinned, and a changed meaning or unit of one is a break", () => {
+  const pin = JSON.parse(read("spec/registry-pin.json")); const docs = CAT.pinOf().places?.docs ?? {};
+  const unpinned = Object.keys(docs).filter((f) => pin.places?.docs?.[f] !== docs[f]);
+  const meant = JSON.parse(JSON.stringify(pin)); if (meant.places?.docs?.at) meant.places.docs.at += " (it once meant something else)";
+  const unit = JSON.parse(JSON.stringify(pin)); if (unit.places?.units) unit.places.units.at = "cm";
+  const meaning = CAT.pinBreakList(meant).some((b: any) => b.text.startsWith("places.at: its meaning"));
+  const unitBreak = CAT.pinBreakList(unit).some((b: any) => b.text.startsWith("places.at: its unit"));
+  return [["at", "min", "max", "label"].every((f) => typeof docs[f] === "string") && !unpinned.length && meaning && unitBreak, { docs: Object.keys(docs), unpinned, meaning, unitBreak }];
+});
 await C("D13", "a pin break is acknowledged in the record, not just against the live code: every break between an earlier spec/registry-pin.json (the base's, where this branch left origin/main; and the pin's previous version, before its newest change) and the working tree's is a `  - <break>` line spec/REGISTRY-CHANGELOG.md gained since then (D8 compares the pin to the code, so the code and the pin edited together, with no line, passed it)", () => {
   const F = "spec/registry-pin.json"; const now = (f: string) => (fs.existsSync(path.join(T, f)) ? read(f) : null);
   const r = PH.unacknowledged(T, [F], "spec/REGISTRY-CHANGELOG.md", now, (was, is) => CAT.pinBreakList(was[F] ?? {}, is[F] ?? {}).map((b: any) => b.text), argv);

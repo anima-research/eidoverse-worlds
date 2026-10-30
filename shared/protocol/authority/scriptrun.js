@@ -308,12 +308,14 @@ export function settleOrphans(w, present = []) {
 //   lift     no reader serves an un-lifted seat (sitting works on socket children only): BLOCKS writes
 //   rename   @world trusted (drafts.js trustedOf reads both), a motion's bob (names.js motionType), a station's pose
 //            (sockbody.js bodyOf) are read in the old spelling: served; a grabbable's pose or a grip's fingers are not
-//            (shared/grab.js reads anim and grasp only): BLOCKS writes
+//            (shared/grab.js reads anim and grasp only), nor is a picture's or a sound's alt or look (picture.js and sound.js
+//            read description only: no live read alias, R 10-27): BLOCKS writes
 //   repair   the sky's azimuth in degrees reads as radians, an address model reads as "thing": BLOCKS writes
 // A blocked world refuses every write (not the reads, not leave) with the registered code `repair-needed`, whose text names
 // the command (authority.js request). Never a silent wrong behaviour; never a write the operator didn't ask for.
 const needsCache = new WeakMap();
-const SERVED_RENAMES = (op) => !(op.comp === "grabbable" || op.comp.startsWith("grabbable:"));   // what no reader serves in the old spelling
+const UNSERVED_RENAMES = new Set(["grabbable", "picture", "sound"]);   // what no reader serves in the old spelling
+const SERVED_RENAMES = (op) => !(UNSERVED_RENAMES.has(op.comp) || op.comp.startsWith("grabbable:"));
 /** Why the record itself stops a write now, or null: its old shapes wait for the maintenance command (lead's ruling 10-18:
  *  a load never writes; a world whose old shapes no reader serves refuses every write until the command runs). Reads work
  *  either way. A log changed outside the purge rule does NOT stop writes (house markup, #260 10-20): the fold names each such
@@ -486,7 +488,7 @@ export function presenceEvent(w, kind, who) {
 // it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
 // when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
 // is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
-// snap), socket? and to? (release), seq (the act) when logged.
+// snap | left | fell), socket? and to? (release), seq (the act) when logged.
 const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
 // Everything a write set off, until nothing is left: a hand event's scripts may write (changed:, say), and a changed:
 // script's move may let go of a held thing (letGoEdited), which is a hand event again. So the two queues are drained in

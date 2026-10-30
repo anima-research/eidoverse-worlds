@@ -23,6 +23,7 @@ const HIDDEN_WORLD = new Set(["physics-engine", "about", "bounds", "spawn"]);
 const IMP = "imported:", IMP_BANS = "imported-bans:";
 /** The record's derived fields (and its stamps): not components. The authority refuses a component named like one. */
 export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "kind", "actor", "ts", "placer"]);
+export const fillsFromImported = (n) => !DERIVED.has(n) && n !== "parent";
 /** The components on a record (its facts), without the derived fields. */
 export const recordComponents = (rec) => { const out = {}; for (const k in rec ?? {}) if (!DERIVED.has(k)) out[k] = rec[k]; return out; };
 export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, water: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
@@ -86,7 +87,7 @@ export function viewOf(id, c) {
   // what an imported world's translation carried (imported:<name>) shows under its name only where nothing else does: the
   // active component (translation splits a component's unknown fields off into imported:<it>), the derived pose fields and
   // the parent stay as they are
-  for (const [k, v] of Object.entries(c)) if (k.startsWith(IMP)) { const n = idOut(k.slice(IMP.length)); if (!(n in rec) && !DERIVED.has(n) && n !== "parent") rec[n] = clone(v); }
+  for (const [k, v] of Object.entries(c)) if (k.startsWith(IMP)) { const n = idOut(k.slice(IMP.length)); if (!(n in rec) && fillsFromImported(n)) rec[n] = clone(v); }
   return rec;
 }
 

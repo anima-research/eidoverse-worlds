@@ -2,6 +2,7 @@
 // occupant streams the hull's pose (presence), the authority checks plausibility and the hull's own collision, and commits only
 // the last accepted pose, as the system's act, on exit, every LEASE.commitMs and when the stream stops (shared/drive.js).
 import { driveOf, helmOf, implausible, LEASE, slackAfter, slackNow, turnBetween } from "../../drive.js";
+import { qNorm } from "../../rot.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
@@ -20,6 +21,11 @@ const outsideWorld = (...a) => UP.outsideWorld(...a);
 const leases = (w) => (w.presence.drives ??= {});
 const paceOf = (w) => (w.pace ? w.pace() : w.now());
 const poseOf = (st, id) => { const t = st.entities[id]?.c.transform ?? {}; return { pos: (t.pos ?? [0, 0, 0]).slice(), q: (t.q ?? [0, 0, 0, 1]).slice() }; };
+const loggedKey = (st, id) => { const t = st.entities[id]?.c.transform; return JSON.stringify([t?.pos ?? null, t?.q ?? null]); };
+function edited(w, st, host, L) {
+  if (L.logged === undefined || loggedKey(st, host) === L.logged) return false;
+  L.pose = poseOf(st, host); L.logged = loggedKey(st, host); w.presenceDirty = true; return true;
+}
 
 /** What the hull runs into sweeping `from` → `pose` (sub-steps ≤ its smallest half-extent): an id, "ground", or null; an
  *  overlap it starts in blocks only a sub-step that deepens it (drive-check D10, D11). */
@@ -57,7 +63,7 @@ const dot4 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 function liveLease(w, st, host) {
   const L = leases(w)[host]; if (!L) return null;
   const helm = helmOf(st, host);
-  if (st.entities[host] && helm && occupantOf(w, st, L.by)?.to === helm) return L;
+  if (st.entities[host] && helm && occupantOf(w, st, L.by)?.to === helm) { edited(w, st, host, L); return L; }
   endLease(w, st, host, "exit"); return null;
 }
 
@@ -68,10 +74,12 @@ const carriedBy = (w, st, host, driver) => { const fam = familyOf(st, host);
 function commitLease(w, st, host, why, free = true) {
   const L = leases(w)[host], e = st.entities[host]; if (!L || !e) return false;
   L.committed = paceOf(w);
+  if (edited(w, st, host, L)) { L.fails = 0; return false; }
   const t = { ...(e.c.transform ?? {}), pos: L.pose.pos.map(r3), q: qr3(L.pose.q) };
   if (JSON.stringify(t.pos) === JSON.stringify(e.c.transform?.pos) && JSON.stringify(t.q) === JSON.stringify(e.c.transform?.q)) { L.fails = 0; return false; }   // nothing to write is not a failure (review delta2 L2-B)
   try { const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: [host], comps: ["transform"] } }, [setOp(host, "transform", t)]);
-    changeEntry(w, plan, w.append(actEntry(w, "system", "drive-commit", { id: host, driver: L.by, carried: carriedBy(w, st, host, L.by), why }))); }
+    changeEntry(w, plan, w.append(actEntry(w, "system", "drive-commit", { id: host, driver: L.by, carried: carriedBy(w, st, host, L.by), why })));
+    L.logged = loggedKey(w.state(), host); }
   catch (x) { L.fails = (L.fails ?? 0) + 1;   // bounded: a refusal never lands, a failing disk is tried COMMIT_TRIES times (review delta-260 L-A)
     if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;
     console.warn(`[authority] ${host}'s drive-commit failed ${L.fails}× (${String(x?.message ?? x).slice(0, 160)}): its lease is dropped and the helm freed; the hull stays at its logged pose`);
@@ -120,10 +128,10 @@ const DRIVE_VERBS = {
     const lock = [a.id, ...ancestors(st, a.id)].find((k) => lockedC(st.entities[k]?.c));
     if (lock) refuse("locked", `${lock === a.id ? a.id : `${a.id} hangs from ${lock}, which`} is locked: it can't be driven`, "someone who may lift the lock lifts it");
     const now = paceOf(w); let L = liveLease(w, st, a.id);
-    if (!L) { const sat = occupantOf(w, st, actor).t; L = leases(w)[a.id] = { by: actor, pose: poseOf(st, a.id), at: Number.isFinite(sat) ? sat : now, beat: now, committed: now }; w.presenceDirty = true; }   // paced from taking the helm
+    if (!L) { const sat = occupantOf(w, st, actor).t; L = leases(w)[a.id] = { by: actor, pose: poseOf(st, a.id), logged: loggedKey(st, a.id), at: Number.isFinite(sat) ? sat : now, beat: now, committed: now }; w.presenceDirty = true; }   // paced from taking the helm
     L.beat = now;
-    const next = { pos: a.pos, q: a.q }, stands = { pose: L.pose };
-    const dt = (now - L.at) / 1000, slack = slackNow(L.slack, dt), bad = implausible(L.pose, next, dt, spec, slack);
+    const next = { pos: a.pos, q: qNorm(a.q) ?? a.q }, stands = { pose: L.pose };
+    const dt = (now - L.at) / 1000, slack = slackNow(L.slack), bad = implausible(L.pose, next, dt, spec, slack);
     if (bad) refuse(bad.what === "shape" ? "shape" : "too-fast", bad.what === "shape" ? `drive's ${bad.said}` : `${a.id} can't have gone there: ${bad.said}`, "drive from the pose that stands (the reply's pose)", stands);
     const B = boundsOf(st); if (B && outsideWorld(B, next.pos)) refuse("out-of-bounds", `[${next.pos.map(r3).join(", ")}] is outside this world`, "drive back inside its bounds", stands);
     const hit = hullHit(st, a.id, next, L.pose);

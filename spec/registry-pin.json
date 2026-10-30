@@ -752,7 +752,12 @@
  "places": {
   "status": "trial",
   "keyPattern": "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$",
-  "docs": {},
+  "docs": {
+   "at": "a spot to stand, [x, y, z] in the thing's own frame (its y the floor there)",
+   "min": "a room's low corner (its y the floor)",
+   "max": "a room's high corner",
+   "label": "how it reads, ≤ 80 characters"
+  },
   "units": {
    "at": "m",
    "min": "m",

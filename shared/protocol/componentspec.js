@@ -826,7 +826,7 @@ export function pinOf() {
     if (d.maxKeys !== undefined) p.maxKeys = d.maxKeys;
     if (d.absentMeans) p.absentMeans = { ...d.absentMeans };
     // what each field means, and its unit: the normative home of a component's meaning (the house's view, #260 10-20)
-    if (d.docs) p.docs = Object.fromEntries(Object.entries(d.docs).filter(([f]) => Object.hasOwn(d.fields ?? {}, f)));
+    if (d.docs) p.docs = Object.fromEntries(Object.entries(d.docs).filter(([f]) => Object.hasOwn(d.fields ?? {}, f) || d.map !== undefined));
     if (d.units) p.units = copy(d.units);
     if (d.grammar) p.grammar = { ...d.grammar };
     if (d.vocab) p.vocab = copy(d.vocab);
@@ -878,8 +878,9 @@ export function pinBreakList(pin, now = pinOf()) {
     if (p.status !== undefined && n.maxKeys !== undefined && (p.maxKeys === undefined || n.maxKeys < p.maxKeys)) push(`${name}: maxKeys ${p.maxKeys ?? "none"} → ${n.maxKeys}`);
     if (p.status !== undefined) for (const f of n.required ?? []) if (!(p.required ?? []).includes(f) && Object.hasOwn(p.fields ?? {}, f)) push(`${name}.${f}: now required`);
     for (const [f, m] of Object.entries(p.absentMeans ?? {})) if (n.absentMeans?.[f] !== m) push(`${name}.${f}: its meaning of absence ${j(m)} → ${j(n.absentMeans?.[f]) ?? "gone"}`);
-    for (const [f, m] of Object.entries(p.docs ?? {})) if (Object.hasOwn(n.fields ?? {}, f) && n.docs?.[f] !== m) push(`${name}.${f}: its meaning ${j(m)} → ${j(n.docs?.[f]) ?? "gone"}`);
-    for (const [f, u] of Object.entries(p.units ?? {})) if (Object.hasOwn(n.fields ?? {}, f) && j(n.units?.[f]) !== j(u)) push(`${name}.${f}: its unit ${j(u)} → ${j(n.units?.[f]) ?? "gone"}`);
+    const judged = (f) => (!p.fields && !n.fields) || Object.hasOwn(n.fields ?? {}, f);
+    for (const [f, m] of Object.entries(p.docs ?? {})) if (judged(f) && n.docs?.[f] !== m) push(`${name}.${f}: its meaning ${j(m)} → ${j(n.docs?.[f]) ?? "gone"}`);
+    for (const [f, u] of Object.entries(p.units ?? {})) if (judged(f) && j(n.units?.[f]) !== j(u)) push(`${name}.${f}: its unit ${j(u)} → ${j(n.units?.[f]) ?? "gone"}`);
     for (const [f, g] of Object.entries(p.grammar ?? {})) if (n.grammar?.[f] !== g) push(`${name}.${f}: grammar ${g} → ${n.grammar?.[f] ?? "gone"}`);
     // a closed vocabulary (roles.vocab: ranks, built-in ids, permissions, the custom-id pattern, reserved ids): ANY difference
     // changes what a stored grant or role-def means (a freed id, a new reserved one), so additions break too: never silently

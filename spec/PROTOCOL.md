@@ -342,7 +342,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   on the seat only; one helm per hull, on a hull with drive). Taking the helm (`use … drive`; `station.who` and the lock
   gate it) leases the hull to its occupant (Roblox network ownership): their client steps it kinematically and sends
   `drive {id, pos, q}` (presence, relayed only from the helm); the authority checks each step against the spec (with
-  slack: a fraction over its rates and a fixed allowance that refills over 1/15 s, so a faster stream gains nothing) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
+  slack: a fraction over its rates and a fixed allowance that only what a step leaves of its rates unused refills, so a stream gains no speed it can keep) and the hull's own collider, swept over the step, against what's solid (an overlap it starts in may only lessen),
   answering a refusal with the pose that stands. Only the last accepted pose is written, as the system's act
   `drive-commit {id, driver, carried, why}` (`carried`: the passengers' ids): on getting up, every 5 s, when a passenger
   gets up (`alight`) and when the steps stop for 3 s (the lease is lost: passengers stay seated, the helm frees). Sitting
@@ -432,7 +432,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   which steps it needs, naming the command, and **fails closed** where
   today's readers don't serve the old shape: a world needing `lift-sockets`
   (no reader serves an un-lifted seat), a grabbable rename (`shared/grab.js`
-  reads `anim` and `grasp` only) or `repair-shapes` (a sky's azimuth in
+  reads `anim` and `grasp` only), a picture's or a sound's `alt` or `look`
+  (`shared/picture.js` and `shared/sound.js` read `description` only) or
+  `repair-shapes` (a sky's azimuth in
   degrees would read as radians) loads and reads, but refuses every write
   (not `leave`) with the registered code `repair-needed`, whose text names
   the command. Renames whose old spelling the readers serve (`@world`
@@ -1196,8 +1198,11 @@ is called, and a body effect as `{kind, to}`, never which consent admitted
 it: the log is permanent and public, and the authority's own record of an
 activation never becomes an attendance list (an `enter` / `leave`
 activation, and a grab that isn't itself logged, records no trigger actor
-and no `event.by`; a release always has its own act, so it keeps its
-trigger). What a script writes with the identities it receives live is its
+and no `event.by`; a release keeps its trigger, since it has its own act,
+except a leaving holder's whose drop was refused where the authority doesn't
+put the thing back (no engine, or no stored pose): that one has none and,
+like a departure, records no identity). What a script writes with the
+identities it receives live is its
 own act, signed with its sponsor's rights. An auditor's re-run of a script is a
 check, never the record; its procedure is `docs/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.

@@ -22,6 +22,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the track narrows in mud", "mover.js", "k = Math.max(1, areaFactor(factor));", "k = areaFactor(factor);", ["A4"]],
   ["the lowest priority wins", "zone.js", "for (let i = (areas?.length ?? 0) - 1; i >= 0; i--) { const a = areas[i];", "for (let i = 0; i < (areas?.length ?? 0); i++) { const a = areas[i];", ["A2"]],
   ["any zone holds an area", "protocol/authority/checks.js", "if (c[\"physics-area\"] !== undefined && !(c.zone?.shape === \"box\" || c.zone?.global === true)) return", "if (false) return", ["A1"]],
+  ["the track ignores the water", "protocol/authority/bodyverbs.js", "* Math.max(1, thickAt(st, me.at), thickAt(st, to))", "", ["A6"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// shared/zone.js — a world's", "//  shared/zone.js — a world's", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -140,5 +141,18 @@ await C("A5", "the mover and the authority agree: a run's strides in a ×2.5 are
   const span = path.at(-1)[0] + 10;
   return [first.ok && near(span, 20, 1e-6) && inside.every((x) => x.ok) && outside.some((x) => x.refused?.code === "too-fast"),
     { span, inside: inside.filter((x) => !x.ok).map(show).slice(0, 3), outside: outside.filter((x) => !x.ok).length }]; });
+
+await C("A6", "the mover and the authority agree in thin water: a fast diver's strokes (the shared mover's stepSwim in water of drag 0.5, at 10 Hz for 3 s) are every one taken under @world's level of that drag and in a water body of it; the same strokes in water of the default drag are refused once the track runs dry", () => {
+  const stroke = M.MOVER.swim.speed * M.MOVER.swim.dive, strokes: number[][] = [];
+  let p = [-15, 5, 0], v = [0, 0, 0];
+  for (let i = 0; i < 30; i++) { const n = M.stepSwim(p, v, { direction: [1, 0, 0], dive: true, fast: true }, { speed: stroke, drag: 0.5, surfaceAt: () => 10 }, 0.1); p = n.pos; v = n.velocity; strokes.push(p); }
+  const run = (water: (s: any) => any) => { const s = session(); s.call("delete", { id: "@world", component: "bounds" }); const made = show(water(s));
+    const first = show(s.call("move", { to: [-15, 5, 0] }, "vic", 2000)), r = strokes.map((q) => s.call("move", { to: q }, "vic", 100)), no = r.filter((x) => !x.ok);
+    return { made, first, refused: no.length, said: no.length ? show(no[0]) : null }; };
+  const level = run((s) => s.call("set", { id: "@world", component: "water", value: { level: 10, drag: 0.5 } }));
+  const body = run((s) => s.call("create", { id: "pool", components: { transform: tf([0, 5, 0]), zone: { shape: "box", size: [80, 10, 20] }, water: { drag: 0.5 } } }));
+  const plain = run((s) => s.call("set", { id: "@world", component: "water", value: { level: 10 } }));
+  const span = strokes.at(-1)![0] + 15;
+  return [span > 26 && [level, body].every((a) => a.made === "ok" && a.first === "ok" && a.refused === 0) && plain.made === "ok" && plain.refused > 0, { span: +span.toFixed(2), level, body, plain }]; });
 
 console.log(`[physics-area-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

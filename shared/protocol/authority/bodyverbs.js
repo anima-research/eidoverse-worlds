@@ -1,8 +1,8 @@
 // shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first (refactor split, 2026-10-17; moved from authority.js's
 // "physics" section unchanged). They stand on physics.js, occupants.js and manipulate.js; the gate is above them, through UP.
-import { TRACK, areaFactor, tokensAfter } from "../../mover.js";
-import { physicsAreasOf, speedFactorAt } from "../../zone.js";
+import { TRACK, areaFactor, swimThick, tokensAfter } from "../../mover.js";
+import { mediumOf, physicsAreasOf, speedFactorAt, waterVolumes, zonesOf } from "../../zone.js";
 import { atASpawn, spawnsOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
@@ -28,6 +28,10 @@ import { fliesIn, flyingWorld, gripHow, launch, recentRests, releasePos, returnH
 import * as R from "../roles.js";
 const AREAS = new WeakMap();   // a folded state's physics areas (zone.js physicsAreasOf), once per state
 const areasOf = (st) => { let a = AREAS.get(st.entities); if (!a) AREAS.set(st.entities, (a = physicsAreasOf(st))); return a; };
+const WATERS = new WeakMap();
+const watersOf = (st) => { let z = WATERS.get(st.entities); if (!z) { const zones = zonesOf(st); WATERS.set(st.entities, (z = { zones, volumes: waterVolumes(zones) })); } return z; };
+const thickAt = (st, p) => { const z = watersOf(st), m = mediumOf(p, z.zones, { volumes: z.volumes });
+  return m.medium === "water" ? swimThick(z.zones.bodies.find((b) => b.id === m.body)?.water?.drag) : 1; };
 // who may lift the lock that stops a grab or a punt, as the gate's own lock refusals say it (gate.js lockCheck): a lock at
 // owner level is an owner's or its locker's to lift, never any builder's (review of #260, protocol core I73)
 const unlockFix = (w, st, k) => { const by = lastSetterOf(w, k, "lock");
@@ -46,6 +50,14 @@ const outsideWorld = (...a) => UP.outsideWorld(...a);
 const rateCheck = (...a) => UP.rateCheck(...a);
 const request = (...a) => UP.request(...a);
 const warnings = (...a) => UP.warnings(...a);
+function returnHeld(w, actor, id, why, how, seq) {
+  delete w.presence.holds[id];
+  const st = w.state(); const t = st.entities["@world"]?.c["physics-engine"] ? st.entities[id]?.c.transform : null; let back;
+  if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
+    back = w.append(actEntry(w, "system", "return-held", { id, holder: actor, why })); changeEntry(w, p, back); }
+  const act = seq ?? back;
+  if (st.entities[id]) heldEvent(w, "release", id, { by: actor, how, ...(act !== undefined ? { seq: act } : {}) });
+}
 
 // review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
 // the body's position or hand: the put's change carries where the thing went, a launch's sim entry where it left from
@@ -72,7 +84,7 @@ const EMBODIED_VERBS = {
     if (fell && !atASpawn(st, to)) refuse("spawn", `a body that fell is sent back to an arrival place: [${to.join(", ")}] isn't within one`, `arrive at one of: ${spawnsOf(st).map((s) => `[${s.pos.join(", ")}] (${s.id})`).join("; ") || "(none)"}`);
     if (!me || a.teleport === true) { // a teleport (arriving is one): an act, so the track's reset is on the record
       const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
-      if (mine.length) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
+      if (mine.length && !fell) refuse("holding", `you're holding ${mine.join(", ")}; a teleport can't carry things`, "put it down (or walk it there) first", { at: me?.at });
       const inSolid = solidAt(w, st, to, new Set(), null, arrivalBox(st, to, size)); if (inSolid) refuse("solid", `[${to.join(", ")}] is inside ${inSolid}`, "arrive somewhere a body fits", { at: me?.at });
       // a visitor arrives at an arrival place: @world.spawn or a spawn-point (shared/spawn.js)
       if (!may(st, actor, "build") && !atASpawn(st, to)) { const all = spawnsOf(st);
@@ -82,6 +94,7 @@ const EMBODIED_VERBS = {
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true, ...(fell ? { reason: FELL } : {}) })) : undefined;   // a fall is on the record with its reason
+      if (fell) for (const id of mine) returnHeld(w, actor, id, FELL, "fell", act);
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftOccupied(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
@@ -92,7 +105,7 @@ const EMBODIED_VERBS = {
     { if (occupantOf(w, st, actor)) { endDrivesBy(w, st, actor); st = w.state(); } }
     { const sat = occupantOf(w, st, actor); if (sat && vacateAt(w, st, actor, sat.to)) me = w.presence.bodies[actor]; if (w.presence.occupants?.[actor]) clearOccupant(w, actor); }
     // a speed area that boosts (physics-area {kind: speed}) where the step starts or ends widens the track (mover tokensAfter)
-    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to)));
+    const k = Math.max(areaFactor(speedFactorAt(areasOf(st), me.at)), areaFactor(speedFactorAt(areasOf(st), to))) * Math.max(1, thickAt(st, me.at), thickAt(st, to));
     const d = dist(me.at, to); const tokens = tokensAfter(me.tokens, now - (me.ts ?? now), k);
     if (d > tokens + 1e-9) refuse("too-fast", `that's ${r3(d)} m; right now your body can cover ${r3(tokens)} m (${r3(TRACK.speed * Math.max(1, k))} m/s, ${r3(TRACK.cap * Math.max(1, k))} m at most in one go)`, "walk there in steps, or move {to, teleport: true} (an act on the record; not while holding anything)", { at: me.at });
     const block = pathBlocked(w, st, me.at, to, size);
@@ -397,10 +410,7 @@ const EMBODIED_VERBS = {
     const wasLeaving = w.leaving; w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = wasLeaving ?? null; }   // a nested request (enter() keeps the outer call's state)
     // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
     // where the log last had it; if picking it up took it out of the engine, the authority puts it back there, as its own act.
-    for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
-      const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c["physics-engine"]) { const t = st.entities[id].c.transform;
-        if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
-          changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why: r.refused?.code }))); } } }
+    for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) returnHeld(w, actor, id, r.refused?.code, "left");
     endDrivesBy(w, w.state(), actor);   // a driver leaving: the lease commits, the helm frees (shared/protocol/authority/drive.js)
     if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);   // a guest never returns (review full-260 L8)
     delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearOccupant(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves

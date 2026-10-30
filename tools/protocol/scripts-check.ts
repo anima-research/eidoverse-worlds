@@ -42,6 +42,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor's fair share", "authority/scriptrun.js", ": B.bySponsor + cost > B.share ?", ": false ?", ["B6b"]],
   ["per-script rate", "authority/scriptrun.js", "(B.mine >= cfg.rate ?", "(false ?", ["B6c"]],
   ["script count", "authority/scripts.js", "if (n > cfg.max) refuse(\"too-many\"", "if (false) refuse(\"too-many\"", ["B7"]],
+  ["the excess taken from both places", "authority/scripts.js", "if (!ways.length) ways.push(", "if (false) ways.push(", ["Q1d"]],
   ["cascade depth", "authority/scriptrun.js", "if (depth > cfg.depth) return out(\"refused\"", "if (false) return out(\"refused\"", ["B8"]],
   ["locks bind scripts", "authority/gate.js", "if (k) lockCheck(w, st, who, role, k, op, at); }", "if (k && !cap) lockCheck(w, st, who, role, k, op, at); }", ["B9"]],
   ["in flight binds scripts", "authority.js", "if (inFlight(op.id)) refuse(\"in-flight\"", "if (inFlight(op.id) && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
@@ -118,7 +119,11 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["world.use stays inside scope.ids", "authority/scriptrun.js", "for (const u of uses) if (!cap.ids.includes(u.id)) return mark(", "for (const u of uses) if (false) return mark(", ["W2"]],
   ["world.use meets the target's who as the sponsor", "authority/use.js", "if (h?.who && !admits(ctx.st, ctx.asker ?? ctx.actor, h.who))", "if (h?.who && !admits(ctx.st, ctx.actor, h.who))", ["W3"]],
   ["the script act records its world.use calls", "authority/scriptrun.js", ", ...(uses.length ? { uses } : {}) } };", " } };", ["W1"]],
-  ["the auditor compares world.use calls", "scriptaudit.js", "if (jcs(res.uses ?? []) !== jcs(b.uses ?? [])) {", "if (false) {", ["W1"]],
+  ["the auditor compares world.use calls", "scriptaudit.js", "if (!sameU) { flags.push({ seq, check: \"rerun-use\"", "if (false) { flags.push({ seq, check: \"rerun-use\"", ["W1"]],
+  ["a who-dependent world.use is flagged, not skipped", "scriptaudit.js", "if (whoReads(b.reads)) { skipped.push(", "if (sameU && whoReads(b.reads)) { skipped.push(", ["W1b"]],
+  ["the arrival's stand-ins compare their uses", "scriptaudit.js", "[!sameU, \"world.use calls\", jcs(r2.uses ?? []) === jcs(res.uses ?? [])]", "[!sameU, \"world.use calls\", true]", ["W1c", "W1d"]],
+  ["an arrival's parts are judged each on its own", "scriptaudit.js", "if (!parts.length) { skipped.push(", "if (parts.length < [!sameW, !sameS, !sameU].filter(Boolean).length) { skipped.push(", ["W1d"]],
+  ["an arrival's stand-ins must read alike", "scriptaudit.js", "const parts = !r2.ok || jcs(readShape(r2.reads)) !== jcs(readShape(res.reads)) ? [] :", "const parts = !r2.ok ? [] :", ["W1e"]],
   ["a world.use act is a link, not a depth level", "authority/scripts.js", "if (e.kind === \"act\" && e.verb === \"script\") n++; e = w.entries[e.cause]; } return n; }", "if (e.kind === \"act\") n++; e = w.entries[e.cause]; } return n; }", ["W4"]],
   ["a script on @world hears every use (world-level)", "authority/use.js", "out.push(activate(w, \"@world\", name,", "out.push(void (w, \"@world\", name,", ["WL1"]],
   ["a script on @world is the owner's to install", "authority/gate.js", "if (base === \"roles\") return \"grant\";\n  return \"owner\";", "if (base === \"roles\") return \"grant\";\n  return base === \"script\" ? \"thing\" : \"owner\";", ["WL2"]],
@@ -936,6 +941,59 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       return { r: st(s, r), open: comp(s, "gate", "openable")?.open, uses: act?.body?.uses, use: use ? [use.cause === r.script?.act, use.body?.request?.id, use.body?.request?.action, use.body?.sponsor] : null, change: change?.actor ?? null,
         audit: `${A.reran}/${A.acts} ${A.flags.map((f: any) => f.check).join(",")}`, forged: AU.auditScripts(forged, s.w().getBlob, { run: SB.runScript }).flags.map((f: any) => f.check) }; },
     good: (o) => o.r === "ran" && o.open === true && JSON.stringify(o.uses) === '[{"id":"gate","action":"open"}]' && JSON.stringify(o.use) === '[true,"gate","open","bob"]' && o.change === "script:lever" && o.audit === "1/1 " && o.forged.includes("rerun-use") },
+  { id: "W1b", what: "world.use whose target turns on who was near (a name read): the auditor SKIPS its act as depending on who was near, as D4 does for a set, and never flags it rerun-use, which reads as a forgery (review of #260)", run(s) { cast(s);
+      for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
+        s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
+      s.call("bob", "create", { id: "lever", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "lever", "pick", onUse(`const near = world.near(3); const n = near.length ? world.name(near[0]) : null;\nworld.use(n === "Vic" ? "gatea" : "gateb", "open");`), { scope: { ids: ["self", "gatea", "gateb"], comps: [] }, on: ["use"] });
+      s.call("bob", "set", { id: "lever", component: "reactions", value: { pull: { kind: "script", script: "pick" } } });
+      s.call("vic", "move", { to: [0, 0, 1] }); const r = useSteady(s, "vic", { id: "lever", action: "pull" });
+      if (!AU) return { absent: true };
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript });
+      return { r: st(s, r), a: comp(s, "gatea", "openable")?.open, b: comp(s, "gateb", "openable")?.open, reads: s.entries()[r.script?.act]?.body?.reads, reran: A.reran,
+        flags: A.flags.map((f: any) => f.check), skipped: A.skipped?.map((x: any) => x.why) ?? null }; },
+    opts: { nameOf: (id: string) => NAMES[id] ?? null },
+    good: (o) => o.r === "ran" && o.a === true && o.b === false && JSON.stringify(o.reads) === JSON.stringify({ near: [{ r: 3, n: 1 }], names: 1 })
+      && o.reran === 0 && o.flags.length === 0 && o.skipped?.length === 1 && /who was near/.test(o.skipped[0]) },
+  { id: "W1c", what: "world.use whose target turns on who arrived (an enter, whose act records no identity): the auditor asks its second stand-in before calling a differing use anything, and compares the stand-ins' uses; one that turns on the identity's shape is SKIPPED, and one the stand-ins agree on is rerun-anon, never rerun-use (review of #260)", run(s) { cast(s);
+      for (const [id, x] of [["gatea", 10], ["gateb", 14], ["gatec", 18], ["gated", 22]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
+        s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
+      s.call("bob", "create", { id: "matp", model: "crate", place: { at: [0, 0] } }); s.call("bob", "create", { id: "matq", model: "crate", place: { at: [2, 0] } });
+      install(s, "bob", "matp", "shape", `world.on("enter", (e) => world.use(e.by.startsWith("u-") ? "gatea" : "gateb", "open"));\n`, { scope: { ids: ["self", "gatea", "gateb"], comps: [] }, on: ["enter"] });
+      install(s, "bob", "matq", "who", `world.on("enter", (e) => world.use(e.by === "vic" ? "gatec" : "gated", "open"));\n`, { scope: { ids: ["self", "gatec", "gated"], comps: [] }, on: ["enter"] });
+      if (!D.presenceEvent || !AU) return { absent: true };
+      clock.advance(100); const ran = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.script}:${x.status}`);
+      const seqOf = (sid: string) => s.entries().findLastIndex((e: any) => e.kind === "act" && e.actor === `script:${sid}` && e.verb === "script");
+      const A = AU.auditScripts(s.entries(), s.w().getBlob, { run: SB.runScript }), at = (q: number) => ({ flags: A.flags.filter((f: any) => f.seq === q).map((f: any) => f.check), skipped: A.skipped.filter((x: any) => x.seq === q).map((x: any) => x.why) });
+      return { ran, open: ["gatea", "gateb", "gatec", "gated"].map((g) => comp(s, g, "openable")?.open), shape: at(seqOf("matp")), who: at(seqOf("matq")) }; },
+    good: (o) => JSON.stringify(o.open) === "[false,true,true,false]" && o.shape.flags.length === 0 && o.shape.skipped.length === 1 && /who arrived or left/.test(o.shape.skipped[0])
+      && JSON.stringify(o.who.flags) === '["rerun-anon"]' && o.who.skipped.length === 0 },
+  { id: "W1d", what: "…each part of an arrival's act is judged on its own: a world.use that turns on who came doesn't hide forged writes that don't; the forged writes, which the stand-ins agree on and the log doesn't, are rerun-anon, while the honest act is skipped (review of #260)", run(s) { cast(s);
+      for (const [id, x] of [["gatea", 10], ["gateb", 14]] as const) { s.call("bob", "create", { id, model: "door", components: { openable: { open: false } }, place: { at: [x, 0] } });
+        s.call("bob", "set", { id, component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } }); }
+      s.call("bob", "create", { id: "mat", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "mat", "both", `world.on("enter", (e) => { world.use(e.by.startsWith("u-") ? "gatea" : "gateb", "open"); world.set("self", "t/n", { n: 1 }); });\n`, { scope: { ids: ["self", "gatea", "gateb"], comps: ["t/n"] }, on: ["enter"] });
+      if (!D.presenceEvent || !AU) return { absent: true };
+      clock.advance(100); const ran = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.script}:${x.status}`);
+      const L = s.entries(), q = L.findLastIndex((e: any) => e.kind === "act" && e.actor === "script:mat" && e.verb === "script");
+      const judge = (log: any[]) => { const A = AU.auditScripts(log, s.w().getBlob, { run: SB.runScript }); return { flags: A.flags.filter((f: any) => f.seq === q).map((f: any) => `${f.check}: ${f.why}`), skipped: A.skipped.filter((x: any) => x.seq === q).length }; };
+      const forged = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
+      const ch = forged.find((e: any) => e.kind === "change" && e.cause === q); const op = ch ? (ch.verb === "batch" ? ch.body.ops : [ch.body]).find((o: any) => o.comp === "t/n") : null; if (op) op.value = { n: 2 };
+      return { ran, n: comp(s, "mat", "t/n")?.n, b: comp(s, "gateb", "openable")?.open, forgedOp: !!op, honest: judge(L), forged: judge(forged) }; },
+    good: (o) => o.n === 1 && o.b === true && o.forgedOp && o.honest.flags.length === 0 && o.honest.skipped === 1
+      && o.forged.skipped === 0 && o.forged.flags.length === 1 && /^rerun-anon: the re-run's writes differ from the log/.test(o.forged.flags[0]) && !/world\.use/.test(o.forged.flags[0]) },
+  { id: "W1e", what: "…but only where the two stand-ins read alike: one that read differently took another path through the script, so every part counts as turning on who came, and an act with forged writes they agree on is skipped, as before (review of #260)", run(s) { cast(s);
+      s.call("bob", "create", { id: "mat", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "mat", "reads", `world.on("enter", (e) => { if (e.by.length !== 11) world.near(3); world.set("self", "t/n", { n: 1 }); });\n`, { scope: { ids: "self", comps: ["t/n"] }, on: ["enter"] });
+      if (!D.presenceEvent || !AU) return { absent: true };
+      clock.advance(100); const ran = D.presenceEvent(s.w(), "enter", "vic").map((x: any) => `${x.script}:${x.status}`);
+      const L = s.entries(), q = L.findLastIndex((e: any) => e.kind === "act" && e.actor === "script:mat" && e.verb === "script");
+      const judge = (log: any[]) => { const A = AU.auditScripts(log, s.w().getBlob, { run: SB.runScript }); return { reran: A.reran, flags: A.flags.filter((f: any) => f.seq === q).map((f: any) => `${f.check}: ${f.why}`), skipped: A.skipped.filter((x: any) => x.seq === q).length }; };
+      const forged = F.readLog(Buffer.from(L.map((e: any) => JSON.stringify(e)).join("\n") + "\n"));
+      const ch = forged.find((e: any) => e.kind === "change" && e.cause === q); const op = ch ? (ch.verb === "batch" ? ch.body.ops : [ch.body]).find((o: any) => o.comp === "t/n") : null; if (op) op.value = { n: 2 };
+      return { ran, reads: L[q]?.body?.reads ?? null, forgedOp: !!op, honest: judge(L), forged: judge(forged) }; },
+    good: (o) => o.forgedOp && Array.isArray(o.reads?.near) && o.reads.near.length === 1 && o.reads.near[0].n === 0 && o.honest.reran === 1 && o.honest.flags.length === 0 && o.honest.skipped === 0
+      && o.forged.skipped === 1 && o.forged.flags.length === 0 },
   { id: "W2", what: "world.use outside scope.ids is refused whole: the gate stays shut and nothing is logged for the script", run(s) { cast(s);
       gateAndLever(s, { ids: "self", comps: [] }); const n0 = s.entries().length;
       const r = useSteady(s, "vic", { id: "lever", action: "pull" });
@@ -1140,6 +1198,41 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       s.call("vic", "consent", { allow: "scripts-by:bob" }); const one = s.call("vic", "consent", { block: "script:pad1" });
       return { one: one?.ok, rs: ["pad1", "pad2"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => o.one === true && JSON.stringify(o.rs) === '["refused consent","ran"]' },
+  { id: "Q1b", what: "the too-many refusal says whose limit it is (review of #260): this server's default, which the owner may raise to this server's ceiling; the owner's own max; how many to remove and from where; and raising the setting, offered wherever the limit stands below this server's ceiling", run(s) { cast(s);
+      const fill = (n: number, tag: string) => { const u = s.call("bob", "upload", { text: onUse(`world.say("${tag}");`) }); let last: any = null;
+        for (let i = 0; i < n; i++) { const id = `${tag}${i}`; s.call("bob", "create", { id, model: "crate", place: { at: [i % 20, Math.floor(i / 20)] } }, 200);
+          last = s.call("bob", "set", { id, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } }, 200); if (!last?.ok) return { at: i, last }; }
+        return { at: null, last }; };
+      const said = (r: any) => r?.last?.refused ? `${r.last.refused.code}: ${r.last.refused.reason} | ${r.last.refused.fix}` : `ok at ${r.at}`;
+      const dflt = said(fill(13, "d"));
+      const five = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 5 } });
+      const low = said(fill(1, "l"));
+      const top = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 64 } });
+      const atTop = said(fill(53, "c"));
+      const one = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
+      const own = said(fill(1, "o"));
+      return { dflt, five: five?.ok, low, top: top?.ok, atTop, one: one?.ok, own }; },
+    good: (o) => o.five === true && o.top === true && o.one === true
+      && /^too-many: .* would have 13 scripts; it allows 12, this server's default, which the world's owner may raise in @world\.script-settings\.max up to 64 \| remove one of the 12 here first, or add one fewer in this request \(it adds 1\), or the world's owner may raise @world\.script-settings\.max to 13 or more \(up to 64 on this server\)$/.test(o.dflt)
+      && /^too-many: .* would have 13 scripts; it allows 5, which the world's owner sets in @world\.script-settings\.max \| remove 8 of the 12 here first, or the world's owner may raise @world\.script-settings\.max to 13 or more \(up to 64 on this server\)$/.test(o.low)
+      && /^too-many: .* would have 65 scripts; it allows 64, which the world's owner sets in @world\.script-settings\.max \| remove one of the 64 here first, or add one fewer in this request \(it adds 1\): this server allows a world 64 at most$/.test(o.atTop)
+      && /^too-many: .* would have 65 scripts; it allows 1, which the world's owner sets in @world\.script-settings\.max \| remove 64 of the 64 here first, or the world's owner may raise @world\.script-settings\.max to 64, this server's ceiling, and one must still go$/.test(o.own) },
+  { id: "Q1c", what: "…and where the excess is the request's own installs, it says so rather than asking to remove scripts the world doesn't hold (review of #260)", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 5 } });
+      const u = s.call("bob", "upload", { text: onUse(`world.say("b");`) });
+      for (let i = 0; i < 6; i++) s.call("bob", "create", { id: `b${i}`, model: "crate", place: { at: [i, 0] } }, 200);
+      const r = s.call("bob", "batch", { ops: [0, 1, 2, 3, 4, 5].map((i) => ({ verb: "set", args: { id: `b${i}`, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } } })) }, 200);
+      return { r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
+    good: (o) => /^too-many: .* would have 6 scripts; it allows 5, which the world's owner sets in @world\.script-settings\.max \| add one fewer in this request \(it adds 6\), or the world's owner may raise @world\.script-settings\.max to 6 or more \(up to 64 on this server\)$/.test(o.r) },
+  { id: "Q1d", what: "…and where neither the scripts here nor the request's own installs alone hold the excess, it says to take it from both (review of #260)", run(s) { cast(s);
+      const u = s.call("bob", "upload", { text: onUse(`world.say("m");`) });
+      for (let i = 0; i < 4; i++) s.call("bob", "create", { id: `m${i}`, model: "crate", place: { at: [i, 0] } }, 200);
+      const val = { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] };
+      const two = [0, 1].map((i) => s.call("bob", "set", { id: `m${i}`, component: "script:p", value: val }, 200));
+      const one = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
+      const r = s.call("bob", "batch", { ops: [2, 3].map((i) => ({ verb: "set", args: { id: `m${i}`, component: "script:p", value: val } })) }, 200);
+      return { two: two.map((x: any) => x?.ok === true), one: one?.ok === true, r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
+    good: (o) => o.two.every(Boolean) && o.one && /^too-many: .* would have 4 scripts; it allows 1, which the world's owner sets in @world\.script-settings\.max \| take 3 away between the 2 here and the 2 this request adds, or the world's owner may raise @world\.script-settings\.max to 4 or more \(up to 64 on this server\)$/.test(o.r) },
   { id: "Q1", what: "reinstalling a script whose value was purged counts against the world's script limit, as a new one does", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
       for (const id of ["qa", "qb"]) s.call("bob", "create", { id, model: "crate", place: { at: [0, 0] } });
