@@ -50,9 +50,11 @@ const scriptsCfg = (st) => { const own = ownScriptSettings(st);
   for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k]) && out[k] > top) { if (own[k] !== undefined) (out.capped ??= {})[k] = out[k]; out[k] = top; }
   return out; };
 // Whose a limit an owner may set is, for a refusal that quotes it: this server's ceiling when it lowered the owner's
-// value (`capped`), the owner's when their value stands, else this server's own, which the owner may lower but not raise
+// value (`capped`), the owner's when their value stands, else this server's own: a default below the ceiling the owner may
+// raise to it (max: 12 of 64), one at the ceiling they may lower but not raise
 const limitWhose = (st, cfg, k) => (cfg.capped?.[k] !== undefined ? `this server's ceiling: the owner's @world.script-settings.${k} asks ${cfg.capped[k]}, and this server caps it`
   : ownScriptSettings(st)[k] !== undefined ? `which the world's owner sets in @world.script-settings.${k}`
+  : cfg[k] < scriptCeiling()[k] ? `this server's default, which the world's owner may raise in @world.script-settings.${k} up to ${scriptCeiling()[k]}`
   : `this server's limit, which the world's owner may lower in @world.script-settings.${k} but not raise`);
 // the registry's lists (componentspec script.itemEnums), read here, never restated
 const BODY_EFFECTS = COMPONENTS.script.itemEnums["scope.bodies"];
@@ -135,7 +137,17 @@ function installCheck(w, st, s, who, op) {
   const prev = st.entities[op.id]?.c[op.comp];
   if (v.always === true && prev?.always !== true && !Roles.isOwner(role)) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
   if (prev === undefined || prev === PURGED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
-    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.script-settings.max (owner)"); }
+    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}, ${limitWhose(st, cfg, "max")}`, tooManyFix(st, s, n, cfg.max)); }
+}
+function tooManyFix(st, s, n, max) {
+  const was = new Set(allScripts(st).map((x) => `${x.id}|${x.name}`)), added = allScripts(s).filter((x) => !was.has(`${x.id}|${x.name}`)).length;
+  const here = n - added, k = n - max, top = scriptCeiling().max, K = (x) => (x === 1 ? "one" : String(x)), ways = [];
+  if (here >= k) ways.push(`remove ${K(k)} of the ${here} here first`);
+  if (added >= k) ways.push(`add ${K(k)} fewer in this request (it adds ${added})`);
+  if (!ways.length) ways.push(`take ${K(k)} away between the ${here} here and the ${added} this request adds`);
+  const raise = max >= top ? null : n <= top ? `the world's owner may raise @world.script-settings.max to ${n} or more (up to ${top} on this server)`
+    : `the world's owner may raise @world.script-settings.max to ${top}, this server's ceiling, and ${K(n - top)} must still go`;
+  return raise ? `${ways.join(", or ")}, or ${raise}` : `${ways.join(", or ")}: this server allows a world ${top} at most`;
 }
 const rtKey = (id, name) => `${id}|${name}`;
 const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });

@@ -42,6 +42,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["sponsor's fair share", "authority/scriptrun.js", ": B.bySponsor + cost > B.share ?", ": false ?", ["B6b"]],
   ["per-script rate", "authority/scriptrun.js", "(B.mine >= cfg.rate ?", "(false ?", ["B6c"]],
   ["script count", "authority/scripts.js", "if (n > cfg.max) refuse(\"too-many\"", "if (false) refuse(\"too-many\"", ["B7"]],
+  ["the excess taken from both places", "authority/scripts.js", "if (!ways.length) ways.push(", "if (false) ways.push(", ["Q1d"]],
   ["cascade depth", "authority/scriptrun.js", "if (depth > cfg.depth) return out(\"refused\"", "if (false) return out(\"refused\"", ["B8"]],
   ["locks bind scripts", "authority/gate.js", "if (k) lockCheck(w, st, who, role, k, op, at); }", "if (k && !cap) lockCheck(w, st, who, role, k, op, at); }", ["B9"]],
   ["in flight binds scripts", "authority.js", "if (inFlight(op.id)) refuse(\"in-flight\"", "if (inFlight(op.id) && cap?.kind !== \"script\") refuse(\"in-flight\"", ["B10"]],
@@ -1155,6 +1156,41 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       s.call("vic", "consent", { allow: "scripts-by:bob" }); const one = s.call("vic", "consent", { block: "script:pad1" });
       return { one: one?.ok, rs: ["pad1", "pad2"].map((id) => st(s, s.call("vic", "use", { id, action: "go" }))) }; },
     good: (o) => o.one === true && JSON.stringify(o.rs) === '["refused consent","ran"]' },
+  { id: "Q1b", what: "the too-many refusal says whose limit it is (review of #260): this server's default, which the owner may raise to this server's ceiling; the owner's own max; how many to remove and from where; and raising the setting, offered wherever the limit stands below this server's ceiling", run(s) { cast(s);
+      const fill = (n: number, tag: string) => { const u = s.call("bob", "upload", { text: onUse(`world.say("${tag}");`) }); let last: any = null;
+        for (let i = 0; i < n; i++) { const id = `${tag}${i}`; s.call("bob", "create", { id, model: "crate", place: { at: [i % 20, Math.floor(i / 20)] } }, 200);
+          last = s.call("bob", "set", { id, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } }, 200); if (!last?.ok) return { at: i, last }; }
+        return { at: null, last }; };
+      const said = (r: any) => r?.last?.refused ? `${r.last.refused.code}: ${r.last.refused.reason} | ${r.last.refused.fix}` : `ok at ${r.at}`;
+      const dflt = said(fill(13, "d"));
+      const five = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 5 } });
+      const low = said(fill(1, "l"));
+      const top = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 64 } });
+      const atTop = said(fill(53, "c"));
+      const one = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
+      const own = said(fill(1, "o"));
+      return { dflt, five: five?.ok, low, top: top?.ok, atTop, one: one?.ok, own }; },
+    good: (o) => o.five === true && o.top === true && o.one === true
+      && /^too-many: .* would have 13 scripts; it allows 12, this server's default, which the world's owner may raise in @world\.script-settings\.max up to 64 \| remove one of the 12 here first, or add one fewer in this request \(it adds 1\), or the world's owner may raise @world\.script-settings\.max to 13 or more \(up to 64 on this server\)$/.test(o.dflt)
+      && /^too-many: .* would have 13 scripts; it allows 5, which the world's owner sets in @world\.script-settings\.max \| remove 8 of the 12 here first, or the world's owner may raise @world\.script-settings\.max to 13 or more \(up to 64 on this server\)$/.test(o.low)
+      && /^too-many: .* would have 65 scripts; it allows 64, which the world's owner sets in @world\.script-settings\.max \| remove one of the 64 here first, or add one fewer in this request \(it adds 1\): this server allows a world 64 at most$/.test(o.atTop)
+      && /^too-many: .* would have 65 scripts; it allows 1, which the world's owner sets in @world\.script-settings\.max \| remove 64 of the 64 here first, or the world's owner may raise @world\.script-settings\.max to 64, this server's ceiling, and one must still go$/.test(o.own) },
+  { id: "Q1c", what: "…and where the excess is the request's own installs, it says so rather than asking to remove scripts the world doesn't hold (review of #260)", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 5 } });
+      const u = s.call("bob", "upload", { text: onUse(`world.say("b");`) });
+      for (let i = 0; i < 6; i++) s.call("bob", "create", { id: `b${i}`, model: "crate", place: { at: [i, 0] } }, 200);
+      const r = s.call("bob", "batch", { ops: [0, 1, 2, 3, 4, 5].map((i) => ({ verb: "set", args: { id: `b${i}`, component: "script:p", value: { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] } } })) }, 200);
+      return { r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
+    good: (o) => /^too-many: .* would have 6 scripts; it allows 5, which the world's owner sets in @world\.script-settings\.max \| add one fewer in this request \(it adds 6\), or the world's owner may raise @world\.script-settings\.max to 6 or more \(up to 64 on this server\)$/.test(o.r) },
+  { id: "Q1d", what: "…and where neither the scripts here nor the request's own installs alone hold the excess, it says to take it from both (review of #260)", run(s) { cast(s);
+      const u = s.call("bob", "upload", { text: onUse(`world.say("m");`) });
+      for (let i = 0; i < 4; i++) s.call("bob", "create", { id: `m${i}`, model: "crate", place: { at: [i, 0] } }, 200);
+      const val = { src: u.src, scope: { ids: "self", comps: [] }, on: ["use"] };
+      const two = [0, 1].map((i) => s.call("bob", "set", { id: `m${i}`, component: "script:p", value: val }, 200));
+      const one = s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
+      const r = s.call("bob", "batch", { ops: [2, 3].map((i) => ({ verb: "set", args: { id: `m${i}`, component: "script:p", value: val } })) }, 200);
+      return { two: two.map((x: any) => x?.ok === true), one: one?.ok === true, r: r?.refused ? `${r.refused.code}: ${r.refused.reason} | ${r.refused.fix}` : r?.ok ? "ok" : JSON.stringify(r).slice(0, 200) }; },
+    good: (o) => o.two.every(Boolean) && o.one && /^too-many: .* would have 4 scripts; it allows 1, which the world's owner sets in @world\.script-settings\.max \| take 3 away between the 2 here and the 2 this request adds, or the world's owner may raise @world\.script-settings\.max to 4 or more \(up to 64 on this server\)$/.test(o.r) },
   { id: "Q1", what: "reinstalling a script whose value was purged counts against the world's script limit, as a new one does", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { max: 1 } });
       for (const id of ["qa", "qb"]) s.call("bob", "create", { id, model: "crate", place: { at: [0, 0] } });
