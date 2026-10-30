@@ -311,8 +311,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const t0 = ag.serverNow(), timed = await call("act", { verb: "set", args: { id: "@world", component: `roles:${vic.actor}`, value: { role: "builder", for: "2h" } } });
   await tryUntil("the agent folds Vic's timed grant", () => Number.isSafeInteger(roleOf()?.until), { ms: 3000, step: 50 });
   ok(!timed.isError && roleOf()?.role === "builder" && Math.abs(roleOf().until - (t0 + 7_200_000)) < 60_000 && !("for" in roleOf()), "AT11 act set roles:<id> {role, for: \"2h\"} stores until = now + 2 h (epoch ms)", [T(timed).slice(0, 200), roleOf(), t0]);
-  const until0 = roleOf()?.until, badFor = await call("act", { verb: "set", args: { id: "@world", component: `roles:${vic.actor}`, value: { role: "member", for: "2 fortnights" } } });
-  await sleep(300);
+  const until0 = roleOf()?.until, badFor = await call("act", { verb: "set", args: { id: "@world", component: `roles:${vic.actor}`, value: { role: "member", for: "2 fortnights" } } });   // refused before sending: nothing to wait for
   ok(badFor.isError && /not sent/.test(T(badFor)) && /"30m", "2h", "1d" or "1w"/.test(T(badFor)) && roleOf()?.until === until0 && roleOf()?.role === "builder", "AT11 a malformed for is refused before anything is sent, with the durations it takes", [T(badFor), roleOf()]);
   vic.close(); }
 
