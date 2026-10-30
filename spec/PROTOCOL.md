@@ -1192,8 +1192,11 @@ is called, and a body effect as `{kind, to}`, never which consent admitted
 it: the log is permanent and public, and the authority's own record of an
 activation never becomes an attendance list (an `enter` / `leave`
 activation, and a grab that isn't itself logged, records no trigger actor
-and no `event.by`; a release always has its own act, so it keeps its
-trigger). What a script writes with the identities it receives live is its
+and no `event.by`; a release keeps its trigger, since it has its own act,
+except a leaving holder's whose drop was refused where the authority doesn't
+put the thing back (no engine, or no stored pose): that one has none and,
+like a departure, records no identity). What a script writes with the
+identities it receives live is its
 own act, signed with its sponsor's rights. An auditor's re-run of a script is a
 check, never the record; its procedure is `docs/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
 `docs/SCRIPTS.md`.

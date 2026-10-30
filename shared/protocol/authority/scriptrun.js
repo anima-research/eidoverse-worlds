@@ -488,7 +488,7 @@ export function presenceEvent(w, kind, who) {
 // it, once. A grab is presence (unlogged unless the sim had to be told): its activation's cause is the grab's own act
 // when there is one, else the entry that made the script's sponsor, as enter/leave. A release is the settlement, which
 // is logged: its act is the cause. Fields: by, id, hand, grip? (grab); by, id, how (put | drop | throw | stay | return |
-// snap), socket? and to? (release), seq (the act) when logged.
+// snap | left | fell), socket? and to? (release), seq (the act) when logged.
 const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev }); };
 // Everything a write set off, until nothing is left: a hand event's scripts may write (changed:, say), and a changed:
 // script's move may let go of a held thing (letGoEdited), which is a hand event again. So the two queues are drained in

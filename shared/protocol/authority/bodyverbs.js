@@ -46,12 +46,13 @@ const outsideWorld = (...a) => UP.outsideWorld(...a);
 const rateCheck = (...a) => UP.rateCheck(...a);
 const request = (...a) => UP.request(...a);
 const warnings = (...a) => UP.warnings(...a);
-function returnHeld(w, actor, id, why) {
+function returnHeld(w, actor, id, why, how, seq) {
   delete w.presence.holds[id];
-  const st = w.state(); if (!st.entities[id] || !st.entities["@world"]?.c["physics-engine"]) return;
-  const t = st.entities[id].c.transform; if (!t) return;
-  const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
-  changeEntry(w, p, w.append(actEntry(w, "system", "return-held", { id, holder: actor, why })));
+  const st = w.state(); const t = st.entities["@world"]?.c["physics-engine"] ? st.entities[id]?.c.transform : null; let back;
+  if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
+    back = w.append(actEntry(w, "system", "return-held", { id, holder: actor, why })); changeEntry(w, p, back); }
+  const act = seq ?? back;
+  if (st.entities[id]) heldEvent(w, "release", id, { by: actor, how, ...(act !== undefined ? { seq: act } : {}) });
 }
 
 // review 10-07 M3: hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
@@ -85,11 +86,11 @@ const EMBODIED_VERBS = {
       if (!may(st, actor, "build") && !atASpawn(st, to)) { const all = spawnsOf(st);
         refuse("spawn", `this world's arrivals are within ${all.map((s) => `${s.radius} m of [${s.pos.join(", ")}]`).join(" or ")}`, "arrive there, then walk", { at: me?.at }); }
       rateCheck(w, actor);
-      if (fell) for (const id of mine) returnHeld(w, actor, id, FELL);
       // review 10-07 M3: a body's whereabouts are presence. An ARRIVAL writes nothing to the log (that a person was here
       // at a time is not history the world needs). A TELEPORT while present is an act, because it resets the speed
       // track: who did it and when is on the record; never where from, where to, or what kind of client they are
       const act = me ? w.append(actOf(w, actor, "move", { teleport: true, ...(fell ? { reason: FELL } : {}) })) : undefined;   // a fall is on the record with its reason
+      if (fell) for (const id of mine) returnHeld(w, actor, id, FELL, "fell", act);
       w.presence.bodies[actor] = { at: to, ts: now, tokens: TRACK.cap, ...(size ? { size } : {}) }; leftOccupied(w, st, actor, to); w.savePresence();
       return { ok: true, at: to, ...(act !== undefined ? { recorded: true, act } : {}) };
     }
@@ -405,7 +406,7 @@ const EMBODIED_VERBS = {
     const wasLeaving = w.leaving; w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = wasLeaving ?? null; }   // a nested request (enter() keeps the outer call's state)
     // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
     // where the log last had it; if picking it up took it out of the engine, the authority puts it back there, as its own act.
-    for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) returnHeld(w, actor, id, r.refused?.code);
+    for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) returnHeld(w, actor, id, r.refused?.code, "left");
     endDrivesBy(w, w.state(), actor);   // a driver leaving: the lease commits, the helm frees (shared/protocol/authority/drive.js)
     if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);   // a guest never returns (review full-260 L8)
     delete w.presence.bodies[actor]; forgetReaches(w.presence, actor); clearOccupant(w, actor); w.savePresence();   // F3 (b): a yes ends when either person leaves

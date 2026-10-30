@@ -11,7 +11,7 @@ interface UseEvent extends EventBase { on: "use"; by: Id; seq?: number; action: 
 interface SayEvent extends EventBase { on: "say"; by: Id; text: string; to?: Id; seq: number }
 interface PresenceEvent extends EventBase { on: "enter" | "leave"; by: Id }
 interface GrabEvent extends EventBase { on: "grab"; by: Id; id: Id; hand: string; grip?: string; seq?: number }
-interface ReleaseEvent extends EventBase { on: "release"; by: Id; id: Id; how: "put" | "drop" | "throw" | "stay" | "return" | "snap"; to?: Id; socket?: string; seq: number }
+interface ReleaseEvent extends EventBase { on: "release"; by: Id; id: Id; how: "put" | "drop" | "throw" | "stay" | "return" | "snap" | "left" | "fell"; to?: Id; socket?: string; seq?: number }
 interface ChangedEvent extends EventBase { id: Id; comp: string; by: Id; seq: number }
 interface TickEvent extends EventBase { on: "tick" }
 interface WakeEvent extends EventBase { on: "wake"; slept: number }
