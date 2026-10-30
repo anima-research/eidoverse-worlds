@@ -370,7 +370,7 @@ const exitedPid = async () => { const p = Bun.spawn(["bun", "-e", ""]); await p.
 // watched from inside, so it leaves its own signs of where custody's lock has it: `met-lock` the first time the lock is
 // held, a dot in `tries` each time, `met-right` the first time another holds the right to remove a lock, and `holds-right`
 // once it holds one itself (with `pause`, it then waits for `resume` before going on).
-const minter = (dir, f, go, i, each, { pause = false } = {}) => Bun.spawn(["bun", "-e", `const fs = (await import("node:fs")).default;
+const minter = (dir, f, go, i, each, { pause = false, waitMs = 0 } = {}) => Bun.spawn(["bun", "-e", `const fs = (await import("node:fs")).default;
   const lock = ${JSON.stringify(`${f}.lock`)}, at = (n) => ${JSON.stringify(dir)} + "/" + n + "-${i}", seen = new Set();
   const mark = (n) => { if (!seen.has(n)) { seen.add(n); fs.writeFileSync(at(n), ""); } };
   const nap = new Int32Array(new SharedArrayBuffer(4)), until = (p) => { while (!fs.existsSync(p)) Atomics.wait(nap, 0, 0, 5); };
@@ -382,7 +382,7 @@ const minter = (dir, f, go, i, each, { pause = false } = {}) => Bun.spawn(["bun"
   const h = custodyAt(${JSON.stringify(f)}); mark("ready"); until(${JSON.stringify(go)});
   const out = {}, t0 = performance.now();
   try { for (let j = 0; j < ${each}; j++) out["u-p${i}-" + j] = h.keyOf("u-p${i}-" + j, true); out.sequencer = h.sequencer(); }
-  catch (e) { out.error = String(e.message ?? e); } out.ms = Math.round(performance.now() - t0); console.log(JSON.stringify(out));`], { cwd: ENGINE, stdout: "pipe", stderr: "pipe" });
+  catch (e) { out.error = String(e.message ?? e); } out.ms = Math.round(performance.now() - t0); console.log(JSON.stringify(out));`], { cwd: ENGINE, stdout: "pipe", stderr: "pipe", env: { ...process.env, ...(waitMs ? { EIDO_CUSTODY_LOCK_WAIT_MS: String(waitMs) } : {}) } });
 // what a child printed, and how it exited: a child that crashed says so rather than printing nothing that compares equal
 const resultOf = async (k) => { const code = await k.exited, out = await new Response(k.stdout).text();
   try { return { ...JSON.parse(out), code }; } catch { return { crashed: true, code, stderr: (await new Response(k.stderr).text()).slice(-400) }; } };
@@ -398,7 +398,7 @@ const T = scratchKeys(); holdLock(T.lock); fs.writeFileSync(T.go, "");
 const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
 // ---- A13h: while a live process holds the lock no one mints; released, six processes minting into one keys file at once keep every key ----
 { const { dir, f, lock, go } = scratchKeys(), N = 6, EACH = 8; holdLock(lock);
-  const kids = Array.from({ length: N }, (_, i) => minter(dir, f, go, i, EACH));
+  const kids = Array.from({ length: N }, (_, i) => minter(dir, f, go, i, EACH, { waitMs: 120_000 }));   // held until all six start: slower than 10 s on a slow runner (Windows CI 41003901034)
   const ready = !!(await tryUntil("every minter has its handle open", () => marks(dir, "ready") === N, { ms: 60_000, step: 50 })); fs.writeFileSync(go, "");
   const met = !!(await tryUntil("every minter meets the held lock", () => marks(dir, "met-lock") === N, { ms: 60_000, step: 50 }));   // each child's own sign: it met the held lock
   const during = Object.keys(keysIn(f).holders ?? {}).length, waiting = kids.every((k) => k.exitCode === null);

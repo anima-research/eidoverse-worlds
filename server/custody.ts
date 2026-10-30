@@ -11,7 +11,7 @@ type Key = { pub: string; priv: string };
 type File = { sequencer?: Key; operator?: Key; holders: Record<string, Key> };
 
 /** How long a mint waits for another process's mint to finish before it gives up. */
-const LOCK_WAIT_MS = 10_000;
+const LOCK_WAIT_MS = Number(process.env.EIDO_CUSTODY_LOCK_WAIT_MS) || 10_000;   // how long a mint waits on a held lock (a slow host may raise it)
 /** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
 function holderOf(f: string): { pid: number; nonce: string } | null {
   let s: string; try { s = fs.readFileSync(f, "utf8"); } catch { return null; }
