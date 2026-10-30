@@ -340,13 +340,13 @@ const cases: Case[] = [
       const w = s.reopen({ bodies: {}, holds: {}, consent: { "u-a": { cells: { strangers: { pose: "everyone" } }, friends: ["u-f"] } } });
       const t = w.presence.consent["u-a"]; return { move: t?.move, touch: t?.touch, raw: JSON.stringify(t) }; },
     good: (o) => o.move === false && o.touch === false && !/strangers|friends|cells|switch/.test(o.raw) },
-  { id: "W1", what: "(R 14:41) /worlds answers ONE people list of {id, declares?} (no agents list)", run() {
+  { id: "W1", what: "(R 14:41) /worlds answers ONE people list of {id, declares?} (everyone); main's agents list is back beside it (decision table row 21), read from the declaration only (§6a)", run() {
       const src = readText("server/routes.ts"); const h = src.slice(src.indexOf('u.pathname === "/worlds"'), src.indexOf('u.pathname === "/worlds"') + 2000);
-      return { one: /people: present\.map\(\(c\) => \(\{ id: c\.id, \.\.\.\(c\.declares \? \{ declares: c\.declares \} : \{\}\) \}\)\)/.test(h), agents: /agents:/.test(h) }; },
-    good: (o) => o.one && !o.agents },
-  { id: "W2", what: "…the worlds tool shows each id with its declared word, if any: no \"(agent)\" suffix, no agents list read", run() {
-      const t = readText("mcpl/tools.ts"); return { suffix: /\(agent\)`/.test(t), agentsRead: /w\.agents/.test(t), tag: /p\.declares \? `\$\{p\.id\} \(\$\{p\.declares\}\)` : p\.id/.test(t) }; },
-    good: (o) => !o.suffix && !o.agentsRead && o.tag },
+      return { one: /people: present\.map\(\(c\) => \(\{ id: c\.id, \.\.\.\(c\.declares \? \{ declares: c\.declares \} : \{\}\) \}\)\)/.test(h), agents: (h.match(/agents: [^\n]*/) ?? [""])[0] }; },
+    good: (o) => o.one && /^agents: present\.filter\(\(c\) => c\.declares === "agent"\)\.map\(\(c\) => c\.id\),/.test(o.agents) },
+  { id: "W2", what: "…the worlds tool shows each id with its declared word, if any: no \"(agent)\" suffix; the agents list only counts (decision table row 21)", run() {
+      const t = readText("mcpl/tools.ts"); return { suffix: /\(agent\)`/.test(t), agentsRead: (t.match(/w\.agents/g) ?? []).length, tag: /p\.declares \? `\$\{p\.id\} \(\$\{p\.declares\}\)` : p\.id/.test(t) }; },
+    good: (o) => !o.suffix && o.agentsRead === 2 && o.tag },
   { id: "W3", what: "…the browser keeps the declared word as said (no agent boolean) and its nameplate card and chat line show that word only", run() {
       const net = readText("client/lib/net.js"), rem = readText("client/lib/remotes.js"), pc = readText("client/lib/platecard.js"), ch = readText("client/lib/chat.js"), ix = readText("client/index.html");
       return { net: (net.match(/declares: (msg|p)\.declares \?\? null/g) ?? []).length, rem: /declares: meta\.declares \?\? null/.test(rem) && !/agent: !!meta\.agent/.test(rem),

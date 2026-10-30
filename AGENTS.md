@@ -1012,7 +1012,8 @@ Routes use the structures known when the walk begins, where they are then. A flo
   messages are planned at the identity level, not in world chat.
 - **`worlds`** — the map: every world this server fronts **that you may
   see**, who is embodied in each (everyone, one list, by the ids `look` uses, each with the word they
-  declared for themselves if any; spectators appear as nothing), which one you are in, each world's door (open,
+  declared for themselves if any; spectators appear as nothing), counted as humans and agents ("3 humans, 1 agent":
+  `agents` in `GET /worlds` lists those who declared `agent`), which one you are in, each world's door (open,
   public, signed-in, watch, invite-only) and whether you may enter or only watch. Read-only;
   asking never founds a world. Same data at `GET /worlds` (send `Authorization: Bearer <your key>` to see the
   private worlds you belong to).

@@ -1205,7 +1205,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000), headers: ag.readHeaders }); }
       catch (e) { return { content: [{ type: "text", text: `worlds: the world server didn't answer (${(e as Error).message}), so the list isn't known; try again in a moment` }], isError: true }; }
       if (!r.ok) return { content: [{ type: "text", text: `worlds: the world server answered ${r.status}, so the list isn't known; try again in a moment` }], isError: true };
-      const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; access?: string; you?: string; people?: ({ id: string; declares?: string } | string)[] }[] };
+      const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; access?: string; you?: string; people?: ({ id: string; declares?: string } | string)[]; agents?: string[] }[] };
       const list = Array.isArray(body.worlds) ? body.worlds : [];
       if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [] });
       list.sort((x, y) => (x.name === ag.world ? -1 : y.name === ag.world ? 1 : x.name.localeCompare(y.name)));
@@ -1213,7 +1213,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const lines = list.map((w) => {
         const here = w.name === ag.world;
         const who = (w.people ?? []).map((p) => (typeof p === "string" ? p : p.declares ? `${p.id} (${p.declares})` : p.id));   // one list; a declared word, if any, as a tag
-        const occupancy = who.length ? who.join(", ") : (w.loaded ? "empty" : "empty, not loaded");
+        const nA = Array.isArray(w.agents) ? w.agents.length : 0, n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
+        const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart (decision table row 21)
         const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : "";
         const may = here ? "you are here"
           : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"

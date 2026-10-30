@@ -801,7 +801,8 @@ const ROUTES: Route[] = [
           loaded: !!w,
           access: door.label,          // open | public | signed-in | watch | invite-only: the door for everyone it doesn't list
           you: mine,                   // enter | watch: what THIS caller may do there
-          people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),
+          people: present.map((c) => ({ id: c.id, ...(c.declares ? { declares: c.declares } : {}) })),   // everyone here, human or agent
+          agents: present.filter((c) => c.declares === "agent").map((c) => c.id),   // main's field (decision table row 21): by declaration (§6a), never inferred
         }];
       });
       return new Response(JSON.stringify({ worlds: out }),

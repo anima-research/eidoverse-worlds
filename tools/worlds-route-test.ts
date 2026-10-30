@@ -101,7 +101,7 @@ console.log("\n— A. on-disk worlds —");
   check("a dir with only an old v1 log is not a world here", !names.includes("oldv1"), names.join(","));
   check("dot-dirs are not worlds", !names.some((n) => n.startsWith(".")), names.join(","));
   check("sorted by name", JSON.stringify(names) === JSON.stringify([...names].sort()), names.join(","));
-  check("unloaded on-disk world says so, empty", rows.every((r) => r.loaded === false && r.people.length === 0 && r.agents === undefined), JSON.stringify(rows));
+  check("unloaded on-disk world says so, empty", rows.every((r) => r.loaded === false && r.people.length === 0 && Array.isArray(r.agents) && r.agents.length === 0), JSON.stringify(rows));
 }
 
 console.log("\n— B. presence —");
@@ -113,7 +113,7 @@ console.log("\n— B. presence —");
   const m = byName((await fetchWorlds(port)).rows);
   check("annex now loaded", m.annex?.loaded === true, JSON.stringify(m.annex));
   check("a participant who declared nothing lists under people, untagged", m.annex?.people.some((p) => p.id === "alice" && !("declares" in p)), JSON.stringify(m.annex));
-  check("a participant who declared agent lists in the SAME people list, tagged with the word (R 10-17: one list)", m.annex?.people.some((p) => p.id === "bot" && p.declares === "agent") && m.annex?.agents === undefined && m.annex?.people.length === 2, JSON.stringify(m.annex));
+  check("a participant who declared agent lists in the SAME people list, tagged with the word (R 10-17: one list), and in main's agents (decision table row 21)", m.annex?.people.some((p) => p.id === "bot" && p.declares === "agent") && JSON.stringify(m.annex?.agents) === '["bot"]' && m.annex?.people.length === 2, JSON.stringify(m.annex));
   check("a spectator appears as nothing", m.commons?.people.length === 0, JSON.stringify(m.commons));
   alice.close(); bot.close(); ghost.close();
   await new Promise((r) => setTimeout(r, 300));

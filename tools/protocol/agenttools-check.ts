@@ -19,6 +19,7 @@
 //   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
+//   AT12 /worlds lists agents apart again; the worlds tool counts humans and agents (decision table row 21)
 //   AT11 a timed grant takes main's for: "2h" again through act set (decision table row 14)
 // @ts-nocheck
 import fs from "node:fs";
@@ -233,6 +234,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(chosen.isError && /mint/.test(T(chosen)) && /\$my-mug/.test(T(chosen)), "AT2e an id the agent chooses is refused, and the words name the placeholder", T(chosen)); }
 
 // ---- AT3: a refused shove is an error ----
+// AT12 (decision table row 21): /worlds lists main's agents again (declared, §6a), and the worlds tool counts humans and agents apart
+{ const yard = (await (await fetch(`http://127.0.0.1:${port}/worlds`, { headers: ag.readHeaders })).json()).worlds?.find((w) => w.name === "yard");
+  const line = T(await call("worlds")).split("\n").find((l) => l.startsWith("- yard")) ?? "";
+  ok(JSON.stringify(yard?.agents) === JSON.stringify([ag.name]) && yard.people?.length === 2 && /1 human, 1 agent: /.test(line), "AT12 /worlds' agents lists the declared agent; people is everyone; the worlds tool says 1 human, 1 agent", [yard, line]); }
 { const vic = await sock("Vic"); await sleep(200);
   vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // in reach (shove: 3 m)
   const sw = await vic.req("consent", { move: false }); ok(sw?.ok, "(AT3 setup) Vic turns her move gate off (its default is on)", sw);
