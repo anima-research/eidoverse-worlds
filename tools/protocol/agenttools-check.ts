@@ -18,6 +18,7 @@
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
 //   AT9  an alias runs the new tool with the OLD argument shape (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
+//   AT10 catch_up says speech is arrival-only (decision table row 11)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -65,6 +66,8 @@ const { HANDLERS, TOOLS, TOOL_RENAMED, toolList, handleTool: handleToolDoor } = 
   // AT3 / AT2 descriptions
   const desc = Object.fromEntries(TOOLS.map((t) => [t.name, t.description]));
   ok(!/default for agent performers/.test(desc.act) && /owner's call \(their move gate/.test(desc.act) && desc.act.includes((await import("../../shared/protocol/physconst.js")).bodyRangeWords()) && !/within 3 m/.test(desc.act) && /shove \{target/.test(desc.act), "AT3 act's shove says the body's owner decides, the same for every body (no agent default)", desc.act.slice(0, 200));
+  // AT10 (decision table row 11): speech is arrival-only (server/world.ts sayFloor), so catch_up promises no backlog
+  ok(/arrival-only/.test(desc.catch_up) && /since you arrived/.test(desc.catch_up) && !/since a point in the world's history/.test(desc.catch_up), "AT10 catch_up's description says speech is arrival-only: chat since you arrived, no backlog", desc.catch_up);
   // ---- AT6: the surface itself ----
   const names = TOOLS.map((t) => t.name);
   const folded = ["take_off", "climb_to", "glide_to", "land_at", "rehearse_down", "rehearse_recover", "fold_wings", "unfold_wings", "flight_status",
