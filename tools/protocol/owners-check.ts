@@ -17,6 +17,7 @@
 //        their roles); by id too; recorded in world.mod.jsonl as an operator repair, no account printed or logged
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
 //        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
+//   OR7  bind refuses an identity only a third party's entry names (a recipient of translated old speech); OR8 its own entry, role, ban or mute makes it bindable
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 //   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
 //   UN2  one owner bound: no warning; UN3 no owner at all and no --claim: refused, naming --claim (every translation ends with an owner)
@@ -305,6 +306,25 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const e6 = directoryAt(file).entry(fableId) ?? {}, t6 = directoryAt(file).entry(twins[0]) ?? {};
   row("OR6", () => ok(b6.code === 0 && same(e6.subs, ["human:test:fable"]) && same(t6.subs, ["human:test:twin"]) && held.resolve({ sub: "human:test:fable", name: "fable" }) === fableId && held.entry(fableId)?.kind === "account",
     "OR6 a directory another process held from before (a running server) takes the binds: its next save keeps them, and signing in with a bound account there finds the identity; a bind by id works too", { b6: b6.out.slice(0, 200), e6, t6 }));
+}
+
+// OR7/OR8 (#260 Stella q3): only the identity's own record in the world makes it bindable: an entry it wrote, a role, a ban or mute on it
+{ const root = scratch("owners-or7"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
+  v1(W, "yard", [["world", "grant", { id: "fable", role: "owner", sub: "human:test:fable" }], ["fable", "say", { text: "psst", to: "Echo" }],
+    ["Talker", "say", { text: "hi" }], ["fable", "grant", { id: "Roley", role: "builder" }], ["fable", "ban", { id: "Banned" }]]);
+  const u = upgrade(root, "yard"); const file = directoryFileIn(W), d0 = directoryAt(file);
+  const mutey = d0.imported("Mutey"), modf = path.join(W, "yard", "world.mod.jsonl");
+  fs.appendFileSync(modf, JSON.stringify({ ts: T0, actor: u.roles.fable?.[0], verb: "mute", who: mutey }) + "\n");
+  const bind = (...a: string[]) => { const r = Bun.spawnSync(["bun", "tools/operator-repair.ts", "bind", ...a], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+  const echo = Object.entries<any>(JSON.parse(fs.readFileSync(file, "utf8")).ids).find(([, e]) => e.name === "Echo")?.[0];
+  const before = fs.readFileSync(file, "utf8"), mod0 = fs.readFileSync(modf, "utf8");
+  const r7 = [bind("yard", "Echo", "human:test:echo"), bind("yard", String(echo), "human:test:echo")];
+  const still = fs.readFileSync(file, "utf8") === before && fs.readFileSync(modf, "utf8") === mod0;
+  row("OR7", () => ok(u.up.code === 0 && !!echo && r7.every((r) => r.code === 1 && /nobody called/.test(r.out)) && still,
+    "OR7 bind refuses an identity only another person's entry names (Echo, the recipient of fable's translated old speech), by name and by id, nothing changed", { code: u.up.code, echo, r7 }));
+  const r8 = ["Talker", "Roley", "Banned", "Mutey"].map((n) => bind("yard", n, `human:test:${n.toLowerCase()}`));
+  row("OR8", () => ok(r8.every((r) => r.code === 0 && /^bound /m.test(r.out)), "OR8 …while its own record makes it bindable: an entry it wrote (Talker), a role (Roley), a ban (Banned), a mute (Mutey)", r8.map((r) => r.out.slice(0, 160))));
 }
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);

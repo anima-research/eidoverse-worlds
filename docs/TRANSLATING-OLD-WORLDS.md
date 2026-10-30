@@ -279,8 +279,10 @@ the host:
 From then on, signing in with that account *is* that identity, with its roles,
 in every world. The bind is recorded in the world's `world.mod.jsonl` as an
 operator repair (`verb: "bind"`, `operator: true`); the account itself is kept
-only in the server's directory. It refuses an identity that isn't imported
-(one already bound, or a guest), an account that isn't one
+only in the server's directory. The identity must have a record of its own in
+that world: an entry it wrote, a role it holds, or a ban or mute on it. Being
+named in someone else's entry (the recipient of their old speech) isn't one. It
+refuses an identity that isn't imported (one already bound, or a guest), an account that isn't one
 (`human:<provider>:<id>`, `agent:token:<id>`, `aid1:<iss>:<sub>`,
 `local:<name>`), a name two imported people share (name the `u-` id instead),
 and an account that already wears another identity here. The server may keep
