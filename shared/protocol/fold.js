@@ -419,9 +419,14 @@ export function applyInPlace(s, ops, seq = Infinity, purged = null, batch = fals
 export function purgesIn(entries) {
   const none = () => {}, settled = acceptedEntries(entries); return unnamedStubs(settled, purgesOf(settled, none), none);
 }
-/** the entries the strict fold accepts, by seq (null where it rejects one); none without a genesis (#260 Stella 10-30) */
-export function acceptedEntries(entries) {
+/** the entries the strict fold accepts, by seq (null where it rejects one); none where it reads no world (#260 Stella 10-30).
+ *  `ops`: also null a change whose ops the fold skips as malformed (a bind's authors; purgesIn keeps the fold's own input). */
+export function acceptedEntries(entries, { ops = false } = {}) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];
-  if (!g || g.kind !== "genesis") return [];   // the fold reads no world here, so nothing is replayed either
-  return settledEntries(ok, worldIdOf(g), none);
+  if (!g || g.kind !== "genesis" || g.body.dialect !== DIALECT || g.body.v !== VERSION) return [];   // the fold reads no world here
+  try { if (checkGenesis(g.body) === "unknown-minor") return []; } catch (x) { if (x instanceof Malformed) return []; throw x; }
+  const settled = settledEntries(ok, worldIdOf(g), none);
+  if (ops) for (let seq = 1; seq < settled.length; seq++) { const e = settled[seq]; if (e?.kind !== "change") continue;
+    try { opsOf(e); } catch (x) { if (x instanceof Malformed) settled[seq] = null; else throw x; } }
+  return settled;
 }

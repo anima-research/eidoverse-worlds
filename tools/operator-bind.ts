@@ -19,7 +19,7 @@ function ownIn(dir: string): Set<string> {
   const out = new Set<string>(), mine = (id: unknown) => { if (typeof id === "string" && isMinted(id)) out.add(id); };
   const lines = (f: string) => { const p = path.join(dir, f); return fs.existsSync(p) ? fs.readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }) : []; };
   const log = readLog(fs.readFileSync(path.join(dir, "world.jsonl")));
-  for (const e of acceptedEntries(log)) mine(e?.actor);   // only an entry the reader accepts (#260 Stella 10-30)
+  for (const e of acceptedEntries(log, { ops: true })) mine(e?.actor);   // only an entry the reader accepts (#260 Stella 10-30)
   for (const m of lines("world.mod.jsonl")) { mine(m?.actor); if (m?.verb === "ban" || m?.verb === "mute") mine(m.who); }
   const wc = fold(log).entities?.["@world"]?.c ?? {};
   for (const k of Object.keys(wc)) if (k.startsWith("roles:")) mine(k.slice(6));

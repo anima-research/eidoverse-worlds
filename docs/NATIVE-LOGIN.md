@@ -32,15 +32,17 @@ The current single sequencer needs no additional storage. Native sessions use th
 existing private session persistence. Re-login is required after native expiry.
 
 `HN_NATIVE_ORIGIN` defaults to `https://eidoverse.animalabs.ai`. Staging/local
-servers must set their exact public origin. A native-login request carrying an
-Origin is compared with that configured or default origin only; it does not trust
-Host or forwarded headers (server/native-login.ts).
+servers must set their exact public origin. `GET /native` serves the login page
+with no Origin check. A native-login POST carrying an Origin is compared with that
+configured or default origin only; it does not trust Host or forwarded headers
+(server/native-login.ts). A POST with no Origin (a native client) is not checked.
 
-The signed-in WebSocket guard (server/auth.ts `ownOrigin`) applies when a browser
-sends no `Sec-Fetch-Site`, and has two cases:
-- `HN_NATIVE_ORIGIN` set: the Origin must equal it exactly (scheme, host, port).
-- unset: the Origin must equal the request's own scheme and its `Host` header
-  (the URL's host without one). Behind a proxy that is not the public origin, so
+The signed-in WebSocket guard (server/auth.ts `crossSiteUpgrade`):
+- `Sec-Fetch-Site` sent: it decides, and only `same-origin` passes.
+- not sent, and no Origin: a native client, allowed.
+- not sent, with an Origin: it must equal `ownOrigin`, which is `HN_NATIVE_ORIGIN`
+  when set (scheme, host, port, exactly), else the request's own scheme and its
+  `Host` header (the URL's host without one). Behind a proxy that is not the public origin, so
   set `HN_NATIVE_ORIGIN` there (README, deploy/SHOW_RUNBOOK.md).
 
 The existing `HN_ISSUER_KEY` enables the feature and

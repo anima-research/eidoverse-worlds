@@ -1000,11 +1000,12 @@ Routes use the structures known when the walk begins, where they are then. A flo
   sent and can read back only what was said while you were present (a
   reconnect is a new arrival). Read-back follows effective permission: the
   owner, server operators, and anyone currently holding `readChat` read the
-  master log's speech from before they came. It is granted like any
-  permission: the Roles panel's `readChat` toggle on a role
-  (client/lib/rolespanels.js), or a per-person exception
-  (client/lib/people.js). A `grantRoles` holder grants it only to roles
-  below their own, and only with permissions they hold. There is
+  master log's speech from before they came. The owner grants it to a
+  whole role with the Roles panel's `readChat` toggle
+  (client/lib/rolespanels.js; only the owner changes these). A `grantRoles`
+  holder grants it to one person at a time in People
+  (client/lib/people.js): a role below their own, or a per-person
+  exception, and only with permissions they hold. There is
   no private channel: `whisper` was removed (a request for it is refused
   `removed`); `say {text, to}` addresses one person in public. Direct
   messages are planned at the identity level, not in world chat.

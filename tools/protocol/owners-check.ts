@@ -334,6 +334,20 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   const r9 = bind("yard", "Stray", "human:test:stray"), k9 = bind("yard", "Kept", "human:test:kept");
   row("OR9", () => ok(!!said && r9.code === 1 && /nobody called/.test(r9.out) && k9.code === 0 && /^bound /m.test(k9.out),
     "OR9 bind refuses an identity whose only entry the reader rejects (Stray: a parseable row with an unknown field); the same row, valid, makes Kept bindable", { said: !!said, r9, k9 }));
+  // OR10/OR11 (#260 Stella 10-30, 3rd): the strict reader's other two stages, a change's ops and the genesis version, each with a control
+  const change = rows.find((e) => e.kind === "change"), opper = d9.imported("Opper"), okop = d9.imported("Okop");
+  fs.appendFileSync(wl, JSON.stringify({ ...change, actor: opper, ts: ts + 3, body: { ...change.body, verb: "explode" } }) + "\n" + JSON.stringify({ ...change, actor: okop, ts: ts + 4 }) + "\n");
+  const r10 = bind("yard", "Opper", "human:test:opper"), k10 = bind("yard", "Okop", "human:test:okop");
+  row("OR10", () => ok(!!change && r10.code === 1 && /nobody called/.test(r10.out) && k10.code === 0 && /^bound /m.test(k10.out),
+    "OR10 bind refuses an identity whose only entry is a change the fold skips (an unknown op); the same change, valid, makes Okop bindable", { change: !!change, r10, k10 }));
+  const lines = fs.readFileSync(wl, "utf8").split("\n").filter(Boolean), g = JSON.parse(lines[0]), late = d9.imported("Late");
+  fs.appendFileSync(wl, JSON.stringify({ ...said, actor: late, ts: ts + 5 }) + "\n");
+  fs.writeFileSync(wl, [JSON.stringify({ ...g, body: { ...g.body, minor: 999 } }), ...fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).slice(1)].join("\n") + "\n");
+  const r11 = bind("yard", "Late", "human:test:late");
+  fs.writeFileSync(wl, [lines[0], ...fs.readFileSync(wl, "utf8").split("\n").filter(Boolean).slice(1)].join("\n") + "\n");
+  const k11 = bind("yard", "Late", "human:test:late");
+  row("OR11", () => ok(r11.code !== 0 && !/^bound /m.test(r11.out) && k11.code === 0 && /^bound /m.test(k11.out),
+    "OR11 under a genesis with an unsupported minor (the fold reads no world) nobody's entry counts; the same log with its own genesis binds Late", { r11, k11 }));
 }
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);
