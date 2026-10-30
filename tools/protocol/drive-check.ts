@@ -33,7 +33,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["two helms taken", "protocol/authority/sockets.js", "if (helms.length > 1) return", "if (false) return", ["D1"]],
   ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
-  ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack, dt)", "slack = slackNow(null, dt)", ["D13"]],
+  ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack)", "slack = slackNow(null)", ["D13"]],
   ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why, free);   // a throw keeps", "  try { commitLease(w, st, host, why, free); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
   ["a drive step's failed commit unseats its driver", "protocol/authority/drive.js", 'commitLease(w, st, a.id, "periodic", false)', 'commitLease(w, st, a.id, "periodic")', ["D19"]],
   ["a failing commit retries forever", "protocol/authority/drive.js", "if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;", "throw x;", ["D18"]],
@@ -43,6 +43,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the engine carries every layer", "protocol/simlayer.js", "sphereShape(e.c.physics)) || solidOff(e.c, \"things\")) return null;", "sphereShape(e.c.physics)) || solidOff(e.c)) return null;", ["D15"]],
   ["blocks unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(b).size !== b.length) return", "if (false) return", ["D17"]],
   ["a dynamic thing may skip things", "protocol/authority/checks.js", "if (!b.includes(\"things\") && c.physics?.kind === \"dynamic\") return", "if (false) return", ["D17"]],
+  ["a zero q passes the door", "drive.js", "!qNorm(next?.q)) return", "!(Array.isArray(next?.q) && next.q.length === 4 && next.q.every(Number.isFinite))) return", ["D20"]],
+  ["the slack refills by time again", "protocol/authority/drive.js", "slack = slackNow(L.slack)", "slack = ((s, k) => s ? { flat: Math.min(0.25, s.flat + 0.25 * k), up: Math.min(0.25, s.up + 0.25 * k), turn: Math.min(0.05, s.turn + 0.05 * k) } : slackNow(null))(L.slack, Math.min(1, Math.max(0, dt)) * 15)", ["D21"]],
+  ["a raw q is kept", "protocol/authority/drive.js", "const next = { pos: a.pos, q: qNorm(a.q) ?? a.q }", "const next = { pos: a.pos, q: a.q }", ["D22"]],
+  ["an edit's move is committed over", "protocol/authority/drive.js", "if (L.logged === undefined || loggedKey(st, host) === L.logged) return false;", "return false;", ["D23", "D24"]],
   ["CONTROL (no-op: must stay green)", "drive.js", "// shared/drive.js — a hull", "//  shared/drive.js — a hull", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -220,12 +224,43 @@ await C("D12", "sitting is consent to ride, on the record: every drive-commit na
   return [lost?.driver === "vic" && JSON.stringify(lost?.carried) === '["pat"]' && up.ok && alight?.why === "alight" && JSON.stringify(alight?.carried) === '["pat"]'
     && exit?.why === "exit" && JSON.stringify(exit?.carried) === "[]" && gone.ok, { lost, up: show(up), alight, exit, gone: show(gone) }]; });
 
-await C("D13", "the fixed slack is a budget, not per message (review L26): a 60 Hz stream each 0.2 m past maxSpeed gains under 9.5 m/s over 1 s (5 + 15 × 0.25 m: per message it was ~17); an honest 15 Hz stream arriving jittered (20 / 112 ms) is taken whole", () => {
+await C("D13", "the fixed slack is a budget, not per message (review L26): a 60 Hz stream each 0.2 m past maxSpeed gains under 9.5 m/s over 1 s (per message it was ~17; D21 bounds what a stream keeps); an honest 15 Hz stream arriving jittered (20 / 112 ms) is taken whole", () => {
   const s = session(); s.board("vic"); let z = 0, took = 0; const why: any = {};
   for (let i = 0; i < 60; i++) { const want = z + 4 * 1.25 / 60 + 0.2, r = s.call("drive", { id: "hull", pos: [0, 1, want], q: [0, 0, 0, 1] }, "vic", 1000 / 60); if (r.ok) { z = want; took++; } else why[r.refused?.code] = (why[r.refused?.code] ?? 0) + 1; }
   const h = session(); h.board("vic"); let hz = 0, refused = 0;
   for (let i = 0; i < 30; i++) { hz += 4 / 15; const r = h.call("drive", { id: "hull", pos: [0, 1, hz], q: [0, 0, 0, 1] }, "vic", i % 2 ? 112 : 20); if (!r.ok) refused++; }
   return [z < 9.5 && took > 0 && refused === 0, { speed: z, took, why, refused }]; });
+
+await C("D20", "a drive step whose q is all zeros is refused shape with the pose that stands, rather than throwing", () => {
+  const s = session(); s.board("vic");
+  const ok = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 1] }, "vic"), zero = s.call("drive", { id: "hull", pos: [0, 1, 1.5], q: [0, 0, 0, 0] }, "vic");
+  return [ok.ok && zero.refused?.code === "shape" && JSON.stringify(zero.refused.pose?.pos) === "[0,1,1]", { ok: show(ok), zero: [show(zero), zero.refused?.pose] }]; });
+
+await C("D21", "the slack is a bounded allowance that only unused rate refills, not time: a 60 Hz stream at 6 m/s on a maxSpeed-4 hull is refused too-fast within 2 s (refilled by time, it ran on, as far as 8.75 m/s); a 60 Hz stream at maxSpeed runs its 3 s whole", () => {
+  const run = (v: number) => { const s = session(); s.board("vic"); let z = 0;
+    for (let i = 0; i < 3 * 60; i++) { z += v / 60; const r = s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic", 1000 / 60); if (!r.ok) return { at: i, code: r.refused?.code, said: show(r) }; }
+    return { at: null }; };
+  const fast = run(6), honest = run(4);
+  return [fast.code === "too-fast" && fast.at < 120 && honest.at === null, { fast, honest }]; });
+
+await C("D22", "a drive step's q is kept as a rotation: [0, 0, 0, 2] is taken as [0, 0, 0, 1], in the reply's pose and the lease's", () => {
+  const s = session(); s.board("vic"); const r = s.call("drive", { id: "hull", pos: [0, 1, 1], q: [0, 0, 0, 2] }, "vic");
+  const L = s.w().presence.drives?.hull;
+  return [r.ok && JSON.stringify(r.pose?.q) === "[0,0,0,1]" && JSON.stringify(L?.pose?.q) === "[0,0,0,1]", { r: show(r), pose: r.pose, lease: L?.pose }]; });
+
+await C("D23", "a builder's move of a driven hull stands: it lets the driver go, and the lease ends without committing its stale pose over the move", () => {
+  const s = session(); s.board("vic"); s.call("drive", { id: "hull", pos: [0, 1, 3], q: [0, 0, 0, 1] }, "vic");
+  const moved = s.call("set", { id: "hull", component: "transform", value: tf([8, 1, 0]) }, "olive"), at = s.log().length;
+  s.sweep(3100); s.sweep(3100);
+  const later = s.log().slice(at).filter((e: any) => e.kind === "act" && e.verb === "drive-commit");
+  return [moved.ok && JSON.stringify(posOf(s)) === "[8,1,0]" && later.length === 0 && !s.w().presence.drives?.hull, { moved: show(moved), pos: posOf(s), later: later.map((e: any) => e.body), lease: s.w().presence.drives?.hull }]; });
+
+await C("D24", "a move that leaves the driver at the helm (their own edit) stands too: the lease goes on from the edited pose, so their next step is judged from there and the periodic commit writes the stream that went on from it", () => {
+  const s = session(); s.board("olive"); s.call("drive", { id: "hull", pos: [0, 1, 3], q: [0, 0, 0, 1] }, "olive");
+  const moved = s.call("set", { id: "hull", component: "transform", value: tf([8, 1, 0]) }, "olive");
+  const steps = [[0.2, 100], [0.4, 2000], [0.6, 2000]].map(([z, ms]) => show(s.call("drive", { id: "hull", pos: [8, 1, z], q: [0, 0, 0, 1] }, "olive", ms)));
+  s.sweep(1500); const kept = JSON.stringify(posOf(s)), helm = s.w().presence.occupants?.olive?.to;
+  return [moved.ok && steps.every((x) => x === "ok") && kept === "[8,1,0.6]" && helm === "helm", { moved: show(moved), steps, kept, helm }]; });
 
 await C("D14", "a commit that throws (the log's disk fails as the driver gets up) keeps the lease (review L27): the getting-up fails, the driver is still at the helm, the lease holds the hull where it is, and the next step drives on from there (no snap back to the logged pose)", () => {
   const s = session(); s.board("vic");
