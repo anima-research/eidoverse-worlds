@@ -103,6 +103,10 @@ report lists each one):
 - *Carried, with their fate said:* vehicle `probes` (retired: the authority's
   hull sweep).
 - *Sky audio* (the weather's own sounds) is `@world.sky.audio`, as main's.
+- *A person's own `none` or `spectator`* (translate-v1@36): in an owned
+  world, `none` becomes a ban in `world.mod.jsonl` with the grant's end, so
+  they stay out; a live `spectator` (unless `*` is spectator) refuses the
+  translation by name, since there is no watch-only grant for one person.
 
 A report reviewed under an earlier translator is never approvable: each
 version translates differently, so its hash differs, and the refusal says so.

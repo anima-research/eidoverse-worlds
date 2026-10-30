@@ -122,7 +122,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@35";
+export const TRANSLATOR = "eidoverse/translate-v1@36";
+// @36 (#260, Stella follow-up): a person's own role none in an owned world is also an imported ban (its until kept), filed in the
+// moderator log, so the door keeps them out as main did; @35 left them a newcomer with a body. Output differs there.
 // @35 (owner 10-30, "despaghettify"): main's water.speed is physics-area {kind: speed, factor: speed / 2.4} on the water's zone again,
 // the one way an area changes how fast a body moves; @31-@34 wrote a water.drag field, which is gone. Output differs there.
 // @34 (decision table row 8): main's ambient motes are a derived dust document carrying its count, range and colour (EFFECT_LIMITS bound them: 600, 32 m), its defaults (16 m, #aec8b4) where unset; @33 named the dust Essential capped at 600 over 8 m. Output differs there.
@@ -230,7 +232,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@35";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@36";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -888,6 +890,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (screen && (screen.captioners === undefined || Array.isArray(screen.captioners?.ids))) {
         const ids = screen.captioners?.ids ?? []; screen.captioners = { ids: ids.includes(id) ? ids : [...ids, id] };
         const { caption: _c, ...rest } = r; r = rest; }
+      if (r?.role === "none" && !open) w[`imported-bans:${id}`] ??= { reason: "main's role none kept this person out", ...(Number.isSafeInteger(r.until) ? { until: r.until } : {}) };   // @36: a ban, so the door keeps them out
       if (r && (r.role === "spectator" || r.role === "none")) w[`imported-roles:${id}`] = r;   // no rung below member (@17): carried, not granted
       else w[`roles:${id}`] = r && open && (r.role === undefined || r.role === "visitor" || r.role === "member") ? { ...r, role: "builder" } : r && r.role === "visitor" ? { ...r, role: "member" } : r; }
   }

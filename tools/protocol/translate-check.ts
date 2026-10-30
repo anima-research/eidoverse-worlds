@@ -2,6 +2,7 @@
 //   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
 //           (everyone builder, rank and all; the cap at builder)
 //   W1a-c   #260 item 1: a person's own watch grant (closed or open old world) is refused by name, never dropped or widened
+//   W1d     @36: a person's own role none in an owned world is a ban (its end kept) in the moderator log: still kept out
 //   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
 //   B24a-f  name-only global bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
@@ -12,7 +13,7 @@
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
 //   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
 //   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
-//   V5      the translator is @35, and a report reviewed under @34 is refused, naming the earlier translator
+//   V5      the translator is @36, and a report reviewed under @35 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -33,6 +34,7 @@ import { sha256 } from "../../shared/protocol/hash.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 import * as ACC from "../../shared/protocol/access.js";
 import * as FOLD1 from "./import-v1/fold.js";
+import * as RIGHTS from "../../shared/protocol/authority/rights.js";
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 900)}` : ""}`); } };
@@ -93,6 +95,18 @@ row("W1c", () => { const L = [OWNER, BOB("spectator")], { W } = tr(L), bob = TV1
   ok(ACC.entryOf(W, { actor: bob }).may === "embody" && JSON.stringify(names) === '["Bob"]' && JSON.stringify(TV1.watchGrants(v1st(vis), T0)) === '["Bob"]'
     && TV1.watchGrants(v1st([OWNER, BOB("visitor")]), T0).length === 0 && TV1.watchGrants(v1st([BOB("spectator")]), T0).length === 0,
     "W1c an owned world with no '*' restriction: Bob:spectator (who main held to watching) would embody in v4, so he is named too; Bob:visitor and an ownerless world refuse nothing", { names, door: ACC.entryOf(W, { actor: bob }) }); });
+row("W1d", () => { const U = T0 + 86_400_000, bob = TV1.enc("Bob"), at = (L: any) => tr(L).W;
+  const open = at([OWNER, BOB("none", { until: U })]), spec = at([OWNER, ["olga", "grant", { id: "*", role: "spectator" }], BOB("none")]), vis = at([OWNER, BOB("visitor")]), unowned = at([BOB("none")]);
+  const root = scratch("translate-w1d"), Wd = path.join(root, "worlds"), d = path.join(Wd, "den"); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, BOB("none", { until: U })]).map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const out = Bun.spawnSync(["bun", "-e", `import { translateV1World } from "./tools/protocol/import-v1/world.ts"; translateV1World(${JSON.stringify(d)}, ${JSON.stringify(path.join(Wd, "new"))}); console.log("T ok");`],
+    { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: Wd, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: "", TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const mf = path.join(Wd, "new", "world.mod.jsonl"), mod = fs.existsSync(mf) ? fs.readFileSync(mf, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const ban = mod.find((m) => m.verb === "ban"), w = (t: number) => ({ mod, now: () => t });
+  ok(open[`imported-bans:${bob}`]?.until === U && !open[`roles:${bob}`] && spec[`imported-bans:${bob}`] && !vis[`imported-bans:${bob}`] && !unowned[`imported-bans:${bob}`]
+    && ban?.until === U && RIGHTS.isBanned(w(U - 1), ban.who) && !RIGHTS.isBanned(w(U), ban.who),
+    "W1d an owned world's Bob:none (no '*' restriction, or '*' spectator) is a ban with the grant's end, filed in the moderator log, so the door keeps him out until then; Bob:visitor and an ownerless world (main read no grant) ban no one",
+    { open: open[`imported-bans:${bob}`], ban, said: (out.stdout.toString() + out.stderr.toString()).slice(-400) }); });
 row("W1b", () => { const root = scratch("translate-w1"), Wd = path.join(root, "worlds"), d = path.join(Wd, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, NONE, BOB("spectator")]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const out = Bun.spawnSync(["bun", "-e", `import { reportV1World, translateV1World } from "./tools/protocol/import-v1/world.ts"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("R " + JSON.stringify({ refused: report.refused, watching: report.watching })); try { translateV1World(${JSON.stringify(d)}, ${JSON.stringify(path.join(Wd, "new"))}); console.log("T wrote"); } catch (e) { console.log("T " + JSON.stringify(String(e.message))); }`],
@@ -243,12 +257,12 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@34" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@35" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 35 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 35 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@35/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @35; a report reviewed under @34 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 36 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 36 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@36/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @36; a report reviewed under @35 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

@@ -402,7 +402,7 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     // translated world quietly unbans everyone (component review, world-settings #3)
     const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
     if (banned.length) { const modFile = path.join(destDir, "world.mod.jsonl"); touched.push({ file: modFile, before: fs.existsSync(modFile) ? fs.readFileSync(modFile) : null }); const ml = modLogAt(modFile);
-      for (const [k, v] of banned) ml.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), translated: true }); }
+      for (const [k, v] of banned) ml.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), ...(Number.isSafeInteger(v?.until) ? { until: v.until } : {}), translated: true }); }
     // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
     // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
     const places = carryPoses(srcDir, destDir, idOfName, touched);
