@@ -63,7 +63,7 @@
 //        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
 //        level (water on @world) is not a volume and does not refuse (control); main's water volume and air box on the same
 //        world translate (listed under `mapped`, absent from the refusal)
-//   IP27 a client that doesn't fold the log: a native (Unreal) session is told the Unreal client hasn't been ported to this protocol
+//   IP27 a client that doesn't fold the log: a native (Unreal) session is told to update its client (current builds join through the bridge)
 //        yet; anyone else is told to reload or update (the wire carries the latter; the native text is the pure switch)
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/inplace-check.ts
 // @ts-nocheck
@@ -169,8 +169,8 @@ const srv1 = await boot("boot1");
   await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   ok(err === noFoldRefusal("current", false) && /reload the page/.test(err) && !/Unreal/.test(err), "IP27 a joiner with no replica and no native session is told, on the wire, to reload the page or update the agent (the non-native text)", err); }
-ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", true)) && /a world of the current protocol, and/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
-  "IP27 a native (Unreal) session gets the truthful text: the Unreal client hasn't been ported to this protocol yet, nothing is wrong with it or the world", noFoldRefusal("current", true));
+ok(/update the Unreal client/.test(noFoldRefusal("current", true)) && /a world of the current protocol, and/.test(noFoldRefusal("current", true)) && /Nothing is wrong with your sign-in/.test(noFoldRefusal("current", true)) && !/reload the page/.test(noFoldRefusal("current", true)),
+  "IP27 a native (Unreal) session gets the truthful text: update the client, nothing is wrong with it or the world", noFoldRefusal("current", true));
 // IP27c (review of the house fixes): a native session issued since main #255 carries native: true, not nativeWorld, and is
 // told the Unreal text on the wire
 { const sf = path.join(root, "native-sessions.json"), sid = "c".repeat(64);
@@ -182,7 +182,7 @@ ok(/Unreal client hasn't been ported to it yet/.test(noFoldRefusal("current", tr
   await tryUntil("the join to current is answered", () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 }); ws.close();
   const err = msgs.find((m) => m.type === "error")?.error ?? "";
   try { srvN.proc.kill(); } catch {}
-  ok(err === noFoldRefusal("current", true), "IP27c a native session marked native: true (issued since #255) is told on the wire that the Unreal client hasn't been ported yet", err); }
+  ok(err === noFoldRefusal("current", true), "IP27c a native session marked native: true (issued since #255) is told on the wire to update its Unreal client", err); }
 
 // ================= IP19–IP21: the dry run and the approval it binds =================
 { const d = oldWorld("careful"); const fp = fingerprint(d);

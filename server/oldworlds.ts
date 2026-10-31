@@ -35,12 +35,12 @@ export type OldWorld = {
 };
 
 /** What a client that doesn't fold the log is told at join (server.ts, the 4005 refusal). A NATIVE session (the Unreal client,
- *  signed in through native-login: isNativeSession, native: true or an older nativeWorld) is told the truth about itself: it hasn't been ported to this protocol
- *  yet (review of PR #260, Mica, item 7); until 2026-10-18 it was told to "reload the page", which it has none of. Anyone else
+ *  signed in through native-login: isNativeSession, native: true or an older nativeWorld) is told the truth about itself: this build can't fold the log
+ *  (review of PR #260, Mica, item 7); a current build never sees it, since it rejoins through its bridge on this close. Anyone else
  *  (an old page, an old agent build) is told to reload or update. */
 export function noFoldRefusal(world: string, native: boolean): string {
   return native
-    ? `"${world}" is a world of the current protocol, and the Unreal client hasn't been ported to it yet: it doesn't fold the world's log, so it can't join. Nothing is wrong with your sign-in or with the world; a browser client can join it now, and the Unreal client will when its port lands.`
+    ? `"${world}" is a world of the current protocol, and this Unreal build can't fold its log. Nothing is wrong with your sign-in or with the world: update the Unreal client (current builds join through their local bridge), or join from a browser.`
     : `"${world}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent`;
 }
 
