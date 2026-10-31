@@ -312,8 +312,7 @@ function pathBlocked(w, st, from, to, size) {
   if (law?.blocked) { const L = law.blocked;
     return { ground: true, reason: L.swim ? `the bank at [${L.at.map(r3).join(", ")}] stands ${r3(L.top - groundOf(st).level)} m above the water: higher than a swimmer can haul out (${r3(MOVER.swim.climb * s)} m)`
       : `the ground at [${L.at.map(r3).join(", ")}] rises ${r3(L.top - L.from)} m from where you stand: a ledge higher than a step (${r3(MOVER.body.step * s)} m)` }; }
-  const skin = (b) => ({ min: [b.min[0] + MOVER.body.skin * s, b.min[1], b.min[2] + MOVER.body.skin * s], max: [b.max[0] - MOVER.body.skin * s, b.max[1], b.max[2] - MOVER.body.skin * s] });
-  const boxes = (law ? law.out.map((x) => x.box) : [bodyBox(from, s), ...pts.map((p) => bodyBox(p, s))]).map(skin);
+  const boxes = law ? law.out.map((x) => x.box) : [bodyBox(from, s), ...pts.map((p) => bodyBox(p, s))];
   const already = new Set(); const b0 = boxes[0]; // a body already inside something may walk out of it
   for (const id of near(st, b0.min, b0.max)) if (hitsIx(st, b0, id, 0.01)) already.add(id);
   const lo = [0, 1, 2].map((i) => Math.min(...boxes.map((b) => b.min[i]))), hi = [0, 1, 2].map((i) => Math.max(...boxes.map((b) => b.max[i])));
