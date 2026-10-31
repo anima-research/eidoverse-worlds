@@ -614,6 +614,9 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    a faint wash instead. .ping's background is declared later and still wins. */
 .chat-log .line.me { background: rgba(255,255,255,.04); border-radius: 3px; }
 .chat-log .line.declared .who[data-declares]::after { content: ' · ' attr(data-declares); color: var(--dim); font-size: var(--fs-xs); font-weight: normal; }
+/* an agent is marked as on main: a small ◈ before the name, not a word after it (decision row 10, R 10-30) */
+.chat-log .line.declared .who[data-declares="agent"]::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
+.chat-log .line.declared .who[data-declares="agent"]::after { content: none; }
 .chat-log .line.sys { color: var(--dim); font-style: italic; }
 .chat-log .line.hist-note {
   border-bottom: 1px dashed var(--edge); padding-bottom: 4px; margin-bottom: 4px;
@@ -2518,7 +2521,6 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 .chat-side-list .who-row .who-badge { flex: 0 6 auto; min-width: 1.4em; padding: 0 4px; }
 .chat-side-list .who-row[aria-haspopup] { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }   /* a long-press is the person menu, not text selection */
 .who-muted { flex: none; margin-left: 3px; color: var(--err); font-size: var(--fs-xs); }
-.who-ai { flex: none; margin-left: 4px; color: var(--dim); font-size: var(--fs-xs); }
 .sp-ctx-head { padding: 4px 9px 5px; font: 600 11.5px var(--font); color: #b9b9be; border-bottom: 1px solid rgb(255 255 255 / .08); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 .sp-ctx-item.dim, .sp-ctx-item:disabled { color: #8a8a90; cursor: default; white-space: normal; max-width: 240px; font-size: 11.5px; }
 .sp-ctx-item:disabled:hover { background: none; }

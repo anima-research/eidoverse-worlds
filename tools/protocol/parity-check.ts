@@ -306,11 +306,11 @@ const cases: Case[] = [
       const def = await t({}), ch = await t({ kinds: ["change"] }), win = await t({ after: 4, before: 8 });
       return { def: [/#5/.test(def), /#6/.test(def), /#7/.test(def)], ch: [/#6/.test(ch), /#5/.test(ch)], win: [/#5/.test(win), /#7/.test(win), /#9/.test(win)], args: asked.map((x) => [x.after ?? null, x.before ?? null]) }; },
     good: (o) => o.def[0] && !o.def[1] && o.def[2] && o.ch[0] && !o.ch[1] && o.win[0] && o.win[1] && !o.win[2] && JSON.stringify(o.args[2]) === "[4,null]" },
-  { id: "P8", what: "decision row 15 (R 10-30): a self-declared agent's plate reads 'name · AI' and its People Here row carries a plain AI tag; any other declaration or none, no tag", async run() {
-      const P = await import(TREE + "client/lib/plate.js"); const rm = readText("client/lib/remotes.js"), ch = readText("client/lib/chat.js"), av = readText("client/lib/avatar.js");
-      return { plate: [P.plateText("Ann", { ai: true }), P.plateText("Ann", { approx: true, ai: true }), P.plateText("Ann")], who: [P.declaresAI("agent"), P.declaresAI("human"), P.declaresAI(null)],
-        marks: (rm.match(/markAI\((r|fresh|existing)\);/g) ?? []).length, row: /declaresAI\(p\.declares\) \? '<span class="who-ai"/.test(ch), drawn: /makeLabel\(plateText\(name, \{ approx: this\._seatApprox, ai: this\._ai \}\)\)/.test(av) }; },
-    good: (o) => JSON.stringify(o.plate) === JSON.stringify(["Ann · AI", "Ann ≈ · AI", "Ann"]) && JSON.stringify(o.who) === "[true,false,false]" && o.marks === 4 && o.row && o.drawn },
+  { id: "P8", what: "decision row 10 (R 10-30): an agent is marked as on main, a small ◈ before its name in the chat log (not a trailing word); no tag on the nameplate or in People Here", async run() {
+      const css = readText("client/index.html"), av = readText("client/lib/avatar.js"), ch = readText("client/lib/chat.js");
+      return { before: /\.who\[data-declares="agent"\]::before \{ content: '◈ '/.test(css), noWord: /\.who\[data-declares="agent"\]::after \{ content: none; \}/.test(css),
+        plate: /· AI/.test(av) || /who-ai/.test(ch) || /who-ai/.test(css) }; },
+    good: (o) => o.before && o.noWord && !o.plate },
   { id: "P3", what: "the agent's shove trims its target (main's absent()): spaces name nobody; someone not here is refused before anything is sent", async run() {
       const T = await import(TREE + "mcpl/tools.ts"); const sent: any[] = [];
       const ag: any = { joined: true, name: "me", people: new Map([["ann", { pose: { p: [1, 0, 0] } }]]), pos: { x: 0, z: 0 }, puppet: (to: string) => sent.push(to) };

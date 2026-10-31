@@ -12,7 +12,6 @@
 // of a name, so a person's highlight and an agent's ping can differ.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
-import { declaresAI } from './plate.js';
 // NOT importing xrpanels.js: it reaches the engine through domquad -> htmlmesh, and
 // chat.js is shared with a client that has no scene to hang a VR panel in. The spec is
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
@@ -1024,7 +1023,7 @@ function paintSide(force = false) {
       // exactly this reason; this now matches that vocabulary.
       ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}" data-name="${esc(p.id)}"${p.me || !personUi ? '' : ' aria-haspopup="menu"'}>
           <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
-          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>${declaresAI(p.declares) ? '<span class="who-ai" title="declared an AI agent">AI</span>' : ''}${personUi ? personUi.badgeHtml(p.id, esc) : ''}${personUi?.muted?.(p.id) ? '<span class="who-muted" title="muted by a moderator" aria-label="muted">⊘</span>' : ''}
+          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>${personUi ? personUi.badgeHtml(p.id, esc) : ''}${personUi?.muted?.(p.id) ? '<span class="who-muted" title="muted by a moderator" aria-label="muted">⊘</span>' : ''}
           <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>${stripName === p.id && personUi ? '<div class="pm-strip" data-for="' + esc(p.id) + '"></div>' : ''}`).join('')
     : '<div class="who-empty">nobody yet</div>';
   // only when it changed: the 2 s repaint used to rebuild the list every time, which reset hover and keyboard focus on
