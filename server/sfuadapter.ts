@@ -336,6 +336,11 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
   sfuState(world).sfu.setMuted(speakerId, mutedFlag);
 }
 
+/** Server-held deafness: the listener hears nobody, whatever its own consent says. No caller since ghost was removed (10-20); kept for the relay (sfu-test) and a future spectator role. */
+export function setSfuDeafened(world: string, listenerId: string, deaf: boolean) {
+  sfuState(world).sfu.setDeafened(listenerId, deaf);
+}
+
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
   senders.delete(wkey(world, id));
@@ -380,6 +385,7 @@ export function sfuDiag(world: string) {
     // to be observable, and /relay-diag is where an operator looks.
     service: voiceServiceState(),
     moderatorMuted: d.muted,          // one store, read back from the enforcement point
+    deafened: d.deafened,
   };
 }
 

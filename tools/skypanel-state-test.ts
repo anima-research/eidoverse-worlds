@@ -7,12 +7,13 @@
 // probe can't reach cheaply are cheap: a log with no clouds on the detailed sky, a real clock with no tz or a tz that
 // doesn't resolve, and a new log landing on top of your unsaved preview.
 
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const stub = new URL("./skypanel-stub.mjs", import.meta.url).pathname;
+const stub = fileURLToPath(new URL("./skypanel-stub.mjs", import.meta.url));
 plugin({
   name: "skypanel-stubs",
   setup(b) {
-    b.onResolve({ filter: /^\.\/(base|defs|net|ui|sky|terrain|lod_policy|realize\/models)\.js$/ }, () => ({ path: stub }));
+    b.onResolve({ filter: /^\.\/(base|defs|net|ui|sky|terrain|lod_policy|realize\/models|editwrites)\.js$/ }, () => ({ path: stub }));
   },
 });
 
@@ -77,6 +78,18 @@ logSky({ ...S.sent.at(-1)[1] });   // your own commit comes back as the log
 check("after ✓ your log is the sky: nothing to say", you() === "", you());
 logSky({ hours: 20, rate: 0, weather: "clear", clouds: "clear" });
 check("with nothing unsaved a new log is simply followed", you() === "" && slider.value === "20", `${you()} slider=${slider.value}`);
+
+// R 10-28 (item 13's bonus bug): the "world" select saved nothing (the sky stores no world since the 10-16 shape audit). Every
+// world control in the panel must commit what it shows: each option chosen, then ✓, is in what is sent. Local ones are exempt.
+console.log("SKY PANEL — every shared select commits what it shows");
+{ const local = (sel: Element) => /local/.test(sel.getAttribute("aria-label") ?? "") || /local/.test((sel.closest(".row") as HTMLElement | null)?.title ?? "");
+  const dead: string[] = [];
+  for (const sel of [...body.querySelectorAll("select")] as HTMLSelectElement[]) { if (local(sel)) continue;
+    const name = sel.closest(".row")?.querySelector(".nm")?.textContent ?? "?";
+    for (const o of [...sel.options].map((x) => x.value).filter(Boolean)) {
+      sel.value = o; sel.dispatchEvent(new Event("change")); (body.querySelector("button.dirty") as HTMLButtonElement | null)?.click();
+      if (!JSON.stringify(S.sent.at(-1)?.[1] ?? {}).includes(JSON.stringify(o))) dead.push(`${name}=${o}`); } }
+  check("no select whose choice the commit drops (the world select is gone: earth is the only sky world, and it isn't stored)", dead.length === 0, dead.join(", ")); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

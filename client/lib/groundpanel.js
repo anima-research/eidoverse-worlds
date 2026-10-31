@@ -16,9 +16,10 @@
 import { bus, report, CONFIG } from './base.js';
 import { currentTerrainArgs, terrainEditBase, noteTerrainSent } from './world.js';
 import { defsRegistry } from './defs.js';
-import { sendVerb } from './net.js';
+import { send as sendRequest } from './editwrites.js';
 import { flashHint } from './ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
+import { paletteDefaults, terrainArgs, grassArgs } from '../../shared/grounddefs.js';
 import { state, onWorldChange } from './state.js';
 import { stateLines } from './statelines.js';
 import { getGrassQuality, getGrassShed, getGrassDensity } from './terrain.js';
@@ -27,6 +28,9 @@ import { getGrassQuality, getGrassShed, getGrassDensity } from './terrain.js';
 // forget what the author had dialed in
 const st = { tint: null, shape: null, seed: 7, density: null, grass: false, plant: null, height: null };
 let offNow = null, offBudget = null;   // the readout's subscriptions — one per paint
+// the ground is @world's terrain and grass components, so a pick is a `set` and mow is a `delete` — one door
+// request each, undoable like any edit
+const ground = (component, value) => sendRequest(value == null ? { verb: 'delete', args: { id: '@world', component } } : { verb: 'set', args: { id: '@world', component, value } }, { what: component });
 
 export function paintGround(body) {
   if (body.dataset.init) return;
@@ -38,40 +42,33 @@ export function paintGround(body) {
       body.innerHTML = '<div style="color:var(--dim);font-size:11px">this world serves no ground palette (defs/ground/_palette.json)</div>';
       return;
     }
-    const first = (o) => Object.keys(o)[0];
     // carry the author's dials across a defs push; fall back when an edit
     // removed the very option they had selected
-    if (!pal.tints[st.tint]) st.tint = pal.tints.meadow ? 'meadow' : first(pal.tints);
-    if (pal.shapes[st.shape] == null) st.shape = pal.shapes.hills != null ? 'hills' : first(pal.shapes);
-    if (pal.grassHeight[st.height] == null) st.height = pal.grassHeight.meadow != null ? 'meadow' : first(pal.grassHeight);
-    if (pal.grassDensity[st.density] == null) st.density = pal.grassDensity.normal != null ? 'normal' : first(pal.grassDensity);
-    if (!pal.plantings[st.plant]) st.plant = pal.plantings.meadow ? 'meadow' : first(pal.plantings);
+    const def = paletteDefaults(pal);
+    if (!pal.tints[st.tint]) st.tint = def.tint;
+    if (pal.shapes[st.shape] == null) st.shape = def.shape;
+    if (pal.grassHeight[st.height] == null) st.height = def.height;
+    if (pal.grassDensity[st.density] == null) st.density = def.density;
+    if (!pal.plantings[st.plant]) st.plant = def.plant;
 
+    // the args are shared/grounddefs.js's — the Build tab's World section
+    // writes the same ones for the same pick
     // Each control changes ITS key over the world's current terrain bag, never the whole bag: rebuilding it
     // from the panel's dials dropped everything the panel doesn't own — placed features, a heightmap, a seed
     // or size set from the console. (Changing the tint flattened a shaped world back to plain noise.) A world
-    // with no terrain yet gets the panel's full default bag, as before.
-    const fresh = () => ({
-      seed: st.seed, size: 160, segments: 200, amplitude: pal.shapes[st.shape], flatRadius: 16,
-      layers: [{ color: pal.tints[st.tint].layer, repeat: 16 }],
-    });
-    const growTerrain = (patch) => {
+    // with no terrain yet gets the panel's full default bag (terrainArgs), as before. The patch builds on
+    // terrainEditBase() (a sent-but-unechoed edit counts), so two quick clicks compose.
+    const fresh = () => terrainArgs(pal, { seed: st.seed, shape: st.shape, tint: st.tint });
+    const growTerrain = (patch = {}) => {
       const cur = terrainEditBase();
-      sendVerb('terrain', noteTerrainSent(cur ? { ...cur, ...patch } : { ...fresh(), ...patch }));
+      ground('terrain', noteTerrainSent(cur ? { ...cur, ...patch } : { ...fresh(), ...patch }));
     };
     // what "grow" plants — every option is one bag on the singleton grass
     // verb, straight from the def; blade plantings take the height dial and
     // the tint row's colour column
     const growGrass = () => {
       st.grass = true;
-      const p = pal.plantings[st.plant];
-      const args = structuredClone(p.args);
-      if (p.blade) {
-        args.height = pal.grassHeight[st.height];
-        const color = pal.tints[st.tint][p.tint];
-        if (color) args.color = color;
-      }
-      sendVerb('grass', { ...args, density: pal.grassDensity[st.density] });
+      ground('grass', grassArgs(pal, st));
     };
     const isBlade = () => !!pal.plantings[st.plant]?.blade;
 
@@ -87,7 +84,7 @@ export function paintGround(body) {
       const lvl = document.createElement('input');
       lvl.type = 'number'; lvl.step = '0.25'; lvl.title = 'water level (m)';
       lvl.style.cssText = 'width:4.5em;font-size:11px';
-      const cur = currentTerrainArgs()?.water?.level;
+      const cur = (state.st?.water ?? currentTerrainArgs()?.water)?.level;   // water is its own component (shape audit 10-16)
       if (Number.isFinite(cur)) lvl.value = String(cur);
       else fetch(`/heightmap?world=${encodeURIComponent(CONFIG.world)}&format=json`).then((r) => (r.ok ? r.json() : null))
         .then((m) => { if (m && !lvl.value) lvl.value = (m.min + (m.max - m.min) * 0.25).toFixed(1); }).catch(() => {});
@@ -99,10 +96,10 @@ export function paintGround(body) {
         btn('fill', () => {
           const level = Number(lvl.value);
           if (!Number.isFinite(level)) { flashHint('set a water level first'); return; }
-          growTerrain({ water: { ...(terrainEditBase()?.water ?? {}), level } });
+          ground('water', { ...(state.st?.water ?? {}), level });
           flashHint(`water at ${level} m`);
         }),
-        btn('drain', () => { growTerrain({ water: null }); flashHint('water drained'); }),
+        btn('drain', () => { ground('water', null); flashHint('water drained'); }),
       ));
     }
 
@@ -168,7 +165,7 @@ export function paintGround(body) {
     body.appendChild(dens.row);
     body.appendChild(btnRow(
       btn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
-      btn('mow', () => { st.grass = false; sendVerb('grass', { clear: true }); flashHint('field cleared'); }),
+      btn('mow', () => { st.grass = false; ground('grass', null); flashHint('field cleared'); }),
     ));
 
     // tint drives both terrain layer and grass colour
@@ -221,7 +218,7 @@ export function paintGround(body) {
         }
         lo.value = (+min).toFixed(1); hi.value = (+max).toFixed(1);
         const cur = terrainEditBase() ?? { seed: st.seed, segments: 200, layers: [{ color: pal().tints[st.tint].layer, repeat: 16 }] };
-        sendVerb('terrain', noteTerrainSent({
+        ground('terrain', noteTerrainSent({
           ...cur, size: up.meta?.size ?? cur.size ?? 160,
           // enough mesh to show the image's detail along its longer side
           segments: Math.max(cur.segments ?? 200, Math.min(512, Math.max(up.w, up.h) - 1)),

@@ -20,6 +20,7 @@
 // sky-xr-livehold-probe); anything visual. Those are the fakes' contracts, stated beside each fake.
 //
 //   bun tools/sky-lifecycle-test.mjs
+import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { mock } from 'bun:test';
 GlobalRegistrator.register({ url: 'http://localhost/?world=t&name=p' });
@@ -34,7 +35,7 @@ let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m ${n}${ok ? '' : `  ${typeof d === 'string' ? d : JSON.stringify(d)}`}`); };
 
 const THREE = await import('three');
-const lib = (f) => new URL(`../client/lib/${f}`, import.meta.url).pathname;
+const lib = (f) => fileURLToPath(new URL(`../client/lib/${f}`, import.meta.url));
 
 // ---- the bus, tee, the scene -------------------------------------------------------------------------------------
 const handlers = new Map();
@@ -61,14 +62,15 @@ mock.module(lib('loadwork.js'), () => ({ beginWork: () => ({ end() {} }) }));
 mock.module(lib('framebudget.js'), () => ({ busy: () => false }));
 mock.module(lib('lightrig.js'), () => ({ setDayness() {}, releaseForeignLights() {} }));
 mock.module(lib('warmqueue.js'), () => ({ warm: async (_n, fn) => fn(), P_AMBIENT: 0 }));
-mock.module(lib('autohooks.js'), () => ({ claimUnowned: () => [], releaseHook() {} }));
+mock.module(lib('terrain.js'), () => ({ rainSurfaceAt: () => null }));   // sky.js reads only the rain surface from terrain (main #254)
+mock.module(lib('autohooks.js'), () => ({ claimUnowned: () => [], releaseHook() {}, autoHooks: [], ownHook: (fn) => fn }));
 
 // ---- the interim gradient: a flag, announced as sky_interim does ---------------------------------------------------
 let interim = false;
 mock.module(lib('sky_interim.js'), () => ({
   showInterimSky() { if (!interim) { interim = true; bus.emit('sky-interim', true); } },
   hideInterimSky() { if (interim) { interim = false; bus.emit('sky-interim', false); } },
-  updateInterimSky() {}, interimSkyShown: () => interim,
+  updateInterimSky() {}, interimSkyShown: () => interim, interimSkyObject: () => null,   // read only to hide the sky under water (main #254)
 }));
 
 // ---- sky_baked: the dome contract sky.js relies on ------------------------------------------------------------------
@@ -80,6 +82,7 @@ const putBack = (list) => { for (const [d, p] of list ?? []) if (!d.parent) p.ad
 const takeOut = (api) => { const ds = api?._internals?.sky?.domes ?? []; const l = ds.filter((d) => d.parent).map((d) => [d, d.parent]); for (const [d, p] of l) p.remove(d); return l; };
 mock.module(lib('sky_baked.js'), () => ({
   BAKE_INTERCEPT: Symbol('bake-intercept'),
+  bakedDomeObject: () => null,   // read only to hide the sky under water (main #254)
   bandCuts: () => [0, 1], bandedBakeRender: async () => 1, bakeGeneration: () => SB.gen,
   holdLiveDomes(api) { if (SB.held || SB.parked) return false; const l = takeOut(api); if (!l.length) return false; SB.held = l; return true; },
   releaseLiveDomes() { putBack(SB.held); SB.held = null; },
@@ -114,12 +117,14 @@ function fakeSystem() {
   };
   return sys;
 }
+// LIB: what the asset library lists under eidoverse/assets/sky and what fails to prime (the weather sounds live there, not in the engine)
+const LIB = { sky: [], missing: [] };
 mock.module(lib('assets.js'), () => ({
-  primeFiles: async () => {}, listLibrary: async () => [], fetchBytes: async () => new Uint8Array(),
+  primeFiles: async (paths) => paths.filter((p) => LIB.missing.includes(p)), listLibrary: async (dir) => (dir.endsWith('/sky') ? LIB.sky.map((path) => ({ path })) : []), fetchBytes: async () => new Uint8Array(),
   async loadEidoModule() {
     globalThis.makeSkySystem = (args) => fakeSystem(args);   // through sky.js's setter, as sky_system's eval assigns it
-    globalThis.makeSky = async () => {
-      BAKE.builds++;
+    globalThis.makeSky = async (o = {}) => {
+      BAKE.builds++; BAKE.audio = o.audio;
       const sys = await globalThis.makeSkySystem({ opts: {} });
       return { _internals: { sky: sys }, bakeEnv: (o) => sys.bakeEnv(o), enableReflections() {}, update() {},
         transitionTo() {}, setWeather() {}, setTime() {}, setColors() {}, setClouds() {}, dispose() {} };
@@ -317,6 +322,23 @@ try {
       sky.getCloudQuality() === 'high' && BAKE.builds === b1 + 1 && worldLine >= 1 && !sky.skyHeld(),
       { q: sky.getCloudQuality(), builds: BAKE.builds - b1, worldLine });
     sky.SKY_WORLDS.pop();
+  }
+
+  // ---- 4. sky.audio: the library's weather sounds when this server has them, silent (never an error) otherwise ------------
+  {
+    if (renderer.xr.isPresenting) leave();
+    sky.SKY_WORLDS.push('mars');                                // a world switch is a fresh build, which is when audio is read (case 3 left mars)
+    const build = async (world, audio) => { const b = BAKE.builds; await sky.applySky({ ...ARGS, world, audio, ts: ++T }); await settle(); return BAKE.builds === b + 1; };
+    const none = await build('earth', true), aNone = BAKE.audio;
+    LIB.sky = ['eidoverse/assets/sky/audio/rain_desert_loop.ogg'];
+    const has = await build('mars', true), aHas = BAKE.audio;
+    const off = await build('earth', false), aOff = BAKE.audio;
+    LIB.missing = ['eidoverse/weather_audio.js'];
+    const noMod = await build('mars', true), aNoMod = BAKE.audio;
+    LIB.sky = []; LIB.missing = []; await build('earth', false); sky.SKY_WORLDS.pop();
+    check('sky.audio true on a server without the weather sounds: built silent (audio false), no error', none && aNone === false, { none, aNone });
+    check('…with them in the library: the sky is built with its sounds; audio false stays silent; without weather_audio.js silent again',
+      has && aHas === true && off && aOff === false && noMod && aNoMod === false, { has, aHas, off, aOff, noMod, aNoMod });
   }
 
   check('no reported errors', reports.length === 0, reports.slice(0, 3));

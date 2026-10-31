@@ -9,12 +9,15 @@ import { join, resolve } from "node:path";
 import { totalmem } from "node:os";
 
 export const PORT = Number(process.env.PORT ?? 8940);
+/** Where the server listens. Default every interface, as always; HOST=127.0.0.1 keeps a test world on this machine
+ *  only (research 44: R's first world is served locally, and exposed on the tailnet separately, after a check). */
+export const HOST = process.env.HOST ?? "0.0.0.0";
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 // The RENDERERS' own credential (docs/DESIGN-world-access.md). A renderer is the
-// vision of the agents in a world — snapshots are how they see — so a renderer
-// presenting this may WATCH any world, members-only ones included (invisible,
+// vision of the agents in a world — screenshots are how they see — so a renderer
+// presenting this may WATCH any world, invite-only ones included (invisible,
 // never authoring, as every renderer). Distinct from JOIN_TOKEN on purpose: the
 // door key rides invite links, and "renderer" is a flag any client can set, so
 // the door key + the flag must never be a key to a private world. Unset = no
@@ -32,6 +35,10 @@ export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod);
 // serving worlds must be startable without shouldering the optimizer.
 export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
+// TRUST_NAMES=1: a PRIVATE server (a dev box, the owner's own garden on 127.0.0.1) takes a typed name as an account,
+// `local:<name>`, so its owner can be who they say without a login. Never set it on a server strangers can reach: there
+// anyone typing the owner's name would BE the owner (round-2 review R2). Off by default; the server says so at boot.
+export const TRUST_NAMES = process.env.TRUST_NAMES === "1";
 // OPT_MEM_BUDGET_MB bounds the optimizer so serving a world never competes
 // with encoding one: each optimize child runs under RLIMIT_DATA of this
 // many MB (Linux only — XNU accepts the limit and ignores it), and an item
@@ -60,7 +67,7 @@ export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usabl
 // estimate above: measured 259MB for a 5.4MB store GLB (x48). The KTX2/LOD
 // arms were not measured separately and are assumed the same order.
 export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
-// How long the snapshot broker (snapshots.ts) waits for a renderer's frame
+// How long the screenshot broker (screenshots.ts) waits for a renderer's frame
 // before GET /snap answers 504. 12s suits a GPU renderer; a software-rendered
 // one (SwiftShader, --disable-gpu) running a full world can need 10-20s per
 // frame, and loses most races at 12. A summoned roamer first travels (up to
@@ -70,7 +77,7 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // longest wait (5s), capped at 255s, the largest idleTimeout Bun.serve
 // accepts. So the most this window can be is 225 (255, less the 25s journey
 // and the 5s): a larger value is refused like any other invalid one, and 12 is
-// used with a warning. Each request also has one deadline (snapshots.ts
+// used with a warning. Each request also has one deadline (screenshots.ts
 // budgetMs, 55 s by default, or the caller's ?budget=), which the journey, any
 // wait and the frame all come out of. The deadline stretches past 55 s for a
 // longer window, so a frame from a renderer that is free and already there gets
@@ -80,8 +87,8 @@ export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 // above the 255s cap. nginx's 60s default would cut a /snap once
 // SNAP_TIMEOUT_SEC is past about 56 s.
 export const SNAP_TIMEOUT_MS = envNumber("SNAP_TIMEOUT_SEC", 12, (n) => n > 0 && n <= 225) * 1000;
-// How long after a start the snapshot broker waits before it sweeps parked roamers to agents' worlds
-// (snapshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.
+// How long after a start the screenshot broker waits before it sweeps parked roamers to agents' worlds
+// (screenshots.ts sweep): renderers reconnecting after a restart rejoin the worlds they were in, and need the moment.
 // Tests set 0.
 export const SNAP_SWEEP_GRACE_MS = envNumber("SNAP_SWEEP_GRACE_SEC", 30, (n) => n >= 0 && n <= 600) * 1000;
 // How often the broker sweeps besides a roamer joining (the backstop for anything else that leaves a world unserved).
@@ -92,6 +99,8 @@ export const ROOT = resolve(import.meta.dir, "..");
 // permanent). Default keeps the production path unchanged.
 export const WORLDS_DIR = resolve(process.env.WORLDS_DIR ?? join(ROOT, "worlds"));
 // The eidoverse-video checkout = the asset library (models, VRMs, animations).
+// Where a world's verified copy goes before an in-place upgrade (server/backups.ts): beside WORLDS_DIR, never inside it.
+export const BACKUPS_DIR = resolve(process.env.BACKUPS_DIR || join(WORLDS_DIR, "..", "backups"));
 export const LIBRARY_DIR = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
 // Same doctrine as WORLDS_DIR: a dev or test instance points this elsewhere so it can never write derived
 // variants or markers into the live store (a harness once did — review of #172).
@@ -121,15 +130,34 @@ export const LADDER = [PATCH_DIR, OPT_DIR, LIBRARY_DIR];
 
 mkdirSync(WORLDS_DIR, { recursive: true });
 
-/** How many entries may accumulate past a snapshot before folding again.
- *  Small enough that a joiner's tail stays trivial, large enough that a busy
- *  world is not writing a snapshot per action. */
-export const FOLD_EVERY = Number(process.env.FOLD_EVERY ?? 150);
-/** Authored verbs allowed per client per 4s. A griefer gets silence; a person
- *  arranging furniture must not. Configurable because a build session and a
- *  show night want different answers. */
-export const VERB_RATE = Number(process.env.VERB_RATE ?? 12);
-/** All messages per client per second — 15Hz of pose plus verbs plus slack. */
+/** The fold cache (server/statecache.ts) is rewritten every this many entries; 0 = off. Server policy: resuming 1000 entries
+ *  costs ~4 ms at boot (fold ≈ 4.3 µs/entry measured), and a rewrite every 1000 is noise on the write path. */
+export const STATE_CACHE_EVERY = Number(process.env.STATE_CACHE_EVERY ?? 1000);
+/** A physics world writes a sim checkpoint once this many entries follow its last one (authority checkpointSim), so a boot
+ *  replays at most this many into the engine; 0 = only after launches, as before. Server policy, measured on the gym-derived
+ *  205k log (10-28): a checkpoint costs ~10 ms (cut + fsynced ~50 KB blob + its line), replay 1.2 µs/entry for label sets and
+ *  56 µs for transform sets, so 1000 bounds a boot's engine tail at ~60 ms for ~10 µs/entry of writing. */
+export const SIM_CHECKPOINT_EVERY = Number(process.env.SIM_CHECKPOINT_EVERY ?? 1000);
+// ---- server policy: every limit a server runner may set, in one place (an operator surface reads these: WISHLIST) ----
+/** One person's acts per window, logged entries (Matrix rc_message's shape; shared/protocol/authority/gate.js rateCheck). */
+export const ACT_RATE = envNumber("ACT_RATE", 60, (n) => n > 0);
+/** One person's says per window, counted apart from acts so chat and building can't starve each other. */
+export const SAY_RATE = envNumber("SAY_RATE", 20, (n) => n > 0);
+/** The act/say window, in seconds. */
+export const RATE_WINDOW_SEC = envNumber("RATE_WINDOW_SEC", 10, (n) => n > 0);
+/** Bytes one account may make the log hold per window, in KiB. */
+export const RATE_KIB = envNumber("RATE_KIB", 256, (n) => n > 0);
+/** Bytes one guest (no account) may make the log hold per window, in KiB. */
+export const ANON_RATE_KIB = envNumber("ANON_RATE_KIB", 32, (n) => n > 0);
+/** The act rate as the authority takes it (injected: the authority is shared code, livehost opts.rate). */
+export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 1000, bytes: RATE_KIB * 1024, anonBytes: ANON_RATE_KIB * 1024 };
+/** Seconds between two copies of one world (world-fork copies on the shared thread); 0 = no limit. */
+export const FORK_GAP_SEC = envNumber("FORK_GAP_SEC", 60, (n) => n >= 0);
+/** Copies one person may make per hour; 0 = no limit. */
+export const FORK_PER_HOUR = envNumber("FORK_PER_HOUR", 5, (n) => n >= 0);
+// Founding a world: no limits (R 10-28, "no limits until we can study this properly"); server/worldlog.ts foundRefusal.
+/** All messages per client per second — 15Hz of pose plus verbs plus slack; a token bucket with two seconds of burst
+ *  (server/msgrate.ts), so a backlog the server itself caused isn't charged to the client. */
 export const MSG_RATE = Number(process.env.MSG_RATE ?? 60);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle

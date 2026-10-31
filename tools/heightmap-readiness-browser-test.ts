@@ -22,8 +22,11 @@ const PLAIN = { seed: 9, size: 80, segments: 64, amplitude: 5, flatRadius: 4 };
 const plainAt = makeHeightField(terrainParams(PLAIN));
 const P = [17, -11];   // the probe point
 
+// joining never founds a world: the bench founds it, owned by the driver's typed name (TRUST_NAMES), who sets its terrain
+const WORLD = `hmready-${crypto.randomUUID().slice(0, 8)}`;
 const { PORT, BASE, cws, cdp, evalJson, cleanup, die } = await scratchBench('hm-ready', {
-  headed: process.argv.includes('--headed'), portFrom: 9440, serverEnv: { OPT_DIR: OPT, SKIP_OPT_SWEEP: '1' },
+  headed: process.argv.includes('--headed'), portFrom: 9440, worlds: [WORLD], owner: 'hmdriver',
+  serverEnv: { OPT_DIR: OPT, SKIP_OPT_SWEEP: '1', TRUST_NAMES: '1' },
 });
 const { check, tally } = mkCheck();
 async function until(f: () => any, label: string, timeout = 90_000) {
@@ -40,19 +43,20 @@ cws.addEventListener('message', (ev) => {
 });
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*store/heightmaps/*' }] });
 
-const WORLD = `hmready-${crypto.randomUUID().slice(0, 8)}`;
 const msgs: any[] = [];
 const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
 dws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
 await new Promise((r, j) => { dws.onopen = r as any; dws.onerror = j as any; });
-dws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'hmdriver', token: '' }));
+dws.send(JSON.stringify({ type: 'join', world: WORLD, id: 'hmdriver', token: '', replica: true }));
 await until(() => msgs.some((m) => m.type === 'snapshot'), 'driver join');
+// the ground is @world's terrain component: one door request (`set`), answered by its reply
+let reqN = 0;
 async function terrain(args: unknown) {
-  const start = msgs.length;
-  dws.send(JSON.stringify({ type: 'verb', verb: 'terrain', args }));
-  await until(() => msgs.slice(start).some((m) => (m.entry ?? m).verb === 'terrain' || m.type === 'error'), 'terrain echo', 10_000);
-  const error = msgs.slice(start).find((m) => m.type === 'error');
-  if (error) await die(1, `terrain refused: ${error.error}`);
+  const id = `hm-${++reqN}`;
+  dws.send(JSON.stringify({ type: 'request', id, verb: 'set', args: { id: '@world', component: 'terrain', value: args } }));
+  await until(() => msgs.some((m) => m.type === 'reply' && m.id === id), 'terrain reply', 10_000);
+  const r = msgs.find((m) => m.type === 'reply' && m.id === id);
+  if (!r.ok) await die(1, `terrain refused: ${JSON.stringify(r.reply?.refused ?? r)}`);
 }
 const state = () => evalJson(`(async () => {
   const t = await import('/lib/terrain.js');

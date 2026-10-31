@@ -1,0 +1,123 @@
+# import-v1: the one-way importer for old (v1) worlds
+
+Everything here exists to read a world saved on disk in the first protocol's format (a `log.jsonl` of v1 verbs) **once**,
+and write it out as a new v4 world. Nothing at runtime uses it: the server, the browser client and the agents speak v4
+only, and a directory that holds only an old log is refused at open. It lives under `tools/`, so the server never serves
+it and nothing at runtime can load it; `tools/protocol/nov1-check.ts` (in `bun run test:protocol`) fails if anything under
+`client/`, `mcpl/`, `server/` or `shared/` imports anything under `tools/`.
+
+| file | what it is |
+| --- | --- |
+| `fold.js` | the old fold (how a v1 entry changed the world), trimmed to what the translators read |
+| `translate-v1.js` | v1/v2 log → v4 log: each old entry becomes an `imported` act (`body {verb, args, from}`: its verb and args, kept as provenance) or a `say`, and one change entry that brings the v4 fold to the same place, checked after every entry. `DEFERRED` + `deferredFeatures(log)`: the features v4 does not carry yet (water volumes, air boxes, climb routes, vehicles, collision toggles) and every use of one in a log; `translateV1World` refuses on any |
+| `translate-d3.js` | the name her four dialect-3 goldens are checked under (sweep §3): a thin wrapper over `translate-v1.js`, which runs her sim (the first eidosim, `eidosim-v1.js` here) beside the v1 fold whenever a log enters a physics `epoch`. Since @11 a punt stays its `imported` act and each rest is a plain change by `sim` caused by it: no launch, no digest, nothing that asks a reader to fly her engine. The epoch becomes `@world physics-engine` (today's eidosim from then on), and each collider's stamped box its `physics.shape`, `dynamic` for a thing v1 ever punted and `static` otherwise. A log with no epoch translates as one without her sim would |
+| `eidosim-v1.js` | the first eidosim (dialect 3), kept here so the translator, the sweep and the directory check can read what a physics-era v1 log's punts did; nothing at runtime loads it (the server runs `eidosim@1.0.0`) |
+| `eidosim-v1-test.ts` | its covenant tests (self-agreement, schedule independence, quantization), run on the copy kept here (suite `eidosim-v1`) |
+| `frozen/` | every module the old fold reads (forecast, captions, rot, blueprint, chatwindow, and what they import: components, euler, hierarchy, scale3, simmath), byte for byte as they stood at 6dab22f5 (2026-10-04, the commit where the server stopped reading v1 worlds), so a change to the live `shared/` modules never changes what an old log means. Its import closure stays inside this directory (importer-check IM-I3b) |
+| `build.ts` | the old fold's build hash, stamped into a translated world's `translated` act |
+| `world.ts` | `reportV1World(src, {name})`: the dry-run report and its hash (nothing written). `translateV1World(src, dest, {name, approval})`: refuses a founder key (a translation names none), reads `src/log.jsonl` (never writes it), refuses a log using a `DEFERRED` feature, translates, re-reads the result with the strict reader (and, for a physics-era log, the live host's sim layer, which must read the whole history without a disagreement and find nothing to fly: each rest is already a plain change), maps every old name to a door identity, then writes `dest/world.jsonl`; a failure after that removes what it made again |
+| `snapshot-oracle.ts` | the translator against the OLD ENGINE (suite `oracle`): every old world whose `snapshot.json` is a complete fold of its log (seq and bytes match) is translated for real, and its fold (and the server's lifted load) compared with the snapshot, through the translator's mapping and also field by field off the snapshot. Incomplete snapshots are skipped, never compared. Given a world translated in place, it reads the kept originals (`log.original.jsonl`, `snapshot.original.json`). `OPT_DIR=<serving checkout>/assets/opt` gives store models their real addresses |
+
+The operator runs it, in place, in two steps (review of PR #260, item 6: the approval is bound to the exact dry-run
+report before anything moves). **A translation names no founder and carries no owner's signature** (#260 rereview,
+blocker 1): v1 logs record accounts, never keys, so nothing can yet bind a key to the old world's owner, and a key handed
+to the tool would be the operator's choice, recorded as "the owner approved" and installed as tier 0. `--founder-key` and
+`--approve-sig` are refused before anything is written. Until something can attest that a key is the v1 owner's (a
+home-node attestation, later), the one path is `--no-founder-key --operator-only-no-owner`: tier 0 stays empty, and the
+record says no owner was attested.
+
+1. **The dry run.** `WORLDS_DIR=<dir> bun tools/protocol/world.ts translate <world> --dry-run --no-founder-key`. It writes
+   nothing and prints the report (`reportV1World` in `world.ts` here): the old log's size and sha256, the translator and
+   fold build, `founderKey: null`, the counts, the `DROPPED` table (what every translation drops or renames by design, from
+   `translate-v1.js`), `deferred` (uses of features v4 doesn't carry yet: `DEFERRED` — water volumes, air boxes, climb
+   routes, vehicles, collision toggles; any means the translation is refused, naming each use) and `report-hash <sha256>`.
+   Nothing in it varies between runs, so the same log and tool always hash the same.
+2. **The translation, bound to that hash.** `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`.
+   The report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool changed) is refused with
+   both hashes named. Without `--operator-only-no-owner` it is REFUSED: no owner can sign, and the operator says so,
+   knowingly. The tool **countersigns** with this host's custody operator key (`.custody.json` `operator`, never the
+   sequencer key) over `eidoverse-approve-translation:<world>:<hash>`, and the writer checks it itself before the log is
+   written (`approvalProblem`): a countersignature missing, not verifying, or over another hash or world, an approval
+   carrying an owner's signature, or a founder key handed to `translateV1World` refuses by name. The approval is in the new
+   world's log, the system's `translation-approved` act right after `repair-shapes`:
+   `{report, approval: {over, owner: null, operator: {key, sig}, noOwner}}`, `noOwner` saying in words that no owner was
+   attested. A refused report can't be approved.
+
+The world keeps its name, so links to it keep working (the Commons is cut over with `translate commons --no-founder-key --approved … --operator-only-no-owner`). It
+is translated into a temporary sibling directory (`.translating-<world>-…`, never served) and verified there first: the
+importer's own checks (0 divergences, projection equality, strict read-back), the result opened as the server opens it
+(same digest), and, when the directory holds the old server's `snapshot.json`, `snapshot-oracle.ts`'s agreement with it
+(a snapshot the oracle can't compare, a partial one or a physics-era log's, is reported as not compared). Only then is
+it swapped in: `world.jsonl` lands in the world's directory in one rename, and the old files are renamed beside it,
+`log.jsonl` → `log.original.jsonl`, `snapshot.json` → `snapshot.original.json`, `poses.json` → `poses.original.json`:
+the same files, never rewritten or deleted. The old log must hold exactly the bytes that were translated (their size
+and sha256, recorded in the temporary directory as `.source.json`) right before the swap and again after its last
+rename: an old server still writing to it refuses the swap (stop it, then translate again), and the recovery of an
+interrupted swap checks the same before it moves anything. The identities the translation mints join the shared
+directory only once the swap has succeeded (kept until then in the temporary directory as `.identities.json`, which the
+recovery of an interrupted swap writes): a failed attempt leaves none behind, so retries don't pile up unused ones. On any failure, before or during the swap, whatever moved is
+put back, the temporary directory is removed, and it says why. A directory whose `world.jsonl` is a world is served as one, so the
+kept `log.original.jsonl` never makes it look old; translating it again refuses. `translate <old world> <new name>`
+still translates into a new name instead, leaving the old directory exactly as it was (the same dry run and approval).
+
+**Rollback.** The swap moves these: `world.jsonl` in; `log.jsonl` → `log.original.jsonl`, `snapshot.json` →
+`snapshot.original.json`, `poses.json` → `poses.original.json`; then the new `poses.json` (keyed by identity),
+`world.mod.jsonl` (the v1 bans, filed as the moderator's record) and `translation.json` in; and only then the minted
+identities into the shared directory (`.directory.json`). `translation.json` is the record of all of it: every rename,
+every made file with the sha256 it was made with, the identities, the report hash and the approval.
+`WORLDS_DIR=<dir> bun tools/protocol/world.ts rollback <world>` (stop the server first) removes the made files, renames
+the originals back (the same files: bytes, inode and mtime unchanged), forgets the minted identities that nobody has bound
+or renamed since (`directory.forgetPlanned`), and removes the manifest: the world directory is byte-identical to before
+the translation (inplace-check IP24 proves it file by file), and the world translates again. The shared directory is not
+restored from a copy: it is rewritten without the forgotten identities, so it holds the entries it held before (the same
+bytes when nothing else changed it meanwhile, as IP24 checks), and a directory file the translation itself created stays,
+holding none of them. A
+made file the server has written to since (the v4 world's acts, places, bans) refuses the rollback unless
+`--discard-changes`. The content-address index (`OPT_DIR/eido-index.json`) is a cache of library bytes, not world state,
+and is left. A directory translated before 2026-10-18 has no manifest: `rollback` says so and what to rename by hand. At boot the server prints, for
+each old world, the exact in-place commands, with `WORLDS_DIR` filled in and a
+placeholder for the report hash (`server/oldworlds.ts` `bootNotice`). A visitor is told in plain words that the world
+needs a one-time conversion by whoever runs the server and that nothing is lost (`visitorText`; the browser keeps that
+sentence on its splash, suite `refusedjoin`). The sweep
+(`tools/protocol/sweep.ts`, in `test:protocol`) translates every old world log it can find and requires zero divergences.
+
+**This directory is temporary.** It stays only until the live Commons has been cut over to v4 (decided 2026-10-06); a
+follow-up change, about a month after that cutover, deletes this directory, the sweep's v1 half and the v1 fixtures in
+`spec/fixtures/`.
+
+## The Commons and governance keys (PROTOCOL §13)
+
+A translated world's genesis names its governance keys, and genesis never changes. **A translated world's tier 0 stays
+empty**: nothing can yet bind a key to the v1 owner (above), so the translation names no founder, and the host's operator
+key is tier 1. Governance is reserved (§13); the reserved draft must allow ONE attested fill of a translated world's empty
+tier 0 later, once something (a home-node attestation) can vouch that a key belongs to the world's v1 owner. The public
+Commons was founded by **antra**; its owners (antra, fable, janus, mica, from the v1 log's grants) and builder (Digi_Rat)
+come across as `roles:<id>`, because roles are rights inside the world and governance keys are a separate list (§7, "two
+owner lists, never confused"). Neither R's key nor Burrow's goes in tier 0.
+
+Before the cut-over, **back up the host's custody** (`WORLDS_DIR/.custody.json`: the file `.custody.json` in the worlds
+directory itself; a worlds dir saved before the 2026-10-07 names pass may still hold it as `.v4-custody.json`, renamed
+on first use) off this machine: it holds the sequencer and operator keys. Lose it and the Commons can never sign another head; the only way on is a fork.
+
+### A founder's own key, for a world FOUNDED new
+
+Founding a brand-new world is a different path: there is no prior owner to bind, and the founder brings their own key,
+which `create-world {ownerKey}` puts in tier 0 (without one, tier 0 is empty). The key is made, and proven, like this:
+
+1. **The founder makes a key on their own machine.** The private half never leaves it. With OpenSSL (any recent
+   version):
+
+       openssl genpkey -algorithm ed25519 -out eidoverse-owner.pem
+       printf 'ed25519:%s\n' "$(openssl pkey -in eidoverse-owner.pem -pubout -outform DER | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=')"
+
+   Keep `eidoverse-owner.pem` offline and backed up: it is the only thing that can reclaim, rewind or re-key the world
+   from the top.
+2. **They prove it's theirs, and that the text is spelled right**, by signing the key text with it and sending the
+   public key and the signature (both are safe to share):
+
+       KEY=ed25519:…   # the line printed above
+       printf 'eidoverse-owner-key:%s' "$KEY" > msg.txt
+       openssl pkeyutl -sign -inkey eidoverse-owner.pem -rawin -in msg.txt | base64 | tr -d '\n'; echo
+
+3. **The operator checks it** (nothing is written): `bun tools/protocol/world.ts owner-key <KEY> <signature>`. It says
+   `ok` only when the signature verifies over `eidoverse-owner-key:<KEY>`.

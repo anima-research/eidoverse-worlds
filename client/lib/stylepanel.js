@@ -5,6 +5,8 @@
 
 import { makeSection } from './ui.js';
 import { bus } from './base.js';
+import { checkRow } from './rows.js';
+import { alwaysNames, setAlwaysNames } from './namereveal.js';
 
 const LS = 'ew-style-tokens';
 const FIELDS = [
@@ -118,6 +120,14 @@ export function initStylePanel() {
     const xrVis = dial('VR panel opacity', 'the panels in a headset: 1 is solid (the default); lower lets the world show through behind the text.',
       ...XR_PANEL_A_RANGE, xrPanelAlphaToken, setXrPanelAlpha);
     repaintDials = () => { vis.repaint(); xrVis.repaint(); };
+
+    // ALWAYS SHOW NAMES (owner, 10-02): every name in range, through walls — what holding B/Y did in VR before the face
+    // buttons took VRChat's convention (namereveal.js). A view preference, so it lives with the look of things; it works
+    // on the desktop too, and the N hold still does it for a glance. Off by default.
+    const names = checkRow('always show names', () => alwaysNames(), (on) => setAlwaysNames(!!on));
+    names.id = 'style-always-names';
+    names.title = 'every name within range shows, through walls, all the time — what holding N does for a moment';
+    body.appendChild(names);
 
     const reset = document.createElement('button');
     reset.textContent = 'reset to defaults';

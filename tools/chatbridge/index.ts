@@ -1,8 +1,14 @@
 // Chat bridge: mirrors a world's spoken chat into one Discord text channel,
 // and carries that channel's messages back in as speech.
 //
-//   world WS (embodied "discord") ── say verbs ──▶ Discord channel
-//   Discord channel ── messages ──▶ say {text: "author: …"} in the world
+//   world WS (embodied "discord") ── `say` entries of the log stream ──▶ Discord channel
+//   Discord channel ── messages ──▶ a door `say` request {text: "author: …"}
+//
+// The world speaks the protocol: the join says `replica: true` (a client that
+// doesn't is refused), chat arrives as `say` entries in the `log` stream
+// (actors are opaque ids; the stream's `names` and the snapshot's cut.names say
+// who they are), and a say is a door request {type: "request", id, verb: "say",
+// args: {text}} answered by `reply` (a refusal is logged, not retried).
 //
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world
@@ -11,8 +17,9 @@
 // provenance survives in the log verbatim.
 //
 // Loop safety (both directions, both by identity):
-//   world → Discord: entries whose actor is the bridge's own id are skipped —
-//     that covers the echo of every line it just spoke.
+//   world → Discord: entries whose actor is the bridge's own identity (the
+//     snapshot's cut.you) are skipped — that covers the echo of every line it
+//     just spoke.
 //   Discord → world: messages from bots/webhooks are skipped — that covers
 //     the bridge's own posts (and any other bot; humans only by default).
 //
@@ -47,7 +54,8 @@ const DRY_RUN = process.env.DRY_RUN === "1";
 const MAX_BACKLOG = 50;        // per direction; beyond this the oldest drop
 const MAX_LINE_CHARS = 1500;   // Discord → world cap (with honest ellipsis)
 const DISCORD_CHUNK = 1900;    // world → Discord split point (limit is 2000)
-const SEND_GAP_MS = 350;       // world verb pacing; VERB_RATE default is 12/4s
+const SEND_GAP_MS = 550;       // world say pacing: under the door's 20 says per 10 s per actor (authority/gate.js RATE), with room
+const RATE_BACKOFF_MS = 2000;  // a say refused `rate` anyway goes back to the front of the queue and waits this long
 
 const log = (m: string) => console.log(`[chatbridge ${new Date().toISOString().slice(11, 19)}] ${m}`);
 
@@ -136,6 +144,10 @@ const toWorld: In[] = [];
 let worldWs: WebSocket | null = null;
 let joined = false;
 let speaking = false;
+let reqN = 0;
+const inFlight = new Map<string, In>();   // request id → the line it carries, until the world replies
+let holdUntil = 0;                        // a rate refusal's backoff
+let requeued = 0;                         // lines put back during the current backoff (replies come in send order, so they go back in order)
 
 async function pumpWorld() {
   if (speaking) return;
@@ -146,10 +158,13 @@ async function pumpWorld() {
       const d = toWorld.shift()!;
       log(`⏭ world backlog — dropped "${d.author}: ${d.text.slice(0, 40)}…"`);
     }
+    if (Date.now() < holdUntil) { await new Promise((r) => setTimeout(r, holdUntil - Date.now())); continue; }
     const m = toWorld.shift()!;
     let text = `${m.author}: ${m.text}`;
     if (text.length > MAX_LINE_CHARS) text = `${text.slice(0, MAX_LINE_CHARS)}…`;
-    worldWs.send(JSON.stringify({ type: "verb", verb: "say", args: { text } }));
+    const id = `chatbridge-${++reqN}`;
+    inFlight.set(id, m);
+    worldWs.send(JSON.stringify({ type: "request", id, verb: "say", args: { text } }));
     await new Promise((r) => setTimeout(r, SEND_GAP_MS));
   }
   speaking = false;
@@ -157,13 +172,15 @@ async function pumpWorld() {
 
 // ---------------------------------------------------------------- world socket
 
-let lastSeq = -Infinity; // dedupe guard across reconnects (tail replay overlaps live)
+let lastSeq = -Infinity; // dedupe guard across reconnects (a log re-delivery overlaps live)
+let myId: string | null = null; // the bridge's own identity (opaque), from the snapshot
+const names: Record<string, string> = {}; // identity → display name (the door's directory, as the world sends it)
 
 function connectWorld() {
   const ws = new WebSocket(WORLD_URL);
   worldWs = ws;
   ws.onopen = () =>
-    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN }));
+    ws.send(JSON.stringify({ type: "join", world: WORLD_NAME, id: BRIDGE_ID, token: WORLD_TOKEN, replica: true }));
   ws.onclose = () => {
     joined = false;
     log("world socket closed — reconnecting in 1.5s");
@@ -173,23 +190,44 @@ function connectWorld() {
     let msg: any;
     try { msg = JSON.parse(String(ev.data)); } catch { return; }
     if (msg.type === "error") { log(`world says: ${msg.error}`); return; }
+    if (msg.type === "reply") {
+      const line = inFlight.get(msg.id); inFlight.delete(msg.id);
+      const refused = msg.reply?.refused;
+      if (line && refused?.code === "rate") {   // too fast after all: resend it, in its place, after a pause
+        if (Date.now() >= holdUntil) requeued = 0;
+        toWorld.splice(requeued++, 0, line); holdUntil = Date.now() + RATE_BACKOFF_MS;
+        log(`world asked to slow down — "${line.author}: ${line.text.slice(0, 40)}" waits ${RATE_BACKOFF_MS / 1000} s`);
+        void pumpWorld();
+      } else if (msg.reply?.ok === false || msg.ok === false) log(`world refused a say: ${refused?.reason ?? JSON.stringify(refused ?? msg.reply)}`);
+      return;
+    }
     if (msg.type === "snapshot") {
       joined = true;
-      // live lines only: the channel is a window, not an archive — but keep
-      // the tail's high-water seq so a reconnect can't replay it at us
-      for (const e of msg.entries ?? []) if (typeof e.seq === "number") lastSeq = Math.max(lastSeq, e.seq);
-      log(`joined "${msg.world}" as ${msg.you} (${msg.entries?.length ?? 0} tail entries skipped — live lines only)`);
+      myId = msg.cut?.you ?? null;
+      Object.assign(names, msg.cut?.names ?? {});
+      // live lines only: the channel is a window, not an archive. Everything at
+      // or before the snapshot's head is history (a reconnect replays none of
+      // it); the head, not a remembered high-water mark, so a reset world (a
+      // fresh, shorter log) isn't muted until it outgrows the old one
+      lastSeq = Number.isInteger(msg.cut?.head) ? msg.cut.head : lastSeq;
+      log(`joined "${msg.world}" as ${msg.you} (${msg.state?.recentChat?.length ?? 0} recent lines skipped — live lines only)`);
       pumpWorld().catch((e) => log(`world pump error: ${e.message}`));
       return;
     }
-    if (msg.type !== "log" || msg.entry?.verb !== "say") return;
-    const { actor, seq, args } = msg.entry;
-    if (typeof seq === "number") { if (seq <= lastSeq) return; lastSeq = seq; }
-    if (actor === BRIDGE_ID) return; // our own speech echoing back
-    const text = String(args?.text ?? "").trim();
-    if (!text) return;
-    toDiscord.push({ actor, text, at: Date.now() });
-    pumpDiscord().catch((e) => log(`discord pump error: ${e.message}`));
+    if (msg.type !== "log") return;
+    Object.assign(names, msg.names ?? {});
+    (msg.entries ?? []).forEach((e: any, i: number) => {
+      if (e?.kind !== "say") return;
+      const seq = msg.from + i;
+      if (seq <= lastSeq) return;
+      lastSeq = seq;
+      if (myId && e.actor === myId) return; // our own speech echoing back
+      const text = String(e.body?.text ?? "").trim();
+      if (!text) return;
+      const actor = names[e.actor] ?? String(e.actor);
+      toDiscord.push({ actor, text, at: Date.now() });
+      pumpDiscord().catch((err) => log(`discord pump error: ${err.message}`));
+    });
   };
 }
 

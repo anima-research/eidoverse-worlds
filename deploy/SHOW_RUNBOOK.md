@@ -13,9 +13,13 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | Env | Meaning | Show value |
 |---|---|---|
 | `JOIN_TOKEN` | Door key, checked at join + upload. **Empty = OPEN** (boot log shouts). | set it |
+| `TRUSTED_PROXIES` | Comma-separated peer addresses whose forwarded address the server believes (server/peer.ts): `X-Real-IP`, or `X-Forwarded-For` under `PROXY_ADDRESS_HEADER=x-forwarded-for`. Loopback is always trusted; from any other peer the socket address is used — so a guest reaching the port directly can't pick or frame an address (every guest sanction and limiter keys on it). | unset (nginx is on loopback) |
+| `HN_NATIVE_ORIGIN` | This server's public origin, exactly (`https://<host>`, with a port if not the default). A signed-in WebSocket from a browser that sends no `Sec-Fetch-Site` opens only from this Origin (server/auth.ts ownOrigin); unset, it is the request's own scheme and Host, which behind nginx is not the public one. | `https://<host>` |
 | `RECORD_FRAMES` | `1` = append stage frames + roster deltas to `worlds/<w>/frames-<ts>.jsonl`. Clients see a ⏺ notice at join. | `1` |
 | `UPLOAD_CAP_MB` | Per-upload size cap (default 20). Orrery's `EIDOVERSE_MAX_MB` and nginx `client_max_body_size` must move with it. | 30 |
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
+| `CSP_CONNECT_EXTRA` | Extra origins the page may connect to (space-separated `https://`/`wss://` origins: an external voice or TTS endpoint). Absent: the server's own origin and loopback only (server/csp.ts). | unset unless voice runs off-box |
+| `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name is refused loudly at boot (the server still starts with the rest, or with the setup link if none is left). Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
 
 ## URLs
 
@@ -46,7 +50,7 @@ latency p95 11ms, server 53MB RSS / ~2% CPU with recording on.
 ## Audio
 
 Discord voice channel (stage). Agent speech: voice bot (`tools/voicebot.ts`)
-joins the channel, watches world `say` verbs from configured agent performers,
+joins the channel, watches world `say` entries from configured agent performers,
 synthesizes via TTS endpoint, plays into the channel. Humans just talk.
 Captions: every `say` is already in-world chat + the world log.
 
@@ -66,6 +70,8 @@ One instance per world (PORT=9224 etc. for a second). Keep the Mac awake
 
 ## Day-of checklist
 
+0. Found the show world once: joining never founds one. A signed-in owner types `/newworld <name> [title]` (the `world-found`
+   message) and becomes its owner; then `/access` and `/grant` set who may come in and build.
 1. `git status` clean on the box; server + nginx up; `JOIN_TOKEN` set; boot log shows NO open-door warning.
 2. `RECORD_FRAMES=1` confirmed — ⏺ notice visible in a test client.
 3. Load test against the public URL passes (above).
@@ -76,7 +82,7 @@ One instance per world (PORT=9224 etc. for a second). Keep the Mac awake
 
 ## After
 
-- Archive: `worlds/<world>/log.jsonl` + `frames-<ts>.jsonl` + `assets/opt/store/`
-  = the complete performance. Copy all three off-box same night.
+- Archive: the world's directory `worlds/<world>/` (its signed log `world.jsonl`, the moderator log `world.mod.jsonl`,
+  `frames-<ts>.jsonl`) + the server's custody key (it signs the log) + `assets/opt/store/` = the complete performance. Copy all three off-box same night.
 - Replay/machinima: frames file is `{roster|frame}` JSONL at ~15Hz — feed to
   the eidoverse batch renderer (retroactive filming, DESIGN.md).

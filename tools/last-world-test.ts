@@ -13,7 +13,8 @@
 // of it agrees, and that its boot tripwire keys on the world chosen, both extracted
 // from the served HTML rather than copied; and the real net.js writing and
 // forgetting, a fresh process per page load with only the DOM-touching UI modules
-// stubbed.
+// stubbed. The door's yes is a snapshot carrying the authority's `cut` (replica.adopt folds it) and
+// live changes come as `log` entries through replica.ingest, as the authority sends them.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -74,14 +75,14 @@ console.log("builtIn");
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
     mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
-    mock.module(L + "boot.js", () => ({ markPhase() {} }));
+    mock.module(L + "chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
+    mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot() { return false; } }));
     const { builtIn } = await import(L + "net.js");
-    console.log(JSON.stringify([{}, { entities: {} }, { entities: { a: {} } }, { terrain: { seed: 1 } }, { grass: { density: 1 } }, { sky: { hours: 8 } }, null].map(builtIn)));`],
+    console.log(JSON.stringify([{}, { entities: {} }, { entities: { a: {} } }, { terrain: { seed: 1 } }, { grass: { density: 1 } }, { sky: { hours: 8 } }, { water: { level: 0 } }, null].map(builtIn)));`],
     { stdout: "pipe", stderr: "pipe" });
   const got = r.stdout.toString().trim().split("\n").pop();
-  check("builtIn: nothing / no entities / an entity / ground / grass / sky / no state",
-    got === JSON.stringify([false, false, true, true, true, true, false]), got ?? r.stderr.toString().slice(0, 300));
+  check("builtIn: nothing / no entities / an entity / ground / grass / sky / water / no state",
+    got === JSON.stringify([false, false, true, true, true, true, true, false]), got ?? r.stderr.toString().slice(0, 300));
   const main = readFileSync(join(ROOT, "client/main.js"), "utf8");
   check("main.js's empty-world notice asks builtIn, as the memory does",
     /bus\.on\('hydrated', \(\) => \{[\s\S]{0,400}?builtIn\(worldState\.st\)\) return;\s*\n\s*logChat\('\*', emptyWorldNotice\(CONFIG\)\)/.test(main));
@@ -210,10 +211,11 @@ console.log("net.js");
 // "snapshot": the door's yes into a world with something built in it; "fresh": into one
 // nobody has built in (what a mistyped name founds); "spawn": someone builds, live.
 // {early: w}: the inline boot script's socket, which already sent a join to world w, for connect() to adopt
-// only if that is byte-for-byte the join net.js would send. {set: [k, v]}: another tab writes localStorage.
+// only if that is byte-for-byte the join net.js would send (it carries the account: helen's own name here). {set: [k, v]}: another tab writes localStorage.
 // "ground": the door's yes into a world with ground and nothing placed. "authed": this page entered signed in.
+// A refusal's words reach the person as a toast or on the boot splash (boot.js refuseBoot): both are `toasts` here.
 type Step = "snapshot" | "fresh" | "ground" | "spawn" | "say" | "connect" | "timers" | "authed"
-  | { close: number } | { early: string } | { set: [string, string] };
+  | { close: number } | { early: string } | { summon: string } | { set: [string, string] };
 type Out = { world: string; stored: string | null; tab: string | null; reloads: number; toasts: string[]; sockets: number; authedReads: number };
 function pageLoad(search: string, stored: string | null, steps: Step[], tab: string | null = null,
                   inline: { world: string; remembered: boolean } | null = null): Out {
@@ -236,30 +238,39 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     const { mock } = await import("bun:test");
     const L = ${JSON.stringify(L)};
     mock.module(L + "presence.js", () => ({ presence: {} }));
-    mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
-    mock.module(L + "boot.js", () => ({ markPhase() {} }));
+    mock.module(L + "chat.js", () => ({ logChat() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
+    const toasts = [];
+    mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot: (m) => toasts.push(m), waitBoot() { return false; } }));
     const net = await import(L + "net.js");
     const { CONFIG } = await import(L + "base.js");
-    const toasts = [];
+    // the door's yes: the authority's cut of the world (wire state: {id: {born, c: {comp: {v}}}}), at head 0
+    const yes = (wire) => net._dispatch({ type: "snapshot", you: "helen", present: [], state: null, entries: [], throughSeq: 0,
+      cut: { state: wire, head: 0, worldId: "w", you: "helen" } });
+    // a live entry, the next one after what this client has folded
+    const live = (e) => net._dispatch({ type: "log", from: net.replica.head + 1, entries: [{ ts: Date.now(), actor: "helen", ...e }] });
+    let boxes = 0;
     net.wireNet({ toast: (m) => toasts.push(m) });
     net.net.ws = { send() {}, readyState: 1 };
     for (const s of ${JSON.stringify(steps)}) {
-      if (s === "snapshot") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: { entities: { tree: { lib: "tree", pos: [0, 0, 0] } } } });
-      else if (s === "fresh") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: {} });
-      else if (s === "ground") await net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], state: { terrain: { seed: 7, size: 200 } } });
+      if (s === "snapshot") await yes({ tree: { born: 0, c: { lib: { v: "tree" } } } });
+      else if (s === "fresh") await yes({});
+      else if (s === "ground") await yes({ "@world": { born: 0, c: { terrain: { v: { seed: 7, size: 200 } } } } });
       else if (s === "authed") CONFIG.authed = true;
-      else if (s === "spawn") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "spawn", args: { id: "box1", lib: "box" } } });
-      else if (s === "say") await net._dispatch({ type: "log", entry: { seq: 1, actor: "helen", verb: "say", args: { text: "hello?" } } });
+      else if (s === "spawn") { const id = "box" + ++boxes;
+        await live({ kind: "change", verb: "batch", body: { ops: [{ verb: "create", id }, { verb: "set", id, comp: "lib", value: "box" }] } }); }
+      else if (s === "say") await live({ kind: "say", body: { text: "hello?" } });
       else if (s.early) {
         const ws = new globalThis.WebSocket(); ws.readyState = 1;
-        globalThis.__ewEarlySocket = { ws, sent: { world: s.early, id: "helen", avatar: "", token: "" }, buffered: [], arrived: [], failed: false };
+        globalThis.__ewEarlySocket = { ws, sent: { world: s.early, id: "helen", avatar: "", token: "", account: "helen" }, buffered: [], arrived: [], failed: false };
       }
       else if (s.set) mem.set(s.set[0], s.set[1]);
       else if (s === "connect") await net.connect();
       else if (s === "timers") timers.splice(0).forEach((f) => f());
+      else if (s.summon) { CONFIG.renderer = true; CONFIG.roam = true; await net._dispatch({ type: "renderer-travel", world: s.summon }); }
       else sockets[sockets.length - 1].onclose({ code: s.close });
     }
-    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length, authedReads }));`;
+    console.log(JSON.stringify({ world: CONFIG.world, stored: mem.get("ew-world") ?? null, tab: smem.get("ew-world-tab") ?? null, reloads, toasts, sockets: sockets.length, authedReads }));
+    process.exit(0);   // a join starts the clock's interval, which would keep this page open`;
   const r = Bun.spawnSync(["bun", "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(r.stdout.toString().trim().split("\n").pop()!) as Out; }
   catch { return { world: `ERROR ${r.stderr.toString().slice(0, 400)}`, stored: null, tab: null, reloads: 0, toasts: [], sockets: 0, authedReads: 0 }; }
@@ -277,6 +288,8 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
 
   const spec = pageLoad("?spectate&world=lab", "garden", ["snapshot"]);
   check("watching ?spectate&world=lab leaves the memory at garden, and pins no tab", spec.stored === "garden" && spec.tab === null, JSON.stringify(spec));
+  const summoned = pageLoad("?world=lab", "garden", ["snapshot", { summon: "garden" }]);
+  check("a roaming renderer summoned to garden goes there", summoned.world === "garden", JSON.stringify(summoned));
   const rend = pageLoad("?renderer&world=lab", "garden", ["snapshot"]);
   check("a renderer in lab leaves the memory at garden", rend.stored === "garden", JSON.stringify(rend));
 

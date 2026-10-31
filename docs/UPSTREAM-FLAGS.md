@@ -3,6 +3,8 @@
 For whoever merges `overhaul/rimward` into anima/main (or cherry-picks from
 it). Everything here carries a commit on this branch; the sections are
 ordered by what upstream most needs to know. Compiled 2026-08-30 (§24r).
+Historical: that merge has happened, and the world protocol it describes
+has since been replaced by the current protocol (spec/PROTOCOL.md); file names are as of then.
 
 ## 1. Bugs found in upstream's own tree (fixed here, unfixed there)
 
@@ -160,9 +162,9 @@ puts the mesh 1.95m away on a slope where the ground is somewhere else;
 on commons's hills the cluster sat up to 29cm inside the hillside at
 every landing. The sim applier now shows the visual center standing on
 ITS ground (`simworld.js`, the terrain difference between the two
-footprints — presentation only; `tools/sim-ground-smoke.ts` holds the
-proof). Two residues only the asset fix removes: a body RELEASED to the
-fold (an epoch-release `place`) is realized at the authored origin
+footprints — presentation only; that smoke test, `tools/sim-ground-smoke.ts`,
+went with the old sim applier). Two residues only the asset fix removes: a body RELEASED to the
+fold (a body coming to rest) is realized at the authored origin
 height again, and the static terrain re-seat (world.js) still seats by
 the origin — both sink the cluster by the same slope difference.
 Re-exporting is a MIGRATION, not a drop-in: every logged `pos` for this
@@ -185,7 +187,7 @@ compensates.
 
 ## 5. Structural changes a merge will meet on this branch
 
-The refactor survey program (docs/REFACTOR-SURVEY.md, all items closed):
+The refactor survey program (all items closed; the survey is in git history):
 
 - server: ws handler table (`server/messages.ts`), join split
   (admitJoin/installJoin/buildSnapshot), `server/limits.ts`, `fsutil.ts`
@@ -197,6 +199,5 @@ The refactor survey program (docs/REFACTOR-SURVEY.md, all items closed):
 - shared: `sim.js` (eidosim@0.1.0 — PROTOCOL_v2, deterministic sim over
   stamped intents), `force.js`, def validators (`floradefs`, `avatardefs`,
   `animdefs`, `skydefs`, `structdefs`, `grounddefs`, `uidefs`).
-- Suites that pin source text were retargeted with the moves
-  (whisper-disable, the two ws-switch suites). If you move these files
-  again, those suites say so by name.
+- Suites that pin source text were retargeted with the moves. If you
+  move these files again, any suite that reads them says so by name.

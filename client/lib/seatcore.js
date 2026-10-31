@@ -133,26 +133,31 @@ export function profileStatus(profile, currentAvatarSha256, currentClipSha256) {
 
 /** Legacy sockets were authored under root-at-socket and may encode either a
  *  physical plane or an empirically-placed root target — nothing infers which.
- *  Only the exact authored string "surface" consumes a profile; everything
- *  else (absent, "legacy-root", typos, numbers) is legacy by construction. */
+ *  Only a body block that says so — `body.anchor: 'surface'` (D14: one enum,
+ *  shared/sockbody.js ANCHORS, so a socket can't say "surface" and "hips" at
+ *  once) — consumes a profile; everything else (absent, another anchor, typos,
+ *  numbers) is legacy by construction. `sock` is the socket component
+ *  ({name, body, …}: PLAN-sockets-entities). */
 export function socketAnchor(sock) {
-  return sock?.seatAnchor === "surface" ? "surface" : "legacy-root";
+  // the seat's station (shape audit 10-16: what a body does at a socket is the station component; its anchor is top-level),
+  // or the older spelling a fixture or a lifted log may still hand in: a socket value with a body block
+  return (sock?.anchor ?? sock?.body?.anchor) === "surface" ? "surface" : "legacy-root";
 }
 
-// ---- rider scale (B5) -------------------------------------------------------
+// ---- occupant scale (B5) ----------------------------------------------------
 
-/** The named shared definition of riderEffectiveScale: the rider avatar
+/** The named shared definition of occupantEffectiveScale: the occupant avatar
  *  root's world scalar scale at compose time, times its chosen body size —
- *  which shipped (bodyscale.js) and plugs in at this seam: seats.js passes
- *  root scale × avatar.bodyScale(), and the text tier passes the rider's
- *  presence `scale` (mcpl/effective.ts riderScale). Nonuniform scale is an
+ *  which shipped (bodyscale.js) and plugs in at this seam: occupants.js passes
+ *  root scale × avatar.bodyScale(), and the text tier passes the occupant's
+ *  presence `scale` (mcpl/effective.ts occupantScale). Nonuniform scale is an
  *  abstention, never an average. */
-export function riderScalar(scaleVec3) {
+export function occupantScalar(scaleVec3) {
   if (scaleVec3 == null) return { ok: true, s: 1 };
   const [sx, sy, sz] = scaleVec3;
-  if (!fin(sx) || !fin(sy) || !fin(sz)) return { ok: false, why: "non-finite rider scale" };
+  if (!fin(sx) || !fin(sy) || !fin(sz)) return { ok: false, why: "non-finite occupant scale" };
   if (Math.abs(sx - sy) > SCALE_UNIFORM_EPS || Math.abs(sy - sz) > SCALE_UNIFORM_EPS)
-    return { ok: false, why: "nonuniform rider scale" };
+    return { ok: false, why: "nonuniform occupant scale" };
   return { ok: true, s: sy };
 }
 
@@ -211,9 +216,9 @@ export function nameFromAvatarPath(path) {
  *  the body's contact geometry stays world-vertical: contactY·sin(tilt) of
  *  pure error, the named discriminator in the pitch/roll fixture. Body
  *  orientation-to-plane is a separate future mechanic, not this one. */
-export function applySeatCorrection(socketPoint, contactY, riderScale = 1) {
-  if (!fin3(socketPoint) || !fin(contactY) || !fin(riderScale)) return null;
-  return [socketPoint[0], socketPoint[1] - contactY * riderScale, socketPoint[2]];
+export function applySeatCorrection(socketPoint, contactY, occupantScale = 1) {
+  if (!fin3(socketPoint) || !fin(contactY) || !fin(occupantScale)) return null;
+  return [socketPoint[0], socketPoint[1] - contactY * occupantScale, socketPoint[2]];
 }
 
 // ---- the passive instrument's seat claim (the _v lesson) --------------------

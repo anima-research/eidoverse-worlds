@@ -1,4 +1,7 @@
-# eido: URIs — content references that survive leaving the host, v1 draft
+# eido: URIs — content references that survive leaving the host (first draft)
+
+**Status: informative** (recut C14, 2026-10-21). No reader resolves an `eido:` URI today, so this file isn't part of the
+normative set (spec/NORMATIVE.md). It becomes normative when a world needs portable blobs.
 
 **License: CC0 1.0 (public domain)**, same terms as `PROTOCOL.md` beside it.
 Status: DRAFT for review against the store's actual shapes. The words
@@ -20,11 +23,11 @@ eido:<alg>/<digest-hex>
 eido:sha256/9f2c4a1b0e8d7c6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f
 ```
 
-- `<alg>`: lowercase digest algorithm. `sha256` is the only algorithm in v1
+- `<alg>`: lowercase digest algorithm. `sha256` is the only algorithm in this draft
   and the only one an implementation MUST support; the segment exists so a
   future algorithm is an addition, not a migration.
 - `<digest-hex>`: the **full** lowercase hex digest (64 chars for sha256).
-- No authority component, no query, no fragment, no parameters in v1. The
+- No authority component, no query, no fragment, no parameters in this draft. The
   URI names bytes and nothing else; media type and role travel in the
   *reference envelope* (§2a), which is a normative part of this spec — "the
   reference knows" is a contract there, not a shrug here.
@@ -47,12 +50,12 @@ substitution is exactly what an `eido:` URI makes impossible, on purpose:
   SHOULD record the derivation so the small form is *findable by name*:
 
   ```
-  {verb: "variant", args: {of: "eido:sha256/<orig>", eido: "eido:sha256/<min>",
-                           kind: "opt/draco-webp@1024"}}
+  set {id: "@world", component: "variants:<orig hex>",
+       value: {"opt/draco-webp@1024": "eido:sha256/<min>"}}
   ```
 
-  folding to a per-original variant map (world scope; last write per
-  (of, kind) wins). Clients MAY prefer a declared variant for bandwidth the
+  one keyed component per original, mapping each kind of derivation to its
+  own name (world scope; a later write replaces it). Clients MAY prefer a declared variant for bandwidth the
   way they prefer `store-min` today — but by its own verified name, chosen in
   the open, instead of by a server swapping bytes under a fixed path.
 - Consequently the §3 endpoint MUST serve exactly the named bytes. (Client-
@@ -84,16 +87,26 @@ Current loaders dispatch on `.glb`/`.vrm`/script paths; a digest carries no
 extension, and Content-Type is an untrusted hint from an untrusted resolver.
 So the type contract is: **media lives beside the reference, in the log.**
 
-- A log entry whose field carries an `eido:` URI MUST carry the media type in
-  a sibling `media` field of that entry (short registered form: `glb`, `vrm`,
+- A component value that carries an `eido:` URI MUST carry the media type
+  beside it, in a sibling `media` field (short registered form: `glb`, `vrm`,
   `js`, `png`, `jpg`, `webp`, `glsl`, …), e.g.
-  `{verb: "spawn", args: {lib: "eido:sha256/<hex>", media: "glb", …}}`.
+  `picture {src: "eido:sha256/<hex>", media: "png", …}`. A component whose
+  whole value is a reference has nowhere to put a sibling, and needs none
+  when its **media is fixed by its role**: `model` is always a glTF binary
+  (`glb`), so `model: "eido:sha256/<hex>"` is complete (translate-v1@8–@11
+  wrote models this way, review 2026-10-07; since R's ruling of 2026-10-17 a
+  model is stored as its library path, the portable reference, with its
+  bytes' hash beside it as `model-hash: "sha256:<hex>"`, and a stored
+  `eido:` model is read, and written back as its path when the world's
+  maintenance command runs, where the host's index knows it). A whole-value reference
+  whose media can vary needs a new versioned name with a `media` field
+  (PROTOCOL §4: a changed meaning is a new name).
   Exporters that rewrite `store/<hex16>.glb` → `eido:` derive `media` from
   the extension they are erasing — the information already exists at exactly
   the moment it is needed.
-- **Role** is the field itself, as today: `lib` wants a model, a `behavior`
-  binding wants a script, `src` wants what its verb documents. No new role
-  vocabulary.
+- **Role** is the field itself, as today: `model` wants a model, a
+  `script:<name>`'s `src` wants a script source, a picture's `src` an image.
+  No new role vocabulary.
 - A client MUST choose its loader from the log's declared `media`, MUST NOT
   trust the resolver's Content-Type, and MAY fall back to magic-byte sniffing
   (`glTF` container, script-as-UTF-8) only when `media` is absent — i.e. only
@@ -120,33 +133,24 @@ version, not a change to the URI.
 ## 4. Declaring resolvers
 
 A world MAY declare where its bytes are known to live, as an ordinary
-world-scope entry:
+component on `@world` (owner):
 
 ```
-{verb: "resolvers", args: {urls: ["https://eidoverse.animalabs.ai", …]}}
+set {id: "@world", component: "resolvers", value: {urls: ["https://eidoverse.animalabs.ai", …]}}
 ```
 
-folding to a world-scope list (last write wins; absent = origin only).
+(a later write replaces it; absent = origin only).
 
-**Closed-verb reality check** (review catch — the first draft assumed a
-generous reader that does not exist): the server verb set is closed, so
-`resolvers` and §1a's `variant` are **protocol additions**, not something old
-hosts fold gracefully.
-
-- Authoring through an older host fails at the door with the standard
-  unknown-verb rejection — loudly, at write time, which is the right failure.
-  Hosts implementing this spec MUST advertise an `eido` capability in their
-  hello/info payload so clients can feature-detect instead of authoring blind.
-- *Replaying* a log that contains these verbs on an older reader is the real
-  seam: rejection there would brick an imported world over metadata. Two
-  mitigations, both cheap: the exporter ALSO writes the resolver list and
-  variant map into the export manifest (sidecar, not log — an old importer
-  ignores the sidecar and loses only reach, never the world); and this spec's
-  server change should land together with the one generous-reader rule the
-  protocol arguably owes itself anyway: *unknown world-scope metadata verbs
-  in an imported log are preserved-and-ignored, not fatal*. That rule is a
-  PROTOCOL.md amendment and is called out as this spec's only hard
-  protocol dependency.
+**No protocol change needed.** `resolvers` and §1a's `variants:<hex>` are
+components, and every reader keeps and replays components it doesn't
+understand (PROTOCOL §4), so an older reader folds an imported world with
+them intact and simply doesn't use them. Bare names belong to the
+protocol's registry, so a host implementing this spec registers them there
+(or writes them under its domain prefix until it does). Hosts implementing
+this spec MUST advertise an `eido` capability in their hello/info payload so
+clients can feature-detect instead of authoring blind. The exporter ALSO
+writes the resolver list and variant maps into the export manifest, so an
+importer that reads only the manifest loses nothing.
 
 A forked or exported world thus carries its resolver list with it — in the
 log where both ends are current, in the manifest everywhere — so the copy
@@ -157,9 +161,8 @@ knows where the original's bytes lived even before anyone mirrors them.
 - Existing logs are untouched: `store/<hex16>.<ext>` references remain valid
   host-relative paths, resolvable exactly as today at their origin.
 - Ingestion already computes the full sha256 before truncating to the
-  filename — from the day this lands, new log entries SHOULD write the
-  `eido:` form in `lib` / `src` / `path` fields **with the §2a `media`
-  sibling**, and hosts continue to serve the same blob at both the old path
+  filename — from the day this lands, new component values SHOULD write the
+  `eido:` form in `src` / `path` fields **with the §2a `media` sibling**, and hosts continue to serve the same blob at both the old path
   and §3's endpoint.
 - A reader encountering either form treats `store/<hex>` as "origin-only
   reference" and `eido:` as "resolve anywhere." Rewriting old logs is
@@ -176,8 +179,9 @@ knows where the original's bytes lived even before anyone mirrors them.
   them. Bandwidth becomes donatable.
 - **Cross-host dedup.** Two hosts holding the same swing hold the same
   identity, and know it without talking.
-- **Provenance stays pinned.** `behavior` bindings already pin exact script
-  bytes; this is that same discipline for every reference in the log.
+- **Provenance stays pinned.** A `script:<name>` component already pins its
+  exact source by hash; this is that same discipline for every reference in
+  the log.
 
 ## 6a. Security & limits
 
@@ -199,7 +203,7 @@ knows where the original's bytes lived even before anyone mirrors them.
   has not given it. Blob-level auth stays a later-version resolver
   capability, as §3 says.
 
-## 7. Non-goals in v1
+## 7. Non-goals in this draft
 
 Mutable names (that is a registry's job, and registries are logs); blob
 deletion semantics (a host may stop serving anything — 404 is always legal;
@@ -212,4 +216,6 @@ redaction policy lives with the log, not the URI); multihash beyond the
 against antra-tess's review: variants are distinct identities (§1a), media
 lives in the reference envelope (§2a), the closed verb set is named as the
 protocol dependency it is (§4), and resolvers get a security clause (§6a).
-Where this draft and reality disagree, reality was there first.*
+Revised 2026-10-06 for the protocol: the additions are components, not new
+verbs, so the old protocol dependency is gone. Where this draft and reality
+disagree, reality was there first.*

@@ -1,5 +1,17 @@
 # World access: who may enter a world, decided by the world
 
+> **On this protocol (ported 2026-10-17):** the same doors, in this protocol's components rather than `grant` rungs —
+> `@world.access {join: anyone|signed-in|listed, watch?: "anyone"}`, `default-role`, and `roles:<id>.until` for a timed
+> grant, ended by the authority's system act `expire-roles` (PROTOCOL §7). One pure decision for every door is
+> `shared/protocol/access.js`; the server's doors are `server/access.ts` (entryFor, doorFor, settleAccess, sweepAccess);
+> the browser has `/access`, `/grant … for 2h`, `/revoke`, `/members` and World Settings › Access; agents use ordinary
+> requests. Not carried over: a founding cap (joining never founds a world here), the directory search of everyone who
+> has signed in, a per-person `spectator` rung, and the `world_access` tool. An idle world's door (`doorFor`) is read
+> without loading it: `@world`'s access, default-role, role-defs and roles:* from `world.jsonl`, and the moderator log
+> `world.mod.jsonl` (ban / kick / unban), cached until either file changes, so a ban or kick refuses every HTTP read
+> (`/worlds`, `/geom`, `/heightmap`, `/access`) of an unloaded world exactly as of a loaded one. What follows is upstream's
+> design as written.
+
 Status: implemented on branch `feat/world-access`: world access, the owner
 panel (World › 🔒 access) and agent travel rules. What is left is operator
 config on the home node and the Unreal client (see the end). Decisions from
@@ -20,9 +32,9 @@ antra, 2026-10-17, are folded in below.
 1. **No outsiders.** `worlds:join` stays required. A world chooses among
    instance members; it cannot admit someone without the scope. Nothing
    changes on the home node's login.
-2. **Founding:** every member may create worlds, capped per day.
+2. **Founding:** every member may create worlds, capped per day. *(Here: superseded — see Founding below.)*
 3. **Expiry while inside:** warn 5 minutes before, then remove.
-4. **Members-only worlds are unlisted and invisible** to non-members. There
+4. **Invite-only worlds are unlisted and invisible** to everyone they don't list. There
    is therefore no "knock": a refusal says only that the world isn't open to
    you.
 5. ~~Builders may create invite links~~. **No invite links** (antra,
@@ -31,7 +43,7 @@ antra, 2026-10-17, are folded in below.
    a person Eidoverse has never seen, is handled by that person signing in
    once (opening any world).
 6. **Forks keep the member list.** They do already, since roles ride the
-   copied log. A fork also counts against the founding cap.
+   copied log. A fork also counts against the founding cap (upstream's; not carried over here).
 
 ## What existed before (origin/main 8072c47)
 
@@ -55,7 +67,7 @@ none  <  spectator  <  visitor  <  builder  <  owner
 - `none` may not enter, may not watch, and the world is invisible to them.
 - `spectator` may watch but has no body.
 - The wildcard `*` is everyone not named. `grant * none` makes a world
-  members-only, `grant * spectator` makes it watch-only, and `grant * builder`
+  invite-only, `grant * spectator` makes it watch-only, and `grant * builder`
   (or revoking `*`) opens it again. A world with no `*` record reads as
   builder, so **no existing world changes.**
 
@@ -80,7 +92,7 @@ Guards: ownership never expires, and the wildcard never expires (an expiring
 first, and refused if the result would leave a closed world with no owner (an
 ownerless world reads as open) or would shut out the owner making the change.
 The guards check the result rather than the one record named, because a grant
-whose sub merges records can touch more than one. `WORLD_ADMIN` remains the
+whose sub merges records can touch more than one. `SERVER_OPERATORS` remains the
 recovery of last resort.
 
 ### Naming who
@@ -133,11 +145,12 @@ recovery of last resort.
 
 ### Founding
 
-Every member may found worlds, `FOUND_DAILY_CAP` per identity per rolling 24 h
-(default 5; `off` removes the cap; operators are exempt). This applies to
-stepping into a new name and to `/fork`. The ledger is
-`WORLDS_DIR/.founding.json`. For JOIN_TOKEN typed names the cap is per typed
-name, so it can be dodged by retyping. Those doors are operator-trusted.
+*On this server:* upstream's `FOUND_DAILY_CAP` (per identity per rolling 24 h, its ledger
+`WORLDS_DIR/.founding.json`) is not carried over, and nothing reads it: joining never founds a world.
+A signed-in person founds one with the `world-found` request, whose limits are
+`server/worldlog.ts` `foundRefusal`: a name of 3 to 32 lowercase letters, digits and '-' that no world
+has. Any signed-in account founds, person or agent; the engine sets no quotas (how many and how often is
+the server runner's policy). `tools/protocol/world.ts found` is the operator's own door.
 Watching a world that doesn't exist founds nothing: it closes with 4011,
 which clients retry, so an observer started early joins once the world
 exists. Founding also now happens only *after* identity, ban and access
@@ -157,7 +170,7 @@ ban → world ban → operator → credential narrowing → the ladder.
 
 | Door | Phase 1 |
 |---|---|
-| browser ws `join` (incl. travel) | identity re-derived per join; `canEnter` against the world's door (read from disk if idle, so a refused join loads nothing); then the founding cap |
+| browser ws `join` (incl. travel) | identity re-derived per join; `canEnter` against the world's door (read from disk if idle, so a refused join loads nothing); a world that doesn't exist is refused (joining never founds one) |
 | agent join via MCPL door | same path. The sub now arrives with the aid1 credential |
 | after any `grant` (owner, agent) | `settleAccess`: push `your-rights`, remove whoever lost entry (4010) |
 | expiry | `sweepAccess` every `ACCESS_SWEEP_MS` (5 s) |
@@ -166,34 +179,25 @@ ban → world ban → operator → credential narrowing → the ladder.
 | MCPL door `worlds` tool, `/snap` | ask *as the agent* (bearer), so members see their private worlds |
 | behavior scripts | may not change access (`*`, revoke, `for`/`until`, `sub`, the two new rungs), and may not grant at all in a closed world. A script's emit skips the validator and the settle pass |
 | `/reset` | owners kept with their sub. A closed world keeps its `*` and its live members, because erasing content must not open it |
-| renderer client | a renderer is the vision of the agents inside, so one holding the renderers' credential (`RENDERER_TOKEN`, presented as its door key *with* the renderer flag) may watch any world, members-only included. It stays invisible and never authors, and closing a world doesn't remove it. A client that only *says* renderer (door key plus flag) gets nothing extra. The snapshot dispatcher sends a roamer only where it will be let in, because a refused renderer stops rather than retrying |
+| renderer client | a renderer is the vision of the agents inside, so one holding the renderers' credential (`RENDERER_TOKEN`, presented as its door key *with* the renderer flag) may watch any world, invite-only included. It stays invisible and never authors, and closing a world doesn't remove it. A client that only *says* renderer (door key plus flag) gets nothing extra. The snapshot dispatcher sends a roamer only where it will be let in, because a refused renderer stops rather than retrying |
 
 ## UX
 
-**World › 🔒 access** (`client/lib/accesspanel.js`), a tab in the world
-panel:
+**World Settings › People & roles › Who may come in** (`client/lib/rolespanels.js` paintAccess; its listed part is
+`client/lib/accesspanel.js`). On this protocol the panel reads `@world`'s access, default-role and roles:* from the
+page's own fold and edits them with ordinary `set`/`delete` requests; the authority judges each one (R 10-27):
 
-- **The door:** four buttons (open · visitors · watch only · members only),
-  the current one marked. Closing while unlisted people are present asks
-  twice and says how many will have to leave.
-- **Listed by name:** each member with role, "agent" / "here now" / time left,
-  a role select, a time select (no end · 1 hour · 1 day · 1 week; picking one
-  restarts it from now) and ✕ to remove. A by-name-only member in a closed
-  world is flagged with what to do.
-- **Add someone:** a search of identities that have signed in (owner-only,
-  `access-directory`). A pick is added *by subject*, so it binds to exactly
-  that person. If no match is found, "add by name" (for agents) explains that
-  a person needs to sign in once. Role and time apply to the add.
-- **Here now, not listed:** a button per verified person present, plus "add
-  all", so an owner can keep everyone before closing. A typed-name joiner's
-  button is disabled with the reason.
-- **Non-owners** see the door, their own standing and time left, and the
-  member list, with no controls.
-- Data comes from the server (`access-state`), re-asked after every grant
-  entry and presence change and repainted every 30 s for countdowns.
-  Refusals show inline and as toasts.
-- Driven end to end by `tools/access-panel-probe.mjs` (real browser,
-  18 checks).
+- **The door:** the four doors (open · public · watch only · invite-only) and the fields under them. Closing while
+  unlisted people are present asks first and says how many will have to leave.
+- **Listed here:** each `roles:<id>` grant with its role, "here now", time left and "you"; for whoever may change it
+  (an owner, or grantRoles over someone ranked below with a role below theirs) a role select, an end select (no end ·
+  1 hour · 1 day · 1 week, from now) and ✕.
+- **Add someone:** a name is looked up only among the people this world has seen (`whois`); anyone else is added by
+  their exact identity (u-…, which each person sees on this panel). No search of everyone who has signed in. Role and
+  time apply to the add.
+- **Here now, not listed:** a button per person present.
+- **Everyone else** sees the same facts with no controls. A refusal shows inline in the authority's words, and as a toast.
+- Driven end to end by `tools/protocol/access-panel-probe.ts` (the `access-panel` browser suite).
 
 **Browser chat** (owner-gated by the server):
 ```
@@ -206,7 +210,7 @@ toast plus a chat line.
 
 **Agents:** `world_access {action: show|mode|grant|revoke, mode?, id?, role?, for?}`.
 The reply is the world's refusal, or the door as it now stands. The `worlds`
-tool marks worlds as members-only or watch-only. An agent removed with 4010
+tool marks worlds as invite-only or watch-only. An agent removed with 4010
 stays down instead of reconnecting.
 
 ## Agent travel rules (built)
@@ -220,7 +224,7 @@ stays down instead of reconnecting.
 - **The credential only narrows.** A `worlds` list (aid1 claim or tokens.json)
   keeps an agent to those worlds, and no list means no narrowing.
   `create: false` stops founding; anything else founds like any member
-  (daily cap).
+  (upstream's daily cap; here founding is `world-found`, open to any signed-in account, with no quota).
 - **⚠️ On deploy, every credentialed agent can reach every open world.** Today
   most credentials carry no `worlds` list, so they could reach only their
   minted world. Owners should close what should be closed first.
@@ -238,7 +242,7 @@ stays down instead of reconnecting.
   before any world uses them.
 - **Renderers' credential (deploy):** set `RENDERER_TOKEN` on the sequencer,
   and give it to the roaming renderers as their key. Until then roamers can
-  serve open worlds only, and a snapshot asked in a members-only world says
+  serve open worlds only, and a snapshot asked in an invite-only world says
   why.
 - **Proxy timeout (deploy):** `GET /snap` sets its own per-request timeout
   from the broker's longest wait, so Bun's idle timer doesn't reset a `/snap`
@@ -255,13 +259,15 @@ stays down instead of reconnecting.
 
 ## Review (independent, 2026-10-17)
 
-An adversarial review reproduced three bypasses in the first cut, all fixed
-with regression cases in `tools/access-test.ts` §5b:
+An adversarial review reproduced three bypasses in the first cut, all fixed:
 
-- credentials carried across re-joins on one socket;
+- credentials carried across re-joins on one socket (regression case:
+  `tools/protocol/access-check.ts` A15);
 - a directory lookup returning another record's sub, which let a revoke
-  delete an owner and open a closed world;
-- a revoke that was accepted but did nothing.
+  delete an owner and open a closed world. This can't arise now that a
+  role is addressed only by the actor's identity (`roles:<id>`), which
+  access-check A16 pins;
+- a revoke that was accepted but did nothing (regression case: A17).
 
 Also adopted: name-keyed records don't admit people to closed worlds, the
 granter sees the binding, scripts can't grant in closed worlds, outcome-based
@@ -270,14 +276,14 @@ prefilter, a 1 s sweep, and the agent's `/snap` carrying its credential.
 
 ## Follow-ups noticed
 
-- A golden fixture for access (members-only, expiry, revoke) in `spec/fixtures/`.
+- A golden fixture for access (invite-only, expiry, revoke) in `spec/fixtures/`.
 - The browser recomputes its own rights without its sub (`state.js
   refreshMyRights`). For sub-bound grants this is wrong until the server's
   `your-rights` push lands right after. That push exists, so it self-corrects,
   but passing the sub would be cleaner.
 - An idle world's first `/worlds` listing parses its whole `snapshot.json`
   once (it is cached after that).
-- Pre-existing: `WORLD_ADMIN` matches display names as well as subs. Anyone
+- Pre-existing: the server operator list matched display names as well as subs. Anyone
   listed there by *name* passes every access check under a typed name. List
   operators by sub.
 - Inside a closed world, verb rights still honour name-keyed records. Entry

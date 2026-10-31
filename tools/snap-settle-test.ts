@@ -2,13 +2,13 @@
 //
 //   bun tools/snap-settle-test.ts
 //
-// net_snap.js settle() waits for a just-arrived renderer's world to finish loading before it captures (no partial
+// net_capture.js settle() waits for a just-arrived renderer's world to finish loading before it captures (no partial
 // worlds). It used to stop at a fixed 20 s while the server would wait 40 s for a summoned roamer, so a world that
 // finished loading at 22 s became a failed first snapshot (2026-10-24). Each snap now carries `wait` from the server
-// (server/snapshots.ts dispatch), and settle uses it.
+// (server/screenshots.ts dispatch), and settle uses it.
 //
-// The real net_snap.js, in a fresh process per case, with its browser-only imports (core.js, remotes.js, fp_view.js,
-// capture.js) stubbed and the readiness probe scripted: the world becomes ready after `readyAt` ms.
+// The real net_capture.js, in a fresh process per case, with its browser-only imports (core.js, remotes.js, fp_view.js,
+// capture.js, world.js) stubbed and the readiness probe scripted: the world becomes ready after `readyAt` ms.
 
 import { join } from "node:path";
 
@@ -19,7 +19,7 @@ function check(name: string, cond: boolean, detail = "") {
 }
 const ROOT = join(import.meta.dir, "..");
 
-/** Ask the real snapshot() for a frame: the world is ready after `readyAt` ms (never, if null); `wait` is the
+/** Ask the real capture() for a frame: the world is ready after `readyAt` ms (never, if null); `wait` is the
  *  server's budget (absent, if undefined). Returns what it answered and how long it took. */
 function snapCase(readyAt: number | null, wait: number | undefined) {
   const L = join(ROOT, "client/lib") + "/";
@@ -33,14 +33,15 @@ function snapCase(readyAt: number | null, wait: number | undefined) {
     mock.module(L + "remotes.js", () => ({ remotes: new Map([["agent", { avatar: { root, headWorldPosition: () => null, visualBounds: (b) => b } }]]) }));
     mock.module(L + "fp_view.js", () => ({ composeFirstPerson: () => "data:image/png;base64,FIRST" }));
     mock.module(L + "capture.js", () => ({ captureFrame: () => "data:image/png;base64,FRAME", captureFrom: () => "data:image/png;base64,FROM" }));
-    const snap = await import(L + "net_snap.js");
+    mock.module(L + "world.js", () => ({ entities: new Map() }));   // net_capture frames a placed thing (at=) from world.js
+    const snap = await import(L + "net_capture.js");
     const t0 = performance.now(), readyAt = ${JSON.stringify(readyAt)};
     snap.setSnapReadiness(async () => {
       const ready = readyAt !== null && performance.now() - t0 >= readyAt;
       return { ready, body: true, builds: false, models: ready ? 1 : 0, loading: ready ? 0 : 1, compiling: 0 };
     });
     const msg = { follow: "agent", view: "third" ${wait === undefined ? "" : `, wait: ${wait}`} };
-    const r = await snap.snapshot(msg);
+    const r = await snap.capture(msg);
     console.log(JSON.stringify({ r, ms: Math.round(performance.now() - t0), budget: snap.settleBudget(msg) }));`;
   const out = Bun.spawnSync([process.execPath, "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(out.stdout.toString().trim().split("\n").pop()!) as { r: any; ms: number; budget: number }; }

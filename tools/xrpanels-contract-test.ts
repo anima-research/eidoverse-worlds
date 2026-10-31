@@ -5,9 +5,10 @@
 // drives the real module — a stub would only assert its own shim.
 // RED when: the validation guard goes (a def with no dispatch registers), or
 // the findIndex/replace becomes a push (re-registering an id duplicates it).
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-const here = (p: string) => new URL(p, import.meta.url).pathname;
+const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 plugin({
   name: "xrpanels-stubs",
   setup(b) {

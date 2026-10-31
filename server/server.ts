@@ -5,43 +5,47 @@
 //  - serves the browser client and the eidoverse-video asset library
 // No world manifest: everything about a world arrives through its log.
 
-import { existsSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { nameAtDoor } from "./names.ts";
+import { existsSync, appendFileSync, readdirSync } from "node:fs";
+import { fileIncludes } from "./durable.ts";
 import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
-import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
-import { globalBans, findBan } from "./moderation.ts";
-import { canEnter, whoOf, foundingRefusal, noteFounding, notePrincipal, sweepAccess, worldForAccess, ACCESS_CLOSE, NOT_YET_CLOSE, type AccessWorld, type Expel } from "./access.ts";
-import { entryRestrictedIn } from "../shared/rightsfold.js";
-import { emptyState } from "../shared/fold.js";
-import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
-import { resolveLibFile, lintSpawn } from "./lint.ts";
-// The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
-// motion/particle linters, reactions, and the behavior cap itself; spawn lint
-// subscribes to all live commits below, including script-authored spawns.
-import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
+import { TRUST_NAMES } from "./config.ts";
+// how often a person may change the name they show (moderation: a name is how people recognise who did what)
+const RENAME_COOLDOWN_MS = Math.max(0, Number(process.env.RENAME_COOLDOWN_DAYS ?? 7)) * 86400000;
+import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
+import { type HnSession, agentTokens, accountOf } from "./auth.ts";
+import { addrSanctionsFor, saveAddrSanctions } from "./moderation.ts";
+import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, NOT_YET_CLOSE, type Expel } from "./access.ts";
+import { isOperator, mintSetupToken } from "./operators.ts";
+import { setupLine } from "./setup.ts";
+import { resolveLibFile } from "./libfile.ts";
 import { summarizeGlb } from "./geometry.ts";
-// The world itself — WorldLog + WorldSession behind the unsplit facade, with
-// the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
-// worlds with the server is boot policy, not world mechanics.
-import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.ts";
-import { warmBoxes, worldLibs } from "./boxes.ts";
+// The world itself (a log + the embodied plane) and the registry. The boot
+// sweep below stays HERE: waking scripted worlds with the server is boot
+// policy, not world mechanics.
+import { World, type Client, worlds, getWorld, worldExists, wireSettledPose, wireRights, authorityNow } from "./world.ts";
+import { isWorldSaved } from "./worldlog.ts";
+import { oldWorldAt, bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
+import { isSwapUnfinished } from "./livehost.ts";
+import { oldFormatRefused, provenWho, ownerOf } from "./upgrade.ts";
+import { backupsDirProblem } from "./backups.ts";
+import { isNativeSession } from "./native-login.ts";
+import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
+import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
+import { withoutOnceAnim } from "../shared/onceanim.js";
+import { directoryFor, foldName, accountTag } from "./directory.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
-// snapshot; the separate ephemeral broker owns renderer capture requests.
+// snapshot, pendingCaptures for the renderer's capture-result replies.
 import { route, avatarRoster } from "./routes.ts";
-import { snapshots } from "./snapshots.ts";
+import { screenshots } from "./screenshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
-import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
+import { MESSAGES } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
-import { onEntryCommitted } from "./events.ts";
 import { defsFingerprint } from "./defs.ts";
-import { advanceSim, tickOf } from "../shared/sim.js";
-// The reference fold lives in shared/ (house rule 1 by construction; the
-// world folds with it in world.ts) — what remains here is the role ladder.
-import { ROLE_RANK } from "../shared/fold.js";
 // Seat profiles (#101, upstream; write-half ported §24r): the store, its
 // external-change poll, the verdict lane on /avatars and the POST
 // /seat-profile proposal door are all wired — routes.ts owns the HTTP half,
@@ -56,8 +60,9 @@ import { OPT_DIR, PATCH_DIR } from "./config.ts";
 // Relay-floor (#104): transport selection + durable voice-service identity.
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
-import { nameAtDoor } from "./names.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
+import { isOwner } from "../shared/protocol/roles.js";
+import { newBucket, admitMessage } from "./msgrate.ts";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 // The resident-visible service chart (amendment 2): every voice-service
@@ -111,46 +116,6 @@ function retireRelayLeg(w: World, id: string) {
   }
 }
 
-// Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
-// rights (revoke the grant, the behavior loses its teeth) through the same
-// table as everyone else. The store path is where `?as=script` uploads land.
-// OPT_DIR, not ROOT/assets/opt: the two coincide by default, but a sequencer
-// launched with OPT_DIR elsewhere (the probe harness, a scratch box, a
-// production overlay) uploaded scripts into OPT_DIR/store/scripts and then
-// looked for them here — "script file missing" on every bind. (Same line as
-// #192; whichever lands second merges clean.)
-wireBehaviorStore(OPT_DIR);
-wireBehaviorGate((w, author, verb, args, authorSub) => {
-  const needs = VERB_NEEDS[verb];
-  if (!needs) return `verb not allowed: ${verb}`;
-  // WORLD ACCESS is changed by owners directly, never by a script: a script's
-  // emit skips the grant validator and the settle pass (access.ts), so a
-  // script closing a world would leave everyone inside it, and a script
-  // writing an expiry would skip the guards. Ordinary role grants stay open
-  // to an owner's scripts, as before.
-  // In a CLOSED world a script may not grant at all: demoting the last owner,
-  // or a grant whose sub merges away an owner's record, would leave it
-  // ownerless — and an ownerless world is open (review). Nor may a script
-  // bind a grant to a durable sub anywhere: that is the door's to resolve.
-  if (verb === "grant") {
-    const a = (args ?? {}) as Record<string, unknown>;
-    const rank = a.role != null ? ROLE_RANK[String(a.role)] : undefined;
-    if (a.id === "*" || a.revoke != null || a.until !== undefined || a.for !== undefined || a.sub !== undefined
-      || (rank != null && rank < ROLE_RANK.visitor) || entryRestrictedIn((w as unknown as World).state as any)) {
-      return "who may come into a world is changed by its owners directly, not by scripts";
-    }
-  }
-  const rights = rightsOf((w as unknown as World).state, author, authorSub);
-  if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
-    return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
-  }
-  // a guarded thing refuses scripts by their AUTHOR's standing, and a locked
-  // thing refuses them by the same rule as hands (a behavior nudging a
-  // nailed-down bench is still an accident vector)
-  const st = (w as unknown as World).state;
-  return guardRefusal(st, { id: author, ...(authorSub ? { sub: authorSub } : {}), role: rights.role }, verb, args) ?? lockRefusal(st, verb, args);
-});
-
 /** A pose as it should be handed to SOMEONE ELSE — the settled result rather
  *  than whatever frame the body happened to be in.
  *
@@ -160,7 +125,7 @@ wireBehaviorGate((w, author, verb, args, authorSub) => {
  *  So a resident mid-ragdoll looked fine to herself and arrived collapsed for
  *  every joiner — for weeks, with no way to tell from inside her own session.
  *
- *  - emote: a one-shot is a moment, not a place. Replaying it at every wake
+ *  - anim (played once, pose.anim): a moment, not a place. Replaying it at every wake
  *    would make a wave into a tic.
  *  - ragdoll: physics in flight, not an enacted pose. The get-up path only
  *    exists in the session that fell, so anyone receiving it is stuck with a
@@ -170,7 +135,8 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
   // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
   // client replayed a voice state its new session never had (review 09-30 S2)
-  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
+  // t/seq: a sample's capture time and count (spec/PHYSICS.md §5.1) belong to that one sample, never to a remembered body
+  const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -178,17 +144,13 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // both planes. world.ts takes it by injection because the source-text gates
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
-
-// The entry bus's boot-time subscribers (§24, events.ts): every committed
-// entry reaches these, uniformly, in this order — the wire's seq stream
-// first, then the scripts. Future systems (seats, recorders, the sim core)
-// subscribe here instead of teaching another append site to fan out.
-onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
-onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
-// Live commits only: includes script-authored spawns, never replay or joins.
-onEntryCommitted("spawn-lint", (w, entry) => {
-  if (entry.verb === "spawn") lintSpawn(w as World, entry);
-});
+// A role change re-sends everyone's rights.
+// …and whoever may no longer be here (a closed door, an ended grant, a demotion in a world that admits only people
+// listed) is removed (server/access.ts settleAccess, 4010), as upstream #258's settle pass did.
+wireRights(
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } }
+    settleAccess(w, expel as Expel); },
+);
 
 // ------------------------------------------------------------------ presence
 
@@ -228,7 +190,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
-      snapshots.retire(t);
+      screenshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -236,23 +198,26 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   }
 }
 
-function expel(w: World, target: Client, why: string, code = 4006) {
-  try { target.ws.send(JSON.stringify({ type: "error", error: why })); } catch { /* going anyway */ }
+function expel(w: World, target: Client, why: string, until?: number | null, code = 4006) {
+  // `until`: when they may come back (a timed ban); an agent host reconnects then instead of never.
+  // `code`: 4006 removed by moderation; 4010 (access.ts ACCESS_CLOSE) this world is no longer open to you — neither is redialled
+  try { target.ws.send(JSON.stringify({ type: "error", error: why, ...(until ? { until } : {}) })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
-  snapshots.retire(target);
+  screenshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
   // handler's copy could never fire and the legs died silently
   retireAuxLeg(w, target);
   if (wasEmbodied) reapAuxLegs(w, target, "primary removed by moderation");
-  if (wasEmbodied && target.lastPose) w.rememberPose(target.id, target.lastPose); // they may be back
+  if (wasEmbodied && target.lastPose && target.actorId && !target.anonymous) w.rememberPose(target.actorId, target.lastPose); // they may be back (remembered by identity, never by name)
   target.superseded = true;   // the close path must not double-handle this body
   w.clients.delete(target);
   clients.delete(target.ws);
   target.world = null;
-  target.ws.close?.(code, code === ACCESS_CLOSE ? "access ended" : "removed by moderation");
-  if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.bhv.onPresence("leave", target.id); }
+  target.ws.close?.(code, code === 4010 ? "access ended" : "removed by moderation");
+  if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.actorId); }
+  if (wasEmbodied && target.actorId) w.log?.departed(target.actorId); // what they held drops into the world (design 20, orphans)
 }
 
 // Operator-log census: people are people, eyes are eyes.
@@ -271,12 +236,12 @@ function describe(w: World): string {
 // the running server notices here: reload, diff, and push the same
 // generation-bearing event a proposal gets. Late profile arrival is
 // event-driven for every consumer, not wishful polling.
-// World access expiry (access.ts): warn five minutes out, then settle each
-// passed `until` into history and remove whoever lost entry with it.
-// Every second: between `until` and the sweep an expired member's verbs are
-// already refused (rightsIn reads the clock), but their poses still flow.
+// World access expiry (access.ts): warn five minutes out, then the authority writes each passed `until` into the log
+// (expire-roles) and whoever lost entry with it is removed. Every second: between `until` and the sweep the grant still
+// stands (it ends when its end is written, so a replay agrees).
+setLoadedWorlds(() => worlds);
 registerSystem({ name: "access-sweep", everyMs: Math.max(250, Number(process.env.ACCESS_SWEEP_MS ?? 1000)),
-  fn: (now) => sweepAccess(worlds.values() as unknown as Iterable<AccessWorld>, expel as unknown as Expel, now) });
+  fn: (now) => sweepAccess(worlds.values(), expel as Expel, now) });
 
 registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   const ext = seatStore.pollExternalChange();
@@ -287,21 +252,15 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   }
 } });
 
+// The engine's heartbeat: every world's sim advances and its rests log on this cadence, not inside whoever's request
+// comes next (DESIGN-physics-responsiveness §1). FRAME_MS is the finest beat the scheduler has; the pass is bounded by
+// engine ticks, so a stall catches up over several beats.
+registerSystem({ name: "physics", everyMs: FRAME_MS, fn: () => {
+  for (const w of worlds.values()) { try { w.log?.settle(); } catch (err) { console.error(`[world:${w.name}] physics settle`, err); } }
+} });
 registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
-    try { w.bhv.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
-  }
-} });
-
-// The sim heartbeat (PROTOCOL_v2 §5): advance every epoch world's sim fold
-// to the tick "now" quantizes to. Advancement is schedule-independent, so
-// this cadence is presentation-freshness policy, not physics — a slower
-// beat computes the same states later, never different ones.
-registerSystem({ name: "sim", everyMs: 250, fn: (now) => {
-  for (const w of worlds.values()) {
-    try {
-      if (w.sim.epoch && !w.sim.epoch.foreign) advanceSim(w.sim, tickOf(w.sim, now));
-    } catch (err) { console.error(`[world:${w.name}] sim advance`, err); }
+    try { w.scripts.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
   }
 } });
 
@@ -321,58 +280,42 @@ registerSystem({ name: "defs-watch", everyMs: 1000, fn: () => {
   defsFp = fp;
 } });
 
+// Boot: the worlds dir's shared key files under their current names (a dir saved before the 2026-10-07 names pass has
+// them renamed once, server/keyfiles.ts), before any world or join reads them.
+try { custodyFileIn(WORLDS_DIR); directoryFileIn(WORLDS_DIR); } catch (err) { console.error("[boot] key files", err); }
+
 // Boot sweep: worlds load lazily on first touch, but a world with scripts
 // must wake WITH the server, not with its first visitor — otherwise a
-// restart leaves every lighthouse dark until someone happens to sail past.
-// Cheap peek before paying for a real load: the snapshot names its
-// behaviors; a world with no snapshot yet gets a byte-scan of its log for
-// the verb. (A world whose behaviors were all since removed may load once
-// for nothing — harmless, and it folds a fresh snapshot on shutdown.)
+// restart leaves every timer dark until someone happens to sail past. Cheap
+// peek before paying for a real load: a chunked byte-scan of the log for a script
+// component. (A world whose scripts were all since removed may load once for
+// nothing — harmless.)
 try {
   let woken = 0;
   for (const name of readdirSync(WORLDS_DIR)) {
     try {
-      if (!/^[a-z0-9_-]{1,64}$/i.test(name)) continue;
-      const dir = join(WORLDS_DIR, name);
-      if (!existsSync(join(dir, "log.jsonl"))) continue;
-      let hasScripts = false;
-      const snapPath = join(dir, "snapshot.json");
-      if (existsSync(snapPath)) {
-        try {
-          const snap = JSON.parse(readFileSync(snapPath, "utf8"));
-          hasScripts = Object.keys(snap?.state?.behaviors ?? {}).length > 0;
-        } catch { /* corrupt snapshot: fall through to the log scan */ }
-      }
-      if (!hasScripts && readFileSync(join(dir, "log.jsonl"), "utf8").includes('"verb":"behavior"')) {
-        hasScripts = true;
-      }
-      if (hasScripts) { getWorld(name); woken++; }
+      if (!/^[a-z0-9_-]{1,64}$/i.test(name) || !isWorldSaved(name)) continue;
+      if (fileIncludes(join(WORLDS_DIR, name, "world.jsonl"), '"script:')) { getWorld(name); woken++; }
     } catch (err) { console.error(`[boot] world ${name} peek failed`, err); }
   }
-  if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their behaviors run without visitors`);
+  if (woken) console.log(`[boot] ${woken} scripted world(s) woken — their scripts run without visitors`);
 } catch (err) { console.error("[boot] world sweep failed", err); }
-
-/** Whispers waiting for someone who wasn't here. Memory only, deliberately:
- *  see the `whisper` message case.
- *
- *  The key is built in ONE place because it is written on one code path and
- *  read on another — they drifted once already (a stray separator character
- *  made every held whisper unreachable, silently), and the failure mode is a
- *  private message that simply never arrives. */
-// held-whisper machinery lives with its writers in messages.ts now (R2);
-// join's delivery of held whispers imports it back, one-way.
+// Old-format worlds are not served, and the operator is TOLD (they were skipped in silence above): one block per world with
+// the translator's command, this WORLDS_DIR filled in (server/oldworlds.ts).
+try { const notice = bootNotice(WORLDS_DIR); if (notice) console.log(notice); } catch (err) { console.error("[boot] old-world notice failed", err); }
+{ const bad = backupsDirProblem(WORLDS_DIR); if (bad) console.log(`[boot] ${bad}. Upgrades of old-format worlds refuse until it is moved.`); }
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
-snapshots.setClients(() => clients.values());   // roaming renderers are found across worlds
+screenshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
-snapshots.setAdmission((w, c) => canEnter(w, whoOf(c), "watch").ok);
-snapshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
-snapshots.setSweepGrace(SNAP_SWEEP_GRACE_MS);   // config.ts SNAP_SWEEP_GRACE_SEC
-// Keep agents' worlds served (snapshots.ts sweep): a parked roamer goes to any world with an agent in it and no
-// renderer, so its first snapshot finds the world loaded. On a timer, as the backstop for everything that leaves a
+screenshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
+screenshots.setFrameTimeout(SNAP_TIMEOUT_MS);   // config.ts SNAP_TIMEOUT_SEC
+screenshots.setSweepGrace(SNAP_SWEEP_GRACE_MS);   // config.ts SNAP_SWEEP_GRACE_SEC
+// Keep agents' worlds served (screenshots.ts sweep): a parked roamer goes to any world with an agent in it and no
+// renderer, so its first screenshot finds the world loaded. On a timer, as the backstop for everything that leaves a
 // world unserved; a roamer joining also runs it at once (below).
-setInterval(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, SNAP_SWEEP_EVERY_MS);   // config.ts SNAP_SWEEP_EVERY_SEC
+setInterval(() => { try { screenshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, SNAP_SWEEP_EVERY_MS);   // config.ts SNAP_SWEEP_EVERY_SEC
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
@@ -394,7 +337,7 @@ const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID(
  *  long before any GLB. */
 function sendGeomFollowup(w: World, c: Client) {
   const libs = new Set<string>();
-  for (const e of Object.values(w.state.entities)) if (e.lib && e.kind !== "light") libs.add(e.lib);
+  for (const e of Object.values(w.state.entities)) if (e.model) libs.add(e.model);
   if (!libs.size) return;
   (async () => {
     const geom: Record<string, { bbox: unknown }> = {};
@@ -424,6 +367,10 @@ function sendGeomFollowup(w: World, c: Client) {
 // can finally be exercised without a live socket. Bodies moved verbatim;
 // refusal `return`s became `return null`.
 
+/** A join's declared status (PROTOCOL §6a): one short lowercase word of its own ("agent", "ai", …; up to 32 characters — its own grammar, not a role id), else undeclared (null). */
+function declarationOf(v: unknown): string | null {
+  return typeof v === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(v) ? v : null;
+}
 function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, reason?: string): void }, msg: any, auth: HnSession | null): World | null {
     // A malformed world name is a bad LINK, not a bad actor — refuse it
     // with an explanation and a close code the client knows not to retry
@@ -434,45 +381,73 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       c.ws.close?.(4005, "bad world name");
       return null;
     }
-    // IDENTITY IS PER JOIN. A socket can join again (travel), and nothing a
-    // previous join established may ride along: a credential matched the
-    // name it was presented WITH, and a session that has since lapsed vouches
-    // for nothing. (Found by review: a credentialed socket re-joining under a
-    // member's typed name was treated as verified — and its sub then bound
-    // that member's grant to itself.)
-    c.tokenVerified = false;
-    c.nameReserved = false;
-    c.sub = auth ? auth.sub : undefined;
-    // The world's DOOR, if the world exists: the loaded world, or its roles
-    // and bans read from disk (access.ts worldForAccess) — so a refused join
-    // neither loads an idle world into memory for good nor founds a new one.
-    // getWorld runs only once every check below has passed (it writes the
-    // genesis entry the moment it meets a new name).
-    const door = worldForAccess(wname, worlds);
-    const loaded = worlds.get(wname);
+    // Joining never FOUNDS a world (security review 10-06 H3; RFC-005 §3.2.7 "founding is not joining"): a name with no
+    // world behind it is refused, and only a world is served (the old protocol has no runtime here: an old log is
+    // translated once, by the operator, into a new world).
+    if (worldExists(wname) && isSwapUnfinished(join(WORLDS_DIR, wname))) {   // an in-place translation stopped mid-swap: never served (boot names the recovery)
+      ws.send(JSON.stringify({ type: "error", error: interruptedVisitorText(wname) }));
+      c.ws.close?.(4005, "interrupted conversion");
+      return null;
+    }
+    if (worldExists(wname) && !isWorldSaved(wname)) {   // a world saved in an old format: it is translated once, by the operator
+      // (server/oldworlds.ts: a first-protocol log.jsonl is translatable; a log saved before the 2026-10-07 names pass is
+      // re-translated from its original log, or refounded). The visitor is told in plain words that nothing is lost and
+      // who converts it; the command line is the operator's, in the boot notice. A directory holding no old log at all
+      // (an empty one) is no world: it is refused as one.
+      const old = oldWorldAt(WORLDS_DIR, wname);
+      // …with the structured reason beside the words: who may upgrade it, and the doc (server/upgrade.ts; docs/WIRE.md 4005)
+      const who = provenWho(c, msg), operator = isOperator(who?.account ?? null);
+      const refuse = (owner: "bound" | "name" | null) => { ws.send(JSON.stringify({ type: "error", error: old ? old.visitor : `there's no world called "${wname}" here — check the link that brought you here`,
+        ...(old ? { refused: oldFormatRefused(old.kind, old.visitor, operator, owner) } : {}) }));
+        c.ws.close?.(4005, old ? "old-format world" : "no such world"); };
+      // a signed-in non-operator may be its owner: world.ts owner-of answers (cached), then the refusal goes
+      if (old?.kind === "translatable" && who && !operator) void ownerOf(wname, who, { join: true }).then((o) => refuse(o?.recognised ?? null), () => refuse(null));
+      else refuse(null);
+      return null;
+    }
+    if (!worldExists(wname)) {
+      // nothing to watch YET is not a refusal (upstream #258: 4011, redialled): an observer started before the world is
+      // founded gets in once someone founds it. A body is refused as before (joining never founds).
+      if (msg.spectate || msg.renderer) {
+        ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" yet — nothing to watch` }));
+        c.ws.close?.(NOT_YET_CLOSE, "no such world yet");
+        return null;
+      }
+      ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" here — check the link that brought you here` }));
+      c.ws.close?.(4005, "no such world");
+      return null;
+    }
+    const w = getWorld(wname);
+    // C1 (security review 10-06): what this join proves is decided from THIS join's own credentials. Nothing a previous
+    // join on this socket proved carries over (a token presented once used to make every later join on the socket
+    // "verified", so a second join could wear any agent's name).
+    c.tokenVerified = false; c.auxBound = false; c.actorId = undefined;
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).
     c.id = (auth ? auth.name : String(msg.id ?? c.id)).slice(0, LIMITS.ID_LEN);
     // Actor names are the log's ink — refuse the ones that forge system
-    // or script authorship ("world" authors grants; "bhv:*" authors
+    // or script authorship ("world" authors grants; "script:*" authors
     // script effects; the behavior loop-guard trusts that prefix), and
     // strip control characters that would corrupt every future reader.
     // (Hesperus finding #3: an unauthenticated join as "world" produced
     // entries indistinguishable from the sequencer's own.)
     c.id = c.id.replace(/[\u0000-\u001f\u007f]/g, "").trim();
-    // ...and no markup characters (< > "): a typed name carrying them is refused in words; in a name the identity
-    // service gave, each becomes a look-alike (‹ › ″; server/names.ts). Names are shown everywhere; none should ever parse as a tag.
+    // M3: format characters (zero-width, bidi overrides) and compatibility forms are how one name passes for another
+    c.id = c.id.normalize("NFKC").replace(/\p{Cf}/gu, "").trim();
+    // security pass 3 (H1): no markup characters in a name — a typed one is refused in words, one the identity service
+    // gave becomes a look-alike (‹ › ″; server/names.ts)
     {
-      const door = nameAtDoor(c.id, { typed: !auth });
-      if (door.refused) {
-        ws.send(JSON.stringify({ type: "error", error: door.refused }));
-        ws.close(4004, "bad name");
+      const n = nameAtDoor(c.id, { typed: !auth });
+      if (n.refused) {
+        ws.send(JSON.stringify({ type: "error", error: n.refused }));
+        ws.close(4004, "name has markup");
         return null;
       }
-      c.id = door.name;
+      c.id = n.name;
     }
-    if (!c.id || /^(world|\*)$/i.test(c.id) || /^bhv:/i.test(c.id)) {
+    // H2: an identity is never a name — a name shaped like one (u-…) would pass for the person who wears it
+    if (!c.id || /^(world|\*|system|sim)$/i.test(c.id) || /^script:/i.test(c.id) || /^u-[a-z2-7]{20}$/i.test(c.id)) {
       ws.send(JSON.stringify({ type: "error", error: `that name is reserved for the world itself` }));
       ws.close(4004, "reserved name");
       return null;
@@ -505,106 +480,132 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       }
     }
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
+    // a status the participant DECLARES (PROTOCOL §6a): optional, presence only, relayed with arrive and the snapshot's
+    // present list, never inferred from the credential, the client or anything else, never logged, never read by a gate.
+    // Absent is undeclared: no word is assumed. One short lowercase word; anything else is no declaration.
+    c.declares = declarationOf(msg.declares) ?? undefined;
+    // the joining page's own id (#234/#217: a page's typing and attention follow its own session), relayed as `session`
     if (typeof msg.session === "string" && PAGE_SESSION_RE.test(msg.session)) c.presenceSession = msg.session;
-    c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
     c.roam = c.renderer && Boolean(msg.roam);
     // re-derived on every join, like the rest of identity: the renderers' own
     // credential, presented WITH the renderer flag on this very join
     c.trustedRenderer = c.renderer && Boolean(RENDERER_TOKEN) && String(msg.token ?? "") === RENDERER_TOKEN;
-    snapshots.configure(c, msg.capture);
+    screenshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
-    // Same display name, different PERSON (two guild members can share a
-    // nick): suffix the newcomer rather than letting takeover fight.
-    if (auth && !c.spectator) {
-      for (const other of loaded?.clients ?? []) {
-        if (other !== c && !other.spectator && other.id === c.id && other.sub && other.sub !== c.sub) {
-          c.id = `${c.id}-${c.sub!.replace(/\D/g, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN);
-          break;
-        }
-      }
-    }
-    // Agent names are RESERVED: an id that appears in mcpl/tokens.json
-    // is claimable only with that agent's own bearer token (the MCPL
-    // door forwards it). Closes the "fable spoofable" hole for names we
-    // actually know; humans stay self-asserted until archipelago-home.
+    // ---- who this join is: an ACCOUNT, proven by this join's credential (C1/C2) ----
+    //   a verified session → its sub ("human:discord:…");
+    //   an enrolled agent's bearer (mcpl/tokens.json) → "agent:token:<id>", and its name is that enrolment's id;
+    //   a home-node aid1 credential of KIND agent → the enrolment that lists its subject, else "aid1:<iss>:<sub>";
+    //   a private TRUST_NAMES door → "local:<typed name>"; otherwise none: anonymous.
+    // A name reserved by an enrolment is claimable only with that enrolment's own proof. Never by a slug of a name.
     {
       const at = agentTokens();
-      const tokStr = String(msg.agentToken ?? "");
-      let tokId = at.byToken.get(tokStr);
-      // The archipelago door forwards the agent's aid1 credential. An
-      // identity the home node vouches for satisfies the reservation
-      // exactly like a tokens.json bearer — same slug derivation as the
-      // MCPL door, so the two doors agree on who "fable" is.
-      const aid = tokId ? null : aid1JoinIdentity(tokStr);
-      if (!tokId) tokId = aid?.slug;
-      if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) {
-        c.tokenVerified = true;
-        // The NAME is authoritative only when the credential is an agent's:
-        // tokens.json names are operator-assigned, aid1 agent names are
-        // enrolled uniquely. A human's aid1 slug is a display name.
-        c.nameReserved = !aid || aid.payload.kind !== "human";
-        // …and the agent's DURABLE subject rides that credential. Carry it,
-        // so grants, bans, guards and world access bind to the principal and
-        // not to the name (a browser session already carries its sub).
-        if (aid && !c.sub) c.sub = aid.payload.sub;
+      let account: string | null = auth && c.sub ? c.sub : null;
+      let agentName: string | null = null;
+      const proven = accountOf(String(msg.agentToken ?? ""));
+      if (proven && "refused" in proven) {
+        ws.send(JSON.stringify({ type: "error", error: proven.refused }));
+        c.ws.close?.(4004, "bad agent credential");
+        return null;
       }
-      if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
-        console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);
+      if (proven) { account = proven.account; agentName = proven.name; }
+      if (agentName) { c.id = nameAtDoor(agentName.slice(0, LIMITS.ID_LEN), { typed: false }).name; c.tokenVerified = true; }   // an aid1 slug is the credential issuer's: no markup in it either. The credential proves WHO (the enrolment, the reserved name), never what kind: §6a
+      // a reserved name is matched FOLDED (foldName: case, spaces, punctuation), as display collisions are — "Hes perus" and
+      // "hesperus." are the enrolled name too (security review 10-18 L11); the enrolment's own proof is the only way to wear it
+      const reservedAs = [...at.names].find((n) => foldName(n) === foldName(c.id)) ?? null;
+      if (reservedAs && account !== `agent:token:${reservedAs}`) {
+        console.log(`[perm] join refused: "${c.id}" is a reserved agent name (no proof of that enrolment)`);
         ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
         c.ws.close?.(4004, "reserved name");
         return null;
       }
+      // a private door: the account is the one the client keeps (msg.account), else the typed name — so a person can show a
+      // new name and stay who they are (R 10-11). Typed, so the door's markup rule holds for it too.
+      if (!account && TRUST_NAMES) { const keep = typeof msg.account === "string" ? nameAtDoor(msg.account.trim().slice(0, LIMITS.ID_LEN), { typed: false }).name : "";
+        account = `local:${(keep || c.id).toLowerCase()}`; }
+      // a connection that has joined stays who it proved it was: travel keeps the identity; a new one needs a new socket
+      if (c.account !== undefined && c.account !== account) {
+        ws.send(JSON.stringify({ type: "error", error: "this connection already joined as someone else — reconnect to join as another identity" }));
+        c.ws.close?.(4004, "identity is fixed per connection");
+        return null;
+      }
+      c.account = account;
+      c.anonymous = !account;
     }
-    // ENTRY — checked once identity is SETTLED (id/sub/reserved names all
-    // resolved above), before the body enters. One decision, access.ts
-    // canEnter, the same one every other door asks: bans first (a global ban
-    // closes every door, a world ban this one; spectating counts — a ban is
-    // exclusion, not just silencing), then the world's own ladder (`none`
-    // may not come in, `spectator` may only watch). WORLD_ADMIN passes
-    // everywhere — an operator can never be locked out, which is also the
-    // unban path of last resort.
-    const who = whoOf(c);
+    // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous
+    // visitor may not wear a name an account has claimed here (H1/M3: typing someone's name to stand in for them).
+    // RENAME COOLDOWN (R 10-11: "you can only rename yourself every so often (moderation reasons)"): a typed name that
+    // differs from the one this account wore is a rename; inside the cooldown the old name stands and the client is told
+    // when it may change. A case change is free; a sign-in's name (Discord's) is the provider's, not counted here.
+    c.renamed = false; c.renameRefused = undefined;
+    // The newcomer is the one renamed; an anonymous one is marked as a guest. The collision pass runs FIRST, so the
+    // cooldown below judges the name the person will actually wear (STRIKES P-S2-5: judged on the typed name, then
+    // suffixed, then stamped, it trapped someone under a name they never asked for).
+    const typed = c.id;
+    if (!c.spectator) {
+      const dir = directoryFor(WORLDS_DIR);
+      const taken = (n: string) => [...w.clients].some((o) => o !== c && !o.spectator && foldName(o.id) === foldName(n) && (!c.account || o.account !== c.account))   // two guests are never one account (review of #260, server I10)
+        || (!!c.anonymous && dir.claimedName(n))
+        || (!!c.account && dir.claimedByOther(n, c.account));   // H2 (pass 3): nor an account under another account's name, here or not
+      if (taken(c.id)) {
+        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${accountTag(c.account ?? "")}`;
+        let n = base.slice(0, LIMITS.ID_LEN), k = 2;
+        while (taken(n)) n = `${base.slice(0, LIMITS.ID_LEN - 3)} ${k++}`;
+        c.id = n;
+      }
+    }
+    if (!c.spectator && c.account && !auth && !c.tokenVerified) {
+      const dir = directoryFor(WORLDS_DIR); const id0 = dir.idOfSub(c.account); const e0 = id0 ? dir.entry(id0) : null;
+      if (e0 && foldName(e0.name) !== foldName(c.id)) {
+        const until = (e0.renamedAt ?? 0) + RENAME_COOLDOWN_MS;
+        if (Date.now() < until) { c.renameRefused = { tried: typed, until }; c.id = e0.name; }
+        else c.renamed = foldName(c.id) === foldName(typed);   // a suffixed name wasn't their choice: no cooldown starts on it
+      }
+    }
+    // A world's actor is an OPAQUE id from the authority's directory (server/directory.ts, never logged), reached only
+    // through an account; one per account across the authority's worlds; anonymous ids live in memory only (M2). Typing someone's name
+    // never yields their id, so it never yields their role.
+    // a spectator skips the name checks above (it shows no name), so it mustn't record one either: its account keeps the
+    // name it has, and a first sight takes the typed name only if no other account wears it (review of #260, server I42)
+    { const dir = directoryFor(WORLDS_DIR);
+      const kept = c.spectator && c.account ? dir.idOfSub(c.account) : null;
+      c.actorId = kept ?? dir.resolve({ sub: c.account ?? null,
+        name: c.spectator && c.account ? dir.spectatorName(c.id, c.account, LIMITS.ID_LEN) : c.id }); }
+    if (c.renamed && c.actorId) directoryFor(WORLDS_DIR).markRenamed(c.actorId);
+    // ENTRY — checked once identity is SETTLED (account, actor id, reserved names all resolved above), before the body
+    // enters. One decision, server/access.ts entryFor, the same one every other door asks (a listing, an HTTP read, the
+    // settle after a role change): bans first (a global ban closes every door, a world's ban this one; watching counts —
+    // a ban is exclusion, not just silencing), then the world's own @world.access (who may come in
+    // with a body; watch: anyone lets the rest spectate), account age, and capacity for a body. Operators, owners and
+    // holders of a moderation power always get in — an operator can never be locked out, which is also the unban path
+    // of last resort.
     {
-      const v = canEnter(door ?? { name: wname, state: emptyState() }, who, c.spectator ? "watch" : "embody");
-      if (!v.ok) {
-        console.log(`[world:${wname}] join refused: ${c.id} — ${v.reason}`);
-        ws.send(JSON.stringify({ type: "error", error: v.why }));
-        c.ws.close?.(v.code, v.reason === "banned" ? "banned" : "no access");
+      const here = [...w.clients].filter((o) => !o.spectator && (o.surface ?? "world") === "world" && o.actorId !== c.actorId).length;
+      const r = entryFor(doorOfWorld(w), whoOf(c), c.spectator ? "watch" : "embody", { here });
+      if (r) {
+        console.log(`[world:${w.name}] join refused: ${c.id} — ${r.reason}`);
+        ws.send(JSON.stringify({ type: "error", error: r.why, ...(r.until ? { until: r.until } : {}) }));
+        // "full" is its own close reason: it is transient (someone leaves), so a client waits and tries again rather than
+        // showing it as the answer (review r3 F6); the other refusals won't change by retrying
+        c.ws.close?.(r.code, r.reason === "full" ? "full" : r.reason === "banned" ? "banned" : "no access");
         return null;
       }
     }
-    // FOUNDING — a name nobody has used yet. Every member may found worlds, a
-    // few a day (access.ts foundingRefusal). Watching a world that does not
-    // exist founds nothing: there is nothing to watch, and an ownerless world
-    // nobody stepped into would be open to everyone.
-    if (!door) {
-      // An aux leg (voice, captions…) for a world that does not exist yet is
-      // an orphan exactly as it is anywhere else: same answer as the orphan
-      // gate below (4008), which its sidecar knows how to wait out.
-      if (c.surface !== "world") {
-        ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
-        ws.close(4008, "aux without primary");
-        clients.delete(ws);
-        return null;
+    if (w.log && c.actorId && !isOperator(c.account)) {
+      // a guest is a fresh identity per connection: a mute a guest was given here is also filed against their
+      // hashed address (moderation.ts), and every new guest from that address is given it too, written to the moderator
+      // log as the moderator's own act on the new identity (so it shows, applies and lifts like any other) (R 10-07)
+      if (c.anonymous && c.addr && !c.spectator && (c.surface ?? "world") === "world") {
+        let carried = 0;
+        for (const s of addrSanctionsFor(w.name, c.addr)) {
+          if (s.kind !== "mute" || w.log.mutedHere(c.actorId)) continue;   // a guest ghost stored before 10-20 is ignored: ghost is gone
+          w.log.live.appendMod({ actor: s.actor, verb: s.kind, who: c.actorId, ...(s.kind === "mute" ? { channels: s.channels ?? ["voice", "chat"] } : {}), until: s.until, ...(s.reason ? { reason: s.reason } : {}), carried: "address" });
+          if (!s.ids.includes(c.actorId)) s.ids.push(c.actorId); carried++;
+        }
+        if (carried) { saveAddrSanctions(); console.log(`[world:${w.name}] a guest's ${carried} sanction(s) carried to ${c.id} by address`); }
       }
-      // Nothing to watch YET is not a refusal (4011, retried): an observer
-      // started before the world is founded gets in once someone founds it.
-      if (c.spectator) {
-        ws.send(JSON.stringify({ type: "error", error: `there's no world called "${wname}" yet — nothing to watch` }));
-        c.ws.close?.(NOT_YET_CLOSE, "no such world yet");
-        return null;
-      }
-      const why = foundingRefusal(who);
-      if (why) {
-        console.log(`[world:${wname}] founding refused: ${c.id} — ${why}`);
-        ws.send(JSON.stringify({ type: "error", error: why }));
-        c.ws.close?.(ACCESS_CLOSE, "no founding");
-        return null;
-      }
-      noteFounding(who);
     }
-    const w = loaded ?? getWorld(wname);
     c.world = w;
     // ADMISSION BEFORE TAKEOVER (review finding 2): every check that can
     // refuse this join runs before the takeover kick. The old order let
@@ -642,8 +643,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       //   · self-asserted primary with no bindable credential: REFUSE.
       //     Guessing would bless exactly the impostor this exists to
       //     stop; the primary can log in and rejoin to earn aux legs.
-      const auxBound = c.tokenVerified === true
-        || (typeof primary.sub === "string" && primary.sub.length > 0 && c.sub === primary.sub);
+      // an aux leg binds by ACCOUNT: the same proven account as its primary (a token-verified agent, or the same login)
+      const auxBound = !!c.account && c.account === primary.account;
       // Remember the binding so the attest gate (B3) admits the SAME
       // identity authority B1 does — a sub-bound human's voice leg, not
       // only a token-verified agent leg (Opus-5 review: gating attest on
@@ -690,11 +691,15 @@ function installJoin(c: Client, w: World) {
     let retiredGen: number | undefined;
     if (!(c.spectator && c.surface === "world")) {
       for (const other of [...w.clients]) {
-        if (other !== c && other.id === c.id
+        // a takeover is the SAME ACCOUNT re-arriving (H1): a typed name never kicks anyone, and anonymous sessions
+        // never take over (each is its own guest)
+        // …and the same account under a NEW name is a takeover too (R 10-10 18:13, "Body not in the world yet. I just changed
+        // my name": the renamed connection wasn't superseded, so its old socket's close departed the body under her feet)
+        if (other !== c && !!c.account && other.account === c.account
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
-          snapshots.retire(other);
+          screenshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -704,26 +709,30 @@ function installJoin(c: Client, w: World) {
           // its credential is bound to the retired primaryGen, and the
           // successor mints fresh (#104 amendment 1 — takeover→rotate;
           // measured target: old leg's packets refused ≤2s)
-          if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, c.id);
+          // the leg is the PREDECESSOR's, under its own id: a successor that arrived under a new name has none yet
+          // (review of #260, server I12)
+          if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, other.id);
+          // …and under a new name, the old name's avatar leaves everyone's view: the superseded close says nothing, and
+          // the successor arrives under its own name (review of #260, server I47)
+          if ((c.surface ?? "world") === "world" && !other.spectator && other.id !== c.id) {
+            w.dirty.delete(other.id);
+            { w.broadcast({ type: "leave", id: other.id }); w.scripts.onPresence("leave", other.id, other.actorId); }
+          }
         }
       }
     }
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
-    snapshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
-    // an agent's body arriving where no renderer serves: send a roaming renderer now, so its first snapshot finds the
-    // world loaded (server/snapshots.ts prewarm; a no-op when one already serves or none roams)
-    if (c.agent && !c.spectator) snapshots.prewarm(w);
+    screenshots.noteJoin(c);   // when it (re)joined: a roamer just arrived may still be loading the world
+    // a body arriving with an agent's enrolment (its credential, never a declaration: §6a) where no renderer serves: send a
+    // roaming renderer now, so its first screenshot finds the world loaded (server/screenshots.ts prewarm; a no-op when one
+    // already serves or none roams)
+    if (c.tokenVerified && !c.spectator) screenshots.prewarm(w);
     // …and a roaming renderer joining (its watchdog restarts it into its lobby, after a deploy or every few hours)
     // is sent straight back to an agent's world that has none, rather than waiting for the timer above. A second
     // later, so its own join has settled before it is asked to travel.
-    if (c.roam) setTimeout(() => { try { snapshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
-    // eidosim@0.3.0: know the world's standing geometry before anyone spawns
-    // or epochs into it (boxes.ts — the sync validators read a warm cache).
-    // AFTER admission, never before: a rejected or invalid join must not
-    // trigger a whole-world GLB parse (PR #160 review, B1); bounded inside.
-    void warmBoxes(worldLibs(w.state));
+    if (c.roam) setTimeout(() => { try { screenshots.sweep(); } catch (e) { console.error("[snap] sweep failed:", e); } }, 1_000);
     // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
     // the lab found a listener bound to a dead voice leg until page
     // reload. This event is the no-reload path: "retire the old peer,
@@ -739,32 +748,72 @@ function installJoin(c: Client, w: World) {
         id: c.id, surface: c.surface, gen: c.gen, retired: retiredGen ?? null });
       for (const t of w.clients) if (t !== c) t.ws.send(transition);
     }
-    // A brand-new world belongs to whoever first walks into it embodied:
-    // the grant goes through the log like any other fact, actor "world".
-    // (Pre-existing ownerless worlds stay OPEN — granting their first
-    // owner is a deliberate act by a WORLD_ADMIN, not a land-rush.)
-    // ("brand-new" tolerates the genesis dialect marker every fresh log
-    // now opens with — a world whose only history is its birth certificate
-    // still belongs to whoever steps in first)
-    if (!c.spectator && w.snapSeq < 0
-      && w.entries.every((e) => e.verb === "genesis")) {
-      w.commit("world", "grant",
-        { id: c.id, role: "owner", gen: true, ...(c.sub ? { sub: c.sub } : {}) });
-      console.log(`[world:${w.name}] new world — ${c.id} is its owner`);
-    }
+    // (a world's owner is named when it is FOUNDED — tools/protocol/world.ts found, or the translator — never by being first in)
 }
 
+/** What a client is told it may do: the role the authority gives it (the authority admits every write), and the body and spend
+ *  permissions its role record carries (@world roles:<id>, else the world's default-role; a guest never wears the
+ *  default). `open` = the world has no owner. */
+function rightsFor(w: World, c: Client) {
+  // research roles S4: rights come from the authority alone ({role, rank, permissions}, by identity); gen and fly stay as the
+  // client's flags, read off the permissions. A server operator (SERVER_OPERATORS, by account) flies and spends everywhere, as before.
+  const op = isOperator(c.account);
+  const wc = (w.log.live.state().entities?.["@world"]?.c ?? {}) as Record<string, any>;
+  const open = !Object.entries(wc).some(([k, v]) => k.startsWith("roles:") && isOwner(v));
+  if (!c.actorId) return { role: "member", roleName: "Member", rank: 0, permissions: [] as string[], gen: op, fly: op, open };
+  const e = w.log.rightsOf(c.actorId); const m = w.log.mutedHere(c.actorId);
+  return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,
+    ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };
+}
+/** Does this identity hold a power that lets it in past access rules (research: moderators and owners bypass max)? */
+
+/** The sanctions sweep (research roles S4): every couple of seconds, and right after a moderation act, make
+ *  each world's live state match the moderator log by the authority's clock. Nothing is written when a sanction ends;
+ *  this is what notices. Per connection it keeps what it last applied, so it acts only on a change:
+ *   - voice: the SFU's moderator mute (enforced at ingress) is on while a voice mute is in force;
+ *   - rights: the person is told their own state again (your-rights carries muted);
+ *   - the muted badges every client draws (mod-state: identity → until), when the set changes. */
+/** who is muted here now, by identity → until (the people list's muted glyph) */
+function mutedIn(S: Record<string, unknown>): Record<string, number> {
+  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
+  return muted;
+}
+export function sanctionSweep(w: World) {
+  if (!w.log) return;
+  const S = w.log.sanctions();   // one pass over the moderator log per world per sweep (review 10-07: it was one per client)
+  for (const c of [...w.clients]) {
+    if (c.spectator || (c.surface ?? "world") !== "world" || !c.actorId) continue;
+    const x = S[c.actorId] as any; const voice = !!x?.mute?.channels?.includes("voice");
+    if (voice !== !!c.sfuMuted && (voice || c.sfuMuted !== undefined)) { try { setSfuModeratorMute(w.name, c.id, voice); } catch (err) { console.error(`[world:${w.name}] sfu mute`, err); } }
+    c.sfuMuted = voice;
+    const mine = JSON.stringify([x?.mute?.until ?? null, x?.mute?.channels ?? null]);
+    if (c.sanctionKey !== mine) { const first = c.sanctionKey === undefined; c.sanctionKey = mine;
+      if (!first) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } } }
+  }
+  // the SFU keys its mute on the connection's display id: once that person is gone, release it, so a display id never
+  // carries a mute across people (the next holder of the name is someone else; the identity's own return re-applies it)
+  const live = new Set([...w.clients].filter((c) => c.sfuMuted).map((c) => c.id));
+  for (const id of [...(w.sfuMutedIds ?? [])]) if (!live.has(id)) { try { setSfuModeratorMute(w.name, id, false); } catch { /* relay gone */ } }
+  w.sfuMutedIds = live;
+  const muted = mutedIn(S);
+  const key = JSON.stringify(muted);
+  if (w.modStateKey !== key) { w.modStateKey = key; w.broadcast({ type: "mod-state", muted }); }
+}
+registerSystem({ name: "sanctions", everyMs: 2000, fn: () => { for (const w of worlds.values()) { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep`, err); }
+  try { w.regateReaches(); } catch (err) { console.error(`[world:${w.name}] re-gating reaches`, err); } } } });   // a timed allow ends with no request (review of #260)
+
 function buildSnapshot(w: World, c: Client) {
-    // snapshot = full log replay (folding comes later) + who's present now
-    const jp = w.joinPayload();
+    // snapshot = the authority's cut of the world (the joiner folds it, then the log stream) + who's present now
     return {
       type: "snapshot",
-      renderSceneVersion: 1,
+      // (no renderSceneVersion: upstream #248's render-scene projection isn't served here — server/render-scene.ts reads the
+      // first protocol's fold — so a native client isn't told to ask for it)
       world: w.name,
       you: c.id,
-      // your durable subject, when the door vouched for one — the principal
-      // guarded things are matched against (rights.ts isPlacer), so the browser
-      // can grey out what it may not author without re-deriving it from names
+      // when this account may next change its name (and the name it just tried, if that was too soon)
+      ...(c.account && !c.tokenVerified ? { renameAfter: (directoryFor(WORLDS_DIR).entry(c.actorId ?? "")?.renamedAt ?? 0) + RENAME_COOLDOWN_MS, renameCooldownDays: RENAME_COOLDOWN_MS / 86400000 } : {}),
+      ...(c.renameRefused ? { renameRefused: c.renameRefused } : {}),
+      // your durable subject, when the authority vouched for one
       ...(c.sub ? { yourSub: c.sub } : {}),
       gen: c.gen,   // your surfaceSession — echo it in attestations
       // your OWN live aux legs — people[] excludes self, and a page that
@@ -774,27 +823,29 @@ function buildSnapshot(w: World, c: Client) {
         .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
         .map(x => ({ surface: x.surface, gen: x.gen })),
       recording: RECORD,
-      // The world as it is, then only what has happened since. A joiner's
-      // cost is now the size of the WORLD, not the length of its history.
-      state: jp.state,
-      throughSeq: jp.throughSeq,
-      entries: jp.tail,
-      // dialect 3: the sim fold's cut, adopted by the joiner (absent
-      // pre-epoch — see joinPayload)
-      ...("sim" in jp ? { sim: (jp as { sim?: unknown }).sim } : {}),
+      // the world: the authority's cut (its fold, head, your undoable acts, names, holds), which the joiner folds and then
+      // advances with the `log` stream. A joiner's cost is the size of the WORLD, not the length of its history.
+      cut: { ...w.log.info(), ...w.log.clientCut(actorIdOf(c)) },
+      // chat isn't world state, and speech is arrival-only (R 10-18): a joiner is sent no line said before it came, so the
+      // window is always empty. chatTotal is how many lines a history page could still show this joiner: for an admin
+      // (owner, operator) every line the master log holds; for everyone else none
+      state: { recentChat: [], chatTotal: w.isAdmin(c) ? (w.state.chatTotal ?? 0) : 0 },
+      throughSeq: w.log.snapSeq,
       // the body roster rides along — a joiner resolves names with no
       // extra round-trip (bbox geometry follows as its own message)
       avatars: avatarRoster(),
-      // what YOU may do here, as of now (live grants update it client-side).
-      // `open` = no owner exists, so rights are the everyone-builds default.
-      yourRights: { ...rightsOf(w.state, c.id, c.sub), open: !worldHasOwner(w.state) },
+      // what YOU may do here, as of now (a role change re-sends it: your-rights)
+      yourRights: rightsFor(w, c),
       // wake where you fell asleep — the world's memory of your body
-      restore: c.spectator ? null : (w.poses[c.id] ?? null),
+      restore: c.spectator || !c.actorId ? null : (w.poses[c.actorId] ?? null),   // by identity: a name is anyone's to wear
       present: [...w.clients].filter(o => o !== c && !o.spectator).map(o => ({
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent, session: presenceSession(o),
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), ...(o.declares ? { declares: o.declares } : {}), session: presenceSession(o),   // §6a: relayed as declared; absent = undeclared
+        // a world: the identity the log and roles know them by (granting a role names this id, never a name)
+        ...(o.actorId ? { actorId: o.actorId } : {}),
+        ...(w.log && o.anonymous ? { guest: true } : {}),   // no account: the people list's 'guest' badge (research roles S6)
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
         surfaces: [...w.clients]
@@ -806,7 +857,7 @@ function buildSnapshot(w: World, c: Client) {
 
 const server = Bun.serve({
   port: PORT,
-  hostname: process.env.HOST ?? "0.0.0.0",
+  hostname: HOST,
   // Bun closes a connection after 10s with no bytes moving (its default
   // idleTimeout) — and that includes a response mid-stream. Over a relayed or
   // transcontinental link a big download (a VRM, an unoptimized library glb)
@@ -825,17 +876,20 @@ const server = Bun.serve({
     return route(req, srv);
   },
   websocket: {
+    maxPayloadLength: LIMITS.WS_MESSAGE_BYTES,
     // House rule 3 applies to EVERY ws callback, not just message: an
     // uncaught throw out of open/close exits the process the same way (the
-    // 4f82250 crash loop), and close reaches disk (settleLease → append,
+    // 4f82250 crash loop), and close reaches disk (a departure's drop → the authority,
     // rememberPose → write+rename) — an EIO/ENOSPC there must be a log line,
     // never an exit.
     open(ws) {
       try {
         const c: Client = { id: `anon-${nextClientNum++}`, ws, world: null, avatar: "", lastPose: null, spectator: false,
-          msgWin: 0, msgCount: 0, verbWin: 0, verbCount: 0 };
-        const sess = (ws as unknown as { data?: { session?: HnSession | null } }).data?.session;
+          msgs: newBucket(2 * MSG_RATE) };
+        const data = (ws as unknown as { data?: { session?: HnSession | null; addr?: string } }).data;
+        const sess = data?.session;
         if (sess && sess.exp > Date.now()) { c.auth = sess; c.sub = sess.sub; }
+        c.addr = data?.addr ?? null;
         clients.set(ws, c);
       } catch (err) {
         console.error(`[ws] open failed server-side:`, err);
@@ -845,20 +899,12 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
-        snapshots.retire(c);
+        screenshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
         if (c.bcRing?.length) {
           console.log(`[bc] ${c.id} last breadcrumbs: ${c.bcRing.join(" | ")}`);
-        }
-        // a vanished simulator's objects land exactly where its last frame put
-        // them — the lease's whole promise (docs/leases.md). Per-lease guard:
-        // a failed settle (disk) must not abandon the OTHER leases or the
-        // leave cleanup below — a ghost body standing forever (#56) is worse
-        // than one object hovering at its last streamed transform.
-        if (c.world) for (const [lid, L] of [...c.world.leases]) if (L.holder === c) {
-          try { c.world.settleLease(lid); } catch (err) { console.error(`[world:${c.world.name}] lease settle for ${lid} on close`, err); }
         }
         if (c.world) {
           c.world.clients.delete(c);
@@ -875,11 +921,11 @@ const server = Bun.serve({
           if (!c.superseded) retireAuxLeg(c.world, c);
           if (!c.spectator) {
             if (!c.superseded) {
-              try { c.world.rememberPose(c.id, c.lastPose); } // sleep where you stood
+              try { if (c.actorId && !c.anonymous) c.world.rememberPose(c.actorId, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
             }
-            c.world.broadcast({ type: "leave", id: c.id });
-            c.world.bhv.onPresence("leave", c.id);
+            c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.actorId);
+            if (!c.superseded && c.actorId) c.world.log?.departed(c.actorId); // a takeover keeps the body; a departure drops what it held
             // The primary is gone: reap every aux leg of this identity, unless a
             // successor took over (its auxes transfer to the new primary — same
             // identity, and takeover means re-arrival, not departure).
@@ -906,11 +952,16 @@ const server = Bun.serve({
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return; }
 
-      // message-rate cap: 15Hz poses + verbs + slack. Excess is dropped
-      // silently — closing would just trigger the client's auto-reconnect.
+      // message-rate cap (server/msgrate.ts): a token bucket at MSG_RATE a second with two seconds of burst, so a backlog the
+      // server's own busy thread caused isn't charged to the client. Over it, a REQUEST is answered (its client awaits a reply
+      // by id: silence left it hanging, client-check HT 10-17), up to MSG_RATE answers a second; anything else is dropped.
       const now = Date.now();
-      if (now - c.msgWin > 1000) { c.msgWin = now; c.msgCount = 0; }
-      if (++c.msgCount > MSG_RATE) return;
+      const verdict = admitMessage(c.msgs, now, MSG_RATE);
+      if (verdict !== "run") {
+        if (msg?.type === "request" && verdict === "refuse") { try { ws.send(JSON.stringify({ type: "reply", id: msg.id ?? null, verb: String(msg.verb ?? "").slice(0, 32), ok: false,
+          reply: { ok: false, refused: { code: "rate", reason: `more than ${MSG_RATE} messages a second from this connection: this request wasn't run`, fix: "slow down and send it again" } } })); } catch { /* gone */ } }
+        return;
+      }
 
       // No message may ever kill the process. An uncaught throw in Bun's ws
       // callback EXITS THE SERVER, and a client in a reconnect loop turns one
@@ -921,7 +972,7 @@ const server = Bun.serve({
       try {
       switch (msg.type) {
         case "join": {
-          // upgrade) passes without the door key; everyone else needs
+          // upgrade) passes without the authority key; everyone else needs
           // JOIN_TOKEN as before. Both may be live at once — invite links for
           // the show, Discord login for everyone with the role.
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;
@@ -947,46 +998,49 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
-            snapshots.retire(c);
+            screenshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
-              c.world.broadcast({ type: "leave", id: c.id });
-              c.world.bhv.onPresence("leave", c.id);
+              c.world.broadcast({ type: "leave", id: c.id }); c.world.scripts.onPresence("leave", c.id, c.actorId);
+              if (c.actorId) c.world.log?.departed(c.actorId);
               reapAuxLegs(c.world, c, "primary traveled");
             }
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
-          // the directory of identities this instance has seen (access.ts) —
-          // what lets an owner grant someone who is not here right now
-          if (c.sub) notePrincipal(c.sub, auth ? auth.name : c.id, c.agent ? "agent" : "human");
+          // slice 3c: a world talks only to clients that fold its log. A client that doesn't (an old page, an old agent build) is refused
+          // with the reason; 4005 = a refused join, which clients know not to redial
+          // (an aux surface, e.g. a voice leg, carries presence and audio, never world state: it isn't asked to)
+          if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
+            ws.send(JSON.stringify({ type: "error", error: noFoldRefusal(w.name, !!auth && isNativeSession(auth)) }));
+            ws.close(4005, "this client doesn't fold the log");
+            clients.delete(ws);
+            return;
+          }
+          c.replica = msg.replica === true;
           installJoin(c, w);
+          // speech is arrival-only (R 10-18): this connection hears says after the cut it is about to adopt, and reads back
+          // none at or below it (history, the authority's history) unless it is an admin's (world.ts sayFloor)
+          c.arrivedSeq = w.log.head;
           // The server's clock, just before the snapshot, for a join that asks
-          // (`clock: true`). A browser seeks shared sounds and stamps their
-          // start in server time, and an agent evaluates motion in it
-          // (serverNow in client/lib/remotes.js and mcpl/agent.ts); both learn
-          // it from a message's `t`. The snapshot's own transfer time would
+          // (`clock: true`): the world's authority clock, the one frames and
+          // clock replies carry (spec/PHYSICS.md §5.1). A browser seeks shared
+          // sounds in it, and an agent evaluates motion in it (serverNow in
+          // client/lib/serverclock.js and mcpl/agent.ts); both learn it from a
+          // message's `t`, until a browser's first round trip lands. The snapshot's own transfer time would
           // bias the first sample, so a small message carries it first. A join
           // that doesn't ask gets the messages it always did, so a client that
           // takes the first message after a join as the snapshot still works.
-          if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: Date.now() }));
+          if (msg.clock === true) ws.send(JSON.stringify({ type: "clock", t: authorityNow(w) }));
           ws.send(JSON.stringify(buildSnapshot(w, c)));
+          // the badges already in force: mod-state is broadcast only when the set changes, so a joiner is told it now
+          // (review of #260, server I48)
+          if (w.log) ws.send(JSON.stringify({ type: "mod-state", muted: mutedIn(w.log.sanctions()) }));
           sendGeomFollowup(w, c);
-          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, session: presenceSession(c) }, c);
-          if (!c.spectator) w.bhv.onPresence("enter", c.id);
-          // Whispers that arrived while this identity was away. Held in memory
-          // only — see the `whisper` case for why they must never reach the log.
-          if (!c.spectator) {
-            const held = pendingWhispers.get(whisperKey(w.name, c.id));
-            if (held?.length) {
-              // The client must distinguish catch-up from a live addressed event
-              // for private attention UI. This flag is server-authored, never logged.
-              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
-              pendingWhispers.delete(whisperKey(w.name, c.id));
-              console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
-            }
-          }
+          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, ...(c.declares ? { declares: c.declares } : {}), session: presenceSession(c), ...(c.actorId ? { actorId: c.actorId } : {}), ...(w.log && c.anonymous ? { guest: true } : {}) }, c);
+          if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join (keyed on the identity, never a name)
+          if (!c.spectator) w.scripts.onPresence("enter", c.id, c.actorId);
           console.log(`[world:${w.name}] ${describe(w)}${c.spectator ? ` — ${c.id} watching` : ` — ${c.id} joined`}`);
           break;
         }
@@ -1149,6 +1203,11 @@ const server = Bun.serve({
             // hand the fresh leg a deleted send path.
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+            // the mint retired the old leg, and a retirement resets the id's mute at the SFU (sfuadapter.ts revokeSfuLeg):
+            // forget what this connection last applied, its mute and deafness both, so the sweep applies the sanctions in
+            // force to the new leg (review of #260)
+            c.sfuMuted = undefined;
+            if (c.world.log) sanctionSweep(c.world);
             const transition = JSON.stringify({ type: "surface-transition",
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
             for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
@@ -1158,36 +1217,35 @@ const server = Bun.serve({
           }
         }
         case "voice-moderate": {
-          // 🔴 A3'S THIRD STATE, WHICH DID NOT EXIST (amendment 3, 2026-08-16).
-          // antra: "Define and test three independent states: listener receive
-          // consent OFF/ON; publisher self-mute / pre-encode gate; moderator /
-          // global track mute." We had the first two. setSfuModeratorMute was
-          // implemented, enforced at ingress and unit-tested — and had NO
-          // CALLER outside its own test, because the verb that would reach it
-          // was never written. server.ts even carried a comment saying
-          // "moderator mute is a different verb with a different rank", naming
-          // a verb that did not exist.
-          //
-          // It is NOT a substitute for listener consent: consent is
-          // listener-authored and per-pair; this silences a speaker for
-          // EVERYONE, so it needs moderation rights, not a preference.
-          if (!c.world || !relayEnabled()) return;
+          // Research roles S4 (finding 1): this muted a typed DISPLAY NAME, kept no record, and was lost on a reconnect.
+          // It is now the authority's `mute {channels: ['voice']}` (or `unmute`): keyed on the target's IDENTITY, logged in the
+          // moderator log, gated like every person-act (the mute permission, a target ranked below you), and re-applied on
+          // every join while it lasts (sanctionSweep). The SFU's moderator mute (enforced at ingress) is how it applies.
+          // The target: msg.actorId (an identity), else the PRESENT person whose name is msg.id (never an absent name, so a
+          // name someone typed to dodge or to frame can only ever reach the identity actually standing there).
+          if (!c.world?.log) return;
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          const rights = rightsOf(c.world.state, c.id, c.sub);
-          if (ROLE_RANK[rights.role] < 2) {
-            ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
-            return;
-          }
-          const who = String(msg.id ?? "").slice(0, 64);
-          if (!who) return;
+          const w = c.world;
+          const target = typeof msg.actorId === "string" ? msg.actorId : [...w.clients].find((t) => t.id === String(msg.id ?? "") && (t.surface ?? "world") === "world" && !t.spectator)?.actorId;
+          if (!target) { ws.send(JSON.stringify({ type: "error", error: "nobody here by that name to mute" })); return; }
           const muted = msg.muted === true;
-          setSfuModeratorMute(c.world.name, who, muted);
-          // Moderation is world-visible by design: a silence nobody can see the
-          // cause of is indistinguishable from a bug, and that ambiguity is
-          // what makes moderation feel arbitrary.
-          const note = JSON.stringify({ type: "voice-moderated", id: who, muted, by: c.id });
-          for (const t of c.world.clients) t.ws.send(note);
-          console.log(`[world:${c.world.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${who} for everyone`);
+          const minutes = typeof msg.minutes === "number" ? msg.minutes : 60;
+          // the voice control's unmute lifts a VOICE mute: one that also covers chat is lifted where its whole record is
+          // (Moderation › Bans, /unmute), not ended quietly from a voice button (review 10-07)
+          if (!muted && w.log.mutedHere(target, "chat")) { ws.send(JSON.stringify({ type: "error", error: "that mute covers chat too: lift it in Moderation › Bans (or /unmute)" })); return; }
+          // through the request path (review r14 M1, 10-18): one capability, the connection's queue, the meters, both recheck seams
+          void requestAs(c, ws, w, muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
+            .then((r: any) => {
+              if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
+              sanctionSweep(w);
+              guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
+              if (muted) for (const t of w.clients) if (t.actorId === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
+              // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug
+              const name = [...w.clients].find((t) => t.actorId === target)?.id ?? target;
+              const note = JSON.stringify({ type: "voice-moderated", id: name, actorId: target, muted, by: c.id, ...(muted ? { until: r.until } : {}) });
+              for (const t of w.clients) { try { t.ws.send(note); } catch { /* gone */ } }
+              console.log(`[world:${w.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${name} (${target}) for everyone`);
+            });
           return;
         }
         case "voice-consent": {
@@ -1210,8 +1268,9 @@ const server = Bun.serve({
           // OWN keys only: a type such as "__proto__" or "constructor" must
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
-          const h = typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined;
-          if (h) h({ c, ws, now, expel }, msg);
+          // every world speaks the protocol: the authority's own types first (server/requestwire.ts), then the room's (presence, voice, chat lanes)
+          const h = requestHandler(msg.type) ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
+          if (h && !gagged(c, String(msg.type))) h({ c, ws, now, expel, sweep: sanctionSweep }, msg);
         }
       }
       } catch (err) {
@@ -1236,7 +1295,10 @@ registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
   for (const w of worlds.values()) {
     try {
     if (w.dirty.size === 0) continue;
-    const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: Date.now(), poses: Object.fromEntries(w.dirty) });
+    // t is the AUTHORITY's clock (spec/PHYSICS.md §5.1: max(last entry ts, wall), the one that stamps entries' ts), never
+    // raw wall time: in a world whose log runs ahead of the wall clock, a client drawing flights at serverNow() drew them
+    // at the wrong tick (physseeds SV1)
+    const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: authorityNow(w), poses: Object.fromEntries(w.dirty) });
     w.dirty.clear();
     if (RECORD) {
       if (!w.recPath) {
@@ -1255,31 +1317,16 @@ registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
   }
 } });
 
-// Stale-lease sweep: a holder that stops streaming (hung tab, wedged plugin)
-// loses the object — committed at its last known transform, like a
-// disconnect. Nothing hovers forever; nothing stays possessed.
-registerSystem({ name: "lease-sweep", everyMs: 5_000, fn: (now) => {
-  for (const w of worlds.values()) {
-    // per-world guard (house rule 3): settleLease appends to disk
-    try {
-      for (const [id, L] of [...w.leases]) {
-        if (now - L.lastAt > LIMITS.LEASE_SWEEP_MS) {
-          w.debug("lease-swept", { id, holder: L.holder.id });
-          w.settleLease(id);
-        }
-      }
-    } catch (err) { console.error(`[world:${w.name}] lease sweep`, err); }
-  }
-} });
-
 // The heartbeat starts once every system is on it — the base is the finest
 // cadence in the registry (stage frames); everything coarser rides it.
 startTick(FRAME_MS);
 
-// Fold on the way out so a restart resumes from the snapshot rather than
-// re-reading a tail that was already folded in memory.
+// On the way out, everyone connected sleeps where they stand (every log line is already on disk: the authority appends
+// and fsyncs each one before its request returns).
 let shuttingDown = false;
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
+// Windows has no SIGTERM: Ctrl+C, Ctrl+Break (SIGBREAK) and closing the console (SIGHUP) run this; taskkill /F can't be caught
+// (the next boot then folds the whole log: correct, slower). SIGHUP is Windows-only: nohup's ignore stays on POSIX (review L23)
+for (const sig of ["SIGINT", "SIGTERM", ...(process.platform === "win32" ? ["SIGBREAK", "SIGHUP"] : [])]) {
   process.on(sig, () => {
     if (shuttingDown) process.exit(0);
     shuttingDown = true;
@@ -1289,21 +1336,21 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
       // client that also vanished during the restart window woke at its
       // PREVIOUS remembered spot instead of where it stood.
       for (const c of w.clients) {
-        if (!c.spectator && !c.superseded && c.lastPose) w.rememberPose(c.id, c.lastPose);
+        if (!c.spectator && !c.superseded && c.lastPose && c.actorId && !c.anonymous) w.rememberPose(c.actorId, c.lastPose);
       }
-      if (w.entries.length) w.fold("shutdown");
-      // fold only runs on a non-empty tail — a world whose batch is armed
-      // but whose tail was just folded still owes the file its last lines
-      try { w.flushLog(); } catch (err) { console.error(`[world:${w.name}] shutdown flush failed`, err); }
+      w.log.checkpointSim();    // a sim checkpoint, so the next boot replays little into the engine (authority checkpointSim)
+      w.log.saveStateCache();   // the fold cache, so the next boot folds only what comes after (server/statecache.ts)
     }
     process.exit(0);
   });
 }
 
-console.log(`eidoverse-worlds sequencer on http://${process.env.HOST ?? "0.0.0.0"}:${PORT}`);
+console.log(`eidoverse-worlds sequencer on http://${HOST}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
-if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");
+{ const t = mintSetupToken(); if (t) console.log(`  ${setupLine(t)}`); }   // first run: the one place the token is printed (server/setup.ts)
+if (TRUST_NAMES) console.log(`  ⚠ TRUST_NAMES=1: a typed name IS an account here (local:<name>). Private servers only: anyone who can reach ${HOST}:${PORT} can be anyone.`);
+if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the server is OPEN. Fine on a tailnet, wrong on a public box.");
 // A fresh clone without the client's install step serves a client that can
 // never wake: the importmap points `three` at client/node_modules, every
 // module import 404s, and the splash used to sit at "waking the engine"

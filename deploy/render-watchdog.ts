@@ -36,7 +36,7 @@ const BOOT_GRACE_SEC = Number(process.env.BOOT_GRACE_SEC ?? 45);
 const VERSION_URL = `${SHOW_URL}/client-version`;
 
 // ROAM=1: a roaming renderer — it starts in WORLD and the server sends it to any world a snapshot is asked of
-// where no renderer is serving (server/snapshots.ts). Its name says so: mac-gpu-roam-<WORLD>.
+// where no renderer is serving (server/screenshots.ts). Its name says so: mac-gpu-roam-<WORLD>.
 const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
 // lite=0: the client's boot tripwire (index.html, `ew-boot-attempt:<world>`)
 // demotes a device to the engine-less LITE client when its last full boots were

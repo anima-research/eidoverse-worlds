@@ -1,0 +1,385 @@
+# Registry changelog
+
+Every re-pin of spec/registry-pin.json that changed, removed or narrowed a trial or reserved component (PROTOCOL §4 Status;
+docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pin --ack "<why>"`, newest last.
+
+- 2026-10-16: shape audit wave 1 (R 10-16): training-consent removed (a server's terms); imported-epoch merged into imported:epoch; roles.sub dropped (no person data); capacity and script-settings are policy numbers with no pinned defaults (absent = this server's default), script-settings trimmed to {run, max, budget, cpu}. First pin with status, ranges, required, keyPattern/maxKeys, itemEnums, scopeFields and writtenBy.
+  - imported-epoch: the name is gone (a registered name is read forever)
+  - roles.sub: type any → gone
+  - training-consent: the name is gone (a registered name is read forever)
+  - capacity.entities: default 10000 → gone
+  - capacity.guestEntities: default 500 → gone
+  - capacity.avatar: default 2000 → gone
+  - script-settings.install: type string → gone
+  - script-settings.rate: type int → gone
+  - script-settings.depth: type int → gone
+  - script-settings.fails: type int → gone
+  - script-settings.runs: type int → gone
+  - script-settings.run: default true → gone
+  - script-settings.install: default "builder" → gone
+  - script-settings.max: default 12 → gone
+  - script-settings.budget: default 600 → gone
+  - script-settings.rate: default 6 → gone
+  - script-settings.depth: default 8 → gone
+  - script-settings.fails: default 5 → gone
+  - script-settings.cpu: default 2000 → gone
+  - script-settings.runs: default 60 → gone
+  - script-settings.install: "builder" is no longer allowed
+  - script-settings.install: "owner" is no longer allowed
+- 2026-10-17: shape audit wave 2 (R 2026-10-16, all components trial): attach-interact (socket = attach point + station; sockets lift-only; one home; grabbable/reactions/look-at/places/spawn/lock settled), physics-motion (transform pinned per glTF; parent −order; pivot; motion trims + load repair; physics.kind required, 8 reserved props, material→surface, kinematic stamps; collider exact→mesh; joint = skeleton, physics-joint reserved; structure/surface/stage pinned), render-media-env (light decay/daytime/on, −shadows; picture −part −flip; captions current line; sky 19→14 radians; grass one spelling; particles addresses; terrain defaults = sim law, raster reserved, water split; label on); reserved names material anim-clip anim-states camera zone video joint physics-joint spring-joint link tags. Per-wave detail: notes shape-audit/w2-*-acks.md
+  - transform.pos: its range narrowed (its lower bound rose): {} → {"min":-100000,"max":100000}
+  - transform.scale: its range narrowed (its lower bound rose): {} → {"min":-1000,"max":1000}
+  - collider.shape: "exact" is no longer allowed
+  - stage.speaker: type any → string
+  - stage.speaker: its range narrowed (its maxLen fell): {} → {"maxLen":80}
+  - parent.order: type string → gone
+  - parent.order: default "a0" → gone
+  - parent.to: now required
+  - light.shadows: type bool → gone
+  - light.day: type bool → gone
+  - light.shadows: default false → gone
+  - light.day: default true → gone
+  - motion.part: type string → gone
+  - motion.amplitude: type number → gone
+  - motion: a conditional default changed: {"if":{"type":"pendulum"},"absent":["amp","amplitude"],"set":{"amp":0}}
+  - motion: a conditional default changed: {"if":{"type":"bob"},"absent":["amp","amplitude"],"set":{"amp":0.3}}
+  - motion.type: now required
+  - sockets: status trial → reserved
+  - socket.body: type object → gone
+  - socket.accepts: its range narrowed (its maxItems fell): {} → {"maxItems":8}
+  - socket.radius: its range narrowed (its lower bound rose): {} → {"min":0.02,"max":1}
+  - socket.body: its meaning of absence "things only: no person attaches here" → gone
+  - home.scale: type any → vec3
+  - home.parent: type any → object
+  - home.pos: now required
+  - home.scale: its meaning of absence "its size in the world is kept as it is when the reset runs" → "its size in the world is kept as it is when it goes home"
+  - places: keys any → ^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$
+  - physics.material: type string → gone
+  - physics.friction: type number → gone
+  - physics.restitution: type number → gone
+  - physics.linearDamping: type number → gone
+  - physics.angularDamping: type number → gone
+  - physics.centerOfMass: type vec3 → gone
+  - physics.ccd: type bool → gone
+  - physics.layers: type int → gone
+  - physics.mask: type int → gone
+  - physics.frictionCombine: type string → gone
+  - physics.restitutionCombine: type string → gone
+  - physics.kind: default "dynamic" → gone
+  - physics.frictionCombine: "average" is no longer allowed
+  - physics.frictionCombine: "min" is no longer allowed
+  - physics.frictionCombine: "multiply" is no longer allowed
+  - physics.frictionCombine: "max" is no longer allowed
+  - physics.restitutionCombine: "average" is no longer allowed
+  - physics.restitutionCombine: "min" is no longer allowed
+  - physics.restitutionCombine: "multiply" is no longer allowed
+  - physics.restitutionCombine: "max" is no longer allowed
+  - physics.kind: now required
+  - physics.mass: its meaning of absence "kg; absent, density × the volume of its stamped shape (shapes.js shapeVolume; a convex, mesh or compound shape's baked geometry). Never a constant" → "kg; absent, density × the volume of its stamped shape at its scale (shapes.js shapeVolume; shared/shove.js massOf). Today that shape is its measured bounding box, so a chair weighs as a solid box of its density; eidosim's flight computes the same (shared/sim.js: 1000 kg/m³ × its box) and reads no mass yet. Never a constant"
+  - physics.density: its meaning of absence "kg/m³; absent, its material's surface density, else 1000 kg/m³ (water)" → "kg/m³; absent, its surface's density, else 1000 kg/m³ (water: eidosim's, shared/sim.js DENSITY)"
+  - physics.material: its meaning of absence "a surface:<name> on @world; absent (or naming no surface there now), friction and restitution are its own fields', else the engine's own law" → gone
+  - physics.friction: its meaning of absence "≥ 0, one coefficient (static = dynamic); absent, its material's, else the engine's own law (eidosim: its fixed constants)" → "≥ 0, one coefficient (static = dynamic); absent, its surface's, else the engine's own law (eidosim: its fixed constants)"
+  - physics.restitution: its meaning of absence "0..1; absent, its material's, else the engine's own law (eidosim: its fixed bounce)" → "0..1; absent, its surface's, else the engine's own law (eidosim: its fixed bounce)"
+  - physics.frictionCombine: its meaning of absence "average|min|multiply|max, how its friction meets another's (the higher in that order wins); absent, its material's, else average" → "average|min|multiply|max, how its friction meets another's (the later in that list wins, PhysX's priority); absent, its surface's, else average"
+  - physics.restitutionCombine: its meaning of absence "average|min|multiply|max, as frictionCombine; absent, its material's, else max" → "average|min|multiply|max, as frictionCombine; absent, its surface's, else max"
+  - physics.centerOfMass: its meaning of absence "[x, y, z] m in its own frame; absent, the centroid of its stamped shape" → "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape"
+  - physics.ccd: its meaning of absence "true: swept (continuous) collision for this body; absent, the engine's own law (eidosim sweeps every body)" → gone
+  - physics.layers: its meaning of absence "32-bit collision layers it is in; absent, 1 (the first)" → gone
+  - physics.mask: its meaning of absence "32-bit layers it collides with (both sides must accept); absent, all (0xffffffff)" → gone
+  - physics-engine.build: type any → string
+  - physics-engine.tickMs: its range narrowed (its lower bound rose): {} → {"min":16,"max":1000}
+  - physics-engine.engine: now required
+  - surface: status trial → reserved
+  - joint: keyed true → undefined
+  - joint.to: type ref → gone
+  - joint.type: type string → gone
+  - joint.anchor: type vec3 → gone
+  - joint.axis: type axis → gone
+  - joint.limits: type array → gone
+  - joint.drive: type object → gone
+  - joint.breakForce: type number → gone
+  - joint.type: "fixed" is no longer allowed
+  - joint.type: "hinge" is no longer allowed
+  - joint.type: "slider" is no longer allowed
+  - joint.type: "ball" is no longer allowed
+  - joint.type: "distance" is no longer allowed
+  - joint.type: "spring" is no longer allowed
+  - picture.part: type string → gone
+  - picture.flip: type bool → gone
+  - picture.flip: default false → gone
+  - look-at.offset: type vec3 → gone
+  - look-at.forward: default "z" → [0,0,1]
+  - look-at.up: default "y" → [0,1,0]
+  - look-at.speed: default 240 → 4.1887902047863905
+  - look-at.speed: its range narrowed (its max fell): {"min":0,"max":3600} → {"min":0,"max":62.83185307179586}
+  - look-at.yaw: its range narrowed (its lower bound rose): {} → {"min":-3.141592653589793,"max":3.141592653589793}
+  - look-at.pitch: its range narrowed (its lower bound rose): {} → {"min":-1.5707963267948966,"max":1.5707963267948966}
+  - captions.mediaTime: type number → gone
+  - captions.window: type array → gone
+  - captions.title: its range narrowed (its maxLen fell): {} → {"maxLen":120}
+  - captions.session: now required
+  - captions.n: now required
+  - sky.clock: type string → gone
+  - sky.dormantRated: type object → gone
+  - sky.weatherSeconds: type number → gone
+  - sky.sun: type number → gone
+  - sky.fill: type number → gone
+  - sky.world: type string → gone
+  - sky.hours: its range narrowed (its lower bound rose): {} → {"min":0,"max":24}
+  - sky.rate: its range narrowed (its lower bound rose): {} → {"min":-1000,"max":1000}
+  - sky.azimuth: its range narrowed (its lower bound rose): {} → {"min":-6.283185307179586,"max":6.283185307179586}
+  - sky.fog: its range narrowed (its lower bound rose): {} → {"min":0}
+  - sky.exposure: its range narrowed (its lower bound rose): {} → {"min":0}
+  - sky.ambient: its range narrowed (its lower bound rose): {} → {"min":0}
+  - sky.weatherK: its range narrowed (its lower bound rose): {} → {"min":0,"max":2}
+  - sky.tz: its range narrowed (its maxLen fell): {} → {"maxLen":64}
+  - grass.bladeHeight: type number → gone
+  - grass.spacing: type number → gone
+  - grass.perCell: type number → gone
+  - grass.colorTip: type number → gone
+  - grass.preset: type string → gone
+  - structure.tile: its range narrowed (its lower bound rose): {} → {"gt":0,"max":100}
+  - structure.wallH: its range narrowed (its lower bound rose): {} → {"gt":0,"max":100}
+  - structure.wallT: its range narrowed (its lower bound rose): {} → {"gt":0,"max":10}
+  - structure.slabT: its range narrowed (its lower bound rose): {} → {"gt":0,"max":10}
+  - particles.preset: type string → gone
+  - particles.origin: type array → gone
+  - particles.count: type number → gone
+  - particles.quality: type string → gone
+  - particles.size: type number → gone
+  - particles.area: type any → gone
+  - particles.texture: type string → gone
+  - particles.speed: type number → gone
+  - particles.opacity: type number → gone
+  - particles.lifetime: type number → gone
+  - particles.effect: now required
+  - particles.effect: its meaning of absence "an older value (the first protocol's): its preset names the effect, and its count, size, opacity, speed, lifetime, area, texture and quality are that effect's params of the same names" → gone
+  - particles.at: its meaning of absence "[0, 0, 0] in its own frame; in an older value, its origin" → "[0, 0, 0] in its own frame"
+  - particles.params: its meaning of absence "none: the effect's own defaults (in an older value, its own knobs: see effect)" → "none: the effect's own defaults"
+  - spawn.radius: its range narrowed (its lower bound rose): {} → {"min":0,"max":100}
+  - spawn.pos: now required
+  - terrain.blob: type string → gone
+  - terrain.w: type int → gone
+  - terrain.h: type int → gone
+  - terrain.spacing: type number → gone
+  - terrain.origin: type array → gone
+  - terrain.format: type string → gone
+  - terrain.layers: type any → array
+  - terrain.water: type any → gone
+  - terrain.layers: its range narrowed (its maxItems fell): {} → {"maxItems":8}
+  - terrain.heightmap: its meaning of absence "no image: the noise (or raster) is the base" → "no image: the noise is the base"
+  - terrain.water: its meaning of absence "no water: dry ground everywhere" → gone
+- 2026-10-17: motion gains node (a keyed motion's node name is data, motion:<slot> {node}; review r7 F1); motion.part's dropped pointer reworded
+- 2026-10-17: imported-behavior.attach holds an entity id: typed ref so a delete clears it, lint finds it dangling, copy/merge rebind it (R 10-17 ID HARDENING 4)
+  - imported-behavior.attach: type string → ref
+- 2026-10-17: names (R 10-17 14:34): @world trusted → trusted-components (the bare word read as a list of trusted people); stored values renamed at every load by the system's rename-components act (shaperepair.js RENAMED_COMPONENTS)
+  - trusted: the name is gone (stored values need a repair or a translation; a stable name never goes)
+- 2026-10-17: names (R 10-17 15:09/15:11): grabbable.pose and station.pose → anim (an open name of a pose or a clip; a name the body doesn't know is its default, never a refusal; grabbable's two-hand is twoHanded), a grip's fingers → grasp; anim-pose reserved beside anim-clip. A write in the old spelling is taken and stored in the new (writes.js); stored values renamed at every load by rename-components (shaperepair.js RENAMED_FIELDS)
+  - station.pose: type any → gone
+  - station: a conditional default changed: {"if":{"action":"sit"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"ride"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"drive"},"set":{"pose":"sitchair"}}
+  - station: a conditional default changed: {"if":{"action":"lie"},"set":{"pose":"lie"}}
+  - station: a conditional default changed: {"if":{"action":"kneel"},"set":{"pose":"sit"}}
+  - station: a conditional default changed: {"if":{"action":"stand"},"set":{"pose":"idle"}}
+  - station: a conditional default changed: {"absent":["pose"],"set":{"pose":"sitchair"}}
+  - grabbable.pose: type string → gone
+  - grabbable.pose: "hand" is no longer allowed
+  - grabbable.pose: "carry" is no longer allowed
+  - grabbable.pose: "torch" is no longer allowed
+  - grabbable.pose: "pistol" is no longer allowed
+  - grabbable.pose: "two-hand" is no longer allowed
+  - grabbable.pose: "shoulder" is no longer allowed
+  - grabbable.pose: its meaning of absence "by size: one hand under 0.5 m, both arms at or above; two-hand if twoHanded" → gone
+- 2026-10-18: names (R 10-17 21:40): motion.type bob → oscillate (a sinusoidal back-and-forth along an axis; bob read as a float only); the door takes bob for one release and stores oscillate; stored values renamed at every load by the system's rename-components act (shaperepair.js RENAMED_FIELDS motion, names.js motionType)
+  - motion: a conditional default changed: {"if":{"type":"bob"},"set":{"axis":[0,1,0],"period":4,"phase":0}}
+  - motion: a conditional default changed: {"if":{"type":"bob"},"absent":["amp"],"set":{"amp":0.3}}
+  - motion.type: "bob" is no longer allowed
+  - motion.period: its meaning of absence "pendulum: 3.5 s; spin and orbit: their degPerSec; bob: 4 s" → "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s"
+  - motion.amp: its meaning of absence "pendulum 0 (still); bob 0.3 m" → "pendulum 0 (still); oscillate 0.3 m"
+  - motion.axis: its meaning of absence "pendulum [1, 0, 0]; spin and bob [0, 1, 0]" → "pendulum [1, 0, 0]; spin and oscillate [0, 1, 0]"
+- 2026-10-18: roles.until and access.watch added (upstream #258 world access, ported 10-17): a timed grant, and who may watch a world that admits only people listed; each states its meaning of absence
+- 2026-10-18: kernel (reviewer item 5, 10-18): transform and parent are the kernel's, status trial-kernel: a change to either is refused by the gate unless the same change carries a translator, a changelog line and old-reader/new-reader vectors (shared/protocol/kernelspec.js, tools/protocol/kernel-check.ts, spec/kernel-pin.json)
+  - transform: status trial → trial-kernel
+  - parent: status trial → trial-kernel
+- 2026-10-19: kernel scope (reviewer item 5, 10-18): model, roles and access are the kernel's, status trial-kernel: a change to any of them is refused by the gate unless the same change carries a translator, a changelog line and old-reader/new-reader vectors (shared/protocol/kernelspec.js, tools/protocol/kernel-check.ts, spec/kernel-pin.json)
+  - model: status trial → trial-kernel
+  - roles: status trial → trial-kernel
+  - access: status trial → trial-kernel
+- 2026-10-19: kernel: scope extension (reviewer item 5, 10-18): model, roles (with the ladder's grammar) and access (with the four doors) entered the kernel with the shapes the registry pinned; no stored byte changes meaning, so no translator or vectors; from now on a change to any of them is a kernel change
+  - model: absent → (the registry's pinned shape, now the kernel's)
+  - roles: absent → (the registry's pinned shape, now the kernel's)
+  - access: absent → (the registry's pinned shape, now the kernel's)
+- 2026-10-21: recut B2 (R 10-20 'a soft barrier by rank'; house 21:59Z): a lock is just true; its strength is its setter's rank now, read from the log at check time. The 10-07 {rank} levels are gone: no stored world used one (8 stored locks, all true). A stored {rank} still reads as locked.
+  - lock.rank: type string → gone
+  - lock.rank: default "builder" → gone
+  - lock.rank: "builder" is no longer allowed
+  - lock.rank: "moderator" is no longer allowed
+  - lock.rank: "owner" is no longer allowed
+- 2026-10-21: kernel: recut C11 (house markup 10-20, plan C11): the kernel holds what the fold reads; roles and access keep their component shape, and the ladder's vocabulary moves to the registry pin (roles.vocab: a change still needs --ack, never silent). No stored byte changes meaning.
+  - roles.rank: leaves the kernel; the registry pin holds it (roles.vocab.rank)
+  - roles.builtin: leaves the kernel; the registry pin holds it (roles.vocab.builtin)
+  - roles.permissions: leaves the kernel; the registry pin holds it (roles.vocab.permissions)
+  - roles.customId: leaves the kernel; the registry pin holds it (roles.vocab.customId)
+  - roles.reserved: leaves the kernel; the registry pin holds it (roles.vocab.reserved)
+  - roles.lockLevels: leaves every pin: unread since recut B2 (a lock is true; its strength is its setter's rank); LOCK_LEVELS deleted
+  - access.doors: leaves every pin: client presets that write access fields; no stored byte names a door
+- 2026-10-21: 'ghost' is no longer a reserved role id (R 10-21): it was a sanction, removed entirely in recut B4, never a role a grant named; the future neutral role is 'spectator' (wishlisted), so nothing needs the old name held
+  - roles.reserved: vocabulary ["banned","everyone","ghost","guest","none","owner"] → ["banned","everyone","guest","none","owner"]
+- 2026-10-21: the base rung is inhabitant (R 10-21: rungs named for what they let you do; 'everyone' read as inclusive, 'participant' is already the code's noun for anyone present); visitor is its old word (read as inhabitant, stored as inhabitant, rewritten by the maintenance command; pinned as roles.vocab.renamed). none is gone (a ban or a mute does its job; a stored grant reads as no grant). guest and everyone are no longer reserved: guest is an account state, everyone a consent tier. grabbable.who and physics.who default to inhabitant (the same rung, the new word)
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"visitor"}}
+  - grabbable.who: default "visitor" → "inhabitant"
+  - grabbable.who: its meaning of absence "visitor" → "inhabitant"
+  - roles.rank: vocabulary {"none":-1,"visitor":0,"builder":100,"moderator":200,"owner":255} → {"inhabitant":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["visitor","builder","moderator","owner"] → ["inhabitant","builder","moderator","owner"]
+  - roles.reserved: vocabulary ["banned","everyone","guest","none","owner"] → ["banned","owner"]
+- 2026-10-21: roles.vocab.retired: none and visitor are retired words (a stored value in either still reads with its old meaning), so neither can name a custom role; found by role-grammar: none had become a valid custom id
+- 2026-10-21: visitor and none are released (R 10-21): no stored world of this protocol outside this PR's own tests carries them (#260 is unmerged; v1 worlds come in through translate-v1@17, which still maps v1's visitor to inhabitant and carries spectator/none as imported-roles), so nothing reads the old words: no rename table, no retired words. A dev world built on #260 before today keeps grabbables whose who says visitor, an undefined role there (owners only until recreated)
+  - roles.renamed: vocabulary {"visitor":"inhabitant"} → gone
+  - roles.retired: vocabulary ["none","visitor"] → gone
+- 2026-10-21: the base rung is inhabitant, not player (R 10-21): neutral and lasting (you belong here and may make it home), where player read casual; not visitor, which sat too close to guest (the conventional word for no account, a different axis). grabbable.who and physics.who default to inhabitant
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"player"}}
+  - grabbable.who: default "player" → "inhabitant"
+  - grabbable.who: its meaning of absence "player" → "inhabitant"
+  - roles.rank: vocabulary {"player":0,"builder":100,"moderator":200,"owner":255} → {"inhabitant":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["player","builder","moderator","owner"] → ["inhabitant","builder","moderator","owner"]
+- 2026-10-21: who names what it admits (recut item 8; house: 'who as rank is a corner'): grabbable.who, physics.who and station.who widen from a role id to a role id | {permission} | {roles: [...]}. A widening: every stored value (a role id) keeps its meaning, so no translator
+  - station.who: type string → any
+  - physics.who: type string → any
+  - grabbable.who: type string → any
+- 2026-10-21: engine identity (house answer, #260 2026-10-21): an engine is named by its version, held to its conformance digests (spec/conformance/physics/), so physics-engine.build (a source-file hash) leaves; the terrain law now says the digests hold it, not the hash
+  - physics-engine.build: type string → gone
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, pinned by EIDOSIM_BUILD (then features and heightmap: shared/terrainshape.js)" → "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)"
+- 2026-10-21: normative: engine identity E4 (house answer, #260 2026-10-21): foreign-engine names a version, not a build, and covers a grab or delete that would set a resting thing falling, which only the world's engine computes
+  - refusal foreign-engine: {"meaning":"the world runs a build this server doesn't carry","when":"a launch in a world whose physics build is another server's"} → {"meaning":"the world runs an engine version this server doesn't carry","when":"what only that engine computes: a launch, or a grab or delete that would set a resting thing falling"}
+- 2026-10-21: normative: house markup (#260 2026-10-20), accepted: the record-altered write lockout comes out; §12 still detects a value stripped without a purge (the fold's commit-unpurged diagnostic, the value read as unknown)
+  - refusal record-altered: gone (old logs may hold it)
+- 2026-10-22: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads'): transform, parent and model leave the kernel, since the fold never reads them; they are ordinary trial components again
+  - transform: status trial-kernel → trial
+  - model: status trial-kernel → trial
+  - parent: status trial-kernel → trial
+- 2026-10-22: kernel: C11b, the house's plan (#260 2026-10-20: 'trim the kernel pin to what the fold reads; roles/access keep at most their component shape'): transform, parent and model leave the kernel (the fold never reads them); roles and access keep their field shape only, their ranges, enums and meanings held by the registry pin
+  - transform: leaves the kernel; the registry pin holds it
+  - parent: leaves the kernel; the registry pin holds it
+  - model: leaves the kernel; the registry pin holds it
+  - roles.absentMeans: leaves the kernel; the registry pin holds it
+  - roles.keyed: leaves the kernel; the registry pin holds it
+  - roles.on: leaves the kernel; the registry pin holds it
+  - access.enums: leaves the kernel; the registry pin holds it
+  - access.ranges: leaves the kernel; the registry pin holds it
+  - access.absentMeans: leaves the kernel; the registry pin holds it
+  - access.on: leaves the kernel; the registry pin holds it
+- 2026-10-22: sky.law and terrain.law no longer define the law by naming reference code; the law is pinned as data in spec/conformance/laws.json (the house's view, #260 10-20)
+  - sky.law: its meaning of absence "forecast@1: shared/forecast.js segmentAt's draw order (dwell, then state, then intensity) per (seed, segment) at this commit" → "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
+  - terrain.law: its meaning of absence "the ground's height is shared/terrainmath.js makeHeightField over these numbers, held by eidosim's conformance digests (engine-check) (then features and heightmap: shared/terrainshape.js)" → "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
+- 2026-10-22: surface, terrain-grid and terrain-tile stay reserved by name with no shape pinned, and physics' reserved fields lose their pre-pinned units/ranges/enums: pre-shaping builds ahead of any world (the house's view, #260 10-20); the sketches are docs/RESERVED-SHAPES.md
+  - surface.friction: type number → gone
+  - surface.restitution: type number → gone
+  - surface.density: type number → gone
+  - surface.frictionCombine: type string → gone
+  - surface.restitutionCombine: type string → gone
+  - surface.label: type string → gone
+  - surface.frictionCombine: "average" is no longer allowed
+  - surface.frictionCombine: "min" is no longer allowed
+  - surface.frictionCombine: "multiply" is no longer allowed
+  - surface.frictionCombine: "max" is no longer allowed
+  - surface.restitutionCombine: "average" is no longer allowed
+  - surface.restitutionCombine: "min" is no longer allowed
+  - surface.restitutionCombine: "multiply" is no longer allowed
+  - surface.restitutionCombine: "max" is no longer allowed
+  - surface.friction: its meaning of absence "the engine's own law" → gone
+  - surface.restitution: its meaning of absence "the engine's own law" → gone
+  - surface.density: its meaning of absence "the engine's own" → gone
+  - surface.frictionCombine: its meaning of absence "average" → gone
+  - surface.restitutionCombine: its meaning of absence "max" → gone
+  - surface.label: its meaning of absence "its key" → gone
+  - terrain-grid.spacing: type number → gone
+  - terrain-grid.tile: type int → gone
+  - terrain-grid.origin: type array → gone
+  - terrain-grid.extent: type array → gone
+  - terrain-grid.limits: type object → gone
+  - terrain-tile.mm: type array → gone
+- 2026-10-22: readChat joins the closed permission list: reading speech back past your arrival is a permission a role holds, not 'the owner' named in the protocol (the house's view, #260 10-20)
+  - roles.permissions: vocabulary ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles"] → ["build","editOthers","editWorld","generate","fly","scripts","pauseScripts","mute","kick","ban","grantRoles","readChat"]
+- 2026-10-22: normative: readback act:* row: an engine is chosen by version (name@version) since engine identity replaced the build hash; the row's words follow (pre-review of the 0246cd16 push)
+  - readback act:*: {"fields":["request.label","request.id","request.component","request (a physics-engine build it typed)"],"unknown":"no label match; an unknown chooser of an engine build is the owner's: never restamped"} → {"fields":["request.label","request.id","request.component","request (a physics-engine version it typed)"],"unknown":"no label match; an unknown chooser of an engine version is the owner's: never restamped"}
+- 2026-10-22: normative: nothing-to-reset also covers a reset whose every target is skipped (each skip says why) or that names none
+  - refusal nothing-to-reset: {"meaning":"everything is already home","when":"a reset whose targets are all at home"} → {"meaning":"nothing was reset: every target was already home or was skipped, each skip saying why","when":"a reset whose targets are all at home or all skipped, or that names none"}
+- 2026-10-27: water port step 1 (DESIGN.md env-components, the combine law): zone opens (trial: shape box|sphere|capsule|cylinder, size, radius, height, priority, blend, weight, global; after OMI_physics_shape, Godot Area3D, Unity Volume); water may sit on @world (the world's level, unchanged) or on a thing (a body filling its sibling zone), so it loses on: world, level means the surface in its entity's frame on both sides, kind gains lake and pool, a thing's flow may be [x, y, z]; water gains waves, attenuationColor/attenuationDistance (KHR_materials_volume), scatterColor, density, drag; water-exclusion joins (Unreal's Water Body Exclusion Volume). No stored value changes meaning: no world held zone, and water was @world's alone
+  - water: on "world" → undefined
+  - water.level: its meaning "the water's surface height, metres (world y)" → "its surface height, metres, in its entity's frame (the world's on @world; on a thing, absent: its zone's top)"
+  - water.kind: its meaning "still | river | ocean" → "still | river | ocean | lake | pool"
+  - water.flow: its meaning "a current [x, z], metres a second" → "a current, metres a second: [x, z] on @world; on a thing [x, z] or [x, y, z], in its own frame"
+  - zone: status reserved → trial
+- 2026-10-27: deferred-features port step 3a (DESIGN.md env-components, the laws): collision off is collider {enabled} (Godot CollisionShape3D.disabled, Unity Collider.enabled, Roblox CanCollide), so physics.kind none means not simulated and is still solid: this protocol is unreleased and no world held physics none but the gate's own fixtures, migrated (phys-check, models-field-test); a dev/test world that stored physics {kind: 'none'} meaning walk-through gets collider {enabled: false} beside it by hand. light.kind gains directional (KHR_lights_punctual: a sun); spawn gains yaw; spawn-point joins (OMI_spawn_point); climb joins (Godot Path3D + PathFollow3D; upstream main #248 traversal); sky gains gradient (OMI_environment_sky; rate: 0 already pins the clock). No stored value changes meaning but physics none's solidity
+  - light.kind: its meaning "point (shines every way) or spot (a cone along its -Z)" → "point (shines every way), spot (a cone along its -Z) or directional (a sun: parallel light along its -Z everywhere, KHR_lights_punctual's; range and decay unread; the first by id is the renderer's sun)"
+  - physics.kind: its meaning "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)" → "dynamic (falls, tumbles, can be pushed) | static (never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (not simulated: the engine never moves it). Whether it is solid is collider.enabled's, never the kind's"
+- 2026-10-27: deferred-features port step 3b (DESIGN.md env-components): a floor is the ground, terrain {kind: 'flat', height} (m), level everywhere; the noise numbers' defaults now apply only to kind noise (a when rule), so no stored noise value changes meaning, and a flat value takes none of them
+  - terrain.seed: default 1 → gone
+  - terrain.size: default 80 → gone
+  - terrain.amplitude: default 3 → gone
+  - terrain.octaves: default 4 → gone
+  - terrain.frequency: default 2.5 → gone
+  - terrain.flatRadius: default 0 → gone
+  - terrain.flatHeight: default 0 → gone
+  - terrain.kind: its meaning "the base's kind: noise (a raster kind is reserved)" → "the base's kind: noise, or flat (level ground at height; a raster kind is reserved)"
+- 2026-10-27: normative: deferred-features port step 3b: KillZ is the authority's to judge (doesnt-apply names a below-bounds respawn for a body it last knew above the bounds); spawn names the spawn-point things beside @world.spawn
+  - refusal doesnt-apply: {"meaning":"that argument doesn't go with the mode you chose","when":"a place argument whose modes exclude the chosen one"} → {"meaning":"that argument doesn't go with the mode you chose","when":"a place argument whose modes exclude the chosen one; a below-bounds respawn for a body the authority last knew above @world.bounds.min.y (or nowhere), or one seated"}
+  - refusal spawn: {"meaning":"arrivals are limited to the spawn","when":"an arrival or teleport outside @world.spawn's radius"} → {"meaning":"arrivals are limited to the world's arrival places","when":"an arrival, teleport or below-bounds respawn outside every arrival place's radius (@world.spawn and the spawn-point things)"}
+- 2026-10-27: water-exclusion.bodies: the doc said @world's level is kept out always; the code (excludes(), Z4w, Z11) keeps it out only when bodies is absent or names @world: the doc now says what the code always did (review finding 6)
+  - water-exclusion.bodies: its meaning "the water bodies (things with water, or @world) it keeps out; it keeps out only those at or below its zone's priority, @world's level always" → "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)"
+- 2026-10-27: motion (trial): a pendulum's meaning of absence names the old readings as old (R 10-27: a translated swing swings as on main): period 3.5 s and damp 0 against today's defaults 2.4 s and 0.08; maxAmp absent reads 1.1 rad, the first protocol's push cap (the reader, use.js, and the repair write it), where today's default is 0.9
+  - motion.period: its meaning of absence "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s" → "pendulum: 3.5 s (an old value's reading; a swing written today carries the default, 2.4 s); spin and orbit: their degPerSec; oscillate: 4 s"
+  - motion.damp: its meaning of absence "0: it swings forever" → "0: it swings forever (an old value's reading; the default is 0.08)"
+  - motion.maxAmp: its meaning of absence "0.9 rad" → "1.1 rad (an old value's reading, the first protocol's push cap; the default is 0.9 rad)"
+- 2026-10-27: description (R 10-27): picture.alt and sound.alt are description; a stored alt (or the look before it) is renamed once by the load (shaperepair RENAMED_FIELDS), no live read alias
+  - sound.alt: type string → gone
+  - picture.alt: type string → gone
+- 2026-10-27: material (R 10-27): the held name gets its minimal shape {node, texture, description?, lit?}, trial: an image on a named node of a model (glTF baseColorTexture; Godot surface_material_override); a standalone image is picture
+  - material: status reserved → trial
+  - material.node: added after material was first registered, with no meaning of absence (absentMeans.node: what an older value without it means)
+  - material.texture: added after material was first registered, with no meaning of absence (absentMeans.texture: what an older value without it means)
+  - material.lit: added after material was first registered, with no meaning of absence (absentMeans.lit: what an older value without it means)
+- 2026-10-28: R 10-28 / SWEEP-3: sound near and radius up to 200 m (was 100); sky gains system (eidoverse | skymesh) and colors (main's)
+- 2026-10-28: normative: body consent is two gates and two lists (R 10-28): the ask is removed, so pending is reserved (consent refusals are never logged), cool-down is only the repeated-refusals throttle, and no rate counts asks
+  - refusal rate: {"meaning":"too much, too fast","when":"an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent"} → {"meaning":"too much, too fast","when":"an actor's entry, say, byte, dry-run or upload budget for the window is spent"}
+  - refusal cool-down: {"meaning":"wait before asking this again","when":"a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)"} → {"meaning":"wait before trying this again","when":"repeated refusals of one class of body act (world-wide, moderator log)"}
+  - refusal pending: {"meaning":"one ask at a time","when":"a body ask while another to the same person is still waiting"} → {"meaning":"one ask at a time","when":"reserved: a body ask while another to the same person was waiting (the ask was removed 10-28; never logged, kept so the word isn't reused)","reserved":true}
+- 2026-10-28: body consent is two gates (R 10-28): @world.body-default is {move?, touch?} (each a bool; absent: move on, touch off), no longer the switch's accept|ask|refuse; a stored switch value is still read (consent.js worldGates: refuse and ask → both off, accept → move on)
+  - body-default: type "string" → undefined
+- 2026-10-28: R 10-28: sky takes audio again (a bool, absent off: plays the asset library's weather sounds when this server has them, silent otherwise), mapped from main's sky.audio by translate-v1@25; a new light's default intensity 16 → 25.93 cd, main's default light (16 cd, decay 1.7) matched at 5 m, half the default range (16 × 5^0.3). An older light (no decay) still reads 16: the repair writes it beside decay 1.7; only a light stored since 10-16 with a decay and no intensity reads brighter
+  - light.intensity: default 16 → 25.93
+  - light.intensity: its meaning "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise" → "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise. Default 25.93: main's default light's brightness at 5 m"
+- 2026-10-28: normative: kick is conventional (R 10-28): it removes someone now and they may come straight back, so no kick is ever in force and the kicked refusal is gone
+  - refusal kicked: gone (old logs may hold it)
+- 2026-10-28: the base rung is member (R 10-28: "let's do member"); its earlier word existed only on this PR, so it is gone with no alias and no migration. grabbable.who and physics.who default to member; translate-v1@26 writes it
+  - physics: a conditional default changed: {"if":{"kind":"dynamic"},"set":{"who":"inhabitant"}}
+  - grabbable.who: default "inhabitant" → "member"
+  - grabbable.who: its meaning of absence "inhabitant" → "member"
+  - grabbable.who: its meaning "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own" → "who may pick it up: a role id (this rank or above): member (anyone), builder, owner or this world's own"
+  - roles.role: its meaning "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines" → "the role this person holds: a built-in (member, builder, moderator, owner) or one the world defines"
+  - roles.rank: vocabulary {"inhabitant":0,"builder":100,"moderator":200,"owner":255} → {"member":0,"builder":100,"moderator":200,"owner":255}
+  - roles.builtin: vocabulary ["inhabitant","builder","moderator","owner"] → ["member","builder","moderator","owner"]
+- 2026-10-29: R 10-28 item 50: collision layers. collider gains blocks [bodies|hulls|things] (Godot collision layers/masks, Unity's layer matrix): which movers it stops; absent, all three, as before. [hulls] with hidden is an invisible wall only vehicles meet (main's vehicle minY/maxY, translated)
+- 2026-10-29: R 10-28 item 50: physics-area {kind: speed, factor 0.05..10} opens on a thing with a box or global zone (Godot Area3D's overrides, Unreal Physics Volume): a body inside moves at factor × its own speed (walk, run, wade, stroke, 3D swim); the authority's track widens inside a boost, never narrows. Kinds direction, point and vortex are planned, not open
+- 2026-10-29: collider.shape absentMeans: cited path corrected to client/lib/supportclass.js (I.M. 10-29); wording only, meaning unchanged
+  - collider.shape: its meaning of absence "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)" → "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (client/lib/supportclass.js)"
+- 2026-10-29: water.drag is read now (LEGACY-PINS item 8): a swimmer strokes against the water's own drag (Godot linear_damp), absent the mover's own 5 /s; translate-v1@31 maps main's water.speed to it instead of a physics-area that slowed walkers too
+  - water.drag: its meaning of absence "the mover's own swim law (shared/mover.js)" → "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)"
+  - water.drag: its meaning "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction)" → "how fast it slows what moves through it, per second (Godot Area3D linear_damp, Unreal Fluid Friction): a swimmer strokes at 5 / drag of its pace, and walkers on its floor are untouched"
+- 2026-10-30: normative: repair-needed also covers a picture or sound whose describing text is stored as alt or look: picture.js and sound.js read description only (no live read alias, R 10-27), so that rename is not served and the world refuses writes until the maintenance command renames it
+  - refusal repair-needed: {"meaning":"the world's stored values are in an old spelling no reader serves; the maintenance command must run first","when":"any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"} → {"meaning":"the world's stored values are in an old spelling no reader serves; the maintenance command must run first","when":"any write (not a read, not leave) to a world needing lift-sockets, a grabbable, picture or sound rename, or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"}
+- 2026-10-30: owner 10-30 (Basil 1.1; "Godot is the exemplar"): collider gains layer and mask, Godot's CollisionObject3D collision_layer / collision_mask (lists of numbers 1..32 or names, each absent [1]). A mover meets a collider when its blocks names the mover's kind AND the mover's mask holds one of its layers (Godot's collides_with); a hull's mask is its own collider's, bodies and engine things scan [1]. A stored world (no layer, no mask) collides as before; translate-v1@32 puts a banded vehicle's walls in its own layer, so other hulls pass them
+- 2026-10-30: wording only: water.density documented as reserved (read by nothing yet); light.decay's absence repaired by the maintenance command, never at load (review of #260)
+  - light.decay: its meaning of absence "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load" → "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 by the maintenance command (repair-shapes; docs/MAINTENANCE.md), never at load"
+  - water.density: its meaning "how dense the water is, kg/m³ (what a body floats against)" → "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)"
+- 2026-10-30: owner 10-30 ("despaghettify"): water.drag goes; physics-area {kind: speed} on the water's zone is the one way an area changes how fast a body moves, and translate-v1@35 writes main's water.speed as it again. Only test or scratch worlds translated at @31-@34 could carry water.drag (nothing was merged); no compatibility shim
+  - water.drag: type number → gone
+  - water.drag: its meaning of absence "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)" → gone
+- 2026-10-31: Mica 10-31 (#260 decision row 27): physics-area gains `modes` (walk | swim | fly | climb; absent = all; Unreal's per-movement-mode settings). translate-v1@37 writes modes: ['swim'] for main's water.speed, which slowed only the swim.
+- 2026-10-31: physics-area.modes: new field (Mica 10-31 row 27; walk|swim|fly|climb, absent all)
+- 2026-10-31: reactions impulse: opened (main's script-free swing; Mica 10-31 matrix 8, decision row 19)
+- 2026-10-31: Mica 10-31 (matrix 8, decision row 19): reactions {kind: 'impulse', strength?, angular?} is open again (main's script-free swing push; use.js already ran it for translated worlds). reservedKinds is empty.
+- 2026-10-31: particle-effect limits: 4,000 particles per emitter, 8,000 per effect, 64 m extent (were 600 / 1,000 / 32 m), so main's motes (≤3,000, ≤60 m) translate unclamped (decision row 7); the Essentials' count param keeps its 600 bound (their addresses unchanged); translate-v1@38
+- 2026-10-31: sky.sun and sky.fill: stored again (multipliers on the renderer's sun and its bounce light, absent = 1), so main's sliders carry over (decision table, R 10-30); translate-v1@39
+- 2026-10-31: sky.sun and sky.fill stored again (decision table, R 10-30)

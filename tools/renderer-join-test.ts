@@ -3,11 +3,11 @@
 //   bun tools/renderer-join-test.ts
 //
 // The server takes a join's `renderer` flag at its word: it sends that client snapshots, and if the
-// join also says `roam`, sends it into worlds that have no renderer (server/snapshots.ts summon). A
+// join also says `roam`, sends it into worlds that have no renderer (server/screenshots.ts summon). A
 // lite page with ?renderer used to send both flags. A roaming one was sent into a world and
 // answered every snapshot there "this client has no renderer", and because the world then had a
 // renderer, no working one was ever sent (2026-10-24). net.js sendJoin now claims the role only when a
-// snapshot renderer is wired (main.js wires net_snap.js; lite.js wires none). A page that claims neither
+// snapshot renderer is wired (main.js wires net_capture.js; lite.js wires none). A page that claims neither
 // flag still asks to be invisible (spectate). A door key admits it as a spectator; the renderers'
 // credential admits renderers only and refuses it (4003, pinned in tools/access-test.ts 11b). Either way,
 // the broker never routes a snapshot to it.
@@ -40,10 +40,10 @@ function pageLoad(search: string, wire: "none" | "snapshot" | "other-hooks", joi
     const L = ${JSON.stringify(L)};
     mock.module(L + "presence.js", () => ({ presence: {} }));
     mock.module(L + "chat.js", () => ({ logChat() {}, logWhisper() {}, noteTyping() {}, noteHistoryContext() {}, resyncChatAfter() {} }));
-    mock.module(L + "boot.js", () => ({ markPhase() {} }));
+    mock.module(L + "boot.js", () => ({ markPhase() {}, refuseBoot() {}, waitBoot: async () => {} }));
     const net = await import(L + "net.js");
     const wire = ${JSON.stringify(wire)};
-    if (wire === "snapshot") net.wireNet({ snapshot: async () => ({ dataUrl: "data:image/png;base64," }) });
+    if (wire === "snapshot") net.wireNet({ capture: async () => ({ dataUrl: "data:image/png;base64," }) });
     if (wire === "other-hooks") net.wireNet({ toast: () => {}, myAvatarPath: () => "claude" });   // what lite.js passes: no snapshot
     const sent = [];
     net.net.ws = { send: (s) => { const m = JSON.parse(s); if (m.type === "join") sent.push(m); }, readyState: 1 };
@@ -94,16 +94,16 @@ console.log("the entry points wire what this test assumes");
   // comments mention these names too; strip only a // that starts a line or follows whitespace, so a URL survives
   const code = (src: string) => src.replace(/(^|\s)\/\/.*$/gm, "$1");
   const calls = (src: string) => [...code(src).matchAll(/wireNet\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]);
-  check("lite.js wires net.js with no snapshot renderer", calls(lite).length > 0 && calls(lite).every((c) => !/\bsnapshot\b/.test(c)), JSON.stringify(calls(lite).length));
+  check("lite.js wires net.js with no capture renderer", calls(lite).length > 0 && calls(lite).every((c) => !/\bcapture\b/.test(c)), JSON.stringify(calls(lite).length));
   // sendJoin reads the wiring when the join is sent, and a renderer starts at once: the snapshot must be wired
   // before main.js first calls start() or connect(), not merely somewhere in the module
   const m = code(main);
-  const wiredAt = m.search(/wireNet\(\{\s*snapshot\s*\}\)/);
+  const wiredAt = m.search(/wireNet\(\{\s*capture\s*\}\)/);
   // a call with or without arguments; if neither is found the check FAILS, it does not pass vacuously
   const starts = [m.search(/\bstart\(\s*\)/), m.search(/\bconnect\(\s*\)/)].filter((i) => i >= 0);
   const firstStart = starts.length ? Math.min(...starts) : -1;
   check("main.js still calls start() or connect() (what the next check measures against)", firstStart >= 0, "found neither");
-  check("main.js wires net_snap.js's snapshot before it first calls start() or connect()", wiredAt >= 0 && firstStart >= 0 && wiredAt < firstStart, `wired at ${wiredAt}, first start/connect at ${firstStart}`);
+  check("main.js wires net_capture.js's snapshot before it first calls start() or connect()", wiredAt >= 0 && firstStart >= 0 && wiredAt < firstStart, `wired at ${wiredAt}, first start/connect at ${firstStart}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

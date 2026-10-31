@@ -1,9 +1,13 @@
 # Native world projection (version 1)
 
-Implemented locally, not deployed. Browser flora placement has been extracted
-unchanged into `shared/flora-placement.js`; browser and native projection import it.
+**Not served by this server.** Join snapshots carry no `renderSceneVersion`:
+`server/render-scene.ts` reads the first protocol's fold, so this server doesn't offer
+the lane (server/server.ts `buildSnapshot`). The native client reaches this server through
+its bridge. What follows describes upstream #248's projection. Browser flora placement
+has been extracted unchanged into `shared/flora-placement.js`; browser and native
+projection import it.
 
-Join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
+Upstream, join snapshots advertise `renderSceneVersion:1`. A joined world-surface client
 may send `{type:"render-scene",version:1,reset:true}` for a full projection and
 subsequent requests without reset for geometry deltas. World, socket generation
 and membership bind the delta cursor. Requests are limited to once per 250 ms
@@ -87,13 +91,14 @@ hands/feet aimed at world/self/participant coordinates and anatomical bone seeds
 on loaded remote rigs. Native seeds are NOT calibrated skin contacts; the client
 never asserts `reached:true`. First-person local hands, palm alignment, native
 joint/torso constraints and named targets on the local body remain incomplete.
-Wave/cheer/point use the existing one-shot `pose.emote` field. Native gestures
+Wave/cheer/point use the presence plane's one-shot gesture field (this protocol's `pose.anim`; the native client
+still sends the first protocol's key, which servers read for one release — shared/onceanim.js). Native gestures
 are procedural approximations, not downloaded browser animation clips.
 Puppet and bodydrag requests are not accepted automatically; native ragdolls,
 mount/seating, force reactions and full streamed body-pose parity remain future work.
 
-Additional scratch checks: `tools/native-environment-control.ts`,
-`tools/native-interactions-fixture.ts`, and `tools/leasetest.ts`.
+Additional scratch checks: `tools/native-environment-control.ts` and
+`tools/native-interactions-fixture.ts` (`tools/leasetest.ts` went with leases).
 
 ## Component data (water, air, environment, vehicles)
 

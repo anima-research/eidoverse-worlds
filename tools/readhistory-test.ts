@@ -17,7 +17,6 @@ import { join } from "node:path";
 
 const tmp = mkdtempSync(join(tmpdir(), "ew-readhistory-"));
 process.env.WORLDS_DIR = join(tmp, "worlds");
-process.env.FOLD_EVERY = "100000";          // the test folds by hand
 mkdirSync(process.env.WORLDS_DIR, { recursive: true });
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {

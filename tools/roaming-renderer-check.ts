@@ -2,8 +2,8 @@
 //   bun tools/roaming-renderer-check.ts http://127.0.0.1:<port> [SHOT=path.png]
 //   (each run founds two worlds: start the scratch sequencer with FOUND_DAILY_CAP=off, or the sixth run is refused)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
-// crates). Its arrival alone must send the renderer over (pre-warm); a snapshot must come only once the world is
-// REALIZED (every crate loaded — never a partial frame); a second snapshot is fast (the renderer stays). Then the
+// crates). Its arrival alone must send the renderer over (pre-warm); a screenshot must come only once the world is
+// REALIZED (every crate loaded — never a partial frame); a second screenshot is fast (the renderer stays). Then the
 // watchdog's own check (deploy/render-health.ts health) runs over real devtools: the roamer is healthy, a page with no
 // client is not joined.
 import { chromium } from 'playwright';
@@ -53,7 +53,7 @@ try {
   const page = await browser.newPage();
   // TRIPPED (default on; TRIPPED=0 skips): the roamer's profile carries what its watchdog's kills leave behind, a
   // boot tripwire for its lobby and a spent retry. Before index.html's rule 0 that loaded the LITE client, which still
-  // joined as a renderer, was sent to the agent's world, and answered every snapshot "this client has no renderer"
+  // joined as a renderer, was sent to the agent's world, and answered every screenshot "this client has no renderer"
   // (2026-10-24). The renderer must boot full anyway, and serve.
   const tripped = process.env.TRIPPED !== '0';
   if (tripped) await page.addInitScript((w) => {
@@ -76,7 +76,7 @@ try {
   for (const v of crates) { sock.send(JSON.stringify({ type: 'verb', ...v })); await Bun.sleep(300); }
   const pose = () => sock.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: 'idle' } }));
   pose(); keepPose = setInterval(pose, 200);
-  // PRE-WARM: the agent's arrival alone sends the roaming renderer to its world, before any snapshot is asked
+  // PRE-WARM: the agent's arrival alone sends the roaming renderer to its world, before any screenshot is asked
   const tw = Date.now(); while (Date.now() - tw < 20000 && (await rendererWorld()) !== world) await Bun.sleep(250);
   const prewarmMs = Date.now() - tw;
   assert.equal(await rendererWorld(), world, 'the agent arriving brought the roaming renderer (prewarm)');
@@ -87,7 +87,7 @@ try {
     return { status: r.status, ms: Date.now() - t0, png: r.ok ? new Uint8Array(await r.arrayBuffer()) : null, err: r.ok ? '' : await r.text() }; };
   const first = await snap();
   console.log(JSON.stringify({ first: { status: first.status, ms: first.ms, err: first.err.slice(0, 160) } }));
-  assert.equal(first.status, 200, `the roamer came and served the snapshot: ${first.err}`);
+  assert.equal(first.status, 200, `the roamer came and served the screenshot: ${first.err}`);
   // the frame was taken only once the world was realized: every crate a real model, nothing loading
   const where = await page.evaluate(async () => { const { CONFIG } = await import('/lib/base.js'); const m = await import('/lib/realize/models.js');
     const r = m.residencyDebug(); return { world: CONFIG.world, real: r.real, loading: r.loading, standins: r.standins }; });
@@ -98,8 +98,8 @@ try {
   await Bun.sleep(2200);   // the broker's per-renderer cooldown
   const second = await snap();
   console.log(JSON.stringify({ second: { status: second.status, ms: second.ms } }));
-  assert.equal(second.status, 200); assert.ok(second.ms < 3000, 'the renderer stays: the next snapshot is fast');
-  // THE WATCHDOG'S CHECK, over real devtools: the roamer that just served two snapshots is judged healthy (frames
+  assert.equal(second.status, 200); assert.ok(second.ms < 3000, 'the renderer stays: the next screenshot is fast');
+  // THE WATCHDOG'S CHECK, over real devtools: the roamer that just served two screenshots is judged healthy (frames
   // counted, joined, a frame captured), and a page that is not the client is judged not joined. A verdict that
   // fails a working renderer killed every roamer every two minutes for a week (docs/INCIDENTS.md, 2026-10-24).
   const verdict = await health(dbg);
@@ -110,8 +110,8 @@ try {
   const notClient = await health(dbg, (u) => u.includes('/version?probe=plain'));
   assert.ok(!notClient.healthy && notClient.reason === 'not joined', `a page with no client is not joined: ${JSON.stringify(notClient)}`);
   // THE ROAMER RESTARTS (its watchdog does this every few hours, and on every client deploy): it comes back as a new page
-  // in its lobby, with the agent's world left unserved. The sweep (server/snapshots.ts) must send it straight back
-  // without a snapshot being asked, so the agent's next snapshot is served at once (2026-10-24: "failing on first try
+  // in its lobby, with the agent's world left unserved. The sweep (server/screenshots.ts) must send it straight back
+  // without a screenshot being asked, so the agent's next screenshot is served at once (2026-10-24: "failing on first try
   // is bad").
   await page.close();
   const again = await browser.newPage();
@@ -119,11 +119,11 @@ try {
   const againWorld = () => again.evaluate(async () => (await import('/lib/base.js')).CONFIG.world).catch(() => null);
   const tb = Date.now(); while (Date.now() - tb < 30000 && (await againWorld()) !== world) await Bun.sleep(250);
   const backMs = Date.now() - tb;
-  assert.equal(await againWorld(), world, 'the restarted roamer was sent back to the agent\'s world with no snapshot asked (sweep)');
+  assert.equal(await againWorld(), world, 'the restarted roamer was sent back to the agent\'s world with no screenshot asked (sweep)');
   await again.waitForFunction(async (n) => { const m = await import('/lib/realize/models.js'); const r = m.residencyDebug(); return r.real >= n && r.loading === 0 && r.standins === 0; }, crates.length, { timeout: 60000 });
   const afterRestart = await snap();
   console.log(JSON.stringify({ afterRestart: { status: afterRestart.status, ms: afterRestart.ms, backMs } }));
-  assert.equal(afterRestart.status, 200, `the first snapshot after the roamer's restart is served: ${afterRestart.err}`);
+  assert.equal(afterRestart.status, 200, `the first screenshot after the roamer's restart is served: ${afterRestart.err}`);
   assert.ok(afterRestart.ms < 3000, `…at once, from the roamer already there (${afterRestart.ms} ms)`);
-  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; snapshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next snapshot took ${afterRestart.ms} ms`);
+  console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; screenshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next screenshot took ${afterRestart.ms} ms`);
 } finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); }

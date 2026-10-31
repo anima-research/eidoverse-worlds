@@ -12,9 +12,11 @@ import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:c
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds, freePort } from "./harness.ts";
 import { verifyToken } from "../server/aid1.ts";
+import { accountTag } from "../server/directory.ts";
 
-const PORT = Number(process.env.PORT ?? 8992);
+const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9420);   // a free port, never a fixed default
 const HTTP = `http://localhost:${PORT}`;
 const WS_URL = `ws://localhost:${PORT}/ws`;
 const DOOR = "test-door";
@@ -57,7 +59,7 @@ function open(joinMsg: Record<string, unknown>, cookie = ""): Promise<Sock> {
   return new Promise((resolve) => {
     const ws = new WebSocket(WS_URL, cookie ? ({ headers: { cookie } } as any) : undefined);
     const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", ...joinMsg }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: "authtest", replica: true, ...joinMsg }));
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       s.msgs.push(m);
@@ -71,6 +73,10 @@ const snap = (s: Sock) => s.msgs.find((m) => m.type === "snapshot");
 
 // ---- boot scratch sequencer ----
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-authtest-"));
+foundWorlds(worldsDir, ["authtest"]);   // joining never founds a world
+// the agent enrolments (reserved names) are this run's own, not whatever the checkout's mcpl/tokens.json holds
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({ "authtest-claude-bearer": { id: "claude" } }));
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
 // whose pid dies immediately, orphaning the real sequencer on this port where
 // it poisons the next run.
@@ -78,8 +84,8 @@ const optDir = mkdtempSync(join(tmpdir(), "authtest-opt-"));
 const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
   env: {
     // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
-    ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: DOOR,
-    HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0",
+    ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
+    HN_NATIVE_ORIGIN: HTTP, HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
   },
   stdout: "ignore", stderr: "inherit",
 });
@@ -129,7 +135,7 @@ try {
   const t1 = await open({}, twinA.cookie);
   const t2 = await open({}, twinB.cookie);
   check("same nick, different person → suffixed, no takeover",
-    snap(t2)?.you === "Twin-0002" && t1.closedWith === null,
+    snap(t2)?.you === `Twin-${accountTag("human:discord:5550002")}` && t1.closedWith === null,   // a hash: none of the account's digits
     `you=${snap(t2)?.you} t1closed=${t1.closedWith}`);
   const t1b = await open({}, (await auth(mint({ sub: "human:discord:5550001", name: "Twin" }))).cookie);
   check("same person re-arriving → takeover still works", snap(t1b)?.you === "Twin" && t1.closedWith === 4002,
@@ -139,14 +145,13 @@ try {
   const s6 = await open({}, spoof.cookie);
   check("agent name via Discord nick → reserved, rejected", s6.closedWith === 4004, `code=${s6.closedWith}`);
 
-  // ---- /upload gate: aid1 reaches the script tier (Digi's finding #5) ----
+  // ---- /upload gate: an aid1 agent credential reaches the upload door (Digi's finding #5). (The v1 runtime-script
+  // store, /upload?as=script, went with protocol v1: a script is an `upload {text}` request, tools/protocol/scripts-check.ts.)
   const upTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });
-  const up = (tok: string, body = "world.log('hi')") =>
-    fetch(`${HTTP}/upload?as=script&token=${encodeURIComponent(tok)}`, { method: "POST", body });
+  const glb = new Uint8Array(16); new DataView(glb.buffer).setUint32(0, 0x46546c67, true);   // a glTF header
+  const up = (tok: string) => fetch(`${HTTP}/upload?token=${encodeURIComponent(tok)}`, { method: "POST", body: glb });
   const u1 = await up(upTok);
-  const u1body = u1.status === 200 ? await u1.json() : null;
-  check("aid1 token uploads a script", u1.status === 200 && typeof u1body?.path === "string",
-    `status=${u1.status}`);
+  check("aid1 token is accepted at the upload door", u1.status === 200, `status=${u1.status}`);
   check("aid1 upload is repeatable (no jti burn)", (await up(upTok)).status === 200);
   check("garbage aid1 at /upload → 401", (await up("aid1.not.real")).status === 401);
   check("spectate-only scope at /upload → 401",
@@ -173,11 +178,31 @@ try {
   const entry = manifest[imPath.replace(/^store\/images\//, "").replace(/\.[a-z]+$/, "")];
   check("...credited to the signed-in name, not the forged ?by=", entry?.by === "Guest One", `status=${im.status} by=${entry?.by}`);
   check("...the cookie from another site's page is not taken", (await upAs({ cookie: a1.cookie, "sec-fetch-site": "same-site" })).status === 401);
-  check("...nor a cookie with no fetch-site at all", (await upAs({ cookie: a1.cookie })).status === 401);
   check("no session, no key → 401", (await upAs({ "sec-fetch-site": "same-origin" })).status === 401);
   const spectOnly = await auth(mint({ sub: "human:discord:7770001", name: "Watcher", scopes: ["worlds:spectate"] }));
   check("a spectate-only login cannot upload", spectOnly.cookie.length > 0
     && (await upAs({ cookie: spectOnly.cookie, "sec-fetch-site": "same-origin" })).status === 401);
+
+  // ---- a native client's session (browser-approved pairing, native-login.ts): the cookie the ws join takes, with no
+  // fetch metadata (a native client isn't a browser), is taken by /worlds and /upload too (R 10-27; unreal-contract CONTRACT.md)
+  const npost = (path: string, body: object, headers: Record<string, string> = {}) =>
+    fetch(`${HTTP}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const pairing = await (await npost("/native/start", {})).json();
+  const approved = await npost("/native/approve", { user_code: pairing.user_code }, { origin: HTTP, cookie: a1.cookie });
+  const polled = await npost("/native/poll", { device_code: pairing.device_code });
+  const native = /ew_sess=[a-f0-9]{64}/.exec(polled.headers.get("set-cookie") ?? "")?.[0] ?? "";
+  check("native pairing: the browser approves, the client's poll gets its own session cookie", approved.status === 200 && polled.status === 200 && native.length > 0 && native !== a1.cookie, `approve=${approved.status} poll=${polled.status}`);
+  const sN = await open({}, native);
+  check("native session: the ws join takes it with no door key", Boolean(snap(sN)), `closed=${sN.closedWith}`);
+  check("native session: GET /worlds (a JOIN_TOKEN box) takes the same cookie → 200", (await fetch(`${HTTP}/worlds`, { headers: { cookie: native } })).status === 200);
+  const upN = await upAs({ cookie: native, "x-real-ip": "203.0.113.7" });
+  check("native session: POST /upload takes the same cookie → 200", upN.status === 200, `status=${upN.status} ${upN.status !== 200 ? await upN.text() : ""}`);
+  check("...a browser's cookie with no fetch-site at all is the same request, and is taken too", (await upAs({ cookie: a1.cookie, "x-real-ip": "203.0.113.8" })).status === 200);
+  check("...but the cookie from another site's page (sec-fetch-site: same-site) still isn't, at /worlds or /upload",
+    (await fetch(`${HTTP}/worlds`, { headers: { cookie: native, "sec-fetch-site": "same-site" } })).status === 401
+    && (await upAs({ cookie: native, "sec-fetch-site": "cross-site", "x-real-ip": "203.0.113.9" })).status === 401);
+  check("no cookie, no key: GET /worlds → 401", (await fetch(`${HTTP}/worlds`)).status === 401);
+  check("a key in ?token= is not a /worlds credential", (await fetch(`${HTTP}/worlds?token=${DOOR}`)).status === 401);
 
   // ---- agent-door verifier (the same copy net-server.ts uses) ----
   const agentTok = mint({ sub: "agent:ferro@guest", kind: "agent", name: "Ferro", scopes: ["worlds:join"], jti: undefined });
@@ -186,7 +211,7 @@ try {
   const vBad = verifyToken(agentTok, { issuerId: ISSUER_ID, iss: ISS, aud: "orrery" });
   check("agent aid1 for another audience refused", !vBad.ok);
 
-  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6]) { try { s.ws.close(); } catch { /* closed */ } }
+  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6, sN]) { try { s.ws.close(); } catch { /* closed */ } }
 } finally {
   proc.kill();
 }

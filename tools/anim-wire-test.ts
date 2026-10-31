@@ -6,7 +6,7 @@ const { WorldAgent } = await import('../mcpl/agent.ts');
 const { handleTool } = await import('../mcpl/tools.ts');
 const { scratchSequencer, mkCheck, sleep } = await import('./harness.ts');
 const { check, tally } = mkCheck();
-const h = await scratchSequencer('anim-wire', { serverEnv: { SKIP_OPT_SWEEP: '1' }, portFrom: 9350 });
+const h = await scratchSequencer('anim-wire', { worlds: ['anim-test'], serverEnv: { SKIP_OPT_SWEEP: '1' }, portFrom: 9350 });
 const agents: any[] = [];
 const tracks = { leftUpperArm: [{ t: 0, q: [0, 0, 0, 1] }] };
 const held = { hips: [0, 0, 0, 1] };
@@ -47,7 +47,7 @@ try {
   for (const replace of [false, true]) {
     target.setPose(held);
     // Omit the argument in the default case: the tool must author false itself.
-    await handleTool(ctx, 'animate', { dur: 1, tracks, target: 'target', ...(replace ? { replace } : {}) });
+    await handleTool(ctx, 'anim', { dur: 1, tracks, mode: 'once', target: 'target', ...(replace ? { replace } : {}) });   // animate's words (the old name runs nothing, R 10-28)
     check(`tool target animate (${replace ? 'replace' : 'default'}) sends explicit intent`, (await next(puppets, 'puppet', 'sender')).anim.replace === replace);
     check('the target applies tool-authored intent', replace ? target.heldPose === null : target.heldPose === held);
     await next(seen, 'anim', 'target');

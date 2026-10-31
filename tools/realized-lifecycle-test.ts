@@ -1,0 +1,251 @@
+// realized-lifecycle-test — the four "realized" registries agree about every id, at every seam of a thing's life.
+//
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/realized-lifecycle-test.ts
+//
+// The realizer (client/lib/realize/models.js, REAL here) hands an id to world.js `entities`, its own `tracked`, the
+// collider registry and the caster registry at different moments: tracked + a null reservation at create, the object
+// at realize, collider + caster at the promote tail. A `remove` (or a demote, a same-id re-create, a world reset) can
+// land between any two of those. The survey (DEBT-SURVEY-2026-10-12 §2.13) read the mechanism and named the drift —
+// a remove landing mid-GLB-load leaving `entities` holding null, `tracked` a gen, `casters` warm — without
+// reproducing it. This pins it either way: after each seam, ALL FOUR registries are empty for a removed id, and all
+// four hold it after a full realize. Same cone as lod-client-test (tools/lod-client-stub.mjs: a loader the test holds
+// open and releases by hand; colliders and casters recorded, never built).
+import "./protocol/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
+import { plugin } from 'bun';
+import { fileURLToPath } from 'node:url';
+
+const STUB = fileURLToPath(new URL('./lod-client-stub.mjs', import.meta.url));
+plugin({
+  name: 'lod-client-stub',
+  setup(b) {
+    for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
+      '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$', '^\\.\\./materials\\.js$']) {
+      b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
+    }
+  },
+});
+const store = new Map<string, string>();
+(globalThis as any).localStorage = {
+  getItem: (k: string) => store.get(k) ?? null,
+  setItem: (k: string, v: string) => { store.set(k, v); },
+  removeItem: (k: string) => { store.delete(k); },
+};
+
+const stub: any = await import('./lod-client-stub.mjs');
+const M: any = await import('../client/lib/realize/models.js');
+const S: any = await import('../client/lib/state.js');
+const { scratchWorld } = await import('./protocol/scratchworld.ts');
+const { emptyView } = await import('../shared/protocol/view.js');
+const { bus } = await import('../client/lib/base.js');
+
+let failures = 0;
+const check = (label: string, ok: boolean, detail?: string) => {
+  console.log(`  ${ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${label}${!ok && detail ? `\n      ${detail}` : ''}`);
+  if (!ok) failures++;
+};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const settle = async () => { for (let i = 0; i < 6; i++) await sleep(15); };
+
+const lib = (id: string) => `eidoverse/assets/models/${id}.glb`;
+const GEOM = { bbox: { size: [1, 1, 1], center: [0, 0.5, 0] } };
+const W = scratchWorld('realized');
+const door = (tool: string, args: any) => { const r = W.call(tool, args); if (!r.ok) throw new Error(`${tool} ${JSON.stringify(args)} refused: ${JSON.stringify(r.refused)}`); S.applyView(structuredClone(W.view())); return r; };
+const spawnAt = (id: string, z: number, model = lib(id)) => {
+  bus.emit('lib-geom', { [model]: GEOM });
+  door('create', { id, model, components: { transform: { pos: [0, 0, z] } } });
+};
+const drain = () => { for (let i = 0; i < 50 && M.promoteTailPending() > 0; i++) M.drainPromoteTail(); };
+/** What each registry says about an id — the one shape every check reads. */
+const held = (id: string) => ({
+  entities: stub.entities.has(id) ? (stub.entities.get(id) === null ? 'null' : stub.entities.get(id).userData?.placeholder ? 'placeholder' : 'object') : '-',
+  tracked: M.realizedAs(id) ? 'yes' : '-',
+  colliders: stub.colliders.has(id) ? 'yes' : '-',
+  casters: stub.casters.has(id) ? 'yes' : '-',
+});
+const gone = (id: string) => { const h = held(id); return h.entities === '-' && h.tracked === '-' && h.colliders === '-' && h.casters === '-'; };
+const full = (id: string) => { const h = held(id); return h.entities === 'object' && h.tracked === 'yes' && h.colliders === 'yes' && h.casters === 'yes'; };
+const releaseAll = async () => { for (const h of stub.held.splice(0)) h.release(); await settle(); };
+const noErrors = (label: string) => { check(`${label}: no realizer error reported`, stub.reports.length === 0, JSON.stringify(stub.reports.map((r: any) => [r.where, String(r.e?.message ?? r.e)]))); stub.reports.length = 0; };
+
+M.initModelsRealizer();
+S.hydrate(emptyView());
+stub.camera.position.set(0, 0, 0);
+
+console.log('\nrealized lifecycle — four registries, one id, every seam\n');
+
+// ---- 1. the full life, as the baseline the races are measured against
+{
+  spawnAt('a', 5); await settle(); drain();
+  check('realized + tail drained: all four hold it', full('a'), JSON.stringify(held('a')));
+  door('delete', { id: 'a' });
+  check('remove after a full realize: all four empty', gone('a'), JSON.stringify(held('a')));
+  noErrors('full life');
+}
+
+// ---- 2. the survey's race: remove while the GLB is in flight
+{
+  stub.setHold(true);
+  spawnAt('b', 5); await settle();
+  check('mid-load: a placeholder stands, tracked holds it, no collider, no caster', held('b').entities === 'placeholder' && held('b').tracked === 'yes' && held('b').colliders === '-' && held('b').casters === '-', JSON.stringify(held('b')));
+  check('…and the load is held open', stub.held.some((h: any) => h.lib === lib('b')));
+  door('delete', { id: 'b' });
+  check('remove lands mid-load: all four empty BEFORE the bytes land', gone('b'), JSON.stringify(held('b')));
+  stub.setHold(false);
+  await releaseAll(); drain();
+  check('the bytes land for a gone id: all four STILL empty (the completion re-read state and stood down)', gone('b'), JSON.stringify(held('b')));
+  check('nothing was added to the scene for it', !stub.scene.children.some((o: any) => o.userData?.entityId === 'b'));
+  noErrors('remove mid-load');
+}
+
+// ---- 3. remove between realize and the promote tail (the heavy tail is a later frame)
+{
+  spawnAt('c', 5); await settle();
+  check('realized, tail pending: object + tracked, no collider, no caster yet', held('c').entities === 'object' && held('c').tracked === 'yes' && held('c').colliders === '-' && held('c').casters === '-' && M.promoteTailPending() === 1, JSON.stringify({ ...held('c'), tail: M.promoteTailPending() }));
+  door('delete', { id: 'c' });
+  drain();
+  check('remove before the tail drained: all four empty, the tail never registered a caster or fitted a collider', gone('c') && M.promoteTailPending() === 0, JSON.stringify(held('c')));
+  noErrors('remove before tail');
+}
+
+// ---- 4. the same id re-modelled (set model) over a load still in flight: the OLD completion must leave nothing
+{
+  stub.setHold(true);
+  spawnAt('d', 5); await settle();
+  const oldHeld = stub.held.find((h: any) => h.lib === lib('d'));
+  bus.emit('lib-geom', { [lib('d2')]: GEOM });
+  door('set', { id: 'd', component: 'model', value: lib('d2') }); await settle();
+  // the aborted old job still occupies the scheduler's net lane until its bytes land, so the new load waits behind it
+  check('re-modelled mid-load: a new reservation stands; the old load is still held and the new one queued behind it',
+    held('d').entities === 'placeholder' && held('d').tracked === 'yes' && stub.held.length === 1 && oldHeld && !stub.loads.some((l: any) => l.lib === lib('d2')), JSON.stringify({ ...held('d'), held: stub.held.map((h: any) => h.lib) }));
+  oldHeld.release(); await settle(); drain();
+  check('the OLD bytes land: still a placeholder, for the NEW lib — the stale completion neither realized nor cleared the reservation; the new load is now held too',
+    held('d').entities === 'placeholder' && held('d').tracked === 'yes' && held('d').colliders === '-' && held('d').casters === '-' && stub.held.some((h: any) => h.lib === lib('d2')), JSON.stringify({ ...held('d'), held: stub.held.map((h: any) => h.lib) }));
+  stub.setHold(false);
+  await releaseAll(); drain();
+  check('the NEW bytes land: all four hold it, wearing the new lib', full('d') && stub.entities.get('d').userData.lib === lib('d2'), JSON.stringify({ ...held('d'), lib: stub.entities.get('d')?.userData?.lib }));
+  door('delete', { id: 'd' });
+  check('removed: all four empty', gone('d'), JSON.stringify(held('d')));
+  noErrors('re-model over a held load');
+}
+
+// ---- 5. demote (residency sweep): the stand-in holds no collider and no caster; promote brings both back
+{
+  spawnAt('e', 5); await settle(); drain();
+  check('near: full', full('e'), JSON.stringify(held('e')));
+  stub.camera.position.set(0, 0, -500);
+  M.residencySweep(); await settle();
+  check('demoted: entities holds the placeholder, tracked holds it, collider and caster are RELEASED', held('e').entities === 'placeholder' && held('e').tracked === 'yes' && held('e').colliders === '-' && held('e').casters === '-', JSON.stringify(held('e')));
+  stub.camera.position.set(0, 0, 0);
+  M.residencySweep(); await settle(); drain();
+  check('promoted again: all four hold it', full('e'), JSON.stringify(held('e')));
+  door('delete', { id: 'e' });
+  check('removed: all four empty', gone('e'), JSON.stringify(held('e')));
+  noErrors('demote / promote');
+}
+
+// ---- 6. a world reset with a load in flight and a realized thing standing: nothing survives in any registry
+{
+  stub.setHold(true);
+  spawnAt('f', 5); await settle();
+  stub.setHold(false);
+  spawnAt('g', 5); await settle(); drain();
+  check('one mid-load, one full', held('f').entities === 'placeholder' && full('g'), JSON.stringify({ f: held('f'), g: held('g') }));
+  S.reset();
+  check('reset: all four empty for both', gone('f') && gone('g'), JSON.stringify({ f: held('f'), g: held('g') }));
+  await releaseAll(); drain();
+  check('the held bytes land after the reset: still empty', gone('f'), JSON.stringify(held('f')));
+  noErrors('reset');
+}
+
+// ---- 7. sockets (PLAN-sockets-entities): a socket child is an Empty frame on its host — no collider, no caster, no box —
+// and a socket that rides a part goes into the part's node at rest, so what sits on it rides the part
+{
+  const T = stub.THREE;
+  spawnAt('sw', 5, lib('swing')); await settle(); drain();
+  door('set', { id: 'sw', component: 'sockets', value: { seat: { pos: [0, 0.5, 0.1], part: 'plank', body: { action: 'sit' } }, hook: { pos: [0.4, 1, 0], accepts: ['coat'] } } });
+  const kids = Object.keys(S.state.st.entities).filter((k) => S.state.st.entities[k].parent?.to === 'sw');
+  const seat = kids.find((k) => S.state.st.entities[k].socket?.name === 'seat'), hook = kids.find((k) => S.state.st.entities[k].socket?.name === 'hook');
+  const so = seat && stub.entities.get(seat), ho = hook && stub.entities.get(hook);
+  check('a socket child is realized: an Empty (a Group marked socket), tracked as a socket', !!so && so.isGroup && so.userData.socket === true && M.realizedAs(seat)?.kind === 'socket', JSON.stringify({ seat, kind: M.realizedAs(seat ?? '') }));
+  check('…with no collider, no caster and no box', !stub.colliders.has(seat) && !stub.casters.has(seat) && M.boxOf(seat) === null && !stub.colliders.has(hook), JSON.stringify({ seat: held(seat), box: M.boxOf(seat) }));
+  check('a plain socket hangs on its host at its own pose', !!ho && ho.parent === stub.entities.get('sw') && ho.position.toArray().join() === '0.4,1,0', JSON.stringify({ parent: ho?.parent?.userData, pos: ho?.position?.toArray() }));
+  const host = stub.entities.get('sw'); const plank = host.getObjectByName('plank'); const pivot = host.getObjectByName('pivot');
+  host.updateMatrixWorld(true);
+  const wp = (o: any) => { o.updateWorldMatrix(true, false); return new T.Vector3().setFromMatrixPosition(o.matrixWorld); };
+  const want = new T.Vector3(0, 0.5, 0.1).applyMatrix4(host.matrixWorld);
+  check('a part socket goes INTO the part\'s node, where the part at rest puts it on the host', so?.parent === plank && wp(so).distanceTo(want) < 1e-9, JSON.stringify({ parent: so?.parent?.name, at: wp(so).toArray(), want: want.toArray() }));
+  // I37: its rest (what motion.js and openable.js compose onto) is that pose in the part's node, not its pose on the host
+  // Mutation (must go red): drop the `child.userData.base = …` line in models.js execMount.
+  check('…and its rest is its pose in that node', JSON.stringify(so?.userData?.base?.pos) === JSON.stringify(so?.position?.toArray()), JSON.stringify({ base: so?.userData?.base, local: so?.position?.toArray() }));
+  door('create', { id: 'cup', model: lib('cup'), components: { parent: { to: seat }, transform: { pos: [0, 0.1, 0] } } }); await settle(); drain();
+  const cup = stub.entities.get('cup');
+  check('cargo on the part socket rides inside it', cup?.parent === so, JSON.stringify({ parent: cup?.parent?.userData }));
+  // the swing swings (motion.js keeps the rest pose as mbase and turns the pivot): the seat and its cargo go with it
+  pivot.userData.mbase = { pos: pivot.position.toArray(), quat: pivot.quaternion.toArray() };
+  const before = wp(cup).clone();
+  pivot.quaternion.setFromAxisAngle(new T.Vector3(1, 0, 0), 0.5);
+  const pivotW = wp(pivot), swung = before.clone().sub(pivotW).applyAxisAngle(new T.Vector3(1, 0, 0), 0.5).add(pivotW);
+  check('the part swings: the cargo on its socket swings with it (about the pivot)', wp(cup).distanceTo(swung) < 1e-6 && wp(cup).distanceTo(before) > 0.1, JSON.stringify({ before: before.toArray(), now: wp(cup).toArray(), want: swung.toArray() }));
+  // re-attaching mid-swing (a reconnect's reconcile) still seats it at REST, not at the swing's current phase
+  delete so.userData.mountRel; M.reconcileModels();
+  pivot.quaternion.set(0, 0, 0, 1); host.updateMatrixWorld(true);
+  check('re-attached mid-swing, the socket still sits where the part at rest puts it', wp(so).distanceTo(want) < 1e-9, JSON.stringify({ at: wp(so).toArray(), want: want.toArray() }));
+  // residency: a host whose sockets are bare frames still demotes (they move onto its stand-in); a part socket keeps it real
+  spawnAt('bench', 6); await settle(); drain();
+  door('set', { id: 'bench', component: 'sockets', value: { rest: { pos: [0, 0.5, 0], body: {} } } });
+  const rest = Object.keys(S.state.st.entities).find((k) => S.state.st.entities[k].parent?.to === 'bench');
+  stub.camera.position.set(0, 0, -500); M.residencySweep(); await settle();
+  check('far: a host with a bare socket demotes, and its socket rides the stand-in', held('bench').entities === 'placeholder' && stub.entities.get(rest)?.parent === stub.entities.get('bench'), JSON.stringify({ bench: held('bench'), on: stub.entities.get(rest)?.parent?.userData }));
+  check('…while a host with a part socket stays real (a stand-in has no named nodes)', held('sw').entities === 'object', JSON.stringify(held('sw')));
+  stub.camera.position.set(0, 0, 0); M.residencySweep(); await settle(); drain();
+  check('near again: the real bench carries its socket', full('bench') && stub.entities.get(rest)?.parent === stub.entities.get('bench'), JSON.stringify(held('bench')));
+  door('delete', { id: 'bench' });
+  door('delete', { id: 'sw' });
+  check('deleting the host takes its sockets (and what rides them) with it, from every registry', gone('sw') && gone(seat) && gone(hook) && gone('cup'), JSON.stringify({ sw: held('sw'), seat: held(seat), hook: held(hook), cup: held('cup') }));
+  noErrors('sockets');
+}
+
+// ---- 8. (house review of #260, client/lib I37) a thing parented after it was realized: its rest (userData.base, what
+// motion.js and openable.js compose onto) is now its LOCAL pose in the parent, not the world pose it had at the root.
+{
+  spawnAt('crate8', 5); spawnAt('toy8', 9); await settle(); drain();
+  const toy = stub.entities.get('toy8');
+  check('(setup) at the root its rest is its world pose', JSON.stringify(toy?.userData?.base?.pos) === JSON.stringify([0, 0, 9]), JSON.stringify(toy?.userData?.base));
+  door('set', { id: 'toy8', component: 'parent', value: { to: 'crate8' } }); await settle(); drain();
+  const local = toy.position.toArray();
+  check('parented: it hangs in the crate, and its rest is the local pose the mount gave it', toy.parent === stub.entities.get('crate8') && JSON.stringify(toy.userData.base?.pos) === JSON.stringify(local), JSON.stringify({ base: toy.userData.base, local }));
+  door('delete', { id: 'crate8' }); if (S.state.st.entities.toy8) door('delete', { id: 'toy8' });
+  noErrors('re-parent rest');
+}
+
+// ---- 9. (house review of #260, client/lib I4) residency distance reads where a parented thing IS: its pos is parent-local
+// (view.js), so a cup 1 m along a crate 40 m away read as 1 m away and was never demoted, loaded at full detail.
+// Mutation (must go red): make entDist read ent.pos alone again.
+{
+  spawnAt('far9', 40); await settle(); drain();
+  door('create', { id: 'cup9', model: lib('cup9'), components: { parent: { to: 'far9' }, transform: { pos: [0, 0, 1] } } }); await settle(); drain();
+  const v = S.state.st.entities.cup9;
+  check('(setup) the child\'s pos is parent-local', JSON.stringify(v?.pos) === JSON.stringify([0, 0, 1]), JSON.stringify(v?.pos));
+  const d = M.residencyDistance(v);
+  check('its residency distance is from where it stands in the world (~41 m), not its local offset', Math.abs(d - 41) < 1e-6, `d = ${d}`);
+  door('delete', { id: 'far9' });
+  noErrors('parented residency');
+}
+
+// ---- 10. (house review of #260, client/lib I34) a switched-off thing casts no light: syncCompLight re-ran on a light edit
+// (and on born/pose) after retire had dropped it, and requested the light again.
+// Mutation (must go red): drop the offIn check in models.js syncCompLight.
+{
+  door('create', { id: 'lamp10', components: { light: { color: 0xffcc88, intensity: 4, range: 6 }, transform: { pos: [0, 1, 5] } } }); await settle(); drain();
+  check('(setup) a lit thing requests its light', stub.lightRequests.has('complight:lamp10'));
+  door('set', { id: 'lamp10', component: 'disabled', value: true }); await settle(); drain();
+  check('switched off: its light is released', !stub.lightRequests.has('complight:lamp10'));
+  door('set', { id: 'lamp10', component: 'light', value: { color: 0x88aaff, intensity: 4, range: 6 } }); await settle(); drain();
+  check('…and a light edit while it is off requests nothing', !stub.lightRequests.has('complight:lamp10'), JSON.stringify(stub.lightRequests.get('complight:lamp10')));
+  door('delete', { id: 'lamp10' });
+  noErrors('disabled light');
+}
+
+console.log(`\n${failures ? `\x1b[31m${failures} failed\x1b[0m` : '\x1b[32mall passed\x1b[0m'}\n`);
+W.close?.();
+process.exit(failures ? 1 : 0);

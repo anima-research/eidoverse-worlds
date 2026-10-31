@@ -9,24 +9,43 @@
 // it is preserved inside the handler bodies rather than across them.
 
 import { CONFIG, bus, report } from '../base.js';
+import { SHOVE_REACH } from '../../../shared/protocol/physconst.js';
+import { CUSTOM_ID, isOwner, effectiveOf } from '../../../shared/protocol/roles.js';
+import { DOORS, doorOf, doorWrites, durationMs, leftWords, notADoor } from '../../../shared/protocol/access.js';
+import { actorName as actorLabel } from '../../../shared/protocol/names.js';
+/** This world's @world components, from this client's own fold (roles, access, the default role). */
+const worldComponents = () => replica.st?.entities?.['@world']?.c ?? {};
 import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
-import { entities, roleOf, worldHasOwner } from '../world.js';
+import { entities, worldHasOwner, bagOf } from '../world.js';
+import { resolveThing, handleOf } from '../../../shared/thingref.js';
+// a thing by what a person types (R 10-17: ids are minted and opaque): its id, its label, or a unique id prefix of 4+.
+// A label two things share is refused with their handles, never resolved by picking one. {id} | {err} | null (nothing)
+function thingNamed(word) {
+  if (!word) return null;
+  const r = resolveThing(word, [...entities.keys()].map((id) => ({ id, label: bagOf(id)?.label })));
+  if (r.id) return { id: r.id };
+  if (r.ambiguous) return { err: `"${word}" names ${r.ambiguous.length} things — say which (its handle works): ${r.ambiguous.slice(0, 6).map((t) => `${typeof t.label === 'string' ? `"${t.label}" ` : ''}#${handleOf(t.id, entities.keys())}`).join(', ')}` };
+  return null;
+}
 import {
-  net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
+  net, replica, identityOf, sendMod, sendPuppet, sendWorldFork, sendWorldFound, sendWorldReset, requestDebug, sendRequest,
 } from '../net.js';
 import { remotes } from '../remotes.js';
+import { serverNow, serverUntil } from '../serverclock.js';   // straight from the clock: through remotes.js this closes an import cycle and the re-export is unbound at load
 import { myState, setPosture, flightReport } from '../controller.js';
-import { kick } from '../physobj.js';
+import { punt as puntThing, grab, put, drop, throwHeld } from '../thingphysics.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
-import { EMOTE_ORDER, EMOTES } from '../avatar.js';
+import { ANIM_ORDER, ANIM_CLIPS } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
+import { send } from '../editwrites.js';   // roles, the door and moderation send record: false: they are not build edits, and Ctrl+Z must never revoke a grant or lift a ban
+import * as OP from '../../../shared/protocol/requests.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
@@ -62,67 +81,150 @@ register('eyes', (arg) => {
   logChat('*', shut ? 'you close your eyes' : 'you open your eyes');
 });
 
+/** Who a typed name is here, through the world's own lookup (the server's directory, scoped to the people this world
+ *  has seen): {id, name, declares?, guest?, imported?, role, here, banned}[]. Someone present answers from the roster without asking. */
+export async function lookupPerson(name) {
+  const id = identityOf(name);
+  const r = await sendRequest('whois', { name: id ?? name });
+  return r?.ok ? r.people ?? [] : null;
+}
+// +gen / +fly (SWEEP-3 N6): the generate and fly permissions someone holds here, as /grant writes them
+const extras = (has) => [['generate', '+gen'], ['fly', '+fly']].filter(([k]) => has(k)).map(([, w]) => ` ${w}`).join('');
+const personLine = (p) => `${p.name}: ${p.role}${extras((k) => effectiveOf(worldComponents(), p.id, { anon: !!p.guest }).can[k])}${p.guest ? ' (a guest)' : ''}${typeof p.declares === 'string' ? ` (declares ${p.declares})` : ''}${p.here ? '' : ', not here now'}${p.banned ? ', banned' : ''}`;
+/** One identity for a typed name, or a chat line saying why not (nobody / several). */
+async function onePerson(name, what) {
+  const id = identityOf(name); if (id) return id;
+  const ppl = await lookupPerson(name);
+  if (ppl === null) { logChat('*', `couldn't look up ${name} just now — try again`); return null; }
+  if (!ppl.length) { logChat('*', `nobody called "${name}" has been in this world — a ${what} goes to someone it knows`); return null; }
+  if (ppl.length > 1) { logChat('*', `${ppl.length} people here have gone by "${name}": ${ppl.map((p) => `${p.id} (${p.role}${p.here ? ', here' : ''})`).join('; ')} — /${what} <id> picks one`); return null; }
+  return ppl[0].id;
+}
+
 register('role', (arg) => {
-  const who = (arg || '').trim() || CONFIG.name;
-  if (who === CONFIG.name && !worldHasOwner() && net.myRights?.open !== false) {
-    return logChat('*', 'this world is open — everyone here can build');
+  // the DOOR's role (it's what admits writes): your own comes with your rights; anyone else's from the world's lookup,
+  // present or not (roles are keyed by identity, never by name)
+  const who = (arg || '').trim();
+  if (!who || who === CONFIG.name) {
+    const r = net.myRights;
+    if (!r) return logChat('*', 'not in a world yet');
+    if (!worldHasOwner()) return logChat('*', `you: ${r.role} — this world has no owner, so nobody builds here until someone owns it`);
+    return logChat('*', `you: ${r.role}${extras((k) => !!r.permissions?.includes(k))}${!r.permissions?.includes('build') ? ' — you can look, talk and use things; an owner can make you a builder' : ''}`);
   }
-  const r = who === CONFIG.name ? (roleOf(who) ?? net.myRights) : roleOf(who);
-  if (!r) return logChat('*', `${who} holds no role here (visitor)`);
-  return logChat('*', `${who}: ${r.role}${r.gen ? ' +gen' : ''}`);
+  lookupPerson(who).then((ppl) => {
+    if (ppl === null) return logChat('*', `couldn't look up ${who} just now — try again`);
+    if (!ppl.length) return logChat('*', `nobody called "${who}" has been in this world`);
+    for (const p of ppl) logChat('*', personLine(p));
+  });
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]
-  // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
-  // and default-off everywhere -- including open worlds, and including for
-  // owners. Somebody says so, in the log, or nobody flies.
-  // `for <duration>` ends the grant (30m, 2h, 1d, 1w); `forever` clears an end.
-  const usage = 'usage: /grant <name> owner|builder|visitor|spectator|none [+gen|-gen] [+fly|-fly] [for 2h|forever]';
+  // /grant <name> <role> [+gen|-gen] [+fly|-fly] [for 2h|forever] — a role is any role this world has (member, builder,
+  // moderator, owner, or one its owner defined); +gen/+fly are per-person exceptions (roles:<id>.can.generate / .fly,
+  // research roles S5); `for <duration>` ends the grant then (roles:<id>.until; 30m, 2h, 1d, 1w), `forever` clears an end
+  // (upstream #258). The authority decides: owners grant anything, a grantRoles holder only roles ranked below their own,
+  // with permissions they hold; ownership never ends by itself.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
-  const role = parts.slice(1).find((p) => ['owner', 'builder', 'visitor', 'spectator', 'none'].includes(p.toLowerCase()))?.toLowerCase();
-  const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
-  const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
   const forAt = parts.findIndex((p, i) => i > 0 && p.toLowerCase() === 'for');
-  const dur = forAt > 0 ? parts.slice(forAt + 1, forAt + 3).join(' ').match(/^\d+\s*[a-z]+/i)?.[0] : undefined;
+  const durWord = forAt > 0 ? parts.slice(forAt + 1, forAt + 3).join(' ').match(/^\d+(?:\.\d+)?\s*[a-z]+/i)?.[0] : undefined;
+  const dur = durWord ? durationMs(durWord) : null;
   const forever = parts.some((p, i) => i > 0 && /^(forever|permanent|permanently)$/i.test(p));
-  if (forAt > 0 && !dur) return logChat('*', 'for wants a duration: 30m, 2h, 1d or 1w');
-  if (!id || (!role && !genFlag && !flyFlag && !dur && !forever)) return logChat('*', usage);
-  sendVerb('grant', { id, ...(role ? { role } : {}),
-                      ...(genFlag ? { gen: genFlag === '+gen' } : {}),
-                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}),
-                      ...(dur ? { for: dur } : forever ? { until: null } : {}) });
+  if (forAt > 0 && !dur) return logChat('*', 'for wants a duration: 30m, 2h, 1d or 1w (at most a year)');
+  const words = new Set(['for', 'forever', 'permanent', 'permanently', ...(durWord ? durWord.toLowerCase().split(/\s+/) : [])]);
+  const role = parts.slice(1).map((p) => p.toLowerCase()).find((p) => CUSTOM_ID.test(p) && !words.has(p));
+  const flag = (k) => { const f = parts.find((p) => p === `+${k}` || p === `-${k}`); return f === undefined ? undefined : f[0] === '+'; };
+  const gen = flag('gen'), fly = flag('fly');
+  if (!id || (!role && gen === undefined && fly === undefined && !dur && !forever)) {
+    return logChat('*', 'usage: /grant <name> <role> [+gen] [+fly] [for 2h|forever] — roles: member, builder, moderator, owner, or one this world defines; /grant * <role> for everyone who signed in');
+  }
+  const can = gen !== undefined || fly !== undefined ? { ...(gen !== undefined ? { generate: gen } : {}), ...(fly !== undefined ? { fly } : {}) } : null;
+  // * = the world's newcomer role for people who signed in (guests stay members unless the world opts in)
+  if (id === '*') {
+    if (isOwner({ role })) return logChat('*', 'everyone can\'t be an owner — /grant * builder or /grant * member');
+    if (dur || forever) return logChat('*', 'the world\'s default role never expires — /access invite-only|watch closes a world instead');
+    // merge: the default role also carries the world's guest opt-in (guests); ±gen/±fly join its can (SWEEP-3 N5: roles.js effectiveOf)
+    const dr = worldComponents()['default-role'];
+    const value = { ...(role ? { role } : {}), ...(can ? { can: { ...(dr?.can && typeof dr.can === 'object' ? dr.can : {}), ...can } } : {}) };
+    send({ verb: 'set', args: { id: '@world', component: 'default-role', value, merge: true } }, { what: role ? `make everyone ${role}` : `change what everyone may do (${Object.entries(can).map(([k, v]) => `${v ? '+' : '-'}${k === 'generate' ? 'gen' : k}`).join(' ')})`, record: false });
+    return;
+  }
+  // a role goes to the person's IDENTITY (the u-… id the world knows them by), never to a typed name
+  onePerson(id, 'grant').then((who) => { if (!who) return;
+    const cur = worldComponents()[`roles:${who}`];
+    // a time or exceptions alone change a grant, so there must be one: a role-less record is refused by the authority (I42)
+    if (!role && !cur) return logChat('*', `${id} holds no role here to ${dur || forever ? 'time' : 'add exceptions to'} — /grant ${id} <role>${dur ? ` for ${durWord}` : ''}`);
+    // the whole grant, changed only where the command says (house review I6: a new role kept neither the person's
+    // exceptions nor their end): a new duration replaces the end, forever drops it (a set, not a merge: a merge can't
+    // remove a field), and new exceptions join the old ones
+    // an owner's grant never ends: the authority refuses an owner with an end, so none is kept or sent
+    if (isOwner(role) && dur) return logChat('*', `ownership never expires — /grant ${id} owner, without a time`);
+    const { until: was, ...rest } = cur ?? {};
+    const until = forever || isOwner(role) ? undefined : dur ? serverUntil(dur) : was > serverNow() ? was : undefined;
+    const exceptions = can || rest.can ? { ...(rest.can ?? {}), ...(can ?? {}) } : null;
+    const value = { ...rest, ...(role ? { role } : {}), ...(exceptions ? { can: exceptions } : {}), ...(until !== undefined ? { until } : {}) };
+    send({ verb: 'set', args: { id: '@world', component: `roles:${who}`, value } },
+      { what: `${role ? `make ${id} ${role}` : forever ? `make ${id}'s grant permanent` : dur ? `time ${id}'s grant` : `change ${id}'s exceptions`}${dur ? ` for ${durWord}` : ''}`, record: false }); });
 });
 
-// /revoke <name> — take back someone's grant: they get this world's default
-// again (in a members-only world, that means they may not come in).
+// /revoke <name> — take back someone's role: they hold this world's default role again (in a world that admits only
+// people listed, that means they may not come in, and the door removes them).
 register('revoke', (arg) => {
   const id = (arg || '').trim();
   if (!id) return logChat('*', 'usage: /revoke <name>');
-  sendVerb('grant', { id, revoke: true });
+  onePerson(id, 'revoke').then((who) => { if (!who) return;
+    if (!worldComponents()[`roles:${who}`]) return logChat('*', `${id} holds no role here — nothing to take back`);
+    send({ verb: 'delete', args: { id: '@world', component: `roles:${who}` } }, { what: `take back ${id}'s role`, record: false }); });
 });
 
-// /access [members|watch|visitors|open] — who may come into this world.
-// No argument: show it (and who is listed). Owner-only to change; the
-// server enforces. Same verb underneath: the wildcard's rung.
+// /access [invite-only|watch|public|open] — who may come into this world (@world.access and default-role; the four doors of
+// shared/protocol/access.js DOORS). No argument: show it, and who is listed. Owner-only to change; the authority decides.
 register('access', (arg) => {
   const a = (arg || '').trim().toLowerCase();
-  if (!a) return sendMod('world-access');
-  const rung = { members: 'none', private: 'none', closed: 'none', watch: 'spectator', spectators: 'spectator',
-                 visitors: 'visitor', visitor: 'visitor', open: 'builder', builders: 'builder' }[a];
-  if (!rung) return logChat('*', 'usage: /access members|watch|visitors|open — or /access to see who can come in');
-  sendVerb('grant', { id: '*', role: rung });
+  if (!a) return showMembers();
+  const door = { 'invite-only': 'invite-only', invite: 'invite-only', private: 'invite-only', closed: 'invite-only', listed: 'invite-only', watch: 'watch', spectators: 'watch',
+                 public: 'public', open: 'open', builders: 'open' }[a];
+  if (!door) return logChat('*', notADoor(a, worldComponents()));
+  const ws = doorWrites(door, worldComponents());
+  const ops = ws.map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
+  send(ops.length === 1 ? ops[0] : { verb: 'batch', args: { ops } }, { what: `make this world ${door === 'invite-only' ? 'invite-only' : door === 'watch' ? 'watch only' : door}`, record: false });
 });
-register('members', () => sendMod('world-access'));
-
-// /kick /ban <name> [reason…] — owner-only, the server enforces (and
-// narrates the act into chat via the log entry it broadcasts back).
-function moderate(cmd, arg) {
-  const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
-  if (!id) return logChat('*', `usage: /${cmd} <name> [reason] — ${cmd === 'kick' ? 'they can rejoin; /ban keeps them out' : 'a kick that sticks — /unban lifts it'}`);
-  sendVerb(cmd, { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
+register('members', () => showMembers());
+/** Who may come into this world, and until when: the door (shared/protocol/access.js) and everyone listed, from this
+ *  client's own fold. */
+function showMembers() {
+  const wc = worldComponents(), now = serverNow();
+  const door = doorOf(wc);
+  const rows = Object.entries(wc).filter(([k, v]) => k.startsWith('roles:') && v && typeof v === 'object')
+    .map(([k, v]) => `${actorLabel(k.slice(6))} — ${v.role}${Number.isSafeInteger(v.until) ? ` (${leftWords(v.until, now)})` : ''}`);
+  logChat('*', `who can come into "${CONFIG.world}": ${door === 'signed-in' ? 'anyone signed in' : DOORS[door]}${rows.length ? `\n${rows.join('\n')}` : '\nnobody is listed by name'}`);
 }
+
+// /kick <name> [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
+// /warn <name> <reason…>: the authority enforces the permission and the rank (only below you);
+// everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here, and may come straight back); the others also
+// reach someone who has left (the world's lookup).
+function moderate(cmd, arg) {
+  const [id, ...rest0] = (arg || '').trim().split(/\s+/).filter(Boolean);
+  const USAGE = { kick: '<name> [reason] (they may come straight back; /ban keeps someone out)', ban: '<name> [days | forever] [reason]', mute: '<name> [minutes, default 60] [voice|chat] [reason]', warn: '<name> <reason>' };
+  if (!id) return logChat('*', `usage: /${cmd} ${USAGE[cmd]}`);
+  let rest = rest0.slice(); const args = {};
+  const num = () => (rest.length && /^\d+(\.\d+)?$/.test(rest[0]) ? Number(rest.shift()) : undefined);
+  if (cmd === 'kick') { const m = num(); if (m !== undefined) args.minutes = m; }   // the authority refuses a length, pointing at ban
+  if (cmd === 'ban') { if (rest[0] === 'forever') rest.shift(); else { const d = num(); if (d !== undefined) args.days = d; } }
+  if (cmd === 'mute') args.minutes = num() ?? 60;
+  if (cmd === 'mute' && (rest[0] === 'voice' || rest[0] === 'chat')) args.channels = [rest.shift()];
+  if (rest.length) args.reason = rest.join(' ');
+  if (cmd === 'warn' && !args.reason) return logChat('*', `usage: /warn ${USAGE.warn} — a warning says why`);
+  const go = (who) => send({ verb: cmd, args: { who, ...args } }, { what: `${cmd} ${id}`, record: false });
+  if (cmd === 'kick') { const who = identityOf(id); return who ? go(who) : logChat('*', `${id} isn't here to remove — /ban keeps someone away`); }
+  onePerson(id, cmd).then((who) => { if (who) go(who); });
+}
+register('mute', (arg) => moderate('mute', arg));
+register('warn', (arg) => moderate('warn', arg));
+for (const verb of ['unmute']) register(verb, (arg) => { const id = (arg || '').trim();
+  if (!id) return logChat('*', `usage: /${verb} <name>`);
+  onePerson(id, verb).then((who) => { if (who) send({ verb: verb, args: { who } }, { what: `${verb} ${id}`, record: false }); }); });
 
 // /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
 // one-word-two-acts overload sent a typo'd object name into the moderation
@@ -141,39 +243,57 @@ register('punt', (arg) => {
     shovePerson(named, pow, 'punt');
     return;
   }
-  kick(arg);
+  puntThing(arg);
 });
+// carrying (requests; T and C are the keys)
+register('grab', (arg) => grab((arg || '').trim() || undefined));
+register('put', (arg) => put((arg || '').trim() || undefined));
+register('drop', (arg) => drop((arg || '').trim() || undefined));
+register('throw', (arg) => throwHeld(arg));
 register('ban', (arg) => moderate('ban', arg));
 
-// /epoch [tickMs] — enter the deterministic-sim epoch (PROTOCOL_v2 §3).
-// Owner-ranked: the server refuses below rank 2 and refuses any sim name
-// this sequencer does not carry; the client only makes the door REACHABLE
-// (before this, entering an epoch took a raw world_verb — which is how a
-// playtest "of the new physics" ran the legacy volunteer sim instead).
+// /epoch [tickMs] (/physics) — run physics in this world: set @world.physics-engine (design 20 P4). Owner-ranked: the authority
+// refuses below owner and refuses an engine this server doesn't carry; it stamps the build and every thing's shape.
 register('epoch', (arg) => {
   const a = (arg || '').trim();
-  // /epoch off — LEAVE the sim epoch (ruling 2026-09-01: explicit, never a
-  // toggle): every flight is released to the fold where it stands, and punts
-  // go back to the volunteer physics. Owners only; the world refuses or announces.
+  // /epoch off — stop physics (explicit, never a toggle): the authority refuses while anything is in flight (P6: a cut
+  // waits for rests). Owners only; the world refuses or announces.
   if (/^(off|leave|exit|none)$/i.test(a)) {
-    sendVerb('epoch', { sim: null });
-    logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
+    send(OP.unset('@world', 'physics-engine'), { what: 'leave the physics epoch' });
+    logChat('*', 'asked the world to turn physics off — refused while anything is in flight (owners only; the world will refuse or announce)');
     return;
   }
   const tickMs = Math.round(Number(a)) || 66;
-  sendVerb('epoch', { sim: SIM_ID, tickMs });
-  logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
+  send(OP.set('@world', 'physics-engine', { engine: SIM_ID, tickMs }), { what: 'enter the physics epoch' });
+  logChat('*', `asked the world to run ${SIM_ID} at a ${tickMs}ms tick — throws and punts fly, and the log records where they rest (owners only; the world will refuse or announce)`);
 });
 
 register('unban', (arg) => {
   const id = (arg || '').trim();
   if (!id) return logChat('*', 'usage: /unban <name>');
-  sendVerb('unban', { id });
+  onePerson(id, 'unban').then((who) => { if (who) send({ verb: 'unban', args: { who } }, { what: `unban ${id}`, record: false }); });
 });
 
-register('bans', () => sendMod('world-bans'));
+// /bans: what is in force here now — bans and mutes — from the authority's `bans` (the
+// Moderation panel's source). The legacy world-bans message listed bans only, so a mute in force read "nobody is banned"
+// (audit 10-07). Moderators may ask; the authority says so to anyone else.
+register('bans', async () => {
+  const r = await sendRequest('bans', {});
+  if (!r?.ok) return logChat('*', r?.refused?.reason ?? "couldn't read what's in force here");
+  const now = r.now ?? [];
+  const until = (t) => (Number.isFinite(t) ? `until ${new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'until lifted');
+  const why = (x) => (x?.reason ? ` — ${x.reason}` : '');
+  const lines = [];
+  for (const x of now) {
+    const who = x.name ?? x.who;
+    if (x.ban) lines.push(`banned: ${who} ${until(x.ban.until)}${why(x.ban)}`);
+    if (x.mute) lines.push(`muted (${(x.mute.channels ?? ['voice', 'chat']).join(' + ')}): ${who} ${until(x.mute.until)}${why(x.mute)}`);
+  }
+  if (!lines.length) return logChat('*', 'nobody is banned or muted here');
+  for (const l of lines) logChat('*', l);
+});
 
-// global moderation — WORLD_ADMIN only, the server enforces
+// global moderation — server operators only, the server enforces
 function moderateGlobal(cmd, arg) {
   const [id, ...rest] = (arg || '').trim().split(/\s+/).filter(Boolean);
   if (!id) return logChat('*', `usage: /${cmd} <name>${cmd === 'gban' ? ' [reason] — bans from every world on this server' : ''}`);
@@ -183,18 +303,26 @@ register('gban', (arg) => moderateGlobal('gban', arg));
 register('gunban', (arg) => moderateGlobal('gunban', arg));
 register('gbans', () => sendMod('global-bans'));
 
+// /boom [power] [radius] (/blast) — a blast at my feet (R 10-28): the authority shoves each body by its own consent and punts each
+// loose thing; builders and up. shared/protocol/authority/bodyverbs.js force
+register('boom', async (arg) => {
+  const nums = (arg || '').trim().split(/\s+/).map(Number).filter(Number.isFinite);
+  const r = await send({ verb: 'force', args: { at: [myState.pos.x, myState.pos.y, myState.pos.z], ...(nums[0] ? { power: nums[0] } : {}), ...(nums[1] ? { radius: nums[1] } : {}) } }, { what: 'a blast', record: false });
+  if (r?.ok) logChat('*', `boom — ${r.punted?.length ?? 0} thing${r.punted?.length === 1 ? '' : 's'} sent flying, ${r.bodies?.shoved ?? 0} ${r.bodies?.shoved === 1 ? 'body' : 'bodies'} knocked over (${r.radius} m, ${r.power} m/s)`);
+});
+
 register('push', (arg) => {
   // /push [name] [power] — a REQUEST to the target's client, which owns the
   // body and decides (pushable). Range-gated here out of honesty, not
   // security: a shove is an arm's reach, and the receiver caps magnitude
   // anyway. No name = the nearest person within reach.
-  const REACH = 2.5;
+  const REACH = SHOVE_REACH;
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((p) => !/^[\d.]+$/.test(p));
   // one word, two acts: /push swing1 is the swing's use-reaction (the old
   // alias, kept working), /push bob is a shove. Things win the name lookup
   // because they were here first; /shove is always the person verb.
-  if (named && entities.has(named)) { sendVerb('use', { id: named, action: 'push' }); return; }
+  { const t = thingNamed(named); if (t?.err) return logChat('*', t.err); if (t) { send(OP.use(t.id, 'push'), { what: `push ${named}` }); return; } }
   const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((p) => /^[\d.]+$/.test(p))) || 2.2));
   let target = named ?? null;
   if (!target) {
@@ -213,7 +341,7 @@ register('push', (arg) => {
  *  client, which owns the body and decides (pushable). Range-gated here out
  *  of honesty, not security — the receiver caps magnitude anyway. */
 function shovePerson(target, pow, word) {
-  const REACH = 2.5;
+  const REACH = SHOVE_REACH;
   const r = remotes.get(target);
   if (!r?.avatar) return logChat('*', `${target} isn't here to ${word}`);
   const tp = r.avatar.root.position;
@@ -310,29 +438,25 @@ register('letgo', (arg) => {
 register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
-  return logChat('*', `shoves and blasts ${pushable() ? 'CAN' : 'can NOT'} knock you over${v ? '' : ' — /pushable on|off to change'}`);
-});
-
-register('boom', (arg) => {
-  // /boom [power] [radius] — an instantaneous force verb at my feet. The
-  // server gates it at builder rank and bounds the numbers; every pushable
-  // body in radius (mine included — standing at your own blast is on you)
-  // applies its own shove.
-  const nums = (arg || '').trim().split(/\s+/).map(parseFloat).filter(Number.isFinite);
-  sendVerb('force', {
-    at: [myState.pos.x, myState.pos.y, myState.pos.z],
-    ...(nums[0] ? { power: nums[0] } : {}),
-    ...(nums[1] ? { radius: nums[1] } : {}),
-  });
+  return logChat('*', `“Allow being moved” is ${pushable() ? 'on: people CAN' : 'off: people can NOT'} shove, blast, drag, carry or seat you${v ? '' : ' — /pushable on|off to change'}`);
 });
 
 register('fork', (arg) => {
-  // /fork <new-name> — copy this world, all history included (owner-only,
-  // the server enforces). The reply arrives as a world-forked message.
+  // /fork <new-name> — copy this world as it stands now into a new one (owner-only, the server enforces). Its chat and
+  // history stay here: the copy's founding act names this world. The reply arrives as a world-forked message.
   const to = (arg || '').trim();
   if (!to) return logChat('*', 'usage: /fork <new-name> — copies this world into a new one');
   if (!/^[a-z0-9_-]{1,64}$/i.test(to)) return logChat('*', `"${to}" won't do as a world name — letters, digits, - and _ only`);
   sendWorldFork(to);
+});
+
+register('newworld', (arg) => {
+  // /newworld <name> [title…] — found a new, empty world that you own (a signed-in account; no quotas, R 10-28).
+  // The reply arrives as world-founded, with the link.
+  const [name, ...rest] = (arg || '').trim().split(/\s+/);
+  if (!name) return logChat('*', 'usage: /newworld <name> [title] — founds a new, empty world that you own');
+  if (!/^[a-z0-9][a-z0-9-]{2,31}$/.test(name)) return logChat('*', `"${name}" won't do as a world name — 3 to 32 lowercase letters, digits and -`);
+  sendWorldFound(name, rest.join(' ') || undefined);
 });
 
 register('reset', (arg) => {
@@ -361,40 +485,47 @@ register('debug', (arg) => {
 
 register('mount', (arg) => {
   // /mount <thing> <onto> [slot] — glue where it stands, or seat in a socket
-  const [child, parent, slot] = (arg || '').trim().split(/\s+/);
-  if (!child || !parent) return logChat('*', 'usage: /mount <thing> <onto> [slot] — parents one thing to another, keeping its pose');
-  if (!entities.get(child) || !entities.get(parent)) return logChat('*', 'both things must exist (and be loaded) here');
-  sceneAttach(child, parent, slot);
+  const [childW, parentW, slot] = (arg || '').trim().split(/\s+/);
+  if (!childW || !parentW) return logChat('*', 'usage: /mount <thing> <onto> [slot] — parents one thing to another, keeping its pose');
+  const c = thingNamed(childW), p = thingNamed(parentW); const e = c?.err ?? p?.err; if (e) return logChat('*', e);
+  if (!c || !p || !entities.get(c.id) || !entities.get(p.id)) return logChat('*', 'both things must exist (and be loaded) here');
+  sceneAttach(c.id, p.id, slot);
 });
 
 register('dismount', (arg) => {
-  const id = (arg || '').trim();
-  if (!id) return logChat('*', 'usage: /dismount <thing>');
-  if (!entities.get(id)?.userData?.mountedTo) return logChat('*', `${id} isn't mounted on anything`);
-  sceneDetach(id);
+  const word = (arg || '').trim();
+  if (!word) return logChat('*', 'usage: /dismount <thing>');
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);
+  if (!t || !entities.get(t.id)?.userData?.mountedTo) return logChat('*', `${word} isn't mounted on anything`);
+  sceneDetach(t.id);
 });
 
 register('use', (arg) => {
   // /use <entity> [action] — rank 0: using the world is for everyone.
   // Reactions (the swing's push, a door's open) come back as log entries.
-  const [id, action] = (arg || '').trim().split(/\s+/);
-  if (!id) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
-  if (!entities.has(id)) return logChat('*', `nothing here called "${id}"`);
-  sendVerb('use', { id, action: action || 'use' });
+  const [word, action] = (arg || '').trim().split(/\s+/);
+  if (!word) return logChat('*', 'usage: /use <thing> [action] — e.g. /push swing1');
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);
+  if (!t) return logChat('*', `nothing here called "${word}"`);
+  const id = t.id;
+  // no action: the authority does the thing's one action, or says what it offers (it was sent 'use', which most don't)
+  send(OP.use(id, action || null), { what: action ? `${action} ${id}` : `use ${id}` });
 });
 
 register('sit', (arg) => {
-  // /sit [thing] — a declared seat nearby wins; otherwise sit on the ground
-  if (!trySitOn((arg || '').trim() || null)) setPosture('sit');
+  // /sit [thing] [slot] — a declared seat nearby wins; otherwise sit on the ground
+  const [word, slot] = (arg || '').trim().split(/\s+/);
+  const t = thingNamed(word); if (t?.err) return logChat('*', t.err);   // by id, label or handle (R 10-17)
+  if (!trySitOn(t?.id ?? (word || null), slot || null)) setPosture('sit');
 });
 
-register('emote', (arg) => {
+register('anim', (arg) => {
   const name = (arg || '').trim().toLowerCase();
-  if (!EMOTE_ORDER.includes(name) && !Object.keys(EMOTES).includes(name)) {
-    return logChat('*', `emotes: ${Object.keys(EMOTES).join(', ')}`);
+  if (!ANIM_ORDER.includes(name) && !Object.keys(ANIM_CLIPS).includes(name)) {
+    return logChat('*', `actions: ${Object.keys(ANIM_CLIPS).join(', ')}`);
   }
-  getMe()?.playEmote(name);
-  myState.emote = name;
+  getMe()?.playOnce(name);
+  myState.anim = name;
 });
 
 register('goto', (arg) => {
@@ -410,7 +541,7 @@ register('rename', () => {
   // chat.js emitted this command for years with nobody subscribed (§14.1
   // found bug) — a silently dead command. Until mid-session renames exist,
   // say so instead of saying nothing.
-  logChat('*', "renaming mid-session isn't supported yet — set your name at the door (clear ew-name in devtools to re-open it)");
+  logChat('*', "renaming mid-session isn't supported yet — set your name at the authority (clear ew-name in devtools to re-open it)");
 });
 
 function bearingTo(p) {
@@ -433,10 +564,15 @@ export async function saveScreenshot() {
 /** The bus subscriptions — called once from main's boot sequence. The
  *  register() table above filled at import; this turns it on. */
 export function initCommands() {
+  let saidRights = null;
   bus.on('your-rights', (r) => {
-    // only worth a line when the world actually restricts — open worlds stay silent
-    if (!r.open && r.role !== 'owner') {
-      logChat('*', `this world has an owner — you are a ${r.role}${r.gen ? ' +gen' : ''} here`);
+    // only worth a line when the world actually restricts — open worlds stay silent — and only when what you may do
+    // changed (a server re-sends your rights after a sanction or anyone's role change: the same line again is noise)
+    const key = JSON.stringify([r.role, r.roleName, r.permissions ?? null, r.gen, r.fly, !!r.muted]);
+    if (key === saidRights) return; saidRights = key;
+    if (!r.open && !isOwner(r)) {
+      const extra = Array.isArray(r.permissions) ? '' : r.gen ? ' +gen' : '';
+      logChat('*', `this world has an owner — you are ${/^[aeiou]/i.test(r.roleName ?? r.role) ? 'an' : 'a'} ${(r.roleName ?? r.role).toLowerCase()}${extra} here`);
     }
   });
 

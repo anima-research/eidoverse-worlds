@@ -24,7 +24,8 @@ const { FLOOR, UPPER, boxes, buildGlb, boxMesh } = await import("./two-storey-fi
 const { Document, NodeIO } = await import("@gltf-transform/core");
 const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
 type Box = [number, number, number, number, number, number];
-const { scratchSequencer, mkCheck, sleep } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
+const { tryUntil, pause } = await import("./protocol/wait.ts");
 const { check, tally } = mkCheck();
 
 const bounds = (p: Float32Array) => {
@@ -74,7 +75,7 @@ console.log("\nmodel downloads, governed:");
     const u = new URL(req.url);
     if (u.pathname === "/library/huge.glb") return new Response(huge);
     open++; most = Math.max(most, open); served++;
-    await Bun.sleep(150);
+    await pause("each fetch is held open, so loads overlap", 150);
     open--;
     return new Response(glb);
   } });
@@ -92,19 +93,22 @@ console.log("\nmodel downloads, governed:");
 }
 
 console.log("\nan agent in a two-storey building (isolated sequencer):");
-const h = await scratchSequencer("agent-mesh-collision", { serverEnv: { SKIP_OPT_SWEEP: "1" }, portFrom: 9420 });
+const h = await scratchSequencer("agent-mesh-collision", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["meshcollide", "meshcollide-empty"], owner: "walker", portFrom: 9420 });
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const URL_ = h.BASE.replace("http", "ws") + "/ws";
 let a: any = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_ });
 const near = (v: number, want: number, tol = 0.03) => Math.abs(v - want) <= tol;
 try {
   await a.connect();
+  // the protocol: a founded world has bounds (±20 m); the test ground is at x 19–21
+  const widened = await a.request("set", { id: "@world", component: "bounds", value: { min: [-100, -20, -100], max: [100, 60, 100] } });
+  if (!widened?.ok) throw new Error(`setup: widening @world's bounds was refused: ${JSON.stringify(widened?.refused ?? widened)}`);
   const up = await fetch(`${h.BASE}/upload?name=two-storey`, { method: "POST", body: await buildGlb(boxes) });
   const { path } = await up.json() as { path: string };
   // the building sits on the ground under its own origin, wherever that is
   const gy = a.heightAt(0, 0);
-  a.verb("spawn", { id: "tower", lib: path, pos: [0, gy, 0], yaw: 0 });
-  for (let i = 0; i < 100 && !a.supportIds?.get("tower"); i++) await sleep(50);
+  await legacyVerb(a, "spawn", { id: "tower", lib: path, pos: [0, gy, 0], yaw: 0 });
+  await tryUntil("the tower's support is registered", () => a.supportIds?.get("tower"), { ms: 5000, step: 50 });
   await a.supportReady();
   await sleep(300);                                     // the fit itself is a detached registration
   // y: which floor at the destination, where it has more than one (navgrid)
@@ -121,12 +125,12 @@ try {
   check("walks across the upper floor, still upstairs", await walk(0, -2.4) && near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
   a.setPosture("idle");
   check("standing still upstairs does not drop it to the ground floor", near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
-  a.verb("comp", { id: "tower", type: "sockets", data: { bench: { pos: [-0.8, UPPER + 0.45, -2.4], yaw: 0, pose: "sitchair" } } });
+  await legacyVerb(a, "comp", { id: "tower", type: "sockets", data: { bench: { pos: [-0.8, UPPER + 0.45, -2.4], body: { pose: "sitchair" } } } });
   await sleep(200);
-  a.verb("mount", { id: "walker", to: "tower", slot: "bench" });
-  for (let i = 0; i < 40 && !a.mounts.has("walker"); i++) await sleep(50);
-  await sleep(500);                                     // seated for a few ticks
-  check("sits on an upstairs seat", a.mounts.has("walker"));
+  await legacyVerb(a, "mount", { id: "walker", to: "tower", slot: "bench" });
+  await tryUntil("the walker is seated", () => !!a.myOccupancy, { ms: 2000, step: 50 });
+  await pause("seated for a few ticks", 500);
+  check("sits on an upstairs seat", !!a.myOccupancy);
   check("stands up from it upstairs, not on the ground floor beneath",
     await walk(-0.2, -2.4) && near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
   // leave upstairs, come back: the body wakes where it was, at that height,
@@ -168,13 +172,13 @@ try {
     body: await buildGlb([[-1.4, 0, -0.1, 1.4, 1.4, 0.1]]) })).json() as { path: string };
   const crossing = walk(0, 1.8);
   await sleep(300);
-  a.verb("spawn", { id: "barrier", lib: bar.path, pos: [-1.3, gy + UPPER, -0.6], yaw: 0, collide: "box" });
+  await legacyVerb(a, "spawn", { id: "barrier", lib: bar.path, pos: [-1.3, gy + UPPER, -0.6], yaw: 0, collide: "box" });
   const t0 = Date.now();
   check("a walk that something solid blocks after it set off stops at it",
     !(await crossing) && a.pos.z < -0.6 - 0.1 && near(a.pos.y, gy + UPPER), `at (${a.pos.x.toFixed(2)}, ${a.pos.y.toFixed(2)}, ${a.pos.z.toFixed(2)})`);
   check("...says why it stopped", /blocked at .* something solid/.test(a.walkStall ?? ""), String(a.walkStall));
   check("...and promptly, not at the walk timeout", Date.now() - t0 < 4_000, `${Date.now() - t0}ms`);
-  a.verb("remove", { id: "barrier" });
+  await legacyVerb(a, "remove", { id: "barrier" });
   await sleep(300);
   await walk(0, -2.4);
   check("goes back down the stair", await walk(2.2, -2.4) && await walk(2.2, 2.4) && near(a.pos.y, gy + FLOOR), `y ${a.pos.y.toFixed(3)}`);
@@ -185,13 +189,18 @@ try {
     // a closed pen 2m across, its model download held up 2.5s: there is no
     // way into it, so a walk planned against it is refused — and one planned
     // before it exists here walks straight in
-    const wallUp = await fetch(`${h.BASE}/upload?name=pen`, { method: "POST", body: await buildGlb([
-      [-1.1, 0, -1.1, 1.1, 3, -0.9], [-1.1, 0, 0.9, 1.1, 3, 1.1], [-1.1, 0, -1.1, -0.9, 3, 1.1], [0.9, 0, -1.1, 1.1, 3, 1.1]]) });
+    const penGlb = await buildGlb([
+      [-1.1, 0, -1.1, 1.1, 3, -0.9], [-1.1, 0, 0.9, 1.1, 3, 1.1], [-1.1, 0, -1.1, -0.9, 3, 1.1], [0.9, 0, -1.1, 1.1, 3, 1.1]]);
+    const wallUp = await fetch(`${h.BASE}/upload?name=pen`, { method: "POST", body: penGlb });
     const wallLib = ((await wallUp.json()) as { path: string }).path;
+    // the door stores the model as its content address (shape audit 10-16): the agent fetches /library/<that>, so the
+    // held-up download is matched by either spelling — the path the upload answered or the address of its bytes
+    const wallHex = new Bun.CryptoHasher("sha256").update(penGlb as any).digest("hex");
+    const isWallFetch = (u: string) => u.includes(`/library/${wallLib}`) || (u.includes("/library/") && u.includes(wallHex));
     const realFetch = globalThis.fetch;
     let delayed = 0;
     globalThis.fetch = (async (u: any, o?: any) => {
-      if (String(u).includes(`/library/${wallLib}`)) { delayed++; await sleep(2500); }
+      if (isWallFetch(String(u))) { delayed++; await sleep(2500); }
       return realFetch(u, o);
     }) as typeof fetch;
     try {
@@ -199,11 +208,14 @@ try {
       const there = await walk(-6, 0) && await walk(-6, 10) && await walk(19, 10);
       check("(at the test ground, x 19)", there && Math.abs(a.pos.x - 19) < 0.15, `at (${a.pos.x.toFixed(2)}, ${a.pos.z.toFixed(2)})`);
       const wy = a.heightAt(20, 10);
-      a.verb("spawn", { id: "wall", lib: wallLib, pos: [21, wy, 10], yaw: 0, collide: "exact" });
-      for (let i = 0; i < 40 && !a.entities.get("wall"); i++) await sleep(25);
+      await legacyVerb(a, "spawn", { id: "wall", lib: wallLib, pos: [21, wy, 10], yaw: 0, collide: "exact" });
+      await tryUntil("the agent holds the wall", () => a.entities.get(sceneId(a, "wall")), { ms: 1000, step: 25 });
       const crossed = await walk(21, 10);
       check("a pen spawned just now, its shape still downloading: a walk into it waits for it, then is refused — never passes through its wall",
-        !crossed && a.pos.x > 19 - 0.15 && a.pos.x < 19.9 && delayed > 0, `ended at x ${a.pos.x.toFixed(2)}, ${delayed} delayed fetch(es), ${a.walkStall ?? a.walkRefusal}`);
+        // (the protocol merge: the authority walks this body too, and its own solids stop a walk at the pen's wall either
+        // way — so the walk must be refused by its PLAN, before a step, from the pen's fitted shape: the barrier's work)
+        !crossed && a.pos.x > 19 - 0.15 && a.pos.x < 19.9 && delayed > 0 && /no walkable way|nowhere to stand|still loading/.test(a.walkRefusal ?? "") && !a.lastWalkRefusal,
+        `ended at x ${a.pos.x.toFixed(2)}, ${delayed} delayed fetch(es), plan: ${a.walkRefusal}, authority: ${JSON.stringify(a.lastWalkRefusal)}`);
 
       // a cold join: a body that left beside the wall comes back, and its
       // first walk is through the wall while the wall's shape is downloading
@@ -216,7 +228,8 @@ try {
       const pending = a.supportPending.size, from = a.pos.x;
       const back = await walk(21, 10);
       check("rejoining beside it and walking into it at once: refused too",
-        Math.abs(from - 19.3) < 0.7 && !back && a.pos.x < 19.9 && delayed > 0, `ended at x ${a.pos.x.toFixed(2)}, ${pending} syncs pending at the first walk, ${delayed} delayed`);
+        Math.abs(from - 19.3) < 0.7 && !back && a.pos.x < 19.9 && delayed > 0 && /no walkable way|nowhere to stand|still loading/.test(a.walkRefusal ?? "") && !a.lastWalkRefusal,
+        `ended at x ${a.pos.x.toFixed(2)}, ${pending} syncs pending at the first walk, ${delayed} delayed, plan: ${a.walkRefusal}, authority: ${JSON.stringify(a.lastWalkRefusal)}`);
     } finally { globalThis.fetch = realFetch; }
   }
 } finally {

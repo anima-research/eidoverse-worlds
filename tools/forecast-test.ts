@@ -308,7 +308,8 @@ const policyArgs = {
   // must not knock a world back onto the frozen authored clock
   const sky = foldSkyEntry(null, { verb: "sky", args: { clock: "real", tz: "America/Los_Angeles" }, ts: T0, seq: 1, actor: "antra" });
   const wet = foldSkyEntry(sky, { verb: "weather", args: { weather: "rain" }, ts: T0 + HOUR, seq: 2, actor: "world" });
-  check("fold: weather merge keeps clock+tz", wet.clock === "real" && wet.tz === "America/Los_Angeles",
+  // shape audit 10-16: clock 'real' is stored as its tz (a tz present is the wall clock)
+  check("fold: weather merge keeps the tz (the wall clock)", wet.clock === undefined && wet.tz === "America/Los_Angeles",
     JSON.stringify({ clock: wet.clock, tz: wet.tz }));
   check("describeSky names the real clock", (describeSky(sky, jan) ?? "").includes("real time, America/Los_Angeles"),
     describeSky(sky, jan) ?? "null");
@@ -341,13 +342,15 @@ const policyArgs = {
   const T1 = T0 + 2 * HOUR;
   const real = foldSkyEntry(null,
     { verb: "sky", args: { ...rated, clock: "real", tz: "America/Los_Angeles" }, ts: T1, seq: 4777, actor: "antra" });
-  check("#65 CONTROL (both-tree): no effective field still says ×24 after the flip",
-    real.rate === undefined && real.hours === undefined,
-    `stale hours=${real.hours} rate=${real.rate}`);
-  check("#65 real: prior rated clock parked as dormantRated {hours, rate, ts}",
-    real.dormantRated?.hours === 6.8 && real.dormantRated?.rate === 24 && real.dormantRated?.ts === T1,
-    JSON.stringify(real.dormantRated));
-  check("#65 real: clock/tz + forecast survive the flip", real.clock === "real" && !!real.forecast);
+  // shape audit 10-16 (render-media-env §13): one clock governs and the stored sky says which by its tz alone; hours/rate/ts
+  // stay put as the rated fallback (no dormantRated park: fold bookkeeping in the authored value)
+  check("#65 CONTROL: the effective clock is the wall clock after the flip, never ×24",
+    effectiveClock(real, T1).mode === "real" && !("rate" in effectiveClock(real, T1)),
+    JSON.stringify(effectiveClock(real, T1)));
+  check("#65 real: the rated clock stays put as the fallback (hours, rate, ts), no dormantRated",
+    real.hours === 6.8 && real.rate === 24 && real.ts === T1 && real.dormantRated === undefined,
+    JSON.stringify(real));
+  check("#65 real: tz + forecast survive the flip (no clock field)", real.tz === "America/Los_Angeles" && real.clock === undefined && !!real.forecast);
   check("#65 real: fold stamps bag provenance", real.seq === 4777 && real.by === "antra");
   check("#65 real: late join re-fold is identical",
     JSON.stringify(synth(real)) === JSON.stringify(real));
@@ -358,9 +361,9 @@ const policyArgs = {
   const T2 = T0 + 3 * HOUR;
   const typo = foldSkyEntry(null,
     { verb: "sky", args: { ...real, tz: "America/Nowhere" }, ts: T2, seq: 4800, actor: "antra" });
-  check("#65 B1: parked clock survives a bad-tz re-issue of a normalized bag",
-    typo.dormantRated?.hours === 6.8 && typo.dormantRated?.rate === 24 && typo.dormantRated?.ts === T1,
-    JSON.stringify(typo.dormantRated));
+  check("#65 B1: the rated fallback survives a bad-tz re-issue",
+    typo.hours === 6.8 && typo.rate === 24 && typo.tz === "America/Nowhere",
+    JSON.stringify(typo));
   const h1 = hoursAt(typo, T1 + 30 * MIN), h2 = hoursAt(typo, T1 + 45 * MIN);
   check("#65 CONTROL B1 (both-tree): the sun still MOVES under a typo'd tz",
     Math.abs(h1 - 18.8) < 1e-9 && Math.abs(h2 - 0.8) < 1e-9,
@@ -375,11 +378,10 @@ const policyArgs = {
   const T3 = T0 + 4 * HOUR;
   const wetTypo = foldSkyEntry(typo, { verb: "weather", args: { weather: "rain" }, ts: T3, seq: 4900, actor: "digi" });
   check("#65 B1: weather merge does not snap the fallback day",
-    Math.abs(hoursAt(wetTypo, T3 + MIN) - hoursAt(typo, T3 + MIN)) < 1e-9
-      && wetTypo.dormantRated?.ts === T1 && wetTypo.ts === T3,
+    Math.abs(hoursAt(wetTypo, T3 + MIN) - hoursAt(typo, T3 + MIN)) < 1e-9 && wetTypo.ts === T3,
     `wet=${hoursAt(wetTypo, T3 + MIN)} dry=${hoursAt(typo, T3 + MIN)}`);
-  check("#65 weather merge resurrects no rated fields",
-    wetTypo.rate === undefined && wetTypo.hours === undefined);
+  check("#65 weather merge re-anchors the fallback at its ts (same rate, the hour then)",
+    wetTypo.rate === 24 && Math.abs(wetTypo.hours - hoursAt(typo, T3)) < 1e-9, JSON.stringify(wetTypo));
   check("#65 weather verb cannot claim bag authorship", wetTypo.seq === 4800 && wetTypo.by === "antra",
     JSON.stringify({ seq: wetTypo.seq, by: wetTypo.by }));
 
@@ -399,22 +401,20 @@ const policyArgs = {
   // shape-sanitized — junk keys and non-finite values can never land
   const wSpoof = foldSkyEntry(real,
     { verb: "weather", args: { weather: "rain", dormantRated: { rate: 666 } } as any, ts: T3, seq: 5200, actor: "digi" });
-  check("#65 guard: weather verb cannot author the parked clock",
-    wSpoof.dormantRated?.rate === 24 && wSpoof.dormantRated?.hours === 6.8, JSON.stringify(wSpoof.dormantRated));
+  check("#65 guard: weather verb cannot author the clock under a tz",
+    wSpoof.rate === 24 && wSpoof.dormantRated === undefined, JSON.stringify(wSpoof));
   // the indirect route (review N1'): top-level hours/rate on a weather verb
   // while the standing clock is real must not reach the park either
   const wIndirect = foldSkyEntry(real,
     { verb: "weather", args: { weather: "rain", hours: 1, rate: 666 }, ts: T3, seq: 5250, actor: "digi" });
-  check("#65 guard: weather-verb hours/rate cannot reach the park under a real clock",
-    wIndirect.dormantRated?.hours === 6.8 && wIndirect.dormantRated?.rate === 24 && wIndirect.dormantRated?.ts === T1
-      && wIndirect.hours === undefined && wIndirect.rate === undefined,
-    JSON.stringify({ park: wIndirect.dormantRated, hours: wIndirect.hours, rate: wIndirect.rate }));
+  check("#65 guard: weather-verb hours/rate cannot reach the fallback clock under a tz",
+    wIndirect.rate === 24 && Math.abs(wIndirect.hours - hoursAt({ ...real, tz: "America/Nowhere" }, T3)) < 1e-9,
+    JSON.stringify({ hours: wIndirect.hours, rate: wIndirect.rate }));
   const junk = foldSkyEntry(null,
     { verb: "sky", args: { clock: "real", tz: "America/Los_Angeles", dormantRated: { rate: 999, hours: "noon", junk: 7, ts: "yes" } } as any, ts: T0, seq: 5300, actor: "antra" });
-  check("#65 guard: sky-verb dormantRated is shape-sanitized (finite numbers only)",
-    junk.dormantRated?.rate === 999 && junk.dormantRated?.hours === undefined
-      && (junk.dormantRated as any)?.junk === undefined && junk.dormantRated?.ts === undefined,
-    JSON.stringify(junk.dormantRated));
+  check("#65 guard: a re-issued dormantRated is read as the rated clock, finite numbers only (never stored)",
+    junk.rate === 999 && junk.hours === 12 && junk.dormantRated === undefined && (junk as any).junk === undefined,
+    JSON.stringify(junk));
   const spoof = foldSkyEntry(null,
     { verb: "sky", args: { hours: 3, rate: 1, seq: 1, by: "evil", dormantRated: { rate: 999 } } as any, ts: T0, seq: 6000, actor: "antra" });
   check("#65 guard: rated mode drops dormantRated and fold owns seq/by",
@@ -426,9 +426,9 @@ const policyArgs = {
   const legacy = { hours: 6.8, rate: 24, clouds: "cumulus", clock: "real", tz: "America/Los_Angeles",
     forecast: { ...policyArgs, epoch: T0, seq: 4777, by: "antra" }, ts: T1 };
   const healed = synth(legacy);
-  check("#65 legacy bag heals on late-join replay",
-    healed.hours === undefined && healed.rate === undefined
-      && healed.dormantRated?.hours === 6.8 && healed.dormantRated?.rate === 24, JSON.stringify(healed));
+  check("#65 legacy bag heals on late-join replay (clock real → its tz; hours/rate the fallback)",
+    healed.hours === 6.8 && healed.rate === 24 && healed.tz === "America/Los_Angeles" && healed.clock === undefined
+      && healed.dormantRated === undefined, JSON.stringify(healed));
   check("#65 healing never restamps provenance",
     healed.forecast.epoch === T0 && healed.forecast.seq === 4777 && healed.forecast.by === "antra"
       && healed.ts === T1);

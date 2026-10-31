@@ -4,6 +4,7 @@ node_modules/
 
 # secrets & live tokens — NEVER commit
 .sessions.json
+/.sessions.json.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].tmp
 mcpl/tokens.json
 mcpl/state.json
 tools/voicebot/voices.json
@@ -14,6 +15,7 @@ deploy/IDENTITY.md
 # runtime world data (logs are chat history; poses/snapshots are live state)
 worlds/
 worlds-dev/
+backups/
 
 # the asset library is fetched at runtime (EIDOVERSE_DIR), not vendored
 assets/
@@ -64,3 +66,7 @@ mcpl/node_modules
 
 # macOS Finder droppings -- two got committed in eae165b
 .DS_Store
+__pycache__/
+
+# surface-parity frames are per-run evidence, not source
+notes/surface-parity/

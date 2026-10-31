@@ -21,12 +21,14 @@
 // roughness prompted this tool — served by a scratch sequencer so nothing
 // appends to the real log.
 //
-// Scaffolding (scratch sequencer, CDP, Windows shim rule) is paritybench's.
+// Scaffolding: a scratch sequencer, CDP, and the Windows shim rule (spawn process.execPath, never the PATH bun).
 
 import { existsSync, mkdtempSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chromeArgs, findChrome } from "./protocol/chrome.ts";
+import { killChild } from "./protocol/procgroup.ts";
 
 const args = process.argv.slice(2);
 const has = (n: string) => args.includes(`--${n}`);
@@ -51,29 +53,7 @@ const SECS = num("secs", WIDE ? 25 : HEAVYJOIN ? 50 : GRASSDIAG ? 75 : 40);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
-// A WebGPU-capable Chromium, wherever this machine keeps one — CHROME env
-// wins, else the first candidate that exists (paritybench's list, copied:
-// the tools stay self-contained).
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  win32: [
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-  ],
-  darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-  ],
-  linux: [
-    "/usr/bin/google-chrome", "/usr/bin/microsoft-edge",
-    "/usr/bin/chromium-browser", "/usr/bin/chromium",
-  ],
-};
-const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p))
-  ?? BROWSER_CANDIDATES[process.platform]?.[0] ?? "chrome";
+const CHROME = findChrome() ?? "";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
@@ -83,9 +63,9 @@ const mb = (b: number) => `${(b / 1048576).toFixed(1)}MB`;
 if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
   console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
 }
-if (!existsSync(CHROME)) { console.error(`✗ no browser at ${CHROME}`); process.exit(2); }
-if (!WIDE && !existsSync(join(ROOT, "worlds", "commons", "log.jsonl"))) {
-  console.error("✗ worlds/commons/log.jsonl not found — bootjank replays the real commons"); process.exit(2);
+if (!CHROME || !existsSync(CHROME)) { console.error(CHROME ? `✗ no browser at ${CHROME}` : "✗ no Chromium found (set CHROME=/path/to/chrome)"); process.exit(2); }
+if (!WIDE && !existsSync(join(ROOT, "worlds", "commons", "world.jsonl"))) {
+  console.error("✗ worlds/commons/world.jsonl not found — bootjank replays the real commons"); process.exit(2);
 }
 
 // --wide: the libs an arrival should and should NOT fetch. Distinct sets, so
@@ -123,13 +103,7 @@ const SCRATCH = mkdtempSync(join(tmpdir(), "ew-bootjank-"));
 let seq: Bun.Subprocess | null = null;
 let edge: Bun.Subprocess | null = null;
 let cleaned = false;
-function reap(p: Bun.Subprocess | null) {
-  if (!p) return;
-  try { p.kill(); } catch { /* gone */ }
-  if (process.platform === "win32" && typeof p.pid === "number") {
-    try { Bun.spawnSync(["taskkill", "/PID", String(p.pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" }); } catch { /* fine */ }
-  }
-}
+const reap = killChild;
 async function cleanup() {
   if (cleaned) return;
   cleaned = true;
@@ -153,11 +127,17 @@ const WORLDS = join(SCRATCH, "worlds");
 mkdirSync(WORLDS, { recursive: true });
 if (!WIDE) cpSync(join(ROOT, "worlds", "commons"), join(WORLDS, "commons"), { recursive: true });
 const WORLD = WIDE ? `wide-${Math.random().toString(36).slice(2, 7)}` : "commons";
+const SEQ_ENV = { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, WORLDS_DIR: WORLDS, ...(WIDE ? { HOST: "127.0.0.1", TRUST_NAMES: "1", SERVER_OPERATORS: "" } : {}) };
+// --wide: a founded world its driver owns (a typed name is an account on this loopback-only server)
+if (WIDE) {
+  const r = Bun.spawnSync([process.execPath, "tools/protocol/world.ts", "found", WORLD, "--owner", "widedriver"], { cwd: ROOT, env: SEQ_ENV });
+  if (r.exitCode !== 0) await die(2, `✗ founding ${WORLD} failed: ${r.stderr.toString().slice(-300)}`);
+}
 
 console.log(`\n${bold("bootjank")} — ${WIDE ? "far-city world" : "commons replica"} on :${PORT}${MBIT ? ` at ${MBIT}mbit` : ""}, ${SECS}s window`);
 seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, WORLDS_DIR: WORLDS },
+  env: SEQ_ENV,
   stdout: Bun.file(join(SCRATCH, "sequencer.log")),
   stderr: Bun.file(join(SCRATCH, "sequencer.log")),
 });
@@ -169,34 +149,29 @@ seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
   if (!up) await die(2, `✗ sequencer never came up on :${PORT}`);
 }
 
-// ---- --wide: author the far city (driver socket, lightbench's pattern) ------
+// ---- --wide: author the far city (one batch from its owner) ----------------
 if (WIDE) {
-  const verbs: Array<[string, unknown]> = [
-    ["terrain", { seed: 7, size: 1200, segments: 200, amplitude: 6, flatRadius: 16 }],
-    ["sky", { clouds: "clear", hours: 12, azimuth: 180 }],
-    ...NEAR_LIBS.map((lib, i): [string, unknown] =>
-      ["spawn", { id: `near${i}`, lib, pos: [3 + i * 3, 0, -8 - i * 2], yaw: 0 }]),
-    ...FAR_LIBS.map((lib, i): [string, unknown] =>
-      ["spawn", { id: `far${i}`, lib, pos: [300 + i * 40, 0, 300 + i * 40], yaw: 0 }]),
+  const at = (pos: number[]) => ({ transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const ops = [
+    { verb: "set", args: { id: "@world", component: "terrain", value: { kind: "noise", seed: 7, size: 1200, segments: 200, amplitude: 6, flatRadius: 16 } } },
+    { verb: "set", args: { id: "@world", component: "sky", value: { clouds: "clear", hours: 12, azimuth: Math.PI } } },
+    ...NEAR_LIBS.map((model, i) => ({ verb: "create", args: { id: `$near${i}`, model, components: at([3 + i * 3, 0, -8 - i * 2]) } })),
+    ...FAR_LIBS.map((model, i) => ({ verb: "create", args: { id: `$far${i}`, model, components: at([300 + i * 40, 0, 300 + i * 40]) } })),
   ];
   await new Promise<void>((resolve, reject) => {
     const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", token: "" }));
-    dws.onmessage = async (ev) => {
+    dws.onopen = () => dws.send(JSON.stringify({ type: "join", world: WORLD, id: "widedriver", avatar: "", replica: true }));
+    dws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
-      if (m.type === "snapshot") {
-        for (const [verb, args] of verbs) {
-          dws.send(JSON.stringify({ type: "verb", verb, args }));
-          await sleep(150);
-        }
-        await sleep(400);
+      if (m.type === "snapshot") dws.send(JSON.stringify({ type: "request", id: "wide", verb: "batch", args: { ops } }));
+      if (m.type === "reply" && m.id === "wide") {
         try { dws.close(); } catch { /* fine */ }
-        resolve();
+        if (m.ok) resolve(); else reject(new Error(`batch refused: ${JSON.stringify(m.reply?.refused ?? m).slice(0, 400)}`));
       }
       if (m.type === "error") reject(new Error(`driver refused: ${m.error}`));
     };
     dws.onerror = () => reject(new Error("driver socket failed"));
-    setTimeout(() => reject(new Error("driver never got a snapshot")), 15_000);
+    setTimeout(() => reject(new Error("driver never got a reply")), 15_000);
   }).catch((e) => die(2, `✗ wide-world authoring failed: ${e.message}`));
 }
 
@@ -225,12 +200,8 @@ function cdpOn(ws: WebSocket): Cdp {
 
 edge = Bun.spawn([
   CHROME,
-  ...(HEADED ? [] : ["--headless=new"]),
-  `--remote-debugging-port=${DEBUG_PORT}`,
-  `--user-data-dir=${join(SCRATCH, "edge-profile")}`,   // fresh profile = cold HTTP + shader caches
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-  "--disable-background-networking", "--disable-sync", "--mute-audio",
-  "--window-size=1280,800", "--enable-unsafe-webgpu",
+  // a fresh profile = cold HTTP + shader caches
+  ...chromeArgs({ headed: HEADED, port: DEBUG_PORT, profile: join(SCRATCH, "edge-profile"), extra: ["--window-size=1280,800", "--enable-unsafe-webgpu"] }),
   "about:blank",
 ], { stdout: "ignore", stderr: "ignore" });
 
@@ -289,6 +260,7 @@ if (MBIT > 0) {
 
 const RECORDER = `(() => {
   if (globalThis.__jank) return;
+  performance.setResourceTimingBufferSize(20000);   // the default 250 fills with modules before any model, blinding the far-city gate
   const J = globalThis.__jank = {
     frames: [], gpu: [], bills: [], longtasks: [],
     _up: 0, _tex: 0, _pipe: 0, _pipeMs: 0, _shad: 0, _shadMs: 0, _bmp: 0,
@@ -381,7 +353,7 @@ if (HEAVYJOIN) {
   const heavyJoin = (id: string) => {
     const hws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
     hws.onopen = () => hws.send(JSON.stringify({
-      type: "join", world: WORLD, id, token: "",
+      type: "join", world: WORLD, id, token: "", replica: true,
       avatar: "eidoverse/assets/vrms/aletheia.vrm",   // library-relative, like resolveMyAvatarPath
     }));
     return hws;
@@ -535,7 +507,7 @@ let wideFailed = 0;
 if (WIDE) {
   console.log(`\n${bold("── far-city gate")}`);
   const fetched = new Set(resources.map((r) => r.name.split("?")[0]));
-  const base = (lib: string) => lib.split("/").at(-1)!.slice(0, 60);
+  const base = (model: string) => model.split("/").at(-1)!.slice(0, 60);
   for (const lib of FAR_LIBS) {
     const hit = fetched.has(base(lib));
     if (hit) wideFailed++;

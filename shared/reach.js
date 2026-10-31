@@ -20,6 +20,8 @@
 // back into rotations, because that conversion is renderer-shaped and this is
 // not. (Same split as motioneval.js.)
 
+import { qMul as qMulq, qConj, qRotate as qRot, qAxisAngle } from './rot.js';
+
 // ---- the four vector ops this needs ---------------------------------------
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -327,27 +329,7 @@ export function qFromUnitVectors(a, b) {
   return [c[0] / l, c[1] / l, c[2] / l, w / l];
 }
 
-export const qMulq = (a, b) => [
-  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
-  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
-  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
-  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
-];
-
-export const qConj = (q) => [-q[0], -q[1], -q[2], q[3]];
-
-/** Rotate a vector by a quaternion. */
-export const qRot = (q, v) => {
-  const [x, y, z, w] = q;
-  const cx = y * v[2] - z * v[1] + w * v[0];
-  const cy = z * v[0] - x * v[2] + w * v[1];
-  const cz = x * v[1] - y * v[0] + w * v[2];
-  return [
-    v[0] + 2 * (y * cz - z * cy),
-    v[1] + 2 * (z * cx - x * cz),
-    v[2] + 2 * (x * cy - y * cx),
-  ];
-};
+export { qMulq, qConj, qRot, qAxisAngle };
 
 /**
  * Local rotations for a two-bone chain, given rest and wanted directions in
@@ -795,12 +777,6 @@ export function solveTwoBoneClear(o, guards) {
 // goes (TWIST.lowerArm = 80°). Whatever is left goes to the wrist, clamped,
 // because a wrist is not a ball joint and a hand bent past its range reads
 // worse than a palm that is merely off-angle.
-
-/** Quaternion from an axis and angle. */
-export const qAxisAngle = (axis, ang) => {
-  const s = Math.sin(ang / 2);
-  return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(ang / 2)];
-};
 
 /** Shorten a rotation to at most `maxAng`, keeping its axis. */
 export function qClampAngle(q, maxAng) {

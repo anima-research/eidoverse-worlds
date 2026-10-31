@@ -1,4 +1,4 @@
-// debug-tabs-test substitutes this for every neighbour debug.js imports except rows.js (pure DOM) and frames.js
+// debug-tabs-test substitutes this for every neighbour debug.js imports except rows.js (pure DOM) and windows.js
 // (the real one). One export table serves core/base/xrpanels/gputime/perf/render/perfscope/three-mesh-bvh/colliders/
 // ragdoll/ammodoll/avatar/ui — the names are disjoint. Inert unless a test reads it.
 const Inert = class { constructor() {} set() { return this; } add() {} remove() {} copy() { return this; } };
@@ -16,6 +16,9 @@ export const MODES = [], setMode = () => {}, activeMode = () => null, setSolid =
 export const mountPerfPanel = () => {};
 export const MeshBVHHelper = Inert;
 export const colliders = new Map();
+// colliders.js frameOf: the frame the walker reads a collider in. The suite's colliders map is empty, so this is the
+// real module's standing branch only (yaw = rotation.y, the collider's own box); a lying thing needs real three.
+export const frameOf = (e) => ({ yaw: e.obj?.rotation?.y ?? 0, box: e.box, exact: e.exact, pillar: e.pillar, grid: e.grid });
 export const closestParams = () => ({});
 export const TUNING = {};
 export const JOINT_SPECS = { hip: { flex: 90, ext: 10, twist: 20, x: [-10, 10], z: [-10, 10] } }, HAIR_TUNING = {}, WING_TUNING = {};

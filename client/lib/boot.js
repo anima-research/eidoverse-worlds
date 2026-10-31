@@ -138,17 +138,17 @@ function paint() {
 // it's the one time the user is looking at the UI and not at the world.
 const TIPS = [
   // audited against the live bindings 09-05 (R: "see if anything needs updating")
-  // Whispers and away-delivery are SERVER policy (EIDO_WHISPERS_ENABLED; each agent's own wake rules), not
-  // promises this client can make — the wording stays descriptive, never a guarantee (review 2026-09-10 #4).
+  // An agent's wake rules are its own, not promises this client can make — the wording stays descriptive, never a
+  // guarantee (review 2026-09-10 #4).
   ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
-  ['/', '<b>/w name message</b> whispers privately where this world allows it. Whispers are never written to the world log.'],
-  ['B', '<b>B</b> toggles edit mode. Off by default, so looking around never moves anything.'],
-  ['↕', 'In edit mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
+  ['/', 'Type <b>/</b> in chat for commands. Everything said in a world is public: everyone here hears it.'],
+  ['B', '<b>B</b> toggles builder mode. Off by default, so looking around never moves anything.'],
+  ['↕', 'In builder mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
   ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
-  ['1', 'Number keys play the emote bar\'s gestures, in its order. The bar shows which is which.'],
-  ['Esc', '<b>Esc</b> closes every open panel. <b>Esc</b> again brings back exactly the set you had.'],
+  ['1', 'Number keys play the action bar\'s entries, in its order. The bar shows which is which.'],
+  ['Tab', '<b>Tab</b> hides every open panel and brings back exactly what you had. <b>F11</b> is full screen; <b>Esc</b> leaves it.'],
   ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],
   ['▦', 'Every panel moves and resizes. Where you put them is remembered.'],
@@ -235,6 +235,43 @@ export function finishBoot(reason = 'ready') {
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
   releaseBoot?.();
+}
+
+/** The world refused the join (net.js: close 4005 and its kin — an old-format world, no such world, a removal): the
+ *  splash stays up, or comes back, and says so in the server's own words. Nothing lifts it — no ceiling, no "go in
+ *  anyway": an empty world behind it looked like a successful join (R 10-16 00:02: an old-format world opened as her
+ *  avatar on an empty grid, the refusal toasted UNDER the splash and gone before it lifted). Coming back is a reload. */
+export function refuseBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root) return;
+  el = root;
+  done = true;   // finishBoot, the 45 s ceiling and the progress painters all stand down
+  clearInterval(tipTimer);
+  clearInterval(itemsTimer);
+  stopRays();
+  root.classList.remove('gone');
+  root.style.display = '';
+  root.classList.add('refused');
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'alert'); }
+  const detail = root.querySelector('.sp-detail');
+  if (detail) detail.textContent = '';
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = "couldn't step in";
+}
+export const bootRefused = () => !!el?.classList.contains('refused');
+
+/** A TRANSIENT refusal (a full world) said on the splash while it waits: the words where the person is looking, but
+ *  nothing is pinned — the splash goes on, and the next join that succeeds finishes it as usual (review r3 F6). */
+export function waitBoot(text) {
+  const root = el ?? document.getElementById('splash');
+  if (!root || done) return false;
+  el = root;
+  const phase = root.querySelector('.sp-phase');
+  if (phase) { phase.textContent = String(text ?? ''); phase.setAttribute('role', 'status'); }
+  const sub = root.querySelector('.sp-sub');
+  if (sub) sub.textContent = 'waiting for room — trying again by itself';
+  return true;
 }
 
 /** Disarm the lite-mode tripwire index.html armed before the first engine byte.

@@ -33,21 +33,22 @@ writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fi
 writeFileSync(join(lib, "fixtures/body.vrm"), fixture());
 const AVATAR = "fixtures/body.vrm", WORLD = "voice-wire", OWNER = "voice-owner";
 const preload = process.env.CONTACT_MUTATION ? join(import.meta.dir, "contact-mutation-preload.ts") : undefined;
-const h = await scratchSequencer("voice-wire", { preload, serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9590 });
+const h = await scratchSequencer("voice-wire", { worlds: [WORLD], preload, serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, portFrom: 9590 });   // TRUST_NAMES: a typed name is an account, so the owner is remembered and its restore exists to inspect
 const WS = h.BASE.replace("http", "ws") + "/ws";
 
-type Sock = { ws: WebSocket; last: Record<string, any> | null; snapshot: any };
+type Sock = { ws: WebSocket; last: Record<string, any> | null; snapshot: any; left: Set<string> };
 /** A raw browser-shaped client. Records the newest pose it has seen for OWNER from stage frames. */
 async function join_(id: string, extra: Record<string, unknown> = {}): Promise<Sock> {
-  const s: Sock = { ws: new WebSocket(WS), last: null, snapshot: null };
+  const s: Sock = { ws: new WebSocket(WS), last: null, snapshot: null, left: new Set() };
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error(`${id} join timed out`)), 5000);
     s.ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") { s.snapshot = m; clearTimeout(t); res(); }
       if (m.type === "frame" && m.poses?.[OWNER]) s.last = m.poses[OWNER];
+      if (m.type === "leave" && typeof m.id === "string") s.left.add(m.id);
     };
-    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, ...extra }));
+    s.ws.onopen = () => s.ws.send(JSON.stringify({ type: "join", world: WORLD, id, avatar: AVATAR, replica: true, ...extra }));
   });
   return s;
 }
@@ -120,9 +121,10 @@ x = ownerSends({ mic: true, hear: false });
 await until(() => at(x)(late), "late joiner live frame");
 check("...and the next live frame does", both(late.last, true, false), JSON.stringify(late.last));
 owner.ws.close();
-await sleep(300);
+await until(() => peer.left.has(OWNER), "the owner's leave");   // its pose is remembered on leave: wait for that, not a guess
 const back = await join_(OWNER);
-check("the owner's own restore carries neither", !!back.snapshot && (back.snapshot.restore == null || (!("mic" in back.snapshot.restore) && !("hear" in back.snapshot.restore))), JSON.stringify(back.snapshot?.restore));
+check("the owner's own restore is there (its body remembered)", !!back.snapshot?.restore && Array.isArray(back.snapshot.restore.p), JSON.stringify(back.snapshot?.restore));
+check("...and carries neither mic nor hear", !!back.snapshot?.restore && !("mic" in back.snapshot.restore) && !("hear" in back.snapshot.restore), JSON.stringify(back.snapshot?.restore));
 
 for (const s of [peer, spectator, late, back]) { try { s.ws.close(); } catch {} }
 try { agent.close?.(); agent.disconnect?.(); } catch {}

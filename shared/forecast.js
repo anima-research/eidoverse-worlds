@@ -18,6 +18,9 @@
 // simultaneous clients all land on the same segment of the same forecast.
 
 export const WEATHERS = ['clear', 'fair', 'sunshower', 'overcast', 'rain', 'storm', 'cyclone', 'darkstorm'];
+// The cloud kinds the sky realizes (client/lib/sky.js re-exports this; the
+// world entity's Sky record names the same list).
+export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 
 // ---------------------------------------------------------------- day clock
 
@@ -45,25 +48,28 @@ function tzFormatter(tz) {
  *  keeps a weather verb from snapping the day (see foldSkyEntry). No ambient
  *  Date.now() even in clock mode: the wall hour is derived from the caller's
  *  tMs, so tests can freeze time and every plane derives identically. */
+// A tz present is the wall clock (shape audit 10-16: clock and dormantRated are gone from the stored sky; hours, rate and ts
+// stay put as the rated fallback). An older value said so with clock: 'real' (tz absent = Los Angeles), and parked its
+// rated clock under dormantRated: both still read.
+export const isRealClock = (sky) => !!sky && (typeof sky.tz === 'string' || sky.clock === 'real');
+/** The rated clock's hour at tMs: hours + rate × elapsed since ts (an older value's parked clock when it has one). */
+export function ratedHoursAt(sky, tMs) {
+  if (!sky) return 12;
+  const d = sky.dormantRated;
+  if (isRealClock(sky) && d && typeof d === 'object') return ((((d.hours ?? 12) + (d.rate ?? 0) * (tMs - (d.ts ?? sky.ts ?? tMs)) / 3600e3) % 24) + 24) % 24;
+  return ((sky.hours ?? 12) + (sky.rate ?? 0) * (tMs - (sky.ts ?? tMs)) / 3600e3 + 24000) % 24;
+}
 export function hoursAt(sky, tMs) {
   if (!sky) return 12;
-  if (sky.clock === 'real') {
+  if (isRealClock(sky)) {
     const f = tzFormatter(sky.tz ?? 'America/Los_Angeles');
     if (f) {
       const get = Object.fromEntries(f.formatToParts(new Date(tMs)).map((p) => [p.type, p.value]));
       return (Number(get.hour) % 24) + Number(get.minute) / 60 + Number(get.second) / 3600;
     }
-    // tz didn't resolve: the PARKED rated clock governs (#65). A normalized
-    // bag carries no top-level hours/rate — without this arm a typo'd tz on a
-    // normalized world would freeze the sun at the `?? 12` default forever.
-    // dormantRated anchors on its own ts (the parking moment), so later
-    // weather merges restamping sky.ts never snap the fallback day.
-    const d = sky.dormantRated;
-    if (d && typeof d === 'object') {
-      return ((((d.hours ?? 12) + (d.rate ?? 0) * (tMs - (d.ts ?? sky.ts ?? tMs)) / 3600e3) % 24) + 24) % 24;
-    }
+    // tz didn't resolve: the rated clock governs (an older value's parked one, #65)
   }
-  return ((sky.hours ?? 12) + (sky.rate ?? 0) * (tMs - (sky.ts ?? tMs)) / 3600e3 + 24000) % 24;
+  return ratedHoursAt(sky, tMs);
 }
 
 // ---------------------------------------------------------------- rng
@@ -115,7 +121,9 @@ export function normalizePolicy(f) {
     if (WEATHERS.includes(name) && weight > 0) states.push({ state: name, weight });
   }
   if (!states.length) return null;
-  const d = Array.isArray(f.dwellSec) ? f.dwellSec : [600, 1800];
+  // dwell and transition (shape audit 10-16: no unit in a name); an older policy's dwellSec / transitionSec read too
+  const dw = Array.isArray(f.dwell) ? f.dwell : f.dwellSec;
+  const d = Array.isArray(dw) ? dw : [600, 1800];
   const dwellMin = clamp(d[0], DWELL_FLOOR_S, DWELL_CAP_S);
   const dwellMax = clamp(d[1] ?? dwellMin, dwellMin, DWELL_CAP_S);
   const k = Array.isArray(f.k) ? f.k : [0.7, 1];
@@ -129,7 +137,7 @@ export function normalizePolicy(f) {
     kMin, kMax,
     // a transition may never outlive the shortest segment — otherwise a new
     // ease can begin before the previous one finishes, forever
-    transitionSec: clamp(f.transitionSec ?? 30, 1, Math.min(600, dwellMin)),
+    transitionSec: clamp(f.transition ?? f.transitionSec ?? 30, 1, Math.min(600, dwellMin)),
     epoch: Number.isFinite(f.epoch) ? f.epoch : 0,   // stamped at fold; 0 = never folded
     seq: f.seq, by: f.by,
   };
@@ -184,7 +192,7 @@ export function effectiveSky(sky, nowMs, cursor = null) {
     source: 'authored',
     weather: WEATHERS.includes(sky?.weather) ? sky.weather : null,
     k: sky?.weatherK ?? 1,
-    seconds: sky?.weatherSeconds,
+    seconds: sky?.transition ?? sky?.weatherSeconds,
     cursor: null,
   };
   const p = normalizePolicy(sky?.forecast);
@@ -196,7 +204,7 @@ export function effectiveSky(sky, nowMs, cursor = null) {
   if (o && WEATHERS.includes(o.state) && nowMs >= o.ts && o.ts >= seg.startMs && o.ts < seg.endMs) {
     return {
       source: 'manual', weather: o.state, k: o.k ?? 1,
-      seconds: sky.weatherSeconds, seg, cursor: seg,
+      seconds: sky.transition ?? sky.weatherSeconds, seg, cursor: seg,
       by: o.by, seq: o.seq, resumesMs: seg.endMs,
     };
   }
@@ -210,50 +218,26 @@ export function effectiveSky(sky, nowMs, cursor = null) {
 
 // ---------------------------------------------------------------- fold
 
-/** dormantRated is a CLOCK, not a grab-bag: {hours, rate, ts} — the rated
- *  clock parked when real mode took over, anchored at its own parking-moment
- *  ts. Shape-sanitize anything arriving from args or prior state: finite
- *  numbers only, no junk keys. Null when nothing usable remains. */
-function sanitizeDormant(d) {
-  if (!d || typeof d !== 'object') return null;
-  const s = {};
-  if (Number.isFinite(d.hours)) s.hours = d.hours;
-  if (Number.isFinite(d.rate)) s.rate = d.rate;
-  if (Number.isFinite(d.ts)) s.ts = d.ts;
-  return (s.hours != null || s.rate != null) ? s : null;
-}
-
-/** One clock may govern (issue #65). Whenever `clock:'real'` is authored,
- *  the rated fields `hours`/`rate` never remain as active-looking top-level
- *  state: they park under `dormantRated` — an explicitly-inactive clock a
- *  later return to rated mode restores from (the tuner prefills its sliders
- *  with it), and the one fallback source hoursAt/effectiveClock consult when
- *  the tz turns out not to resolve. Parking is UNCONDITIONAL on real mode —
- *  the fold never asks ICU anything, so the folded STATE is a pure function
- *  of the log on every runtime; only derived hours depend on the tz database
- *  (exactly as on the pre-contract fold). Outside real mode `dormantRated`
- *  is dropped: the top-level fields are the active clock again.
- *
- *  Newly-authored top-level fields win over the carried-forward park (and
- *  re-anchor its ts); a standing-bag re-issue with neither inherits `prior`
- *  untouched — that is how the wholesale sky fold carries the parked clock
- *  across mode flips without the fold holding any state of its own.
- *
- *  Runs on EVERY fold, synthetic replay included — config normalization, not
- *  provenance stamping: deterministic, idempotent, and it heals bags folded
- *  before the contract existed the next time a late join replays them. */
-function normalizeClock(out, prior) {
-  delete out.dormantRated;
-  if (out.clock === 'real') {
-    const parked = {};
-    if (Number.isFinite(out.hours)) parked.hours = out.hours;
-    if (Number.isFinite(out.rate)) parked.rate = out.rate;
-    const d = (parked.hours != null || parked.rate != null)
-      ? { ...(prior ?? {}), ...parked, ts: out.ts }
-      : prior;
-    delete out.hours; delete out.rate;
-    if (d) out.dormantRated = d;
-  }
+// ---------------------------------------------------------------- spelling (shape audit 10-16)
+// What a sky or weather act may still SAY the old way, stored the one way: clock 'real' is a tz (the old default zone when
+// none was named); any other clock is a rated sky (no tz); weatherSeconds is transition; a forecast's dwellSec and
+// transitionSec are dwell and transition; a re-issued dormantRated {hours, rate, ts} (the old park) is the rated clock,
+// re-anchored at the entry's ts so the day doesn't snap. Pure; a value already in today's spelling comes back unchanged.
+const FIX = (o) => o && typeof o === 'object' && !Array.isArray(o);
+export function skySpelling(args, ts) {
+  if (!FIX(args)) return args;
+  const out = { ...args };
+  if ('clock' in out) { if (out.clock === 'real') out.tz = typeof out.tz === 'string' && out.tz ? out.tz : 'America/Los_Angeles'; else delete out.tz; delete out.clock; }
+  if ('weatherSeconds' in out) { if (out.transition === undefined && out.weatherSeconds != null) out.transition = out.weatherSeconds; delete out.weatherSeconds; }
+  if (FIX(out.forecast)) { const f = { ...out.forecast };
+    if ('dwellSec' in f) { if (f.dwell === undefined) f.dwell = f.dwellSec; delete f.dwellSec; }
+    if ('transitionSec' in f) { if (f.transition === undefined) f.transition = f.transitionSec; delete f.transitionSec; }
+    out.forecast = f; }
+  if ('dormantRated' in out) { const d = out.dormantRated; delete out.dormantRated;
+    if (FIX(d) && out.hours == null && (Number.isFinite(d.hours) || Number.isFinite(d.rate))) {
+      const rate = Number.isFinite(d.rate) ? d.rate : 0, h0 = Number.isFinite(d.hours) ? d.hours : 12;
+      out.hours = Number.isFinite(ts) && Number.isFinite(d.ts) ? ((((h0 + rate * (ts - d.ts) / 3600e3) % 24) + 24) % 24) : h0;
+      if (out.rate == null) out.rate = rate; } }
   return out;
 }
 
@@ -265,7 +249,7 @@ function normalizeClock(out, prior) {
  *  and the top-level `seq`/`by` (which sky entry authored this bag — the
  *  effective clock's provenance, issue #65) come from the ENTRY, never from
  *  the authored args — a policy bag cannot spoof its own provenance. The one
- *  exception is synthetic pre-history replay (stateToEntries' negative seqs):
+ *  exception is synthetic pre-history replay (negative seqs: a snapshot re-read as entries):
  *  those args ARE the already-stamped fold, so stamps pass through untouched —
  *  restamping them with the synthetic entry would re-epoch the forecast on
  *  every late join.
@@ -276,6 +260,7 @@ function normalizeClock(out, prior) {
  *  weather change — on both planes, live and fold. */
 export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
   const synthetic = (seq ?? 0) < 0;
+  args = skySpelling(args, ts);
   if (verb === 'sky') {
     const out = { ...args, ts: synthetic ? (args.ts ?? ts) : ts };
     if (!synthetic) {
@@ -287,11 +272,8 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
       }
       out.seq = seq; out.by = actor;
     }
-    // args.dormantRated is the standing-bag re-issue carrier (the wholesale
-    // fold has no prev to inherit from) — authored CONFIG at the same trust
-    // level as authoring hours/rate directly (same verb, same rank), but
-    // shape-sanitized so junk can never land in the fold
-    return normalizeClock(out, sanitizeDormant(args.dormantRated));
+    // no parking (shape audit 10-16): under a tz, hours and rate stay put as the rated fallback
+    return out;
   }
   // weather — merges onto the standing sky (DESIGN.md: a thing that HAPPENS,
   // not a property you set). `keepSky: false` discards the standing sky and
@@ -300,7 +282,8 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
   const base = args.keepSky === false ? {} : (prev ?? {});
   const out = { ...base, ...args, ts };
   delete out.keepSky;   // an instruction to the fold, not a sky property
-  if ((base.rate ?? 0) !== 0 && args.hours == null) out.hours = hoursAt(base, ts);
+  // the rated clock re-anchors at ts (its hour then, never the wall clock's: under a tz, hours/rate are the fallback)
+  if ((base.rate ?? 0) !== 0 && args.hours == null) out.hours = ratedHoursAt(base, ts);
   if (!synthetic) {
     // a weather verb cannot author or clear policy — that is the sky verb's job
     if (base.forecast) out.forecast = base.forecast; else delete out.forecast;
@@ -316,13 +299,10 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
     if (base.seq != null) out.seq = base.seq; else delete out.seq;
     if (base.by != null) out.by = base.by; else delete out.by;
   }
-  // a weather verb can never author the parked clock — base's only. That
-  // includes the indirect route: while the standing clock is real, stray
-  // authored hours/rate on a weather verb must not reach the park (base
-  // carries no top-level rated fields under real mode, so anything here came
-  // from args). Same rank as sky either way — verb semantics, not rights.
-  if (base.clock === 'real') { delete out.hours; delete out.rate; }
-  return normalizeClock(out, sanitizeDormant(base.dormantRated));
+  // a weather verb never authors the clock: under a tz, stray hours/rate on it keep the standing fallback's
+  if (isRealClock(base)) { if (base.hours !== undefined) out.hours = base.hours; else delete out.hours; if (base.rate !== undefined) out.rate = base.rate; else delete out.rate;
+    if ((base.rate ?? 0) !== 0) out.hours = ratedHoursAt(base, ts); }
+  return out;
 }
 
 /** The canonical answer to "what clock governs this sky?" (issue #65) — no
@@ -342,7 +322,7 @@ export function effectiveClock(sky, nowMs) {
     ...(sky.seq != null ? { seq: sky.seq } : {}),
     ...(sky.by != null ? { by: sky.by } : {}),
   };
-  if (sky.clock === 'real') {
+  if (isRealClock(sky)) {
     const tz = sky.tz ?? 'America/Los_Angeles';
     if (tzFormatter(tz)) return { mode: 'real', tz, hour, ...prov };
     // fallback mirrors hoursAt exactly: the parked clock on a normalized

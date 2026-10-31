@@ -2,7 +2,7 @@
 //
 //   bun tools/chat-scrollback-test.ts
 //
-// The join window is what trimRecentChat (shared/fold.js) left, and it is
+// The join window is what trimRecentChat (shared/chatwindow.js) left, and it is
 // fair rather than contiguous: the loudest voice loses its oldest lines
 // first, so a quiet visitor's last line from yesterday can sit above hours of
 // trimmed conversation. Scrollback used to page from the oldest line SHOWN —
@@ -27,23 +27,24 @@
 // cursor is module state, and one scenario's walk must not leak into another.
 
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "chat-stubs",
   setup(b) {
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here("./chat-core-stub.mjs") }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here("./chat-base-stub.mjs") }));
-    b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here("./chat-frames-stub.mjs") }));
+    b.onResolve({ filter: /^\.\/(frames|windows)\.js$/ }, () => ({ path: here("./chat-frames-stub.mjs") }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here("./chat-history-stub.mjs") }));
   },
 });
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { fileURLToPath } from "node:url";
 GlobalRegistrator.register();
 
 const { setLog, holdNext, failNext, release, inFlight, requests } = await import("./chat-history-stub.mjs");
 const { frameStub } = await import("./chat-frames-stub.mjs");
-const { emptyState, foldEntry } = await import("../shared/fold.js");
+const { hear } = await import("../shared/chatwindow.js");
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -71,8 +72,8 @@ const scrollToTop = async (logEl: HTMLElement) => {
 };
 const say = (seq: number, actor: string, ts: number) => ({ seq, ts, actor, verb: "say", args: { text: `#${seq}` } });
 const windowOf = (entries: any[]) => {
-  const st = emptyState();
-  for (const e of entries) foldEntry(st, e);
+  const st: any = {};
+  for (const e of entries) hear(st, { actor: e.actor, text: e.args.text, ts: e.ts, seq: e.seq });
   return st.recentChat as { actor: string; text: string; ts: number; seq: number }[];
 };
 // no row grouped ("cont", name hidden) under a different speaker
@@ -88,7 +89,7 @@ const day: any[] = [];
   const t0 = Date.now() - 86_400_000;
   const speak = (actor: string) => day.push(say(day.length + 1, actor, t0 + (day.length + 1) * 30_000));
   for (let i = 0; i < 20; i++) speak(i % 2 ? "cairn" : "mythos");
-  speak("visitor"); speak("cairn"); speak("visitor");
+  speak("member"); speak("cairn"); speak("member");
   for (let i = 0; i < 177; i++) speak(["cairn", "mythos", "apricot"][i % 3]);
 }
 const all = day.map((e) => e.args.text);
@@ -229,7 +230,7 @@ console.log("lines the log trimmed off the top come back when paging");
   const { logChat, logEl } = await freshChat();
   const t0 = Date.now() - 3_600_000;
   const log: any[] = [];
-  for (let s = 1; s <= 1200; s++) log.push(say(s, s === 650 ? "visitor" : s % 2 ? "cairn" : "mythos", t0 + s * 1000));
+  for (let s = 1; s <= 1200; s++) log.push(say(s, s === 650 ? "member" : s % 2 ? "cairn" : "mythos", t0 + s * 1000));
   setLog(log);
   for (const e of log.slice(600)) logChat(e.actor, e.args.text, "", { seq: e.seq, ts: e.ts });
   check("precondition: the log trimmed to #801–#1200", shownIn(logEl)[0] === "#801" && rowsOf(logEl).length === 400,

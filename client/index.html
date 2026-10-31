@@ -2,14 +2,48 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- the favicon: the hand-set 32 and 16 px masters (notes: logo small/mark-{32,16}.svg; 16 has no room for
      the peg's head, so its peg is a bar), inline so it costs no request. Brand mint on a dark tab strip, a
      deeper mint on a light one (mint on white all but vanishes). /favicon.ico (server/routes.ts) is the 32. -->
-<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
+<link rel="icon" type="image/svg+xml" sizes="32x32" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}
+</style><path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/><path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/><path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/></svg>'>
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
 <style>
+/* (moved 10-11: these rules had been appended INSIDE the favicon's data-URL <style> at line 9, so none of them applied:
+   the profile name control, the Add Component band, the provenance pills; R saw "draftMaterial" in one grey) */
+/* the name in the profile header is the control (R 10-11): text until you point at it */
+.pf-name { all: unset; font-weight: 700; cursor: pointer; border-radius: 4px; padding: 0 3px; margin-left: -3px; }
+.pf-name:hover, .pf-name:focus-visible { background: rgba(255,255,255,.08); box-shadow: inset 0 -1px 0 var(--brand, #7cf); }
+.pf-rename-dlg { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; background: rgba(0,0,0,.45); }
+.pf-rename-card { width: min(380px, calc(100vw - 32px)); padding: 16px 18px; border-radius: 10px; }
+.pf-rename-card h3 { margin: 0 0 8px; font-size: 15px; }
+.pf-rename-card p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; opacity: .85; }
+.pf-rename-in { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 6px 8px; margin: 2px 0 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
+.pf-rename-in:focus { outline: none; border-color: var(--brand, #7cf); }
+.pf-rename-warn { color: var(--warn, #e0a33a); opacity: 1 !important; }
+.pf-rename-err { color: #ff7a7a; }
+.pf-rename-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.pf-rename-btns button { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid rgba(255,255,255,.18); background: transparent; color: inherit; }
+.pf-rename-ok { background: var(--brand, #7cf) !important; color: #0b0d10 !important; border-color: transparent !important; font-weight: 600; }
+.pf-rename-ok:disabled { opacity: .45; cursor: default; }
+/* a long info value: cut with an ellipsis, whole on hover, unfolded on click (R 10-11) */
+.sp-info.sp-info-long { cursor: pointer; }
+.sp-info.sp-info-open { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; }
+/* the icon buttons on the name line: the glyph centred, accent-blue when switched on (R 10-11) */
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on, .frame.edit .sp-row.sp-iconbtn .sp-btn.on:hover { color: var(--e-accent, #4a9eff); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn svg { display: block; }
+/* Add Component… / Add Script…: Blender's Add Modifier, a filled band that heads the component list, not a footnote to Transform */
+.frame.edit .sp-row.sp-add { margin-top: 10px; }
+.frame.edit .sp-row.sp-add .sp-btn, .frame.edit .sp-row.sp-add > button { background: color-mix(in srgb, var(--e-accent, #4a9eff) 22%, transparent); border-color: color-mix(in srgb, var(--e-accent, #4a9eff) 45%, transparent); color: var(--e-text); font-weight: 600; }
+.frame.edit .sp-row.sp-add .sp-btn:hover, .frame.edit .sp-row.sp-add > button:hover { background: color-mix(in srgb, var(--e-accent, #4a9eff) 34%, transparent); }
+/* a card's provenance pill, at the front of its title (R 10-11) */
+.sp-pill { display: inline-block; margin: 0 6px 0 1px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 15px; letter-spacing: .02em; text-transform: uppercase; vertical-align: 1px; }
+.sp-pill-draft { background: color-mix(in srgb, #e0a33a 22%, transparent); color: #e0a33a; box-shadow: inset 0 0 0 1px color-mix(in srgb, #e0a33a 55%, transparent); }
+.sp-pill-foreign { background: transparent; color: var(--e-dim, #999); box-shadow: inset 0 0 0 1px currentColor; }
+.sp-pill-trusted { background: color-mix(in srgb, #4a9ee8 22%, transparent); color: #4a9ee8; box-shadow: inset 0 0 0 1px color-mix(in srgb, #4a9ee8 55%, transparent); }
 /* ===========================================================================
    DESIGN TOKENS — the one block that owns the client's whole look.
    Modding the UI's colors = editing (or live-overriding) THIS BLOCK ONLY;
@@ -18,7 +52,7 @@
    ROLES:
    · brand    = identity & liveness ONLY: the ∃, connection state, "this is
                 on/present". Never decoration.
-   · attn     = "needs YOUR attention": mentions, edit-mode, unsaved, mic-hot.
+   · attn     = "needs YOUR attention": mentions, build-mode, unsaved, mic-hot.
                 One warm amber — complements brand, colorblind-separable.
    · ink ladder (fg/dim/icon) = content: primary text, labels/hints, glyphs.
    · surfaces (panel/chip/well) = material. hover/active whites = interaction
@@ -160,7 +194,7 @@ button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--f
 /* unshared local changes are pending until committed */
 button.dirty { border-color: var(--warn); color: var(--warn); }
 
-input[type=text], input[type=search], input[type=number], input:not([type]) {
+input[type=text], input[type=search], input[type=number], input:not([type]), textarea {   /* textarea too (R 10-10: World Settings' description was the browser's white box) */
   font: var(--fs-sm) var(--font);
   color: var(--fg);
   background: var(--well);
@@ -168,7 +202,8 @@ input[type=text], input[type=search], input[type=number], input:not([type]) {
   border-radius: 5px;
   padding: 6px 8px;
 }
-input::placeholder { color: var(--dim); }
+input::placeholder, textarea::placeholder { color: var(--dim); }
+textarea { resize: vertical; }
 select {
   font: var(--fs-xs) var(--font); background: var(--well); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 5px; padding: 5px;
@@ -312,6 +347,30 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   font-size: var(--fs-sm); color: var(--dim); background: none; border: none;
 }
 .sp-skip.show { opacity: 1; pointer-events: auto; }
+/* a refused join (boot.js refuseBoot): the splash stays and the server's sentence takes the status line — no bar,
+   no bytes, no tips, no way "in anyway" to an empty world that would look like a join */
+#splash.refused .sp-bar, #splash.refused .sp-detail, #splash.refused .sp-items, #splash.refused .sp-tip, #splash.refused .sp-skip { display: none; }
+#splash.refused .sp-status { justify-content: center; margin-top: 0; }
+#splash.refused .sp-phase { color: var(--fg); text-align: center; text-wrap: balance; }
+#splash.refused .sp-phase::after { content: none; }
+/* an old-format world's splash (client/lib/upgradeview.js): the server's words, the doc, the operator's Review upgrade */
+.sp-upgrade { width: min(640px, 90vw); display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.sp-up-doc { color: var(--brand); }
+.sp-up-area { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.sp-up-btn { cursor: pointer; font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--brand) 60%, transparent); background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--fg); }
+.sp-up-btn:disabled { cursor: progress; opacity: .7; }
+.sp-up-report { width: 100%; max-height: 46vh; overflow: auto; text-align: left; font-size: 12px; padding: 8px 12px; box-sizing: border-box; border-radius: 6px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.sp-up-h { font-weight: 600; margin-top: 6px; }
+.sp-up-report ul { margin: 2px 0 4px; padding-left: 18px; }
+.sp-up-none, .sp-up-note, .sp-up-hash { color: var(--dim); }
+.sp-up-hash { font-family: monospace; word-break: break-all; margin-top: 6px; }
+.sp-up-done { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.sp-up-more { width: 100%; text-align: left; color: var(--dim); }
+.sp-up-more summary { cursor: pointer; text-align: center; }
+.sp-up-more pre { margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg); font-size: 12px; white-space: pre; overflow-x: auto; user-select: all; }
+.sp-up-err { margin: 0; color: var(--warn, #e8a060); }
+.sp-up-done { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sp-up-done code { font-size: 12px; word-break: break-all; user-select: all; }
 .sp-skip:hover { color: var(--fg); background: none; }
 @media (prefers-reduced-motion: reduce) { .sp-bar-fill { transition: none; } }
 
@@ -320,7 +379,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    content, so the chrome has to get out of the way on the user's terms. */
 .frame {
   position: fixed; display: flex; flex-direction: column;
-  z-index: 10; /* must equal Z_LO in frames.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: frames.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
+  z-index: 10; /* must equal Z_LO in windows.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: windows.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the action bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
 }
 .fr-head {
   display: flex; align-items: center; gap: 6px;
@@ -554,7 +613,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    look the same to you as it does to them), so "this one is mine" is carried by
    a faint wash instead. .ping's background is declared later and still wins. */
 .chat-log .line.me { background: rgba(255,255,255,.04); border-radius: 3px; }
-.chat-log .line.agent .who::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
+.chat-log .line.declared .who[data-declares]::after { content: ' · ' attr(data-declares); color: var(--dim); font-size: var(--fs-xs); font-weight: normal; }
+/* an agent is marked as on main: a small ◈ before the name, not a word after it (decision row 10, R 10-30) */
+.chat-log .line.declared .who[data-declares="agent"]::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
+.chat-log .line.declared .who[data-declares="agent"]::after { content: none; }
 .chat-log .line.sys { color: var(--dim); font-style: italic; }
 .chat-log .line.hist-note {
   border-bottom: 1px dashed var(--edge); padding-bottom: 4px; margin-bottom: 4px;
@@ -602,11 +664,6 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .ac-row.on .ac-l { color: var(--accent); }
 .ac-row .ac-h { color: var(--dim); font-size: var(--fs-xs); text-align: right; overflow: hidden; }
 
-.chat-log .line.whisper { background: rgba(160, 140, 220, .10); border-left: 2px solid #a08cdc;
-  margin-left: -10px; padding-left: 8px; }
-.chat-log .line.whisper .who { color: #c4b5f0; }
-.chat-log .line.whisper .who::before { content: '⤷ '; }
-.chat-log .line.whisper.me .who::before { content: '⤶ '; }
 .chat-tabs button.has-unread { color: var(--fg); font-weight: 600; }
 .chat-tabs button.has-x {
   /* A DM TAB IS SIZED BY ITS NAME, not by an equal share. `flex: 1 1 0` gave
@@ -785,8 +842,10 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
    far edge of a wide frame. .row = short label (42px) + slider + readout;
    .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
    No private layout rules anywhere. */
-.row.wide { display: grid; grid-template-columns: var(--row-label-col, 7rem) minmax(0, 1fr); align-items: center; }
-.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: left; line-height: 1.25; white-space: normal; }
+/* R 10-11 supersedes the left-aligned rule: labels RIGHT-justified, controls left-justified, both against ONE invisible
+   line, as the build-mode panels do ("the Settings panel aren't aligned like stuff in the Build mode menus") */
+.row.wide { display: grid; grid-template-columns: var(--row-label-col, clamp(6rem, 36%, 10rem)) minmax(0, 1fr); align-items: center; column-gap: 9px; }
+.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: right; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
    or meter inside fills the row (Audio's did not — .ctl had been swept into the
    12rem cap by a bad edit;) */
@@ -839,6 +898,7 @@ body.arranging #dock #hud.emark:hover, body.arranging #dock button:not(.dock-gri
 body.arranging #dock #hud.emark {
   color: var(--ink-on-brand); background: var(--brand-deep); border-radius: 8px; animation: none;  /* inverted: you're holding the chrome */
 }
+/* (the editing dot on the ∃ retired 09-13 — the wrench says it) */
 @keyframes netpulse { 50% { opacity: .35; } }
 /* presence on the profile icon: a dot in the bottom-right corner (the
    Discord/Slack convention) — brand = present, attention = away, err = busy */
@@ -879,7 +939,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 10px; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
-.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (frames.js fitTabStrip) the strip scrolls rather than clip */
+.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (windows.js fitTabStrip) the strip scrolls rather than clip */
 .pf-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
@@ -996,14 +1056,11 @@ body.arranging .frame.st-l { --st-l-s: inset 2px 0 0 var(--sg); }
 body.arranging .frame.st-r { --st-r-s: inset -2px 0 0 var(--sg); }
 body.arranging .frame.st-t { --st-t-s: inset 0 2px 0 var(--sg); }
 body.arranging .frame.st-b { --st-b-s: inset 0 -2px 0 var(--sg); }
-/* Edit mode has to be legible without reading the HUD: the cursor changes and
+/* Build mode has to be legible without reading the HUD: the cursor changes and
    the viewport gets a thin warm frame, so it is obvious why a drag just moved
    a crate instead of the camera. */
-body.edit-mode canvas { cursor: crosshair; }
-body.edit-mode::after {
-  content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none;
-  border: 2px solid color-mix(in srgb, var(--attn) 50%, transparent); border-radius: 3px;
-}
+body.build-mode canvas { cursor: crosshair; }
+/* (the warm rim around the whole frame retired 09-13: the wrench wears the accent) */
 
 #trayzone {
   position: fixed; right: 10px; bottom: 10px; z-index: 28;
@@ -1045,18 +1102,32 @@ body.edit-mode::after {
 }
 #hintbar kbd { font-size: var(--fs-xs); }
 #hintbar.gone { opacity: 0; }
+#hintbar.attn { color: var(--attn); border-color: var(--attn); }   /* asked for, didn't happen: the reason (ui.js flashHint tone) */
 
-/* ---- the lantern (lib/lantern.js): one line for talk, /commands and actions.
+/* ---- the lantern (lib/commandbar.js): one line for talk, /commands and actions.
    Ported from the HUD redesign mockups (the lantern direction, desktop and open).
    ONE element owns bottom-centre: the resting line. The hint bar borrows that same
    spot while it has something to say ("X — sit", a flash) and the line steps aside;
-   the open panel replaces it. --ln-x (lantern.js place()) is the shared axis: the
+   the open panel replaces it. --ln-x (commandbar.js place()) is the shared axis: the
    viewport centre, or the free span beside the chat compose box when centre would
    sit on it.
    z 38: over frames (≤25), the rail (27) and the frame rim (30); under the ∃
    menu and the scrims (40), the glyphs (45), notices (60) and the door (120). */
 #hintbar { bottom: var(--ln-b, 24px); left: var(--ln-x, 50%); height: 36px; box-sizing: border-box;
-  display: flex; align-items: center; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+  display: block; line-height: 34px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+/* block, not flex (R 10-11: "the text is right up against the 'T' in the box on either side"): a flex box makes every text
+   run its own item and drops the spaces at their ends, so 'click or ' + <kbd>T</kbd> + ' to pick up' lost both spaces */
+#hintbar kbd { vertical-align: middle; position: relative; top: -1px; }
+/* an attn bar wraps instead of cutting a long reason with an ellipsis (the bar is otherwise one 36 px line), so the copy pill at its end always shows */
+#hintbar.attn { pointer-events: auto; user-select: text; white-space: normal; height: auto; min-height: 36px; line-height: 20px; padding: 7px 14px; text-overflow: clip; }
+/* a small pill after the words, not a 34 px block in front of them (R 10-11 22:48: "fix the size… move it to the end") */
+#hintbar .hint-copy { margin-left: 8px; padding: 0 5px; height: 18px; line-height: 16px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
+#hintbar .hint-copy:hover { opacity: 1; }
+/* a claim that is a NODE (build mode's selection line, with its lock checkbox): a row, clickable */
+#hintbar.has-node { pointer-events: auto; display: flex; gap: 14px; align-items: center; height: auto; min-height: 36px; padding: 7px 13px; white-space: normal; }
+#hintbar .edit-selbar { display: flex; gap: 14px; align-items: center; }
+/* the lantern pill is the bar's resting content: it yields while any claim shows (ui.js showStatus) */
+#lantern-pill.yield { opacity: 0; pointer-events: none; transition: opacity .2s; }
 #hintbar:empty { display: none; }
 #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: hidden; }
 body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer sits in this band (both bottom 24px); on a phone its list can reach it */
@@ -1073,12 +1144,12 @@ body.lantern-open #hintbar { visibility: hidden; }   /* the open panel's footer 
 #lantern-pill:hover { color: var(--fg); }
 #lantern-pill.open { visibility: hidden; }
 /* HUD layout mode (owner, 10-01): the resting line is one more thing to arrange — dashed like the frames, grabbable
-   (lantern.js drags it, --ln-x/--ln-b); it shows even while the hint bar would borrow its spot */
+   (commandbar.js drags it, --ln-x/--ln-b); it shows even while the hint bar would borrow its spot */
 body.arranging:not(.ui-locked) #lantern-pill { cursor: grab; outline: 1px dashed rgb(255 255 255 / .3); outline-offset: 3px; }
 body.arranging:not(.ui-locked) #lantern-pill:active { cursor: grabbing; }
 body.arranging #hintbar { visibility: hidden; }
 body.arranging #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: visible; }
-/* unpinned in the ∃ menu, or put away with the panels by Esc (lantern.js paintRest): no resting line. Ctrl/Cmd+K
+/* unpinned in the ∃ menu, or put away with the panels by Tab (commandbar.js paintRest): no resting line. Ctrl/Cmd+K
    still opens the lantern; the hint bar sits on --ln-x on its own, so "panels hidden" still shows in this spot */
 #lantern-pill.unpinned, #lantern-pill.quiet { display: none; }
 #lantern-pill .lp-glyph { display: flex; color: var(--brand); }
@@ -1108,7 +1179,7 @@ body.arranging #hintbar:not(.gone):not(:empty) ~ #lantern-pill { visibility: vis
     0 0 30px color-mix(in srgb, var(--brand) 10%, transparent), 0 24px 60px rgb(0 0 0 / .55);
 }
 #lantern[hidden] { display: none; }
-/* a pill moved into the top half: the panel hangs down from it instead of growing off the top (lantern.js place) */
+/* a pill moved into the top half: the panel hangs down from it instead of growing off the top (commandbar.js place) */
 #lantern.down { top: var(--ln-t); bottom: auto; max-height: calc(100vh - var(--ln-t) - 12px); }
 #lantern .ln-head { display: flex; align-items: center; gap: 12px; height: 54px; flex: none; padding: 0 14px 0 18px;
   box-shadow: inset 0 -1px 0 var(--edge); }
@@ -1245,12 +1316,12 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 .pf-who > b { font-size: 17px; font-weight: 650; }
 .pf-who > span { color: var(--dim); font-size: var(--fs-sm); }
 .pf-who > span b { color: var(--fg); font-weight: 550; }
- /* 🔴 TILES — the one tile, shared: profile's stubs and the emote menu both use it.
+ /* 🔴 TILES — the one tile, shared: profile's stubs and the action bar both use it.
    A tile is a quiet well with an icon/glyph, a name, and an optional note or key.
-   .on = lit (the playing emote, the chosen thing). No private tile rules. */
+   .on = lit (the playing gesture, the chosen thing). No private tile rules. */
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
-/* emote tiles are FIXED width and flow: widen the frame and they go to one
-   line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
+/* action bar tiles are FIXED width and flow: widen the frame and they go to one
+   line; the frame snaps to whole tiles on release (actionbar.js). Even gutters. */
 .tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
 .tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
@@ -1363,17 +1434,17 @@ kbd {
 }
 
 /* the lite client's "Light version" card (lite.js liteBanner). The full client's capability notices were the same card
-   and are now chips on the status strip (#hudstatus below, statuschips.js); lite.js places this one under its emote row
+   and are now chips on the status strip (#hudstatus below, statuschips.js); lite.js places this one under its action row
    inline. The history of the old placements is in git (#185 B2). */
 .capnotice {
   position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 95;   /* top-centre, over everything until dismissed (owner, 09-27; capnotice.js says why) */
-  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
+  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred action bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (owner, 09-19) */
 }
 
 /* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
-   The emote bar is widthFor(9)=352px and never narrower at its default, so at
+   The action bar is widthFor(9)=352px and never narrower at its default, so at
    390px wide there are 38px beside it. Three separate occluders were measured in
    that strip: this card (5 of 9 tiles), #dock once body.touch reorients the rail
    along the top edge in landscape (1 tile), and #earbtn at z45 (1 tile). Moving
@@ -1445,7 +1516,7 @@ body.photo #hudstatus, body.photo #stpop, body.photo #platecard { display: none 
 
 /* THE NAMEPLATE CARD (platecard.js): an in-world tooltip beside a person's nameplate — hover a plate 300 ms, or tap it
    on a touch screen. The status-chip popover's recipe in the neutral edge instead of amber: nothing here is a caveat.
-   z 9: a thing in the world, so every panel (frames.js Z_LO 10 … 25) and all chrome sit over it as it follows. */
+   z 9: a thing in the world, so every panel (windows.js Z_LO 10 … 25) and all chrome sit over it as it follows. */
 #platecard {
   position: fixed; z-index: 9; min-width: 150px; max-width: min(220px, calc(100vw - 16px)); box-sizing: border-box;
   padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); line-height: 1.35;
@@ -1641,6 +1712,10 @@ body.touch #touch { display: block; }
   opacity: 0; transition: opacity .12s ease;
 }
 #tipchip.show { opacity: 1; }
+/* the same chip in a VR panel (xrtip.js): rasterised onto the panel's quad, so opaque (no blur, no fade) and outlined in
+   the ring's rule ink to stand off the panel it sits on */
+#xr-tip { max-width: 320px; padding: 4px 10px; border-radius: 6px; font-family: var(--font); font-size: var(--fs-sm); line-height: 1.45;
+  color: var(--fg); background: rgb(var(--panel-rgb)); border: 1px solid rgb(143 232 200 / .45); white-space: pre-line; overflow-wrap: break-word; }
 
 .dbg-row { cursor: pointer; user-select: none; }
 .dbg-row input { accent-color: var(--control); margin: 0; }
@@ -1668,6 +1743,14 @@ body.touch #touch { display: block; }
 .sp-text { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 3px 6px; }
 .sp-btn { background: var(--brand); border: none; color: #14100c; font-weight: 600; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
 .sp-btn.danger, .sp-mini.danger { background: #6e2a2a; color: var(--fg); }
+/* the searchable pick list (panels.js openPop: Add Component). Opaque, one lit row — the keyboard's (review 10-07 S10) */
+.sp-pop { background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #3a3a40); border-radius: 6px; box-shadow: 0 8px 28px rgb(0 0 0 / .55); padding: 6px; color: var(--e-text, #d8d8dc); font: 12.5px var(--font); }
+.sp-pop .sp-pop-search { width: 100%; box-sizing: border-box; margin-bottom: 6px; background: var(--e-well, #121214); color: inherit; border: 1px solid var(--e-line, #3a3a40); border-radius: 4px; padding: 4px 6px; font: inherit; }
+.sp-pop .sp-pop-list { overflow-y: auto; flex: 1; min-height: 0; }
+.sp-pop .sp-pop-cat { opacity: .6; font-size: .8em; margin: 6px 4px 2px; text-transform: uppercase; }
+.sp-pop .sp-pop-item { display: block; width: 100%; text-align: left; margin: 1px 0; padding: 4px 8px; border: none; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.sp-pop .sp-pop-item.active { background: var(--e-accent-bg, rgba(77,138,224,.18)); box-shadow: inset 2px 0 0 var(--e-accent, #4d8ae0); }
+.sp-pop .sp-pop-item:disabled { opacity: .45; cursor: not-allowed; }
 .sp-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; }
 .sp-item { display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 5px; }
 .sp-item:hover { background: rgba(255,255,255,.04); }
@@ -1677,6 +1760,452 @@ body.touch #touch { display: block; }
 .sp-item-sub { color: var(--dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-mini { background: var(--well); border: none; color: var(--fg); border-radius: 4px; padding: 2px 7px; cursor: pointer; }
 .sp-empty { color: var(--dim); font-style: italic; padding: 4px 7px; }
+/* schema fields added for build mode (panels.js: group / enum / color / tree, units) */
+.sp-unit { color: var(--dim); font-size: 11px; margin-left: 2px; }
+.sp-enum { background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 2px 4px; font: inherit; }
+.sp-color { width: 34px; height: 22px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; }
+.sp-f-color.sp-row { flex-wrap: wrap; }
+.sp-color-sw { cursor: pointer; box-sizing: border-box; }
+.sp-color-sw.open { outline: 2px solid var(--accent, #5fa8ff); outline-offset: 1px; }
+.sp-picker { order: 99; flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; padding: 4px 0 2px; }
+.sp-picker[hidden], .sp-pick-recent[hidden] { display: none; }
+.sp-pick-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+.sp-pick-row { display: flex; gap: 2px; }
+.sp-pick-recent .sp-pick-cell { width: calc((100% - 22px) / 12); flex: none; }
+.sp-pick-cell { aspect-ratio: 1; min-height: 16px; border-radius: 3px; cursor: pointer; box-sizing: border-box; border: 1px solid rgba(0,0,0,.25); }
+.sp-pick-cell.on { outline: 2px solid currentColor; outline-offset: 1px; position: relative; z-index: 1; }
+.sp-pick-hex { width: 7.5em; font: inherit; font-family: ui-monospace, monospace; }
+.sp-tree-row .sp-item-label { font-weight: 500; }
+/* ---- build mode: the look (DESIGN-SPEC 2026-09-30, for R: "dark gray, utilitarian — Resonite/Godot/
+   Blender/Maya"). The chrome is grey; the WORLD is the only colour. Colour in the chrome means one of:
+   selection/focus (accent), an axis (x/y/z), danger, or a driven value.
+   The --e-* values have ONE source: client/lib/edittheme.js (the VR painter imports it). They are
+   literals here so first paint needs no script; tools/edittheme-test.ts fails if the two differ.
+   Scoped to the edit workspace / edit frames only — the HUD outside build mode never sees them. */
+body.edit-workspace, .frame.edit {
+  --e-bg0: #161618; --e-bg1: #1e1e21; --e-bg2: #26262a; --e-well: #121214; --e-line: #2f2f35;
+  --e-hover: #2c2c31; --e-press: #36363c; --e-text: #d8d8dc; --e-dim: #8e8e96; --e-faint: #5e5e66;
+  --e-accent: #4d8ae0; --e-accent-bg: rgba(77,138,224,.18);
+  --e-x: #e06a62; --e-y: #82c45e; --e-z: #5f95e8; --e-danger: #e07a72; --e-driven: #c9a24a;
+  --e-driven-edge: rgba(201,162,74,.45); --e-mine: #b08ad8;
+}
+/* Flat gray in build mode, every panel (R, 10-04: "flat gray is better for an editor — colors can't clash"). --panel
+   must be RE-DECLARED here: a custom property resolves its var()s where it is declared, so :root's --panel stays
+   baked teal however --panel-rgb is overridden below it — which is why docked chat/Inspector frames kept the tint. */
+body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var(--panel-a)); }
+/* the house tokens, re-pointed INSIDE edit frames, so the shared renderers (panels.js) and the
+   frame chrome are reused untouched */
+.frame.edit, body.edit-workspace .frame.docked {
+  --panel-rgb: 30 30 33; --panel-a: .98;
+  --well: var(--e-well); --edge: var(--e-line); --edge-hi: #4a4a52;
+  --brand: #d2d2d6; --brand-deep: #9a9aa0; --ink-on-brand: #141416;
+  --fg: var(--e-text); --dim: var(--e-dim); --hov: var(--e-hover); --act: var(--e-press);
+  --r: 6px; font: 400 12px/1.35 var(--font); font-variant-numeric: tabular-nums; color: var(--e-text);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.frame.edit::after, body.edit-workspace .frame.docked::after { box-shadow: inset 0 0 0 1px var(--e-line); }   /* a plain edge, not the HUD's gleam */
+.frame.edit:not(.docked) { border-radius: 6px; }
+/* editor frames wear their names (the house hides frame heads outside
+   arrangement mode — index.html .frame .fr-head — because the dock rail IS
+   the title; an inspector without a name is not a tool anyone recognises) */
+.frame.edit .fr-head, body.edit-workspace .frame.docked .fr-head { display: flex; height: 28px; box-sizing: border-box; padding: 0 6px 0 10px;
+  background: var(--e-bg0); border-bottom: 1px solid var(--e-line); }
+.frame.edit .fr-title, body.edit-workspace .frame.docked .fr-title { letter-spacing: 0; text-transform: none; font: 600 12px var(--font); color: var(--e-text); }
+.frame.edit .fr-btn { color: var(--e-dim); }
+.frame.edit .fr-btn:hover { color: var(--e-text); background: var(--e-hover); }
+.frame.edit .schema-scroll { padding: 6px 8px 8px; }
+/* rows: 24px rhythm; a label column (~38%, right-aligned, dim) and the value left-aligned after it */
+.frame.edit .sp-row { margin: 0; min-height: 24px; gap: 8px; }
+.frame.edit .sp-row + .sp-row { margin-top: 2px; }
+.frame.edit .sp-label { flex: 0 0 27%; min-width: 60px; max-width: 100px;   /* R 10-10: the label column ~30% narrower */
+  box-sizing: border-box; text-align: right; color: var(--e-dim); font-size: 11.5px;
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.2; }   /* a long label wraps (R 10-11: 'can be taken fro…'), never cut */
+.frame.edit .sp-f-num.sp-row { justify-content: flex-start; }
+.frame.edit .sp-f-num .sp-label { flex: 0 0 27%; }
+.frame.edit .sp-info { color: var(--e-text); }
+.frame.edit .sp-row[data-axis="x"] .sp-label { color: var(--e-x); }
+.frame.edit .sp-row[data-axis="y"] .sp-label { color: var(--e-y); }
+.frame.edit .sp-row[data-axis="z"] .sp-label { color: var(--e-z); }
+/* driven (a motion comp composes onto this rest pose) is the FIELD's job: an amber edge and a ~ inside its left
+   end, so the label keeps its axis colour — axis and provenance read at once (R, 09-30). Title: panels.js. */
+.frame.edit .sp-row.driven .sp-label { color: var(--e-dim); }
+.frame.edit .sp-row.driven[data-axis="x"] .sp-label { color: var(--e-x); }
+.frame.edit .sp-row.driven[data-axis="y"] .sp-label { color: var(--e-y); }
+.frame.edit .sp-row.driven[data-axis="z"] .sp-label { color: var(--e-z); }
+.frame.edit .sp-row.driven .sp-num, .frame.edit .sp-row.driven .sp-step:not(.compact) { border-color: var(--e-driven-edge); }
+.frame.edit .sp-drv { position: absolute; left: 7px; top: 50%; transform: translateY(-50%); color: var(--e-driven); font: 700 13px/1 var(--font-code); pointer-events: none; z-index: 1; }
+/* ---- one family of widgets ---- */
+/* field: a sunken well, 1px line, radius 3; focus = accent edge + a faint accent glow */
+.frame.edit .sp-num, .frame.edit .sp-text, .frame.edit .sp-enum, .frame.edit .sp-rename, .frame.edit .sp-json-ta,
+body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.docked input:not([type]) {
+  background-color: var(--e-well); border: 1px solid var(--e-line); border-radius: 3px; color: var(--e-text);
+  font: 400 12px var(--font); font-variant-numeric: tabular-nums; box-sizing: border-box; }
+.frame.edit .sp-num, .frame.edit .sp-text, .frame.edit .sp-enum, .frame.edit .sp-rename { height: 22px; padding: 0 8px; }
+.frame.edit :is(.sp-num, .sp-text, .sp-enum, .sp-rename, .sp-json-ta):focus, body.edit-workspace .frame.docked input:is([type=text], :not([type])):focus {
+  outline: none; border-color: var(--e-accent); box-shadow: 0 0 0 2px rgb(77 138 224 / .22); }
+.frame.edit input::placeholder, body.edit-workspace .frame.docked input::placeholder { color: var(--e-faint); }
+.frame.edit .sp-text { flex: 1 1 auto; }
+.frame.edit .sp-num.scrub { border-color: var(--e-accent); }
+/* the channel box, after Maya's (R, 10-10): rows pushed together, no outline on a box until the hand is on it, the
+   channel's name a handle (drag scrubs, click selects) */
+.frame.edit .sp-f-num.sp-row { min-height: 22px; }
+.frame.edit .sp-f-num.sp-row + .sp-f-num.sp-row { margin-top: 0; }
+.frame.edit .sp-step.compact .sp-num { height: 20px; border-color: transparent; }
+.frame.edit .sp-step.compact .sp-num:hover { border-color: var(--e-line); }
+.frame.edit .sp-label.sp-chan { cursor: ew-resize; user-select: none; border-radius: 3px; padding: 1px 0 1px 4px; margin: 0; }   /* no negative margins: they pulled every number field 8 px left of the other rows (R 10-10, spin's axis vs rate) */
+/* a selected channel: a soft, slightly larger block behind the name, no outline (R 10-11 23:13: "not so harsh to look at") */
+.frame.edit .sp-row.chan-sel .sp-label.sp-chan { background: color-mix(in srgb, var(--e-accent) 22%, transparent); border-radius: 4px; }   /* same padding and margin as unselected: the name never moves, and the block stays on the label's side of the gap (R 10-17 21:36) */
+.frame.edit .sp-row.chan-sel .sp-num { background: color-mix(in srgb, var(--e-accent) 12%, transparent); }
+/* a number: the unit sits INSIDE the field's right end (no ragged unit column); steppers' − + move inside too */
+.frame.edit .sp-step { position: relative; }
+.frame.edit .sp-step .sp-unit { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); margin: 0; color: var(--e-faint); font-size: 11px; pointer-events: none; }
+.frame.edit .sp-step.compact .sp-num { width: 96px; text-align: right; padding: 0 8px; }
+.frame.edit .sp-step.compact .sp-num { padding-right: 20px; }   /* unit or not: one right edge for every number (R 10-11: scale sat 12 px right of translate/rotate) */
+.frame.edit .sp-step:not(.compact) { height: 22px; background: var(--e-well); border: 1px solid var(--e-line); border-radius: 3px; gap: 0; box-sizing: border-box; }
+.frame.edit .sp-step:not(.compact):focus-within { border-color: var(--e-accent); }
+.frame.edit .sp-step:not(.compact) .sp-num { border: none; background: none; height: 20px; width: 56px; text-align: center; padding: 0 2px; box-shadow: none; }
+.frame.edit .sp-step:not(.compact) .sp-unit { right: 24px; }
+.frame.edit .sp-bump { width: 20px; height: 20px; padding: 0; background: none; color: var(--e-dim); border-radius: 2px; text-align: center; line-height: 20px; }
+.frame.edit .sp-bump:hover { background: var(--e-hover); color: var(--e-text); }
+.frame.edit .sp-vec { gap: 4px; }
+/* checkbox: never the native control (it rasterises differently on a VR quad) */
+.frame.edit input[type=checkbox], .edit-selbar input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none;
+  background: var(--e-well); border: 1px solid #4a4a52; border-radius: 3px; cursor: pointer; }
+.frame.edit input[type=checkbox]:checked, .edit-selbar input[type=checkbox]:checked { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
+.frame.edit input[type=checkbox]:focus-visible, .edit-selbar input[type=checkbox]:focus-visible { outline: none; box-shadow: 0 0 0 2px rgb(77 138 224 / .35); }
+.frame.edit input[type=checkbox]:disabled { opacity: .45; cursor: not-allowed; }
+.frame.edit input[type=checkbox]:indeterminate, .edit-selbar input[type=checkbox]:indeterminate { background: var(--e-accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round'%3E%3Cpath d='M6 12h12'/%3E%3C/svg%3E") center / 10px no-repeat; border-color: var(--e-accent); }
+/* select: a field with a chevron */
+.frame.edit .sp-enum { appearance: none; -webkit-appearance: none; padding-right: 22px; min-width: 96px;
+  background: var(--e-well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e96' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") right 6px center / 12px no-repeat; }
+.frame.edit .sp-color { width: 40px; height: 22px; border: 1px solid var(--e-line); border-radius: 3px; padding: 2px; background-clip: content-box; }
+.frame.edit .sp-pick-cell.on { outline-color: var(--e-accent, #5fa8ff); }
+/* button — default: press fill, text colour, radius 3, 24px. quiet: no fill, dim, hover fill. danger: quiet + danger */
+.frame.edit .sp-btn { background: var(--e-press); color: var(--e-text); border: none; border-radius: 3px; height: 24px; padding: 0 10px; font: 500 12px var(--font); box-shadow: none; }
+.frame.edit .sp-btn:hover { background: var(--e-press); filter: brightness(1.18); }
+.frame.edit .sp-btn.danger, .frame.edit .sp-mini.danger { background: none; color: var(--e-danger); box-shadow: none; filter: none; }
+.frame.edit .sp-btn.danger:hover, .frame.edit .sp-mini.danger:hover { background: rgb(224 122 114 / .12); }
+.frame.edit .sp-mini, .frame.edit .sp-json-tog, .frame.edit .sp-revert, .frame.edit .sp-disc { background: none; border: none; box-shadow: none; color: var(--e-dim); border-radius: 3px; }
+.frame.edit .sp-mini:hover, .frame.edit .sp-json-tog:hover, .frame.edit .sp-revert:hover, .frame.edit .sp-json-tog.on { background: var(--e-hover); color: var(--e-text); }
+.frame.edit .sp-disc:not(.none):hover { background: none; color: var(--e-text); }
+.frame.edit .sp-ref-name.arming { background: var(--e-accent-bg); box-shadow: inset 0 0 0 1px var(--e-accent); }
+.frame.edit .sp-f-btn.sp-row { display: inline-flex; margin: 4px 4px 4px 0; vertical-align: top; }   /* consecutive actions share a line */
+/* icon: one glyph set (icons.js), 1.5px at 16px; dim at rest, text on hover, accent when active */
+.frame.edit .sp-ico { display: inline-flex; vertical-align: -2px; margin: 0 1px; }
+.frame.edit .sp-ico svg, .frame.edit .sp-lock svg { stroke-width: 2.25; }
+/* section header: a full-bleed 26px bar (bg2), sentence case */
+.frame.edit .sp-f-group.sp-row { margin: 8px -8px 4px; }
+.frame.edit .sp-group { height: 26px; box-sizing: border-box; background: var(--e-bg2); border: none; border-top: 1px solid var(--e-line); border-bottom: 1px solid var(--e-line);
+  color: var(--e-text); padding: 0 10px; margin: 0; font: 600 12px var(--font); letter-spacing: 0; border-radius: 0; }
+.frame.edit .sp-group::first-letter { text-transform: uppercase; }
+.frame.edit .sp-group:hover { background: var(--e-hover); }
+/* tree rows (Hierarchy): 24px, faint indent guides, name + dim kind on one line; selected = accent-bg + a 2px accent bar */
+.frame.edit .sp-tree { gap: 0; max-height: none; }
+.frame.edit .sp-row.sp-f-tree > .sp-tree { flex: 1 1 auto; min-width: 0; }   /* the rows span the panel (a short list shrank to its longest name, and the eye sat mid-row) */
+/* the Add Component / New Script bar under Transform: two buttons on one line, its own little area */
+/* provenance dot on a card's title (amber: a draft; hollow: nothing here reads it) */
+.frame.edit .sp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-left: 7px; vertical-align: middle; }
+.frame.edit .sp-dot-draft { background: #e0a33a; }
+.frame.edit .sp-dot-foreign { border: 1.5px solid var(--e-dim); box-sizing: border-box; }
+/* a card's title-line actions (remove …): on the right, shown while the line is hovered or focused */
+.frame.edit .sp-row.sp-f-group.has-acts { position: relative; }
+.frame.edit .sp-gacts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; }
+.frame.edit .sp-row.sp-f-group:hover .sp-gacts, .frame.edit .sp-row.sp-f-group:focus-within .sp-gacts { display: inline-flex; }
+.frame.edit .sp-gact { width: 20px; height: 20px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 3px; background: none; color: var(--e-dim); cursor: pointer; }
+.frame.edit .sp-gact:hover { background: var(--e-bg1); color: var(--e-text); }
+.frame.edit .sp-gact.danger:hover { color: var(--e-danger, #ff6b6b); }
+.frame.edit .sp-row.sp-bar { display: inline-flex; vertical-align: top; margin: 6px 6px 6px 0 !important; }   /* the Hierarchy's list fills its panel (it stopped 260 px down, half the panel empty) */
+.frame.edit .sp-item { border-radius: 0; padding-top: 0; padding-bottom: 0; min-height: 20px; gap: 4px; }   /* Maya-tight (R 10-11 00:03) */
+.frame.edit .sp-item:hover { background: var(--e-hover); }
+.frame.edit .sp-tree .sp-item.dim { min-height: 16px; line-height: 14px; font-size: 11px; }   /* a thing's component rows, packed (R 10-10 23:31) */
+.frame.edit .sp-tree-row { background-image: repeating-linear-gradient(90deg, transparent 0 10px, var(--e-line) 10px 11px, transparent 11px 14px);
+  background-size: calc(var(--d, 0) * 14px) 100%; background-position: 4px 0; background-repeat: no-repeat; }
+.frame.edit .sp-item.active { background-color: var(--e-accent-bg); box-shadow: inset 2px 0 0 var(--e-accent); }
+.frame.edit .sp-item.multi { background-color: rgb(77 138 224 / .10); box-shadow: inset 2px 0 0 rgb(77 138 224 / .6); }
+.frame.edit .sp-tree-row.drop { box-shadow: inset 0 0 0 1px var(--e-accent); background-color: var(--e-accent-bg); }
+.frame.edit .sp-tree-row .sp-item-main { flex-direction: row; align-items: baseline; gap: 8px; }
+.frame.edit .sp-item-label { font-weight: 400; color: var(--e-text); flex: 0 0 auto; max-width: 72%; }
+.frame.edit .sp-item.active .sp-item-label { font-weight: 600; }
+.frame.edit .sp-item-sub { color: var(--e-dim); font-size: 11px; flex: 1 1 0; min-width: 0; }
+/* lock/eye toggles: right-aligned, shown at rest only when ON, else on row hover (desktop only — VR always shows them) */
+.frame.edit .sp-tree .sp-mini { filter: none; opacity: 1; width: 22px; height: 20px; padding: 0; display: inline-grid; place-items: center; }
+.frame.edit .sp-tree .sp-mini:not(.on) { visibility: hidden; }
+.frame.edit .sp-tree-row:hover .sp-mini, .frame.edit .sp-tree .sp-mini:focus-visible { visibility: visible; }
+.frame.edit .sp-tree .sp-mini.on { color: var(--e-accent); background: none; }
+.frame.edit .sp-tree .sp-lock:disabled { cursor: default; opacity: .55; background: none; }
+.frame.edit .sp-tree .sp-lock.inherited { opacity: .5; }   /* held by a locked parent: a lock, dimmed */
+.frame.edit .sp-tree .sp-mini:hover { background: var(--e-hover); }
+/* the row's columns (R 10-12): [☑ enabled][name …][👁 only you][🔒]. The box is state, so it always shows; a row without
+   one keeps its width, so names line up. The eye's tint and dot say "only you": nobody else's view changes */
+.sp-tree-row .sp-row-on, .frame.edit .sp-tree-row input.sp-row-on { flex: none; width: 14px; height: 14px; margin: 0 6px 0 0; cursor: pointer; align-self: center; }
+.sp-tree-row .sp-row-on.gap { display: inline-block; visibility: hidden; }
+.sp-tree-row .sp-row-on:disabled { cursor: default; opacity: .55; }
+.sp-tree-row.off .sp-item-label, .sp-tree-row.off .sp-item-sub { opacity: .45; }
+.sp-tree .sp-eye.on { position: relative; }
+.frame.edit .sp-tree .sp-eye.on { color: var(--e-mine); }
+.sp-tree .sp-eye.on::after { content: ''; position: absolute; right: 1px; bottom: 1px; width: 5px; height: 5px; border-radius: 50%; background: var(--e-mine, #b08ad8); }
+.frame.edit .sp-empty { color: var(--e-dim); font-style: normal; }
+body.edit-workspace [data-frame="actions"] { display: none !important; }
+.sp-log { margin: 2px 0; padding: 6px 8px; width: 100%; box-sizing: border-box; max-height: 150px; overflow: auto; background: var(--well); border-radius: 4px;
+  font: 11px/1.45 var(--font-code); white-space: pre-wrap; color: var(--fg); }
+.sp-log.empty { color: var(--dim); font-style: italic; }
+.sp-f-log .sp-label:empty { display: none; }
+.sp-f-json.sp-row { align-items: flex-start; }
+.sp-json { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sp-json-tog { align-self: flex-start; background: none; border: 1px solid var(--edge); color: var(--dim); font: 11px var(--font-code); padding: 2px 7px; border-radius: 4px; cursor: pointer; }
+.sp-json-tog.on, .sp-json-tog:hover { color: var(--fg); border-color: var(--edge-hi); }
+.sp-json-ta { width: 100%; box-sizing: border-box; resize: vertical; background: var(--well); color: var(--fg); border: 1px solid var(--edge); border-radius: 4px;
+  font: 11px/1.45 var(--font-code); padding: 5px 7px; tab-size: 2; }
+.sp-json-ta.bad { border-color: rgb(229 154 154 / .7); }
+.sp-json-err { color: #e59a9a; font-size: 11px; min-height: 0; }
+.sp-json-err:empty { display: none; }
+.sp-f-json .sp-label:empty { display: none; }
+.sp-revert { flex: none; width: 18px; height: 18px; padding: 0; margin-left: 2px; background: none; border: none; color: var(--dim); font-size: 13px; line-height: 1; cursor: pointer; border-radius: 3px; }
+.sp-revert:hover { color: var(--fg); background: rgb(255 255 255 / .08); }
+.sp-revert[hidden] { display: none; }
+.sp-rename { flex: 1 1 auto; min-width: 0; font: inherit; font-weight: 500; background: var(--well); color: var(--fg); border: 1px solid var(--edge-hi); border-radius: 3px; padding: 1px 4px; }
+body.edit-workspace [data-frame="console"] { z-index: 30 !important; }   /* over the build bar, under the menus (40) */
+/* the workspace owns the top strip */
+/* restored 09-23: the port's conflict resolution dropped these three as 'duplicates' of main — main never had them */
+.sp-group { width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--edge); color: var(--brand); font-weight: 600; padding: 4px 0 3px; margin-top: 4px; cursor: pointer; }
+.sp-tree { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow-y: auto; }
+.sp-mini.on { background: var(--brand); color: #14100c; }
+/* channels: the numeric lane — one label, one number, nothing else */
+.sp-step.compact .sp-num { width: 76px; text-align: right; padding-right: 6px; }
+.sp-num { cursor: ew-resize; }
+.sp-num:focus { cursor: text; }
+.sp-num.scrub { cursor: ew-resize; user-select: none; border-color: var(--edge-hi); background: var(--well); }
+.sp-num:disabled, .sp-bump:disabled { opacity: .45; cursor: not-allowed; }
+/* provenance: a value something else owns (a motion comp composes onto it) */
+.sp-row.driven .sp-label { color: #b48cff; }
+.sp-row.driven .sp-num { border-color: rgb(180 140 255 / .45); }
+.sp-row.disabled .sp-label { opacity: .55; }
+.sp-f-text .sp-label { align-self: center; }
+/* ---- the edit WORKSPACE: strips and columns the frames dock into ---- */
+.edit-strip, .edit-col, .edit-split { position: fixed; z-index: 26; }
+/* leaving build mode sets [hidden] on these; their own display rules (flex) outrank the UA's [hidden],
+   so without this the bar, rail and columns stayed PAINTED after the mode ended (found 09-30) */
+:is(.edit-strip, .edit-col, .edit-split)[hidden] { display: none !important; }
+.edit-strip { z-index: 27; background: #1c1c1e; border: 1px solid rgb(255 255 255 / .08); box-sizing: border-box; }
+.edit-top { display: flex; align-items: center; gap: 6px; padding: 0 8px; border-top: none; border-right: none; }
+.edit-tools { display: flex; flex-direction: column; gap: 2px; padding: 4px; border-left: none; border-radius: 0 6px 6px 0; }
+.edit-tool { width: 36px; height: 34px; padding: 0; font-size: 17px; line-height: 1; background: none; border: none; color: #b8b8bd; border-radius: 6px; cursor: pointer; }
+.edit-tool:hover { background: rgb(255 255 255 / .07); color: #f0f0f2; }
+.edit-tool.on { background: #3a3a3f; color: #ffffff; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18); }
+.edit-tool:disabled { opacity: .35; cursor: not-allowed; }
+.edit-tool { position: relative; }
+.edit-tool-key { position: absolute; right: 3px; bottom: 2px; font: 9px var(--font-code); color: #8e8e94; }
+.edit-tool.on .edit-tool-key { color: #dcdce0; }
+.edit-menus { display: flex; gap: 2px; }
+.edit-menu { position: relative; display: inline-block; }
+.edit-btn { background: none; border: none; color: #cfcfd4; font: 500 12px var(--font); letter-spacing: .01em; padding: 5px 9px; border-radius: 5px; cursor: pointer; }
+.edit-btn:hover { background: rgb(255 255 255 / .08); color: #fff; }
+.edit-menu-pop { position: absolute; top: 100%; left: 0; min-width: 210px; margin-top: 2px; padding: 4px; z-index: 40;
+  background: #232326; border: 1px solid rgb(255 255 255 / .12); border-radius: 6px; box-shadow: 0 10px 28px rgb(0 0 0 / .5);
+  display: flex; flex-direction: column; }
+.edit-menu-pop[hidden] { display: none; }   /* an author display rule outranks the UA's [hidden] — say it explicitly */
+/* a menu's z 40 is inside the bar's stacking context (27), under the view bar, split, grip editor and tool strip (29):
+   while one is open the bar rises over them, and the dock (the ∃ that sits on the bar, normally 28) with it */
+.edit-strip:has(.edit-menu-pop:not([hidden])) { z-index: 44; }
+body.edit-workspace:has(.edit-menu-pop:not([hidden])) #dock { z-index: 45; }
+.edit-menu-item { display: flex; justify-content: space-between; gap: 18px; width: 100%; text-align: left; background: none; border: none;
+  color: #e4e4e8; font: 12.5px var(--font); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
+.edit-menu-item:hover { background: rgb(255 255 255 / .09); }
+.edit-menu-item kbd { color: #8e8e94; font: 11px var(--font-code); }
+.build-mode-label { margin-left: auto; margin-right: 10px; color: #8e8e94; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.edit-col { display: flex; flex-direction: column; gap: 0; background: #151517; border-left: 1px solid rgb(255 255 255 / .06); border-right: 1px solid rgb(255 255 255 / .06); box-sizing: border-box; overflow: hidden; }
+.edit-split { background: transparent; z-index: 29; }
+.edit-split-v { width: 6px; cursor: ew-resize; }
+.edit-split-h { height: 6px; cursor: ns-resize; flex: 0 0 6px; position: relative; }
+.edit-split:hover { background: rgb(255 255 255 / .12); }
+/* a docked frame: the column lays it out; the floating geometry paint() writes is ignored */
+.frame.docked { position: relative !important; left: auto !important; top: auto !important; width: auto !important;
+  border-radius: 0; box-shadow: none; min-height: 0; z-index: auto !important; }
+.frame.docked .fr-body { height: auto !important; flex: 1 1 auto; min-height: 0; }
+.frame.docked .fr-head { cursor: default; }
+.frame.docked .fr-btn { display: none; }        /* a docked frame is closed from the View menu, not with ✕ */
+body.edit-workspace .frame.docked { --panel-a: 1; }
+/* the WHOLE dock stays in builder mode (R 10-04: "keep the full dock in build mode"): ∃ (its mic / ear / goggles stay
+   beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
+body.edit-workspace #dock { flex-direction: column !important; }
+body.edit-workspace #dock button.edit-overflow { display: none !important; }
+/* the viewport bar: floats on the view's top-left corner, the edit chrome's own tokens */
+.edit-viewbar { position: fixed; z-index: 29; display: flex; align-items: center; gap: 4px; padding: 3px 5px; border-radius: 6px;
+  background: var(--e-bg1, #1e1e21); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }   /* solid (R 10-10 23:32: readable over any view) */
+.edit-viewbar[hidden] { display: none; }
+/* the Inspector's name line: the name as a title, the eye and padlock beside it (R 10-10 23:48) */
+.frame.edit .sp-row.sp-title { width: calc(100% - 78px); margin-right: 0 !important; }   /* the ☑ before it, the eye and padlock after */
+.frame.edit .sp-row.sp-iconbtn { margin-left: 0 !important; margin-right: 0 !important; }
+.frame.edit .sp-row.sp-title .sp-label { display: none; }
+.frame.edit .sp-row.sp-title input, .frame.edit .sp-row.sp-title .sp-text { width: 100%; font-size: 15px; font-weight: 600; background: transparent !important; border-color: transparent !important; box-shadow: none !important; padding-left: 2px; }
+.frame.edit .sp-row.sp-title input:hover, .frame.edit .sp-row.sp-title input:focus { border-color: var(--e-line) !important; background: var(--e-well) !important; }
+.frame.edit .sp-row.sp-iconbtn .sp-btn { width: 26px; height: 24px; padding: 0; display: inline-grid; place-items: center; background: none; border-color: transparent; color: var(--e-dim); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn:hover { color: var(--e-text); background: var(--e-hover); }
+.frame.edit .sp-row.sp-iconbtn .sp-btn.on { color: var(--e-accent); }
+.frame.edit .sp-row.sp-iconbtn.sp-mine .sp-btn.on, .frame.edit .sp-row.sp-iconbtn.sp-mine .sp-btn.on:hover { color: var(--e-mine); }
+.frame.edit .sp-row.sp-enabled { margin-right: 0 !important; align-items: center; }
+.frame.edit .sp-row.sp-enabled .sp-label { display: none; }
+.frame.edit .sp-row.sp-enabled input[type="checkbox"] { width: 15px; height: 15px; margin: 4px 3px 0 2px; accent-color: var(--e-accent); cursor: pointer; }
+.frame.edit .sp-row.sp-title .sp-info { font-size: 15px; font-weight: 600; padding-left: 2px; }
+.frame.edit .sp-group .sp-group-sub { color: var(--e-dim); font-weight: 400; opacity: 0.8; }   /* 'Transform · 12 m away' (R 10-17 20:34) */
+.frame.edit .sp-row.sp-title:has(+ .sp-handle) { width: calc(100% - 78px - 110px); }   /* the dim #handle after the name (R 10-17 20:30) */
+.frame.edit .sp-row.sp-iconbtn.sp-handle .sp-btn { width: auto; max-width: 110px; padding: 0 3px; font: 11px ui-monospace, monospace; color: var(--e-dim); opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 24px; }
+.frame.edit .sp-row.sp-title:has(+ .sp-handle + .sp-more) { width: calc(100% - 110px - 86px); }   /* several selected: no ☑ / eye / padlock, '+ N more' after the #handle (R 10-17 20:39) */
+.frame.edit .sp-row.sp-more .sp-label { display: none; }
+.frame.edit .sp-row.sp-more .sp-info { color: var(--e-dim); font-size: 12px; white-space: nowrap; line-height: 24px; cursor: default; }
+.edit-marquee { position: fixed; z-index: 30; pointer-events: none; border: 1px dashed var(--e-accent, #4d8ae0); background: color-mix(in srgb, var(--e-accent, #4d8ae0) 12%, transparent); }
+/* the grip editor's panel: floats under the viewport bar (gripedit.js) */
+.gripedit { position: fixed; z-index: 29; width: 236px; display: flex; flex-direction: column; gap: 6px; padding: 6px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--e-bg1, #1e1e21) 92%, transparent); border: 1px solid var(--e-line, #2f2f35); color: var(--e-text, #d8d8dc); font: 12px var(--font); }
+.gripedit-head { display: flex; align-items: center; gap: 6px; }
+.gripedit-of { color: var(--e-accent); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gripedit-list { display: flex; flex-direction: column; gap: 1px; }
+.gripedit-row { display: flex; align-items: center; gap: 6px; text-align: left; border: none; background: none; padding: 2px 4px; border-radius: 3px; }
+.gripedit-row.on { background: var(--e-accent-bg); }
+.gripedit-sw { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.gripedit-dim { color: var(--e-dim, #8a8a92); margin-left: auto; }
+.gripedit-list > .gripedit-dim { margin-left: 0; }
+.gripedit-bar { display: flex; gap: 4px; flex-wrap: wrap; }
+.gripedit-bar button.on { box-shadow: inset 0 -2px 0 var(--e-accent); }
+.gripedit-fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; }
+.gripedit button.danger { color: var(--e-danger, #ff6b6b); }
+.edit-viewbar .edit-camsw { margin: 0 2px; }
+.edit-camsw { display: inline-flex; margin-right: 6px; border: 1px solid var(--e-line); border-radius: 4px; overflow: hidden; }
+.edit-camsw .edit-cam { border: none; border-radius: 0; padding: 0 8px; height: 22px; }
+.edit-camsw .edit-cam.on { background: var(--e-accent-bg); color: var(--e-text); box-shadow: inset 0 -2px 0 var(--e-accent); }
+/* a row's menu as a button: only where there is no right-click (a frame on a headset quad, domquad.js's #xr-stage) */
+.sp-ctxbtn { display: none; flex: none; margin-left: auto; width: 22px; height: 20px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; color: var(--dim); cursor: pointer; line-height: 1; }
+#xr-stage .sp-ctxbtn { display: inline-flex; align-items: center; justify-content: center; }
+.sp-item-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-item-head .sp-ico { display: inline-flex; flex: none; color: var(--e-accent, var(--brand)); }
+/* the world's environment rows hang under the World row (R 10-11): indented, quieter glyph, ✕ on hover */
+.sp-item-sub-row { padding-left: 22px; }
+.sp-item-sub-row .sp-item-head .sp-ico { color: var(--e-dim, var(--ink-dim)); }
+.sp-item .sp-mini.sp-hov { opacity: 0; margin-left: auto; }
+.sp-item:hover .sp-mini.sp-hov, .sp-item .sp-mini.sp-hov:focus-visible { opacity: 1; }
+#xr-stage .sp-item .sp-mini.sp-hov { opacity: 1; }
+.sp-item-head .sp-item-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-item-kind { font-weight: 400; color: var(--e-dim, var(--dim)); margin-right: 6px; text-transform: uppercase; font-size: .82em; letter-spacing: .06em; }
+.edit-selbar .sp-ico { display: inline-flex; vertical-align: -2px; }
+body.edit-workspace #dock .dock-more.on { color: var(--e-accent, var(--brand)); }   /* the dock is open: ⋯ folds it again */
+/* the corner (R, 09-30): the ∃ in the bar's top-left cell, centred in it (40 px bar × 48 px rail), the
+   wrench under it at the head of the rail. Above the bar (27) so the ∃ is never under it. The mic /
+   ear / goggles are NOT moved here: mictoggle.placeMic folds them to the ∃'s right exactly as it does
+   on the HUD, and editlayout's spacer (fitSeat) starts the menus after them. */
+body.edit-workspace #dock { top: -1px !important; left: 3px !important; gap: 2px; z-index: 28;   /* the normal dock's gap: 8 px read "exploded" next to it (R 10-11 14:41: 42 px pitch against 36) */
+  background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }   /* no HUD-tinted card behind the ∃ and the wrench: the bar and the rail ARE its ground */
+/* …grey-on-grey when OFF: the glyphs read their inks off themselves (mictoggle tok), so re-pointing the off tokens on these
+   three elements alone re-inks them for the bar and nowhere else. Live keeps the brand and hot the attention gold, as on
+   the HUD (R, gym 10-17 20:44: 'they stay grey even when live') */
+body.edit-workspace :is(#micbtn, #earbtn, #xrbtn) { --dim: var(--e-dim); --edge-hi: var(--e-faint);
+  border-radius: 3px; }
+body.edit-workspace :is(#micbtn, #earbtn, #xrbtn):hover { background: var(--e-hover); box-shadow: 0 0 0 3px var(--e-hover); }
+.edit-viewbtns { display: flex; gap: 2px; margin-left: 10px; padding-left: 10px; border-left: 1px solid rgb(255 255 255 / .1); }
+.edit-vbtn { width: 30px; height: 28px; padding: 0; font-size: 15px; line-height: 1; background: none; border: none; color: #b8b8bd; border-radius: 5px; cursor: pointer; }
+.edit-vbtn:hover { background: rgb(255 255 255 / .08); color: #fff; }
+.edit-vbtn.on { background: #3a3a3f; color: #fff; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18); }
+.edit-seat { width: 40px; flex: none; align-self: center; height: 22px; box-sizing: border-box; border-right: 1px solid var(--e-line, #2f2f35); margin-right: 4px; }   /* the corner: ∃ + glyphs; width = fitSeat (editlayout.js) */
+body.edit-workspace .edit-tools { z-index: 26; border-radius: 0; border-right: 1px solid rgb(255 255 255 / .08); background: #1a1a1c; }   /* under the dock (28): the rail is behind the wrench, never over it */
+/* the wrench carries the mode: an amber box, instead of a rim around the world */
+body.edit-workspace #dock button[data-toggles="edit"].on {
+  color: var(--attn); background: color-mix(in srgb, var(--attn) 16%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--attn); border-radius: 7px;
+}
+body.edit-workspace #dock button[data-toggles="edit"].on::before { display: none; }
+/* a row's context menu (panels.js contextMenu) */
+.sp-group.sp-flash { box-shadow: inset 0 0 0 1.5px var(--e-text, #ddd); transition: box-shadow .3s; }
+.sp-ctx { position: fixed; z-index: 45; min-width: 160px; padding: 4px; background: #232326; border: 1px solid rgb(255 255 255 / .12);
+  border-radius: 6px; box-shadow: 0 10px 28px rgb(0 0 0 / .5); display: flex; flex-direction: column; }
+.sp-ctx-item { text-align: left; background: none; border: none; color: #e4e4e8; font: 12.5px var(--font); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
+.sp-ctx-item:hover { background: rgb(255 255 255 / .09); }
+.sp-ctx-item.danger { color: #ff9e9e; }
+.sp-ctx-name { color: var(--e-accent, var(--brand)); }
+.sp-disc { width: 14px; flex: none; padding: 0; background: none; border: none; color: var(--dim); font-size: 10px; cursor: pointer; line-height: 1; }
+.sp-disc.none { cursor: default; }
+.sp-disc:not(.none):hover { color: var(--fg); }
+.sp-item.dim .sp-item-label, .sp-item.dim .sp-item-sub { opacity: .45; }
+.sp-item.multi { box-shadow: inset 2px 0 0 var(--brand); background: color-mix(in srgb, var(--well) 60%, transparent); }
+.sp-tree-row.dragging { opacity: .4; }
+.sp-tree-row.drop { box-shadow: inset 0 0 0 1px var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); }
+.sp-tree { min-height: 48px; }   /* room to drop onto empty space (→ root) */
+.sp-tree-root { display: none; margin-top: 2px; padding: 6px 8px; border: 1px dashed var(--e-line, rgba(255,255,255,.25)); border-radius: 4px; color: var(--dim, #9aa); font-size: 11px; text-align: center; }
+.sp-tree.dragging .sp-tree-root { display: block; }
+.sp-tree-root.drop { border-style: solid; border-color: var(--e-accent, var(--brand)); color: var(--e-accent, var(--brand)); }
+.frame.edit .sp-f-text .sp-label:empty { display: none; }
+.frame.edit .sp-f-text .sp-text { font-size: 12px; }
+/* fixed chrome from before the columns keeps to the VIEWPORT between them */
+body.edit-workspace #trayzone { right: calc(var(--edit-right-w, 0px) + 10px); bottom: 116px; }   /* above the selection bar (build.js, bottom 64px) — S11 */
+body.edit-workspace #hintbar { left: calc(var(--edit-left-edge, 0px) + (100vw - var(--edit-left-edge, 0px) - var(--edit-right-w, 0px)) / 2); }
+/* ---- build mode: the look, for the workspace's own chrome (DESIGN-SPEC 2026-09-30; tokens: the --e-* block above) */
+body.edit-workspace .edit-strip { background: var(--e-bg0); border-color: var(--e-line); }
+body.edit-workspace .edit-top { border-bottom: 1px solid var(--e-line); }
+body.edit-workspace .edit-col { background: var(--e-bg0); border-left-color: var(--e-line); border-right-color: var(--e-line); }
+body.edit-workspace .edit-split:hover { background: var(--e-line); }
+/* tool rail: every glyph the same grey; active = press + an accent glyph; key hints faint in the corner */
+body.edit-workspace .edit-tools { background: var(--e-bg0); border-right: 1px solid var(--e-line); }
+.edit-tool { color: var(--e-dim); border-radius: 4px; display: grid; place-items: center; }
+.edit-tool svg, .edit-vbtn svg, .edit-btn svg, #structbar .sb-btn svg { stroke-width: 2.25; display: block; }   /* 1.5 px at 16 px */
+.edit-tool:hover { background: var(--e-hover); color: var(--e-text); }
+.edit-tool.on { background: var(--e-press); color: var(--e-accent); box-shadow: none; }
+.edit-tool-key, .edit-tool.on .edit-tool-key { color: var(--e-faint); font: 9px/1 var(--font-code); right: 3px; bottom: 3px; background: none; border: none; box-shadow: none; padding: 0; }
+/* top bar: quiet buttons */
+.edit-btn, .edit-vbtn { color: var(--e-dim); border-radius: 3px; }
+.edit-btn { color: var(--e-text); display: inline-flex; align-items: center; gap: 5px; }
+.edit-btn:hover, .edit-vbtn:hover { background: var(--e-hover); color: var(--e-text); }
+.edit-vbtn { display: inline-grid; place-items: center; }
+.edit-vbtn.on { background: var(--e-press); color: var(--e-accent); box-shadow: none; }
+.edit-viewbtns { border-left-color: var(--e-line); }
+.build-mode-label { color: var(--e-dim); }
+.edit-menu-pop, body.edit-workspace .sp-ctx { background: var(--e-bg1); border: 1px solid var(--e-line); border-radius: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
+.edit-menu-item, body.edit-workspace .sp-ctx-item { color: var(--e-text); border-radius: 3px; font-size: 12px; }
+.edit-menu-item:hover, body.edit-workspace .sp-ctx-item:hover { background: var(--e-accent-bg); }
+.edit-menu-item kbd { color: var(--e-faint); }
+body.edit-workspace .sp-ctx-item.danger { color: var(--e-danger); }
+/* Hierarchy | Create: the left column's top pane is one panel with two pages. The tab strip stands in
+   for the two frames' title bars (28 px, bg0, like every editor frame head); the picked page shows. */
+.edit-tabs { display: flex; flex: 0 0 28px; height: 28px; box-sizing: border-box; background: var(--e-bg0); border-bottom: 1px solid var(--e-line); padding: 0 4px; gap: 0; }
+.edit-tab { background: none; border: none; border-radius: 0; height: 28px; padding: 0 12px; margin: 0; font: 600 12px var(--font); color: var(--e-dim); cursor: pointer;
+  box-shadow: none; text-align: center; }
+.edit-tab:hover { color: var(--e-text); background: var(--e-hover); }
+.edit-tab.on { color: var(--e-text); background: var(--e-bg1); box-shadow: inset 0 -1px 0 var(--e-bg1); }
+.edit-tab:active { transform: none; }
+.edit-left > :is([data-frame="hierarchy"], [data-frame="build"]) > .fr-head { display: none !important; }
+.edit-left[data-tab="hierarchy"] > [data-frame="build"], .edit-left[data-tab="build"] > [data-frame="hierarchy"] { display: none !important; }
+.edit-right > :is([data-frame="inspector"], [data-frame="history"]) > .fr-head { display: none !important; }
+.edit-right[data-tab="inspector"] > :is([data-frame="history"], [data-frame="attributes"]), .edit-right[data-tab="history"] > :is([data-frame="inspector"], [data-frame="attributes"]),
+.edit-right[data-tab="attributes"] > :is([data-frame="inspector"], [data-frame="history"]) { display: none !important; }
+/* tiles (panels.js 'tiles'): a grid; an icon or a picture over a short label. Quiet at rest, hover fill,
+   armed = press fill + an accent glyph — the tool rail's look */
+.frame.edit .sp-f-tiles.sp-row { display: block; margin: 2px 0 4px; }
+.frame.edit .sp-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.frame.edit .sp-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; height: 52px; padding: 4px;
+  background: none; border: 1px solid var(--e-line); border-radius: 3px; color: var(--e-dim); font: 400 11.5px var(--font); cursor: pointer; box-shadow: none; text-align: center; }
+.frame.edit .sp-tile svg { stroke-width: 2.25; display: block; flex: none; }
+.frame.edit .sp-tile:hover { background: var(--e-hover); color: var(--e-text); border-color: var(--e-hover); }
+.frame.edit .sp-tile.on { background: var(--e-press); border-color: var(--e-press); color: var(--e-text); }
+.frame.edit .sp-tile.on svg { color: var(--e-accent); }
+.frame.edit .sp-tile:active { transform: none; }
+.frame.edit .sp-tile-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frame.edit .sp-tiles-img .sp-tile { height: auto; padding: 4px 4px 5px; justify-content: flex-start; }
+.frame.edit .sp-tile-pic { display: block; width: 100%; aspect-ratio: 1; background: var(--e-well); border-radius: 2px; overflow: hidden; }
+.frame.edit .sp-tile-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.frame.edit .sp-tiles .sp-empty { grid-column: 1 / -1; }
+/* a button that carries a glyph (Create's "new building", "undo building edit", "add light") */
+.frame.edit .sp-btn-ico { display: inline-flex; align-items: center; gap: 6px; }
+.frame.edit .sp-btn-ico svg { stroke-width: 2.25; color: var(--e-dim); flex: none; }
+.frame.edit .sp-btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+/* the armed building tool, named across the top of the viewport (editlayout paintStrip); gone when none is */
+.edit-toolstrip { position: fixed; z-index: 29; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 0 12px; background: rgb(22 22 24 / .92); border-bottom: 1px solid var(--e-line); color: var(--e-dim); font: 400 12px var(--font); white-space: nowrap; overflow: hidden; pointer-events: none; }
+.edit-toolstrip[hidden] { display: none; }
+.edit-toolstrip-name { display: inline-flex; align-items: center; gap: 6px; color: var(--e-text); font-weight: 600; }
+.edit-toolstrip-name svg { color: var(--e-accent); stroke-width: 2.25; }
+.edit-toolstrip-hint { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.edit-toolstrip-esc { color: var(--e-faint); }
+.edit-toolstrip-esc kbd { color: var(--e-dim); font: 11px var(--font-code); border: 1px solid var(--e-line); border-radius: 3px; padding: 0 4px; background: var(--e-well); }
+/* the chat, while it docks in the workspace, wears the editor greys (never outside build mode) */
+body.edit-workspace [data-frame="chat"] { --brand: var(--e-text); --accent: var(--e-accent); }
+body.edit-workspace [data-frame="chat"] .fr-body * { font-style: normal; }
 </style>
 <script>
 /* pre-paint token restore (the default accent flashed for a beat before
@@ -1755,7 +2284,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     const world = globalThis.__ewWorld.world;
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
     const avatar = wantAvatar;   // resolved above, and published for lite.js to match
-    const sent = { world, id: name, avatar, token };
+    // the account kept apart from the shown name (base.js says the same; R 10-11)
+    const account = params.get('account') || localStorage.getItem('ew-account') || (/^guest-/.test(name) ? '' : name);
+    const sent = { world, id: name, avatar, token, ...(account ? { account } : {}) };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     // `arrived` holds each buffered message's performance.now() when its
     // message event ran, the earliest the page can see it: a clock sample
@@ -1765,7 +2296,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // the page's presence session (net.js PAGE_SESSION reads the same one): one id for the page's life
     const session = (globalThis.__ewPageSession ??= globalThis.crypto?.randomUUID?.()
       ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, session, clock: true }));
+    // replica: a world sends this page its own log stream (slice 3b; net.js sendJoin says the same, and
+    // a v1 world ignores it)
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token, ...(account ? { account } : {}), replica: true, session, clock: true }));
     ws.onmessage = (ev) => {
       stash.buffered.push(ev.data);
       stash.arrived.push(performance.now());
@@ -1786,7 +2319,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
      import behind a user action and preloading it would tax the very
      window this exists to shorten.
 
-     INJECTED rather than static, because lite mode (phones: chat, emotes and
+     INJECTED rather than static, because lite mode (phones: chat, gestures and
      who's here, no world) must not download an engine it will never run, and a
      static tag cannot be recalled once the parser has seen it.
 
@@ -1977,6 +2510,106 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 </script>
 <style>
 /* confirmcenter.js: a yes/no in the middle of the screen, over everything */
+/* ---- roles + moderation (research roles 10-06): the person menu, its form and sheet, the two dock panels ---- */
+.who-badge { flex: none; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; line-height: 16px; letter-spacing: .02em;
+  color: var(--dim); border: 1px solid var(--edge-hi); background: rgb(255 255 255 / .04); white-space: nowrap; max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+.who-badge[data-tone="owner"] { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 55%, transparent); background: color-mix(in srgb, var(--brand) 12%, transparent); }
+.who-badge[data-tone="mod"] { color: var(--attn); border-color: color-mix(in srgb, var(--attn) 55%, transparent); background: color-mix(in srgb, var(--attn) 12%, transparent); }
+.who-badge[data-tone="guest"] { font-style: italic; }
+/* in a narrow column the NAME keeps its room and the badge gives way first (it shrinks 4× as fast, down to its first letters) */
+.chat-side-list .who-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: min(6ch, 50%); flex: 0 1 auto; }
+.chat-side-list .who-row .who-badge { flex: 0 6 auto; min-width: 1.4em; padding: 0 4px; }
+.chat-side-list .who-row[aria-haspopup] { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }   /* a long-press is the person menu, not text selection */
+.who-muted { flex: none; margin-left: 3px; color: var(--err); font-size: var(--fs-xs); }
+.sp-ctx-head { padding: 4px 9px 5px; font: 600 11.5px var(--font); color: #b9b9be; border-bottom: 1px solid rgb(255 255 255 / .08); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.sp-ctx-item.dim, .sp-ctx-item:disabled { color: #8a8a90; cursor: default; white-space: normal; max-width: 240px; font-size: 11.5px; }
+.sp-ctx-item:disabled:hover { background: none; }
+.pm-strip { display: flex; flex-direction: column; gap: 3px; margin: 2px 0 6px 12px; padding: 4px; border-left: 2px solid var(--edge-hi); }
+.pm-row { text-align: left; padding: 6px 10px; border-radius: 6px; background: var(--well); border: 1px solid var(--edge); color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
+.pm-row:hover { background: var(--hov); border-color: var(--edge-hi); }
+.pm-row.danger, .pm-go.danger { color: var(--err); }
+.pm-dim, .rp-note, .rp-dim { color: var(--dim); font-size: var(--fs-xs); margin: 2px 0; }
+.pm-form { display: flex; flex-direction: column; gap: 10px; }
+.pm-who b { display: block; font-size: 15px; color: var(--fg); }
+.pm-who code { display: inline-block; margin-top: 2px; font-size: 10.5px; color: var(--dim); word-break: break-all; }
+.pm-who p { margin: 6px 0 0; color: var(--dim); font-size: var(--fs-sm); }
+.pm-label { font-size: var(--fs-xs); color: var(--dim); margin-bottom: 4px; text-transform: lowercase; }
+.pm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pm-chip { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--edge-hi); background: var(--well); color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
+.pm-chip[aria-pressed="true"] { border-color: var(--brand); color: var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); }
+.pm-text { width: 100%; box-sizing: border-box; margin-top: 6px; }
+.pm-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.pm-go { border-color: var(--edge-hi); font-weight: 600; }
+.pm-go.armed { background: color-mix(in srgb, var(--err) 18%, transparent); border-color: var(--err); }
+.pm-err { color: var(--err); font-size: var(--fs-sm); margin: 0; }
+.pm-can { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-sm); }
+#person-form { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .55); }
+#person-form .pm-card { width: min(380px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 18px; border-radius: 10px; border: 1px solid var(--edge-hi); box-sizing: border-box; background: rgb(var(--panel-rgb) / .97); }
+#person-sheet { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-end; background: rgb(0 0 0 / .45); }
+#person-sheet[hidden] { display: none; }
+#person-sheet .pm-sheet { width: 100%; max-height: 82vh; overflow: auto; box-sizing: border-box; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); border-radius: 14px 14px 0 0;
+  border: 1px solid var(--edge-hi); border-bottom: none; background: rgb(var(--panel-rgb) / .98); display: flex; flex-direction: column; gap: 8px; transform: translateY(12px); transition: transform .14s ease-out; }
+#person-sheet.open .pm-sheet { transform: none; }
+#person-sheet .pm-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--edge-hi); align-self: center; margin-bottom: 4px; }
+#person-sheet .pm-title { font-size: 16px; color: var(--fg); }
+#person-sheet .pm-body { display: flex; flex-direction: column; gap: 8px; }
+#person-sheet .pm-row { padding: 12px 14px; font-size: 15px; min-height: 44px; }
+#person-sheet .pm-chip { padding: 9px 14px; font-size: 14px; min-height: 40px; }
+#person-sheet .pm-close { align-self: stretch; min-height: 44px; }
+#platecard .pc-more { padding: 4px 10px; font-weight: 700; letter-spacing: .1em; }
+#platecard .pm-strip { margin: 4px 0 0; }
+#platecard[data-xr] .pc-btns { display: flex; }
+#platecard[data-xr] .pc-btns button[data-act="mention"] { display: none; }
+.rp-h { margin: 10px 0 4px; font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.rp-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--edge); }
+.rp-main { min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.rp-sub { grid-column: 1; color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.rp-row > .rp-btn { grid-row: 1 / span 2; grid-column: 2; }
+.rp-btn { padding: 4px 10px; font-size: var(--fs-xs); white-space: nowrap; }
+.rp-verb { color: var(--attn); }
+.rp-verb[data-verb="role"] { color: var(--brand); }
+.rp-status { font-size: var(--fs-xs); color: var(--dim); }
+.rp-status[data-s="paused"], .rp-status[data-s="suspended"], .rp-status[data-s="needs-reinstall"] { color: var(--attn); }
+.rp-filters { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.rp-filters .pm-chip { padding: 3px 9px; font-size: var(--fs-xs); }
+.rp-ended summary { cursor: pointer; color: var(--dim); font-size: var(--fs-xs); margin-top: 10px; }
+.rp-field { display: grid; grid-template-columns: 12em auto minmax(0, 1fr); align-items: center; gap: 4px 10px; margin: 6px 0; font-size: var(--fs-sm); }   /* the label, then its control beside it (R 10-10: inputs were pushed to the far edge) */
+.rp-field > input:not([type=checkbox]):not([type=number]) { grid-column: 2 / -1; width: 100%; box-sizing: border-box; min-width: 0; }   /* a text field runs to the edge; a number keeps its unit beside it */
+.rp-field > input[type=number], .rp-field > select { justify-self: start; max-width: 100%; }
+.rp-field > input[type=number] { width: 8em; box-sizing: border-box; }
+.rp-v3 input { width: 5em; box-sizing: border-box; }
+.rp-field.rp-wide { grid-template-columns: minmax(0, 1fr); }
+/* a dark checkbox, the panels' own ink (R 10-10: the browser's white one is "unconventional for the style") */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 15px; height: 15px; margin: 0; flex: none; vertical-align: middle; cursor: pointer;
+  border: 1px solid var(--edge-hi, #4a5a5a); border-radius: 3px; background: var(--well, #0b1414) center / 11px 11px no-repeat; }
+input[type=checkbox]:checked { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+/* mixed (a multi-selection that differs, widgets.js sets .indeterminate): a dash, never read as unchecked */
+input[type=checkbox]:indeterminate { background-color: var(--control, #6fd6b8); border-color: var(--control, #6fd6b8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' fill='none' stroke='%23061412' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
+input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-offset: 1px; }
+.rp-field textarea { width: 100%; box-sizing: border-box; }
+.rp-v3 { display: inline-flex; gap: 4px; } .rp-v3 input { width: 4.5em; }
+.rp-ro { color: var(--dim); font-size: var(--fs-xs); font-style: italic; margin: 8px 0 0; }
+.rp-warn { color: var(--attn); font-size: var(--fs-sm); margin: 6px 0; }
+.rp-gridwrap { overflow-x: auto; }
+.rp-grid { border-collapse: collapse; font-size: var(--fs-sm); width: 100%; }
+.rp-grid th, .rp-grid td { padding: 5px 6px; border-bottom: 1px solid var(--edge); vertical-align: middle; }
+.rp-grid thead th { text-align: center; font-weight: 600; vertical-align: bottom; min-width: 70px; }
+.rp-grid tbody th { text-align: left; font-weight: 400; max-width: 220px; }
+.rp-grid tbody th .rp-dim { margin: 0; line-height: 1.3; }
+.rp-grid td { text-align: center; }
+.rp-grid td.rp-grey { opacity: .45; }
+.rp-grid input[type=checkbox] { width: 18px; height: 18px; }
+.rp-grid select.rp-above { margin-top: 4px; max-width: 110px; font-size: var(--fs-xs); }
+.rp-x { margin-left: 2px; padding: 0 6px; font-size: 13px; color: var(--err); }
+.rp-holders { margin: 6px 0; font-size: var(--fs-sm); color: var(--dim); }
+.rp-holders b { color: var(--fg); }
+.rp-holder select { font-size: var(--fs-xs); }
+.rp-actions { margin-top: 10px; display: flex; gap: 8px; }
+.rp-add { margin-top: 8px; padding: 10px; border: 1px solid var(--edge); border-radius: 8px; }
+@media (max-width: 600px) { .rp-row { grid-template-columns: 1fr; } .rp-row > .rp-btn { grid-row: auto; grid-column: 1; justify-self: start; margin-top: 4px; } }
 #confirm-center { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .55); }
 #confirm-center .cc-card { width: min(420px, 100%); padding: 16px 18px; border-radius: 10px; border: 1px solid var(--edge-hi); box-shadow: var(--rim); display: flex; flex-direction: column; gap: 10px; }
 #confirm-center b { color: var(--fg); font-size: 15px; font-weight: 600; }
@@ -1985,6 +2618,11 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 #confirm-center .cc-btns button { min-height: 34px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 #confirm-center .cc-no { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
 #confirm-center .cc-ok { background: var(--brand-deep); color: var(--ink-on-brand, var(--bg)); border: 1px solid var(--brand); font-weight: 600; }
+#confirm-center .cc-alt { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
+#confirm-center .cc-danger { background: #5a2424; color: #ffd9d4; border: 1px solid #b0524a; font-weight: 600; }
+#confirm-center .cc-btns button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+#confirm-center .cc-btns.cc-many { flex-wrap: wrap; }
+#confirm-center .cc-input { min-height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--edge-hi); background: var(--chip); color: var(--fg); font: 14px var(--font); }
 
 /* ---------------------------------------------------------------- lite client
    The renderer-free surface (client/lite.js). It shares the token sheet above and
@@ -1993,26 +2631,26 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
    tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
 html.lite, html.lite body { height: 100%; overflow: hidden; }
 
-#lite-emote-host {
+#lite-action-host {
   position: fixed; left: 0; right: 0; top: 0; z-index: 30;
   padding: 6px 8px calc(6px + env(safe-area-inset-top, 0px));
   background: var(--panel); border-bottom: 1px solid var(--edge); box-shadow: var(--rim);
 }
-.lite-emotes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-/* THE PHONE LAYOUT (owner, 10-01). One top bar: the ∃ (the way into 3D) first, then the emotes on one line. */
+.lite-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+/* THE PHONE LAYOUT (owner, 10-01). One top bar: the ∃ (the way into 3D) first, then the action bar on one line. */
 /* WIDE SCREENS (owner, 10-01: "make sure it's not formatted in an insane way" on a desktop): lite is a column at most
    720 px wide, centred; --lite-x is the margin either side of it (0 on any phone, so the phone layout is unchanged). The
    bar's background still spans the screen; its contents, the card and the chat keep to the column. */
 html.lite { --lite-x: max(0px, calc((100vw - 720px) / 2)); }
-#lite-emote-host { display: flex; align-items: center; gap: 8px; padding-left: calc(var(--lite-x) + 8px); padding-right: calc(var(--lite-x) + 8px); }
-/* the emotes share the row in equal cells (owner, 10-01: "can they all sit comfortably on that top row?"): six fit a
+#lite-action-host { display: flex; align-items: center; gap: 8px; padding-left: calc(var(--lite-x) + 8px); padding-right: calc(var(--lite-x) + 8px); }
+/* the action bar's entries share the row in equal cells (owner, 10-01: "can they all sit comfortably on that top row?"): six fit a
    360 px phone beside the ∃ at ~44 px each; if more are ever added, a cell won't go under 40 px and the row scrolls */
-#lite-emote-host .lite-emotes { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(40px, 52px); justify-content: start; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-#lite-emote-host .lite-emotes::-webkit-scrollbar { display: none; }
-#lite-emote-host .lite-emote { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
+#lite-action-host .lite-actions { flex: 1; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(40px, 52px); justify-content: start; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+#lite-action-host .lite-actions::-webkit-scrollbar { display: none; }
+#lite-action-host .lite-action { width: 100%; min-width: 0; height: 44px; padding: 0; display: grid; place-items: center; font-size: 24px; line-height: 1; border-radius: 10px; }
 /* the card spans the column under the bar, not the full client's narrow top-centre notice */
 html.lite #lite-banner { left: calc(var(--lite-x) + 8px); right: calc(var(--lite-x) + 8px); transform: none; max-width: none; }
-/* the chat fills everything below the bar (and the card while it's up): frames.js sizes frames inline, so these win with !important */
+/* the chat fills everything below the bar (and the card while it's up): windows.js sizes frames inline, so these win with !important */
 html.lite .frame.chat-frame {
   /* edge to edge (owner, 10-01: "seems silly to have a panel at all if that's all there is") */
   position: fixed !important; left: var(--lite-x) !important; right: var(--lite-x) !important; width: auto !important; max-width: none;
@@ -2020,26 +2658,26 @@ html.lite .frame.chat-frame {
   border-radius: 0; border-left: none; border-right: none; border-bottom: none; box-shadow: none;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-/* …and its insides follow: frames.js pins the body to the frame's stored height inline, which left the compose
+/* …and its insides follow: windows.js pins the body to the frame's stored height inline, which left the compose
    row floating mid-panel once the box stretched */
 html.lite .frame.chat-frame { display: flex; flex-direction: column; }
 html.lite .frame.chat-frame > .fr-body { height: auto !important; flex: 1 1 auto; min-height: 0; }
 /* the ∃ leads the top bar and is the way into the 3D world (lite.js) */
 /* on a screen wider than the column the chat gets its side edges back, so it reads as a pane, not a page */
 @media (min-width: 721px) { html.lite .frame.chat-frame { border-left: 1px solid var(--edge); border-right: 1px solid var(--edge); } }
-html.lite #lite-emote-host #hud.emark { position: static; flex: none; width: 44px; height: 44px; padding: 0;   /* the house 9 px side padding left a 24 px box the 30 px mark overflowed to the right (measured 3 px off-centre, owner 10-01) */ border-radius: 10px; color: var(--brand); background: var(--chip); border: 1px solid var(--edge); }
-html.lite #lite-emote-host #hud.emark:active { background: var(--act); }
-html.lite #lite-emote-host #hud.emark:disabled { color: var(--dim); cursor: default; }
-html.lite #lite-emote-host #hud.emark svg { width: 30px; height: 30px; }   /* matched to the emoji glyphs beside it (owner, 10-01) */
-.lite-emote {
+html.lite #lite-action-host #hud.emark { position: static; flex: none; width: 44px; height: 44px; padding: 0;   /* the house 9 px side padding left a 24 px box the 30 px mark overflowed to the right (measured 3 px off-centre, owner 10-01) */ border-radius: 10px; color: var(--brand); background: var(--chip); border: 1px solid var(--edge); }
+html.lite #lite-action-host #hud.emark:active { background: var(--act); }
+html.lite #lite-action-host #hud.emark:disabled { color: var(--dim); cursor: default; }
+html.lite #lite-action-host #hud.emark svg { width: 30px; height: 30px; }   /* matched to the emoji glyphs beside it (owner, 10-01) */
+.lite-action {
   min-width: 44px; min-height: 44px; font-size: 22px; line-height: 1;
   background: var(--chip); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 8px; cursor: pointer;
   transition: transform .12s ease, border-color .12s ease;
 }
-.lite-emote:active { transform: scale(.94); }
-.lite-emote.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
-.lite-emotes-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
+.lite-action:active { transform: scale(.94); }
+.lite-action.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
+.lite-actions-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
 
 #lite-banner .cn-btns button { min-height: 44px; font-size: 15px; }
 
@@ -2108,7 +2746,7 @@ html.lite .frame.panel { max-width: 100%; }
   <!-- the mark drawn as geometry, not typed as a glyph: no font can vary it. This is the HAND-SET 24 px
        master (notes: logo small/mark-24.svg — 3 px arms and peg on whole pixels, wider doorways than the
        splash's master scaled down), its sphere clip baked into the two hook outlines so the drawing
-       carries no ids (the lantern copies this svg, lantern.js EMARK). The splash's #splash .sp-logo is
+       carries no ids (the lantern copies this svg, commandbar.js EMARK). The splash's #splash .sp-logo is
        the large master; the favicon (<head>) is the 32/16 px masters.
        The PEG is scaled straight from the big master (owner, 10-01): as thick as the arms (3.025 units), not the
        whole-pixel 2 it once was, which read thin beside the arms at every size; at 1x it lands on half pixels. -->

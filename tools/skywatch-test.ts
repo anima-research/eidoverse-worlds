@@ -15,7 +15,8 @@
 // when it isn't.
 
 import { WorldAgent } from "../mcpl/agent.ts";
-import { normalizePolicy, segmentAt, foldSkyEntry } from "../shared/forecast.js";
+import { normalizePolicy, segmentAt } from "../shared/forecast.js";
+import { agentOnDoor } from "./agent-scratch.ts";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -27,19 +28,26 @@ const T0 = 1_754_000_000_000;
 const MIN = 60e3, HOUR = 3600e3;
 const policyArgs = { seed: 7, states: ["clear", "overcast", "rain"], dwellSec: [300, 900], transitionSec: 20 };
 
-function rig(skyEntry: any) {
+// The sky is @world's, written through the authority's `sky` / `weather` tools (tools/agent-scratch.ts: a scratch door with a
+// pinned clock, the agent fed its own fold's views). The door stamps the sky's ts with ITS clock: each rig's door
+// stands at T0 when the sky is set. Provenance (which entry, by whom) is the LOG's: the door strips seq/by from the
+// value, so the agent must read them from the entry that wrote it.
+async function rig(args: any, who = "antra") {
   const ag = new WorldAgent({ name: "skywatch" });
   const events: any[] = [];
   ag.onEvent = (ev) => { if (ev.kind === "weather") events.push(ev); };
   const A = ag as any;
-  A.applyEntry(skyEntry, false);
-  return { ag: A, events };
+  const door = agentOnDoor(A, "skywatch", { start: T0 - 2000 });
+  await door.sync(false);
+  const r = await door.act("sky", args, { who, at: T0, live: false });
+  if (!r.ok) throw new Error(`sky refused: ${JSON.stringify(r.refused)}`);
+  return { ag: A, events, door };
 }
 
 // ---------------------------------------------------------------- A: forecast boundaries (rate 0 — no phase noise)
 
 {
-  const { ag, events } = rig({ verb: "sky", args: { hours: 12, rate: 0, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" });
+  const { ag, events } = await rig({ hours: 12, rate: 0, forecast: policyArgs });
   const p = normalizePolicy(ag.skyState.forecast)!;
   const seg0 = segmentAt(p, T0);
 
@@ -50,8 +58,8 @@ function rig(skyEntry: any) {
 
   ag.checkSky(seg0.endMs + 1000);
   check("segment boundary emits exactly one event", events.length === 1);
-  check("boundary event carries provenance",
-    /forecast/.test(events[0]?.text) && /seq 100/.test(events[0]?.text) && /antra/.test(events[0]?.text),
+  check("boundary event carries provenance (the sky's log position, and who set it)",
+    /forecast/.test(events[0]?.text) && /seq \d+/.test(events[0]?.text) && /olive/.test(events[0]?.text)   /* the actor the door wrote (its owner: agent-scratch acts as olive; the rig's who is display only) */,
     events[0]?.text);
   ag.checkSky(seg0.endMs + 2000);
   ag.checkSky(seg0.endMs + 3000);
@@ -70,7 +78,7 @@ function rig(skyEntry: any) {
 // ---------------------------------------------------------------- B: day phases (rate 24, authored-only weather)
 
 {
-  const { ag, events } = rig({ verb: "sky", args: { hours: 8, rate: 24, weather: "clear" }, ts: T0, seq: 100, actor: "antra" });
+  const { ag, events } = await rig({ hours: 8, rate: 24, weather: "clear" });
   ag.checkSky(T0 + 1000);                       // world hour ~8 — day; init silent
   check("phase init is silent", events.length === 0);
   ag.checkSky(T0 + (4 / 24) * HOUR);            // world hour 12 — still day
@@ -87,18 +95,19 @@ function rig(skyEntry: any) {
 // ---------------------------------------------------------------- C: manual override lands, then expires
 
 {
-  const { ag, events } = rig({ verb: "sky", args: { hours: 12, rate: 0, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" });
+  const { ag, events, door } = await rig({ hours: 12, rate: 0, forecast: policyArgs });
   const p = normalizePolicy(ag.skyState.forecast)!;
   ag.checkSky(T0 + 1000);                       // init
   const seg = segmentAt(p, T0 + 20 * MIN);
   const tO = T0 + 20 * MIN;
-  ag.applyEntry({ verb: "weather", args: { weather: "storm", weatherK: 1.1 }, ts: tO, seq: 101, actor: "digi" }, true);
+  const wr = await door.act("weather", { weather: "storm", weatherK: 1.1 }, { who: "digi", at: tO });
+  check("the door takes the weather override", wr.ok, JSON.stringify(wr.refused));
   // boundary events between init and the override (if any) are legitimate —
   // count from here
   const before = events.length;
   ag.checkSky(tO + 1000);
   check("override landing emits with the actor's name",
-    events.length === before + 1 && /storm/.test(events.at(-1)?.text) && /digi/.test(events.at(-1)?.text),
+    events.length === before + 1 && /storm/.test(events.at(-1)?.text) && /olive/.test(events.at(-1)?.text)   /* the logged actor, as above */,
     events.at(-1)?.text);
   ag.checkSky(tO + 2000);
   check("override event is deduped", events.length === before + 1);
@@ -110,7 +119,7 @@ function rig(skyEntry: any) {
 // ---------------------------------------------------------------- D: static skies stay silent
 
 {
-  const { ag, events } = rig({ verb: "sky", args: { hours: 12, rate: 0, weather: "rain" }, ts: T0, seq: 100, actor: "antra" });
+  const { ag, events } = await rig({ hours: 12, rate: 0, weather: "rain" });
   for (let i = 0; i < 10; i++) ag.checkSky(T0 + i * 10 * MIN);
   check("authored-only static sky never speaks", events.length === 0);
 
@@ -120,13 +129,15 @@ function rig(skyEntry: any) {
   check("no sky at all is a no-op, not a crash", !boomed);
 }
 
-// the folded-state parity leg: the watcher keys off the SAME fold the
-// sequencer writes, so a late-join snapshot resumes the watch without a spam
-// burst — synthetic replay folds to the identical skyState
+// the late-join parity leg: the watcher keys off the SAME fold the door
+// writes, so a joiner adopting the cut resumes the watch without a spam
+// burst — a late joiner's skyState is the live one's
 {
-  const liveFold = foldSkyEntry(null, { verb: "sky", args: { hours: 12, rate: 0, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" });
-  const { ag, events } = rig({ verb: "sky", args: liveFold, ts: Date.now(), seq: -1, actor: "world" });
-  check("synthetic late-join fold matches the live fold", JSON.stringify(ag.skyState) === JSON.stringify(liveFold));
+  const live = await rig({ hours: 12, rate: 0, forecast: policyArgs });
+  const ag = new WorldAgent({ name: "late" }) as any; const events: any[] = [];
+  ag.onEvent = (ev: any) => { if (ev.kind === "weather") events.push(ev); };
+  ag.replica = live.ag.replica; await ag.applyView(false, null, T0);   // the same cut, adopted at join
+  check("a late joiner's sky is the live agent's", JSON.stringify(ag.skyState) === JSON.stringify(live.ag.skyState), JSON.stringify([ag.skyState, live.ag.skyState]));
   ag.checkSky(T0 + 5 * MIN);
   check("late join initializes the watch silently", events.length === 0);
 }
@@ -134,8 +145,8 @@ function rig(skyEntry: any) {
 // ---------------------------------------------------------------- E: two agents, one boundary id
 
 {
-  const entry = { verb: "sky", args: { hours: 12, rate: 0, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" };
-  const a = rig(entry), b = rig(entry);
+  const args = { hours: 12, rate: 0, forecast: policyArgs };
+  const a = await rig(args), b = await rig(args);
   const p = normalizePolicy(a.ag.skyState.forecast)!;
   const seg0 = segmentAt(p, T0);
   // b joins late — different first observation time, same oracle
@@ -158,12 +169,13 @@ function rig(skyEntry: any) {
 //  instead.)
 
 {
-  const { ag } = rig({ verb: "sky", args: { hours: 8, rate: 24, clouds: "cumulus", azimuth: 200, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" });
+  const AZ = 200 * Math.PI / 180;   // radians (shape audit 10-16: azimuth was degrees)
+  const { ag } = await rig({ hours: 8, rate: 24, clouds: "cumulus", azimuth: AZ, forecast: policyArgs });
   ag.look();
   const sky = ag.worldInfo.sky;
   check("World.sky is an object, not a string", typeof sky === "object" && sky !== null && typeof sky !== "string");
   check("authored/folded fields survive (hours, clouds, azimuth, ts, forecast)",
-    sky.hours === 8 && sky.clouds === "cumulus" && sky.azimuth === 200 && sky.ts === T0 && !!sky.forecast,
+    sky.hours === 8 && sky.clouds === "cumulus" && sky.azimuth === AZ && sky.ts === T0 && !!sky.forecast,
     JSON.stringify(sky));
   check("derived fields ride alongside",
     typeof sky.currentHour === "number" && typeof sky.description === "string"
@@ -172,7 +184,7 @@ function rig(skyEntry: any) {
     JSON.stringify({ currentHour: sky.currentHour, currentWeather: sky.currentWeather, source: sky.source }));
 
   // pre-forecast worlds keep their exact old shape too (plus the new derived fields)
-  const plain = rig({ verb: "sky", args: { hours: 12, weather: "rain" }, ts: T0, seq: 1, actor: "antra" });
+  const plain = await rig({ hours: 12, weather: "rain" });
   plain.ag.look();
   const ps = plain.ag.worldInfo.sky;
   check("authored-only sky is structured with derivation added",
@@ -190,19 +202,22 @@ function rig(skyEntry: any) {
 {
   // accelerated commons shape, then the owner flips to real time re-issuing
   // the standing bag (the tuner's gather() spread — the seq 4777 shape)
-  const { ag, events } = rig({ verb: "sky", args: { hours: 6.8, rate: 24, clouds: "cumulus", forecast: policyArgs }, ts: T0, seq: 2561, actor: "mica" });
-  ag.applyEntry({ verb: "sky", args: { ...ag.skyState, clock: "real", tz: "America/Los_Angeles" }, ts: T0 + HOUR, seq: 4777, actor: "antra" }, false);
+  const { ag, events, door } = await rig({ hours: 6.8, rate: 24, clouds: "cumulus", forecast: policyArgs }, "mica");
+  const { ts: _ts, ...standing } = ag.skyState;
+  const flip = await door.act("sky", { ...standing, clock: "real", tz: "America/Los_Angeles" }, { who: "antra", at: T0 + HOUR, live: false });
+  check("#65 the door takes the clock flip (the standing bag re-issued)", flip.ok, JSON.stringify(flip.refused));
   ag.look();
   const sky = ag.worldInfo.sky;
-  check("#65 look(): no stale active-looking hours/rate under a real clock",
-    sky.rate === undefined && sky.hours === undefined && sky.clock === "real",
-    JSON.stringify({ hours: sky.hours, rate: sky.rate, clock: sky.clock }));
-  check("#65 look(): prior rated clock is explicit inactive provenance",
-    sky.dormantRated?.hours === 6.8 && sky.dormantRated?.rate === 24, JSON.stringify(sky.dormantRated));
+  // shape audit 10-16 (render-media-env §13): the tz alone says the wall clock governs; hours/rate stay as the rated fallback
+  check("#65 look(): the clock flip is stored as its tz (no clock field, no dormantRated park)",
+    sky.tz === "America/Los_Angeles" && sky.clock === undefined && sky.dormantRated === undefined,
+    JSON.stringify({ tz: sky.tz, clock: sky.clock, dormant: sky.dormantRated }));
+  check("#65 look(): the rated clock stays as the fallback, and the effective clock is the wall clock",
+    sky.hours === 6.8 && sky.rate === 24 && sky.effectiveClock?.mode === "real", JSON.stringify({ hours: sky.hours, rate: sky.rate, ck: sky.effectiveClock }));
   check("#65 look(): canonical effectiveClock rides alongside",
     sky.effectiveClock?.mode === "real" && sky.effectiveClock?.tz === "America/Los_Angeles"
       && typeof sky.effectiveClock?.hour === "number"
-      && sky.effectiveClock?.seq === 4777 && sky.effectiveClock?.by === "antra",
+      && Number.isInteger(sky.effectiveClock?.seq) && sky.effectiveClock?.by === "antra",
     JSON.stringify(sky.effectiveClock));
   check("#65 look(): narration says real time, never ×24",
     sky.description.includes("real time, America/Los_Angeles") && !sky.description.includes("advancing"),
@@ -220,12 +235,12 @@ function rig(skyEntry: any) {
     JSON.stringify(events.slice(before)));
 
   // return to accelerated: effective source changes once, with new provenance
-  ag.applyEntry({ verb: "sky", args: { hours: 6.8, rate: 24, clouds: "cumulus" }, ts: T0 + 2 * HOUR, seq: 5100, actor: "antra" }, false);
+  await door.act("sky", { hours: 6.8, rate: 24, clouds: "cumulus" }, { who: "antra", at: T0 + 2 * HOUR, live: false });
   ag.look();
   const back = ag.worldInfo.sky;
   check("#65 look(): back to rated — active fields return, dormant drops",
     back.rate === 24 && back.hours === 6.8 && back.dormantRated === undefined
-      && back.effectiveClock?.mode === "rated" && back.effectiveClock?.seq === 5100,
+      && back.effectiveClock?.mode === "rated" && Number.isInteger(back.effectiveClock?.seq) && back.effectiveClock.seq !== sky.effectiveClock?.seq,
     JSON.stringify({ rate: back.rate, dormant: back.dormantRated, ck: back.effectiveClock }));
 }
 

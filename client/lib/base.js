@@ -95,16 +95,24 @@ export const CONFIG = {
   worldRemembered: picked.remembered,
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
-  // a roaming renderer: the server may send it to any world a snapshot is asked of (server/snapshots.ts)
+  // a roaming renderer: the server may send it to any world a screenshot is asked of (server/screenshots.ts)
   roam: params.has('renderer') && params.has('roam'),
   follow: params.get('follow'),
   // Door key: ?key=… once, remembered for this origin thereafter.
   token: params.get('key') || store?.getItem('ew-key') || '',
   name: params.get('name') || store?.getItem('ew-name') ||
     `guest-${Math.random().toString(36).slice(2, 6)}`,
+  // a dev host (the probes, a local server, ?dev): the guards that throw loudly instead of letting drift pass
+  dev: params.has('dev') || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(globalThis.location?.hostname ?? ''),
 };
 if (params.get('key')) store?.setItem('ew-key', CONFIG.token);
 store?.setItem('ew-name', CONFIG.name);
+// the ACCOUNT a private (TRUST_NAMES) server knows you by, kept apart from the name you show (R 10-11: renaming herself
+// "Rab" made her a stranger with no role in her own world). Fixed at the first real name this browser used; ?account=
+// overrides. A server with sign-in ignores it: the session is the account there.
+{ let acct = params.get('account') || store?.getItem('ew-account') || '';
+  if (!acct && !/^guest-/.test(CONFIG.name)) acct = CONFIG.name;
+  CONFIG.account = acct || null; if (acct) store?.setItem('ew-account', acct); }
 
 /** The name a join ack says we have, minus the transport prefix sendJoin put
  *  on the wire id ("renderer-" / "retina-"). Pure, for net.js onSnapshot.
@@ -121,6 +129,9 @@ export function nameFromJoinAck(you, { renderer = false, spectate = false, verif
 export function setName(name) {
   CONFIG.name = name;
   store?.setItem('ew-name', name);
+  // the first real name this browser uses is its account, as at load: a first visit loads as a guest, and the door's name
+  // is that first name (a later rename never moves the account)
+  if (!CONFIG.account && name && !/^guest-/.test(name)) { CONFIG.account = name; store?.setItem('ew-account', name); }
 }
 export function setToken(token) {
   CONFIG.token = token;

@@ -10,7 +10,7 @@ const make=(heightAt:(x:number,z:number)=>number=()=>0)=>{
  const a=new WorldAgent({name:"walker",world:"support",avatar:""});
  agents.push(a);a.joined=true;(a as any).terrain={heightAt};return a;
 };
-const ent=(id:string,structure:any)=>({id,lib:"",pos:[0,0,0],yaw:0,scale:1,comp:{structure}} as any);
+const ent=(id:string,structure:any)=>({id,model:"",pos:[0,0,0],yaw:0,scale:1,structure} as any);
 async function finish(a:WorldAgent,p:Promise<boolean>,each?:(i:number)=>void){
  const points=[{...a.pos}];
  for(let i=0;i<1000&&(a as any).target;i++){each?.(i);(a as any).tick();points.push({...a.pos});}
@@ -37,6 +37,13 @@ try{
  check(one.arrived&&one.points.slice(1,swapped).every(p=>Math.abs(p.y-slope(p.x))<1e-12),"a terrain walk's feet follow the terrain under them each tick");
  check(one.points.slice(swapped).every(p=>Math.abs(p.y-2-slope(p.x))<1e-12)&&one.points.length>swapped+1,"terrain that changes mid-walk is the terrain the next tick stands on");
  check((a as any).walkHeightAt===null,"arrival releases the walk's basis");
+ // A ledge AHEAD (not ground moving under the feet) ends the walk at once, with its reason (review 10-15 #4: before, the
+ // stride was refused every tick for the walk's whole timeout and the tool said "interrupted or timed out")
+ { const cliff=make((x)=>x>1.5?2:0);cliff.pos={x:0,y:0,z:0};
+   const t0=Date.now();const r=await finish(cliff,cliff.walkTo(3,0,false,LONG,0));
+   check(!r.arrived&&Date.now()-t0<LONG/10,"a 2 m ledge across the way ends the walk now, not at the walk's timeout");
+   check(/ledge/.test((cliff as any).walkStopReason??"")&&cliff.pos.x<1.6&&Math.abs(cliff.pos.y)<1e-9,"…with a reason naming the ledge, the body stopped short of it: "+(cliff as any).walkStopReason);
+   check((cliff as any).target===null&&(cliff as any).walkHeightAt===null&&cliff.clip==="idle","…and the walk's basis is released, the body idle"); }
  // A wall the start's height would pass under, and the crossing's height meets.
  const b=make((x)=>x);b.pos={x:0,y:0,z:.5};
  b.entities.set("raised",ent("raised",{levels:[{y:.6,tiles:[],walls:[[1,1,0]],apertures:[]}]}));
@@ -109,16 +116,20 @@ try{
  const g=make();g.entities.set("sealed",ent("sealed",sealed));
  const sent:any[]=[];(g as any).ws={send:(m:string)=>sent.push(JSON.parse(m)),close(){}};
  const seated=()=>{
-  g.pos={x:.5,y:1.2,z:.5};g.mounts.set(g.name,{to:"chair"});g.pins.set("hand_l",[1,1,1]);
+  g.pos={x:.5,y:1.2,z:.5};g.setOccupant({to:"chair"});g.pins.set("hand_l",[1,1,1]);
   g.heldPose={chest:[0,0,0,1]};g.clip="ragdoll";g.speed=0;
  };
  seated();
- const state=()=>JSON.stringify({pos:g.pos,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
+ const state=()=>JSON.stringify({pos:g.pos,seat:g.myOccupancy,pins:[...g.pins],pose:g.heldPose,clip:g.clip,epoch:(g as any).bodyEpoch});
  const before=state();
  check(!(await g.walkTo(8.5,.5,true,LONG,0))&&g.walkRefusal?.includes("[sealed]"),"a walk into a sealed room is refused");
  check(state()===before&&sent.length===0,"and the refused walk leaves the seated, pinned, posed, tumbling body as it was, sending nothing");
  const up=g.walkTo(1.5,.5,true,LONG,0);
- check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&sent.some(m=>m.verb==="dismount"),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ check(g.pins.size===0&&g.heldPose===null&&g.pos.y===0&&g.myOccupancy===null&&!g.mounts.has(g.name),"an accepted walk gets the body up: unpinned, unposed, dismounted, on the ground");
+ // …and the world hears it: a seat is presence (the pose frame's `seat`), so the next frame carries none.
+ (g as any).tick();
+ const frame=sent.filter(m=>m.type==="pose").at(-1);
+ check(frame&&!("seat" in frame.pose),"and the world hears it: the next pose frame carries no seat");
  g.stop();await up;
  console.log("PASS "+checks+" active-support lifecycle checks");
 }finally{for(const a of agents)a.close();}

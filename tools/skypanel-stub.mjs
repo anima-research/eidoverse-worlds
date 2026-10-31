@@ -7,7 +7,8 @@ export const bus = {
 };
 export const report = (what, e) => { throw new Error(`${what}: ${e}`); };
 export const defsRegistry = async () => ({ skyPresets: {}, skyClocks: {} });
-export const sendVerb = (verb, args) => { S.sent.push([verb, args]); };
+// editwrites.js: the panel's commit is ONE request (sendOps([{verb: 'sky', args}])), recorded as [verb, args]
+export const sendOps = async (ops) => { for (const o of [].concat(ops)) S.sent.push([o.verb, o.args]); return { ok: true }; };
 export const flashHint = () => {};
 
 export const S = { logged: null, args: {}, previewing: false, impl: 'eidoverse', cloudQuality: 'medium', sent: [] };
@@ -42,3 +43,6 @@ export const getGrassApplied = () => ({ field: false, status: 'applied', strokes
 export const MODEL_QUALITY = ['auto', 'full', 'eco'];
 export const modelQuality = { quality: 'auto' };
 export const dialModelQuality = () => '';
+export const SKY_QUALITY = ['balanced', 'high'];
+export const skyQuality = () => S.quality ?? 'balanced';
+export const setSkyQuality = (q) => { S.quality = q; };

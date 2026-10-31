@@ -9,36 +9,62 @@
 // snapshot) stay in server.ts, where the source-text gates that pin
 // settledPose expect them.
 //
-// Two suites regex THIS file's source now (they used to pin server.ts):
-// tools/whisper-disable-test.ts and tools/voice-wiring-test.ts — moving a
-// body again means moving their patterns with it.
+// A suite regexes THIS file's source now (it used to pin server.ts):
+// tools/voice-wiring-test.ts — moving a body again means moving its patterns
+// with it.
 
-import { runVerb } from "./verbs.ts";
-import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
+import { WORLDS_DIR } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
+import { gateReach } from "./reachgate.ts";
+import { bodyRangeOf } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
-import { rightsOf, isAdminId } from "./rights.ts";
-import { ROLE_RANK } from "../shared/fold.js";
-import { simSnapshot } from "../shared/sim.js";
-import { worlds, forkWorld, type World, type Client } from "./world.ts";
-import { snapshots } from "./snapshots.ts";
-import { renderScene } from "./render-scene.ts";
-import { globalBans, saveGlobalBans } from "./moderation.ts";
-import { foundingRefusal, noteFounding, whoOf, principalOf, searchDirectory } from "./access.ts";
-import { wildcardRoleIn, entryRestrictedIn } from "../shared/rightsfold.js";
+import { isOperator } from "./operators.ts";
+import { directoryFor, foldName } from "./directory.ts";
+import { actorOf as actorIdOf } from "./requestwire.ts";
+import { qNorm } from "../shared/rot.js";
+import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
+import { worlds, type World, type Client, authorityNow } from "./world.ts";
+import { stateSampleError } from "../shared/presencewire.js";
+import { screenshots } from "./screenshots.ts";
+import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
+import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy, globalBansText, takePending } from "./moderation.ts";
+import { isOwner } from "../shared/protocol/roles.js";
 
-// ---- whispers: held-in-memory machinery (moved with its only writers) ------
-// join's held-whisper delivery imports these back — one-way, like
-// the screenshot broker's pending requests.
-export const pendingWhispers = new Map<string, unknown[]>();
-export const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
-export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
+/** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
+ *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
+ *  embodied leg is the target, whatever name anyone wears, and an actor who isn't here is simply not here (the name
+ *  beside it is NOT a fallback: that would hand the message to whoever wears the name). A sender with no actor id (an
+ *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
+ *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
+const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+/** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy (review full-260 #1). */
+const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
 
-// inspect: per-connection pacing and the reply budget (a bag is authored data;
-// anything bigger than this is a structure plan nobody edits as JSON).
-const inspectAt = new WeakMap<object, number>();
-const INSPECT_MAX = 64 * 1024;
+/** Body consent at the server (PROTOCOL §5; tools audit 10-07 "Body consent"): a presence act on someone else's body is
+ *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js: their lists, then the gate
+ *  for the class — move for shove and displace, touch for pose — then the world's default) and a sane range, BEFORE it's
+ *  forwarded. The target's client still has the last word; this is so a packet never reaches a body that said no.
+ *  Returns the refusal, or null to forward. */
+function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"): string | null {
+  if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
+  const live = c.world?.log?.live;
+  if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
+  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, liveBodyDefault(live));
+  if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause (a closed gate, a block): the real cause is theirs, not yours; they are told (once per asker per cooldown)
+  // a range only where the world sets one (@world.body-default.range; R 10-28 13:44): m between the two bodies' last frames
+  const r = bodyRangeOf(live.state?.()?.entities?.["@world"]?.c?.["body-default"]); if (r == null) return null;
+  const a = c.lastPose?.p, b = tc.lastPose?.p;
+  if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
+  const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (this world's range is ${r} m) — walk closer`;
+  return null;
+}
+function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {
+  const leg = (o: Client) => !o.spectator && (!embodied || (o.surface ?? "world") === "world");
+  if (typeof actor === "string" && ACTOR_ID.test(actor)) return { tc: [...w.clients].find((o) => o.actorId === actor && leg(o)) ?? null, byActor: true, actor };
+  return { tc: name ? [...w.clients].find((o) => o.id === name && leg(o)) ?? null : null, byActor: false, actor: null };
+}
 
 export type MsgCtx = {
   c: Client;
@@ -47,89 +73,24 @@ export type MsgCtx = {
   expel: (w: World, target: Client, why: string) => void;
 };
 
+/** A page size asked for on the wire: a whole number from 1 to PAGE_MAX, else the default (NaN or 1.5 never equals a
+ *  page's length, so readHistory's ceiling would never stop it). */
+export const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.PAGE_DEFAULT); return Number.isInteger(n) && n >= 1 ? Math.min(LIMITS.PAGE_MAX, n) : LIMITS.PAGE_DEFAULT; };
+
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
-  "render-scene": ({ c, ws, now }, msg) => {
-    if ((c.ws as any).getBufferedAmount?.() > 8 * 1024 * 1024) return;
-    const scene = renderScene(c, msg, now);
-    if (scene) ws.send(JSON.stringify(scene));
-  },
-  "verb": ({ c, ws, now, expel }, msg) => {
-    // The authored plane in one call — table + shell live in
-    // server/verbs.ts (§15, 7b): preamble, validators, append +
-    // broadcast, after hooks, byte-identical. expel rides in the ctx,
-    // injected: verbs.ts must never import server.ts (the cycle break
-    // §15.1 pinned).
-    //
-    // eidosim@0.3.0: a spawn (its lib) or an epoch (every standing lib)
-    // needs the sequencer's box stamp, and summarizing a GLB is async
-    // while validators are not — so the cache is warmed HERE, on the
-    // wire. AUTHORED ORDER IS KEPT: a client whose verb is waiting on an
-    // asset read has every later verb of its own queued behind it (PR
-    // #160 review, B1 — a cold spawn followed by a place used to land as
-    // place-then-spawn, wrong forever in the log). A client with nothing
-    // in flight runs synchronously, in order, as before; only a lib this
-    // process has never seen pays the wait, once.
-    const w = c.world;
-    if (!w) return;
-    const gen = c.gen;
-    // Admission issues a new generation even when this socket rejoins the
-    // same world. Bind pending work to that acceptance, not just its name or
-    // world pointer (takeover and ordinary close can leave the latter set).
-    const current = () => gen != null && c.gen === gen && c.ws === ws
-      && c.world === w && !c.superseded && w.clients.has(c) && c.ws.readyState === 1;
-    const libs = () => msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
-      : msg.verb === "epoch" ? coldLibs(worldLibs(w.state)) : [];
-    // Recheck immediately before the synchronous commit path, after any read.
-    const run = () => { if (current()) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
-    if (!libs().length && !c.verbQueue) { run(); return; }
-    // The callback's try/catch cannot catch a continuation. Contain both
-    // validation and after-hook failures here, and leave a resolved queue so
-    // the next authored request still runs. Never discard a rejecting finally.
-    const tail: Promise<void> = (c.verbQueue ?? Promise.resolve())
-      .then(async () => {
-        if (!current()) return;
-        // A preceding queued spawn may have changed the epoch's box domain.
-        await warmBoxes(libs());
-        run();
-      })
-      .catch((err) => {
-        console.error(`[ws] "verb" from ${c.id} failed server-side:`, err);
-        try { ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* socket already gone */ }
-      });
-    c.verbQueue = tail;
-    void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
-  },
   "history": ({ c, ws, now, expel }, msg) => {
-    // Deliberately available to spectators too: watching a show and
-    // reading back what was said before you arrived is the same act.
+    // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
+    // connection arrived, unless it is the owner's, an operator's or a readChat holder's (world.ts isAdmin), who reads the master log.
+    // Spectators page like anyone else: what they were present for.
     if (!c.world) return;
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
       after: typeof msg.after === "number" ? msg.after : -Infinity,
-      limit: Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT))),
+      limit: pageLimit(msg.limit),
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
+      floor: c.world.sayFloorFor(c),
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
-  },
-  "inspect": ({ c, ws, now }, msg) => {
-    // One entity's authored component bag, for native inspectors. The browser
-    // folds the whole log and reads the same bag locally; render-scene only
-    // projects what renderers need. Open to spectators for the reason history
-    // is: the log is public to everyone in the world. Read-only; edits are
-    // `comp` verbs through the normal gate.
-    if (!c.world || typeof msg.id !== "string" || msg.id.length > 128) return;
-    const last = inspectAt.get(c) ?? 0;
-    if (now - last < 50) return;
-    inspectAt.set(c, now);
-    const e: any = c.world.state.entities[msg.id];
-    const reply: Record<string, unknown> = { type: "inspect", id: msg.id, reqId: msg.reqId ?? null };
-    if (!e) { ws.send(JSON.stringify({ ...reply, error: "not_found" })); return; }
-    const comp = e.comp ?? {};
-    const size = JSON.stringify(comp).length;
-    Object.assign(reply, { lib: e.lib ?? null, kind: e.kind ?? "model", parent: e.parent ?? null });
-    if (size > INSPECT_MAX) Object.assign(reply, { error: "too_large", types: Object.keys(comp), size });
-    else reply.comp = comp;
-    ws.send(JSON.stringify(reply));
   },
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
@@ -137,27 +98,19 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // spectators for the same reason history is: the log is public,
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
-    const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
-    if (msg.sim) {
-      // the sim fold's cut, on request — the determinism proof's
-      // server leg (sim-smoke compares this against an independent
-      // recompute), and any client's "what does the sequencer think"
-      ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        sim: simSnapshot(c.world.sim) }));
-      return;
-    }
-    if (msg.behavior != null) {
+    const limit = pageLimit(msg.limit);
+    if (msg.script != null) {
       // one script's own log ring + status — the author's console
-      const b = c.world.bhv.inspect(String(msg.behavior));
+      const b = c.world.scripts.inspect(String(msg.script));
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        behavior: String(msg.behavior),
-        status: b?.status ?? "no such behavior",
+        script: String(msg.script),
+        status: b?.status ?? "no such script",
         events: (b?.ring ?? []).slice(-limit).map((r) => ({ ts: r.ts, kind: "script-log", line: r.line })) }));
       return;
     }
-    if (msg.behaviors) {   // the roster: what runs here, and is it alive
+    if (msg.scripts) {   // the roster: what runs here, and is it alive
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
-        events: c.world.bhv.list().map((b) => ({ ts: 0, kind: "behavior", ...b })) }));
+        events: c.world.scripts.list().map((b) => ({ ts: 0, kind: "script", ...b })) }));
       return;
     }
     const kinds = Array.isArray(msg.kinds) && msg.kinds.length ? new Set(msg.kinds.map(String)) : null;
@@ -166,40 +119,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       .slice(-limit);
     ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null, events }));
   },
-  "whisper": ({ c, ws, now, expel }, msg) => {
-    if (!WHISPERS_ENABLED) {
-      ws.send(JSON.stringify({ type: "error", error: "whispers are disabled in this world" }));
-      return;
-    }
-    // A private message between two bodies.
-    //
-    // It must NEVER reach the world log. The log is append-only, public,
-    // replayed in full to every future joiner, and forkable — a whisper
-    // written there would be permanently readable by everyone who ever
-    // enters this world, including people who weren't born yet when it
-    // was sent. So whispers route point-to-point and are never appended.
-    //
-    // The cost of that choice is durability: there is no log to replay
-    // from. So an undelivered whisper is held in MEMORY for a while and
-    // handed over when its recipient next joins. Lost on restart, which
-    // is the honest trade — a private message should be more willing to
-    // vanish than to become permanent public record.
-    if (!c.world || c.spectator) return;
-    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
-    const text = String(msg.text ?? "").slice(0, LIMITS.WHISPER_LEN);
-    if (!to || !text) return;
-    const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
-    const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator);
-    for (const t of targets) t.ws.send(JSON.stringify(packet));
-    ws.send(JSON.stringify({ ...packet, echo: true })); // your own sent copy
-    if (!targets.length) {
-      const key = whisperKey(c.world.name, to);
-      const q = pendingWhispers.get(key) ?? [];
-      q.push(packet);
-      while (q.length > LIMITS.WHISPER_HOLD) q.shift();
-      pendingWhispers.set(key, q);
-      ws.send(JSON.stringify({ type: "error", error: `${to} isn't here — they'll get it when they arrive` }));
-    }
+  // whisper was removed (R 10-18): speech is public and arrival-only, and direct messages will live at the identity level
+  // (client/profile), not in world chat. A client still sending one is told so in the registry's words (refusalcodes.js
+  // `removed`); its text goes nowhere — not delivered, not held, not logged.
+  "whisper": ({ ws }, msg) => {
+    const r = REMOVED_VERBS.whisper;
+    ws.send(JSON.stringify({ type: "error", error: `whisper was removed: ${r.why}`, about: "whisper", refused: { code: "removed", reason: `whisper was removed: ${r.why}`, fix: r.fix }, ...(msg?.reqId !== undefined ? { reqId: msg.reqId } : {}) }));
   },
   "anim": ({ c, ws, now, expel }, msg) => {
     // A one-off animation: relayed once to everyone, never logged. It is
@@ -208,6 +133,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // that it must not ride the 15Hz pose stream, so it is its own
     // message sent once.
     if (!c.world || c.spectator) return;
+    // {stop: true} (R 10-17 16:26): every animation this body is playing fades out, back to what it holds beneath
+    if (msg.stop === true) { c.world.broadcast({ type: "anim", id: c.id, stop: true }, c); return; }
     if (typeof msg.dur !== "number" || typeof msg.tracks !== "object") return;
     // one guard against a pathological payload — poses are tiny, so
     // anything approaching a real asset is a mistake or an attack
@@ -228,8 +155,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // outside. The target decides whether to honour it.
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
-    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
+    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name (H2)
+    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to ${msg.ragdoll ? "shove" : "pose"}` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
     // exactly those two shapes; the receiver caps magnitude for itself.
@@ -239,9 +166,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const lean = ((msg.ragdoll as { lean: unknown[] }).lean).map(Number);
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
+    // consent and range at the server (L6): a knock-over is a shove, a pose or an animation is a pose
+    const why = (rag ? bodyRefusal(c, tc, "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose") : null);
+    if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
     // merge: pose only the bones sent, over what the target already holds.
     // Absent means replace — what every sender meant before the flag existed.
-    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, pose: msg.pose ?? null, merge: msg.merge === true,
+    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}), pose: msg.pose ?? null, merge: msg.merge === true,
       anim: msg.anim ? { ...msg.anim, replace: msg.anim.replace !== false } : null, ragdoll: rag }));
   },
   "bc": ({ c, ws, now, expel }, msg) => {
@@ -250,77 +180,6 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const ring = (c.bcRing ??= []);
     ring.push(String(msg.tag ?? "").slice(0, LIMITS.ID_LEN));
     if (ring.length > LIMITS.BC_RING) ring.shift();
-    return;
-  },
-  "lease": ({ c, ws, now, expel }, msg) => {
-    // Entity animation leases — docs/leases.md. The server arbitrates
-    // (objects have no owning client), remembers the last streamed
-    // transform, and COMMITS it when the holder releases, vanishes, or
-    // goes stale. It never simulates: transforms in, transforms out,
-    // one `place` verb at rest. Presence semantics: never logged.
-    if (!c.world || c.spectator) return;
-    const w = c.world;
-    const id = String(msg.id ?? "").slice(0, LIMITS.ID_LEN);
-    const op = String(msg.op ?? "");
-    if (!id) return;
-
-    const sane = (a: unknown, n: number): number[] | null => {
-      if (!Array.isArray(a) || a.length !== n) return null;
-      const v = (a as unknown[]).map(Number);
-      return v.every(Number.isFinite) ? v : null;
-    };
-    if (op === "claim") {
-      if (!w.state.entities[id]) {
-        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: "no such entity" }));
-        return;
-      }
-      // physical play is USING the world (rank 0), like `use` — a
-      // per-world knob can gate this later without protocol changes
-      const cur = w.leases.get(id);
-      if (cur && cur.holder !== c) {
-        const stale = Date.now() - cur.lastAt > LIMITS.LEASE_STALE_MS;
-        // proximity take: you can take what you can reach — the ball
-        // being dribbled past you is kickable, the one across the
-        // field is not. Distance vs the OBJECT's live position.
-        const at = cur.lastState?.p ?? w.state.entities[id].pos;
-        const me = c.lastPose?.p;
-        const near = !!me && Math.hypot(me[0] - at[0], me[2] - at[2]) <= LIMITS.LEASE_TAKE_M;
-        if (!stale && !(msg.take && near)) {
-          ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: `${cur.holder.id} is animating it` }));
-          return;
-        }
-        cur.holder.ws.send(JSON.stringify({ type: "lease", op: "lost", id, to: c.id }));
-      }
-      // per-client cap: a runaway plugin must not lease a whole world
-      let held = 0;
-      for (const L of w.leases.values()) if (L.holder === c) held++;
-      if (held >= LIMITS.LEASES_PER_CLIENT && !w.leases.has(id)) {
-        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: "too many live leases — release something" }));
-        return;
-      }
-      w.leases.set(id, { holder: c, lastState: w.leases.get(id)?.lastState ?? null, lastAt: Date.now() });
-      ws.send(JSON.stringify({ type: "lease", op: "granted", id, ...(w.leases.get(id)!.lastState ? { from: w.leases.get(id)!.lastState } : {}) }));
-      w.broadcast({ type: "lease", op: "claimed", id, by: c.id }, c);
-      return;
-    }
-
-    const L = w.leases.get(id);
-    if (!L || L.holder !== c) return;      // a lost holder's tail, dropped
-
-    if (op === "state") {
-      const p = sane(msg.p, 3);
-      if (!p) return;
-      const yaw = Number.isFinite(Number(msg.yaw)) ? Number(msg.yaw) : undefined;
-      const q = sane(msg.q, 4) ?? undefined;
-      L.lastState = { p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}) };
-      L.lastAt = Date.now();
-      w.broadcast({ type: "lease", op: "state", id, by: c.id, p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}) }, c);
-      return;
-    }
-    if (op === "release") {
-      w.settleLease(id, { p: sane(msg.p, 3), yaw: Number.isFinite(Number(msg.yaw)) ? Number(msg.yaw) : null });
-      return;
-    }
     return;
   },
   "bodydrag": ({ c, ws, now, expel }, msg) => {
@@ -351,11 +210,31 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const raw = String(msg.pose ? JSON.stringify(msg.pose) : "");
     if (raw.length > LIMITS.BODYDRAG_POSE_BYTES) return;      // a pose is tiny; anything else is an attack
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
+    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name (H2)
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
+    const addressed = { type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}) };
+    // a grab takes someone's body (move, L6): their consent and reach, at the server; the owner decides whether to accept it
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
+    // A non-grab release ends the drag even after move consent closes; its final sample and nails need the same live
+    // displace consent as any other effect, so a refused release carries only the end (house 6340433633 Q3).
+    else if (!(c.actorId && c.actorId === tc.actorId)) {
+      const nail = msg.unpin != null || msg.pinAt != null || msg.pins != null;
+      const endAlone = () => { if (msg.end != null) tc.ws.send(JSON.stringify({ ...addressed, end: true })); };
+      // fails closed as bodyRefusal does: with no live log or no identity on either side, nothing can say yes
+      const live = c.world.log?.live;
+      if (!live || !c.actorId || !tc.actorId) {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` }));
+        endAlone(); return;
+      }
+      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
+      if (d.mode === "deny") {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: refusalWords(tc.id, "displace") }));
+        endAlone(); return;
+      }
+    }
     tc.ws.send(JSON.stringify({
-      type: "bodydrag", by: c.id,
+      ...addressed,
       ...(msg.grab != null ? { grab: msg.grab } : {}),
       ...(msg.end != null ? { end: true } : {}),
       ...(msg.pose != null ? { pose: msg.pose } : {}),
@@ -380,7 +259,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // every listening agent. So the sentences ride presence — relayed,
     // never persisted, same doctrine as typing — and the complete
     // utterance lands in the log as ONE say when the voice finishes.
-    // Agents perceive a paragraph; humans watch it being spoken.
+    // A reader of the log gets one paragraph; a listener watches it spoken.
+    // Any participant's voice paces this way (a person's TTS as well as a program's).
     // Presence lanes are the voice surface's pacing channel (#57, review
     // finding 8): the bound voice leg owns the audio clock, so it — not
     // the primary, which has no playback timing — paces captions and
@@ -433,8 +313,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     // the say must exist, be recent, and be THIS identity's
-    // recentSays, not entries[]: fold() empties entries every FOLD_EVERY
-    // appends, and a receipt for a folded-out say must still land
+    // recentSays, not entries[]: the first protocol's fold() emptied entries every few
+    // hundred appends, and a receipt for a folded-out say must still land
     // (review finding 3). Misses answer with an error frame — every
     // other refusal in this handler does, and a leg whose receipt was
     // discarded silently cannot even detect it.
@@ -478,7 +358,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence stays presence.
     // mic = a live voice is coming from this body right now (R, 23:30)
     const st = typeof msg.state === "string" && ["ear", "think", "tool", "mic"].includes(msg.state) ? msg.state : null;
-    c.world.broadcast({ type: "typing", id: c.id, to: msg.to ?? null, ...(st ? { state: st } : {}) }, c);
+    // `to` names someone present (presence is about the people here), or nobody
+    // …by identity when the sender names one (toActor, H2), else by name
+    const tt = presenceTarget(c.world, msg.toActor, typeof msg.to === "string" ? msg.to : "", false).tc;
+    c.world.broadcast({ type: "typing", id: c.id, to: tt?.id ?? null, ...(tt?.actorId ? { toActor: tt.actorId } : {}), ...(st ? { state: st } : {}) }, c);
   },
   "drag": ({ c, ws, now, expel }, msg) => {
     // Transient build feedback. DESIGN.md is explicit that dragging is
@@ -488,8 +371,36 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
-    if (ROLE_RANK[rightsOf(c.world.state, c.id, c.sub).role] < 1) return;
-    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, by: c.id }, c);
+    // (the authority's rights for the person's identity)
+    // the build switch (roles S2), never the old protocol's rank table: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
+    if (!c.world.log!.rightsOf(actorIdOf(c)).can.build) return;   // the person's directory identity, never their name
+    // q: the rotate gizmo turns about any axis (design §5); relayed only when
+    // it is a usable quaternion (normalized), so a malformed one is never seen
+    const q = qNorm(msg.q);
+    // `end: true` is the last sample of a drag: receivers drop the claim it carried (docs/WIRE.md: a live drag is a claim)
+    const scale = Array.isArray(msg.scale) && msg.scale.length === 3 && msg.scale.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0 && n < 1000) ? msg.scale : null;   // a scrubbed size
+    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), ...(scale ? { scale } : {}), ...(msg.end === true ? { end: true } : {}), by: c.id }, c);
+  },
+  "drive": ({ c, ws }, msg) => {
+    // a hull's pose from its helm: presence like drag, gated on sitting at the helm (never on build rights); the authority checks it (shared/protocol/authority/drive.js)
+    if (!c.world || c.spectator || typeof msg.id !== "string") return;
+    const r: any = c.world.log!.requestSync(actorIdOf(c), "drive", { id: msg.id, pos: msg.pos, q: msg.q });
+    if (r?.ok) c.world.broadcast({ type: "drive", id: msg.id, pos: r.pose.pos, q: r.pose.q, by: c.id }, c);
+    else ws.send(JSON.stringify({ type: "drive", id: msg.id, snap: true, ...(r?.refused?.pose ? { pos: r.refused.pose.pos, q: r.refused.pose.q } : {}), why: r?.refused?.reason ?? "refused" }));
+  },
+  // spec/PHYSICS.md §5.1: a round-trip clock. {t0} (the asker's own clock, echoed untouched) → {t0, t}: t on the
+  // world's AUTHORITY clock, the one that stamps entries' ts and frames' t. The asker's offset is t − (t0 + t1) / 2.
+  "clock": ({ c, ws }, msg) => {
+    const t0 = typeof msg.t0 === "number" && Number.isFinite(msg.t0) ? msg.t0 : null;
+    ws.send(JSON.stringify({ type: "clock", t0, t: c.world ? authorityNow(c.world) : Date.now() }));
+  },
+  // spec/PHYSICS.md §4.3: the state-sync lane, RESERVED. {s: [sample, …]}, each {id, by, aseq, oseq, t, p, q, v, w, sleep}.
+  // Checked now, so no client ships another shape under this name; refused until a live simulation authority exists.
+  "state": ({ c, ws }, msg) => {
+    if (!c.world || c.spectator) return;
+    const list = Array.isArray(msg.s) ? msg.s : null;
+    const why = !list || !list.length || list.length > 64 ? "state is {s: [sample, …]} (1–64 samples)" : list.map(stateSampleError).find((x) => x) ?? null;
+    ws.send(JSON.stringify({ type: "error", error: why ? `state: ${why}` : "state samples are reserved: no live simulation authority runs here yet (PHYSICS §4.3)" }));
   },
   "pose": ({ c, ws, now, expel }, msg) => {
     if (!c.world || c.spectator) return;
@@ -501,241 +412,101 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         console.log(`[world:${c.world.name}] dropped non-finite pose from ${c.id} (×${cc.badPose})`);
       return;
     }
+    gateReach(c, pose);                           // a hand on another body relays only with their consent (reachgate.ts)
     c.lastPose = pose;
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
-  "snap-result": ({ c }, msg) => { snapshots.receive(c, msg); },
-  "world-fork": ({ c, ws, now, expel }, msg) => {
-    // Copy the world you are standing in to a new name. Owner-only
-    // (rank 2, like shaping terrain): the fork carries ALL history —
-    // every chat line ever said here — so duplicating it is the owner's
-    // call, not any visitor's. WORLD_ADMIN passes everywhere, which is
-    // also the only door for pre-permissions OPEN worlds.
-    if (!c.world) return;
-    if (c.spectator) {
-      ws.send(JSON.stringify({ type: "error", error: "spectators can't copy worlds — join embodied" }));
-      return;
-    }
-    const rights = rightsOf(c.world.state, c.id, c.sub);
-    if (ROLE_RANK[rights.role] < 2) {
-      ws.send(JSON.stringify({ type: "error", error: `copying a world needs its owner — you are a ${rights.role} here` }));
-      return;
-    }
-    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
-    // A copy is a new world: it counts against the same daily founding cap
-    // as stepping into a fresh name (access.ts). Its roles — the member list
-    // of a closed world included — ride the copied log.
-    const capWhy = foundingRefusal(whoOf(c));
-    if (capWhy) {
-      ws.send(JSON.stringify({ type: "error", error: capWhy }));
-      return;
-    }
-    const r = forkWorld(c.world, to);
-    if (!r.ok) {
-      ws.send(JSON.stringify({ type: "error", error: r.err }));
-      return;
-    }
-    noteFounding(whoOf(c));
-    console.log(`[world:${c.world.name}] copied → "${to}" by ${c.id}`);
-    ws.send(JSON.stringify({ type: "world-forked", from: c.world.name, to }));
-  },
-  "world-reset": ({ c, ws, now, expel }, msg) => {
-    // Erase the world you are standing in back to zero. Owner-only, and
-    // the message must carry the world's own name — the client makes you
-    // type it, the server refuses anything else, so a stray click can
-    // never be the thing that empties a world. History is archived, not
-    // destroyed (see World.reset).
-    if (!c.world) return;
-    if (c.spectator) {
-      ws.send(JSON.stringify({ type: "error", error: "spectators can't erase worlds — join embodied" }));
-      return;
-    }
-    const rights = rightsOf(c.world.state, c.id, c.sub);
-    if (ROLE_RANK[rights.role] < 2) {
-      ws.send(JSON.stringify({ type: "error", error: `erasing a world needs its owner — you are a ${rights.role} here` }));
-      return;
-    }
-    if (String(msg.name ?? "") !== c.world.name) {
-      ws.send(JSON.stringify({ type: "error", error: `confirmation mismatch — reset must name "${c.world.name}"` }));
-      return;
-    }
-    const w = c.world;
-    // Who owned it, before the log goes: a reset world must not become a
-    // land-rush — the same owners hold the fresh one. (An ADMIN resetting
-    // an OPEN world leaves it open: no owners existed, none are minted.)
-    const now2 = Date.now();
-    const roles = Object.entries(w.state.roles ?? {}) as [string, { role: string; sub?: string; gen?: boolean; fly?: boolean; until?: number }][];
-    const owners = roles.filter(([id, r2]) => id !== "*" && r2.role === "owner");
-    // …and a world that is CLOSED stays closed, with its members: erasing the
-    // content must not be the thing that opens a members-only world to
-    // everyone (the wildcard and the member list are the door, not content).
-    const closed = entryRestrictedIn(w.state as any);
-    const keep = closed
-      ? roles.filter(([id, r2]) => id === "*" || (r2.role !== "owner" && !(typeof r2.until === "number" && r2.until <= now2)))
-      : [];
-    const arch = w.reset();
-    for (const [id, r2] of owners) {
-      w.commit("world", "grant", { id, role: "owner", gen: true, ...(r2.sub ? { sub: r2.sub } : {}) });
-    }
-    for (const [id, r2] of keep) {
-      w.commit("world", "grant", { id, role: r2.role, ...(r2.gen ? { gen: true } : {}), ...(r2.fly ? { fly: true } : {}),
-        ...(r2.sub ? { sub: r2.sub } : {}), ...(typeof r2.until === "number" ? { until: r2.until } : {}) });
-    }
-    console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
-    w.broadcast({ type: "world-reset", world: w.name, by: c.id });
-  },
-  "access-state": ({ c, ws }) => {
-    // The owner panel's data (client/lib/accesspanel.js): the same facts as
-    // the `world-access` listing, as structure. Anyone present may read it —
-    // roles are log entries, readable by everyone who may be here. Durable
-    // subjects are NOT sent: the panel edits by the record's name, and the
-    // directory search (owner-only, below) is where a subject is picked.
-    if (!c.world) return;
-    const w = c.world;
-    const now2 = Date.now();
-    const roles = (w.state.roles ?? {}) as Record<string, { role: string; gen?: boolean; fly?: boolean; until?: number; sub?: string }>;
-    const owned = Object.entries(roles).some(([k, r]) => k !== "*" && r?.role === "owner");
-    const mine = rightsOf(w.state, c.id, c.sub);
-    const mayEdit = ROLE_RANK[mine.role] >= 2 || isAdminId(c.id, c.sub);
-    const live = Object.entries(roles).filter(([k, r]) => k !== "*" && r && !(typeof r.until === "number" && r.until <= now2));
-    const presentNames = new Set([...w.clients].filter((o) => !o.spectator && !o.superseded).map((o) => o.id));
-    // An editor's panel edits a member BY SUBJECT when the record has one —
-    // the record's key is a display name, and a display name can look like
-    // something else (Greptile #258). Subjects go to editors only.
-    const members = live.map(([id, r]) => ({
-      id, ...(mayEdit && r.sub ? { sub: r.sub } : {}), role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}),
-      ...(typeof r.until === "number" ? { until: r.until } : {}),
-      kind: r.sub ? (principalOf(r.sub)?.kind ?? (r.sub.startsWith("agent:") ? "agent" : "human")) : "name",
-      here: presentNames.has(id) || (r.sub ? [...w.clients].some((o) => o.sub === r.sub && !o.spectator) : false),
-    }));
-    // who is standing here without being listed — what "keep everyone who is
-    // here" adds before closing a world
-    const listed = (o: { id: string; sub?: string }) => live.some(([k, r]) => k === o.id || (r.sub && r.sub === o.sub));
-    const here = [...w.clients]
-      .filter((o) => !o.spectator && !o.superseded && o !== c && !listed(o))
-      .map((o) => ({ id: o.id, ...(mayEdit && o.sub ? { sub: o.sub } : {}), kind: o.agent ? "agent" : "human", verified: Boolean(o.sub || o.nameReserved) }));
-    ws.send(JSON.stringify({ type: "access-state", world: w.name, owned, door: owned ? wildcardRoleIn(w.state as any) : "builder",
-      mayEdit, you: { role: mine.role, ...(mine.until ? { until: mine.until } : {}) }, members, here, now: now2 }));
-  },
-  "access-directory": ({ c, ws }, msg) => {
-    // The "add someone" search: identities this instance has seen, by name.
-    // OWNERS ONLY (of the world they stand in) — it is a roster of who has
-    // signed in, which is not every visitor's business — and it carries the
-    // durable subject, so the owner's pick binds to exactly that person.
-    if (!c.world) return;
-    const mine = rightsOf(c.world.state, c.id, c.sub);
-    if (ROLE_RANK[mine.role] < 2 && !isAdminId(c.id, c.sub)) {
-      ws.send(JSON.stringify({ type: "access-directory", q: String(msg.q ?? ""), results: [], error: "only this world's owners can search for people to add" }));
-      return;
-    }
-    const q = String(msg.q ?? "").slice(0, 64);
-    ws.send(JSON.stringify({ type: "access-directory", q, results: searchDirectory(q) }));
-  },
-  "world-access": ({ c, ws }, msg) => {
-    // Who may come into the world you are standing in, and until when.
-    // Anyone present may read it — roles are log entries, and the log is
-    // readable by everyone who may be here. (Non-members never get this far:
-    // they are not here.) A `mod` reply, so browser chat and agents both
-    // already know how to show it.
-    if (!c.world) return;
-    const w = c.world;
-    const now2 = Date.now();
-    const door = wildcardRoleIn(w.state as any);
-    const MODE: Record<string, string> = {
-      none: "members only — invisible to everyone not listed",
-      spectator: "watch only — anyone may watch, only those listed may come in",
-      visitor: "open — anyone may come in as a visitor",
-      builder: "open — anyone may come in and build",
-    };
-    const mode = Object.keys(w.state.roles ?? {}).some((k) => k !== "*" && (w.state.roles as any)[k]?.role === "owner")
-      ? (MODE[door] ?? `everyone else: ${door}`)
-      : "open — this world has no owner, so anyone may come in and build";
-    const left = (until: number) => {
-      const ms = until - now2;
-      if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))} min left`;
-      if (ms < 2 * 86_400_000) return `${Math.round(ms / 3_600_000)} h left`;
-      return `until ${new Date(until).toISOString().slice(0, 10)}`;
-    };
-    const rows = Object.entries(w.state.roles ?? {})
-      .filter(([id, r]) => id !== "*" && r && !(typeof r.until === "number" && r.until <= now2))
-      .sort(([, a], [, b]) => (ROLE_RANK[b.role] ?? 0) - (ROLE_RANK[a.role] ?? 0))
-      .map(([id, r]) => {
-        const kind = r.sub ? principalOf(r.sub)?.kind : undefined;
-        return `${id} — ${r.role}${r.gen && r.role !== "owner" ? " +gen" : ""}${r.fly ? " +fly" : ""}${typeof r.until === "number" ? ` (${left(r.until)})` : ""}${r.sub ? (kind ? ` · ${kind}` : "") : " · by name only"}`;
-      });
-    ws.send(JSON.stringify({ type: "mod", text: `who can come into "${w.name}": ${mode}\n${rows.length ? rows.join("\n") : "nobody is listed by name"}` }));
-  },
+  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,
+  // the broker: roaming renderers, PNG validation, the generation check)
+  "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
+  "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
     // Who is banned from the world you are standing in. Available to
-    // anyone present — bans are log entries and the log is public; a
-    // list nobody can read is not an audit trail.
+    // anyone present — the moderator's record is public in its outline (who,
+    // when, by whom); a list nobody can read is not an audit trail.
     if (!c.world) return;
-    const list = Object.entries(c.world.state.bans ?? {}).map(([id, b]) =>
-      `${id} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
+    // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
+    // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
+    if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
+      if (!e || !(isOwner(e) || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }
+    const S = c.world.log!.sanctions();
+    const dir = directoryFor(WORLDS_DIR);
+    const list = Object.entries(S).filter(([, x]) => (x as any).ban).map(([, x]) => (x as any).ban).map((m) =>
+      `${dir.entry(m.who)?.name ?? m.who} — ${new Date(m.ts).toISOString().slice(0, 10)}${m.reason ? `: ${m.reason}` : ""}`);
     ws.send(JSON.stringify({ type: "mod", text: list.length
       ? `banned from "${c.world.name}" (${list.length}):\n${list.join("\n")}`
       : `nobody is banned from "${c.world.name}"` }));
   },
   "global-mod": ({ c, ws, now, expel }, msg) => {
     // Instance-wide moderation. Not world verbs — there is no global log
-    // — so these are messages, gated on WORLD_ADMIN and persisted in
+    // — so these are messages, gated on SERVER_OPERATORS and persisted in
     // .bans.json (same posture as .sessions.json). Replies come back as
     // `mod` messages; refusals as `error`, like everything else.
-    if (!isAdminId(c.id, c.sub)) {
-      ws.send(JSON.stringify({ type: "error", error: "global moderation needs WORLD_ADMIN — per-world /ban is the owner tool" }));
+    if (!isOperator(c.account)) {   // SERVER_OPERATORS names ACCOUNTS (security review C3), never a typed name
+      ws.send(JSON.stringify({ type: "error", error: "global moderation is for this server's operators (SERVER_OPERATORS) — per-world /ban is the world owner's tool" }));
       return;
     }
     if (msg.type === "global-bans") {
-      const list = Object.entries(globalBans).map(([id, b]) =>
-        `${id}${b.sub ? ` (${b.sub})` : ""} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
-      ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
+      ws.send(JSON.stringify({ type: "mod", text: globalBansText() }));   // pre-account bans listed too (R 10-28: moderation.ts restoreBans)
       return;
     }
-    const id = String(msg.id ?? "").trim().slice(0, LIMITS.ID_LEN);
+    // an account selector keeps its whole length (an aid1 account carries its issuer's URL): cut to a display name's 64
+    // it named no one, and an unban couldn't find it (review of #260, server I30)
+    const raw = String(msg.id ?? "").trim(), id = /^(human|agent|aid1|local):/.test(raw) ? raw.slice(0, 512) : raw.slice(0, LIMITS.ID_LEN);
     if (!id || id === "*") {
       ws.send(JSON.stringify({ type: "error", error: `${msg.type} wants {id, reason?} — a specific participant, not everyone` }));
       return;
     }
+    const fold = (x: string) => foldName(x);
+    const dir = directoryFor(WORLDS_DIR);
     if (msg.type === "global-unban") {
-      const key = id.toLowerCase();
-      const had = key in globalBans || Object.values(globalBans).some((b) => b.sub === id);
-      delete globalBans[key];
-      for (const [k, b] of Object.entries(globalBans)) if (b.sub === id) delete globalBans[k];
+      // by the name it was filed under, by the account named, or by an account wearing that name here
+      const accts = new Set([id, ...dir.accountsNamed(id)]);
+      const gone = bansLiftedBy(globalBans, id, accts, fold);
+      for (const k of gone) delete globalBans[k];
+      gone.push(...takePending(id, fold));
       saveGlobalBans();
-      console.log(`[mod] ${c.id} lifted global ban on ${id}${had ? "" : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: had ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
+      console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
+      ws.send(JSON.stringify({ type: "mod", text: gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
       return;
     }
-    // global-ban
-    if (isAdminId(id)) {
-      ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` }));
+    // global-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
+    // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
+    // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
+    // knows under that name. Nothing to bind → refused, said plainly.
+    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id));
+    if (present.some((o) => isOperator(o.account))) {
+      ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` }));
       return;
     }
-    if (id.toLowerCase() === c.id.toLowerCase()) {
+    if (fold(id) === fold(c.id) || present.some((o) => o === c)) {
       ws.send(JSON.stringify({ type: "error", error: "you cannot moderate yourself" }));
       return;
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
-    // catch the durable principal if the target is connected anywhere
-    let tsub: string | undefined;
-    for (const w2 of worlds.values()) {
-      const t = [...w2.clients].find((o) => o.id.toLowerCase() === id.toLowerCase());
-      if (t?.sub) { tsub = t.sub; break; }
+    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
+    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
+    const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
+    if (!accounts.size && !guestAddrs.size) {
+      ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
+      return;
     }
-    globalBans[id.toLowerCase()] = { by: c.id, ts: Date.now(), ...(reason ? { reason } : {}), ...(tsub ? { sub: tsub } : {}) };
+    const ts = Date.now();
+    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };
+    if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
+    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: ts + ADDR_BAN_MS, ...(reason ? { reason } : {}) };
     saveGlobalBans();
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {
         if (other === c) continue;
-        if (other.id.toLowerCase() !== id.toLowerCase() && !(tsub && other.sub === tsub)) continue;
+        if (!((other.account && accounts.has(other.account)) || (!other.account && other.addr && guestAddrs.has(other.addr)))) continue;
         expel(w2, other, `you were banned from these worlds by ${c.id}${reason ? ` — ${reason}` : ""}`);
         expelled++;
       }
     }
-    console.log(`[mod] ${c.id} banned ${id} globally${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
+    console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
     ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
     return;
   }

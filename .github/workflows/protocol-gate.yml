@@ -1,0 +1,103 @@
+# The protocol gate (tools/protocol/run.ts) on Linux, macOS and Windows, at the exact head of every PR and push to main.
+# Each OS uploads a JSON receipt: the head it ran, OS, runtimes, the pinned library's head, every suite's result and a hash
+# of the output the verdict rests on (review of PR #260, rereview at 22494b2c: "a durable exact-head gate receipt").
+name: protocol-gate
+on:
+  pull_request:
+  push:
+    # main, plus the protocol PR's own branch: a fork's Actions run on a push to the fork (the receipt for PR #260 comes
+    # from there, since a pull_request from a fork may not run upstream without a maintainer's approval)
+    branches: [main, protocol-v4]
+  workflow_dispatch:
+permissions:
+  contents: read
+# a newer push to the same branch replaces an older run still going: a receipt is for the exact head, so an older head's
+# run is spent runner time (10-20: the reviewers' fix-commit pushes queued 37 runs and the newest head waited behind them)
+concurrency:
+  group: protocol-gate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - name: check out bytes as committed (no CRLF conversion on Windows)
+        shell: bash
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # diffcheck compares the range against main's merge-base
+      - name: fetch main for the range check
+        shell: bash
+        # the PR's base is anima-research's main; a fork's own main can be months stale (10-19: Aug 3)
+        run: git fetch --no-tags https://github.com/anima-research/eidoverse-worlds.git main:refs/remotes/anima/main
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: python deps (the conformance suite)
+        run: python -m pip install cryptography
+      - name: install
+        shell: bash
+        run: |
+          bun install --frozen-lockfile
+          (cd client && bun install --frozen-lockfile)
+          # mcpl's two sibling repos (file:../../…): run.ts pins, fetches, builds and installs them (one source of truth)
+          bun tools/protocol/run.ts --siblings
+          # the project's own playwright, so the browser revision is the one run.ts's import of it looks for
+          bun node_modules/playwright/cli.js install chromium
+      - name: let Chrome's sandbox read its own install (Windows)
+        # windows-latest installs playwright's chromium under the runner profile, which Chrome's sandboxed (AppContainer)
+        # processes can't read: stderr says "Sandbox cannot access executable", and ~150 ms after launch the network service
+        # crashes and restarts. A first navigation landing in that gap is cancelled and the page "never boots": client-b2,
+        # build-client and colour-picker each went red on one run and green on the next. Probe 40048347613 (10-23): the
+        # untouched runner showed both lines; granting ALL APPLICATION PACKAGES read showed neither, on 3 of 3 jobs;
+        # --disable-features=NetworkServiceSandbox stopped the crash but not the access error.
+        if: runner.os == 'Windows'
+        shell: bash
+        run: MSYS_NO_PATHCONV=1 icacls "$(cygpath -w "$LOCALAPPDATA/ms-playwright")" /grant '*S-1-15-2-1:(OI)(CI)(RX)' /T /Q
+      - name: asset library (pinned in run.ts)
+        shell: bash
+        run: bun tools/protocol/run.ts --library "$RUNNER_TEMP/eidoverse-video"
+      - name: gate
+        id: gate
+        shell: bash
+        env:
+          EIDOVERSE_DIR: ${{ runner.temp }}/eidoverse-video
+          PROTOCOL_KEEP: "1"   # keep each suite's scratch so a failure's logs can be uploaded
+          # no EIDO_CHROME_ARGS: each OS's Chrome flags are in tools/protocol/chrome.ts platformArgs (Linux --no-sandbox,
+          # macOS --use-mock-keychain). macOS takes the default GL: 10-19 forced SwiftShader here for a hang whose cause was
+          # the keychain; SwiftShader then blocked the page's main thread > 60 s and the lane failed 5/10 for days. Default
+          # GL on the M1 runner: client 201/0 in 104 s, lane 9/10 (10-22, fork exp/mac-gl)
+          # no EIDO_METER_SCALE: it was 3 on Windows for access A8/A14 (10-19); A14's cause was test order (a2b496e5, 10-22).
+          # The knob stays for an operator whose host is slow; the gate runs the cap as shipped.
+        run: |
+          # Not the upload path (run.ts names its scratch below, on every OS). Kept because with TMPDIR=$RUNNER_TEMP/gate-tmp,
+          # browser-check (playwright) closed at launch on Linux and passed with the default /tmp (10-19). Not the
+          # socket-path limit: a CI-length path passes on Burrow. Cause unknown; /tmp/g is nearest the known-good setup.
+          # Not on Windows: TEMP/TMP pointed elsewhere hung gov-reserved for 300 s with no output (cause unknown).
+          if [ "$RUNNER_OS" != "Windows" ]; then mkdir -p /tmp/g; export TMPDIR=/tmp/g; fi
+          bun tools/protocol/run.ts --receipt "gate-receipt-${{ matrix.os }}.json" --scratch-out "$GITHUB_OUTPUT"
+      - name: receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-receipt-${{ matrix.os }}
+          path: gate-receipt-${{ matrix.os }}.json
+          if-no-files-found: warn
+      - name: scratch logs of failed suites
+        # empty when the gate stopped before making its scratch (a preflight failure): the path would be "/**"
+        if: failure() && steps.gate.outputs.scratch != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-scratch-${{ matrix.os }}
+          path: |
+            ${{ steps.gate.outputs.scratch }}/**/*.log
+            ${{ steps.gate.outputs.scratch }}/**/*.jsonl
+          if-no-files-found: ignore

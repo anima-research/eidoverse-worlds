@@ -12,18 +12,19 @@
 //
 // Types:
 //   pendulum {axis, pivot, amp, period, phase, damp, maxAmp, t0}   — swings
-//   spin     {axis?, pivot?, degPerSec|rpm, phase?, t0}            — windmills, carousels
-//   orbit    {center, radius, degPerSec, phase?, face?, t0}        — ferries, birds
-//   bob      {axis?, amp, period, phase?, t0}                      — hover, buoys
+//   spin     {axis?, pivot?, degPerSec|period, phase?, t0}         — windmills, carousels
+//   orbit    {center?, radius, degPerSec|period, phase?, face?, t0} — ferries, birds (rateOf: the one reading)
+//   oscillate {axis?, amp, period, phase?, t0}                     — back and forth along an axis (a sine): hover, buoys, pistons
 //   path     {points, speed|duration, loop?: 'loop'|'pingpong'|'once', face?, t0}
 //
-// SUB-OBJECTS: a component keyed `motion:<partName>` — or a `motion` whose
-// data carries `part` — animates ONE NAMED NODE inside the entity's model
+// SUB-OBJECTS: a component keyed `motion:<slot>` whose value names a `node`
+// (its name as the model file spells it; motioneval.js motionNode — or, in a
+// value stored before 10-16, the key's tag or a whole `motion`'s `part`) animates ONE NAMED NODE inside the entity's model
 // instead of the whole thing (Orrery's segmented exports name their parts:
 // tripo_part_0, …). Several `motion:<part>` components coexist on one entity,
 // so a machine can have many moving parts. Coordinates are the PART's frame:
 // pivot/axis are relative to the part node's own origin (default pivot
-// [0,0,0] = the node origin, where a hinge usually lives), bob/orbit/path
+// [0,0,0] = the node origin, where a hinge usually lives), oscillate/orbit/path
 // positions are in the part's parent frame. `measure` reports each part's
 // `local` center/size in exactly this frame — a local center IS a pivot
 // candidate verbatim. The server folds all of it blindly; clients that
@@ -31,7 +32,7 @@
 // removed, the part eases back to its authored rest pose.
 
 import { THREE, camera } from './core.js';
-import { entities, comps, findPart } from './world.js';
+import { entities, bags, bagOf, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { serverNow } from './remotes.js';
 // The closed forms themselves live in motioneval.js — a dependency-free
@@ -40,7 +41,8 @@ import { serverNow } from './remotes.js';
 // `amplitude`, missing t0) lives there too; this file is what remains:
 // applying evaluated transforms to THREE objects, and the part-frame
 // machinery only a renderer with a loaded model can have.
-import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta } from './motioneval.js';
+import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta, rateOf } from './motioneval.js';
+import { motionNode, motionType } from '../../shared/protocol/names.js';
 
 const _q = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
@@ -75,17 +77,17 @@ function rotatePartAtPivot(obj, pbase, axis, pivot, theta) {
 
 /** One motion type evaluated on a part, in part-local terms. */
 function evalPart(m, t, obj, pbase) {
-  switch (m.type) {
+  switch (motionType(m)) {
     case 'pendulum':
       rotatePartAtPivot(obj, pbase, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 0, 0], pendulumTheta(m, t));
       return true;
     case 'spin': {
-      const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;
+      const rate = rateOf(m, 36);
       rotatePartAtPivot(obj, pbase, axisOf(m, [0, 1, 0]), m.pivot ?? [0, 0, 0],
         (m.phase ?? 0) + (rate * Math.PI / 180) * t);
       return true;
     }
-    case 'bob': {
+    case 'oscillate': {
       const off = Math.sin((2 * Math.PI / (m.period ?? 4)) * t + (m.phase ?? 0)) * ampOf(m, 0.3);
       _ax.set(...axisOf(m, [0, 1, 0])).normalize();
       obj.position.set(...pbase.pos).addScaledVector(_ax, off);
@@ -94,7 +96,7 @@ function evalPart(m, t, obj, pbase) {
     case 'orbit': {
       const c = m.center ?? pbase.pos;
       const r = m.radius ?? 1;
-      const a = (m.phase ?? 0) + ((m.degPerSec ?? 12) * Math.PI / 180) * t;
+      const a = (m.phase ?? 0) + (rateOf(m, 12) * Math.PI / 180) * t;
       obj.position.set(c[0] + r * Math.sin(a), (c[1] ?? pbase.pos[1]), c[2] + r * Math.cos(a));
       if (m.face !== false) obj.rotation.set(0, a + Math.PI / 2, 0);
       return true;
@@ -124,6 +126,7 @@ const _seenParts = new Set();
  *  and agreeing with other clients matters more than agreeing with vsync. */
 // the camera's WORLD position: in XR camera.position is rig-local, so motion near you froze 90 m from spawn (11a M1)
 const _eye = new THREE.Vector3();
+const _wp = new THREE.Vector3();
 export function tickMotion() {
   camera.getWorldPosition(_eye);   // in XR camera.position is only the head's offset inside the rig
   // The SEQUENCER's clock, not the wall's: t0s are server stamps, and an
@@ -134,20 +137,23 @@ export function tickMotion() {
   // local time only before the first.
   const nowMs = serverNow();
   _seenParts.clear();
-  for (const [id, bag] of comps) {
+  for (const [id, bag] of bags()) {
     for (const key in bag) {
       const isWhole = key === 'motion';
       if (!isWhole && !key.startsWith('motion:')) continue;
       const m = bag[key];
       if (!m || !m.type) continue;
       const obj = entities.get(id);
-      if (!obj || obj.userData.mountedTo) continue;   // mounted things ride their parent
+      if (!obj) continue;
+      // a parented thing (userData.mountedTo: the hierarchy; sitting and holding are presence) moves in its parent's
+      // frame too: its base is the local pose execMount gave it, and the parent carries the result (house review I37)
       // distance gate (§14.2 6a, offender #4): motion is CLOSED-FORM f(t),
       // so a far swing skipped this frame lands at exactly the right phase
       // the frame it re-enters range — nothing drifts, nothing catches up
-      if (obj.position.distanceToSquared(_eye) > 8100) continue;   // 90m, from the camera's WORLD position (review 11a M1)
+      const at = obj.userData.mountedTo ? obj.getWorldPosition(_wp) : obj.position;
+      if (at.distanceToSquared(_eye) > 8100) continue;   // 90m, from the camera's WORLD position (review 11a M1)
       const t = since(m, nowMs);
-      const partName = isWhole ? (typeof m.part === 'string' ? m.part : null) : key.slice(7);
+      const partName = motionNode(key, m);   // the node it moves: its value's `node` (motioneval.js)
 
       if (partName) {
         const part = findPart(obj, partName);
@@ -165,7 +171,9 @@ export function tickMotion() {
         // The shared evaluator (motioneval.js) is the single source of the
         // closed forms — the agent's look() runs the SAME call, which is the
         // whole point (#82). This side just applies the result to the object.
-        const r = evalWholeMotion(base, m, nowMs);
+        // the entity's pivot component is the default hinge (research 52), in its parent's units: scaled by its own scale
+        const pv = bagOf(id)?.pivot?.pos;
+        const r = evalWholeMotion(Array.isArray(pv) && pv.length === 3 ? { ...base, pivot: [pv[0] * obj.scale.x, pv[1] * obj.scale.y, pv[2] * obj.scale.z] } : base, m, nowMs);
         if (!r.ok) {
           // A motion this evaluator won't vouch for (unknown type, malformed
           // path): the thing stands still here and moves for newer clients.
@@ -173,7 +181,7 @@ export function tickMotion() {
           continue;
         }
         obj.position.set(...r.pos);
-        // rot:false = this motion leaves authored rotation alone (bob;
+        // rot:false = this motion leaves authored rotation alone (oscillate;
         // face:false orbit/path) — matching the old per-case behavior.
         if (r.rot) obj.quaternion.set(...r.quat);
       }
@@ -199,3 +207,8 @@ export function tickMotion() {
 // graph circular). For anything that rests AWAY from base (a ferry stopping
 // mid-route), the stopper emits `place` alongside — that IS the
 // plane-transition stamp.
+
+// The inspector's motion fields are declared in shared/editschema.js (one
+// declaration for the desktop, the VR quad and a model's inspect/edit).
+// There is no live preview on purpose: a component is parameters the log
+// owns, and previewing would mean writing a bag this module does not own.

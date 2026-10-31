@@ -11,16 +11,21 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
+import { bodyOf } from '../../shared/components.js';
+import { socketsUnder, resolveSeat } from '../../shared/sockbody.js';
 import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
 // net.js does NOT import this module (its own note: "live grants keep it fresh
 // via world.js"), so this direction closes no cycle.
-import { net } from './net.js';
+import { net, replica } from './net.js';
+import { enc, dec } from '../../shared/protocol/names.js';
+import { kindOf } from '../../shared/protocol/kind.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
 import { reindexCollider } from './colliders.js';
-import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
+import { setTerrain, setGrass, clearGrass, heightAt, setFlatGround } from './terrain.js';
+import { flatHeightOf } from '../../shared/terrainmath.js';
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady } from '../../shared/terrainshape.js';
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
@@ -29,30 +34,87 @@ import { buildFloraField, warmField, loadFloraModule } from './flora.js';
 import { applySky, whenSkyWarm } from './sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './warmqueue.js';
-// seat correction for mounted riders (upstream #101) — the me-drive frame
+// seat correction for mounted occupants (upstream #101) — the me-drive frame
 // calls these for every seated body; their import fell on the fork side of
 // a merge hunk while the call site auto-merged, and every SIT threw 56
 // ReferenceErrors a second (antra, live, from a swing in commons2)
-import { seatCorrectionFor } from './seats.js';
+import { occupyCorrectionFor } from './occupants.js';
 import { applySeatCorrection } from './seatcore.js';
+import { isOwner } from '../../shared/protocol/roles.js';
 
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
  *  duplicate spawn in the same tick can't create two bodies for one id. */
 export const entities = new Map();
-/** id -> { actor, lib, ts } — provenance, for the build inspector. */
-export const entityMeta = new Map();
-/** id -> component bag, fed by `comp` verbs (and `motion`, which is sugar for
- *  the motion component). Mirrors the server's blind fold: data is opaque
- *  here too — meaning lives in whichever evaluator consumes a type (motion.js
- *  reads `motion`; mounting reads `sockets`; the server reads `reactions`).
- *  Unknown types just sit in the bag, forward-compatible. */
-export const comps = new Map();
-/** Avatar attachments (a sitter, a passenger) — bodies aren't entities, so
- *  their mounts live here for remotes/controller to consume. */
-export const avatarMounts = new Map();
-/** id -> bound runtime scripts (server sandbox AND client-mod offers), from
- *  `behavior` entries. mods.js consumes the runtime:"client" ones. */
-export const behaviors = new Map();
+/** A thing's fold record as this client folds it (shared/protocol/replica.js): {model?, transform, parent?, …components},
+ *  component keys as the fold spells them (shared/protocol/names.js). ONE record for every reader — the Hierarchy, the
+ *  Inspector, every evaluator (motion.js reads `motion`; a seat reads its socket child's `socket`; the server reads `reactions`) — so
+ *  nothing is held beside the fold to drift (C7c; the `comps` Map the realizer mirrored it into is gone). Frozen in
+ *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it.
+ *  Read it where you need it; never keep it across an ingest — a write replaces the record (the frozen one is thawed
+ *  by copy), so a kept reference goes stale. */
+export const bagOf = (id) => replica.st?.entities?.[enc(String(id))]?.c ?? null;
+/** Every placed thing's [id, record], ids as the page spells them (the world entity excluded). */
+export function* bags() {
+  const es = replica.st?.entities; if (!es) return;
+  for (const k in es) if (k !== '@world') yield [dec(k) ?? k, es[k].c];
+}
+/** What a thing IS as realized and where from, for the panels: {kind, lib?} — the fold's word (shared/protocol/kind.js),
+ *  the realizer keeps no second copy (entityMeta is gone, C7c). */
+export const metaOf = (id) => { const c = bagOf(id); return c ? { kind: kindOf({ c }), ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
+/** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
+ *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
+ *  index for the realizer's carrier checks, the panels and the seats; no map is kept beside the fold (C12b). */
+const out = (k) => dec(k) ?? k;
+export const childrenOf = (id) => replica.childrenOf?.(enc(String(id))).map(out) ?? [];
+export const parentIdOf = (id) => { const p = replica.parentOf?.(enc(String(id))); return p == null ? null : out(p); };
+export const ancestorsOf = (id) => replica.ancestors?.(enc(String(id))).map(out) ?? [];
+/** A host's sockets (PLAN-sockets-entities: a socket is a child entity {transform, parent: {to: host}, socket: {name,
+ *  part?, body?, accepts?, radius?}}): [{id, name, sock}], from the fold's children index. The one reader every client
+ *  surface shares (clickuse, localbody, seatbody, the Inspector, xrpointer, the scene panel). */
+export const socketsOn = (host) => socketsUnder(String(host), childrenOf, bagOf);
+/** A socket child as a seat reads it: {id (the socket), host, name, sock (its socket component)}, or null when `id` isn't
+ *  a socket in the fold (yet, or any more), or is switched off. */
+export function seatSocket(id) {
+  const c = id == null ? null : bagOf(id);
+  if (!c?.socket || typeof c.socket !== 'object') return null;
+  // a socket switched off (or under something switched off) is closed to occupying, as the authority reads it (occupants.js: offChain):
+  // whoever sits there lets go (localbody's per-frame check), and a frame naming it seats nobody (review 10-12 S3-3)
+  if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
+  return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
+}
+// Avatar attachments: the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
+import { avatarMounts } from './mounts.js';
+export { avatarMounts };
+/** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
+ *  `seat: {to: <socket id>}` while seated, so every receiver sets it from the frame and clears it when a frame comes
+ *  without one. A frame from a client before sockets were entities says {to: <host>, slot}: it names the host's socket
+ *  child of that name (shared/sockbody.js resolveSeat, one release). A seat naming no socket here is no seat. My own is
+ *  set here by localbody.js and rides my frames (net.js sendPose). */
+export function setBodySeat(id, seat) {
+  const cur = avatarMounts.get(id);
+  const to = seat?.to ? seatSocketId(seat) : null;
+  if (!to) { if (cur) { avatarMounts.delete(id); bus.emit('mount', { id, to: null }); } return; }
+  if (cur?.to === to) { seatExtras(cur, seat); return; }
+  const m = { to };
+  seatExtras(m, seat);
+  avatarMounts.set(id, m);
+  bus.emit('mount', { id, to });
+}
+function seatSocketId(seat) {
+  if (seatSocket(seat.to)) return String(seat.to);
+  if (typeof seat.slot !== 'string' || !replica.st) return null;
+  const hit = resolveSeat(replica.st, { to: enc(String(seat.to)), slot: seat.slot });   // the old frame: the host's socket of that name
+  return hit ? (dec(hit.to) ?? hit.to) : null;
+}
+/** What else a seat frame carries (shared/sockbody.js): the pose the occupant chose from the socket's menu and when
+ *  (`pose`, `at`: a sync group follows the latest choice), and their input (`in`: throttle, steer, aimYaw, aimPitch)
+ *  when the socket routes it. Read by occupybody.js for every occupant, mine and everyone else's, the same way. */
+function seatExtras(m, seat) {
+  const fin = Number.isFinite;
+  if (typeof seat.pose === 'string' && /^[a-z0-9][a-z0-9_-]{0,31}$/i.test(seat.pose)) { m.pose = seat.pose; m.at = fin(seat.at) ? seat.at : 0; } else { delete m.pose; delete m.at; }
+  const i = seat.in;
+  if (i && typeof i === 'object') { m.in = {}; for (const k of ['throttle', 'steer', 'aimYaw', 'aimPitch']) if (fin(i[k])) m.in[k] = i[k]; } else delete m.in;
+}
 
 
 export const liveEntities = () => [...entities.values()].filter(Boolean);
@@ -103,6 +165,7 @@ export const anyBuildsPending = () => buildDepth + skyGate;
 // Guards so a re-join (avatar switch, reconnect) that replays the log doesn't
 // regenerate an identical world.
 let lastTerrainArgs = null;
+let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
 
 // ---- world-scope state application ------------------------------------------
@@ -114,7 +177,17 @@ let lastGrassArgs = null;
 /** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
  *  a re-join replaying the same world does not regenerate identical ground. */
 export function applyTerrainState(args) {
-  if (!args) return;
+  // no terrain: the stage floor returns, with the world's water on it when it has some (environment.js groundArgs
+  // {stageFloor, water}; house review I8) and without the old ground's water when it doesn't
+  // …and a flat terrain is that floor at its height (componentspec terrain kind flat)
+  const flat = flatHeightOf(args);
+  if (!args || args.stageFloor === true || flat !== null) {
+    const key = args ? JSON.stringify(args) : null;
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); } setFlatGround(flat ?? 0);
+      try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
+    return;
+  }
+  stageFloor = false; setFlatGround(0);
   const key = JSON.stringify(args);
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
@@ -168,7 +241,7 @@ export function applyTerrainState(args) {
     // re-seat only ground-level entities — anything with a meaningful y
     // (seated on furniture, elevated) keeps its logged height
     for (const [id, obj] of entities) {
-      if (obj && Math.abs(obj.position.y) < 0.02) {
+      if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
         if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
         reindexCollider(id);
@@ -332,39 +405,13 @@ export function applyAssetState(args) {
 
 /** Mirror one role record so the UI can say what you are here, live.
  *  Enforcement is the server's; narration is the LIVE driver's business
- *  (legacy case or causes.js), not this mirror's. */
+ *  (legacy case or livechat.js), not this mirror's. */
 export function applyGrantState(id, rec) {
-  // default matches the FOLD's (shared/fold.js grant case): an unlisted id
-  // in an owned world is a builder, so `/grant bob +gen` doesn't silently
-  // demote bob to visitor. The old 'visitor' default here disagreed with
-  // what the server actually granted (review S6) — the HUD lied.
-  const cur = worldRoles.get(id) ?? { role: 'builder' };
-  worldRoles.set(id, {
-    role: rec.role ?? cur.role,
-    gen: rec.gen != null ? Boolean(rec.gen) : cur.gen,
-    fly: rec.fly != null ? Boolean(rec.fly) : cur.fly,
-  });
+  // a role taken away: back to the world's default (the authority reads @world default-role)
+  if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: null }); return; }
+  worldRoles.set(id, { role: rec.role ?? 'member', gen: rec.can?.generate === true, fly: rec.can?.fly === true || Boolean(rec.fly) });
   bus.emit('roles', { id, ...worldRoles.get(id) });
-  // (What I MAY DO is recomputed from the fold in state.js refreshMyRights(),
-  // with the same rightsIn() the sequencer answers with. It was merged by hand
-  // here for two commits and never ran once: this function is exported and
-  // called by nothing, so the "live grant" fix was dead code that read like a
-  // fix. The mirror above is still the HUD's, which is all it ever was.)
-}
-
-/** Mirror one behavior binding (or its removal) into the roster mods.js
- *  watches. `live` rides the bus event exactly as legacy did. */
-export function applyBehaviorState(id, rec, live = false) {
-  if (!rec) behaviors.delete(id);
-  else if (id && rec.src) {
-    behaviors.set(id, {
-      src: rec.src,
-      ...(rec.runtime ? { runtime: rec.runtime } : {}),
-      ...(rec.knobs ? { knobs: rec.knobs } : {}),
-      author: rec.author ?? rec.by ?? 'world',
-    });
-  }
-  bus.emit('behavior-roster', { live });
+  // (What I MAY DO is the server's answer, `your-rights`, re-sent whenever a role changes; this mirror is the HUD's.)
 }
 
 // (The deferred shadow-in drain that lived here — markShadowless /
@@ -373,11 +420,11 @@ export function applyBehaviorState(id, rec, live = false) {
 // rig budgets the caster set live by camera distance, reversibly.
 // lightrig.js §12.5.)
 
-// Per-world roles as replayed from grant entries. A mirror for UI honesty —
-// the sequencer enforces; this only lets the client SAY what you are.
+// Per-world roles (@world roles:<id>), mirrored from the view. A mirror for UI honesty — the authority enforces; this only
+// lets the client SAY what someone is.
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;
-export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
+export const worldHasOwner = () => [...worldRoles.values()].some(isOwner);
 
 // ---- named parts ------------------------------------------------------------
 
@@ -400,86 +447,75 @@ export function findPart(root, name) {
 
 // ---- mounting ---------------------------------------------------------------
 
-/** A named attachment point, from the entity's `sockets` component:
- *  comp {id, type: 'sockets', data: {seat: {pos:[...], yaw, pose?, part?}}}
- *  Coords are the MODEL's local frame — the frame `measure` reports, so a
- *  flat-zone center is a socket pos verbatim. A socket that names a `part`
- *  (a node motion.js animates, e.g. a swing's seat assembly) keeps the same
- *  coords but RIDES that part's motion instead of standing on the rest pose. */
-const socketOf = (id, slot) => (slot ? comps.get(id)?.sockets?.[slot] : null);
-
-/** World-space position of a socket, for reach checks and hints. Ignores the
- *  part's motion on purpose: "how far is the seat" should not oscillate with
- *  the swing. Fills out; returns null when either half is missing. */
-export function socketWorldPos(id, slot, out) {
-  const parent = entities.get(id);
-  const sock = socketOf(id, slot);
-  if (!parent || !sock) return null;
-  parent.updateWorldMatrix(true, false);
-  return out.set(...(sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
+/** World-space position of a socket (a socket child's id), for reach checks and hints: its host's transform composed
+ *  with the socket's own (local to the host). Ignores a part's motion on purpose: "how far is the seat" should not
+ *  oscillate with the swing. Fills out; returns null when either half is missing. */
+export function socketWorldPos(id, out) {
+  const s = seatSocket(id);
+  const host = s?.host != null ? entities.get(s.host) : null;
+  if (!host) return null;
+  host.updateWorldMatrix(true, false);
+  const p = bagOf(id)?.transform?.pos;
+  return out.set(...(Array.isArray(p) && p.length === 3 ? p : [0, 0, 0])).applyMatrix4(host.matrixWorld);
 }
 
-// A seated body's world transform, live: parent entity's CURRENT transform
-// (mid-pendulum, mid-path — motion.js has already ticked it this frame)
-// composed with the socket. This is what makes a sitter actually RIDE the
-// swing: their body is derived, not streamed.
-//
-// When the socket names a `part`, the seat point additionally rides that
-// part's motion: the model-frame point is carried through the part's current
-// DISPLACEMENT (live transform ∘ rest⁻¹, in world terms). At rest the
-// displacement is identity, so a part socket sits exactly where a plain one
-// does — declaring the part only adds the arc. This is the missing half of
-// motion:<part>: without it a rider sat still while the plank swung through
-// them (the fox's swing, commons, 2026-08-03).
-//
-// The socket offset goes through the parent's full matrixWorld (scale
-// included) rather than quaternion+position: socket coords are model-frame,
-// and a spawn-scaled model renders its seat scaled too.
+// A seated body's world transform, live: the SOCKET's realized object (realize/models.js: an Empty attached to its host,
+// or into the host's moving part at rest), read through its matrixWorld — the host's CURRENT transform (mid-pendulum,
+// mid-path: motion.js has already ticked it this frame), the part's displacement when the socket rides one, then the
+// socket's own pose. This is what makes an occupant actually RIDE the swing: their body is derived, not streamed. The
+// scene graph carries the part, so an occupant and a thing on that socket ride it the same way.
 const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
-const _mtM = new THREE.Matrix4();
-/** Fill outPos with rider's world seat position; returns {yaw, pose, to,
- *  seatState, seatReason} or null when not mounted (or the parent isn't live
- *  yet). `rider` is {path, av} — the roster path and live wrapper of the
- *  body being seated; without it the seat is declared approximate, because
- *  a correction we cannot gate is a correction we may not apply (#101). */
-export function mountTransform(riderId, outPos, rider) {
-  const m = avatarMounts.get(riderId);
+const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
+/** Fill outPos with the occupant's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
+ *  body, sock, upright, yaw, pose, to (the socket), host, slot (its name), seatState, seatReason} or null when not
+ *  mounted (or the socket isn't live yet). `occ` is {path, av} — the roster path and live wrapper of the body.
+ *
+ *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
+ *  a seat, feet for a standing place, head, or the root itself — measured from the occupant's posed skeleton
+ *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
+ *  Until the body has been measured the root sits at the socket, declared approximate. A socket whose body anchors at
+ *  'surface' (the seat authors its support plane, D14) takes the seat-profile correction (#101) instead. */
+const _mtP = new THREE.Vector3(), _mtW = new THREE.Quaternion();
+export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
+  const m = avatarMounts.get(occupantId);
   if (!m) return null;
-  const parent = entities.get(m.to);
-  if (!parent) return null;
-  const sock = (comps.get(m.to)?.sockets ?? {})[m.slot] ?? {};
-  parent.updateWorldMatrix(true, false);
-  _mtF.set(...(m.offset ?? sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
-  const part = sock.part ? findPart(parent, String(sock.part)) : null;
-  if (part && part.parent && part.userData.mbase) {
-    // mbase = the part's rest pose, captured by motion.js the first time it
-    // animates it. Absent mbase means the part has never moved: identity.
-    const b = part.userData.mbase;
-    part.updateWorldMatrix(true, false);
-    _mtM.compose(_mtV.set(...b.pos), _mtQ.fromArray(b.quat), part.scale)
-      .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
-    _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
-  }
-  // The profile correction (#101): contact plane onto the authored socket
-  // plane, applied AFTER part displacement so a profiled rider carries it
-  // through a moving part's arc. The subtraction is along WORLD up — mounted
-  // bodies render upright (yaw only, below), so a tilted parent's normal
-  // would displace the root laterally while the body's contact geometry
-  // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
-  // closed = today's root-at-socket, declared, never silent.
-  const seat = seatCorrectionFor(rider, sock);
-  if (seat.applied) {
-    const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
-    if (c) _mtF.set(c[0], c[1], c[2]);
+  const s = seatSocket(m.to);
+  const sObj = s ? entities.get(s.id) : null;
+  if (!sObj) return null;
+  const sock = s.sock;
+  const body = bodyOf(s.station);
+  sObj.updateWorldMatrix(true, false);
+  _mtF.setFromMatrixPosition(sObj.matrixWorld);
+  // the socket's whole world rotation (a rocket seat lies on its back), part displacement and host included
+  const socketQw = sObj.getWorldQuaternion(_mtW);
+  // the occupant's: the socket's, or, where the occupant set its own heading, the socket's frame without its own turn (the
+  // host's, a part's displacement included) then that heading
+  if (Number.isFinite(m.yaw)) { const lq = bagOf(s.id)?.transform?.q; _mtR.copy(socketQw).multiply(_mtS.fromArray(Array.isArray(lq) && lq.length === 4 ? lq : [0, 0, 0, 1]).invert()).multiply(_mtQ.setFromAxisAngle(_UP, m.yaw)); }
+  else _mtR.copy(socketQw);
+  const upright = _mtV.set(0, 1, 0).applyQuaternion(_mtR).y > 0.966;   // within 15°
+  const socketPos = _mtF.toArray();
+  let state = 'approximate', reason = null;
+  if (body && body.anchor !== 'surface') {
+    if (poseOffset) _mtF.add(_mtP.fromArray(poseOffset).applyQuaternion(socketQw));
+    if (body.anchor === 'root') state = 'anchored';
+    else {
+      occ?.av?.setAnchorWant?.(body.anchor);
+      const off = occ?.av?.anchorOffset?.();
+      if (off) { _mtF.sub(_mtP.fromArray(off).multiply(occ.av.root.scale).applyQuaternion(_mtR)); state = 'anchored'; }
+      else reason = occ?.av ? `measuring the ${body.anchor}` : 'body loading';
+    }
+  } else {
+    // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
+    const seat = upright ? occupyCorrectionFor(occ, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
+    if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
+    else reason = seat.reason;
   }
   outPos.copy(_mtF);
-  parent.getWorldQuaternion(_mtQ);
-  _mtF.set(0, 0, 1).applyQuaternion(_mtQ);
-  const parentYaw = Math.atan2(_mtF.x, _mtF.z);
-  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to,
-    seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
+  _mtF.set(0, 0, 1).applyQuaternion(_mtR);
+  return { q: _mtR.toArray(), socketPos, socketQ: socketQw.toArray(), body, sock, upright, yaw: Math.atan2(_mtF.x, _mtF.z), pose: body?.clip ?? 'sitchair', to: s.id, host: s.host, slot: s.name ?? null,
+    seatState: state, seatReason: reason };
 }
 
 // sky.js owns the current args; world.js only needs them to merge a weather

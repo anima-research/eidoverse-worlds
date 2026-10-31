@@ -3,6 +3,10 @@
 // renderer cone.
 export const entities = new Map();
 export const comps = new Map();
+export const entityMeta = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const reindexCollider = () => {};
 
 // motion.js itself needs only the four names above, but its import cone now
@@ -15,7 +19,7 @@ export const resolveColliders = (pos, terrainAt) => terrainAt(pos.x, pos.z);
 
 // remotes.js (same cone, via motion.js) reads the mount table. Nothing under
 // test mounts anything, so an empty table and a "not riding" answer are the
-// honest stubs — mountTransform returns null for a rider with no mount.
+// honest stubs — mountTransform returns null for an occupant with no mount.
 export const avatarMounts = new Map();
 export const mountTransform = () => null;
 

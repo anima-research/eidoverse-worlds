@@ -15,8 +15,8 @@
 // PLACEMENT: the strip continues the ∃'s status line past whatever glyphs sit on it. On a vertical rail (left/right)
 // that line is the ∃'s ROW, so the chips run along it, away from the edge. On a horizontal rail (top/bottom) the row
 // is the rail itself, so the line is the ∃'s COLUMN (the glyphs fold down/up from it) and the chips stack along that.
-// It depends only on the ∃ and its glyphs — never on frames or the emote bar — so no placement cycle can form; the
-// emote bar and default frames count it as chrome (emotebar.js roomFor, frames.js CHROME_ANCHOR '#hudstatus'), and
+// It depends only on the ∃ and its glyphs — never on frames or the action bar — so no placement cycle can form; the
+// action bar and default frames count it as chrome (actionbar.js roomFor, windows.js CHROME_ANCHOR '#hudstatus'), and
 // the ∃ menu (z 50) opens OVER it and the glyphs, as a dropdown hanging from the ∃ (ui.js anchorBeside).
 //
 // No imports beyond icons: the governor and capnotice post here, and this must not pull the engine in with it.
@@ -37,7 +37,7 @@ function ensure() {
   document.body.append(strip, pop);
   addEventListener('resize', place);
   addEventListener('dockmoved', place);
-  // Esc folds an open popover and goes no further: preventDefault is what frames.js's Esc toggle yields to
+  // Esc folds an open popover and goes no further (preventDefault: nothing after it acts on this Esc)
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && openId) { e.preventDefault(); collapse(); } });
   // a click anywhere but the popover or its chip folds it
   document.addEventListener('pointerdown', (e) => {
@@ -85,6 +85,8 @@ export function clearStatusChip(id) {
 }
 
 export const statusChipIds = () => [...chips.keys()];
+/** Re-seat the strip now (editlayout.js calls it once the builder's menu bar is laid out). */
+export const placeStatusChips = () => place();
 
 function expand(id) {
   if (openId && openId !== id) chips.get(openId)?.el.setAttribute('aria-expanded', 'false');
@@ -143,12 +145,19 @@ function place() {
     const cy = hud.top + hud.height / 2;
     let lo = hud.left, hi = hud.right;
     for (const g of glyphs) if (g.top <= cy && g.bottom >= cy) { lo = Math.min(lo, g.left); hi = Math.max(hi, g.right); }
+    // builder mode: the ∃'s row is also the editor's menu bar (editlayout.js .edit-top). The chips continue past its last
+    // menu and viewport button, never over them (review 10-07 B1: "WebGL 2" sat on Edit ▾, "reduced detail" on View ▾)
+    for (const b of document.querySelectorAll('.edit-top:not([hidden]) > :not(.build-mode-label)')) {
+      const r = visible(b); if (r && r.top <= cy && r.bottom >= cy) hi = Math.max(hi, r.right);
+    }
     // the room left on the row; chips that don't fit WRAP to a second line under the first (a phone with three
     // notices), rather than sliding back over the glyphs
     // (the lantern's resting line is a round button top-right on a phone: the row ends before it)
     let end = edge === 'right' ? 0 : innerWidth;
     const pill = visible(document.getElementById('lantern-pill'));
     if (pill && pill.top <= cy && pill.bottom >= cy) end = edge === 'right' ? Math.max(end, pill.right + GAP) : Math.min(end, pill.left - GAP);
+    const modeLabel = visible(document.querySelector('.edit-top:not([hidden]) .build-mode-label'));   // the bar's right end: the tool's name
+    if (modeLabel && modeLabel.top <= cy && modeLabel.bottom >= cy && edge !== 'right') end = Math.min(end, modeLabel.left - GAP);
     const room = Math.max(80, edge === 'right' ? lo - GAP - end : end - hi - GAP - 4);
     strip.style.maxWidth = `${Math.round(room)}px`;
     const w = strip.offsetWidth;

@@ -10,10 +10,11 @@
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, RISE, GOING, STAIR_FOOT, boxes, buildGlb } = await import("./two-storey-fixture.ts");
-const { scratchSequencer, mkCheck, sleep } = await import("./harness.ts");
+const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("./harness.ts");
+const { tryUntil } = await import("./protocol/wait.ts");
 const { check, tally } = mkCheck();
 
-const h = await scratchSequencer("navgrid", { serverEnv: { SKIP_OPT_SWEEP: "1" }, portFrom: 9460 });
+const h = await scratchSequencer("navgrid", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["navgrid"], owner: "router", portFrom: 9460 });
 const { WorldAgent } = await import("../mcpl/agent.ts");
 const a: any = new WorldAgent({ name: "router", world: "navgrid", url: h.BASE.replace("http", "ws") + "/ws" });
 const near = (v: number, want: number, tol = 0.05) => Math.abs(v - want) <= tol;
@@ -23,22 +24,22 @@ try {
   const upload = async (name: string, list: any[]) =>
     ((await (await fetch(`${h.BASE}/upload?name=${name}`, { method: "POST", body: await buildGlb(list) })).json()) as { path: string }).path;
   const gy = a.heightAt(0, 0);
-  a.verb("spawn", { id: "tower", lib: await upload("two-storey", boxes), pos: [0, gy, 0], yaw: 0 });
+  await legacyVerb(a, "spawn", { id: "tower", lib: await upload("two-storey", boxes), pos: [0, gy, 0], yaw: 0 });
   // a sealed room 12m west: four walls, no door
   const SX = -12;
-  a.verb("spawn", { id: "vault", lib: await upload("vault", [
+  await legacyVerb(a, "spawn", { id: "vault", lib: await upload("vault", [
     [-2.5, 0, -2.5, 2.5, 0.2, 2.5],
     [-2.5, 0.2, -2.5, -2.3, 3, 2.5], [2.3, 0.2, -2.5, 2.5, 3, 2.5],
     [-2.3, 0.2, -2.5, 2.3, 3, -2.3], [-2.3, 0.2, 2.3, 2.3, 3, 2.5],
   ]), pos: [SX, a.heightAt(SX, 0), 0], yaw: 0 });
-  for (let i = 0; i < 100 && !(a.supportIds?.get("tower") && a.supportIds?.get("vault")); i++) await sleep(50);
+  await tryUntil("the tower's and vault's supports are registered", () => a.supportIds?.get("tower") && a.supportIds?.get("vault"), { ms: 5000, step: 50 });
   await a.supportReady();
   await sleep(300);
 
   // each destination is ONE walk_to; the planner finds the way
   const go = async (x: number, z: number, y?: number) => {
     const ok = await a.walkTo(x, z, true, 60_000, 0.01, y);
-    return { ok, refusal: a.walkRefusal, stall: a.walkStall };
+    return { ok, refusal: a.walkRefusal, stall: a.walkStall ?? a.walkStopReason ?? (a.lastWalkRefusal ? JSON.stringify(a.lastWalkRefusal) : null) };
   };
 
   await a.walkTo(0, 6, true);
@@ -58,7 +59,10 @@ try {
     const tread = Math.ceil((STAIR_FOOT - 0.1) / GOING);
     const r = await go(2.2, 0.1);
     check("a point over the stairwell is reached on the stair's tread there, by the stair — never off the edge",
-      r.ok && near(a.pos.y, gy + FLOOR + tread * RISE), `${at()} want y ${(gy + FLOOR + tread * RISE).toFixed(3)} ${r.refusal ?? r.stall ?? ""}`);
+      // protocol merge: the feet are the mover's capsule (r 0.2, shared/mover.js) on colliders.js's floor rule, which stands a
+      // body on the highest tread its footprint overlaps within a step — at (2.2, 0.1) that can be the next tread up
+      // (z 0 is its edge). Within one riser of the tread there, and a tread: never the floor below, never the landing
+      r.ok && Math.abs(a.pos.y - (gy + FLOOR + tread * RISE)) <= RISE + 0.01 && Math.hypot(a.pos.x - 2.2, a.pos.z - 0.1) < 0.6, `${at()} want y ${(gy + FLOOR + tread * RISE).toFixed(3)} (± a riser) ${r.refusal ?? r.stall ?? ""}`);
   }
   {
     // from upstairs to a point with no upper storey: the lowest floor there

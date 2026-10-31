@@ -8,7 +8,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
-import { atomicWrite } from "./fsutil.ts";
+import { writePrivate } from "./fsutil.ts";
 
 // ---- archipelago-home identity (docs/home-node.md §7) ----------------------
 // The second door, alongside JOIN_TOKEN: humans log in with Discord at the
@@ -39,6 +39,19 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
   return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
 }
 
+/** The account an agent credential proves, the one derivation every door uses (account shapes: server/directory.ts header):
+ *  null = no credential; `refused` = one was given and isn't a verified agent's. */
+export function accountOf(tok: string): { account: string; name: string } | { refused: string } | null {
+  if (!tok) return null;
+  const at = agentTokens();
+  const enrolled = at.byToken.get(tok);
+  if (enrolled) return { account: `agent:token:${enrolled.toLowerCase()}`, name: enrolled };
+  const a = aid1JoinIdentity(tok);
+  if (!a || a.payload.kind !== "agent") return { refused: a ? "that credential isn't an agent's — sign in as yourself instead" : "that agent credential didn't verify" };
+  const via = at.bySub.get(a.payload.sub);
+  return via ? { account: `agent:token:${via.toLowerCase()}`, name: via } : { account: `aid1:${a.payload.iss}:${a.payload.sub}`, name: a.slug };
+}
+
 // `native`: issued to a native client by browser-approved pairing (native-login.ts). It is an ordinary session
 // for every world the account may join; the mark only stops it approving another native pairing. Sessions paired
 // before native sessions became ordinary ones carry `nativeWorld` instead, which means the same thing now.
@@ -51,7 +64,27 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
   const s = hnSessions.get(m[1]!);
   if (!s) return null;
   if (s.exp < Date.now()) { hnSessions.delete(m[1]!); return null; }
-  return s;
+  return s.sub.startsWith("human:") ? s : null;   // a cookie session is a human's: anything else proves nobody (/auth refuses to make one)
+}
+
+/** The session a request's cookie proves, as the ws join takes it — refused only from another site's page (a browser says
+ *  so in Sec-Fetch-Site; SameSite=Lax lets the cookie ride from sibling subdomains). A native client sends no fetch metadata. */
+export function sessionOfRequest(req: Request): HnSession | null {
+  const site = req.headers.get("sec-fetch-site");
+  return site === null || site === "same-origin" ? sessionFromCookie(req.headers.get("cookie")) : null;
+}
+
+/** A browser upgrade from a page that isn't this server's (cross-site WebSocket hijacking; OWASP, web.dev Fetch Metadata):
+ *  Sec-Fetch-Site decides when sent (same-origin only); else the Origin must equal ownOrigin exactly. No Origin: a native client. */
+export function crossSiteUpgrade(req: Request): boolean {
+  const site = req.headers.get("sec-fetch-site"); if (site !== null) return site !== "same-origin";
+  const origin = req.headers.get("origin"); if (origin === null) return false;
+  try { return new URL(origin).origin !== ownOrigin(req); } catch { return true; }   // "null" (an opaque origin) too
+}
+/** This server's one public origin (scheme, host, port): HN_NATIVE_ORIGIN when set (behind a proxy), else the request's own. */
+export function ownOrigin(req: Request): string {
+  const conf = process.env.HN_NATIVE_ORIGIN, url = new URL(req.url);
+  return new URL(conf || `${url.protocol}//${req.headers.get("host") ?? url.host}`).origin;
 }
 
 // ---- session persistence ----------------------------------------------------
@@ -59,15 +92,17 @@ export function sessionFromCookie(cookie: string | null): HnSession | null {
 // and sent verified humans back to the door mid-event. They survive restarts
 // now. The file holds bearer-equivalent session ids — 0600 and gitignored,
 // same posture as mcpl/tokens.json.
-export const SESSIONS_FILE = resolve(process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
+// SESSIONS_PATH (or main's HN_SESSIONS_FILE): a self-contained test keeps its sessions in its scratch dir (like
+// AGENT_TOKENS_PATH), never the checkout's
+export const SESSIONS_FILE = resolve(process.env.SESSIONS_PATH ?? process.env.HN_SESSIONS_FILE ?? join(ROOT, ".sessions.json"));
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
-    // atomicWrite IS the write-then-rename: a crash mid-write never truncates
+    // writePrivate IS the write-then-rename: a crash mid-write never truncates
     // the live file. A second rename of the already-consumed .tmp threw on
     // every successful save and logged "session save failed" each time,
     // burying the signal for a real failure (PR #160 review).
-    atomicWrite(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
+    writePrivate(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)));
   } catch (e) { console.log(`[auth] session save failed: ${e}`); }
 }
 try {
@@ -77,6 +112,8 @@ try {
       if (/^[a-f0-9]{64}$/.test(sid) && s.exp > Date.now()) hnSessions.set(sid, s);
     }
     if (hnSessions.size) console.log(`[auth] restored ${hnSessions.size} live session(s)`);
+    const odd = [...hnSessions.values()].filter((s) => !String(s.sub).startsWith("human:"));
+    if (odd.length) console.log(`[auth] ${odd.length} session(s) refused (sub isn't human:…; proves nobody; kept on disk until it expires): ${odd.map((s) => s.name).join(", ")}`);
   }
 } catch (e) { console.log(`[auth] session restore failed (starting empty): ${e}`); }
 
@@ -88,27 +125,38 @@ try {
 // Path is env-overridable so a self-contained test can own its credential
 // fixture (a scratch tokens.json) without mutating the checkout — same posture
 // as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
+export const ENROLMENT_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
-let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string> } | null = null;
+let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
   try {
     const mtime = existsSync(AGENT_TOKENS_PATH) ? Math.round(Bun.file(AGENT_TOKENS_PATH).lastModified) : 0;
     if (!agentTokCache || agentTokCache.mtime !== mtime) {
       const byToken = new Map<string, string>();
       const names = new Set<string>();
+      // an enrolled agent may also arrive through the home node with an aid1 credential: `subs` lists the aid1 subjects
+      // that ARE this agent (security review 10-06 C2: a reserved name is satisfied by a proven subject, never by a
+      // display name that happens to slug the same)
+      const bySub = new Map<string, string>();
       if (mtime) {
-        const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string }>;
-        for (const [tok, v] of Object.entries(raw)) {
-          if (!v?.id) continue;
-          byToken.set(tok, v.id);
-          names.add(v.id.toLowerCase());
+        const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
+        const entries = Object.entries(raw).filter(([, v]) => typeof v?.id === "string" && v.id);
+        const spellings = new Map<string, Set<string>>(); for (const [, v] of entries) { const k = v.id!.toLowerCase(); spellings.set(k, (spellings.get(k) ?? new Set()).add(v.id!)); }
+        // an id is the account (agent:token:<id>): one id on two tokens (a key rotation) is one account; ids differing only in case, or ill-formed, prove nobody (the name stays reserved)
+        const refused: string[] = [];
+        for (const [tok, v] of entries) {
+          const id = v.id!; names.add(id.toLowerCase());
+          if (!ENROLMENT_ID.test(id.toLowerCase()) || spellings.get(id.toLowerCase())!.size > 1) { refused.push(id); continue; }
+          byToken.set(tok, id);
+          for (const s of v.subs ?? []) if (typeof s === "string") bySub.set(s, id);
         }
+        if (refused.length) console.error(`[perm] mcpl/tokens.json: ${refused.length} enrolment(s) refused (an id must match ${ENROLMENT_ID.source} lowercased, and no other id may differ from it only in case): ${refused.map((i) => JSON.stringify(i)).join(", ")}`);
       }
-      agentTokCache = { mtime, byToken, names };
+      agentTokCache = { mtime, byToken, names, bySub };
     }
   } catch (e) {
     console.error("[perm] mcpl/tokens.json unreadable:", (e as Error).message);
-    agentTokCache ??= { mtime: 0, byToken: new Map(), names: new Set() };
+    agentTokCache ??= { mtime: 0, byToken: new Map(), names: new Set(), bySub: new Map() };
   }
   return agentTokCache;
 }

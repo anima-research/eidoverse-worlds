@@ -31,6 +31,7 @@ import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
 import { registerFoliage } from './foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
+import { libRelOf, modelWord } from '../../shared/eido.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -160,7 +161,9 @@ export async function fetchBytes(path) {
 
 // ---- loaders ----------------------------------------------------------------
 
-const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+// the decoder three ships, served by the /node_modules route like the KTX2 transcoder below: no third-party origin at run
+// time (the page's CSP connect-src names none for it; security pass 3 N3)
+const draco = new DRACOLoader().setDecoderPath('/node_modules/three/examples/jsm/libs/draco/gltf/');
 // §20b: ONE KTX2 transcoder for every parse site (VRM, GLB, loadGLBBytes).
 // The transcoder is the vendored basis wasm, served by the /node_modules
 // route. detectSupport at module scope is ordering-safe: core.js top-level-
@@ -215,7 +218,9 @@ export const lodNegotiable = (libPath) => resolveLoadRequest(libPath, 'lod').tie
  *  never a restatement of it: tools/lod-loader-probe.ts runs THIS module
  *  against an owned sequencer, and a mutation here fails it. */
 export function resolveLoadRequest(libPath, tier = 'full') {
-  const ask = askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
+  // a model named by its content address (eido:sha256/…, review 10-07 H3) is fetched as /library/eido/sha256/<hex>.glb:
+  // the host serves its rendition of the file it names; the cache keys stay the model value itself
+  const ask = askFor({ libPath: libRelOf(libPath), key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
   return { url: ask.url, tier: ask.tier, glbKey: ask.tier === 'lod' ? `${libPath}#lod` : libPath };
 }
 /** GPU memory against the proto budget — the policy's "device pressure". */
@@ -548,6 +553,9 @@ export const poolStats = () => ({
 // Friendly names for library paths — store hashes are unreadable, and the
 // loading tray should say "deco desk", not "4fee4b7c4794a2be".
 export const libLabels = new Map();
+/** A person's word for a model: its library name (libLabels: the catalogue's, an upload's), else its path's file name; an old
+ *  address (stored before 10-17) nobody named is "thing", never its hex (shared/eido.js modelWord). */
+export const modelName = (model) => modelWord(model, (m) => libLabels.get(m) ?? null);
 
 const glbCache = new Map();
 export async function loadGLB(libPath, { tier = 'full' } = {}) {
@@ -558,7 +566,7 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
   const req = resolveLoadRequest(libPath, tier);
   tier = req.tier;
   const glbKey = req.glbKey;
-  const short = (libLabels.get(libPath) ?? libPath.split('/').pop()).slice(0, 28) + (tier === 'lod' ? '·lod' : '');
+  const short = modelName(libPath).slice(0, 28) + (tier === 'lod' ? '·lod' : '');
   loadsInFlight.set(glbKey, (loadsInFlight.get(glbKey) ?? 0) + 1);
   try {
   if (!glbCache.has(glbKey)) {

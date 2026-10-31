@@ -27,11 +27,12 @@ the pr0–pr3 diffs plus this PR's wiring.
 ## 2 · `spoken:true` producer migration
 
 **None required, by construction — the wire contract is untouched.** The
-spoken-say trio (`spoken`+`utt`, optional `t0`) is validated in
-`server/verbs.ts:267–273`, which this delta does not modify. Producers (agent
+spoken-say trio (`spoken`+`utt`, optional `t0`) was validated in the server's
+say handler (today the door's `say`, `shared/protocol/authority.js` `spokenOf`), which
+this delta did not modify. Producers (agent
 voice legs via `mcpl/agent.ts`) and the consumer (`voicemouths.js:88`) speak
 the same metadata before and after cutover. What moved is the *audio* lane
-(mesh pair → relay floor); the *display/continuation* lane rides the say verb
+(mesh pair → relay floor); the *display/continuation* lane rides the say
 exactly as documented in AGENTS.md: the trio never proved performance, so
 changing the performance transport cannot invalidate it.
 
@@ -42,7 +43,7 @@ What a stale (pre-cutover) page experiences after the server updates:
 - **Text, presence, says: unaffected.** No message type it depends on is
   removed.
 - **Voice: silently absent, both directions.** The stale page offers mesh via
-  `'rtc'` frames — which die AT THE SERVER: the `rtc` verb is deleted from the
+  `'rtc'` frames — which die AT THE SERVER: the `rtc` message is deleted from the
   ws switch, and an unknown type falls off the switch silently, so no fresh (or
   stale) page ever receives an `'rtc'` frame again. A no-op, not an error —
   enforced server-side, which is where this repository's authority lives. The

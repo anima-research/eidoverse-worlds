@@ -1,90 +1,63 @@
-// bun tools/water/import.ts MANIFEST SERVER WORLD [--apply] [--replace]
-// Default is read-only preflight. Credentials come only from EIDO_TOKEN.
-import {readFileSync} from 'node:fs';
-import {dirname,resolve} from 'node:path';
-import {createHash} from 'node:crypto';
-import {foldEntry,emptyState} from '../../shared/fold.js';
-const [file,server,world]=process.argv.slice(2,5);
-if(!file||!server||!world)throw Error('usage: import.ts MANIFEST SERVER WORLD [--apply] [--replace]');
-const manifest=JSON.parse(readFileSync(file,'utf8')),base=new URL(server);
-const apply=process.argv.includes('--apply'),replace=process.argv.includes('--replace');
-const bytes=new Map();
-for(const f of manifest.files){
- const data=readFileSync(resolve(dirname(file),f.file));
- if(createHash('sha256').update(data).digest('hex')!==f.sha256)throw Error(`asset hash mismatch: ${f.file}`);
- bytes.set(f.path,data);
+// bun tools/water/import.ts MANIFEST --dry                         print the requests, nothing sent (no server needed)
+// bun tools/water/import.ts MANIFEST SERVER WORLD [--apply]        preflight (read-only), or upload the files and send them
+// A manifest carries its `requests` (prepare.ts writes them), or main's `verbs` (world-data/water/manifest.json), which
+// requests.js maps (the old-world translator's own mapping). Features this protocol doesn't carry yet (none in #248's world
+// now) are listed and never sent; --apply refuses while any remain. Credentials come only from EIDO_TOKEN.
+// @ts-nocheck
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { requestsOf } from './requests.js';
+
+const argv = process.argv.slice(2), flags = new Set(argv.filter((a) => a.startsWith('--'))), [file, server, world] = argv.filter((a) => !a.startsWith('--'));
+const dry = flags.has('--dry'), apply = flags.has('--apply');
+if (!file || (!dry && (!server || !world))) throw Error('usage: import.ts MANIFEST --dry | import.ts MANIFEST SERVER WORLD [--apply]');
+const manifest = JSON.parse(readFileSync(file, 'utf8'));
+
+const files = manifest.files ?? [], bytes = new Map(), absent = [];
+for (const f of files) {
+  const p = resolve(dirname(file), f.file);
+  if (!existsSync(p)) { absent.push(f.file); continue; }
+  const data = readFileSync(p);
+  if (createHash('sha256').update(data).digest('hex') !== f.sha256) throw Error(`asset hash mismatch: ${f.file}`);
+  bytes.set(f.path, data);
 }
-for(const v of manifest.verbs){
- if(!['asset','spawn','comp','light','mount','motion'].includes(v.verb))throw Error(`unsupported import verb: ${v.verb}`);
- if(v.verb==='comp'&&Buffer.byteLength(JSON.stringify(v.args.data))>8192)throw Error(`component too large: ${v.args.id}/${v.args.type}`);
+const req = manifest.requests ? { batch: manifest.requests[0], uploads: manifest.uploads ?? [], deferred: manifest.deferred ?? [], mapped: manifest.mapped ?? [], unmapped: manifest.unmapped ?? [] } : requestsOf(manifest.verbs, world ?? 'water');
+if (dry) {
+  console.log(JSON.stringify({ requests: [req.batch], uploads: req.uploads, mapped: req.mapped, unmapped: req.unmapped ?? [], deferred: req.deferred, files: { checked: bytes.size, absent } }, null, 1));
+  process.exit(0);
 }
-const geomURL=new URL('/geom',base);geomURL.searchParams.set('world',world);
-const response=await fetch(geomURL);const geom=response.ok?await response.json():{entities:[]};
-if(!response.ok&&response.status!==404)throw Error(`preflight failed: HTTP ${response.status}`);
-const uploadedPath=new Map(manifest.files.map(f=>[f.path,`store/${f.sha256.slice(0,16)}.glb`]));
-const collisions=manifest.verbs.filter(v=>v.verb==='spawn'&&geom.entities?.some(e=>e.id===v.args.id&&e.lib!==v.args.lib&&e.lib!==uploadedPath.get(v.args.lib))).map(v=>v.args.id);
-console.log(JSON.stringify({world,server:base.origin,apply,files:bytes.size,verbs:manifest.verbs.length,conflicts:collisions,coordinateSystem:manifest.coordinateSystem},null,2));
-if(!apply)process.exit(0);
-if(collisions.length&&!replace)throw Error('existing entity ids differ; inspect the world before using --replace');
-const token=process.env.EIDO_TOKEN??'',url=new URL('/ws',base);url.protocol=base.protocol==='https:'?'wss:':'ws:';
-const ws=new WebSocket(url);let waiter:any=null,st:any=null;
-function next(predicate:(m:any)=>boolean,send?:()=>void){
- return new Promise<any>((res,rej)=>{
-  const timer=setTimeout(()=>{waiter=null;rej(Error('sequencer response timed out; inspect partial import before retrying'));},15000);
-  waiter={predicate,resolve:(m:any)=>{clearTimeout(timer);waiter=null;res(m);},reject:(e:any)=>{clearTimeout(timer);waiter=null;rej(e);}};
-  send?.();
- });
+const base = new URL(server);
+console.log(JSON.stringify({ world, server: base.origin, apply, files: bytes.size, absent: absent.length, ops: req.batch.args.ops.length, deferred: req.deferred.length, coordinateSystem: manifest.coordinateSystem }, null, 2));
+if (!apply) process.exit(0);
+if (req.deferred.length) throw Error(`not sent: ${req.deferred.length} use(s) of features this protocol doesn't carry yet (${[...new Set(req.deferred.map((u) => u.feature))].join(', ')}); see --dry`);
+if (absent.length) throw Error(`not sent: ${absent.length} file(s) missing beside the manifest`);
+const token = process.env.EIDO_TOKEN ?? '';
+// the files first: each manifest path becomes the library path the server stored it under
+const pathOf = new Map();
+for (const f of files) {
+  const u = new URL('/upload', base); u.searchParams.set('token', token); u.searchParams.set('name', f.file);
+  let r; for (let retry = 0; retry < 5; retry++) { r = await fetch(u, { method: 'POST', body: bytes.get(f.path), headers: { 'content-type': 'model/gltf-binary' } }); if (r.status !== 429) break; console.log('waiting for the upload rate window'); await Bun.sleep(15000); }
+  if (!r.ok) throw Error(`asset upload failed: HTTP ${r.status}`);
+  pathOf.set(f.path, (await r.json()).path);
 }
-ws.onmessage=e=>{const m=JSON.parse(String(e.data));if(m.type==='error')waiter?.reject(Error(m.error??'sequencer refused import'));else if(waiter?.predicate(m))waiter.resolve(m);};
-ws.onclose=()=>waiter?.reject(Error('sequencer closed the connection'));
-await new Promise<void>((res,rej)=>{ws.onopen=()=>res();ws.onerror=()=>rej(Error('cannot connect'));});
-try{
- const snap=await next(m=>m.type==='snapshot',()=>ws.send(JSON.stringify({type:'join',id:'water-import',world,token})));
- st={...emptyState(),...snap.state};
- const mapping=new Map();
- for(const f of manifest.files){
-  const known=uploadedPath.get(f.path);
-  if((await fetch(new URL('/library/'+known,base),{method:'HEAD'})).ok){mapping.set(f.path,known);continue;}
-  const u=new URL('/upload',base);u.searchParams.set('token',token);u.searchParams.set('name','Unreal water scene');
-  let r;
-  for(let retry=0;retry<5;retry++){
-    r=await fetch(u,{method:'POST',body:bytes.get(f.path),headers:{'content-type':'model/gltf-binary'}});
-    if(r.status!==429)break;
-    console.log('Waiting for the server upload rate window');await Bun.sleep(15000);
-  }
-  if(!r.ok)throw Error(`asset upload failed: HTTP ${r.status}`);
-  mapping.set(f.path,(await r.json()).path);
- }
- // A rerun must not re-append what the world already holds: fold the entry into a throwaway copy with the
- // real fold and compare the entity (or a body's mount) before and after — ignoring who did it and when (actor, ts,
- // placer) and, when the manifest leaves it out, a motion's start time (re-sending would restart it).
- const settled=(e:any,keepT0:boolean)=>{if(!e)return e;const{actor,placer,ts,...rest}=e;
-  if(!keepT0&&rest.comp?.motion){rest.comp={...rest.comp,motion:{...rest.comp.motion}};delete rest.comp.motion.t0;}return rest;};
- const unchangedBy=(verb:string,args:any)=>{
-  const probe=structuredClone(st),keepT0=args?.t0!=null||args?.data?.t0!=null;
-  const view=(s:any)=>JSON.stringify([settled(s.entities?.[args.id],keepT0),s.mounts?.[args.id]??null]);
-  const before=view(st);foldEntry(probe,{seq:Number.MAX_SAFE_INTEGER,ts:Date.now(),actor:'import',verb,args:structuredClone(args)});
-  return before===view(probe);
- };
- let applied=0,skipped=0;
- for(const item of manifest.verbs){
-  const v=structuredClone(item),a=v.args;
-  if(a.lib)a.lib=mapping.get(a.lib)??a.lib;if(a.path)a.path=mapping.get(a.path)??a.path;
-  const entity=st.entities[a.id];
-  if(v.verb==='asset'&&st.assets.some(x=>x.path===a.path)||
-    v.verb==='spawn'&&entity?.lib===a.lib||
-    v.verb==='comp'&&JSON.stringify(entity?.comp?.[a.type])===JSON.stringify(a.data)||
-    ['light','mount','motion'].includes(v.verb)&&unchangedBy(v.verb,a)){skipped++;continue;}
-  if(v.verb==='spawn'&&entity&&!replace)throw Error(`refusing to overwrite existing entity ${a.id}`);
-  // Match the authoritative echo by IDENTITY (verb + id, component type, asset path), never by the whole
-  // argument bag: the server stamps fields (placer) and may normalize others, which made an exact match
-  // wait forever and abort mid-scene.
-  const same=(e:any)=>e?.verb===v.verb&&e.args?.id===a.id&&e.args?.type===a.type&&e.args?.path===a.path;
-  const m=await next(m=>m.type==='log'&&same(m.entry),
-   ()=>ws.send(JSON.stringify({type:'verb',...v})));
-  foldEntry(st,m.entry);applied++;
-  // Stay below the ordinary verb-rate budget, including first-world imports.
-  await Bun.sleep(400);
- }
- console.log(JSON.stringify({applied,skipped,world}));
-}finally{ws.close();}
+const swap = (v) => (typeof v === 'string' ? pathOf.get(v) ?? v : Array.isArray(v) ? v.map(swap) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v);
+const batch = swap(req.batch);
+const url = new URL('/ws', base); url.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(url);
+await new Promise((res, rej) => { ws.onopen = () => res(); ws.onerror = () => rej(Error('cannot connect')); });
+try {
+  const reply = await new Promise((res, rej) => {
+    const timer = setTimeout(() => rej(Error('no reply in 30 s; look at the world before retrying')), 30000);
+    ws.onmessage = (e) => { const m = JSON.parse(String(e.data));
+      if (m.type === 'error') { clearTimeout(timer); rej(Error(m.error ?? 'refused')); }
+      // the effect documents the batch names go first (upload {effect}), then the batch
+      if (m.type === 'snapshot') { req.uploads.forEach((u, i) => ws.send(JSON.stringify({ type: 'request', id: `water-effect-${i}`, ...u }))); ws.send(JSON.stringify({ type: 'request', id: 'water-import', ...batch })); }
+      if (m.type === 'reply' && /^water-effect-/.test(m.id) && !m.ok) { clearTimeout(timer); rej(Error(`effect upload refused: ${JSON.stringify(m.reply?.refused ?? m)}`)); }
+      if (m.type === 'reply' && m.id === 'water-import') { clearTimeout(timer); res(m); } };
+    ws.onclose = () => rej(Error('the server closed the connection'));
+    ws.send(JSON.stringify({ type: 'join', world, id: 'water-import', token }));
+  });
+  console.log(JSON.stringify({ ok: reply.ok, refused: reply.reply?.refused ?? null, ids: reply.reply?.ids ?? null }, null, 1));
+  if (!reply.ok) process.exit(1);
+} finally { ws.close(); }

@@ -1,0 +1,451 @@
+// tools/protocol/import-v1/world.ts — translate an OLD (v1) world on disk into a NEW v4 world, once. The operator runs it
+// (bun tools/protocol/world.ts translate <v1 world> <new world>); nothing at runtime imports this directory
+// (tools/protocol/nov1-check.ts enforces it). The v1 log is read, never written (R9).
+import { warmLamps, lampsOf } from "./lamps.ts";
+import fs from "node:fs";
+import crypto from "node:crypto";
+import path from "node:path";
+import { TRUST_NAMES } from "../../../server/config.ts";
+import { directoryFor, mintId, foldName, ACCOUNT_SHAPE, type Entry } from "../../../server/directory.ts";
+import { mainKnowledge, type Known } from "../../../server/mainknew.ts";
+import { agentTokens, HN_ISS } from "../../../server/auth.ts";
+import { custodyAt, modLogAt } from "../../../server/custody.ts";
+import { custodyFileIn } from "../../../server/keyfiles.ts";
+import { seal, maintain, operatorRepair } from "../../../shared/protocol/authority.js";
+import { emptyState as v1Empty, foldEntry } from "./fold.js";
+import { openLive } from "../../../server/livehost.ts";
+import { ENGINE_CATALOGUE, warm } from "../../../server/modelcatalogue.ts";
+import { readLog, fold, digest, keyOk } from "../../../shared/protocol/fold.js";
+import { simFold } from "../../../shared/protocol/simlayer.js";
+import { translate, TRANSLATOR, DROPPED, deferredFeatures, deferredRefusal, watchGrants, watchRefusal, accountIn, isAccount, isAccountName } from "./translate-v1.js";
+import { sha256 } from "../../../shared/protocol/hash.js";
+import { jcs } from "../../../shared/protocol/fold.js";
+import { putBlobFile } from "../../../server/durable.ts";
+import { v1FoldBuild } from "./build.ts";
+import { contentAddressOf, recordEido, storeNameMatches } from "../../../server/eidoindex.ts";
+
+type Any = any;
+
+/** The approval of a translation, bound to the dry-run report's hash (review of PR #260, Mica, item 6: "owner/operator
+ *  countersign"; rereview blocker 1). A translation names NO founder and carries NO owner's signature: v1 logs record accounts,
+ *  never keys, so nothing can yet bind a key to the old world's owner, and a key the CLI was handed would be the operator's
+ *  choice recorded as "the owner approved" (and installed as tier 0). Until something can attest that a key is the v1 owner's
+ *  (a home-node attestation, later), the approval is the OPERATOR's countersignature alone (the host's custody operator key,
+ *  server/custody.ts signOperator) over approvalText(world, report), with `owner: null` and NO_OWNER recorded verbatim (the
+ *  CLI's --operator-only-no-owner). Checked by world.ts before anything is written and AGAIN here, before the log is written
+ *  (approvalProblem): an approval carrying an owner's signature, or with the countersignature missing, not verifying, or over
+ *  another hash, is refused. */
+export type Sig = { key: string; sig: string };
+export type Approval = { report: string; owner: null; operator: Sig; noOwner: string };
+export const approvalText = (world: string, report: string) => `eidoverse-approve-translation:${world}:${report}`;
+/** Why a translation names no founder: the CLI's refusal of --founder-key / --approve-sig and the writer's of a founder key. */
+export const NO_FOUNDER = "nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys), so a translation can't name a founder or carry an owner's signature";
+export const NO_OWNER = "no owner approved this translation: nothing can yet bind a key to the old world's owner (v1 logs record accounts, not keys), so no owner was attested and the world's tier 0 is empty; the operator ran it with --operator-only-no-owner, and the operator's countersignature is the only signature";
+const ed25519Pub = (key: string) => crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(key.slice(8), "base64url")]), format: "der", type: "spki" });
+/** Does `sig` (base64 or base64url) verify over `msg` for the governance key `key`? */
+export const verifySig = (key: string, msg: string, sig: string) => { try { return !!key && !!sig && crypto.verify(null, Buffer.from(msg), ed25519Pub(key), Buffer.from(String(sig).replace(/-/g, "+").replace(/_/g, "/"), "base64")); } catch { return false; } };
+/** Why this approval can't stand for world `world`, or null when the operator's countersignature verifies over
+ *  approvalText(world, report), the owner is null and NO_OWNER is recorded. The one rule for the CLI and the writer. */
+export function approvalProblem(world: string, a: Approval | null | undefined): string | null {
+  if (!a || typeof a !== "object" || !/^[0-9a-f]{64}$/.test(String(a.report ?? ""))) return "the approval names no report hash (64 hex, as --dry-run prints it)";
+  if ((a as any).owner !== null) return `it carries an owner's signature (owner must be null): ${NO_FOUNDER}; translate on the operator's countersignature alone with --no-founder-key --operator-only-no-owner`;
+  const text = approvalText(world, a.report);
+  if (!a.operator?.key || !a.operator?.sig) return `no operator countersignature: the host's custody operator key must sign "${text}" (world.ts signs it from .custody.json)`;
+  if (!keyOk(a.operator.key)) return `the operator's key ${a.operator.key} is not a governance key (ed25519:<base64url of 32 bytes>)`;
+  if (!verifySig(a.operator.key, text, a.operator.sig)) return `the operator's countersignature doesn't verify for ${a.operator.key} over "${text}": not this host's countersignature of this report`;
+  if (a.noOwner !== NO_OWNER) return `no owner's signature can exist (${NO_FOUNDER}), so a translation runs on the operator's countersignature alone, and only with --operator-only-no-owner, which records that no owner was attested`;
+  return null;
+}
+/** The approval as the CLI builds it: the operator's countersignature (made here, from the host's custody), owner null, NO_OWNER. */
+export function makeApproval(world: string, report: string, { operator }: { operator: { key: string; sign: (msg: string) => string } }): Approval {
+  return { report, owner: null, operator: { key: operator.key, sig: operator.sign(approvalText(world, report)) }, noOwner: NO_OWNER };
+}
+
+/** A v1 log's lines, parsed: the entries, and how many lines didn't parse (dropped, and said so in the report and result). */
+function readOld(srcBytes: Buffer) {
+  let unparsed = 0;
+  const old = srcBytes.toString("utf8").split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l)]; } catch { unparsed++; return []; } });
+  return { old, unparsed };
+}
+
+/** The identity mapper a translation runs with: who(name, {sub, lowered}) → the v4 identity. A person with an account is
+ *  that account; a person without one is their EXACT name, as v1 kept roles and acts. `lowered`: the name is one the v1
+ *  fold lowercased (a ban's key), so it stands for the one name in this log that lowercases to it, when exactly one does.
+ *  `mint` false (the dry run): reads what `dir` already knows and derives a stable id for the rest, writing nothing, so
+ *  the report counts exactly what the real run renames and nothing in it varies. */
+function identityMapper(old: Any[], dir: ReturnType<typeof directoryFor> | null, { mint = true, known = null, owner = null }: { mint?: boolean; known?: ((name: string) => Known | null) | null; owner?: OwnerClaim | null } = {}) {
+  const planned: Record<string, Entry> = {}; const memo = new Map<string, string>();
+  const fromOf = new Map<string, string>();   // account → where this translation learned it (the report says, per role)
+  const unbound = new Map<string, string>();  // name → why main's records bind it to no one account
+  const unboundCode = new Map<string, "none" | "several" | "foreign">();   // …as a code (oldOwners: only "none" may be recognised by name)
+  const agents = agentTokens();
+  const nameKey = (n: string) => `name:${n}`;
+  // every name this log gives a person (actors, grants, genesis roles, a say's addressee), and every account it gives one
+  // (a sub, a placer's, a bySub): what a lowered ban key may mean, an account's case included. A ban's or an unban's own
+  // id is how its sender typed the name, which v1 matched in any case, so it counts only when nothing else names them.
+  const names = new Set<string>(), banned = new Set<string>();
+  for (const e of old) { const a = e?.args ?? {};
+    if (typeof e?.actor === "string") names.add(e.actor);
+    if (e?.verb === "grant" && typeof a.id === "string") names.add(a.id);
+    if ((e?.verb === "ban" || e?.verb === "unban") && typeof a.id === "string") banned.add(a.id);
+    if (e?.verb === "say" && typeof a.to === "string") names.add(a.to);
+    for (const s of [a.sub, a.placer?.sub, a.bySub]) if (isAccount(s)) names.add(s);
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*") { names.add(k); if (isAccount(v?.sub)) names.add(v.sub); } }
+  const unlowered = (k: string) => {
+    const among = (set: Set<string>) => [...set].filter((n) => n.toLowerCase() === k);
+    const c = among(names); if (c.length) return c.length === 1 ? c[0] : k;
+    const b = new Set(among(banned)); return b.size === 1 ? [...b][0] : k; };
+  // a v1 agent's sub is its home-node subject (agent:<name>@<domain>); a live join from this host's home node wears the
+  // enrolment that lists it, else aid1:<iss>:<sub> (server.ts join), so its grants and bans land on that same account
+  const liveAccount = (sub: string) => (/^agent:/.test(sub) && !/^agent:token:/.test(sub) ? (agents.bySub.has(sub) ? `agent:token:${agents.bySub.get(sub)!.toLowerCase()}` : `aid1:${HN_ISS}:${sub}`) : sub);
+  const stable = (key: string) => "u-" + [...crypto.createHash("sha256").update(`eido-dry-run\0${key}`).digest()].slice(0, 20).map((b) => "abcdefghijklmnopqrstuvwxyz234567"[b & 31]).join("");
+  const who = (name0: string, { sub, lowered = false, from = "this world's log" }: { sub?: string; lowered?: boolean; from?: string } = {}) => {
+    const name = lowered && sub === undefined ? unlowered(name0) : name0;
+    // no account in the log: an agent's reserved name is its account; on a TRUST_NAMES (private) server a bare name is
+    // local:<name>, as a join there is; anywhere else it's an imported identity an operator binds (directory.bind)
+    const acct = sub !== undefined ? liveAccount(sub) : (isAccountName(name) ? liveAccount(name) : agents.names.has(name.toLowerCase()) ? `agent:token:${name.toLowerCase()}` : TRUST_NAMES ? `local:${name.toLowerCase()}` : undefined);
+    const display = isAccountName(name) || name === sub ? null : name;   // a role keyed by its account, or an account alone, has no name of its own
+    const key = acct ?? nameKey(name);
+    if (acct && !fromOf.has(acct)) fromOf.set(acct, sub !== undefined || isAccountName(name) ? from : agents.names.has(name.toLowerCase()) ? "tokens.json (an enrolled agent's name)" : "TRUST_NAMES (a private server: a name is its local account)");
+    // named without an account: whoever this log already knows by exactly that name (a grant's sub, the pre-index below) first
+    let id = (sub === undefined && display !== null ? memo.get(nameKey(display)) : undefined) ?? memo.get(key) ?? (acct && dir ? dir.idOfSub(acct) : null) ?? null;
+    if (!id) { id = mint ? mintId() : stable(key); planned[id] = { name: display || "someone", subs: acct ? [acct] : [], kind: acct ? "account" : "imported", since: Date.now() }; }
+    if (display && planned[id]?.name === "someone") planned[id].name = display;   // a later mention brings the name
+    memo.set(key, id); if (display !== null) memo.set(nameKey(display), id); return id; };
+  // every name that ever had an account in this log (a grant with a sub, genesis roles), first: a person's acts may come
+  // before the grant that names their account, and must land on the same id. (v1 can't tell two people who shared a
+  // name apart in their acts; the last account seen for a name wins, and translate reports how many.)
+  // The other pairs v1's server wrote itself count too (server/verbs.ts at 306a00b0): a ban's {id, sub}, a spawn's or a
+  // light's placer {id, sub}, and a behaviour's bySub, which is its own actor's account.
+  for (const e of old) { const a = e?.args ?? {};
+    if ((e?.verb === "grant" || e?.verb === "ban") && typeof a.id === "string" && typeof a.sub === "string") who(a.id, { sub: a.sub });
+    if (e?.verb === "genesis") for (const [k, v] of Object.entries<Any>(a.roles ?? {})) if (k !== "*" && typeof v?.sub === "string") who(k, { sub: v.sub });
+    if ((e?.verb === "spawn" || e?.verb === "light") && typeof a.placer?.id === "string" && isAccount(a.placer.sub)) who(a.placer.id, { sub: a.placer.sub });
+    if (e?.verb === "behavior" && typeof e.actor === "string" && !["door", "world", "sim"].includes(e.actor) && !/^bhv:/i.test(e.actor) && isAccount(a.bySub)) who(e.actor, { sub: a.bySub }); }
+  // the upgrader recognised as this owner by name (ownerClaimOf): that owner's name is their account, and no one else's is
+  if (owner?.how === "name") who(owner.by, { sub: owner.account, from: "bound by name (provisional): they upgraded it as its owner" });
+  // a name this log pairs with no account: the one account main recorded for it elsewhere on this server (mainknew.ts), as
+  // main's own grant resolved a name (one match binds); several, or none that is an account here, stay imported and are listed
+  // …a ban's target too, when nothing else names them (a ban-only name), or their main-era ban would name no account here
+  const banOnly = [...banned].filter((b) => ![...names].some((n) => n.toLowerCase() === b.toLowerCase()));
+  if (known && !TRUST_NAMES) for (const n of [...names, ...banOnly].sort()) {
+    if (isAccount(n) || ["door", "world", "sim", "*"].includes(n) || /^bhv:/i.test(n) || memo.has(nameKey(n)) || agents.names.has(n.toLowerCase())) continue;
+    const k = known(n); if (!k) { unbound.set(n, "main recorded no account for this name"); unboundCode.set(n, "none"); continue; }
+    const accts = [...new Set(k.subs.map(liveAccount))];
+    if (accts.length === 1 && ACCOUNT_SHAPE.test(accts[0])) who(n, { sub: k.subs[0], from: `main's ${k.from.join(" and ")}` });
+    else unboundCode.set(n, accts.length > 1 ? "several" : "foreign"), unbound.set(n, accts.length > 1 ? `main recorded ${accts.length} accounts under this name (${k.from.join(", ")}): which one is theirs isn't guessed` : `main recorded an account that isn't one here (${accts[0].split(":")[0]}:…)`); }
+  /** id → who they are, for the report: their name, and the account's kind and where it was learned (null: imported, and why) */
+  const describe = (id: string) => { const e = planned[id] ?? dir?.entry(id) ?? null; if (!e) return null;
+    const acct = e.subs[0]; return { name: e.name, account: acct ? acct.split(":").slice(0, 2).join(":") : null, from: acct ? (fromOf.get(acct) ?? "this server's directory") : null, why: acct ? null : (unbound.get(e.name) ?? "main recorded no account for this name") }; };
+  /** id → its one account (planned or in the directory), how it was learned, and why none: for oldOwners only, never printed */
+  const accountOf = (id: string) => { const e = planned[id] ?? dir?.entry(id) ?? null; const acct = e?.subs[0] ?? null;
+    return { name: e?.name ?? id, account: acct, from: acct ? (fromOf.get(acct) ?? "this server's directory") : null, unbound: acct ? null : (unboundCode.get(e?.name ?? "") ?? "none") }; };
+  return { who, planned, idOfName: (n: string) => memo.get(nameKey(n)), describe, accountOf };
+}
+
+/** The old world's owners as an upgrade checks them (server/upgrade.ts, through world.ts owner-of): the v1 fold's final owner
+ *  roles, each through the translation's own identity mapper (mint nothing, write nothing). Accounts stay in this process. */
+export function oldOwners(srcDir: string) {
+  const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
+  const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e);   // as translate folds it
+  const worlds = path.dirname(path.resolve(srcDir));
+  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }) });
+  return Object.entries<Any>(st.roles ?? {}).filter(([k, v]) => k !== "*" && v?.role === "owner").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => {
+    const a = m.accountOf(m.who(k, { sub: (v && typeof v.sub === "string" ? v.sub : undefined) ?? (isAccountName(k) ? k : undefined) }));
+    // on a TRUST_NAMES server a name IS its local account: that binding is the name's, so it is recognised by name
+    const byName = !!a.from?.startsWith("TRUST_NAMES");
+    return { name: byName ? k : a.name, account: byName ? null : a.account, unbound: byName ? "none" as const : a.unbound }; });
+}
+/** May this signed-in account upgrade the old world as its owner (R 10-28)? "bound": main's records bind an owner to exactly this
+ *  account; "name": an owner main recorded NO account for has this name, as the directory folds names (foldName; provisional: an alpha risk the owner
+ *  accepted, until durable accounts); else null, and why. `ownerless`: the world has no owner at all (the upgrader claims it). */
+const recognisedSeen = new Map<string, ReturnType<typeof recognise>>();   // per process, by log head: an apply asks twice (report, write)
+export function ownerRecognised(srcDir: string, account: string | null, name: string | null) {
+  let head = ""; try { const st = fs.statSync(path.join(srcDir, "log.jsonl")); head = `${st.size}:${st.mtimeMs}`; } catch { /* oldOwners says */ }
+  const key = JSON.stringify([path.resolve(srcDir), head, account, name]);
+  if (!recognisedSeen.has(key)) recognisedSeen.set(key, recognise(srcDir, account, name));
+  return recognisedSeen.get(key)!;
+}
+function recognise(srcDir: string, account: string | null, name: string | null) {
+  const owners = oldOwners(srcDir), ownerless = owners.length === 0;
+  if (!account) return { recognised: null, ownerless, why: "not signed in" };
+  if (ownerless) return { recognised: null, ownerless, why: "the world has no owner: an operator upgrades it and becomes its owner" };
+  const bound = owners.find((o) => o.account !== null && o.account === account);
+  if (bound) return { recognised: "bound" as const, owner: bound.name, ownerless };
+  const named = name ? owners.find((o) => o.unbound === "none" && foldName(o.name) === foldName(name)) : undefined;   // the directory's one rule for a name (accountsNamed)
+  if (named) {   // R 10-28: only if main never bound the name to another account, and only one account here holds the name
+    const worlds = path.dirname(path.resolve(srcDir));
+    const main = mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) })(named.name)?.subs ?? [];
+    if (main.some((s) => s !== account)) return { recognised: null, ownerless, why: `main's records bind the owner ${named.name} to another account: that account is the owner` };
+    // a local:<name> (TRUST_NAMES) is the name itself, not another person holding it
+    if (directoryFor(worlds).accountsNamed(name!).some((s) => s !== account && !s.startsWith("local:"))) return { recognised: null, ownerless, why: `the name ${name} is held by more than one account on this server: which one is the owner isn't guessed` };
+    return { recognised: "name" as const, owner: named.name, ownerless }; }
+  const several = name ? owners.find((o) => o.unbound === "several" && foldName(o.name) === foldName(name)) : undefined;
+  return { recognised: null, ownerless, why: several ? `main recorded several accounts for the owner ${several.name}: which one is yours isn't guessed` : "main's records don't make this account one of the world's owners" };
+}
+type OwnerClaim = { by: string; how: "bound" | "name"; account: string };
+/** The upgrader recognised as an owner of the old world (ownerRecognised, its guards): bound to that owner in the translation (R 10-28). */
+function ownerClaimOf(srcDir: string, claim?: { account: string; name: string } | null): OwnerClaim | null {
+  if (!claim?.account) return null;
+  const o = ownerRecognised(srcDir, claim.account, claim.name || null);
+  return o.recognised ? { by: o.owner!, how: o.recognised, account: claim.account } : null;
+}
+/** What the report says when the upgrader claims an ownerless world (R 10-28): hashed, so the same for whoever approves it. */
+export const CLAIM = "this world has no owner: whoever performs this upgrade becomes its owner (an operator-repair set by them, recorded); everyone else keeps main's rights here, builder's permissions and generate";
+
+/** Who main let watch this closed world on their own grant, at this run's clock (translate-v1 watchGrants). */
+const watchOf = (old: Any[]) => { const st: Any = v1Empty(); for (const e of old) if (e?.verb !== "genesis") foldEntry(st, e); return watchGrants(st, Date.now()); };
+const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
+/** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
+ *  between runs (no minted identities, no nonce, no signatures), so its hash is the same for the same old log and the same tool
+ *  build. `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
+ *  report from its own run and refuses an approval of any other hash. */
+/** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
+ *  from} or {name, role, account: null, why, bind}; owners first. What the operator approves, and the upgrade's result. */
+export function peopleOf(world: string, r: Any, describe: (id: string) => Any) {
+  const rank = (x: string) => ["owner", "moderator", "builder", "member"].indexOf(x) >>> 0;
+  const out = Object.entries<Any>(r.final?.translated?.["@world"] ?? {}).filter(([k]) => k.startsWith("roles:")).map(([k, v]) => {
+    const d = describe(k.slice(6)); const name = d?.name ?? k.slice(6), role = String(v?.role ?? "?");
+    return d?.account ? { name, role, account: d.account, from: d.from }
+      : { name, role, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; });
+  return out.sort((a, b) => rank(a.role) - rank(b.role) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+/** Who the translated world bans (its imported-bans, filed in world.mod.jsonl), as peopleOf says who holds a role: bound
+ *  {name, account, from, check?} or {name, account: null, why, bind}. `check`: bound by name alone, so a guest namesake isn't them. */
+export function bansOf(world: string, r: Any, describe: (id: string) => Any) {
+  return Object.keys(r.final?.translated?.["@world"] ?? {}).filter((k) => k.startsWith("imported-bans:")).map((k) => {
+    const d = describe(k.slice("imported-bans:".length)); const name = d?.name ?? k.slice(14);
+    return d?.account ? { name, account: d.account, from: d.from, ...(/^main's /.test(d.from ?? "") ? { check: `bound by name through ${d.from}: if the one banned was a guest wearing the name, this is someone else (lift it: operator-repair unban)` } : {}) }
+      : { name, account: null, why: d?.why ?? "not in the directory", bind: `bun tools/operator-repair.ts bind ${world} ${JSON.stringify(name)} <their account>` }; })
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+/** The upgrade's safety net (R 10-27 "don't lock anyone out of their worlds"): words when no owner of the translated world is
+ *  bound to an account, naming them, else null. A warning, never a refusal: an old-format world admits nobody until it is
+ *  upgraded, and after it a server operator enters every world and can bind its owner (operator-repair bind) or set one. */
+export function ownerWarning(world: string, people: Any[] = []): string | null {
+  const owners = people.filter((p) => p.role === "owner");
+  if (owners.some((p) => p.account)) return null;
+  const how = `a server operator still enters it and can bind them (bun tools/operator-repair.ts bind ${world} <name> <their account>) or give it to someone with operator-repair set (docs/TRANSLATING-OLD-WORLDS.md)`;
+  return owners.length ? `no owner of "${world}" is bound to an account: ${owners.map((p) => p.name).join(", ")}. Until one is, nobody who signs in is its owner; ${how}`
+    : `"${world}" has no owner at all after the upgrade; ${how}`;
+}
+/** Whether a claim applies: asked for, and no owner in the translated world (people). */
+const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
+/** Every translation ends with an owner (LEGACY-PINS item 9): world.ts translate refuses a world with none and no claim, naming the fix; else null. */
+export function ownerlessRefusal(world: string, people: Any[], claim: unknown): string | null {
+  if (claim || people.some((p) => p.role === "owner")) return null;
+  return `"${world}" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=<the account that will own it> (yours, as SERVER_OPERATORS lists it), as the browser's upgrade does; everyone else keeps what main gave them (build and generate). Nothing was changed.`;
+}
+/** What the translation writes, hashed: its final state under the dry run's stable ids (identityMapper mint false), so the
+ *  approved report pins the output itself, not only its counts (review full-260 #4: the approved thing is the applied thing). */
+const outputOf = (r: Any) => `sha256:${sha256(jcs(r.final.translated))}`;
+function reportOf(srcBytes: Buffer, world: string, unparsed: number, deferred: Any[], r: Any, outLength = r.out.length, people: Any[] = [], claim = false, owner: OwnerClaim | null = null, bans: Any[] = [], output = outputOf(r), watch: string[] = []) {
+  const report = {
+    v: 1, world,
+    // Mica, #260 (10-17): "Worlds using alpha should know they accepted translation churn." In the report, so the hash that is
+    // approved covers it (PROTOCOL.md, the trial-period paragraph).
+    trial: "This protocol is in a trial period (about a year): later versions may translate this world again, and stored data may change shape between them (PROTOCOL.md, start). Approving this report accepts that.",
+    source: { file: "log.jsonl", size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed },
+    translator: TRANSLATOR, fold: v1FoldBuild(), founderKey: null,   // a translation names no founder (NO_FOUNDER): tier 0 empty
+    entries: { old: r.stats.in, new: outLength, change: r.stats.change, divergences: r.stats.divergences },
+    output,                      // the translated state's digest (outputOf): a pull or new model bytes between review and apply changes it
+    actorsRenamed: r.stats.renamed, tsClamped: r.stats.tsClamped ?? 0,
+    guards: { becameLocks: r.stats.guards, stillGuardedAtEnd: r.stats.guardsLive },
+    ...(r.stats.launches !== undefined ? { physics: { launches: r.stats.launches, rests: r.stats.rests } } : {}),
+    ...(r.stats.modelsHashed !== undefined ? { models: { hashed: r.stats.modelsHashed, unhashed: r.stats.modelsUnhashed } } : {}),
+    dropped: DROPPED,            // what every translation drops or renames BY DESIGN (the translator's own table)
+    deferred,                    // uses of features v4 doesn't carry yet: any → refused
+    ...(r.stats.mapped ? { mapped: r.stats.mapped } : {}),
+    ...(r.stats.unmapped ? { unmapped: r.stats.unmapped } : {}),   // …and what of them has no home, carried as imported:<component>, with its fate (FATES)
+    ...(r.stats.rights ? { rights: r.stats.rights } : {}),   // main's effective rights as written (translate-v1 mainRights), and what they can't say
+    ...(r.stats.effects ? { effects: r.stats.effects } : {}),   // the derived particle effects stored with the world (translate-v1 particlesOf)
+    ...(r.stats.adjusted ? { adjusted: r.stats.adjusted } : {}),   // values brought to main's reading or the registry's ranges, each with why (translate-v1 toSpec, lightParity)
+    people,                      // who holds a role, and the account bound to them (none: listed, with the operator's bind)
+    bans,                        // who stays banned, and the account each ban holds against (bansOf)
+    ownerWarning: claim ? null : ownerWarning(world, people),   // no owner bound to any account: said, named (a warning: see ownerWarning)
+    ...(claim ? { claim: CLAIM } : owner ? { claim: { by: owner.by, how: owner.how } } : {}),   // the upgrader becomes (or is) its owner (translateV1World claim)
+    ...(watch.length ? { watching: watch } : {}),   // main let them watch a closed world on their own grant: refused (watchGrants)
+    refused: deferred.length ? deferredRefusal(deferred, `"${world}"`) : watchRefusal(watch, `"${world}"`),
+  };
+  return { report, hash: sha256(JSON.stringify(report)) };
+}
+/** A vehicle hull's measured box (model frame) from this host's catalogue, or null: the translator sets main's minY/maxY walls off by it. */
+const hullBox = (lib: unknown) => (typeof lib === "string" ? ENGINE_CATALOGUE.get(lib)?.box ?? null : null);
+/** Measure the models of every thing a v1 world gives a vehicle, so the report and the translation read the same boxes (warm before either). */
+export async function warmHulls(srcDir: string) {
+  const { old } = readOld(fs.readFileSync(path.join(srcDir, "log.jsonl")));
+  const veh = new Set(old.filter((e: Any) => e?.verb === "comp" && e.args?.type === "vehicle").map((e: Any) => String(e.args.id)));
+  await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
+  await warmLamps(old.filter((e: Any) => e?.verb === "spawn").map((e: Any) => e.args?.lib));   // main's inferred lamps (lamps.ts), measured once too
+}
+/** The dry run's translation (ids minted by nothing, this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
+function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, content: (p: string) => string | null = hostContent) {
+  const worlds = path.dirname(path.resolve(srcDir));
+  const m = identityMapper(old, directoryFor(worlds), { mint: false, known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  return { m, r: translateOld(old, world, { who: m.who, content }) };
+}
+/** Every translation of a v1 log here, dry or applied: one set of options (fold build, namespace, hull boxes), so the digest can't drift from the write. */
+const translateOld = (old: Any[], world: string, opts: Any) => translate(old, { foldBuild: v1FoldBuild(), namespace: world, boxOf: hullBox, lampsOf, ...opts });
+export function reportV1World(srcDir: string, { name, content, claim }: { name?: string; content?: (p: string) => string | null; claim?: boolean | { account: string; name: string } } = {}) {
+  const src = path.join(srcDir, "log.jsonl");
+  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
+  const srcBytes = fs.readFileSync(src);
+  const { old, unparsed } = readOld(srcBytes);
+  const world = name ?? path.basename(srcDir);
+  // the pure translation (no directory, no custody key: the conformance key, no nonce), with the real run's identity
+  // mapping minting nothing and its model hashes (this host's bytes, recording nothing): the same stats the real one has
+  const owner = typeof claim === "object" ? ownerClaimOf(srcDir, claim) : null;
+  const { m, r } = dryTranslation(old, srcDir, world, owner, content);
+  const people = peopleOf(world, r, m.describe);
+  return reportOf(srcBytes, world, unparsed, deferredFeatures(old), r, r.out.length, people, claims(claim, people), owner, bansOf(world, r, m.describe), outputOf(r), watchOf(old));
+}
+
+/** Translate a v1 world's log (srcDir/log.jsonl, never written: R9) into a NEW v4 world in destDir, with tier 0 of its
+ *  genesis EMPTY: a translation names no founder (NO_FOUNDER), and a `founderKey` handed here is refused. `name`: the world's name, when destDir's own name isn't it (an in-place translation writes into a temporary sibling
+ *  first: world.ts translate <world>); the world's own inventions are namespaced by it. `deferIdentities`: don't write the
+ *  planned identities to the shared directory; return them (`planned`) for the caller to write once the world is really
+ *  in place (an in-place translation writes into a temporary sibling that may still be thrown away: review of PR #260,
+ *  import-v1/world.ts:86 — a failed attempt left its minted identities behind, and every retry minted more). */
+export function translateV1World(srcDir: string, destDir: string, { founderKey, name, deferIdentities = false, approval, claim }: { founderKey?: unknown; name?: string; deferIdentities?: boolean; approval?: Approval; claim?: { account: string; name: string } } = {}) {
+  if (founderKey !== undefined) throw new Error(`a translation takes no founder key: ${NO_FOUNDER}. Nothing written`);
+  const src = path.join(srcDir, "log.jsonl");
+  if (!fs.existsSync(src)) throw new Error(`${src}: no v1 log`);
+  if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) throw new Error(`${destDir} already holds a world`);
+  const srcBytes = fs.readFileSync(src);
+  const world = name ?? path.basename(destDir);
+  const { old, unparsed } = readOld(srcBytes);
+  // features v4 doesn't carry yet are never dropped quietly (DEFERRED): the log is refused, naming each use
+  const deferred = deferredFeatures(old);
+  if (deferred.length) throw new Error(deferredRefusal(deferred, `"${world}"`)!);
+  const watch = watchOf(old); if (watch.length) throw new Error(watchRefusal(watch, `"${world}"`)!);   // never silently withdrawn (watchGrants)
+  // the approval is checked before anything is translated: its countersignature here, its report hash after the run
+  if (approval) { const bad = approvalProblem(world, approval);
+    if (bad) throw new Error(`the approval is refused: ${bad}. Nothing written`); }
+  // the bytes this translation is OF: an in-place translation checks the old log still holds exactly these before it swaps
+  // (world.ts translateInPlace; review of PR #260, world.ts:99 — a server still writing to it would lose those edits)
+  const source = { size: srcBytes.length, sha256: crypto.createHash("sha256").update(srcBytes).digest("hex"), unparsedLines: unparsed };
+  // A dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) gets its outcomes from her sim: translate-v1@11 runs it
+  // beside the v1 fold and writes each rest as a plain change by `sim` (no launch, no digest: nothing asks a reader to fly
+  // her engine), and below, the sealed text is read by the live host's sim layer before anything is written. (Until 2026-10-08 such a log was
+  // refused here: the importer compared only against the instant fold and left every punted thing where it started.)
+  // the sequencer key is this server's (the custody file every world in this worlds dir shares, server/custody.ts)
+  // identities (round-2 review R1): every v1 person becomes an opaque id in the authority directory; an account seen in the
+  // log (a role's sub, an agent's reserved name) keeps the id it already wears here. Planned in memory, written to the
+  // directory only after the log is — and, translating in place (deferIdentities), only once the swap has succeeded
+  // (world.ts): a failed translation leaves no identities behind.
+  const dir = directoryFor(path.dirname(destDir));
+  const srcWorlds = path.dirname(path.resolve(srcDir));
+  const owner = ownerClaimOf(srcDir, claim);   // the upgrader recognised as its owner: bound to that owner here (planned, so a rollback forgets it)
+  const { who, planned, idOfName, describe } = identityMapper(old, dir, { known: mainKnowledge(srcWorlds, { self: path.basename(path.resolve(srcDir)) }), owner });
+  const cust = custodyAt(custodyFileIn(path.dirname(destDir)));
+  // a model's bytes (R 10-17: the path is the reference; this is model-hash beside it): the original bytes on this host, hashed;
+  // recorded so this server answers /eido/sha256/<hex> for them
+  const addressed = new Map<string, string>();
+  const content = (p: string) => { const h = contentAddressOf(p); if (!h) return null; addressed.set(h, p); if (!storeNameMatches(p)) renamedBlobs.push(p); return `sha256:${h}`; };
+  const renamedBlobs: string[] = [];   // store blobs whose bytes no longer hash to their name: hashed by what's here
+  // the approval (the operator's countersignature; no owner attested), bound to the dry-run report's hash, rides in the
+  // world's own log right after the system's repair-shapes act, written by translate itself so every later cause counts it:
+  // provenance a reader can check against `reportV1World` of log.original.jsonl. The fold never reads acts (PROTOCOL §1), so
+  // this changes no state; a translation nothing approved carries none (the pure callers: sweep, oracle)
+  const approved = approval ? { report: approval.report, approval: { over: approvalText(world, approval.report), owner: null, operator: { key: approval.operator.key, sig: approval.operator.sig }, noOwner: NO_OWNER } } : undefined;
+  const r = translateOld(old, world, { key: cust.sequencer(), operator: cust.operator(), nonce: crypto.randomBytes(16).toString("base64url"), who, content, ...(approved ? { approved } : {}) });
+  if (r.stats.divergences) throw new Error(`translation diverged ${r.stats.divergences}× (first ${JSON.stringify(r.stats.firstDivergence)}): nothing written`);
+  // the approval is of the report of THESE bytes, translated as this run translated them (the dry run's numbers are this run's)
+  const people = peopleOf(world, r, describe), claiming = claims(claim, people);
+  if (claim && !ACCOUNT_SHAPE.test(claim.account)) throw new Error(`the claim's account "${String(claim.account).slice(0, 40)}" isn't an account here. Nothing written`);
+  if (approval) { const output = outputOf(dryTranslation(old, srcDir, world, owner).r);   // the dry run's own translation: its output digest
+    const now = reportOf(srcBytes, world, unparsed, deferred, r, r.out.length - 1, people, claiming, owner, bansOf(world, r, describe), output).hash;
+    if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
+  // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
+  const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
+  // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
+  const back = fold(readLog(text));
+  const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
+  if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);
+  // and it carries no account subject anywhere (PROTOCOL §9.2; translate-v1 @16): the translator drops or maps every one whose
+  // shape it knows, and a log that still holds one, from a shape it missed, is refused here rather than written for good
+  { const acct = accountIn(readLog(text)); if (acct) throw new Error(`the translated log would carry an account subject at seq ${acct.seq}: ${acct.path} (PROTOCOL §9.2: no account subjects in values): nothing written`); }
+  // a physics-era world (translate-v1@11): her sim's outcomes are plain logged writes, so nothing in the text may ask a
+  // reader to fly an engine (no launch, no digest), and the live host's sim layer (livehost.ts: no catalogue of its own)
+  // must read the whole history without one disagreement
+  let sim: Any = null;
+  if (r.stats.launches !== undefined) {
+    const lines = readLog(text); const end = lines.reduce((m: number, e: Any) => (Number.isFinite(e?.ts) && e.ts > m ? e.ts : m), 0);
+    const sf = simFold(lines, end, { models: {} });
+    const flown = lines.filter((e: Any) => e?.kind === "sim").length;
+    if (flown || sf.checks.disagree.length) throw new Error(`the translated world asks a reader to fly (${flown} sim entries) or its sim layer disagrees (${JSON.stringify(sf.checks.disagree.slice(0, 3))}): nothing written`);
+    sim = { launches: r.stats.launches, rests: r.stats.rests, agree: sf.checks.agree, engine: back.entities?.["@world"]?.c?.["physics-engine"] ?? null };
+  }
+  const madeDir = !fs.existsSync(destDir);
+  fs.mkdirSync(destDir, { recursive: true });
+  const tmp = path.join(destDir, "world.jsonl.tmp");
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, path.join(destDir, "world.jsonl"));
+  // from here a failure puts destDir back as it found it (a file this call made is removed, one it changed gets its bytes
+  // back), so a rerun isn't refused as "already holds a world"; the shared directory is written last, once nothing can fail
+  const touched: Touched = [{ file: path.join(destDir, "world.jsonl"), before: null }];
+  try {
+    // lead's ruling 10-18: a LOAD never writes, so the translation runs the maintenance command on its own output here: the
+    // v1 sockets maps become socket children (lift-sockets, the system's act with by: "translate"); the renames and the shape
+    // repair are already in the projection and write nothing. A translated world therefore needs no step when it is served.
+    // the derived particle effects (translate-v1 particlesOf): blobs of the world, by their content address, as an upload stores them
+    for (const [h, doc] of r.effects ?? []) { const f = path.join(destDir, "blobs", `${h.replace(/[^a-z0-9]/g, "-")}.json`), b = jcs(doc);
+      if (`sha256:${sha256(b)}` !== h) throw new Error(`a derived particle effect doesn't hash to its address ${h}`);
+      if (!fs.existsSync(f)) { touched.push({ file: f, before: null }); putBlobFile(f, b, h); } }
+    const live = openLive(destDir, world, { catalogue: ENGINE_CATALOGUE, scripts: null });
+    for (const [h, doc] of r.effects ?? []) if (JSON.stringify(live.getBlob(h)) !== JSON.stringify(JSON.parse(jcs(doc)))) throw new Error(`the stored particle effect ${h} doesn't read back as written`);
+    const m: Any = maintain(live, { by: "translate" });
+    if (m.refused) throw new Error(`the translated world could not be lifted: ${m.refused.code}: ${m.refused.reason}`);
+    const maintenance = { lifted: m.steps.lift.made.length, liftFailed: m.steps.lift.failed, renamed: m.steps.rename.renamed.length, repaired: m.repaired.length, entries: live.entries.length };
+    if (maintenance.liftFailed.length) throw new Error(`the translated world's seats could not all be lifted: ${JSON.stringify(maintenance.liftFailed).slice(0, 300)}`);
+    // v1 bans are the moderator's record in v4 (the authority reads bans only from world.mod.jsonl): file each one there, or a
+    // translated world quietly unbans everyone (component review, world-settings #3)
+    const banned = Object.entries<Any>(back.entities?.["@world"]?.c ?? {}).filter(([k]) => k.startsWith("imported-bans:"));
+    if (banned.length) { const modFile = path.join(destDir, "world.mod.jsonl"); touched.push({ file: modFile, before: fs.existsSync(modFile) ? fs.readFileSync(modFile) : null }); const ml = modLogAt(modFile);
+      for (const [k, v] of banned) ml.appendMod({ ts: Number.isInteger(v?.ts) ? v.ts : Date.now(), actor: "system", verb: "ban", who: k.slice("imported-bans:".length), ...(v?.reason ? { reason: String(v.reason) } : {}), ...(Number.isSafeInteger(v?.until) ? { until: v.until } : {}), translated: true }); }
+    // where each person last stood: the old world remembered it by display name; the server remembers it by identity (a
+    // name is anyone's to wear), so each name this log knows as one person carries over under that person's id
+    const places = carryPoses(srcDir, destDir, idOfName, touched);
+    // the model index is a cache of library bytes (what is recorded stays true); the identities go in last
+    // an ownerless world's upgrader becomes its owner (R 10-28): their identity here (or a new one), set owner as an operator
+    // repair by them; builder gains generate, so everyone else keeps main's ownerless rights (mainRights) once roles.js's cap lifts
+    let claimed: Any = null;
+    if (claiming) { const acct = claim!.account;
+      let id = dir.idOfSub(acct) ?? Object.entries(planned).find(([, e]) => e.subs.includes(acct))?.[0] ?? null;
+      if (!id) { id = mintId(); planned[id] = { name: String(claim!.name || "someone").slice(0, 64), subs: [acct], kind: "account", since: Date.now() }; }
+      // operatorRepair: the first owner's builder keeps generate (roles.js firstOwnerRoleDefs)
+      const x: Any = operatorRepair(live, id!, "set", { id: "@world", component: `roles:${id}`, value: { role: "owner" } });
+      if (!x?.ok) throw new Error(`the claim was refused: ${x?.refused?.code}: ${x?.refused?.reason}`);
+      claimed = { id, name: planned[id]?.name ?? dir.nameOf(id) ?? "someone", account: acct.split(":").slice(0, 2).join(":") };
+      people.unshift({ name: claimed.name, role: "owner", account: claimed.account, from: "claimed: they upgraded it (it had no owner)", claimed: true }); }
+    for (const [h, p] of addressed) recordEido(h, p);
+    if (!deferIdentities) dir.put(planned);
+    // the approval act (translation-approved, bound to the dry-run report) sits right after the translation's marker, BEFORE the
+    // content it approves; the maintenance acts (lift-sockets by: "translate") come at the tail, derived from that approved content
+    return { source, unparsed, planned, people, claimed, effects: [...(r.effects?.keys() ?? [])], identities: Object.keys(planned).length, renamedBlobs, addressed: [...addressed.keys()], stats: r.stats, entries: live.entries.length, worldId: back.worldId, digest: digest(live.state()), maintenance, ...places, ...(sim ? { sim } : {}) };
+  } catch (x) {
+    const undone: string[] = [];
+    for (const { file, before } of [...touched].reverse()) try { if (before === null) fs.rmSync(file, { force: true }); else fs.writeFileSync(file, before); undone.push(path.basename(file)); } catch { /* named below as not undone */ }
+    try { const b = path.join(destDir, "blobs"); if (fs.existsSync(b) && !fs.readdirSync(b).length) fs.rmdirSync(b); } catch { /* not empty, or gone */ }
+    if (madeDir) try { if (!fs.readdirSync(destDir).length) fs.rmdirSync(destDir); } catch { /* not empty, or gone */ }
+    const left = touched.map((t) => path.basename(t.file)).filter((f) => !undone.includes(f));
+    throw new Error(`${(x as Error)?.message ?? x}. Nothing written (${undone.join(", ")} put back as they were${left.length ? `; NOT put back: ${left.join(", ")}` : ""})`);
+  }
+}
+
+/** The old world's remembered places (poses.json, by display name) under each person's id: {poses: how many carried,
+ *  posesDropped: names this log never knew as one person, posesUnread?: why the file couldn't be read or written}. */
+type Touched = { file: string; before: Buffer | null }[];   // a file this call wrote, and its bytes before (null: it made it)
+function carryPoses(srcDir: string, destDir: string, idOfName: (n: string) => string | undefined, touched: Touched) {
+  const oldPoses = path.join(srcDir, "poses.json");
+  if (!fs.existsSync(oldPoses)) return { poses: 0, posesDropped: 0 };
+  let P: Any;
+  try { P = JSON.parse(fs.readFileSync(oldPoses, "utf8")); } catch (x) { return { poses: 0, posesDropped: 0, posesUnread: `poses.json couldn't be read: ${(x as Error).message}` }; }
+  const out: Record<string, unknown> = {}; let dropped = 0;
+  for (const [n, pose] of Object.entries<Any>(P && typeof P === "object" ? P : {})) { const id = idOfName(n); if (id && pose) out[id] = pose; else dropped++; }
+  const n = Object.keys(out).length;
+  if (!n) return { poses: 0, posesDropped: dropped };
+  const to = path.join(destDir, "poses.json");
+  try { const before = fs.existsSync(to) ? fs.readFileSync(to) : null; fs.writeFileSync(to, JSON.stringify(out)); touched.push({ file: to, before }); } catch (x) { return { poses: 0, posesDropped: dropped, posesUnread: `poses.json couldn't be written: ${(x as Error).message}` }; }
+  return { poses: n, posesDropped: dropped };
+}

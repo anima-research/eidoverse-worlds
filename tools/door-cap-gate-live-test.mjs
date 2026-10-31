@@ -32,10 +32,12 @@
 // land, the shared pieces deserve extraction into one harness module.
 //
 // Run: bun tools/door-cap-gate-live-test.mjs
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { foundWorlds } from "./harness.ts";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 
@@ -57,18 +59,20 @@ const JOIN = "cap-gate-test-door";
 const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 const scratch = mkdtempSync(join(tmpdir(), "capgate-"));
 const tokensPath = join(scratch, "tokens.json");
+// the world exists before the run (joining never founds one)
+foundWorlds(scratch, ["commons"]);
 const statePath = join(scratch, "state.json");
 writeFileSync(tokensPath, JSON.stringify({
   "gate-token": { id: "claude", name: "Claude", world: "commons" },
 }));
 // Repository state must be untouched by a run. Snapshot before, compare after.
-const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
+const REPO_STATE = fileURLToPath(new URL("../mcpl/state.json", import.meta.url));
 const snapState = () => existsSync(REPO_STATE)
   ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs,
       hash: new Bun.CryptoHasher("sha256").update(readFileSync(REPO_STATE)).digest("hex") }
   : { exists: false, mtimeMs: 0, hash: "" };
 const repoStateBefore = snapState();
-const BUN = process.execPath.includes("bun") ? process.execPath : "/home/claude/.bun/bin/bun";
+const BUN = process.execPath.includes("bun") ? process.execPath : "bun";
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = "") => {
@@ -208,7 +212,8 @@ console.log(`sequencer :${SEQ_PORT}, door :${DOOR_PORT}, scratch ${scratch}`);
 // cannot pass vacuously, because the tmp is ALWAYS there at boot).
 writeFileSync(`${statePath}.tmp`, "");
 const seq = child(["server/server.ts"],
-  { PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE });
+  { PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
+    AGENT_TOKENS_PATH: tokensPath });   // the world honours the same enrolments the MCPL door does
 const door = child(["mcpl/net-server.ts"], {
   MCPL_PORT: String(DOOR_PORT), WORLD_URL: `ws://127.0.0.1:${SEQ_PORT}/ws`, WORLD_TOKEN: JOIN,
   MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
@@ -234,15 +239,18 @@ try {
 
   // Ground truth: a raw world-ws observer, embodied, remembering every say,
   // and when each of the door body's typing signals arrived.
-  const seen = [];
+  const seen = [], names = {};
   const typings = [];
   obs = new WebSocket(`ws://127.0.0.1:${SEQ_PORT}/ws`);
   const obsJoined = new Promise((resolve) => {
-    obs.onopen = () => obs.send(JSON.stringify({ type: "join", world: "commons", id: "observer", token: JOIN }));
+    obs.onopen = () => obs.send(JSON.stringify({ type: "join", world: "commons", id: "observer", token: JOIN, replica: true }));
     obs.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       if (m.type === "snapshot") resolve(true);
-      if (m.type === "log" && m.entry?.verb === "say") seen.push({ who: m.entry.actor, text: m.entry.args?.text });
+      // chat is the log stream's say entries; their actors are opaque ids, named by the stream
+      if (m.type === "snapshot") Object.assign(names, m.cut?.names ?? {});
+      if (m.type === "log") { Object.assign(names, m.names ?? {});
+        for (const e of m.entries ?? []) if (e?.kind === "say") seen.push({ who: names[e.actor] ?? e.actor, text: e.body?.text }); }
       if (m.type === "typing" && m.id === "claude") typings.push(Date.now());
     };
   });
@@ -431,7 +439,7 @@ try {
   check("granted: channels/open answers with the channel", !!r.result?.channel, JSON.stringify(r).slice(0, 120));
 
   // ---- phase 3: live mention routing (observer → world → door → host) ------
-  obs.send(JSON.stringify({ type: "verb", verb: "say", args: { text: "hey @claude — live mention check" } }));
+  obs.send(JSON.stringify({ type: "request", id: "obs-say", verb: "say", args: { text: "hey @claude — live mention check" } }));
   const mention = await full.waitFor((m) =>
     m.method === "channels/incoming" &&
     JSON.stringify(m.params ?? {}).includes("live mention check"), 8000);

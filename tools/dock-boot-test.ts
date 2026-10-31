@@ -7,8 +7,9 @@
 // rights arrive with the snapshot, after initDock. Measured in the browser (10-01): a builder who unpinned the wrench
 // found it pinned again after every reload — the snapshot's rights read as a grant. The first rights report is where
 // you START, not a change.
+import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "dock-stubs",
   setup(b) {

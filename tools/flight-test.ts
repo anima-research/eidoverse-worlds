@@ -101,11 +101,8 @@ console.log('\nT2 (partial) -- the polar is honest; no glide_to verb yet');
 
   // T2: fly at the polar's real best-glide speed and confirm the distance
   // matches what glideRange() predicts from the same curve.
-  // R3 bounds turn a flier back at 80 m, and best glide from 30 m is ~388 m --
-  // so a range test inside the default world measures the FENCE, not the
-  // polar. Widen the bounds for this test only: T2 is a claim about the glide
-  // curve, and the fence has its own tests.
-  const openSky = makeConfig({ bounds: { radius: 100000, ceiling: 100000 } });
+  // T2 is a claim about the glide curve, not the fence: no box is passed, so nothing fences it (R3 has the fence's tests).
+  const openSky = makeConfig();
   const alt = 30;
   const predicted = glideRange(openSky, alt);
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: alt, z: 0 },
@@ -518,17 +515,19 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
 console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft');
 {
   const cfg = makeConfig();
+  // the world's @world.bounds is the fence and its top the ceiling (LEGACY-PINS item 3); no bounds, no fence
+  const box = { min: [-110, -10, -110], max: [110, 60, 110] }, ceil = box.max[1];
   const lift = () => 3;   // strong enough to climb through a lid that is not enforced
   for (const phase of ['GLIDE', 'PILOT'] as const) {
     let s = initialState({ phase, pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
     let peak = 0, fired = false;
     for (let i = 0; i < 3000; i++) {
-      s = step(cfg, s, DT, { groundY: flat, lift, input: { bank: 0, pitch: 0, yawRate: 0 } });
+      s = step(cfg, s, DT, { groundY: flat, lift, box, input: { bank: 0, pitch: 0, yawRate: 0 } });
       peak = Math.max(peak, s.pos.y);
       if (s.events.some(e => e.kind === 'reflex.r3_ceiling')) fired = true;
     }
-    check(`${phase} is held at the ceiling (peak ${peak.toFixed(2)} <= ${cfg.bounds.ceiling})`,
-          peak <= cfg.bounds.ceiling + 0.05, `reached ${peak.toFixed(2)}`);
+    check(`${phase} is held at the ceiling (peak ${peak.toFixed(2)} <= ${ceil})`,
+          peak <= ceil + 0.05, `reached ${peak.toFixed(2)}`);
     check(`${phase} publishes the R3 ceiling reflex`, fired);
   }
   // SOFT, not a wall: the climb bleeds out across the margin instead of the
@@ -536,24 +535,34 @@ console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
   const climbs: number[] = [];
   for (let i = 0; i < 1200; i++) {
-    s = step(cfg, s, DT, { groundY: flat, lift });
-    if (s.pos.y > cfg.bounds.ceiling - cfg.bounds.softMargin) climbs.push(s.vel.y);
+    s = step(cfg, s, DT, { groundY: flat, lift, box });
+    if (s.pos.y > ceil - cfg.bounds.softMargin) climbs.push(s.vel.y);
   }
   check('the ceiling is SOFT (climb decays, never snaps to zero)',
         climbs.length > 60 && climbs.some(v => v > 0.01) && Math.min(...climbs) >= -0.01);
 
   // Lateral bounds turn a flier back rather than stopping it.
-  let b = initialState({ phase: 'GLIDE', pos: { x: cfg.bounds.radius - 2, y: 40, z: 0 },
+  let b = initialState({ phase: 'GLIDE', pos: { x: box.max[0] - 2, y: 40, z: 0 },
                          airspeed: 12, yaw: 0 }, cfg);
   let turned = false, maxR = 0;
   for (let i = 0; i < 3000; i++) {
-    b = step(cfg, b, DT, { groundY: flat });
-    maxR = Math.max(maxR, Math.hypot(b.pos.x, b.pos.z));
+    b = step(cfg, b, DT, { groundY: flat, box });
+    maxR = Math.max(maxR, Math.abs(b.pos.x), Math.abs(b.pos.z));
     if (b.events.some(e => e.kind === 'reflex.r3_bounds')) turned = true;
   }
   check('flying at the fence publishes R3 bounds', turned);
-  check(`and is banked back rather than walled (max r ${maxR.toFixed(1)})`,
-        maxR < cfg.bounds.radius + cfg.bounds.softMargin + 2);
+  check(`and is banked back rather than walled (max |x|, |z| ${maxR.toFixed(1)})`,
+        maxR < box.max[0] + cfg.bounds.softMargin + 2);
+  // the fence and the ceiling are the world's, not a stage's: a 10 km box, and none at all
+  const far = (env: any) => { let f = initialState({ phase: 'GLIDE', pos: { x: 150, y: 58, z: 0 }, airspeed: 12, yaw: 0 }, cfg), peak = 0, banked = false;
+    for (let i = 0; i < 1200; i++) { f = step(cfg, f, DT, { groundY: flat, lift, ...env }); peak = Math.max(peak, f.pos.y); if (f.events.some(e => e.kind.startsWith('reflex.r3'))) banked = true; }
+    return { x: +f.pos.x.toFixed(1), peak: +peak.toFixed(1), banked }; };
+  const big = far({ box: { min: [-5000, -10, -5000], max: [5000, 400, 5000] } }), none = far({});
+  check('R3b a 10 km box: 150 m out and climbing past 60 m, nothing banks or caps the flier (main\'s 110 m / 60 m stage fence is gone)',
+        !big.banked && big.x > 160 && big.peak > 61, JSON.stringify(big));
+  check('R3c no @world.bounds: no fence and no ceiling at all', !none.banked && none.x > 160 && none.peak > 61, JSON.stringify(none));
+
+
 
   // A LIMP body is NOT steered: the leaf must be free to land where it falls.
   let l = initialState({ phase: 'GLIDE', pos: { x: 0, y: 30, z: 0 }, airspeed: 11 }, cfg);
@@ -679,7 +688,7 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
         !resolveFlight(withRights({ role: 'owner', gen: true, fly: false }),
                        { identity: 'm', avatar: av }).enabled);
   check('an explicit world grant DOES -- and only then',
-        resolveFlight(withRights({ role: 'visitor', gen: false, fly: true }),
+        resolveFlight(withRights({ role: 'member', gen: false, fly: true }),
                       { identity: 'm', avatar: av }).enabled);
   // Permission is necessary, not sufficient: a granted identity in a body that
   // cannot fly is still refused, and for the OTHER reason.
@@ -693,9 +702,11 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   const granted = { role: 'owner', fly: true };
   check('no rights says they have not arrived, and what to do if they never do',
         /haven't arrived/.test(reasonOf(null)) && /ask whoever runs it/.test(reasonOf(null)), reasonOf(null));
-  check('no grant names the grant verb and that the owner sends it, to themselves too',
-        /its owner grants it, to themselves too/.test(reasonOf({ role: 'owner', fly: false })) &&
-        /grant \{id: <your id>, fly: true\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
+  // main #245 named a `grant {fly}` verb; on this branch flight is a role's fly permission (server rightsFor), so the
+  // reason names who gives it and the set that does
+  check('no grant names who gives flight and the roles set that does it',
+        /a role's fly permission, which the world's owner/.test(reasonOf({ role: 'owner', fly: false })) &&
+        /set \{id: "@world", component: "roles:<your id>", value: \{role: <your role>, can: \{fly: true\}\}\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
   check('a wingless body is told it has no wing bones', /no wing bones/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
   const oneChain = { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] };
   check('four wing bones in one chain are counted as such, not called too few',
@@ -738,14 +749,16 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   // mcpl/tools.ts (TEL0S_NOTES §24r — one table, one dispatcher, a load-time
   // advertise⇔handle assertion); net-server.ts is a pure transport.
   const ns = readFileSync('mcpl/tools.ts', 'utf8');
-  // B4: DOWN is involuntary; a pilot must not be able to cry wolf. Naming a
-  // tool "REHEARSAL ONLY" in its description did not stop it being callable.
-  check('rehearsal is env-gated and DEFAULT OFF',
-        /REHEARSAL_ENABLED = process\.env\.EIDO_FLIGHT_REHEARSAL === "1"/.test(ns));
-  check('...filtered out of tools/list when off',
-        /REHEARSAL_ENABLED \|\| !REHEARSAL_TOOLS\.has\(t\.name\)/.test(ns));
-  check('...AND refused at dispatch, not merely hidden',
-        /if \(!REHEARSAL_ENABLED\) return fail\(noSuchTool\(name\)\)/.test(ns));
+  // B4: DOWN is involuntary; a pilot must not be able to cry wolf. The rehearsal
+  // hooks were tools behind an env gate; since the surface fold (10-14) they are
+  // no tool at all: a bench calls the agent's trusted seam directly (as this
+  // file does), and the tool table never names it.
+  check('no rehearsal tool is declared',
+        !/name: "rehearse_/.test(ns));
+  check('...and the tool table never calls the trusted seam',
+        !/ag\.flightBody(Down|Recovered)\(/.test(ns));
+  check('...the old names are refused with where they went, not aliased',
+        /rehearse_down: "no tool/.test(ns));
 
   // B5: infrastructure must not speak in the resident's voice.
   const ag = readFileSync('mcpl/agent.ts', 'utf8');
@@ -763,8 +776,8 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   // B7: the perch economy is not advertised by anything that cannot perform it.
   check('flight_status does not advertise a perch refill',
         !/on a perch\)/.test(ag));
-  check('climb_to does not promise perches either',
-        !/or on a perch \(2\/s\)/.test(ns) && /perches are NOT implemented/i.test(ns));
+  check('the fly mode (climb) does not promise perches either',
+        !/or on a perch \(2\/s\)/.test(ns) && /refilled only on the ground/i.test(ns));
 }
 
 // ------------------------------------------------------- T6: the vigil posture
@@ -934,8 +947,11 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //    have repeat=false, which is why this reproduced only for a person.
   const toggles = /bus\.on\('key',[\s\S]*?\n\}\);/.exec(ctl)?.[0] ?? '';
   check('the key toggles ignore autorepeat (a held F is one take-off)',
+        // the listener dispatches from the BODY_KEYS table (declared after it), so: the guard comes before the dispatch,
+        // and the table is where F lives
         /if \(e\.repeat\) return;/.test(toggles) &&
-        toggles.indexOf('e.repeat') < toggles.indexOf('KeyF'));
+        toggles.indexOf('e.repeat') < toggles.indexOf('BODY_KEYS.find') &&
+        /const BODY_KEYS = \[[\s\S]*?code: 'KeyF'/.test(ctl));
   // ...and the guard is on the LISTENER, not the emit: build.js binds R/F and
   // the arrows to nudge and raise, where holding the key is the interaction.
   check('but the key BUS still carries repeats (build.js nudges need them)',
@@ -1071,20 +1087,16 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
   // agent. The browser had the SAME hole and worse -- applyGrantState() merged
   // grants by hand and was exported and called by nothing, so the "live grant"
-  // fix was dead code that read like a fix. Both sides now recompute from the
-  // folded roles with the one function the sequencer answers with.
+  // fix was dead code that read like a fix. Now (the protocol) neither side
+  // computes rights at all: the server's `your-rights` answer, re-sent whenever
+  // a role changes, is the whole truth (server.ts rightsFor reads the door's
+  // roles record).
   const stt = readFileSync('client/lib/state.js', 'utf8');
-  check('the browser recomputes rights on a live grant entry',
-        /entry\?\.verb === 'grant'/.test(stt) && /rightsIn\(state\.st/.test(stt));
-  check('...with the SAME rule as the sequencer, not a second one',
-        /from '\.\.\/\.\.\/shared\/rightsfold\.js'/.test(stt) &&
-        /rightsIn/.test(readFileSync('server/rights.ts', 'utf8')));
+  check('the browser computes no rights of its own (no grant fold, no second rule)',
+        !/verb === 'grant'/.test(stt) && !/rightsIn\(/.test(stt) && !/rightsfold/.test(stt));
   check('...and the dead hand-merge is gone',
         !/net\.myRights = \{ \.\.\.net\.myRights, \.\.\.worldRoles/.test(
           readFileSync('client/lib/world.js', 'utf8')));
-  // An admin's grant comes from the environment, which the fold cannot see.
-  check('a recompute does not strip WORLD_ADMIN flight',
-        /admin \? cur\.fly : live\.fly/.test(stt));
   // And a withdrawal reaches a body that is ALREADY up: checking only at the
   // next action lets a revoked pilot soar indefinitely by touching nothing.
   check('a revoked grant grounds a body already in the air',
@@ -1247,37 +1259,12 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
 }
 
 
-// LIVE RIGHTS: the sequencer sends personalized folded answers after grants.
-// This is the general path that makes wildcard and durable-sub precedence live.
+// LIVE RIGHTS: the sequencer sends each client its effective rights (`your-rights`) whenever a role changes
+// (server.ts rightsFor over the door's roles record; that the answer reaches a client after a role write through the
+// door is tools/protocol/server-check.ts S1). Here: the agent and the browser consume that answer, and a midair withdrawal
+// hands the agent to the leaf.
 {
-  const { emptyState, foldEntry } = await import('../shared/fold.js');
-  const { runVerb } = await import('../server/verbs.ts');
-  const st: any = emptyState();
-  st.roles.owner = { role: 'owner' };
-  st.roles['*'] = { role: 'builder', fly: true };
-  let seq = 0;
-  const ownerMsgs: any[] = [], pilotMsgs: any[] = [];
-  const w: any = {
-    name: 'rights-bench', state: st, clients: new Set(), leases: new Map(),
-    bhv: { sync() {}, onEntry() {} },
-    append(actor: string, verb: string, args: any) {
-      const e = { seq: ++seq, ts: Date.now(), actor, verb, args };
-      foldEntry(st, e); return e;
-    },
-    // rimward's runVerb commits through the entry bus (commit = append +
-    // publish, TEL0S_NOTES §24); a bench world answers both the same way
-    commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
-    broadcast() {}, debug() {},
-  };
-  const client = (id: string, out: any[]) => ({ id, spectator: false, world: w, lastPose: null,
-    ws: { send(x: string) { out.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 });
-  const owner: any = client('owner', ownerMsgs);
-  const pilot: any = client('pilot', pilotMsgs);
-  w.clients.add(owner); w.clients.add(pilot);
-  runVerb({ w, c: owner, now: Date.now(), expel() {} }, 'grant', { id: '*', fly: false });
-  const live = pilotMsgs.find(m => m.type === 'your-rights');
-  check('wildcard revocation emits personalized effective rights', live?.rights?.fly === false, JSON.stringify(live));
-  check('effective-rights message is bound to the grant cause', live?.causeSeq === 1, JSON.stringify(live));
+  const live = { type: 'your-rights', rights: { role: 'builder', gen: false, fly: false } };
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'pilot', world: 'rights-bench' });
   ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
@@ -1285,21 +1272,27 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
     'L_Wing_Lower', 'R_Wing_Lower'];
   ag.myRights = { role: 'builder', gen: false, fly: true };
   ag.flight = initialState({ phase: 'PILOT', pos: { x: 0, y: 11.3, z: 0 }, wings: 'OPEN' }, makeConfig());
-  if (live?.rights && typeof ag.acceptEffectiveRights === 'function') ag.acceptEffectiveRights(live.rights, 'world');
-  check('headless consumes effective rights and refuses the next action', Boolean(live?.rights) && !ag.flightAllowed().ok);
-  check('midair revocation hands the agent to the leaf', Boolean(live?.rights) && ag.flight.phase === 'LEAF', ag.flight.phase);
+  check('with fly granted, the agent may fly', ag.flightAllowed().ok);
+  ag.acceptEffectiveRights(live.rights, 'world');
+  check('headless consumes effective rights and refuses the next action', !ag.flightAllowed().ok);
+  check('midair revocation hands the agent to the leaf', ag.flight.phase === 'LEAF', ag.flight.phase);
+  const agSrc = readFileSync('mcpl/agent.ts', 'utf8');
+  check("the agent's `your-rights` case installs the server's answer",
+        /case "your-rights":[\s\S]{0,400}this\.acceptEffectiveRights\(msg\.rights/.test(agSrc));
   const netSrc = readFileSync('client/lib/net.js', 'utf8');
   check('browser consumes the server-folded effective-rights message',
         /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
 }
 
 // RED-FIRST REGRESSION: infrastructure flight events must never author resident chat.
-// On ccb065c this deliberately fails: flightEvent() calls verb("say", ...).
+// On ccb065c this deliberately fails: flightEvent() called verb("say", ...) (today it would be door/say).
 {
   const { WorldAgent } = await import('../mcpl/agent.ts');
   const ag: any = new WorldAgent({ name: 'pilot', world: 'bench' });
   let authored = 0;
-  ag.verb = () => { authored++; };
+  // every way an agent writes: the door (requests, say included) and its say helper
+  ag.door = async () => { authored++; return { ok: true }; };
+  ag.say = async () => { authored++; return { ok: true }; };
   ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
   check('flight telemetry never authors resident say', authored === 0, `authored=${authored}`);
 }

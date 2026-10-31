@@ -35,7 +35,7 @@ writeFileSync(join(lib, "fixtures/idle.vrma"), postureFixture("idle"));
 writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fixtures/idle.vrma" }));
 writeFileSync(join(lib, "fixtures/body.vrm"), fixture());
 const AVATAR = "fixtures/body.vrm", WORLD = "body-scale", OWNER = "scale-owner";
-const h = await scratchSequencer("body-scale", { serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9560 });
+const h = await scratchSequencer("body-scale", { worlds: [WORLD], serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9560 });
 const WS = h.BASE.replace("http", "ws") + "/ws";
 
 const agents: any[] = [];
@@ -64,7 +64,7 @@ const ownerWs = new WebSocket(WS);
 await new Promise<void>((res, rej) => {
   const t = setTimeout(() => rej(new Error("owner join timed out")), 5000);
   ownerWs.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "snapshot") { clearTimeout(t); res(); } };
-  ownerWs.onopen = () => ownerWs.send(JSON.stringify({ type: "join", world: WORLD, id: OWNER, avatar: AVATAR }));
+  ownerWs.onopen = () => ownerWs.send(JSON.stringify({ type: "join", world: WORLD, id: OWNER, avatar: AVATAR, replica: true }));
 });
 /** client/lib/net.js sendPose's packet, field for field; body fields ONLY through the real bodyWire, unless `raw`
  *  overrides them (a hostile/garbled sender — the fence and the readers must hold anyway). */
@@ -91,7 +91,7 @@ async function ownerAt(peer: any, scale: unknown, wireScale: number | undefined,
 
 try {
   const peer = await agent("scale-peer");
-  await call(peer, "walk_to", { x: 1.6, z: 4 });
+  await call(peer, "move", { to: [1.6, 0, 4] });
   await ownerAt(peer, 1, undefined);
 
   // ---- the wire at default: absence, byte for byte ----
