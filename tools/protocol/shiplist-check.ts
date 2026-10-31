@@ -50,7 +50,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["…the value it would write", "shared/protocol/authority/checks.js", "else would(comp, field === undefined ? h.value : { ...c[comp], [field]: h.value });", "", ["R2"]],
   ["…a field needs its component", "shared/protocol/authority/checks.js", "if (field !== undefined && !isObj(c[comp])) refuse(\"no-target\"", "if (false) refuse(\"no-target\"", ["R3"]],
   ["…a toggle flips true/false", "shared/protocol/authority/checks.js", "if (h.kind === \"toggle\" && field !== undefined && ftype && ftype !== \"bool\" && ftype !== \"any\") refuse(", "if (false) refuse(", ["R4"]],
-  ["…an impulse is a reserved kind", "shared/protocol/authority/checks.js", "if (!carry && Object.hasOwn(held, h?.kind)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["R6"]],
+  ["…a push doesn't change a spin", "shared/protocol/authority/use.js", "if (e.c.motion && e.c.motion.type !== \"pendulum\") refuse(\"not-pushable\"", "if (false) refuse(\"not-pushable\"", ["R6"]],
   ["a use with its component gone says so", "shared/protocol/authority/use.js", "if (!(e.c[comp] && typeof e.c[comp] === \"object\" && !Array.isArray(e.c[comp]))) refuse(\"no-handler\"", "if (false) refuse(\"no-handler\"", ["R5"]],
   ["motion: path is a type", "shared/protocol/componentspec.js", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\", \"path\"],", "enums: { type: [\"pendulum\", \"spin\", \"orbit\", \"oscillate\"],", ["M1", "R1"]],
   ["motion: rpm is taught", "shared/protocol/authority/checks.js", "if (\"rpm\" in v) refuse(\"schema\"", "if (false) refuse(\"schema\"", ["M2"]],
@@ -256,10 +256,10 @@ await C("R5", "a use whose component was removed since says so, and writes nothi
   const u = W.call("use", { id: "gate" }, "vic"); const c = W.state().entities.gate.c;
   return [!u.ok && /no openable/.test(u.refused.reason) && !c.openable && !c.door, { u: why(u), comps: Object.keys(c) }];
 });
-await C("R6", "a push (impulse) is refused when written: a reserved kind since the shape audit (10-16), on a spinning thing or any", () => {
+await C("R6", "a push (impulse, open again: Mica 10-31) can be written on a spinning thing, and using it is refused: a push doesn't change a spin", () => {
   const W = world(); W.call("create", { id: "fan", model: "crate", components: { motion: { type: "spin", degPerSec: 30 } }, place: { at: [0, 0] } });
-  const r = W.call("set", { id: "fan", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
-  return [!r.ok && r.refused.code === "reserved", why(r)];
+  const r = W.call("set", { id: "fan", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } }), u = r.ok ? W.call("use", { id: "fan", action: "push" }, "vic") : null;
+  return [r.ok && u?.refused?.code === "not-pushable", { set: why(r), use: u ? why(u) : null }];
 });
 await C("R7", "what was right stays right: a door made with its state and handler in one write, a bell that sets its label, a world's own invented flag", () => {
   const W = world();
