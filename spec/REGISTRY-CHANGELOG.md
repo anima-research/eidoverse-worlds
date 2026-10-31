@@ -376,3 +376,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-30: owner 10-30 ("despaghettify"): water.drag goes; physics-area {kind: speed} on the water's zone is the one way an area changes how fast a body moves, and translate-v1@35 writes main's water.speed as it again. Only test or scratch worlds translated at @31-@34 could carry water.drag (nothing was merged); no compatibility shim
   - water.drag: type number → gone
   - water.drag: its meaning of absence "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)" → gone
+- 2026-10-31: Mica 10-31 (#260 decision row 27): physics-area gains `modes` (walk | swim | fly | climb; absent = all; Unreal's per-movement-mode settings). translate-v1@37 writes modes: ['swim'] for main's water.speed, which slowed only the swim.
+- 2026-10-31: physics-area.modes: new field (Mica 10-31 row 27; walk|swim|fly|climb, absent all)

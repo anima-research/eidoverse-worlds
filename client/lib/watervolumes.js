@@ -125,7 +125,7 @@ export function waterAt(p) { return mediumAt(Array.isArray(p)?p:[p.x,p.y,p.z],vo
 export function levelAt(p, level) { return worldLevelAt(Array.isArray(p)?p:[p.x,p.y,p.z],zonesNow,level,{volumes:volumesNow}); }
 export function waterTime() { return clock.value; }
 /** × a body's own speed at p: a physics-area {kind: speed} (zone.js speedFactorAt, the authority's and the agent's reading) */
-export function speedAt(p) { return speedFactorAt(areasNow,Array.isArray(p)?p:[p.x,p.y,p.z]); }
+export function speedAt(p, mode) { return speedFactorAt(areasNow,Array.isArray(p)?p:[p.x,p.y,p.z],mode); }
 let rebuilds = 0;
 export function waterDebug() { return { waters:waters.length, air:airs.length, enabled:installed, time:clock.value, rebuilds, slots:waterCount.value, under:underLevelNow, background:backgroundOn, dryPocket:dryIdx.value }; }
 // a body's pose: its live object's (a moving carrier draws between records), else the record's (simlayer worldPose)

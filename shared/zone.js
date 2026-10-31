@@ -44,17 +44,19 @@ export function physicsAreasOf(st, { poseOf = (id) => worldPose(st, id) } = {}) 
     const c = st.entities[id]?.c ?? {}, a = c["physics-area"];
     if (id === "@world" || !a || typeof a !== "object" || !c.zone || offChain(st, id)) continue;
     const priority = Number.isInteger(c.zone.priority) ? c.zone.priority : 0, factor = fin(a.factor) && a.factor > 0 ? a.factor : 1;
-    if (c.zone.global === true) { out.push({ id, global: true, priority, kind: a.kind, factor }); continue; }
+    const modes = Array.isArray(a.modes) && a.modes.length ? a.modes : null;
+    if (c.zone.global === true) { out.push({ id, global: true, priority, kind: a.kind, factor, modes }); continue; }
     if (c.zone.shape !== "box" || !v3(c.zone.size)) continue;
     const pose = poseOf(id); if (!pose) continue;
     const scale = v3(pose.scale) ? pose.scale.map(Math.abs) : [1, 1, 1], q = pose.q ?? [0, 0, 0, 1], center = [...pose.pos];
-    out.push({ id, global: false, priority, kind: a.kind, factor, size: c.zone.size.map((x, i) => Math.abs(x) * scale[i]), toLocal: (p) => qRotate(qConj(q), [p[0] - center[0], p[1] - center[1], p[2] - center[2]]) });
+    out.push({ id, global: false, priority, kind: a.kind, factor, modes, size: c.zone.size.map((x, i) => Math.abs(x) * scale[i]), toLocal: (p) => qRotate(qConj(q), [p[0] - center[0], p[1] - center[1], p[2] - center[2]]) });
   }
   return out.sort(cmp);
 }
-/** × a body's own speed at p (physics-area kind speed): the highest-priority speed area holding p decides; none: 1. */
-export function speedFactorAt(areas, p) {
-  for (let i = (areas?.length ?? 0) - 1; i >= 0; i--) { const a = areas[i]; if (a.kind !== "speed") continue;
+/** × a body's own speed at p (physics-area kind speed) in movement `mode` (absent: any): the highest-priority speed area
+ *  holding p that touches that mode decides; none: 1. */
+export function speedFactorAt(areas, p, mode) {
+  for (let i = (areas?.length ?? 0) - 1; i >= 0; i--) { const a = areas[i]; if (a.kind !== "speed" || (mode && a.modes && !a.modes.includes(mode))) continue;
     if (a.global) return a.factor; const l = a.toLocal(p); if (l.every((v, k) => Math.abs(v) <= a.size[k] / 2)) return a.factor; }
   return 1;
 }

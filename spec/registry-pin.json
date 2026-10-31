@@ -2610,7 +2610,8 @@
   "status": "trial",
   "fields": {
    "kind": "string",
-   "factor": "number"
+   "factor": "number",
+   "modes": "array"
   },
   "enums": {
    "kind": [
@@ -2627,11 +2628,13 @@
    "kind"
   ],
   "absentMeans": {
-   "factor": "1: no change"
+   "factor": "1: no change",
+   "modes": "every mode"
   },
   "docs": {
    "kind": "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
-   "factor": "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows"
+   "factor": "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows",
+   "modes": "which movement modes it touches: walk | swim | fly | climb (Unreal's per-mode settings); absent: all. Main's slow water translates to ['swim']"
   },
   "units": {
    "factor": "×"

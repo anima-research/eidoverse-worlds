@@ -495,7 +495,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   sun/fill/world dropped, the registry's seven defaults written; `terrain`
   layer colours `"#rrggbb"` → ints, the sim's defaults written,
   `terrain.water` → `water`; `grass` in the flora spelling (a preset keeps
-  its name). The translator (`translate-v1@36`, §14) writes its
+  its name). The translator (`translate-v1@37`, §14) writes its
   projection through the same functions, so a translated world needs no
   repair, and the old-world oracle mirrors the repair with them; the sweep's
   declared projection and the oracle's core check are written independently,
@@ -1491,7 +1491,7 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   'drive', input: {move: 'drive'}, exit}`; `minY` and `maxY` are two hidden walls only that vehicle meets (`collider {blocks:
   ['hulls'], layer: [its own band layer]}`, its thing `collider {mask: [1, that layer]}`: another hull passes) set off by the hull's measured box, so its origin keeps main's band (unmeasured: at `minY`/`maxY`, the
   whole hull in it); `probes` ride `imported:vehicle`, listed under `unmapped` (collision is the hull's own collider). A
-  water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4}` on its zone (2.4 m/s: the volume
+  water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` on its zone (2.4 m/s: the volume
   stroke here, shared/water.js; it scales walking and wading there too); within 5% of 2.4 none is written. Driving is not
   bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume

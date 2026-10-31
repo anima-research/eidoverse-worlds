@@ -1703,7 +1703,7 @@ export class WorldAgent {
   foldedIds(): string[] { return Object.keys(this.st.entities); }
   /** × my speed at p: a physics-area {kind: speed} (shared/zone.js, the client's and the authority's reading), once per view */
   private areas: { st: unknown; a: any[] } | null = null;
-  speedAt = (p: number[]): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p); };
+  speedAt = (p: number[], mode?: string): number => { if (this.areas?.st !== this.st) this.areas = { st: this.st, a: physicsAreasOf(foldOfView(this.st)) }; return speedFactorAt(this.areas.a, p, mode); };
   /** The world's half of the fold — state.sky / terrain / grass — which
    *  shared/worldentity.js reads as the world entity `@world`. */
   worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {

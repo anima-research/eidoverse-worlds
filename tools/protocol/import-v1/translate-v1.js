@@ -122,7 +122,9 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@36";
+export const TRANSLATOR = "eidoverse/translate-v1@37";
+// @37 (Mica 10-31, decision row 27): main's water.speed slowed only the swim; its physics-area now carries modes: ['swim'], so a
+// walk or a wade on the pond floor keeps its own speed. Output differs there.
 // @36 (#260, Stella follow-up): a person's own role none in an owned world is also an imported ban (its until kept), filed in the
 // moderator log, so the door keeps them out as main did; @35 left them a newcomer with a body. Output differs there.
 // @35 (owner 10-30, "despaghettify"): main's water.speed is physics-area {kind: speed, factor: speed / 2.4} on the water's zone again,
@@ -232,7 +234,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@36";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@37";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -442,7 +444,7 @@ export function waterOfOld(d) {
   const water = { ...rest };
   // main's stroke in the volume, as × the one a body swims at here (waterParams' default): a physics-area (@35)
   const f = speed === undefined ? 1 : clampN(waterParams({ speed }).speed / waterParams({}).speed, 0.05, 10, 1);
-  const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f } : null;
+  const area = speed !== undefined && Math.abs(f - 1) > SPEED_NEAR ? { kind: "speed", factor: f, modes: ["swim"] } : null;   // main slowed the stroke only (@37)
   if (Array.isArray(absorption)) { water.attenuationColor = vec3(absorption, [0.16, 0.055, 0.025]).map((x) => Math.exp(-Math.max(0, x))); water.attenuationDistance = 1; }
   if (Array.isArray(scatter)) water.scatterColor = vec3(scatter, [0.015, 0.12, 0.18]).map((x) => Math.max(0, x));
   return { center: vec3(center, [0, 0, 0]), zone: { shape: "box", size: vec3(size, [200, 200, 200]).map((x) => Math.max(0.01, Math.min(1e4, Math.abs(x)))) }, water, ...(area ? { area } : {}),

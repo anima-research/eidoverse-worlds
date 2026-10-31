@@ -9,11 +9,11 @@
 //   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is carried as sky.audio
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
-//   F51     @35: main's slow water is physics-area {kind: speed} on the water's zone; no drag field anywhere
+//   F51     @37: main's slow water is physics-area {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere
 //   F52-53  @31: main's 78 m stage a bounds box; its inferred lamps light children
 //   DT8     @34 (decision table row 8): main's ambient motes' count, range and colour in a derived dust document
 //   DT9     @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0]
-//   V5      the translator is @36, and a report reviewed under @35 is refused, naming the earlier translator
+//   V5      the translator is @37, and a report reviewed under @36 is refused, naming the earlier translator
 //   V6      the report's output digest: what would be written changed since the dry run (same counts) → refused, re-run the dry run
 //   V7      a vehicle hull this host measures: the CLI's dry run → --approved applies (review delta-260 #1), walls set off by its box
 //   S3-*    SWEEP-3: collide, seatAnchor, ranges, CSS colours, particle scale, pivot on a scaled thing, grass extras; light parity;
@@ -225,9 +225,9 @@ row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib
 row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed } }]]);
   const slow = pond(1.2), near = pond(2.45), kid = (o: any) => Object.values<any>(o.E).find((c) => c.water && c.zone), M = (o: any) => o.r.stats.mapped?.find((m) => m.component === "water");
   const json = JSON.stringify([slow.r.out, near.r.out]);
-  ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5 }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5 })
+  ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
     && kid(near) && kid(near)["physics-area"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
-    "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5} on the water's zone, said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
+    "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
 row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
   const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
   ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),
@@ -257,12 +257,12 @@ row("F53b", () => { const { Document } = require("@gltf-transform/core");   // m
 row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER]).map((e) => JSON.stringify(e)).join("\n") + "\n");
   const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@35" })));`], { cwd: ENGINE, env });
+  const rep = Bun.spawnSync(["bun", "-e", `import { reportV1World } from "./tools/protocol/import-v1/world.ts"; import { sha256 } from "./shared/protocol/hash.js"; const { report } = reportV1World(${JSON.stringify(d)}); console.log("H " + sha256(JSON.stringify({ ...report, translator: "eidoverse/translate-v1@36" })));`], { cwd: ENGINE, env });
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 36 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 36 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@36/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @36; a report reviewed under @35 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 37 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 37 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@37/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @37; a report reviewed under @36 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

@@ -240,7 +240,7 @@ export function floorStep({ y, ground0 = y, level0 = undefined, f, level1 = leve
  *  needs to pick a clip (swim / tread vs walk). Without it (no water law in this world), nothing here changes.
  *  `height` (m) is the body's own stature where the caller has measured it (a short avatar swims sooner); absent, the
  *  mover's body height for its `scale`. It moves only where the water reaches on the body, never the stride.
- *  env.speedAt([x, y, z]) → × the stride where the body is (a physics-area {kind: speed}); absent: 1. */
+ *  env.speedAt([x, y, z], mode) → × the stride where the body is (a physics-area {kind: speed}); absent: 1. */
 export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, gain = 1, cap = Infinity, mode = "walk", height = undefined }, env = {}) {
   const here = [pos[0], pos[1], pos[2]];
   if (mode !== "walk") return { pos: here, moved: 0, blocked: { by: `mode:${mode}` }, stance: null };
@@ -255,7 +255,7 @@ export function stepWalk({ pos, dir, dt, run = false, creep = false, scale = 1, 
   // backwards at the run threshold (review 10-15 #3): below a walk, a fraction of the stroke; walk→run, stroke→hard
   const s = scaleOf(scale), dry = walkSpeed({ run, creep, scale }) * gain;
   const stroke = (q) => (q <= MOVER.walk.speed ? MOVER.swim.speed * (q / MOVER.walk.speed) : MOVER.swim.speed + (MOVER.swim.run - MOVER.swim.speed) * Math.min(1, (q - MOVER.walk.speed) / (MOVER.walk.run - MOVER.walk.speed)));
-  const k = env.speedAt ? areaFactor(env.speedAt(pos)) : 1;   // a physics-area {kind: speed} here (zone.js speedFactorAt)
+  const k = env.speedAt ? areaFactor(env.speedAt(pos, st0?.swimming ? "swim" : "walk")) : 1;   // a physics-area {kind: speed} here (zone.js speedFactorAt)
   const d = Math.min(cap, (st0?.swimming ? stroke(dry / s) * s : dry * (st0?.speedFactor ?? 1)) * k * dt);
   if (!(d > 0)) return { pos: here, moved: 0, blocked: null, stance: st0 };
   const nx = pos[0] + (dir[0] / len) * d, nz = pos[2] + (dir[1] / len) * d;

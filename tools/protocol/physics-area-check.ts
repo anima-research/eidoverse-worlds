@@ -16,12 +16,15 @@ import { labClock, pinned } from "./clock.ts";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const MUTANTS: [string, string, string, string, string[]][] = [
-  ["the walk ignores the area", "mover.js", "const k = env.speedAt ? areaFactor(env.speedAt(pos)) : 1;", "const k = 1;", ["A3", "A5"]],
+  ["the walk ignores the area", "mover.js", "const k = env.speedAt ? areaFactor(env.speedAt(pos, st0?.swimming ? \"swim\" : \"walk\")) : 1;", "const k = 1;", ["A3", "A5"]],
   ["the 3D stroke ignores the area", "mover.js", "* areaFactor(water.factor) *", "*", ["A3"]],
   ["the track never widens", "protocol/authority/bodyverbs.js", "tokensAfter(me.tokens, now - (me.ts ?? now), k)", "tokensAfter(me.tokens, now - (me.ts ?? now))", ["A4", "A5"]],
   ["the track narrows in mud", "mover.js", "k = Math.max(1, areaFactor(factor));", "k = areaFactor(factor);", ["A4"]],
   ["the lowest priority wins", "zone.js", "for (let i = (areas?.length ?? 0) - 1; i >= 0; i--) { const a = areas[i];", "for (let i = 0; i < (areas?.length ?? 0); i++) { const a = areas[i];", ["A2"]],
   ["any zone holds an area", "protocol/authority/checks.js", "if (c[\"physics-area\"] !== undefined && !(c.zone?.shape === \"box\" || c.zone?.global === true)) return", "if (false) return", ["A1"]],
+  ["modes are ignored", "zone.js", "if (a.kind !== \"speed\" || (mode && a.modes && !a.modes.includes(mode))) continue;", "if (a.kind !== \"speed\") continue;", ["A6"]],
+  ["the walk asks no mode", "mover.js", "env.speedAt(pos, st0?.swimming ? \"swim\" : \"walk\")", "env.speedAt(pos)", ["A6"]],
+  ["any modes pass the door", "protocol/authority/checks.js", "if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => AREA_MODES.includes(m)))) return", "if (false) return", ["A7"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// shared/zone.js — a world's", "//  shared/zone.js — a world's", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {
@@ -140,5 +143,21 @@ await C("A5", "the mover and the authority agree: a run's strides in a ×2.5 are
   const span = path.at(-1)[0] + 10;
   return [first.ok && near(span, 20, 1e-6) && inside.every((x) => x.ok) && outside.some((x) => x.refused?.code === "too-fast"),
     { span, inside: inside.filter((x) => !x.ok).map(show).slice(0, 3), outside: outside.filter((x) => !x.ok).length }]; });
+
+await C("A6", "modes: an area with modes ['swim'] slows a swim but not a walk or a wade (main's slow water: Mica 10-31, decision row 27); with no modes it slows every mode", () => {
+  const mk = (modes?: string[]) => Z.physicsAreasOf({ entities: { p: { c: { ...AREA(0.5, { shape: "box", size: [1, 1, 1], global: true }), "physics-area": { kind: "speed", factor: 0.5, ...(modes ? { modes } : {}) } } } } });
+  const swimOnly = mk(["swim"]), all = mk();
+  const at = (A: any) => (p: number[], mode?: string) => Z.speedFactorAt(A, p, mode);
+  const walk = (env: any) => M.stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 0.5 }, env).moved;
+  const pool = (lvl: number) => ({ floorAt: () => 0, waterAt: () => lvl });
+  const r = { dry: [walk({}), walk({ speedAt: at(swimOnly) }), walk({ speedAt: at(all) })], wade: [walk(pool(0.85)), walk({ ...pool(0.85), speedAt: at(swimOnly) })],
+    swim: [walk(pool(3)), walk({ ...pool(3), speedAt: at(swimOnly) })], reader: [at(swimOnly)([0, 0, 0], "swim"), at(swimOnly)([0, 0, 0], "walk"), at(all)([0, 0, 0], "walk")] };
+  return [near(r.dry[1], r.dry[0]) && near(r.dry[2], 0.5 * r.dry[0]) && near(r.wade[1], r.wade[0]) && near(r.swim[1], 0.5 * r.swim[0])
+    && r.reader[0] === 0.5 && r.reader[1] === 1 && r.reader[2] === 0.5, r]; });
+
+await C("A7", "the door: modes is a non-empty list of walk | swim | fly | climb", () => {
+  const s = session(); const mk = (id: string, modes: any) => s.call("create", { id, components: { ...AREA(2), "physics-area": { kind: "speed", factor: 2, modes } } });
+  const r: any = { ok: mk("a", ["swim"]), two: mk("b", ["walk", "swim"]), empty: mk("c", []), bad: mk("d", ["dance"]), str: mk("e", "swim") };
+  return [r.ok.ok && r.two.ok && !r.empty.ok && !r.bad.ok && !r.str.ok, Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
 console.log(`[physics-area-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

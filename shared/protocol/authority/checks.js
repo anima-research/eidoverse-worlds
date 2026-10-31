@@ -23,6 +23,7 @@ import { ancestors } from "./math.js";
 import { toggleOf } from "./use.js";
 import { scriptCeiling } from "./scripts.js";
 import { CAPACITY_CEILING } from "./capacity.js";
+const AREA_MODES = ["walk", "swim", "fly", "climb"];   // physics-area.modes (componentspec)
 // the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
 // authority.js binds at load
 const guess = (...a) => UP.guess(...a);
@@ -435,6 +436,8 @@ const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
 export function zoneRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
     // physics-area reads a box zone or a global one (shared/zone.js physicsAreasOf)
+    { const pa = c["physics-area"];
+      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => AREA_MODES.includes(m)))) return { code: "shape", reason: `${id}.physics-area.modes: a non-empty list of ${AREA_MODES.join(" | ")}` }; }
     if (c["physics-area"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-area: ${c.zone === undefined ? "a physics-area on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
     const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
     if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
