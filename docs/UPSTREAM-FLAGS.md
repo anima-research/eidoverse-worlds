@@ -199,6 +199,5 @@ The refactor survey program (all items closed; the survey is in git history):
 - shared: `sim.js` (eidosim@0.1.0 — PROTOCOL_v2, deterministic sim over
   stamped intents), `force.js`, def validators (`floradefs`, `avatardefs`,
   `animdefs`, `skydefs`, `structdefs`, `grounddefs`, `uidefs`).
-- Suites that pin source text were retargeted with the moves
-  (whisper-disable, the two ws-switch suites). If you move these files
-  again, those suites say so by name.
+- Suites that pin source text were retargeted with the moves. If you
+  move these files again, any suite that reads them says so by name.
