@@ -1442,6 +1442,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
         + `\n(the world log: ${said}${kinds.size === 2 && kinds.has("act") && kinds.has("say") ? "; kinds: ['change', 'sim'] shows what acts wrote and the physics" : ""}; act {verb: 'history', args: {id}} reads one thing's own acts)`);
   },
   world_debug: async (ag, a, ctx, name) => {
+      // main's names teach, and nothing unknown is silently dropped (Mica 10-31, matrix #10)
+      const WAS: Record<string, string> = { behavior: "script", behaviors: "scripts" }, TAKES = ["limit", "kinds", "script", "scripts"];
+      for (const k of Object.keys(a ?? {})) if (!TAKES.includes(k))
+        return fail(`world_debug has no argument '${k}'${WAS[k] ? `: ${k} is now ${WAS[k]}` : ""} (it takes ${TAKES.join(", ")}) — nothing ran`);
       const r = await ag.worldDebug({
         limit: Math.min(300, Math.max(1, Number(a.limit ?? 30))),
         kinds: Array.isArray(a.kinds) && a.kinds.length ? a.kinds.map(String) : undefined,

@@ -285,6 +285,27 @@ const cases: Case[] = [
   { id: "P4", what: "the folded light tool says where main's keep went: light.important (matrix A5)", async run() {
       const T = await import(TREE + "mcpl/tools.ts"); return { fold: T.TOOL_FOLDS?.light ?? "" }; },
     good: (o) => /keep: true/.test(o.fold) && /important: true/.test(o.fold) },
+  { id: "P5", what: "world_debug: main's behavior / behaviors are refused naming script / scripts, and an unknown argument is refused, not ignored (matrix #10)", async run() {
+      const T = await import(TREE + "mcpl/tools.ts"); let asked = 0;
+      const ag: any = { worldDebug: async () => { asked++; return { events: [] }; } };
+      const t = (r: any) => ({ err: r?.isError === true, text: r?.content?.[0]?.text ?? "" });
+      const old = t(await T.HANDLERS.world_debug(ag, { behaviors: true }, {}, "world_debug")), one = t(await T.HANDLERS.world_debug(ag, { behavior: "door" }, {}, "world_debug"));
+      const typo = t(await T.HANDLERS.world_debug(ag, { kind: ["refused"] }, {}, "world_debug")), fine = t(await T.HANDLERS.world_debug(ag, { scripts: true }, {}, "world_debug"));
+      return { old, one, typo, fine, asked }; },
+    good: (o) => o.old.err && /behaviors is now scripts/.test(o.old.text) && o.one.err && /behavior is now script/.test(o.one.text) && o.typo.err && /no argument 'kind'/.test(o.typo.text) && !o.fine.err && o.asked === 1 },
+  { id: "P6", what: "body_state carries main's posture as a twin of clip (matrix G1a): the summary read of a body playing sit says clip sit AND posture sit", async run() {
+      const B = await import(TREE + "mcpl/body-state.ts"); const r = new B.BodyStateReader("http://127.0.0.1:9");
+      const obs = { who: "ann", avatar: null, self: false, generation: 1, receivedAt: Date.now(), pose: { p: [0, 0, 0], yaw: 0, clip: "sit" } };
+      const o = await r.read("ann", "summary", undefined, () => obs as any); return { clip: o?.clip ?? null, posture: o?.posture ?? null }; },
+    good: (o) => o.clip === "sit" && o.posture === "sit" },
+  { id: "P7", what: "world_history (matrix G2): act + say by default; kinds picks others; before + after is a window read forward from after and cut at before", async run() {
+      const T = await import(TREE + "mcpl/tools.ts"); const asked: any[] = [];
+      const E = [{ seq: 5, kind: "act", verb: "create", by: "ann" }, { seq: 6, kind: "change", by: "ann" }, { seq: 7, kind: "say", by: "bob", text: "hi" }, { seq: 9, kind: "act", verb: "delete", by: "ann" }];
+      const ag: any = { request: async (_v: string, args: any) => { asked.push(args); return { ok: true, entries: E, next: null }; } };
+      const t = async (a: any) => (await T.HANDLERS.world_history(ag, a, {}, "world_history"))?.content?.[0]?.text ?? "";
+      const def = await t({}), ch = await t({ kinds: ["change"] }), win = await t({ after: 4, before: 8 });
+      return { def: [/#5/.test(def), /#6/.test(def), /#7/.test(def)], ch: [/#6/.test(ch), /#5/.test(ch)], win: [/#5/.test(win), /#7/.test(win), /#9/.test(win)], args: asked.map((x) => [x.after ?? null, x.before ?? null]) }; },
+    good: (o) => o.def[0] && !o.def[1] && o.def[2] && o.ch[0] && !o.ch[1] && o.win[0] && o.win[1] && !o.win[2] && JSON.stringify(o.args[2]) === "[4,null]" },
   { id: "P3", what: "the agent's shove trims its target (main's absent()): spaces name nobody; someone not here is refused before anything is sent", async run() {
       const T = await import(TREE + "mcpl/tools.ts"); const sent: any[] = [];
       const ag: any = { joined: true, name: "me", people: new Map([["ann", { pose: { p: [1, 0, 0] } }]]), pos: { x: 0, z: 0 }, puppet: (to: string) => sent.push(to) };
