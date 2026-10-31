@@ -56,6 +56,13 @@ function buildUse(ctx, a) {
   const offers = actionsOf(ctx.st, a.id);
   // no action named (Commons audit: "doesn't 'undefined'"): the thing's one action, or say what it offers
   // "one action" means one this asker may do: an owner-only lock beside an open-to-all door isn't a choice for a visitor
+  // a translated world: main's behaviour on this thing is carried (@world imported-behavior:<name>, attach) but never run;
+  // say that, not "offers nothing" (decision row 12, R 10-30: main took any event word, and its only listener was the behaviour)
+  if (a.action != null ? !offers.includes(a.action) : !offers.length) {
+    const old = Object.entries(ctx.st.entities["@world"]?.c ?? {}).find(([k, b]) => k.startsWith("imported-behavior:") && b?.attach === a.id);
+    if (old) { const name = old[0].slice("imported-behavior:".length);
+      refuse("no-runtime", `${a.id}${a.action != null ? `'s '${a.action}'` : ""} was handled by main's behaviour '${name}', carried by translation; the authority doesn't run it`, `re-install it as script:${name} and give ${a.id} a reaction that runs it`); }
+  }
   if (a.action == null && !offers.length) refuse("no-action", `${a.id} has nothing to use: it offers no actions`, "inspect shows what a thing offers; a builder gives it reactions, or a seat (a socket child carrying a station)");
   const mine = a.action == null ? offersFor(ctx.st, a.id, ctx.actor).canDo : offers;
   if (a.action == null && mine.length > 1) refuse("no-action", `${a.id} offers ${mine.length} things to do: say which`, `it offers: ${mine.join(", ")} (use {id: '${a.id}', action: '${mine[0]}'})`, { offers: mine });

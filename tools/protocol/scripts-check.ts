@@ -1316,6 +1316,13 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const v = s.call("olive", "scripts", {}); return { set: show(set), imported: v.imported, use: code(use), fix: use.refused?.fix }; },
     good: (o) => o.set === "ok" && o.imported?.[0]?.status === "needs-reinstall" && /re-install it as script:<name>/i.test(o.imported?.[0]?.why) && o.imported?.[0]?.attach === "bell1"
       && o.use === "no-runtime" && /re-install it as script:greeter/.test(o.fix) },
+  { id: "V2", what: "decision row 12: a thing whose main behaviour was carried (attach, no reactions, as the translator writes it) refuses an old event word as no-runtime, naming the behaviour, not 'offers nothing'", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "imported-behavior:chimer", value: { src: "store/scripts/0123456789abcdef.js", attach: "gong", knobs: {}, author: "olive", ts: 1 } });
+      s.call("olive", "create", { id: "gong", model: "bell", place: { at: [1, 0] } });
+      s.call("olive", "create", { id: "rock", model: "bell", place: { at: [2, 0] } });
+      const named = s.call("vic", "use", { id: "gong", action: "chime" }), bare = s.call("vic", "use", { id: "gong" }), plain = s.call("vic", "use", { id: "rock", action: "chime" });
+      return { named: code(named), why: named.refused?.reason, fix: named.refused?.fix, bare: code(bare), plain: code(plain) }; },
+    good: (o) => o.named === "no-runtime" && /main's behaviour 'chimer'/.test(o.why ?? "") && /re-install it as script:chimer/.test(o.fix ?? "") && o.bare === "no-runtime" && o.plain === "no-action" },
   // ---------------- Q: a stored rotation is a unit quaternion, whoever writes it (review of #260) ----------------
   { id: "UQ1", what: "a script's set of a transform with a scaled q stores the unit rotation, and the auditor's re-run agrees with the log", run(s) { cast(s);
       s.call("bob", "create", { id: "vane", model: "crate", place: { at: [0, 0] } });
