@@ -626,6 +626,14 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(!txt.includes("203.0.113.77") && last && !("ip" in last) && /^[0-9a-f]{16,}$/.test(String(last.addr ?? "")), "M3 /perflog stores a hashed address, never the raw IP", last); }
 
 // ---- LC: the world's live state is behind the same door as a join ----
+{ const SF = path.join(root, "nc-sessions.json"), sid = "e".repeat(64);
+  fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "human:test:nat", name: "Nat", scopes: ["worlds:join"], exp: Date.now() + 3600_000, native: true } }));
+  const SN = await start({ JOIN_TOKEN: "door-key", SESSIONS_PATH: SF });
+  const get = (h) => fetch(`http://127.0.0.1:${SN.port}/worlds`, { headers: { cookie: `ew_sess=${sid}`, ...h }, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);
+  const got = { native: await get({}), own: await get({ "sec-fetch-site": "same-origin" }), cross: await get({ "sec-fetch-site": "cross-site" }), none: await fetch(`http://127.0.0.1:${SN.port}/worlds`, { signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1) };
+  ok(got.native === 200 && got.own === 200 && got.cross === 401 && got.none === 401,
+    "NC a signed-in native client (a cookie, no fetch metadata) reads gated /worlds on a door-keyed server; the same cookie from another site's page, or no cookie, is 401 (Unreal bridge design §7.1)", got);
+  SN.proc.kill(); }
 { const S4 = await start({ JOIN_TOKEN: "door-key" });
   const get = (p, key) => fetch(`http://127.0.0.1:${S4.port}${p}`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);
   const noKey = [await get("/worlds"), await get("/geom?world=garden"), await get("/snap?world=garden&follow=x")];
