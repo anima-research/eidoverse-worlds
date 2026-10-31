@@ -274,6 +274,20 @@ const cases: Case[] = [
         lb: /m\?\.type === 'vacated'/.test(lb) && !/'unseated'/.test(lb), ag: /m\.type === "vacated"/.test(ag) && !/"unseated"/.test(ag),
         docs: [md.slice(0, md.indexOf("## Version history")), a, sc, wi].every((t) => !/\bunseat/i.test(t)) && /`vacated \{socket, by,\s+why, at\}`/.test(md) && /`vacated`/.test(a) && /`vacated \{socket, host\?, by, why, at\?\}`/.test(wi), vh: /occupy/.test(md.slice(md.indexOf("## Version history")) + readText("spec/history/PRE-RELEASE-RENAMES.md")) }; },
     good: (o) => o.mine && o.at === "[1,2,3]" && o.lb && o.ag && o.docs && o.vh },
+  // ---------------- P: main's words still teach (Mica 10-31, matrix A4/A5/A7) ----------------
+  { id: "P1", what: "punt {dir} (main's name) is refused naming today's word: 'dir' is now 'v'", run() {
+      const r = VS.validate?.("punt", { id: "ball", dir: [1, 0, 0] });
+      return { code: r?.code, fix: r?.fix ?? "" }; },
+    good: (o) => o.code === "unknown-arg" && /'dir' is now 'v'/.test(o.fix) },
+  { id: "P2", what: "a shove at someone not here is answered as a shove (server/messages.ts puppet), not 'to pose'", run() {
+      const m = readText("server/messages.ts"); return { pose: /isn't here to pose` \}\)\); return; \}/.test(m), split: /isn't here to \$\{msg\.ragdoll \? "shove" : "pose"\}/.test(m) }; },
+    good: (o) => !o.pose && o.split },
+  { id: "P3", what: "the agent's shove trims its target (main's absent()): spaces name nobody; someone not here is refused before anything is sent", async run() {
+      const T = await import(TREE + "mcpl/tools.ts"); const sent: any[] = [];
+      const ag: any = { joined: true, name: "me", people: new Map([["ann", { pose: { p: [1, 0, 0] } }]]), pos: { x: 0, z: 0 }, puppet: (to: string) => sent.push(to) };
+      const act = (target: string) => T.HANDLERS.act(ag, { verb: "shove", args: { target } }, {}); const sp = await act("   "), far = await act("zed");
+      return { sp: sp?.isError === true && /only spaces/.test(sp.content[0].text), far: far?.isError === true && /zed isn't here/.test(far.content[0].text), sent: sent.length }; },
+    good: (o) => o.sp && o.far && o.sent === 0 },
   // ---------------- M: move {client} is gone ----------------
   { id: "M1", what: "(research #14) move takes no `client`: arriving leaves no client kind on the authority's track, and `move {client}` is refused unknown-arg; VERBSPEC.move lists no client", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });

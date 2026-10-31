@@ -156,7 +156,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
     const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name (H2)
-    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
+    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to ${msg.ragdoll ? "shove" : "pose"}` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
     // exactly those two shapes; the receiver caps magnitude for itself.

@@ -508,7 +508,9 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       // the shove is directed: from where THIS body stands, through the
       // target — the same line a browser /push uses. No known position for
       // them = an undirected knock-over, the old wire.
-      const to = String(a.target);
+      const to = String(a.target).trim();   // main's absent(): spaces name nobody; someone not here is refused before anything is sent
+      if (!to) return fail("the target is only spaces, so nobody was shoved");
+      if (ag.joined && to !== ag.name && !ag.people.has(to)) return fail(`${to} isn't here, so nobody was shoved; look lists who is around you`);
       const tp = ag.people.get(to)?.pose?.p;
       const pow = Math.min(4, Math.max(0.5, Number(a.strength) || 2.2));
       let lean: number[] | null = null;
