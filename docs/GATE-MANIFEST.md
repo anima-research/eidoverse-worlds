@@ -364,11 +364,12 @@ time.
 | 194 | lock-strength | browser | `tools/lock-strength-test.ts` | Chromium | 10 s | 180 s |
 | 195 | swim-lists | browser | `tools/swim-lists-test.ts` | Chromium | 10 s | 180 s |
 | 196 | build-client | browser | `tools/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 197 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 198 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 199 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 200 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 201 | client-tools | browser | `tools/run-client.ts --import-only --skip-suites` | Chromium | 202 s | 1010 s |
+| 197 | comps-parity | browser | `tools/comps-parity-test.ts` | Chromium | ? | 300 s |
+| 198 | shiplist-probe | browser | `tools/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 199 | xss-probe | browser | `tools/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 200 | party-probe | browser | `tools/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 201 | colour-picker | browser | `tools/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 202 | client-tools | browser | `tools/run-client.ts --import-only --skip-suites` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 168 (~1796 s), browser 15 (~1167 s); 201 suites in all.
+Lanes: core 18 suites (~79 s), main 168 (~1796 s), browser 16 (~1167 s); 202 suites in all.
 <!-- END GENERATED -->
