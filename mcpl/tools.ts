@@ -1637,7 +1637,7 @@ export const TOOL_FOLDS: Record<string, string> = {
   fold_wings: 'anim {name: "wings-folded"}', unfold_wings: 'anim {stop: "wings-folded"}', flight_status: "body_state (its flight field)",
   clear_pose: "anim {stop: true, target?}", clear_reach: "reach {release: true, limb?}",
   ragdoll: 'anim {ragdoll: true, target?} (a body going limp); to push someone: act {verb: "shove", args: {target, strength?}}', library_sheet: "library {kind, page?}", library_preview: "library {preview}", list_library: "library {query}",
-  light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one)', remove: 'act {verb: "delete", args: {id}}',
+  light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one; main\'s keep: true is light {important: true})', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
   // main's world_access left without a pointer

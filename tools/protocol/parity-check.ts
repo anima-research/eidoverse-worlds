@@ -282,6 +282,9 @@ const cases: Case[] = [
   { id: "P2", what: "a shove at someone not here is answered as a shove (server/messages.ts puppet), not 'to pose'", run() {
       const m = readText("server/messages.ts"); return { pose: /isn't here to pose` \}\)\); return; \}/.test(m), split: /isn't here to \$\{msg\.ragdoll \? "shove" : "pose"\}/.test(m) }; },
     good: (o) => !o.pose && o.split },
+  { id: "P4", what: "the folded light tool says where main's keep went: light.important (matrix A5)", async run() {
+      const T = await import(TREE + "mcpl/tools.ts"); return { fold: T.TOOL_FOLDS?.light ?? "" }; },
+    good: (o) => /keep: true/.test(o.fold) && /important: true/.test(o.fold) },
   { id: "P3", what: "the agent's shove trims its target (main's absent()): spaces name nobody; someone not here is refused before anything is sent", async run() {
       const T = await import(TREE + "mcpl/tools.ts"); const sent: any[] = [];
       const ag: any = { joined: true, name: "me", people: new Map([["ann", { pose: { p: [1, 0, 0] } }]]), pos: { x: 0, z: 0 }, puppet: (to: string) => sent.push(to) };
