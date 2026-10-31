@@ -212,10 +212,11 @@ export const COMPONENTS = {
       play: { args: {}, example: { ring: { kind: "play" } } },
       // R 10-10: a reset button (VRChat's shape: each thing remembers a home, a button lists what it sends home; research
       // notes/eidoverse/RESEARCH-grips-and-reset-2026-10-10.md). Each target goes back to its home component, out of any hand; a target with no home, gone or locked is skipped and named in the reply.
+      // main's script-free swing (Mica 10-31, decision row 19): use pushes a pendulum (motion pendulum; absent, the default one)
+      impulse: { args: { strength: "m/s at its centre along its front (default 0.5)", angular: "or the push as rad/s of swing (main's {impulse: n})" }, example: { push: { kind: "impulse", strength: 0.5 } } },
       reset: { args: { targets: "the ids it sends home: 1 to 64 things. Each needs a home (stamped where it stands when the handler is written, if it has none)" }, example: { reset: { kind: "reset", targets: ["ball-0", "ball-1"] } } },
     },
-    // held names: a handler of one of these kinds is refused (reserved), never read
-    reservedKinds: { impulse: "a push (strength m/s at its centre, or angular rad/s): reserved until this world's engine carries impulses; it had a pendulum-only meaning, and returns with its general one" },
+    reservedKinds: {},
     common: { kind: "the handler kind", who: "who may use it: a role id (builtin or this world's own), that rank or above; absent, anyone who may use the thing", fix: "text shown on refusal" } },
   // R 10-07: the behaviour is `openable` (a door, a gate, a lid, a hatch, a cabinet), not the asset. The conventional shape
   // (Unity/Godot/Roblox door recipes, Unreal's door timeline): a turn about a hinge (angle about axis, through the thing's

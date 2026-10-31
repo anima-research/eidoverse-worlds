@@ -384,10 +384,11 @@ are fixed (pinned in the registry):
 - `set {component, field?, value}` — set a value;
 - `play` — restart the thing's `sound` from the top;
 - `reset {targets}` — send each target back to its home;
-- `script {script}` — hand the action to `script:<name>` on the same thing.
+- `script {script}` — hand the action to `script:<name>` on the same thing;
+- `impulse {strength?, angular?}` — push a swing: a pendulum (its `motion`, or
+  the default one) gains the push, along its front.
 
-`impulse` (a push) is reserved: a handler of that kind is refused until an
-engine carries impulses; anything else is a script.
+Anything else is a script.
 
 The swing, as a recipe (`tools/protocol/authority-check.ts`, the HG checks,
 holds the hang). Ids are the authority's: each `create` answers with the id

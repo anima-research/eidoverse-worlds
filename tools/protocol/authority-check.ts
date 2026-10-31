@@ -869,8 +869,12 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   // shape audit 10-16: `impulse` is a reserved handler kind (a general name with a pendulum-only meaning; it returns with its
   // general one when an engine carries impulses). A new one is refused; the push rows that wrote one (SW1-SW4) are retired
   // with it. A stored one (a translated v1 swing) is carried as it was and its use path is unchanged code.
+  // Mica 10-31 (matrix 8, decision row 19): main let a builder write the script-free push; the engine runs it (use.js), so it's open again
   const p0 = sw("ann", "set", { id: "seat", component: "reactions", value: { push: { kind: "impulse", strength: 0.5 } } });
-  ok(p0.refused?.code === "reserved", "SW1 an impulse handler is refused as a reserved kind, even on a swing (shape audit 10-16)", p0.refused);
+  const u0 = p0.ok ? sw("ann", "use", { id: "seat", action: "push" }) : null, mo = openWorld(root, "swingpush").state().entities.seat?.c?.motion;
+  ok(p0.ok === true && u0?.ok === true && mo?.type === "pendulum" && (mo.amp ?? 0) > 0, "SW1 a builder writes an impulse handler on a swing (main's script-free push), and using it swings the seat", { p0: p0.refused ?? p0.ok, u0: u0?.refused ?? u0?.ok, mo });
+  const p1 = sw("ann", "set", { id: "frame", component: "reactions", value: { push: { kind: "impulse", angular: "fast" } } });
+  ok(p1.refused?.code === "shape", "SW1b an impulse handler's strength and angular are numbers", p1.refused);
   void pendulumTheta;
   const tx = (await import("./import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});

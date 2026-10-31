@@ -378,3 +378,5 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
   - water.drag: its meaning of absence "5 /s: the mover's own (shared/mover.js MOVER.swim.ease)" → gone
 - 2026-10-31: Mica 10-31 (#260 decision row 27): physics-area gains `modes` (walk | swim | fly | climb; absent = all; Unreal's per-movement-mode settings). translate-v1@37 writes modes: ['swim'] for main's water.speed, which slowed only the swim.
 - 2026-10-31: physics-area.modes: new field (Mica 10-31 row 27; walk|swim|fly|climb, absent all)
+- 2026-10-31: reactions impulse: opened (main's script-free swing; Mica 10-31 matrix 8, decision row 19)
+- 2026-10-31: Mica 10-31 (matrix 8, decision row 19): reactions {kind: 'impulse', strength?, angular?} is open again (main's script-free swing push; use.js already ran it for translated worlds). reservedKinds is empty.

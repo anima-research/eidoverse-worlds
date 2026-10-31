@@ -799,13 +799,15 @@
     "script"
    ],
    "play": [],
+   "impulse": [
+    "strength",
+    "angular"
+   ],
    "reset": [
     "targets"
    ]
   },
-  "reservedKinds": [
-   "impulse"
-  ]
+  "reservedKinds": []
  },
  "openable": {
   "status": "trial",
