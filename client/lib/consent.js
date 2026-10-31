@@ -1,4 +1,4 @@
-// My body's consent (R 10-28): two gates — Move me, Touch me — each on or off, and two lists of people — Allow (always
+// My body's consent (R 10-28): two gates — Allow being moved, Allow being posed and touched — each on or off, and two lists of people — Allow (always
 // yes) and Block (always no), whatever the gates say. The authority is the only place it's decided (shared/protocol/
 // consent.js decide; A1: no client gate). This module remembers my choice (localStorage, so it survives the session and
 // follows me between worlds) and hands it to consentsync, which sends it on every arrival and every change.
@@ -7,8 +7,8 @@ import { GATES, DEFAULT_GATES, CONSENT_SHAPE } from '../../shared/protocol/conse
 export { GATES };
 /** what each gate covers, in plain words (Settings ▸ body shows them as the tooltips) */
 export const GATE_WORDS = {
-  move: { label: 'Move me', tip: 'Whether other people may move your body: shove or knock you over (a /boom blast too), drag you, carry you, or sit you down on something. On by default.' },
-  touch: { label: 'Touch me', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default.' },
+  move: { label: 'Allow being moved', tip: 'Whether other people may move your body: shove or knock you over (a /boom blast too), drag you, carry you, or sit you down on something. On by default.' },
+  touch: { label: 'Allow being posed and touched', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default.' },
 };
 
 // the keys before it, read by readStored and never written: main's two (ew-pushable, ew-posable), the body switch (ew-body-switch, to 10-28)
@@ -24,11 +24,11 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
  *  (wider). A setting kept under an older key is carried into the gates silently (R 10-28 13:03: "we're keeping their gates"),
  *  and written under KEY on first read. Never broader than main allowed: the body switch's refuse or ask → both off (F3,
  *  R 10-28 16:02), accept → move on, touch off; with no switch, main's ew-pushable → move ('0' off; only if present) and
- *  ew-posable → touch off if present. Main's posable '1' allowed posing only, and Touch me also opens touch and intimate,
- *  so it can't carry: Touch me stays off and `notice` is set, kept under KEY until takeNotice says it once (fixF). A stored list from before the queue: its
+ *  ew-posable → touch off if present. Main's posable '1' allowed posing only, and Allow being posed and touched also opens touch and intimate,
+ *  so it can't carry: Allow being posed and touched stays off and `notice` is set, kept under KEY until takeNotice says it once (fixF). A stored list from before the queue: its
  *  blocks follow as queued blocks, its unlists follow too but only take someone off allow (never wider), its allows stay where they landed. */
 /** what a person whose old "allow posing" couldn't carry over is told, once (takeNotice) */
-export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Touch me now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Touch me.";
+export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Allow being posed and touched now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Allow being posed and touched.";
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
 /** what the panel and the toast say of it (review delta-260 L-F) */
 export const BLOCK_FOLLOW_WORDS = `it follows you into the worlds you enter in the next ${BLOCK_FOLLOW_MS / 86_400_000} days; where it has landed, it stays until you remove it`;
@@ -51,7 +51,7 @@ export function readStored(get = lsGet, now = Date.now()) {
   const state = { move: undefined, touch: undefined, allow: {}, block: {}, queue: [], notice: false, opened: {} };
   if (sw === 'refuse' || sw === 'ask') { state.move = false; state.touch = false; return state; }
   if (sw === 'accept') { state.move = true; state.touch = false; } else { if (pushable !== null) state.move = pushable !== '0'; if (posable !== null) state.touch = false; }
-  state.notice = posable === '1';   // main's posable was posing only; Touch me is wider, so off and told (fixF)
+  state.notice = posable === '1';   // main's posable was posing only; Allow being posed and touched is wider, so off and told (fixF)
   return state;
 }
 

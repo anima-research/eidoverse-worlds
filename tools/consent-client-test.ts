@@ -46,7 +46,7 @@ const authority = () => { const P: any = { consent: { me: { switch: 'accept', ov
   check('…and removing it records an unlist and sends it: the authority no longer blocks them, the panel no longer lists them', removed && C.bodyTable().unlist.includes('u-mig') && A.sent.some((a) => a.unlist === 'u-mig') && !tableOf(A.P, 'me').block.includes('u-mig') && !C.listed('block').some((p: any) => p.id === 'u-mig'), JSON.stringify(A.sent)); }
 
 // 1. the gates and lists, as the authority takes them
-check('a fresh client: Move me on, Touch me off (the defaults)', C.gate('move') && !C.gate('touch') && landed('pal', 'shove') === 'allow' && landed('pal', 'pose') === 'deny');
+check('a fresh client: Allow being moved on, Allow being posed and touched off (the defaults)', C.gate('move') && !C.gate('touch') && landed('pal', 'shove') === 'allow' && landed('pal', 'pose') === 'deny');
 for (const [g, on, cls, want] of [['move', false, 'shove', 'deny'], ['move', false, 'displace', 'deny'], ['touch', true, 'pose', 'allow'], ['touch', true, 'intimate', 'allow']] as const) {
   C.setGate(g, on); check(`${g} ${on ? 'on' : 'off'} lands: a stranger's ${cls} is ${want}`, landed('pal', cls) === want, landed('pal', cls)); }
 check('…and touch on never opens move (pose is touch, a shove is move)', landed('pal', 'pose') === 'allow' && landed('pal', 'shove') === 'deny');
@@ -66,7 +66,7 @@ for (const [kv, want, why] of [
   [{ 'ew-body-switch': 'refuse' }, '-/-', 'switch refuse → both off'],
   [{ 'ew-body-switch': 'ask' }, '-/-', 'switch ask → both off (F3, R 10-28 16:02: ask was no until yes)'],
   [{ 'ew-body-switch': 'accept' }, 'move/-', 'switch accept → Move on, Touch its default (off)'],
-  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/-', 'switch accept with main\'s posable on → Touch off (posable was posing only; Touch me is touch and intimate too)'],
+  [{ 'ew-body-switch': 'accept', 'ew-posable': '1' }, 'move/-', 'switch accept with main\'s posable on → Touch off (posable was posing only; Allow being posed and touched is touch and intimate too)'],
   [{ 'ew-body-switch': 'refuse', 'ew-posable': '1', 'ew-pushable': '1' }, '-/-', 'switch refuse beats main\'s on keys: an opt-out is never lost'],
   [{ 'ew-pushable': '0' }, '-/-', 'main pushable off → Move off'],
   [{ 'ew-posable': '1' }, 'move/-', 'main posable on → Touch off (never wider: main\'s posable never opened touch or intimate)'],
@@ -75,20 +75,20 @@ for (const [kv, want, why] of [
   [{}, 'move/-', 'nothing stored → the defaults'],
   [{ 'ew-body-consent': '{"v":4,"move":false,"touch":true,"allow":{"u-a":"A"},"block":{}}', 'ew-body-switch': 'accept' }, '-/touch', 'today\'s key wins over the old ones'],
 ] as const) { const s = was(kv as any); check(`migration: ${why}`, g2(s) === want, `${g2(s)} (want ${want})`); }
-check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world, and Touch me chosen off)', ((s) => s.move === undefined && s.touch === false)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
+check('migration: a key never present is a gate never chosen (main posable alone leaves move to the world, and Allow being posed and touched chosen off)', ((s) => s.move === undefined && s.touch === false)(was({ 'ew-posable': '1' })) && ((s) => s.move === undefined && s.touch === undefined)(was({})) && ((s) => s.move === true && s.touch === false)(was({ 'ew-body-switch': 'accept' })));
 check('migration carries no lists from the old keys (the switch kept per-person answers only at the authority)', JSON.stringify(was({ 'ew-body-switch': 'accept' }).allow) === '{}');
 // (fixF) main's posable '1' can't carry over (wider), so the person is told once, in plain words, and how to turn it on
 { const words = (C as any).TOUCH_NOTICE ?? '';
-  check('the notice says the old setting could not carry over, why, and where Touch me is', /allow posing/.test(words) && /couldn't carry over/.test(words) && /intimate/.test(words) && /Settings ▸ body/.test(words) && /Touch me/.test(words), words);
+  check('the notice says the old setting could not carry over, why, and where Allow being posed and touched is', /allow posing/.test(words) && /couldn't carry over/.test(words) && /intimate/.test(words) && /Settings ▸ body/.test(words) && /Allow being posed and touched/.test(words), words);
   check('migration: a notice is due only where main\'s posable on was not carried (not for switch refuse, not for posable off, not for nothing stored)', was({ 'ew-posable': '1' }).notice === true && was({ 'ew-body-switch': 'accept', 'ew-posable': '1' }).notice === true
     && !was({ 'ew-body-switch': 'refuse', 'ew-posable': '1' }).notice && !was({ 'ew-posable': '0' }).notice && !was({}).notice && !was({ 'ew-body-switch': 'accept' }).notice);
   const saved = store.get('ew-body-consent'); store.clear(); store.set('ew-posable', '1');
   const M = await import('../client/lib/consent.js?fixF=posable');   // a fresh page whose storage holds only main's posable on
-  check('…on that page Touch me is off and a stranger may not pose (the authority sees touch:false)', !M.gate('touch') && M.bodyTable().touch === false);
+  check('…on that page Allow being posed and touched is off and a stranger may not pose (the authority sees touch:false)', !M.gate('touch') && M.bodyTable().touch === false);
   const first = M.takeNotice?.(), second = M.takeNotice?.();
   check('…the page is told once: the first take is the notice, the second nothing', first === words && second === null, JSON.stringify([first, second]));
   const M2 = await import('../client/lib/consent.js?fixF=reload');   // the next page load, same storage
-  check('…and not again on the next load (taken is remembered), with Touch me still off', M2.takeNotice?.() === null && !M2.gate('touch'), store.get('ew-body-consent'));
+  check('…and not again on the next load (taken is remembered), with Allow being posed and touched still off', M2.takeNotice?.() === null && !M2.gate('touch'), store.get('ew-body-consent'));
   store.clear(); store.set('ew-posable', '1'); const M3 = await import('../client/lib/consent.js?fixF=unseen');
   const M4 = await import('../client/lib/consent.js?fixF=unseen2');   // a reload before anything took the notice
   check('…a notice not yet taken survives a reload (said once, never zero times)', M4.takeNotice?.() === words && M3 !== M4, store.get('ew-body-consent'));
@@ -149,8 +149,8 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
 // Mutation (must go red): in bodyact.js bodyActAsPuppet return null for every kind.
 {
   const { bodyActAsPuppet, refusedNotice } = await import('../client/lib/bodyact.js');
-  check('a refused act is said to me in plain words: who, and which of my switches turned it away', refusedNotice?.({ type: 'body-refused', from: 'u-wren', gate: 'move', class: 'shove' }, () => 'Wren') === 'Wren tried to move you — your Move me switch is off'
-    && refusedNotice({ type: 'body-refused', from: 'u-wren', gate: 'touch', class: 'pose' }, () => 'Wren') === 'Wren tried to touch you — your Touch me switch is off'
+  check('a refused act is said to me in plain words: who, and which of my switches turned it away', refusedNotice?.({ type: 'body-refused', from: 'u-wren', gate: 'move', class: 'shove' }, () => 'Wren') === 'Wren tried to move you — your “Allow being moved” switch is off'
+    && refusedNotice({ type: 'body-refused', from: 'u-wren', gate: 'touch', class: 'pose' }, () => 'Wren') === 'Wren tried to touch you — your “Allow being posed and touched” switch is off'
     && refusedNotice({ type: 'body-refused', from: 'u-wren', gate: null, class: 'pose' }, () => 'Wren') === 'Wren tried to touch you — they are on your Never allow list', String(refusedNotice?.({ type: 'body-refused', from: 'u-wren', gate: 'move', class: 'shove' }, () => 'Wren')));
   check('…and anything else says nothing', refusedNotice?.({ type: 'body', from: 'u-wren' }, () => 'Wren') === null && refusedNotice?.(null, () => 'x') === null);
   const q = [0, 0, 0.38, 0.92];
@@ -228,9 +228,9 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
   const P: any = { consent: Object.create(null), bodyDefault: { touch: true } };
   const send = async (_: string, a: any) => Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me'), world: { ...DEFAULT_GATES, ...worldGates(P.bodyDefault) } };   // bodyconsent.js's read
   const s = makeConsentSync({ table: G.bodyTable, send, toast: () => {}, on: () => {}, later: () => {}, held: G.noteHeld, landed: G.landed });
-  check('1.3 before any read, a never-chosen Touch me shows the built-in (off)', !G.gate('touch'));
+  check('1.3 before any read, a never-chosen Allow being posed and touched shows the built-in (off)', !G.gate('touch'));
   await s.sync();
-  check('1.3 in a world whose body-default turns touch on, a never-chosen Touch me shows on (the gate in force)', G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'allow');
+  check('1.3 in a world whose body-default turns touch on, a never-chosen Allow being posed and touched shows on (the gate in force)', G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'allow');
   G.setGate('touch', false); await s.sync();
   check('…and turning it off is one change: it shows off, and the authority refuses a stranger\'s pose', !G.gate('touch') && decide(P, 'pal', 'me', 'pose').mode === 'deny', JSON.stringify(tableOf(P, 'me'))); }
 
@@ -240,10 +240,10 @@ const run = async (reply: (n: number) => any, want = T({ move: false })) => {
     const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; };
   const syncer = (D: any, A: any) => makeConsentSync({ table: D.bodyTable, send: A.send, toast: () => {}, on: () => {}, later: () => {}, held: D.noteHeld, landed: D.landed, gone: D.forget });
   const D = await fresh('b1', { 'ew-body-switch': 'accept' }); D.useWorld('w1'); const W1 = migrated(); await syncer(D, W1).sync();
-  check('B1 a stored "accept" (move on) from before never reopens the move gate the server\'s migration closed: nothing sent, a stranger and the friend still can\'t displace, and Move me shows off',
+  check('B1 a stored "accept" (move on) from before never reopens the move gate the server\'s migration closed: nothing sent, a stranger and the friend still can\'t displace, and Allow being moved shows off',
     D.bodyTable().move === true && !W1.sent.some((a) => 'move' in a) && W1.P.consent.me.move === false && decide(W1.P, 'stan', 'me', 'displace').mode === 'deny' && decide(W1.P, 'pal', 'me', 'displace').mode === 'deny' && !D.gate('move'), JSON.stringify({ sent: W1.sent, t: W1.P.consent.me }));
   const opened = D.setGate('move', true); await syncer(D, W1).sync();
-  check('B2 …turning Move me on here reopens it (sent once, then landed: not kept)', opened && W1.sent.some((a) => a.move === true) && decide(W1.P, 'stan', 'me', 'displace').mode === 'allow' && D.gate('move') && D.bodyTable().opened.length === 0, JSON.stringify({ sent: W1.sent, b: D.bodyTable() }));
+  check('B2 …turning Allow being moved on here reopens it (sent once, then landed: not kept)', opened && W1.sent.some((a) => a.move === true) && decide(W1.P, 'stan', 'me', 'displace').mode === 'allow' && D.gate('move') && D.bodyTable().opened.length === 0, JSON.stringify({ sent: W1.sent, b: D.bodyTable() }));
   D.useWorld('w2'); const W2 = migrated(); await syncer(D, W2).sync();
   check('B3 …and only here: another world whose migration closed it stays closed (wider lands where it was made)', !W2.sent.some((a) => 'move' in a) && decide(W2.P, 'stan', 'me', 'displace').mode === 'deny' && !D.gate('move'), JSON.stringify(W2.sent));
   D.setGate('move', false); D.useWorld('w3'); const W3: any = (() => { const P: any = { consent: Object.create(null) }; setConsent(P, 'me', { move: true }); const sent: any[] = []; return { P, sent, send: async (_: string, a: any) => { sent.push(a); return Object.keys(a).length ? setConsent(P, 'me', a) : { ok: true, table: tableOf(P, 'me') }; } }; })();

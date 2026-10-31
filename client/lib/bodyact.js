@@ -6,7 +6,7 @@
 export function refusedNotice(m, nameOf) {
   if (!m || m.type !== 'body-refused') return null;
   const who = nameOf(m.from) ?? 'someone', what = m.class === 'shove' || m.class === 'displace' ? 'move' : 'touch';
-  return `${who} tried to ${what} you — ${m.gate === 'move' ? 'your Move me switch is off' : m.gate === 'touch' ? 'your Touch me switch is off' : 'they are on your Never allow list'}`;
+  return `${who} tried to ${what} you — ${m.gate === 'move' ? 'your “Allow being moved” switch is off' : m.gate === 'touch' ? 'your “Allow being posed and touched” switch is off' : 'they are on your Never allow list'}`;
 }
 /** An act the authority let reach my body (`{type: "body", kind, spec}`: the body verb, which my lists and gates
  *  allowed) as the puppet message localbody.js already applies, or null when there is nothing to apply here.

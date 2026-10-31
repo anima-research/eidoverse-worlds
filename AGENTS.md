@@ -610,9 +610,9 @@ the same way; a person may allow one sponsor's scripts by name
 ragdoll: your body goes limp and falls under its own simulation (`target`
 asks another body to). `act {verb: "shove", args: {target, strength?}}` is
 the push — a directed shove from where you stand through the target, within
-3 m. The authority decides from their consent: their Move me switch (on
+3 m. The authority decides from their consent: their “Allow being moved” switch (on
 unless they or the world turned it off) and their allow and block lists (the
-browser has `/push` for the same, and `/pushable off` turns Move me off).
+browser has `/push` for the same, and `/pushable off` turns Allow being moved off).
 Each body tumbles under its own simulation, streamed like any pose — agent bodies too: a headless client runs the
 same Verlet on its own skeleton and streams the tumble. You fall for real
 and PERCEIVE it; walking or `anim {stop: true}` ends it (stop rests you in

@@ -198,10 +198,10 @@ try {
     check("K3 the choice is persisted under ew-body-consent", await evalJson(`(() => { const v = JSON.parse(localStorage.getItem('ew-body-consent') ?? '{}'); return v.v === 4 && v.move === false && v.touch === false; })()`));
     await evalJson(`(async () => { (await import('/lib/windows.js')).getFrame('settings')?.show(); document.getElementById('sec-body-tab')?.click(); return true; })()`);
     const panel = await evalJson(`(() => { const b = [...document.querySelectorAll('#sec-body input[type=checkbox][data-gate]')]; return b.map((x) => ({ g: x.dataset.gate, on: x.checked, tip: x.title, label: x.closest('.row')?.querySelector('.nm')?.textContent })); })()`);
-    check("K4 Settings ▸ body is two checkboxes, Move me and Touch me, reading the gates", JSON.stringify(panel?.map((x: any) => [x.g, x.on, x.label])) === JSON.stringify([["move", false, "Move me"], ["touch", false, "Touch me"]]), panel);
+    check("K4 Settings ▸ body is two checkboxes, Allow being moved and Allow being posed and touched, reading the gates", JSON.stringify(panel?.map((x: any) => [x.g, x.on, x.label])) === JSON.stringify([["move", false, "Allow being moved"], ["touch", false, "Allow being posed and touched"]]), panel);
     check("K5 …each with a tooltip saying in plain words what it covers", /shove/.test(panel?.[0]?.tip ?? "") && /drag/.test(panel?.[0]?.tip ?? "") && /carry/.test(panel?.[0]?.tip ?? "") && /sit/.test(panel?.[0]?.tip ?? "") && /hands on you/.test(panel?.[1]?.tip ?? "") && /intimate/.test(panel?.[1]?.tip ?? "") && /pose/.test(panel?.[1]?.tip ?? ""), panel);
     await evalJson(`(() => { const b = document.querySelector('#sec-body input[data-gate=move]'); b.checked = true; b.dispatchEvent(new Event('change')); return true; })()`);
-    check("K6 ticking Move me in the panel lands at the authority", await waitFor(`${tbl}.then((t) => t && t.move === true)`, 5000), await evalJson(tbl));
+    check("K6 ticking Allow being moved in the panel lands at the authority", await waitFor(`${tbl}.then((t) => t && t.move === true)`, 5000), await evalJson(tbl));
   });
 
   // ---- L: per-person lists (R 10-28) from People Here: right-click someone → Always allow / Never allow / Default; the

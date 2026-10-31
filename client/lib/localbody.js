@@ -524,7 +524,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   useWorld(CONFIG.world);
   const consentSync = makeConsentSync({ table: bodyTable, send: sendRequest, toast, on: (ev, fn) => bus.on(ev, fn), enabled: () => !(CONFIG.renderer || CONFIG.spectate), held: noteHeld, gone: forget, landed });
   onConsentChange(consentSync.sync);
-  // main's "allow posing" couldn't carry into Touch me (wider): said once, to a person, never a renderer (consent.js TOUCH_NOTICE)
+  // main's "allow posing" couldn't carry into Allow being posed and touched (wider): said once, to a person, never a renderer (consent.js TOUCH_NOTICE)
   if (!(CONFIG.renderer || CONFIG.spectate)) { const told = takeNotice(); if (told) toast(told, 'info', 15000); }
 
   // X reaches the socket system through the controller's hook: mounted → get

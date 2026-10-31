@@ -1,4 +1,4 @@
-// consentpanel — Settings ▸ body: my body's two gates (Move me, Touch me), each a checkbox with a tooltip saying what it
+// consentpanel — Settings ▸ body: my body's two gates (Allow being moved, Allow being posed and touched), each a checkbox with a tooltip saying what it
 // covers, then the people I always or never allow (mine and this world's authority's), each with a remove button
 // (R 10-28). The lists are set from People Here (right-click a person: people.js). The authority decides every act on
 // my body by these (PROTOCOL §5); consentsync sends them. Same .row.wide / .nm / .ctl markup as the video and audio sections (index.html owns it).

@@ -28,7 +28,7 @@ export const COMMANDS = [
   { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
   { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
-  { name: 'pushable', help: '/pushable on|off — your Move me switch: whether people may shove, blast, drag, carry or seat you (on by default; Settings ▸ body has Touch me and your allow/block lists)' },
+  { name: 'pushable', help: '/pushable on|off — your “Allow being moved” switch: whether people may shove, blast, drag, carry or seat you (on by default; Settings ▸ body has Allow being posed and touched and your allow/block lists)' },
   { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — kick a thing at your feet into flight (Q); a person\'s name is the ragdoll shove (their consent decides)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast at your feet (builders): knocks over everyone who lets it and sends loose things flying (power 0.2–12 m/s, default 3; radius 0.5–30 m, default 4)' },
