@@ -64,8 +64,8 @@ try {
   await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`);
   bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await sleep(600);
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
-  check("(setup) edit mode opens", await waitFor(`document.body.classList.contains('edit-mode')`));
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
+  check("(setup) build mode opens", await waitFor(`document.body.classList.contains('build-mode')`));
 
   // ---- ST: buildings ----
   { // where the viewport point meets the floor plane of a building (y = its slab's top), then two buildings: A first (the
@@ -82,7 +82,7 @@ try {
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('house-b'))`);
     const A0 = JSON.stringify(disk().entities[NODE.get("house-a")].c.structure), B0 = JSON.stringify(disk().entities[NODE.get("house-b")].c.structure);
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('house-b'); const s = await import('/lib/structure_ui.js'); s.setStructureMode(true); s.setTool('wall'); return true;`);
-    check("ST0 the wall tool is armed in edit mode", await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall' && m.isStructureMode())`));
+    check("ST0 the wall tool is armed in build mode", await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall' && m.isStructureMode())`));
     let n0 = myActs().length;
     const press = () => evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${SX}, clientY: ${SY} })), true))`);
     await press();

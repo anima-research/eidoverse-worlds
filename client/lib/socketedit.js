@@ -1,7 +1,7 @@
 // seatedit — the seat-anchor authoring grammar (split from build.js, §R4).
 //
 // Sit anchors (socket children with a body block; PLAN-sockets-entities) get the same editing grammar as
-// things: visible in edit mode as gold gizmos, click to select, drag to
+// things: visible in build mode as gold gizmos, click to select, drag to
 // refine, Q/E to face, Del to remove, one undoable log entry per commit.
 // Zero server involvement — this is all authoring UI over the comp verb.
 //
@@ -24,7 +24,7 @@ import { motionNode } from '../../shared/protocol/names.js';
 import { mouse } from './controller.js';
 import { flashHint, html } from './ui.js';
 import { engage, release } from './keyhints.js';
-import { setEditMode, isEditing, deselect,
+import { setBuildMode, isBuilding, deselect,
   setInspectorHtml, hideInspector } from './build.js';
 import { registerHandler } from './inspect.js';
 import { socketQ } from '../../shared/components.js';
@@ -59,7 +59,7 @@ function makeSeatGizmo() {
  *  (reach never oscillates with a part's motion, neither should the gizmo). */
 export function refreshSocketGizmos() {
   for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
-  if (!isEditing()) return;
+  if (!isBuilding()) return;
   // a seat is a socket child (PLAN-sockets-entities): every host that has one, read as its old map (socketMapIn)
   const hosts = new Set();
   for (const [sid, c] of bags()) if (c?.socket && typeof c.socket === 'object') { const h = parentIdOf(sid); if (h != null) hosts.add(h); }
@@ -77,8 +77,8 @@ export function refreshSocketGizmos() {
   if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSocket();
   else refreshSeatHighlight();
 }
-bus.on('comp', ({ type }) => { if (type === 'socket' && isEditing()) refreshSocketGizmos(); });
-bus.on('entity', () => { if (isEditing()) refreshSocketGizmos(); });
+bus.on('comp', ({ type }) => { if (type === 'socket' && isBuilding()) refreshSocketGizmos(); });
+bus.on('entity', () => { if (isBuilding()) refreshSocketGizmos(); });
 
 function refreshSeatHighlight() {
   for (const [k, g] of seatGizmos) {
@@ -122,7 +122,7 @@ export function deselectSocket() {
   hideInspector();
 }
 
-/** Leaving edit mode: nothing seat-flavored survives the exit. */
+/** Leaving build mode: nothing seat-flavored survives the exit. */
 export function resetSockets() {
   seatArm = null;
   deselectSocket();
@@ -188,7 +188,7 @@ function seatFromHit(id, root, hit) {
 
 export function armSocketPlacement(id) {
   if (!id || !entities.get(id)) return;
-  setEditMode(true, { quiet: true });
+  setBuildMode(true, { quiet: true });
   seatArm = id;
   flashHint(html`click the spot where the occupant goes — the arrow will face you · <kbd>Esc</kbd> cancels`, 8000);
 }

@@ -62,7 +62,7 @@ const centre = (sel: string) => evalJson(`(() => { const e = ${sel}; if (!e) ret
 const clickEl = async (sel: string) => { const c = await centre(sel); if (!c) return false; await click(c[0], c[1]); return true; };
 const insp = `document.querySelector('[data-frame="inspector"]')`;
 const select = async (id: string) => { await page(`(await import('/lib/scenegraph.js')).sceneSelect('${id}'); return true;`); await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${id}')`); await sleep(400); };
-const editMode = async (on: boolean) => { await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(${on}), true))`); await waitFor(`document.body.classList.contains('edit-mode') === ${on}`); await sleep(500); };
+const buildMode = async (on: boolean) => { await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(${on}), true))`); await waitFor(`document.body.classList.contains('build-mode') === ${on}`); await sleep(500); };
 const make = async (id: string, comps: string, at: [number, number, number], model = CRATE) => { const r = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', ${model ? `model: '${model}', ` : ""}components: { ${comps} transform: { pos: [${at}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });`); if (r?.ok) NODE.set(id, await evalJson(`'${id}'`)); return r; };
 const chatLines = `[...document.querySelectorAll('#chatlog .line, #chatlog > *')].map((l) => l.textContent)`;
 
@@ -98,7 +98,7 @@ try {
   // ---- B1: the status chips and the menu bar ----
   await stage("B1", async () => {
     await page(`const s = await import('/lib/statuschips.js'); const c = await import('/lib/capnotice.js'); s.statusChip({ id: 'webgl', ...c.WEBGL, actions: [{ label: 'got it' }] }); const g = await import('/lib/governor.js'); s.statusChip(g.REDUCED_CHIP); return true;`);
-    await editMode(true); await sleep(2200);   // the strip re-places on its slow tick too
+    await buildMode(true); await sleep(2200);   // the strip re-places on its slow tick too
     const covered = await evalJson(`[...document.querySelectorAll('.edit-top .edit-btn, .edit-top .edit-vbtn')].filter((b) => b.getBoundingClientRect().width).map((b) => { const r = b.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return b.contains(e) ? null : (b.textContent.trim() || b.title) + ' ← ' + (e?.closest('.stchip')?.textContent ?? e?.className ?? '?'); }).filter(Boolean)`);
     const chips = await evalJson(`[...document.querySelectorAll('.stchip')].map((c) => c.textContent.trim())`);
     check("B1a with both chips up, every menu-bar button is the topmost thing at its own centre", chips.length >= 2 && covered.length === 0, { covered, chips });
@@ -106,7 +106,7 @@ try {
     await clickEl(`[...document.querySelectorAll('.edit-top .edit-btn')].find((b) => /^Edit/.test(b.textContent))`);
     check("B1b a real click on Edit ▾ opens the Edit menu (not a chip's card)", await waitFor(`[...document.querySelectorAll('.edit-menu-pop')].some((p) => !p.hidden && /undo/.test(p.textContent))`, 2000), await evalJson(`document.getElementById('stpop')?.hidden`));
     await press("Escape"); await sleep(300);
-    check("B1d Esc closes the menu and leaves you in builder mode", await evalJson(`![...document.querySelectorAll('.edit-menu-pop')].some((p) => !p.hidden) && document.body.classList.contains('edit-mode')`));
+    check("B1d Esc closes the menu and leaves you in builder mode", await evalJson(`![...document.querySelectorAll('.edit-menu-pop')].some((p) => !p.hidden) && document.body.classList.contains('build-mode')`));
     await clickEl(`document.getElementById('stchip-quality-reduced')`);
     const acts = await evalJson(`[...document.querySelectorAll('#stpop .st-btns button')].map((b) => b.textContent)`);
     const hide = await clickEl(`[...document.querySelectorAll('#stpop .st-btns button')].find((b) => /hide|don/.test(b.textContent))`);
@@ -116,7 +116,7 @@ try {
 
   // ---- B2: Enter in a number field ----
   await stage("B2", async () => {
-    await editMode(true);
+    await buildMode(true);
     check("(setup) a crate", (await make("box2", "label: 'Box Two',", near(3, 3)))?.ok);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('box2'))`);
     await select("box2");
@@ -135,7 +135,7 @@ try {
 
   // ---- B3: World settings in builder mode ----
   await stage("B3", async () => {
-    await editMode(true);
+    await buildMode(true);
     // the dock is folded in builder mode since 10-10 (∃, ⋯, wrench): open it to reach the panel buttons
     await evalJson(`(() => { const m = document.querySelector('#dock .dock-more'); if (m && m.getAttribute('aria-expanded') !== 'true') m.click(); return true; })()`); await sleep(300);
     await clickEl(`document.querySelector('#dock button[data-toggles="world-settings"]')`);
@@ -151,10 +151,10 @@ try {
 
   // ---- B5: play hints in builder mode ----
   await stage("B5", async () => {
-    await editMode(false);
+    await buildMode(false);
     check("(setup) a bench beside me", (await make("bench5", "label: 'Bench', sockets: { seat: { pos: [0, 0.5, 0], body: { action: 'sit' } } },", near(0.9, 0)))?.ok);
     check("(control) in look mode the hint bar offers X — sit", await waitFor(`/X\\s*—\\s*sit/.test(${hint}) && !document.getElementById('hintbar').classList.contains('gone')`, 6000), await evalJson(hint));
-    await editMode(true); await sleep(4000);   // past the builder-mode welcome, which borrows the bar for 2.6 s
+    await buildMode(true); await sleep(4000);   // past the builder-mode welcome, which borrows the bar for 2.6 s
     const shown = await evalJson(`({ text: ${hint}, gone: document.getElementById('hintbar').classList.contains('gone') })`);
     check("B5 in builder mode the hint bar doesn't offer 'X — sit' (X deletes here)", shown.gone || !/—\s*sit|E\s*open/.test(shown.text), shown);
     await page(`const m = await import('/lib/net.js'); return await m.sendRequest('delete', { id: 'bench5' });`);
@@ -162,7 +162,7 @@ try {
 
   // ---- B4 (human side): Add Component ----
   await stage("B4", async () => {
-    await editMode(true);
+    await buildMode(true);
     await select("box2");
     await clickEl(`${insp}.querySelector('.sp-pop-btn')`);
     check("(setup) Add Component opens", await waitFor(`!!document.querySelector('.sp-pop-search')`, 3000));
@@ -186,7 +186,7 @@ try {
 
   // ---- S1: the locked-delete question ----
   await stage("S1", async () => {
-    await editMode(true);
+    await buildMode(true);
     check("(setup) a locked crate", (await make("lockd", "label: 'Locked crate', lock: true,", near(-3, 3)))?.ok);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('lockd'))`);
     await select("lockd");
@@ -232,7 +232,7 @@ try {
 
   // ---- S5: Save as blueprint asks for a name ----
   await stage("S5", async () => {
-    await editMode(true);
+    await buildMode(true);
     check("(setup) an unlabelled crate", (await make("bpbox", "", near(4, -3)))?.ok);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has('bpbox'))`);
     await select("bpbox");
@@ -267,7 +267,7 @@ try {
 
   // ---- L: what the inspector and hierarchy say about locks ----
   await stage("L", async () => {
-    await editMode(true);
+    await buildMode(true);
     if (!disk().entities[NODE.get("lockd")]) await make("lockd", "label: 'Locked crate', lock: true,", near(-3, 3));
     check("(setup) a door-crate under the locked crate", (await make("child1", "label: 'Lid', parent: { to: 'lockd' }, openable: { open: false, locked: false }, reactions: { open: { kind: 'toggle', unless: 'locked' } },", [0, 1.6, 0]))?.ok);
     await select("lockd"); await sleep(400);
@@ -285,7 +285,7 @@ try {
 
   // ---- M: moderation commands ----
   await stage("M", async () => {
-    await editMode(false);
+    await buildMode(false);
     const vic = guest("vicky"); await vic.join(); await sleep(800);
     const say = async (s: string) => { await clickEl(`document.getElementById('chatline')`); await evalJson(`(() => { const t = document.getElementById('chatline'); t.value = ''; t.focus(); return true; })()`); await type(s); await press("Enter"); await sleep(700); };
     const log = () => evalJson(`document.querySelector('[data-frame="chat"]')?.textContent ?? ''`);
@@ -310,12 +310,12 @@ try {
   });
   // ---- X: the leftovers (review 10-07 S14, S15, S11) ----
   await stage("X", async () => {
-    await editMode(false);
+    await buildMode(false);
     const worldOpen = `(() => { const f = document.querySelector('[data-frame="world"]'); return !!f && getComputedStyle(f).display !== 'none'; })()`;
     await page(`(await import('/lib/windows.js')).getFrame('world')?.hide(); return true;`); await sleep(300);
-    await editMode(true); await sleep(600); await editMode(false); await sleep(600);
+    await buildMode(true); await sleep(600); await buildMode(false); await sleep(600);
     check("X1 leaving builder mode doesn't leave the old build panel open (it wasn't open before)", !(await evalJson(worldOpen)));
-    await editMode(true);
+    await buildMode(true);
     await evalJson(`document.querySelector('.edit-left .edit-tab[data-tab="hierarchy"]')?.click(), true`); await sleep(600);
     await clickEl(`[...document.querySelectorAll('[data-frame="hierarchy"] .sp-item')].find((r) => r.dataset.id === '@world')`); await sleep(800);
     const card = await evalJson(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); if (!h) return null; const out = [];

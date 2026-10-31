@@ -1,4 +1,4 @@
-// gizmo — three's TransformControls on the selected thing, in edit mode.
+// gizmo — three's TransformControls on the selected thing, in build mode.
 //
 // The tools column's move / rotate / scale already drive build.js's own drag
 // (grab anywhere on the mesh). The gizmo is the precise version of the same
@@ -18,7 +18,7 @@ import { entities, bagOf } from './world.js';
 import { sendDrag } from './net.js';
 import { registerSystem } from './frameloop.js';
 import { sceneSelected } from './scenegraph.js';
-import { getTool, getSpace, isEditing, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './editwrites.js';   // slice 3b: a release is one request with expect
 import { reindexCollider } from './colliders.js';
 import { engage, release } from './keyhints.js';
@@ -92,7 +92,7 @@ function sync() {
   if (start) return;
   const id = sceneSelected();
   // scenegraph's selection is THE selection (a tree click never sets build.js's viewport `selected`)
-  const want = isEditing() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
+  const want = isBuilding() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
   const c = ensure();
   const obj = entities.get(want); const piv = pivotOf(want) ?? (getTool() === 'pivot' ? [0, 0, 0] : null);   // the pivot tool starts at the origin when there is none
@@ -189,6 +189,6 @@ function cancelDrag() {
 export function initGizmo() {
   setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
-  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('edit-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
+  bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('build-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }

@@ -1,4 +1,4 @@
-// keyhints — every modifier key and hidden gesture in edit mode, said where the hand is (R 10-04: "SOOOO much hidden
+// keyhints — every modifier key and hidden gesture in build mode, said where the hand is (R 10-04: "SOOOO much hidden
 // knowledge in these programs that's nigh impossible to find"). Two tiers, her design:
 //   before: in the control's tooltip (what you COULD do, on hover)
 //   during: on the status line at the bottom while you're engaged (what the keys do RIGHT NOW)

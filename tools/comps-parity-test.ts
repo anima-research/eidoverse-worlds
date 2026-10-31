@@ -28,7 +28,7 @@ try {
   if (secs < 4) await die(1, 'the client did not boot');
   check('the fold is live and frozen (a dev host)', await becomes(`import('/lib/net.js').then((m) => m.replica.active && m.replica.frozen === true)`));
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-  check('edit mode', await becomes(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
+  check('build mode', await becomes(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
 
   const made = await evalJson(`import('/lib/net.js').then((m) => m.sendRequest('create', { id: 'crate', components: { transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: 'crate' } }))`);
   check('the owner makes a crate (an Empty: no asset to download)', made?.ok === true, JSON.stringify(made?.refused));

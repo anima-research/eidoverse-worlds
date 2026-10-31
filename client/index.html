@@ -52,7 +52,7 @@
    ROLES:
    · brand    = identity & liveness ONLY: the ∃, connection state, "this is
                 on/present". Never decoration.
-   · attn     = "needs YOUR attention": mentions, edit-mode, unsaved, mic-hot.
+   · attn     = "needs YOUR attention": mentions, build-mode, unsaved, mic-hot.
                 One warm amber — complements brand, colorblind-separable.
    · ink ladder (fg/dim/icon) = content: primary text, labels/hints, glyphs.
    · surfaces (panel/chip/well) = material. hover/active whites = interaction
@@ -843,7 +843,7 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
    .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
    No private layout rules anywhere. */
 /* R 10-11 supersedes the left-aligned rule: labels RIGHT-justified, controls left-justified, both against ONE invisible
-   line, as the edit-mode panels do ("the Settings panel aren't aligned like stuff in the Edit mode menus") */
+   line, as the build-mode panels do ("the Settings panel aren't aligned like stuff in the Build mode menus") */
 .row.wide { display: grid; grid-template-columns: var(--row-label-col, clamp(6rem, 36%, 10rem)) minmax(0, 1fr); align-items: center; column-gap: 9px; }
 .row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: right; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
@@ -1056,10 +1056,10 @@ body.arranging .frame.st-l { --st-l-s: inset 2px 0 0 var(--sg); }
 body.arranging .frame.st-r { --st-r-s: inset -2px 0 0 var(--sg); }
 body.arranging .frame.st-t { --st-t-s: inset 0 2px 0 var(--sg); }
 body.arranging .frame.st-b { --st-b-s: inset 0 -2px 0 var(--sg); }
-/* Edit mode has to be legible without reading the HUD: the cursor changes and
+/* Build mode has to be legible without reading the HUD: the cursor changes and
    the viewport gets a thin warm frame, so it is obvious why a drag just moved
    a crate instead of the camera. */
-body.edit-mode canvas { cursor: crosshair; }
+body.build-mode canvas { cursor: crosshair; }
 /* (the warm rim around the whole frame retired 09-13: the wrench wears the accent) */
 
 #trayzone {
@@ -1123,7 +1123,7 @@ body.edit-mode canvas { cursor: crosshair; }
 /* a small pill after the words, not a 34 px block in front of them (R 10-11 22:48: "fix the size… move it to the end") */
 #hintbar .hint-copy { margin-left: 8px; padding: 0 5px; height: 18px; line-height: 16px; border-radius: 999px; border: 1px solid currentColor; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer; opacity: .8; vertical-align: middle; }
 #hintbar .hint-copy:hover { opacity: 1; }
-/* a claim that is a NODE (edit mode's selection line, with its lock checkbox): a row, clickable */
+/* a claim that is a NODE (build mode's selection line, with its lock checkbox): a row, clickable */
 #hintbar.has-node { pointer-events: auto; display: flex; gap: 14px; align-items: center; height: auto; min-height: 36px; padding: 7px 13px; white-space: normal; }
 #hintbar .edit-selbar { display: flex; gap: 14px; align-items: center; }
 /* the lantern pill is the bar's resting content: it yields while any claim shows (ui.js showStatus) */
@@ -1760,7 +1760,7 @@ body.touch #touch { display: block; }
 .sp-item-sub { color: var(--dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-mini { background: var(--well); border: none; color: var(--fg); border-radius: 4px; padding: 2px 7px; cursor: pointer; }
 .sp-empty { color: var(--dim); font-style: italic; padding: 4px 7px; }
-/* schema fields added for edit mode (panels.js: group / enum / color / tree, units) */
+/* schema fields added for build mode (panels.js: group / enum / color / tree, units) */
 .sp-unit { color: var(--dim); font-size: 11px; margin-left: 2px; }
 .sp-enum { background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 2px 4px; font: inherit; }
 .sp-color { width: 34px; height: 22px; padding: 0; border: 1px solid var(--edge); border-radius: 4px; background: none; }
@@ -1776,12 +1776,12 @@ body.touch #touch { display: block; }
 .sp-pick-cell.on { outline: 2px solid currentColor; outline-offset: 1px; position: relative; z-index: 1; }
 .sp-pick-hex { width: 7.5em; font: inherit; font-family: ui-monospace, monospace; }
 .sp-tree-row .sp-item-label { font-weight: 500; }
-/* ---- edit mode: the look (DESIGN-SPEC 2026-09-30, for R: "dark gray, utilitarian — Resonite/Godot/
+/* ---- build mode: the look (DESIGN-SPEC 2026-09-30, for R: "dark gray, utilitarian — Resonite/Godot/
    Blender/Maya"). The chrome is grey; the WORLD is the only colour. Colour in the chrome means one of:
    selection/focus (accent), an axis (x/y/z), danger, or a driven value.
    The --e-* values have ONE source: client/lib/edittheme.js (the VR painter imports it). They are
    literals here so first paint needs no script; tools/edittheme-test.ts fails if the two differ.
-   Scoped to the edit workspace / edit frames only — the HUD outside edit mode never sees them. */
+   Scoped to the edit workspace / edit frames only — the HUD outside build mode never sees them. */
 body.edit-workspace, .frame.edit {
   --e-bg0: #161618; --e-bg1: #1e1e21; --e-bg2: #26262a; --e-well: #121214; --e-line: #2f2f35;
   --e-hover: #2c2c31; --e-press: #36363c; --e-text: #d8d8dc; --e-dim: #8e8e96; --e-faint: #5e5e66;
@@ -1789,7 +1789,7 @@ body.edit-workspace, .frame.edit {
   --e-x: #e06a62; --e-y: #82c45e; --e-z: #5f95e8; --e-danger: #e07a72; --e-driven: #c9a24a;
   --e-driven-edge: rgba(201,162,74,.45); --e-mine: #b08ad8;
 }
-/* Flat gray in edit mode, every panel (R, 10-04: "flat gray is better for an editor — colors can't clash"). --panel
+/* Flat gray in build mode, every panel (R, 10-04: "flat gray is better for an editor — colors can't clash"). --panel
    must be RE-DECLARED here: a custom property resolves its var()s where it is declared, so :root's --panel stays
    baked teal however --panel-rgb is overridden below it — which is why docked chat/Inspector frames kept the tint. */
 body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var(--panel-a)); }
@@ -1983,7 +1983,7 @@ body.edit-workspace [data-frame="console"] { z-index: 30 !important; }   /* over
 .sp-f-text .sp-label { align-self: center; }
 /* ---- the edit WORKSPACE: strips and columns the frames dock into ---- */
 .edit-strip, .edit-col, .edit-split { position: fixed; z-index: 26; }
-/* leaving edit mode sets [hidden] on these; their own display rules (flex) outrank the UA's [hidden],
+/* leaving build mode sets [hidden] on these; their own display rules (flex) outrank the UA's [hidden],
    so without this the bar, rail and columns stayed PAINTED after the mode ended (found 09-30) */
 :is(.edit-strip, .edit-col, .edit-split)[hidden] { display: none !important; }
 .edit-strip { z-index: 27; background: #1c1c1e; border: 1px solid rgb(255 255 255 / .08); box-sizing: border-box; }
@@ -2012,7 +2012,7 @@ body.edit-workspace:has(.edit-menu-pop:not([hidden])) #dock { z-index: 45; }
   color: #e4e4e8; font: 12.5px var(--font); padding: 5px 9px; border-radius: 4px; cursor: pointer; }
 .edit-menu-item:hover { background: rgb(255 255 255 / .09); }
 .edit-menu-item kbd { color: #8e8e94; font: 11px var(--font-code); }
-.edit-mode-label { margin-left: auto; margin-right: 10px; color: #8e8e94; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.build-mode-label { margin-left: auto; margin-right: 10px; color: #8e8e94; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .edit-col { display: flex; flex-direction: column; gap: 0; background: #151517; border-left: 1px solid rgb(255 255 255 / .06); border-right: 1px solid rgb(255 255 255 / .06); box-sizing: border-box; overflow: hidden; }
 .edit-split { background: transparent; z-index: 29; }
 .edit-split-v { width: 6px; cursor: ew-resize; }
@@ -2025,7 +2025,7 @@ body.edit-workspace:has(.edit-menu-pop:not([hidden])) #dock { z-index: 45; }
 .frame.docked .fr-head { cursor: default; }
 .frame.docked .fr-btn { display: none; }        /* a docked frame is closed from the View menu, not with ✕ */
 body.edit-workspace .frame.docked { --panel-a: 1; }
-/* the WHOLE dock stays in builder mode (R 10-04: "keep the full dock in edit mode"): ∃ (its mic / ear / goggles stay
+/* the WHOLE dock stays in builder mode (R 10-04: "keep the full dock in build mode"): ∃ (its mic / ear / goggles stay
    beside it in the bar, R 10-04), the panel buttons, the wrench, then the tools. What doesn't fit folds under ⋯ (editlayout fitDock), never a tool. */
 body.edit-workspace #dock { flex-direction: column !important; }
 body.edit-workspace #dock button.edit-overflow { display: none !important; }
@@ -2136,7 +2136,7 @@ body.edit-workspace #dock button[data-toggles="edit"].on::before { display: none
 /* fixed chrome from before the columns keeps to the VIEWPORT between them */
 body.edit-workspace #trayzone { right: calc(var(--edit-right-w, 0px) + 10px); bottom: 116px; }   /* above the selection bar (build.js, bottom 64px) — S11 */
 body.edit-workspace #hintbar { left: calc(var(--edit-left-edge, 0px) + (100vw - var(--edit-left-edge, 0px) - var(--edit-right-w, 0px)) / 2); }
-/* ---- edit mode: the look, for the workspace's own chrome (DESIGN-SPEC 2026-09-30; tokens: the --e-* block above) */
+/* ---- build mode: the look, for the workspace's own chrome (DESIGN-SPEC 2026-09-30; tokens: the --e-* block above) */
 body.edit-workspace .edit-strip { background: var(--e-bg0); border-color: var(--e-line); }
 body.edit-workspace .edit-top { border-bottom: 1px solid var(--e-line); }
 body.edit-workspace .edit-col { background: var(--e-bg0); border-left-color: var(--e-line); border-right-color: var(--e-line); }
@@ -2155,7 +2155,7 @@ body.edit-workspace .edit-tools { background: var(--e-bg0); border-right: 1px so
 .edit-vbtn { display: inline-grid; place-items: center; }
 .edit-vbtn.on { background: var(--e-press); color: var(--e-accent); box-shadow: none; }
 .edit-viewbtns { border-left-color: var(--e-line); }
-.edit-mode-label { color: var(--e-dim); }
+.build-mode-label { color: var(--e-dim); }
 .edit-menu-pop, body.edit-workspace .sp-ctx { background: var(--e-bg1); border: 1px solid var(--e-line); border-radius: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / .45); }
 .edit-menu-item, body.edit-workspace .sp-ctx-item { color: var(--e-text); border-radius: 3px; font-size: 12px; }
 .edit-menu-item:hover, body.edit-workspace .sp-ctx-item:hover { background: var(--e-accent-bg); }
@@ -2203,7 +2203,7 @@ body.edit-workspace .sp-ctx-item.danger { color: var(--e-danger); }
 .edit-toolstrip-hint { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .edit-toolstrip-esc { color: var(--e-faint); }
 .edit-toolstrip-esc kbd { color: var(--e-dim); font: 11px var(--font-code); border: 1px solid var(--e-line); border-radius: 3px; padding: 0 4px; background: var(--e-well); }
-/* the chat, while it docks in the workspace, wears the editor greys (never outside edit mode) */
+/* the chat, while it docks in the workspace, wears the editor greys (never outside build mode) */
 body.edit-workspace [data-frame="chat"] { --brand: var(--e-text); --accent: var(--e-accent); }
 body.edit-workspace [data-frame="chat"] .fr-body * { font-style: normal; }
 </style>

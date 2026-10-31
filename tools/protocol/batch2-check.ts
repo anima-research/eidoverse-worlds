@@ -1,4 +1,4 @@
-// tools/protocol/batch2-check.ts — edit mode v1, components batch 2 (notes/eidoverse/DESIGN-components-batch2-2026-10-07.md,
+// tools/protocol/batch2-check.ts — build mode v1, components batch 2 (notes/eidoverse/DESIGN-components-batch2-2026-10-07.md,
 // with R's answers of 10-07): words (story, text, cleanText), media (picture, sound, where their bytes may come from),
 // look-at, and Credits (History's by-person views), through the real authority and the shared code the clients run.
 //   bun tools/protocol/batch2-check.ts                 every case

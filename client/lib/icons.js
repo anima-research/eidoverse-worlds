@@ -81,7 +81,7 @@ const P = {
   bug: ['M12 20v-9', 'M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z',
         'M14.12 3.88 16 2', 'M21 21a4 4 0 0 0-3.81-4', 'M21 5a4 4 0 0 1-3.55 3.97',
         'M22 13h-4', 'M3 21a4 4 0 0 1 3.81-4', 'M3 5a4 4 0 0 0 3.55 3.97', 'M6 13H2'],
-  // ---- edit mode's glyph set (2026-09-30 look pass): tool rail, build bar, tree toggles, the
+  // ---- build mode's glyph set (2026-09-30 look pass): tool rail, build bar, tree toggles, the
   // pictographs edit chrome used to carry. Verbatim Lucide (ISC); rect/circle/line elements written
   // as the equivalent path data so the one Path2D renderer draws them.
   mousePointer2: ['M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z'],

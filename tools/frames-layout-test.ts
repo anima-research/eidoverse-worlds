@@ -451,7 +451,7 @@ console.log("FRAMES — Tab hides / restores; Esc never touches the set");
 for (const x of allFrames()) x.hide();
 f.show(); mid.show();
 // R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus" — Tab is the
-// panel toggle; Esc is the browser's way out of full screen and closes only transient things (pops, dialogs, edit mode)
+// panel toggle; Esc is the browser's way out of full screen and closes only transient things (pops, dialogs, build mode)
 const press = (k: string, target: EventTarget = document.body) => target.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
 const esc = (target?: EventTarget) => press("Escape", target);
 const tab = (target?: EventTarget) => press("Tab", target);

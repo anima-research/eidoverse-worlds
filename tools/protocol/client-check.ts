@@ -1,4 +1,4 @@
-// tools/protocol/client-check.ts — slice 3b in a real browser: edit mode in a world sends requests, folds the log and
+// tools/protocol/client-check.ts — slice 3b in a real browser: build mode in a world sends requests, folds the log and
 // waits for the authority. One headless Chromium against a scratch sequencer (tools/harness.ts scratchBench: scratch port,
 // scratch WORLDS_DIR, its own profile; never 8968/8970). Run it under the house guards:
 //   code/scripts/eido-probe.sh -C <worktree> -t 400 tools/protocol/client-check.ts      (test:protocol's `client` suite does this)
@@ -110,8 +110,8 @@ try {
   }
   bob.send(JSON.stringify({ type: "join", world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // a fixed 500 ms raced the snapshot on Windows CI (40976310724): roles: with no id   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
-  check("B2 edit mode opens (the owner may build)", await waitFor(`document.body.classList.contains('edit-mode')`));
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
+  check("B2 build mode opens (the owner may build)", await waitFor(`document.body.classList.contains('build-mode')`));
 
   // ---- P: place from the ghost ----
   let n0 = myActs().length;
@@ -497,8 +497,8 @@ try {
   check("I14 …editing scale x writes [2, y, z] to the log (one act)", await waitDisk(() => { const sc = disk().entities[IDS.of("pebble")]?.c.transform.scale; return sc && sc[0] === 2 && sc[1] !== 2; }), disk().entities[IDS.of("pebble")]?.c.transform);
   check("I15 …and the page draws it stretched, not uniform", await waitFor(`import('/lib/world.js').then((m) => { const s = m.entities.get('pebble').scale; return Math.abs(s.x - 2) < 1e-6 && Math.abs(s.y - 0.4) < 1e-6 && s.y === s.z; })`), await evalJson(`import('/lib/world.js').then((m) => m.entities.get('pebble').scale.toArray())`));
 
-  // R 10-04: a reload made in edit mode came back with the edit frames floating, squashed, outside edit mode. An edit
-  // frame whose saved state says "shown" (saved while docked) must still start hidden; edit mode alone opens it.
+  // R 10-04: a reload made in build mode came back with the edit frames floating, squashed, outside build mode. An edit
+  // frame whose saved state says "shown" (saved while docked) must still start hidden; build mode alone opens it.
   const reborn = await page(`localStorage.setItem('ew-frame-zz-edit', JSON.stringify({ x: 60, y: 60, w: 300, h: 12, hidden: false }));
     localStorage.setItem('ew-frame-zz-plain', JSON.stringify({ x: 60, y: 60, w: 300, h: 200, hidden: false }));
     const F = await import('/lib/windows.js');
@@ -547,7 +547,7 @@ try {
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pt'))`, 12000);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); (await import('/lib/build.js')).setTool('select'); return true;`);
   await key("KeyP"); await sleep(400);
-  check("PT0 in edit mode P is the pivot tool's alone: photo mode stays off (main's P has a guard there, as H and R do)", (await evalJson(`import('/lib/controller.js').then((c) => c.photoMode)`)) === false);
+  check("PT0 in build mode P is the pivot tool's alone: photo mode stays off (main's P has a guard there, as H and R do)", (await evalJson(`import('/lib/controller.js').then((c) => c.photoMode)`)) === false);
   check("PT1 P arms the pivot tool: the handles sit at its origin (no pivot yet)", await waitFor(`import('/lib/build.js').then((B) => { const g = __gizmo(); return B.getTool() === 'pivot' && g.attached === 'pt' && g.viaProxy && Math.abs(g.proxyPos[0] - 14) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })`), await evalJson(`({ g: __gizmo().proxyPos, a: __gizmo().attached })`));
   const ptBefore = JSON.stringify(disk().entities[IDS.of("pt")].c.transform);
   const nPt = myActs().length;
@@ -632,13 +632,13 @@ try {
     await page(`const s = await import('/lib/scenegraph.js'); ${selBefore ? `s.sceneSelect(${JSON.stringify(selBefore)})` : "s.sceneDeselect()"}; return true;`); await sleep(400);
   }
 
-  // ---- MIC: the ∃ line's mic and ear glyphs in edit mode read the brand when live and the attention gold when hot (R, gym 10-17 20:44) ----
+  // ---- MIC: the ∃ line's mic and ear glyphs in build mode read the brand when live and the attention gold when hot (R, gym 10-17 20:44) ----
   const micInks = `(async () => { const M = await import('/lib/mictoggle.js'); const b = document.getElementById('micbtn'); const root = getComputedStyle(document.documentElement);
       const st = (svg) => (/stroke="([^"]+)"/.exec(svg ?? '') ?? [])[1] ?? null;
       return { brand: root.getPropertyValue('--brand').trim(), attn: root.getPropertyValue('--attn').trim(), btn: !!b, edit: document.body.classList.contains('edit-workspace'),
         on: st(M.micGlyphFor?.(true, false)), hot: st(M.micGlyphFor?.(true, true)), hotSvg: M.micGlyphFor?.(true, true) ?? '', off: st(M.micGlyphFor?.(false, false)), ear: st(M.earGlyphFor?.(true)), earOff: st(M.earGlyphFor?.(false)) }; })()`;
   { const inks = await evalJson(micInks);
-    check("MIC1 in edit mode the live mic and ear glyphs are the brand teal (var(--brand)), not the bar's grey", inks?.edit && inks?.btn && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.off !== inks?.brand && inks?.earOff !== inks?.brand, inks);
+    check("MIC1 in build mode the live mic and ear glyphs are the brand teal (var(--brand)), not the bar's grey", inks?.edit && inks?.btn && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.off !== inks?.brand && inks?.earOff !== inks?.brand, inks);
     check("MIC2 …and the mic picking up sound is the attention gold (var(--attn)), glowing, its capsule filled in the same gold", inks?.hot === inks?.attn && inks.hotSvg.includes(`drop-shadow(0 0 5px ${inks?.attn})`) && inks.hotSvg.includes(`fill="${inks?.attn}"`) && !/rgba\(/.test(inks.hotSvg), inks);
   }
   // 👁 Hidden in MY view (R 10-04: "Hidden" is the local one; research 51): never logged, and you can't lose track of it
@@ -918,8 +918,8 @@ try {
         const b = await n.sendRequest('create', { id: 'hphull-helm', components: { parent: { to: 'hphull' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'helm' }, station: { action: 'drive', input: { move: 'drive' } } } });
         return JSON.stringify([a.ok || (a.refused?.code + ": " + a.refused?.reason), b.ok || (b.refused?.code + ": " + b.refused?.reason)]);`);
       await evalJson(`(document.activeElement?.blur?.(), true)`);   // CP typed in the chat line: a key there is text
-      await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);   // edit mode's P is the pivot tool
-      const footFree = await waitFor(`!document.body.classList.contains('edit-mode')`);
+      await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);   // build mode's P is the pivot tool
+      const footFree = await waitFor(`!document.body.classList.contains('build-mode')`);
       const photo = `import('/lib/controller.js').then((c) => c.photoMode)`;
       await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
       check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, onFoot, offAgain, now: await evalJson(photo) });
@@ -932,7 +932,7 @@ try {
       const startedOn = await page(`const c = await import('/lib/controller.js'); if (!c.photoMode) c.togglePhotoMode(); return c.photoMode;`);
       check("HP2 …and a photo mode started anyway (not by the key) is ended by the next frame at the helm", atHelm && startedOn === true && await waitFor(`${photo}.then((p) => !p)`, 3000), { startedOn, now: await evalJson(photo) });
       await page(`(await import('/lib/controller.js')).photoMode && (await import('/lib/controller.js')).togglePhotoMode(); await (await import('/lib/net.js')).sendRequest('delete', { id: 'hphull' }); return true;`);
-      await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); }
+      await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`); }
     // CL: nearbyClimb reads routes from the view; a change to one (disabled, moved) is seen (client/lib/climb.js)
     { const ok = await page(`return (await (await import('/lib/net.js')).sendRequest('create', { id: 'clrung', model: '${CRATE}', components: { climb: { points: [[0, 0, 0], [0, 3, 0]] } }, place: { at: [-9, 9] } })).ok ?? 'refused';`);
       const near = (dx: number) => `Promise.all([import('/lib/world.js'), import('/lib/climb.js'), import('/lib/core.js')]).then(([w, c, k]) => { const o = w.entities.get('clrung'); if (!o) return null; o.updateWorldMatrix(true, false);
@@ -1021,10 +1021,10 @@ try {
       check("CB1 Places › Save with the Bounds fields cleared saves the spawn and removes the bounds, as the panel says empty means (house I25), never a zero box", spawned && before !== "null" && after === "null", { spawned, before, after, toasts: await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 100)).slice(-3)`) }); }
     // EK (R 10-15 23:09: "esc doesn't take you back out of fullscreen mode (f11). Right now it toggles your menus"): Esc never
     // hides or restores the panel set (Tab does); F11 is the PAGE's full screen, so the browser's own Esc leaves it; Esc still
-    // closes the transient things. Out of edit mode (build.js claims Esc there), with two panels open.
-    { await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+    // closes the transient things. Out of build mode (build.js claims Esc there), with two panels open.
+    { await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
       { await waitFor(`!document.body.classList.contains('edit-workspace')`); const inks = await evalJson(micInks);
-        check("MIC3 outside edit mode the same: live = the brand, hot = the attention gold", !inks?.edit && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.hot === inks?.attn && inks?.off !== inks?.brand, inks); }
+        check("MIC3 outside build mode the same: live = the brand, hot = the attention gold", !inks?.edit && inks?.on === inks?.brand && inks?.ear === inks?.brand && inks?.hot === inks?.attn && inks?.off !== inks?.brand, inks); }
       await page(`const w = await import('/lib/windows.js'); const base = await import('/lib/base.js'); globalThis.__quiet = []; base.bus.on('esc-quiet', (d) => __quiet.push(d)); for (const f of w.allFrames()) f.hide(); w.getFrame('chat')?.show(); w.getFrame('settings')?.show(); document.activeElement?.blur?.(); return true;`);
       const openIds = `import('/lib/windows.js').then((w) => w.allFrames().filter((f) => f.visible).map((f) => f.id).sort().join())`;
       const press = (k: string) => evalJson(`(() => { const e = new KeyboardEvent('keydown', { key: '${k}', code: '${k}', bubbles: true, cancelable: true }); const t = document.activeElement ?? document.body; const ok = t.dispatchEvent(e); t.dispatchEvent(new KeyboardEvent('keyup', { key: '${k}', code: '${k}', bubbles: true })); return { prevented: !ok }; })()`);   // at the focused element, as a real key is: document listeners (a context menu's) see it too

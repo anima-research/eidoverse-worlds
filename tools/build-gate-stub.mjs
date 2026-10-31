@@ -71,7 +71,7 @@ export const sendDrag = () => {};
 export const myState = { pos: [0, 0, 0], yaw: 0 };
 export const mouse = { x: 0, y: 0 };
 export const setPointerClaim = () => {};
-export const setEditingProbe = () => {};
+export const setBuildingProbe = () => {};
 
 export const hints = [];
 export const flashHint = (t) => { hints.push(String(t)); };

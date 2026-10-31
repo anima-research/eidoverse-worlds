@@ -204,8 +204,8 @@ try {
   // ---- E: the editor's Openable card and Add Component, as a builder meets them ----
   await stage("E", async () => {
   const insp = `document.querySelector('[data-frame="inspector"]')`;
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
-  await waitFor(`document.body.classList.contains('edit-mode')`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
+  await waitFor(`document.body.classList.contains('build-mode')`);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('gate'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'gate')`);
   // a card is its header row (div.sp-f-group holding the .sp-group button) and the rows after it, up to the next header
@@ -228,7 +228,7 @@ try {
   check("E3 Add Component offers Path and LookAt (what the authority takes: look-at since batch 2), and 'door' finds Openable", all?.some((t: string) => /^Path/.test(t)) && all?.some((t: string) => /^LookAt/.test(t)) && items?.some((t: string) => /Openable/.test(t)), { all, items });
   await evalJson(`[...document.querySelectorAll('.sp-pop-item')].find((b) => /Openable/.test(b.textContent))?.click(), true`);
   check("E4 …adding it writes its state and its open action: the toy box opens with E", await waitDisk(() => disk().entities[N("box1")]?.c.openable?.open === false && disk().entities[N("box1")]?.c.reactions?.open?.kind === "toggle"), { c: disk().entities[N("box1")]?.c });
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
   // ---- VA: the body's arrival refused (a takeover reconnect: the server still has my body where it was, and the client
   // re-arrives with a plain move from far away). Review of 5a978cc0: the arrival retried at 5 Hz, forever ----
@@ -365,7 +365,7 @@ try {
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'hdsign', components: { label: 'Hide sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HIDE ME', size: 0.2, width: 2 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('hdsign'))`, 'hdsign'); await sleep(800);
   const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'), w = await import('/lib/world.js');
-    b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hdsign'); await new Promise((z) => setTimeout(z, 700));
+    b.setBuildMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hdsign'); await new Promise((z) => setTimeout(z, 700));
     base.bus.emit('edit-righttab', 'attributes'); await new Promise((z) => setTimeout(z, 600));
     const box = () => { const at = document.querySelector('[data-frame="attributes"]'); const row = [...at.querySelectorAll('.sp-row')].find((r) => /hidden for all/.test(r.textContent)); return row?.querySelector('input[type=checkbox]'); };
     const sample = async (ms) => { const out = []; for (let t = 0; t <= ms; t += 100) { const o = w.entities.get('hdsign'); out.push([t, !!box()?.checked, !!o?.visible, w.bagOf('hdsign')?.hidden === true]); await new Promise((z) => setTimeout(z, 100)); } return out; };
@@ -373,7 +373,7 @@ try {
     const early = []; box()?.click(); for (let i = 0; i < 6; i++) { base.bus.emit('comp', { id: 'some-other-thing', type: 'transform' }); await new Promise((z) => requestAnimationFrame(z)); early.push(!!box()?.checked); }
     await sample(1500); box()?.click(); await sample(1500);
     box()?.click(); const on = await sample(2500); box()?.click(); const off = await sample(2500);
-    base.bus.emit('edit-righttab', 'inspector'); b.setEditMode(false);
+    base.bus.emit('edit-righttab', 'inspector'); b.setBuildMode(false);
     const first = (xs, f) => (xs.find(f) ?? [null])[0];
     return { early, onChecked: first(on, (x) => x[1]), onHiddenRec: first(on, (x) => x[3]), onInvisible: first(on, (x) => !x[2]), offUnchecked: first(off, (x) => !x[1]), offRec: first(off, (x) => !x[3]), offVisible: first(off, (x) => x[2]), tail: [on.at(-1), off.at(-1)] };`);
   check("HD1 ticking 'hidden for all' hides the sign and the box shows it within half a second; unticking brings both back as fast", r && r.onInvisible != null && r.onInvisible <= 500 && r.onChecked != null && r.onChecked <= 500 && r.offVisible != null && r.offVisible <= 500 && r.offUnchecked != null && r.offUnchecked <= 500, r);
@@ -387,7 +387,7 @@ try {
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { a: [p.x + f[0] * 4 - r[0] * 0.8, p.z + f[1] * 4 - r[1] * 0.8], b: [p.x + f[0] * 4 + r[0] * 0.8, p.z + f[1] * 4 + r[1] * 0.8] };`);
   for (const [id, xz] of [["sba", at.a], ["sbb", at.b]]) await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { label: '${id}', transform: { pos: [${xz[0]}, 0, ${xz[1]}], scale: 0.25 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('sba') && !!m.entities.get('sbb'))`, 'sba and sbb'); await sleep(1000);
-  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);
+  await page(`(await import('/lib/build.js')).setBuildMode(true); return true;`); await sleep(1500);
   const scr = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const o = w.entities.get('${id}'); o.updateWorldMatrix(true, true);
     const p = new T.Box3().setFromObject(o).getCenter(new T.Vector3()).project(c.camera); const r = c.canvas.getBoundingClientRect(); return [r.left + (p.x + 1) / 2 * r.width, r.top + (1 - p.y) / 2 * r.height];`);
   const A = await scr("sba"), B = await scr("sbb");
@@ -406,17 +406,17 @@ try {
   const s2 = await sel();
   check("SB1 Shift-click in the viewport adds a second thing to the selection", JSON.stringify([...(s1 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { A, B, s1 });
   check("SB2 Shift-drag on bare space draws a box, and both things inside it are selected", JSON.stringify([...(s2 ?? [])].sort()) === JSON.stringify([N("sba"), N("sbb")].sort()), { box: [sx, sy, ex, ey], start, s2 });
-  await page(`(await import('/lib/build.js')).setEditMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
+  await page(`(await import('/lib/build.js')).setBuildMode(false); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'sba' }); await m.sendRequest('delete', { id: 'sbb' }); return true;`).catch(() => null);
   });
   // ---- SL: selection layers (R, 10-11: "selection layers so people don't select the ground plane all the time") ----
   await stage("SL", async () => {
-  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(4000);   // the edit camera first (it eases in): placed and projected from it
+  await page(`(await import('/lib/build.js')).setBuildMode(true); return true;`); await sleep(4000);   // the edit camera first (it eases in): placed and projected from it
   const at = await page(`const c = await import('/lib/core.js'), co = await import('/lib/controller.js'); const d = c.camera.getWorldDirection(new c.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const f = [d.x / h, d.z / h], r = [-d.z / h, d.x / h], p = co.myState.pos; return { me: [p.x, p.z], crate: [p.x + f[0] * 4, p.z + f[1] * 4], floorPt: [p.x + f[0] * 4 + r[0] * 2, p.z + f[1] * 4 + r[1] * 2] };`);
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'slfloor', model: '${CRATE}', components: { label: 'Floor slab', 'hesperus/layer': 'environment', transform: { pos: [${at.floorPt[0]}, -0.09, ${at.floorPt[1]}], scale: [1.2, 0.05, 1.2] } } });   // a 35 m slab lost the bench's GPU context; size defaults are layers-test's
     return await m.sendRequest('create', { id: 'slcrate', model: '${CRATE}', components: { label: 'Layer crate', transform: { pos: [${at.crate[0]}, 0, ${at.crate[1]}], scale: 0.25 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('slfloor') && !!m.entities.get('slcrate'))`, 'slfloor and slcrate'); await sleep(1000);
-  await page(`(await import('/lib/build.js')).setEditMode(true); return true;`); await sleep(1500);   // as SB: placed from the play camera, then edit mode
+  await page(`(await import('/lib/build.js')).setBuildMode(true); return true;`); await sleep(1500);   // as SB: placed from the play camera, then build mode
   // find, on screen, a pixel whose NEAREST thing is the crate and one whose nearest is the floor (whatever the camera does)
   const find = (id) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const rc = new T.Raycaster(), r = c.canvas.getBoundingClientRect();
     const objs = [...w.entities.values()].filter(Boolean); const want = w.entities.get('${id}');
@@ -429,13 +429,13 @@ try {
   if (!cratePx || !floorPx) return;
   const m = (type, x, y) => cdp.send("Input.dispatchMouseEvent", { type, x: Math.round(x), y: Math.round(y), button: "left", buttons: type === "mouseReleased" ? 0 : 1, clickCount: 1 });
   const clickAt = async (p) => { await m("mousePressed", p[0], p[1]); await m("mouseReleased", p[0], p[1]); await sleep(500); return evalJson(`import('/lib/scenegraph.js').then((s) => s.sceneSelected())`); };
-  // Esc only when something is selected: Esc with nothing selected leaves edit mode (and the next click would be ignored)
+  // Esc only when something is selected: Esc with nothing selected leaves build mode (and the next click would be ignored)
   const esc = () => page(`if ((await import('/lib/scenegraph.js')).sceneSelected()) (await import('/lib/base.js')).bus.emit('key', new KeyboardEvent('keydown', { code: 'Escape' })); return true;`);
   const a = await clickAt(floorPx); await esc(); await sleep(300);
   const b = await clickAt(cratePx); await esc(); await sleep(300);
   await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', true); return true;`);
   const c2 = await clickAt(floorPx); await esc();
-  await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', false); (await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'slfloor' }); await n.sendRequest('delete', { id: 'slcrate' }); return true;`).catch(() => null);
+  await page(`(await import('/lib/selectmask.js')).setLayerOn('environment', false); (await import('/lib/build.js')).setBuildMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'slfloor' }); await n.sendRequest('delete', { id: 'slcrate' }); return true;`).catch(() => null);
   check("SL1 a floor slab on 'environment' is off for clicks at first: clicking it selects nothing; the crate on it still selects", a !== N("slfloor") && b === N("slcrate"), { a, b, floorPx, cratePx });
   check("SL2 Select ▸ environment on: the floor is clickable again", c2 === N("slfloor"), { c2 });
   });
@@ -449,7 +449,7 @@ try {
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('syorb') && !!m.entities.get('syb'))`, 'syorb and syb'); await sleep(1000);
   const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), w = await import('/lib/world.js'), T = (await import('/lib/core.js')).THREE, n = await import('/lib/net.js');
     const wait = (ms) => new Promise((z) => setTimeout(z, ms));
-    b.setEditMode(true); await wait(800);
+    b.setBuildMode(true); await wait(800);
     // SY1: picked in the TREE (no viewport click): the viewport outlines it
     sg.sceneSelect('syb'); await wait(300); const v1 = b.selectionView(); const cb = new T.Box3().setFromObject(w.entities.get('syb')).getCenter(new T.Vector3());
     const inBox = (v, p) => p.x >= v.min[0] - 0.01 && p.x <= v.max[0] + 0.01 && p.z >= v.min[2] - 0.01 && p.z <= v.max[2] + 0.01;
@@ -463,7 +463,7 @@ try {
   const bare = await page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE; const r = c.canvas.getBoundingClientRect(), rc = new T.Raycaster(), objs = [...w.entities.values()].filter(Boolean); for (let y = r.top + 60; y < r.bottom - 60; y += 20) for (let x = r.left + 360; x < r.right - 360; x += 30) { if (document.elementFromPoint(x, y) !== c.canvas) continue; rc.setFromCamera(new T.Vector2((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); if (!rc.intersectObjects(objs, true).length) return [x, y]; } return null;`);   // nothing at all under it (as the viewport's own pick sees things), on the canvas itself   // the canvas itself, not a panel over it
   await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: Math.round(bare[0]), y: Math.round(bare[1]), button: "left", buttons: 1, clickCount: 1 });
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: Math.round(bare[0]), y: Math.round(bare[1]), button: "left", buttons: 0, clickCount: 1 }); await sleep(500);
-  const after = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'); const o = { scene: sg.sceneSelected(), view: b.selectionView() }; b.setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'syorb' }); await n.sendRequest('delete', { id: 'syb' }); return o;`);
+  const after = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'); const o = { scene: sg.sceneSelected(), view: b.selectionView() }; b.setBuildMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'syorb' }); await n.sendRequest('delete', { id: 'syb' }); return o;`);
   check("SY1 picked in the Hierarchy, the viewport outlines the same thing", r?.sy1, r?.v1);
   check("SY2 after an edit and an undo, a click on empty space deselects it in the Hierarchy AND the viewport", r?.afterUndo?.scene === N("syb") && after.scene == null && !after.view.visible, { afterUndo: r?.afterUndo, after });
   check("SY3 the selection box follows a moving (orbiting) thing", r?.follow?.length === 6 && r.follow.every(Boolean), r?.follow);
@@ -490,7 +490,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'nlbox', model: '${CRATE}', components: { label: 'Name box', transform: { pos: [${me[0]} + 2.5, 0, ${me[1]} - 2], scale: 0.3 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('nlbox'))`, 'nlbox'); await sleep(600);
-  await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('nlbox'); return true;`);
+  await page(`(await import('/lib/build.js')).setBuildMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('nlbox'); return true;`);
   const insp = `document.querySelector('[data-frame="inspector"]')`;
   await waitFor(`${insp}.querySelector('.sp-row.sp-title input')?.value === 'Name box'`);
   const lockBtn = `[...${insp}.querySelectorAll('.sp-iconbtn button')].find((b) => /Lock it|Locked/.test(b.title))`;
@@ -500,7 +500,7 @@ try {
   const locked = await waitFor(`import('/lib/world.js').then((m) => !!m.bagOf('nlbox')?.lock)`);
   await sleep(400); const svg1 = await evalJson(`${lockBtn}?.querySelector('svg')?.innerHTML ?? null`);
   await evalJson(`(${lockBtn}?.click(), true)`); await waitFor(`import('/lib/world.js').then((m) => !m.bagOf('nlbox')?.lock)`);
-  await page(`(await import('/lib/build.js')).setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'nlbox' }); return true;`).catch(() => null);
+  await page(`(await import('/lib/build.js')).setBuildMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'nlbox' }); return true;`).catch(() => null);
   check("NL1 the Inspector's first line is the name as a title, with the eye and the padlock on it; the padlock locks it, and its icon changes", before.title === "Name box" && before.sameLine && locked && !!svg1 && svg1 !== before.svg, { before: { ...before, svg: !!before.svg }, locked, iconChanged: !!svg1 && svg1 !== before.svg });
   });
   // ---- HY: History says what changed (R, 10-10 23:55: "Is there a reason the history isn't more explicit here?") ----
@@ -509,9 +509,9 @@ try {
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'hysign', components: { label: 'History sign', transform: { pos: [${me[0]} + 2, 1.2, ${me[1]} + 2] }, text: { text: 'HI', size: 0.2, width: 5.076 } } });
     await new Promise((z) => setTimeout(z, 1600)); return await m.sendRequest('set', { id: 'hysign', component: 'text', value: { text: 'HI', size: 0.2, width: 3.912 } });`);
   await sleep(800);
-  const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'); b.setEditMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hysign'); await new Promise((z) => setTimeout(z, 600));
+  const r = await page(`const b = await import('/lib/build.js'), sg = await import('/lib/scenegraph.js'), base = await import('/lib/base.js'); b.setBuildMode(true); await new Promise((z) => setTimeout(z, 500)); sg.sceneSelect('hysign'); await new Promise((z) => setTimeout(z, 600));
     base.bus.emit('edit-righttab', 'history'); let lines = []; for (let i = 0; i < 20 && !lines.some((l) => /width/.test(l)); i++) { await new Promise((z) => setTimeout(z, 250)); lines = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((e) => e.textContent); }
-    base.bus.emit('edit-righttab', 'inspector'); b.setEditMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'hysign' }); return lines.slice(0, 4);`);
+    base.bus.emit('edit-righttab', 'inspector'); b.setBuildMode(false); const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: 'hysign' }); return lines.slice(0, 4);`);
   check("HY1 History says what an edit changed: 'text: width 5.076 → 3.912'", r?.some((l: string) => /text: width 5\.076 → 3\.912/.test(l)), r);
   });
   // ---- WG: out of reach (R, 10-10: "it's not giving me much clear feedback about why I can't grab it. The error line
@@ -567,7 +567,7 @@ try {
   const made = await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'clbox', model: '${CRATE}', components: { label: 'Claimed', transform: { pos: [${me[0]} + 1.5, 0, ${me[1]} + 1], scale: 0.3 } } });`);
   check("(setup) a crate to be dragged by someone else", made?.ok, made);
   await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('clbox') && !!m.bagOf('clbox'))`, 15000); await sleep(400);
-  await key("KeyE"); await sleep(600);   // edit mode: the Hierarchy is up
+  await key("KeyE"); await sleep(600);   // build mode: the Hierarchy is up
   const seen = await page(`const b = await import('/lib/base.js'); b.bus.emit('drag', { id: 'clbox', pos: [${me[0]} + 1.6, 0, ${me[1]} + 1], yaw: 0, by: 'Zed' }); await new Promise((r) => setTimeout(r, 350));
     const bd = await import('/lib/build.js'); const rows = [...document.querySelectorAll('[data-frame="hierarchy"] .schema-scroll *')].map((e) => e.textContent).filter((t) => /editing: Zed/.test(t)).length;
     return { claims: bd.claimsNow(), rows };`);
@@ -699,7 +699,7 @@ try {
   const me = await evalJson(`import('/lib/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   await page(`const m = await import('/lib/net.js'); return await m.sendRequest('create', { id: 'getool', model: '${CRATE}', components: { label: 'Grip tool', grabbable: {}, transform: { pos: [${me[0]} + 0.9, 0, ${me[1]}], scale: 0.25 } } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('getool'))`, 'getool'); await sleep(700);
-  const opened = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/gripedit.js')).openGripEditor('getool');
+  const opened = await page(`(await import('/lib/build.js')).setBuildMode(true); await new Promise((z) => setTimeout(z, 400)); (await import('/lib/gripedit.js')).openGripEditor('getool');
     const p = globalThis.__gripeditTest(); const add = [...p.panel.querySelectorAll('button')].find((b) => b.textContent === '+ grip'); add.click(); await new Promise((z) => setTimeout(z, 1500));
     const w = await import('/lib/world.js'); return { grips: Object.keys(w.bagOf('getool')?.grabbable?.grips ?? {}), start: w.bagOf('getool')?.grabbable?.grips?.grip1?.pos ?? null, ed: globalThis.__gripedit(), gizmo: globalThis.__gizmo?.().attached ?? null };`);
   check("GE1 the grabbable card's grip editor adds a grip and shows a ghost hand on it (and the main gizmo steps aside)", opened.grips.includes("grip1") && opened.ed?.name === "grip1" && opened.ed?.ghost && !opened.gizmo, opened);
@@ -717,7 +717,7 @@ try {
     const gp = new T.Vector3(...g.pos).applyMatrix4(o.matrixWorld); const P = { p: new T.Vector3(), q: new T.Quaternion() }; const palm = tp.palmOf(n.net.you, 'right', P);
     return { ok: r?.ok ?? null, why: r?.refused?.reason ?? null, gap: palm ? +gp.distanceTo(P.p).toFixed(4) : null };`);
   check("GE4 try it: it is picked up by that grip, and the palm sits on the grip point (within 1 cm)", tried.ok && tried.gap !== null && tried.gap < 0.01, tried);
-  await page(`(await import('/lib/gripedit.js')).closeGripEditor(); (await import('/lib/thingphysics.js')).physicsApi?.put?.('getool'); (await import('/lib/build.js')).setEditMode(false);`);
+  await page(`(await import('/lib/gripedit.js')).closeGripEditor(); (await import('/lib/thingphysics.js')).physicsApi?.put?.('getool'); (await import('/lib/build.js')).setBuildMode(false);`);
   });
   // ---- NH: the authority has no body for me while I think I'm here (R, 10-10 after a rename): a grab re-arrives ----
   await stage("NH", async () => {
@@ -748,12 +748,12 @@ try {
   const r = await page(`const W = await import('/lib/windows.js'), B = await import('/lib/build.js'); const wait = (ms) => new Promise((z) => setTimeout(z, ms));
     const ids = W.allFrames().map((f) => f.id); const a = ['actions', 'profile', 'keyboard', 'debug'].find((x) => ids.includes(x)), b = ['profile', 'keyboard', 'actions', 'debug'].find((x) => ids.includes(x) && x !== a);
     try { localStorage.removeItem('ew.edit.panels'); } catch {}
-    W.getFrame(a).show(); W.getFrame(b).hide(); B.setEditMode(true); await wait(500);
+    W.getFrame(a).show(); W.getFrame(b).hide(); B.setBuildMode(true); await wait(500);
     const inEdit1 = [W.getFrame(a).visible, W.getFrame(b).visible]; W.getFrame(b).show(); await wait(200);
-    B.setEditMode(false); await wait(500); const inPlay = [W.getFrame(a).visible, W.getFrame(b).visible];
-    B.setEditMode(true); await wait(500); const inEdit2 = [W.getFrame(a).visible, W.getFrame(b).visible]; B.setEditMode(false); await wait(400); W.getFrame(a).hide();
+    B.setBuildMode(false); await wait(500); const inPlay = [W.getFrame(a).visible, W.getFrame(b).visible];
+    B.setBuildMode(true); await wait(500); const inEdit2 = [W.getFrame(a).visible, W.getFrame(b).visible]; B.setBuildMode(false); await wait(400); W.getFrame(a).hide();
     return { a, b, inEdit1, inPlay, inEdit2 };`);
-  check("EP1 entering edit mode puts play's panels away; what I open in edit mode comes back next time; play's come back on leaving", JSON.stringify(r.inEdit1) === "[false,false]" && JSON.stringify(r.inPlay) === "[true,false]" && JSON.stringify(r.inEdit2) === "[false,true]", r);
+  check("EP1 entering build mode puts play's panels away; what I open in build mode comes back next time; play's come back on leaving", JSON.stringify(r.inEdit1) === "[false,false]" && JSON.stringify(r.inPlay) === "[true,false]" && JSON.stringify(r.inEdit2) === "[false,true]", r);
   });
   // ---- CH: the chat's "scroll up for earlier" note appears once, however many times I rejoin (R, 10-10) ----
   await stage("CH", async () => {
@@ -766,7 +766,7 @@ try {
   await page(`const m = await import('/lib/net.js'); await m.sendRequest('create', { id: 'atbox', model: '${CRATE}', components: { label: 'Attr box', transform: { pos: [${me[0]} + 3, 0, ${me[1]} + 3], scale: 0.3 } } });
     return await m.sendRequest('set', { id: 'atbox', component: 'motion', value: { type: 'spin', axis: [0, 1, 0], degPerSec: 30 } });`);
   await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('atbox'))`, 'atbox'); await sleep(600);
-  const r = await page(`(await import('/lib/build.js')).setEditMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('atbox'); await new Promise((z) => setTimeout(z, 900));
+  const r = await page(`(await import('/lib/build.js')).setBuildMode(true); await new Promise((z) => setTimeout(z, 500)); (await import('/lib/scenegraph.js')).sceneSelect('atbox'); await new Promise((z) => setTimeout(z, 900));
     const insp = document.querySelector('[data-frame="inspector"]'); const labels = [...insp.querySelectorAll('.sp-label')].map((l) => l.textContent.trim());
     const eye = [...insp.querySelectorAll('.sp-bar button')].find((b) => /YOUR view/.test(b.title)); const hasEyeIcon = !!eye?.querySelector('svg');
     const spinX = [...insp.querySelectorAll('.sp-row.sp-f-group')].find((g) => /^▾?[ ]*Spin/.test(g.textContent.trim()))?.querySelector('.sp-gact');
@@ -775,7 +775,7 @@ try {
     const ag = [...at.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim()); const ig = [...insp.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2).trim());
     (await import('/lib/base.js')).bus.emit('edit-righttab', 'inspector'); await new Promise((z) => setTimeout(z, 300));   // back to the Inspector whatever happens (VM2b measures it)
     let removed = null; if (spinX) { spinX.click(); await new Promise((z) => setTimeout(z, 1500)); removed = !(await import('/lib/world.js')).bagOf('atbox')?.motion; }
-    (await import('/lib/build.js')).setEditMode(false);
+    (await import('/lib/build.js')).setBuildMode(false);
     return { ag, ig, hiddenCheckbox: labels.includes('hidden'), parentInInspector: labels.includes('parent'), eye: eye?.title ?? null, hasEyeIcon, attr: al, spinX: !!spinX, removed };`);
   check("AT1 the Inspector has the my-view eye (with its icon) and no 'hidden' checkbox or parent row; Attributes has id, hidden for all, parent and every component as JSON", !r.hiddenCheckbox && !r.parentInInspector && r.eye && r.hasEyeIcon && ["id", "hidden for all", "parent", "motion", "label"].every((x) => r.attr.includes(x)), r);
   check("AT1b rotation order and the quaternion are in Attributes ('Rotation, as stored'), not an Inspector 'Advanced' group (R 10-10 23:38)", r?.ag?.includes("Rotation, as stored") && !r?.ig?.includes("Advanced"), { ag: r?.ag, ig: r?.ig });
@@ -800,7 +800,7 @@ try {
   check("MT2 a one-slot override (hesperus/material:<its slot>) recolours that slot; a slot the model doesn't have changes nothing", r.slot && r.slotA === "0044ff" && r.slotB === r.before[0], r);
   check("MT1 a hesperus/material override recolours that one thing (a clone; the same model elsewhere is untouched), and deleting it brings the model's own material back", r.set === true && r.a[0] === "ff2200" && Math.abs(r.a[1] - 0.15) < 1e-6 && r.b[0] === r.before[0] && !r.sharedWithB && r.backIsOwn && r.del === true, r);
   });
-  // ---- EC: the camera in edit mode (R, 10-10: "we need camera moving controls in edit mode ... Blender or Maya ... or
+  // ---- EC: the camera in build mode (R, 10-10: "we need camera moving controls in build mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
   // the earlier stages punted the crate away, walked me off and left things at my feet: step to clear ground and put
@@ -810,7 +810,7 @@ try {
   const put = await page(`const c = await import('/lib/controller.js'), k = await import('/lib/core.js'), n = await import('/lib/net.js'); const d = k.camera.getWorldDirection(new k.THREE.Vector3()); const h = Math.hypot(d.x, d.z) || 1;
     const r = await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [c.myState.pos.x + d.x / h * 1.5, 0, c.myState.pos.z + d.z / h * 1.5], scale: [0.3, 0.3, 0.3] } }); return { ok: !!r?.ok, code: r?.refused?.code ?? null, dir: [d.x, d.y, d.z] };`); await sleep(2500);
   check("(setup) the crate is back in view, on clear ground", put?.ok, put);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   const cam = () => evalJson(`import('/lib/controller.js').then((c) => ({ yaw: c.camYaw, pitch: c.camPitch, dist: c.camDist, pan: c.editPan.toArray() }))`);
   // a drag: press at (x, y), three moves, release. where: 'cuball' = a pixel on that thing, 'bare' = a pixel no thing is under
   const drag = (where: string, button: number, alt: boolean, mx: number, my: number) => page(`const c = await import('/lib/core.js'), w = await import('/lib/world.js'), T = c.THREE;
@@ -849,14 +849,14 @@ try {
   await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', key: 'w', bubbles: true })), true)`);
   const home = await cam();
   check("EC7 after F frames a far thing, walking (W) brings the camera back to my body", Math.hypot(...far.pan) > 30 && Math.hypot(...home.pan) < 0.05, { far: far.pan, home: home.pan });
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   const c5 = await cam();
-  check("EC6 leaving edit mode gives the camera back to the body: no pan, no further than play allows", Math.hypot(...c5.pan) === 0 && c5.dist <= 16, c5);
+  check("EC6 leaving build mode gives the camera back to the body: no pan, no further than play allows", Math.hypot(...c5.pan) === 0 && c5.dist <= 16, c5);
   });
   // ---- HQ: a quieter hierarchy (R, 10-10: names only, the id on hover, a View menu for ids / kinds / components; and
   // the World row says which world it is) ----
   await stage("HQ", async () => {
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
   const H = `document.querySelector('[data-frame="hierarchy"]')`;
   const row = () => evalJson(`(() => { const l = [...${H}.querySelectorAll('.sp-tree-row')].find((x) => x.dataset.id === 'cuball'); const m = l?.querySelector('.sp-item-main'); return l ? { label: m.querySelector('.sp-item-label')?.textContent, sub: m.querySelector('.sp-item-sub')?.textContent ?? null, title: m.title } : null; })()`);
@@ -884,30 +884,30 @@ try {
   check("HQ4a …and with them listed, things start folded (no component rows until I open one)", Array.isArray(shut) && shut.length === 0, shut);
   check("HQ4 Options ▸ list components: opened, its components are rows under it (grabbable, physics)", cs?.includes("grabbable") && cs?.includes("physics") && !cs?.includes("label"), cs);
   await evalJson(`(localStorage.removeItem('ew.hierarchy.view'), true)`);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
-  // ---- DK: the dock folds in edit mode (R, 10-10: a "..." that expands to the full dock and shrinks to just the ∃ and the wrench) ----
+  // ---- DK: the dock folds in build mode (R, 10-10: a "..." that expands to the full dock and shrinks to just the ∃ and the wrench) ----
   await stage("DK", async () => {
   await evalJson(`(localStorage.removeItem('ew.edit.dock'), true)`);
   const shown = () => evalJson(`(() => { const d = document.getElementById('dock'); const vis = (b) => getComputedStyle(b).display !== 'none' && !b.hidden;
     return { panels: [...d.querySelectorAll('button[data-toggles]')].filter((b) => b.dataset.toggles !== 'edit' && vis(b)).length, wrench: !!d.querySelector('button[data-toggles="edit"]') && vis(d.querySelector('button[data-toggles="edit"]')), more: !!d.querySelector('.dock-more') && vis(d.querySelector('.dock-more')) }; })()`);
   const play = await shown();
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(500);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(500);
   const folded = await shown();
-  check("DK1 entering edit mode, the dock is folded: the wrench and the ⋯, no panel buttons", play.panels > 0 && folded.panels === 0 && folded.wrench && folded.more, { play, folded });
+  check("DK1 entering build mode, the dock is folded: the wrench and the ⋯, no panel buttons", play.panels > 0 && folded.panels === 0 && folded.wrench && folded.more, { play, folded });
   await evalJson(`(document.querySelector('#dock .dock-more').click(), true)`); await sleep(300);
   const open = await shown();
   check("DK2 the ⋯ opens it: the panel buttons are back", open.panels > 0 && open.wrench && open.more, open);
   await evalJson(`(document.querySelector('#dock .dock-more').click(), true)`); await sleep(300);
   check("DK3 …and the ⋯ again folds it", (await shown()).panels === 0, await shown());
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(500);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`); await sleep(500);
   const back = await shown();
-  check("DK4 leaving edit mode gives the dock back whole, with no ⋯", back.panels === play.panels && !back.more, { play, back });
+  check("DK4 leaving build mode gives the dock back whole, with no ⋯", back.panels === play.panels && !back.more, { play, back });
   await evalJson(`(localStorage.removeItem('ew.edit.dock'), true)`);
   });
   // ---- CB: the channel box, after Maya's (R, 10-10): plain numbers, scale coloured, the name a handle, reset in the menu ----
   await stage("CB", async () => {
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: 'cuball', component: 'transform', value: { pos: [7.5, 0.25, 6], scale: [0.5, 0.5, 0.5] } }); (await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`);
   const I = `document.querySelector('[data-frame="inspector"]')`;
   const rows = () => evalJson(`[...${I}.querySelectorAll('.sp-row.sp-f-num')].map((r) => ({ label: r.querySelector('.sp-label')?.textContent, v: r.querySelector('.sp-num')?.value, axis: r.dataset.axis ?? null, sel: r.classList.contains('chan-sel'), revert: !!r.querySelector('.sp-revert:not([hidden])') })).filter((r) => /^(translate|rotate|scale) [xyz]/.test(r.label ?? ''))`);
@@ -960,11 +960,11 @@ try {
   await sleep(600);
   await key("KeyG", "ctrlKey: true");
   check("CB9 Ctrl+G resets all three at once", await waitDisk(() => { const t = tr(), s = t.scale, q = t.q; return t.pos.every((v: number) => v === 0) && (!q || Math.abs(q[1]) < 1e-9) && (s === undefined || s === 1 || (Array.isArray(s) && s.every((v: number) => v === 1))); }), tr());
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
   // ---- VM: the Viewport menu (R, 10-10: isolate selected, wireframe, flat shaded) ----
   await stage("VM", async () => {
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`); await sleep(300);
   const vis = () => evalJson(`import('/lib/world.js').then((w) => ({ cuball: w.entities.get('cuball')?.visible, anchor: w.entities.get('anchor')?.visible, gate: w.entities.get('gate')?.visible }))`);
   const pickV = async (word: string) => { await evalJson(`(document.querySelector('.edit-menu[data-menu="viewport"] .edit-btn').click(), true)`); await sleep(150);
@@ -983,14 +983,14 @@ try {
   check("VM2b Body | Free, Viewport and wireframe sit in a bar ON the viewport, between the two columns, not in the top bar; the top bar's menu is 'Layout'", bar?.has.every(Boolean) && !bar.inTop && bar.between && bar.layout.some((t: string) => /^Layout/.test(t)) && !bar.layout.some((t: string) => /^View\b/.test(t)), bar);
   check("VM3 flat shaded and wireframe draw the scene through one override material", flat?.flat && wire?.wire, { flat, wire });
   await pickV("isolate selected");
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(300);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`); await sleep(300);
   const out = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => ({ over: !!c.scene.overrideMaterial, anchor: w.entities.get('anchor')?.visible }))`);
-  check("VM4 leaving edit mode puts the view back: no override, nothing isolated away", out && !out.over && out.anchor, out);
+  check("VM4 leaving build mode puts the view back: no override, nothing isolated away", out && !out.over && out.anchor, out);
   });
   // ---- FC: the free camera (R, 10-10: Body | Free on the top line; WASD flies it; the body holds an "I'm working" pose;
   // B steps back into the body and keeps the spot; Body resets) ----
   await stage("FC", async () => {
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(300);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(300);
   const st = () => evalJson(`Promise.all([import('/lib/controller.js'), import('/lib/core.js')]).then(([c, k]) => ({ free: c.isFreeCam(), focus: c.freeCamState().focus, body: c.myState.pos.toArray(), pose: !!c.myState.pose, cam: k.camera.position.toArray(), sw: [...document.querySelectorAll('.edit-camsw .edit-cam.on')].map((b) => b.dataset.cam) }))`);
   const hold = async (code: string, ms: number) => { await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', bubbles: true })), true)`); await sleep(ms); await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', bubbles: true })), true)`); };
   const s0 = await st();
@@ -1015,21 +1015,21 @@ try {
   await evalJson(`(window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true })), true)`); const s2 = await st();
   const d = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   check("FC2 W flies the camera's centre; my body stays where it stood", d(s2.focus, s1.focus) > 1 && d(s2.body, s1.body) < 1e-6 && s2.pose, { moved: d(s2.focus, s1.focus), body: d(s2.body, s1.body) });
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`); await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`); await sleep(600);
   const s3 = await st();
-  check("FC3 B (leaving edit mode) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`); await sleep(600);
+  check("FC3 B (leaving build mode) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(600);
   const s4 = await st();
   check("FC4 B again returns to where I left the camera, pose and all", s4.free && s4.pose && d(s4.focus, s2.focus) < 1e-6, { s4: s4.focus, s2: s2.focus });
   await evalJson(`(document.querySelector('.edit-camsw .edit-cam[data-cam="body"]').click(), true)`); await sleep(400);
   const s5 = await st();
   check("FC5 the Body switch is the reset: the camera is my body's again, the pose ends", !s5.free && !s5.pose && s5.sw.join() === "body", s5);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
   // ---- RB: a row's menu as a button, for where there is no right-click (R, 10-10: "buttons in VR to the right of
   // anywhere that would get a right-click menu, hidden on desktop") ----
   await stage("RB", async () => {
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('cuball'); return true;`); await sleep(500);
   const r = await evalJson(`(() => { const I = document.querySelector('[data-frame="inspector"]'), H = document.querySelector('[data-frame="hierarchy"]');
     const row = [...I.querySelectorAll('.sp-row.sp-f-num')].find((x) => /^scale x/.test(x.querySelector('.sp-label')?.textContent ?? '')), b = row?.querySelector('.sp-ctxbtn');
@@ -1045,7 +1045,7 @@ try {
   const tm = await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].map((b) => b.textContent)`);
   await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
   check("RB2 the button opens the row's own menu: a field's (copy value…), a thing's (rename, duplicate…)", fm?.some((t: string) => /copy value/.test(t)) && tm?.some((t: string) => /^rename/.test(t)) && tm?.some((t: string) => /^duplicate/.test(t)), { fm, tm });
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(false), true))`);
   });
   // ---- NP: a request in flight when the connection drops (review 10-10: pending requests were settled only by their
   // 15 s timer, so a move in flight at a reconnect held the body track for up to 15 s, then spoke a stale timeout) ----

@@ -552,7 +552,7 @@ function tokens() {
   };
 }
 export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12, title = '', theme = null } = {}) {
-  if (theme === 'edit') return paintEdit(canvas, fields, { width, title });   // edit mode's frames: their own look, under the VR floor (editpaint.js)
+  if (theme === 'edit') return paintEdit(canvas, fields, { width, title });   // build mode's frames: their own look, under the VR floor (editpaint.js)
   const C = tokens();
   const g = canvas.getContext('2d');
   const regions = [];

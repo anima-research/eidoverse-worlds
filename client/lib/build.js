@@ -31,7 +31,7 @@ import { scaleOf } from '../../shared/scale3.js';
 import { MESH_DEFAULT, ghostMeshSize } from './meshghost.js';
 import { engage, release } from './keyhints.js';
 import { placeRefusal } from '../../shared/blueprint.js';
-import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
+import { myState, mouse, setPointerClaim, setBuildingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from './ui.js';
 import { paint, escapeHtml } from './markup.js';
 import { pushHostHook } from './autohooks.js';
@@ -64,11 +64,11 @@ let dragging = null;      // { id, offset, plane } while moving a selection
 // it up and moves it, and the world quietly rearranges itself while you are
 // just trying to see. Looking is the default; editing is something you say you
 // are doing.
-let editMode = false;
-export const isEditing = () => editMode;
-claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own ladder) — the frames' close-all yields
+let buildMode = false;
+export const isBuilding = () => buildMode;
+claimEscape(() => (buildMode ? 'edit' : null));   // build mode owns Esc (its own ladder) — the frames' close-all yields
 
-/** May this client enter edit mode at all?
+/** May this client enter build mode at all?
  *
  * PERMISSIVE WHEN UNKNOWN, denying only on a known-insufficient role —
  * generate.js:144 (`net.myRights?.gen !== false`) is the house idiom and this
@@ -78,9 +78,9 @@ claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own 
  * make holdGhost() silently do nothing on a slow join — a build click that
  * vanishes is worse than one that is refused out loud.
  */
-// No edit mode on a phone (R, 10-06 23:39: "Probably not a great surface for it"). A phone = a coarse pointer on a
-// screen whose short side is phone-sized; tablets, headset browsers and touch laptops keep edit mode. Viewing and
-// playing are untouched. VR edit mode comes later but must not be broken in principle (same date), so this never
+// No build mode on a phone (R, 10-06 23:39: "Probably not a great surface for it"). A phone = a coarse pointer on a
+// screen whose short side is phone-sized; tablets, headset browsers and touch laptops keep build mode. Viewing and
+// playing are untouched. VR build mode comes later but must not be broken in principle (same date), so this never
 // reads XR state.
 export const editSurface = () => !(globalThis.matchMedia?.('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600);
 export const mayEdit = () => {
@@ -91,16 +91,16 @@ export const mayEdit = () => {
   return role === undefined || isOwner(r);
 };
 
-export function setEditMode(on, { quiet = false } = {}) {
+export function setBuildMode(on, { quiet = false } = {}) {
   // The gate the wrench advertises, applied at the one chokepoint every entry
-  // point funnels through: toggleEditMode, the dock action, KeyB, and the two
+  // point funnels through: toggleBuildMode, the dock action, KeyB, and the two
   // quiet callers (holdGhost, armSocketPlacement — "I picked a thing to place",
   // which is exactly the build intent the server refuses). Gating only the
   // keybind would have been half a fix, which is the shape of mistake this
   // review round already caught once.
   //
   // ONLY the `on` direction. Leaving always works, or a client demoted
-  // mid-session is trapped in edit mode with no way out.
+  // mid-session is trapped in build mode with no way out.
   //
   // R, 2026-09-11, on why this is not merely cosmetic: "Builder is true by
   // default, but if it's a server where builder/not builder is delineated,
@@ -108,11 +108,11 @@ export function setEditMode(on, { quiet = false } = {}) {
   // not disagree with the rail.
   if (on && !mayEdit()) {
     if (!quiet) flashHint(editSurface() ? 'builder mode needs build rights in this world' : 'builder mode is for a desktop (or tablet); on a phone you can look around and play');
-    return editMode;
+    return buildMode;
   }
-  if (editMode === on) return editMode;
-  editMode = on;
-  document.body.classList.toggle('edit-mode', on);
+  if (buildMode === on) return buildMode;
+  buildMode = on;
+  document.body.classList.toggle('build-mode', on);
   if (!on) { cancelGhost(); deselect(); resetSockets(); }
   refreshSocketGizmos();   // anchors are visible exactly while you are editing
   // Saying you are building puts the tools in front of you: the workspace's Build tab (editlayout.js) is the catalog.
@@ -123,10 +123,10 @@ export function setEditMode(on, { quiet = false } = {}) {
       ? html`builder mode — <kbd>G</kbd> move · <kbd>E</kbd> rotate · <kbd>R</kbd> scale · <kbd>Q</kbd> select · <kbd>F</kbd> find · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>B</kbd> leaves`
       : 'looking again');
   }
-  bus.emit('edit-mode', on);
-  return editMode;
+  bus.emit('build-mode', on);
+  return buildMode;
 }
-export const toggleEditMode = () => setEditMode(!editMode);
+export const toggleBuildMode = () => setBuildMode(!buildMode);
 
 // The TOOL is what a drag does. Move is the drag everyone has today; rotate
 // and scale are the Q/E and ,/. gestures with the pointer instead of keys;
@@ -166,7 +166,7 @@ setPointerClaim(() => ghost !== null || !!dragging?.armed);
 const pointerVetoes = [];
 const pointerVeto = () => pointerVetoes.some((f) => f());
 export function setPointerVeto(fn) { pointerVetoes.push(fn); }
-setEditingProbe(() => editMode);
+setBuildingProbe(() => buildMode);
 
 // ============================================================ selection
 
@@ -238,11 +238,11 @@ export function refreshOutline() {
 // ONE selection (R 10-11 01:13: "make sure the same entities that are selected agree with each other in the hierarchy and
 // the viewport"; 00:57: after undos, clicking away no longer deselected; 00:41: "Can the bounding box on moving objects
 // update as the objects translate?"). edit/selection.js is the truth; `selected` is its primary resolved to an object,
-// set on its event and re-resolved each edit-mode frame (a model swapped under it, a thing gone) with the box
+// set on its event and re-resolved each build-mode frame (a model swapped under it, a thing gone) with the box
 // re-measured, so it tracks a thing that moves. The residency sweep must never demote what someone is editing —
 // editHolds is id-based because promotion swaps the object out from under a userData flag.
 function followSelection() {
-  const sid = editMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
+  const sid = buildMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
   if (obj) {
     if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
     obj.updateWorldMatrix(true, true); outline.box.setFromObject(obj); outline.visible = true;
@@ -294,7 +294,7 @@ export async function holdPicture() {
   if (src) await holdGhost(`@picture:${src}`, 'picture');
 }
 export async function holdGhost(lib, label) {
-  setEditMode(true, { quiet: true });   // choosing a thing to place is intent enough
+  setBuildMode(true, { quiet: true });   // choosing a thing to place is intent enough
   cancelGhost();
   deselect();
   try {
@@ -330,7 +330,7 @@ export async function holdGhost(lib, label) {
 export async function holdBlueprint(hash, record) {
   const why = record ? placeRefusal(record) : 'that blueprint is not in this world\'s store';
   if (why) { flashHint(`can't place it: ${why}`, 5000); return false; }
-  setEditMode(true, { quiet: true });
+  setBuildMode(true, { quiet: true });
   cancelGhost();
   deselect();
   const token = (holdBlueprint.n = (holdBlueprint.n ?? 0) + 1);
@@ -561,7 +561,7 @@ function commitSpawn() {
 }
 function selectWhenHere(id, ms = 3000) {
   const t0 = performance.now(), since = Sel.mark();
-  const go = () => { if (entities.has(id)) { if (editMode) Sel.setIfUnchanged(since, [id]); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
+  const go = () => { if (entities.has(id)) { if (buildMode) Sel.setIfUnchanged(since, [id]); return; } if (performance.now() - t0 < ms) setTimeout(go, 60); };
   go();
 }
 
@@ -590,7 +590,7 @@ export function undo() {
   deselect(); return Edits.undo();
 }
 
-// Edit mode's panels own the selection the inspector SHOWS (a tree pick sets
+// Build mode's panels own the selection the inspector SHOWS (a tree pick sets
 // it without touching `selected`, which only a viewport pick sets). editpanels
 // installs its remover here — it can't be imported (editpanels imports us).
 // Without it, Del after a tree pick removed nothing, or the last thing picked
@@ -616,7 +616,7 @@ function removeSelected() {
 let barePress = null;
 addEventListener('mouseup', (e) => {
   const p = barePress; barePress = null;
-  if (!p || !editMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
+  if (!p || !buildMode || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 5) return;
   // a click on empty space clears THE selection (the Hierarchy's too), not only the viewport's pick
   deselectAll(); if (socketSelected()) deselectSocket();
 });
@@ -650,7 +650,7 @@ function pickHit(nx, ny) {
 export function pickAt(nx, ny) { let r = pickHit(nx, ny)?.object; while (r && !r.userData.entityId) r = r.parent; return r?.userData.entityId ?? null; }
 
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
+  if (e.button !== 0 || !buildMode) return;  // outside build mode the canvas is for looking
   if (e.altKey) return;   // Alt+drag is the camera's (controller.js: orbit / pan / dolly)   // keys: editCamera
   // an armed seat placement outranks everything, the ghost included
   if (socketArmed()) { socketMouseDown(e); e.preventDefault(); return; }
@@ -752,7 +752,7 @@ addEventListener('mouseup', () => {
 });
 
 canvas.addEventListener('click', (e) => {
-  if (!ghost || !editMode) return;
+  if (!ghost || !buildMode) return;
   commitSpawn();
   e.preventDefault();
 });
@@ -774,16 +774,16 @@ bus.on('key', (e) => {
     else if (ghost) cancelGhost();
     else if (socketSelected()) deselectSocket();
     else if (primaryThing()) deselectAll();
-    else if (editMode) setEditMode(false);
+    else if (buildMode) setBuildMode(false);
     return;
   }
-  // Undo stays available outside edit mode — you may only notice the mistake
+  // Undo stays available outside build mode — you may only notice the mistake
   // after you have gone back to looking.
   // redo is Ctrl+Shift+Z or Ctrl+Y (the authority's undo of my undo)
   if ((e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) {   // keys: undo
     e.preventDefault?.(); Edits.redo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }   // keys: undo
-  if (!editMode) return;
+  if (!buildMode) return;
 
   // reset the selection's transform (editpanels.resetTransform): the tools' own letters with Alt, and Ctrl+G for all
   // three. Before the tool keys, which ignore modifiers.

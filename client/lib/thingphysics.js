@@ -722,7 +722,7 @@ function tickShove(now) {
   if (!shoveOn || !replica.active || !net.joined || !arrived) return;
   const canon = replica.sim; if (!canon?.sim || canon.foreign) return;
   const st = hooks?.myState?.(), me = hooks?.me?.(); let f = feet();
-  // my own body only, walking: not in edit mode (R 10-12: a builder arranging crates nudges them), seated, down or flying
+  // my own body only, walking: not in build mode (R 10-12: a builder arranging crates nudges them), seated, down or flying
   if (!st || !me || !f || hooks?.editing?.() || hooks?.seated?.() || hooks?.flying?.() || st.clip === 'ragdoll') { headV.reset(); return; }
   const cap = colliderFor(me.userScale), sp = Number.isFinite(st.speed) ? st.speed : 0;
   let vel = [Math.sin(st.yaw) * sp, Math.cos(st.yaw) * sp];
@@ -758,7 +758,7 @@ async function shove(id, v, now) {
 // ---------------------------------------------------------------- use while held (grabbable.use; research grab §3-4)
 // The use button while you hold a thing: a request per press and per release (use.down, use.up: each one act; a
 // hose turns on, then off), and, while it's pressed, presence (pose.use) every client draws the thing's fx from. Desktop:
-// the left mouse button while holding something usable (outside edit mode); phone: a button that appears while you do;
+// the left mouse button while holding something usable (outside build mode); phone: a button that appears while you do;
 // VR: the trigger (xr.js calls useHeld). Rapid effects are never a stream of acts: the authority rate-limits acts on purpose.
 const usable = () => myHolds().find((id) => grabOf(compsOf(id))?.use) ?? null;
 let pressing = null;   // the id my use is held down on
@@ -897,7 +897,7 @@ bus.on('key', (e) => {
 });
 
 /** The hint bar's line about my hands (localbody.js updateSeatHint): what I hold and how to let go, else what's in reach
- *  to pick up. R, 10-10: "there's no help option to assist me while I'm holding anything". Null in a headset, in edit mode,
+ *  to pick up. R, 10-10: "there's no help option to assist me while I'm holding anything". Null in a headset, in build mode,
  *  outside a world. */
 export function handsHint() {
   if (!replica.active || hooks?.editing?.() || xrActive()) return null;

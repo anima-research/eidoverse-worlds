@@ -1,4 +1,4 @@
-// editwrites — edit mode's writes.
+// editwrites — build mode's writes.
 //
 // Every edit is a REQUEST, the same request an agent sends ({type: 'request', verb, args}), and the person waits for
 // the authority's answer: an act number to undo by, or a refusal in the same words an agent gets (shared/protocol/refusal.js).

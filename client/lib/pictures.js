@@ -316,7 +316,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
   };
 });
 
-// ---- the edit-mode inspector's gestures (the fields themselves are the schema's
+// ---- the build-mode inspector's gestures (the fields themselves are the schema's
 // `picture` group, shared/editschema.js). An upload is a GESTURE, not a value:
 // pick a file, send it through the store door, then commit the path like any edit.
 function pickFile(accept) {

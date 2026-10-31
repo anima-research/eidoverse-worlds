@@ -5,7 +5,7 @@
 // turns — `serverNow` here stands in for client/lib/serverclock.js's estimate.
 export const editors = [];
 export const registerEditor = (fn) => { editors.push(fn); };
-export const registerHandler = () => {};   // the edit-mode gestures (upload); this test drives the html block
+export const registerHandler = () => {};   // the build-mode gestures (upload); this test drives the html block
 export const commitEdit = () => ({ ok: true, errors: [] });
 export const toast = () => {};
 export const flashHint = () => {};

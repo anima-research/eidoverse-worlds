@@ -14,7 +14,7 @@ import { THREE, scene, camera, canvas } from './core.js';
 import { bus } from './base.js';
 import { entities } from './world.js';
 import { registerSystem } from './frameloop.js';
-import { isEditing, setPointerVeto, setEscapeHook } from './build.js';
+import { isBuilding, setPointerVeto, setEscapeHook } from './build.js';
 import * as Edits from './editwrites.js';
 import { sendRequest } from './net.js';
 import { flashHint } from './ui.js';
@@ -187,7 +187,7 @@ export function closeGripEditor() {
 export function initGripEdit() {
   setPointerVeto(() => !!st && (!!st.controls.axis || !!st.controls.dragging));
   setEscapeHook(() => { if (!st) return false; if (st.controls.dragging) return false; closeGripEditor(); return true; });
-  bus.on('edit-mode', (on) => { if (!on) closeGripEditor(); });
+  bus.on('build-mode', (on) => { if (!on) closeGripEditor(); });
   bus.on('comp', () => { if (st && !st.controls.dragging) { if (!entities.get(st.id)) return closeGripEditor(); setGhost(); paint(); } });
   registerSystem('gripedit', () => { if (st && !st.controls.dragging) placeProxy(); }, { every: 2 });
   globalThis.__gripeditTest = () => st && { proxy: st.proxy, controls: st.controls, panel: st.panel };   // harness: drive a drag

@@ -1,5 +1,5 @@
-// editpaint — the edit-mode SURFACE for the VR quad (Hierarchy, Inspector, Console): the same field specs
-// panels.js renderCanvas paints, in edit mode's look (edittheme.js), under the VR floor the spec sets:
+// editpaint — the build-mode SURFACE for the VR quad (Hierarchy, Inspector, Console): the same field specs
+// panels.js renderCanvas paints, in build mode's look (edittheme.js), under the VR floor the spec sets:
 //
 //   - every hit target >= EDIT_VR.minHit canvas px tall (≈ 3.8 cm at 900 px/m);
 //   - no line thinner than EDIT_VR.minLine (a 1-px line shimmers on a resampled quad);

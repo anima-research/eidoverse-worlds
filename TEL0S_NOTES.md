@@ -924,7 +924,7 @@ fixture/tool matrix.
   tools/panelbench.ts (16 checks) — the panels lazy-build on open, so
   construction errors were invisible to every boot gate and the
   surfaces went their whole lives eyeball-only; now a scratch world +
-  headless Chrome opens all four sections, round-trips edit mode,
+  headless Chrome opens all four sections, round-trips build mode,
   reads the help sheet, counts the debug panel's 45 sliders, and
   demands zero console errors. NOT def-ized deliberately: sky slider
   specs (code-shaped UI plumbing), Piper voice + STARTER (small; on

@@ -56,12 +56,12 @@
       "<kbd>M</kbd> toggles · <kbd>Esc</kbd> frees the cursor (browsers only let Esc release it)"
     ],
     [
-      "Edit mode",
+      "Build mode",
       "<kbd>B</kbd> — off by default, so looking around never moves anything"
     ],
     [
       "Select",
-      "in edit mode: click a thing; the tools are <kbd>Q</kbd> select, <kbd>G</kbd> move, <kbd>E</kbd> rotate, <kbd>R</kbd> scale (drag the gizmo); <kbd>Del</kbd> remove"
+      "in build mode: click a thing; the tools are <kbd>Q</kbd> select, <kbd>G</kbd> move, <kbd>E</kbd> rotate, <kbd>R</kbd> scale (drag the gizmo); <kbd>Del</kbd> remove"
     ],
     [
       "Seat anchors",

@@ -309,7 +309,7 @@ export function trySitOn(arg, slot = null) {
   return true;
 }
 
-// "I'm working on this" (R, 10-10): while my camera is free of my body in edit mode, the body holds a working pose, so
+// "I'm working on this" (R, 10-10): while my camera is free of my body in build mode, the body holds a working pose, so
 // the people around it can see I've stepped out: forearms raised as at a console, head bent to it. Mine to give up: it
 // ends when the camera comes back (the Body switch, or B), and any pose I held before is not restored (moving ends a
 // pose anyway).
@@ -332,7 +332,7 @@ let _hintAcc = 0;
 // builder mode has its own keys (build.js: X and Del remove, E rotates): the world's play offers ("X — sit", "E open")
 // would advertise a delete key as a seat (review 10-07 B5). The bar carries the builder's hints there instead.
 let _building = false;
-bus.on('edit-mode', (on) => { _building = !!on; _hintAcc = 1; });
+bus.on('build-mode', (on) => { _building = !!on; _hintAcc = 1; });
 export function updateSeatHint(dt) {
   _hintAcc += dt;
   if (_hintAcc < 0.45) return;

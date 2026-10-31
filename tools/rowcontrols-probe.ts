@@ -50,7 +50,7 @@ try {
   await gate('client boots', secs >= 4, `${secs} sections`);
   await gate('the fold is live', await waitFor(`import('/lib/net.js').then((m) => m.replica.active)`, 20000));
   await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-  await gate('edit mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
+  await gate('build mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
   await ev(`(() => { document.querySelector('.edit-tabs:not(.edit-rtabs) .edit-tab[data-tab="hierarchy"]')?.click(); return true; })()`);
   await gate('the Hierarchy tab is showing', await waitFor(`(() => { const f = document.querySelector('[data-frame="hierarchy"]'); return !!f && f.getBoundingClientRect().width > 100; })()`));
 
@@ -208,7 +208,7 @@ try {
   const hh2 = await ev(`(async () => { const t = await import('/lib/thingphysics.js'); const h = t.handsHint(); return h == null ? null : String(h.strings ? h.strings.join('|') + JSON.stringify(h.values) : h); })()`).catch((e) => 'err ' + e);
   check('P7 (control) shown again, the hint offers the toy', /toy/.test(String(hh2)), String(hh2));
   await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-  await gate('(setup) back in edit mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
+  await gate('(setup) back in build mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
   await ev(`(() => { document.querySelector('.edit-tabs:not(.edit-rtabs) .edit-tab[data-tab="hierarchy"]')?.click(); return true; })()`);
   await ev(`(async () => { ${D}.hierDo?.('fold:all-open'); return true; })()`); await painted(); await painted();
 
@@ -221,10 +221,10 @@ try {
   check('RC1 after a real click the box does not keep focus', await waitFor(`!/^INPUT/.test(document.activeElement?.tagName ?? '')`, 3000), await ev(`document.activeElement?.tagName + '.' + document.activeElement?.className`));
   check('RC2 …and the row repaints as off without waiting for a blur', await waitFor(`!!document.querySelector('[data-frame="hierarchy"] .sp-tree-row[data-id="box2"]')?.classList.contains('off')`, 4000));
   await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-  check('RC3 B is not swallowed: it leaves edit mode', await waitFor(`![...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`, 3000));
+  check('RC3 B is not swallowed: it leaves build mode', await waitFor(`![...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`, 3000));
   await ev(`(document.activeElement?.blur?.(), true)`);
   if (await ev(`![...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`)) await ev(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-  await gate('(setup) back in edit mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
+  await gate('(setup) back in build mode', await waitFor(`[...document.querySelectorAll('.frame.edit')].some((f) => getComputedStyle(f).display !== 'none')`));
   await ev(`(() => { document.querySelector('.edit-tabs:not(.edit-rtabs) .edit-tab[data-tab="hierarchy"]')?.click(); return true; })()`); await painted();
   await ev(`(document.activeElement?.blur?.(), true)`); await ev(`import('/lib/net.js').then((m) => m.replica.st.entities['box2']?.c.disabled ? m.sendRequest('delete', { id: 'box2', component: 'disabled' }) : null)`);
   await gate('(setup) box2 back on', await waitFor(`(async () => !(${offOf('box2')}))()`) && await waitFor(`import('/lib/world.js').then((w) => !!w.entities.get('box2'))`, 20000),

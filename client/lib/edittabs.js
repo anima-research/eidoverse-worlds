@@ -1,5 +1,5 @@
 // edittabs — which page of the edit workspace's left column a viewer sees
-// (design §5: "B enters edit mode on the Build tab; the last tab used is
+// (design §5: "B enters build mode on the Build tab; the last tab used is
 // remembered after that"). Pure, so a test can hold the rule without a DOM;
 // editlayout.js keeps the layout in localStorage (per viewer, client-only,
 // never on the wire) and asks here.

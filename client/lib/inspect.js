@@ -218,7 +218,7 @@ export function editorsFor(ctx) {
   for (const fn of htmlEditors) { try { const e = fn(ctx); if (e) out.push(e); } catch { /* skip it */ } }
   const schema = schemaFor(ctx.id);
   // picture/sound keep their reviewed html blocks here (the registered editors
-  // above) until this panel retires; the edit-mode inspector renders the groups
+  // above) until this panel retires; the build-mode inspector renders the groups
   schema.groups.filter((g) => !['pos', 'flags', 'comp', 'picture', 'sound'].includes(g.group)).forEach((g, i) => {
     const host = `data-fe="${i}"`;
     out.push({

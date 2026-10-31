@@ -26,7 +26,7 @@ import { markPhase, refuseBoot, waitBoot } from './boot.js';
 import { showOldFormat } from './upgradeview.js';
 import { OLD_FORMAT_SPLASH } from '../../shared/oldformat.js';
 // this client folds the authority's own stream (shared/protocol/replica.js) and derives the view the realizers draw from it,
-// locally; edit mode sends requests (editwrites.js) and waits for the authority.
+// locally; build mode sends requests (editwrites.js) and waits for the authority.
 import { makeReplica } from '../../shared/protocol/replica.js';
 import { redialer, REDIAL } from '../../shared/redial.js';
 import { actorName } from '../../shared/protocol/names.js';

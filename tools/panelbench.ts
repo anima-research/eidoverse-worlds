@@ -48,14 +48,14 @@ for (const [id, probe, what] of [
   check(`${id} section paints (${what})`, !!ok);
 }
 
-console.log('\nedit mode (the gesture core survives the split):');
+console.log('\nbuild mode (the gesture core survives the split):');
 {
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
   await sleep(200);
-  check('B enters edit mode', !!(await evalJson(`document.body.classList.contains('edit-mode')`)));
+  check('B enters build mode', !!(await evalJson(`document.body.classList.contains('build-mode')`)));
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true`);
   await sleep(200);
-  check('Esc leaves it', !(await evalJson(`document.body.classList.contains('edit-mode')`)));
+  check('Esc leaves it', !(await evalJson(`document.body.classList.contains('build-mode')`)));
 }
 
 console.log('\nthe help overlay (def-fed prose):');

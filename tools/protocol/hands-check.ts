@@ -1,6 +1,6 @@
 // @ts-nocheck
 // tools/protocol/hands-check.ts — what is in a hand, and where a put lands (R's desktop test, 2026-10-10: crates hovering
-// after a put, five crates carried at once, a held barrel moved in edit mode and then stuck).
+// after a put, five crates carried at once, a held barrel moved in build mode and then stuck).
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/hands-check.ts
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { request } from "../../shared/protocol/authority.js";

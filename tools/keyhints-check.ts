@@ -1,6 +1,6 @@
-// tools/keyhints-check.ts — no hidden keys in edit mode (R 10-04: "SOOOO much hidden knowledge… needs to be tooltipped
+// tools/keyhints-check.ts — no hidden keys in build mode (R 10-04: "SOOOO much hidden knowledge… needs to be tooltipped
 // somewhere for it to matter"). Fails when:
-//   1. edit-mode code reads a modifier (e.shiftKey / ctrlKey / altKey / metaKey, key === 'Control'…) on a line without a
+//   1. build-mode code reads a modifier (e.shiftKey / ctrlKey / altKey / metaKey, key === 'Control'…) on a line without a
 //      `// keys: <id>` tag naming an entry in client/lib/keyhints.js;
 //   2. an entry has no words to show (`before` empty);
 //   3. an entry is never shown: no engage('<id>'), withKeys(…, '<id>') or KEYHINTS.<id> outside keyhints.js and outside
@@ -32,7 +32,7 @@ for (const f of FILES) {
     }
   });
 }
-ok(untagged.length === 0, "1 every modifier read in edit-mode code is tagged `// keys: <id>`", untagged);
+ok(untagged.length === 0, "1 every modifier read in build-mode code is tagged `// keys: <id>`", untagged);
 ok(badIds.length === 0, "1b …and every tag names a keyhints.js entry", badIds);
 const empty = Object.entries(KEYHINTS).filter(([, h]: any) => !h.before).map(([k]) => k);
 ok(empty.length === 0, "2 every entry has words to show (before)", empty);

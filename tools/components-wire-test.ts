@@ -1,4 +1,4 @@
-// components-wire-test — step 2 of docs/DESIGN-edit-mode-components.md §7:
+// components-wire-test — step 2 of docs/DESIGN-build-mode-components.md §7:
 // light as a component, empty entities, collider as a component — each with
 // its alias, on every tier that gives it meaning.
 //
@@ -162,12 +162,12 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   check('kindOf: light / empty / model / mesh', kindOf({ pos: [0, 1, 0], light: {} }) === 'light' && kindOf({ pos: [0, 0, 0] }) === 'empty' && kindOf({ model: LAMP }) === 'model' && kindOf({ mesh: { shape: 'box', size: [1, 1, 1] } }) === 'mesh' && kindOf({ mesh: {} }) === 'empty');
   const { bus } = await import('../client/lib/base.js');
   const marker = (g: any) => !!g?.children.some((c: any) => c.userData?.emptyMarker);
-  check('outside edit mode an Empty carries no marker (nothing to hit that nobody can see)', !marker(piv));
-  bus.emit('edit-mode', true);
+  check('outside build mode an Empty carries no marker (nothing to hit that nobody can see)', !marker(piv));
+  bus.emit('build-mode', true);
   live('create', { id: 'e3', components: { transform: { pos: [0, 0, 15] } } });
-  check('edit mode on: every Empty wears a pickable marker, including one created while editing', marker(piv) && marker(stub.entities.get('e3')));
-  bus.emit('edit-mode', false);
-  check('edit mode off: the markers come off again', !marker(piv) && !marker(stub.entities.get('e3')));
+  check('build mode on: every Empty wears a pickable marker, including one created while editing', marker(piv) && marker(stub.entities.get('e3')));
+  bus.emit('build-mode', false);
+  check('build mode off: the markers come off again', !marker(piv) && !marker(stub.entities.get('e3')));
   // F1 pins: a waiting child composes its carrier's whole folded pose (turn, scale) with its own offset, follows a change
   // to either, and mounts into the real lamp the moment the lamp loads, without moving.
   const q90 = [0, Math.SQRT1_2, 0, Math.SQRT1_2];

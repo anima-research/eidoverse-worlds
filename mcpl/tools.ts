@@ -400,7 +400,7 @@ const cutSpeech = (t: string) => {
 const notANumber = (v: unknown) => typeof v === "number" ? !Number.isFinite(v)
   : typeof v !== "string" || v.trim() === "" || !Number.isFinite(Number(v));
 /** The authority's refusal as a tool error: the code, why, and what to do instead. */
-// the same words a person in edit mode sees for the same refusal (shared/protocol/refusal.js)
+// the same words a person in build mode sees for the same refusal (shared/protocol/refusal.js)
 /** One line of a world's history, as an agent reads it: who did what, with what arguments. An entry imported from an
  *  old log (an act `imported`) shows the verb and args it was written with, not `imported {}`; a refused request says it
  *  was refused, and never reads as a thing that happened (Commons audit, agents #3). */

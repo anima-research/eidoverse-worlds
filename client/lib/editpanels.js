@@ -2,7 +2,7 @@
 // declaration is a desktop frame and a VR quad. Every action here is a verb
 // scenegraph.js already speaks; this file only decides what the rows are.
 //
-// P1 of notes/proposals/2026-09-04-edit-mode-spec.md, at parity with the
+// P1 of notes/proposals/2026-09-04-build-mode-spec.md, at parity with the
 // World›Scene section it retires: transform, lock, every registered component
 // editor (inspect.js), raw JSON for the rest, add/remove component, find /
 // attach / detach / remove, script badges and a Behaviors group.
@@ -1040,7 +1040,7 @@ function removeMany(ids) {
 
 // ---------------------------------------------------------------- build
 // Things INTO the world, in the left column beside the Hierarchy (Build | Hierarchy; design §5),
-// so the viewport carries nothing but the world. B opens edit mode on this tab the first time;
+// so the viewport carries nothing but the world. B opens build mode on this tab the first time;
 // editlayout.js remembers the last tab after that (edittabs.js). Three sections, every one a
 // RE-HOST of something that already worked — nothing here is a second implementation:
 //   Blueprints  the starters and the library (catalog.js, /library-models): a raw model is a
@@ -1332,7 +1332,7 @@ const PANELS = [
   { id: 'history', title: 'History', theme: 'edit', fields: historyFields, dispatch: historyDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
   // docked as a third tab (Inspector | Attributes | History): Maya's Attribute Editor to the Inspector's channel box
   { id: 'attributes', title: 'Attributes', theme: 'edit', fields: attributesFields, dispatch: attributesDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
-  // optional: never auto-shown on entering edit mode (View ▸ console, or a script row in the inspector)
+  // optional: never auto-shown on entering build mode (View ▸ console, or a script row in the inspector)
   { id: 'console', title: 'Console', theme: 'edit', fields: consoleFields, dispatch: consoleDispatch, optional: true, frame: { x: 'center', y: -24, w: 560, h: 240, minW: 320, minH: 120 } },
 ];
 const frames = new Map();
@@ -1376,7 +1376,7 @@ export function initEditPanels() {
   setInterval(() => { if (!lastAway || document.hidden || !frames.get('inspector')?.frame?.el?.getClientRects().length) return; const id = sceneSelected(); const o = id === lastAway.id ? entities.get(id) : null;
     if (!o) { lastAway = null; return; } if (Math.round(o.getWorldPosition(_wp).distanceTo(myState.pos)) !== lastAway.m) repaintAll(); }, 500);
   bus.on('selection', () => { const id = sceneSelected(); if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied', 'view-prefs']) bus.on(ev, repaintAll);   // view-prefs: this viewer's rotate order   // log-applied: a world's library lives on @world, which the realizers never touch
+  for (const ev of ['entity', 'comp', 'mount', 'build-mode', 'selection', 'structure-tool', 'tool', 'your-rights', 'log-applied', 'view-prefs']) bus.on(ev, repaintAll);   // view-prefs: this viewer's rotate order   // log-applied: a world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_KEYS = new Set(['sky', 'terrain', 'grass', 'blueprints'])
@@ -1406,8 +1406,8 @@ export function initEditPanels() {
   });
   bus.on('entity', () => { if (outlines.size) syncOutlines(); });
   bus.on('disabled-changed', () => repaintAll());   // switched off or on: the Inspector and the Hierarchy say so at once
-  // leaving edit mode keeps the primary thing (the look-mode scene panel shows it) and drops the rest
-  bus.on('edit-mode', (on) => { if (!on) { armingRef = null; const p = sceneSelected(); if (p) Sel.set([p]); else Sel.clear(); } });
+  // leaving build mode keeps the primary thing (the look-mode scene panel shows it) and drops the rest
+  bus.on('build-mode', (on) => { if (!on) { armingRef = null; const p = sceneSelected(); if (p) Sel.set([p]); else Sel.clear(); } });
   setEditHooks({ casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(removable()));

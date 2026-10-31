@@ -59,7 +59,7 @@ import {
   setPoseOverride, sendPuppet, sendAnim, builtIn,
 } from './lib/net.js';
 import { poseCommands } from './lib/posecommands.js';
-import { updateBuild, toggleEditMode, isEditing, editSurface } from './lib/build.js';
+import { updateBuild, toggleBuildMode, isBuilding, editSurface } from './lib/build.js';
 // may I build here: the build switch (the authority's), else the role (an older server); unknown = no (strict)
 const mayBuildStrict = () => (Array.isArray(net.myRights?.permissions) ? net.myRights.permissions.includes('build') : isOwner(net.myRights));
 import { initPalette } from './lib/catalog.js';
@@ -230,11 +230,11 @@ initDock([
   { id: 'settings', label: '⚙️', icon: 'gear-six' },
   {
     id: 'edit', label: '🔧', icon: 'wrench', last: true,
-    action: toggleEditMode,
-    active: () => isEditing(),
+    action: toggleBuildMode,
+    active: () => isBuilding(),
     // while editing, the wrench is THE way out — amber on purpose (R, 09-30), so its tooltip says so
     title: (on) => (on ? 'leave builder mode (B)' : null),
-    gate: () => editSurface() && mayBuildStrict(),   // no edit mode on a phone (build.js editSurface)
+    gate: () => editSurface() && mayBuildStrict(),   // no build mode on a phone (build.js editSurface)
     deadWhy: () => (editSurface() ? null : ' — builder mode is for a desktop or tablet'),
   },
 ]);
@@ -377,7 +377,7 @@ function start() {
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   // hierarchy + inspector as fields: desktop frames now, VR quads through the same declaration
   const editPanels = initEditPanels();
-  bus.on('edit-mode', (on) => editPanels.show(!!on));
+  bus.on('build-mode', (on) => editPanels.show(!!on));
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
   initMaterialOverrides();   // the draft hesperus/material reader (docs/COMPONENT-LADDER.md)
@@ -481,9 +481,9 @@ setMeHook(() => getMe());        // the fold pose is written onto the avatar
 // physics in a world: carrying, throwing and punting as door requests, flights drawn from this client's own fold
 setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
 setRespawnHooks({ fold: () => replica.st ?? null, send: (args) => thingPhysicsRequest('move', args) });   // KillZ (controller.js respawnMe)
-initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isEditing(), photo: () => photoMode, seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
-initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isEditing(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
-initClickUse({ editing: () => isEditing(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
+initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isBuilding(), photo: () => photoMode, seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
+initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isBuilding(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
+initClickUse({ editing: () => isBuilding(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders; my own
 // id is how "a landmark on me" and "a point in my frame" find this body
 initReachNet({
@@ -500,22 +500,22 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 // The main keys, as data: the handler below dispatches from this table and the
 // lantern prompt lists it (lib/actions.js), so a key and its row cannot drift.
 // `id` names an existing action to merge into (the dock's debug/edit/chat rows
-// gain their key) or a new one; `guard` gates the KEY only (edit mode rebinds H
+// gain their key) or a new one; `guard` gates the KEY only (build mode rebinds H
 // and R) — from the prompt the act is always the act. `plain` keys answer only with no Ctrl/Alt/Meta held (a
 // browser's own chord must stay the browser's).
 const MAIN_KEYS = [
   { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
-    guard: () => !isEditing(), run: () => toggleHelp() },
-  { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
-  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', guard: () => !isEditing(), run: () => (helmHull() && !photoMode ? flashHint('photo mode needs the controls: get up from the helm first', 4000) : togglePhotoMode()) },   // the helm owns the keys (main ccd5c53fa)
+    guard: () => !isBuilding(), run: () => toggleHelp() },
+  { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleBuildMode() },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', guard: () => !isBuilding(), run: () => (helmHull() && !photoMode ? flashHint('photo mode needs the controls: get up from the helm first', 4000) : togglePhotoMode()) },   // the helm owns the keys (main ccd5c53fa)
   { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
     prevent: true, run: () => document.body.classList.toggle('photo') },
   { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
   { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
   { code: 'KeyU', key: 'U', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster', 'us'], group: 'panels', icon: 'users',
-    plain: true, guard: () => !isEditing(), run: () => togglePeopleHere() },   // plain: Ctrl+U is the browser's view-source
+    plain: true, guard: () => !isBuilding(), run: () => togglePeopleHere() },   // plain: Ctrl+U is the browser's view-source
   { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
-    guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
+    guard: () => !isBuilding(), run: () => (isDowned() ? getUp() : goLimp()) },
 ];
 // merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
 for (const { code, guard, prevent, plain, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });

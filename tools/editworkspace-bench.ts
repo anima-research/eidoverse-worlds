@@ -4,7 +4,7 @@
 //
 //   the corner   the ∃ in the top-left cell, the mic / ear (/ goggles) folded to its right exactly as
 //                the HUD folds them, the menus after them, the glyphs in the editor's greys;
-//   the wrench   the way out: amber on purpose, titled "leave edit mode (B)", the only amber on the rail;
+//   the wrench   the way out: amber on purpose, titled "leave build mode (B)", the only amber on the rail;
 //   Build        Build | Hierarchy tabs in the left column (Build replaced Create in step 5, 10-02; its
 //                World section and @world are worldentity-test's); the six building tools as tiles (structure_ui's
 //                TOOLS), "new building", an honest "undo building edit"; the armed tool's strip across the
@@ -137,7 +137,7 @@ console.log('\nBuild — the building tools and the library, docked beside the H
   await evalJson(`[...${create}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'door')?.click(), true`);
   await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'door')`);
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' })), true`);
-  check('Esc drops an armed tool (and only that — edit mode stays on)', await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === null) && document.querySelector('.edit-toolstrip').hidden && import('/lib/build.js').then((b) => b.isEditing())`), JSON.stringify(await evalJson(`import('/lib/build.js').then((b) => b.isEditing())`)));
+  check('Esc drops an armed tool (and only that — build mode stays on)', await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === null) && document.querySelector('.edit-toolstrip').hidden && import('/lib/build.js').then((b) => b.isBuilding())`), JSON.stringify(await evalJson(`import('/lib/build.js').then((b) => b.isBuilding())`)));
   // Library: what the World panel's build section offers, here
   check('Library: add light, the search box, the starter models as picture tiles', await evalJson(`!!${btn('add light')} && !!${create}.querySelector('.sp-text[placeholder^="search the library"]') && ${create}.querySelectorAll('.sp-tiles-img .sp-tile img').length >= 8`), await evalJson(`${create}.querySelectorAll('.sp-tiles-img .sp-tile').length`));
   await evalJson(`${btn('add light')}?.click(), true`);
@@ -152,7 +152,7 @@ console.log('\nBuild — the building tools and the library, docked beside the H
 }
 
 console.log('\nleaving:');
-await evalJson(`import('/lib/build.js').then((m) => m.setEditMode(false)), true`);
+await evalJson(`import('/lib/build.js').then((m) => m.setBuildMode(false)), true`);
 check('the workspace chrome is not painted any more (bar, rail, columns, tool strip)', await waitFor(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].every((e) => getComputedStyle(e).display === 'none')`), JSON.stringify(await evalJson(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].map((e) => e.className + ':' + getComputedStyle(e).display)`)));
 check('…the ∃ is back on the HUD, hit-testable, its glyphs beside it', await waitFor(`(() => { const h = document.querySelector('#hud').getBoundingClientRect(), m = document.querySelector('#micbtn').getBoundingClientRect(); const hit = document.elementFromPoint(h.left + h.width / 2, h.top + h.height / 2); return (hit === document.querySelector('#hud') || document.querySelector('#hud').contains(hit)) && m.left >= h.right && Math.abs((m.top + m.bottom) / 2 - (h.top + h.bottom) / 2) <= 2; })()`));
 check('…the glyphs wear the HUD ink again (not the editor grey)', await waitFor(`(() => { const g = document.querySelector('#micbtn svg g'); const p = document.createElement('i'); document.body.append(p); p.style.color = 'var(--dim)'; const dim = getComputedStyle(p).color; p.remove(); return !!g && getComputedStyle(g).stroke === dim; })()`, 3000));

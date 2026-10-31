@@ -1,4 +1,4 @@
-// shared/protocol/refusal.js — how an authority refusal reads, in one place, so someone in edit mode and someone calling a tool
+// shared/protocol/refusal.js — how an authority refusal reads, in one place, so someone in build mode and someone calling a tool
 // see the same words for the same refusal (PARITY: one text on every surface). The authority's reply is
 // {ok: false, refused: {code, reason, fix, …}}; `what` names the request ("place", "undo", "move crate-1").
 //

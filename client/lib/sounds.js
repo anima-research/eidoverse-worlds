@@ -301,7 +301,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
   };
 });
 
-// ---- the edit-mode inspector's gestures (fields: the schema's `sound` group).
+// ---- the build-mode inspector's gestures (fields: the schema's `sound` group).
 // A new sound plays (R 10-07: no start-paused); the authority stamps its t0. Before the file picker: whose it is to upload.
 function pickFile(accept) {
   return new Promise((resolve) => {

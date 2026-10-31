@@ -147,7 +147,7 @@ function place() {
     for (const g of glyphs) if (g.top <= cy && g.bottom >= cy) { lo = Math.min(lo, g.left); hi = Math.max(hi, g.right); }
     // builder mode: the ∃'s row is also the editor's menu bar (editlayout.js .edit-top). The chips continue past its last
     // menu and viewport button, never over them (review 10-07 B1: "WebGL 2" sat on Edit ▾, "reduced detail" on View ▾)
-    for (const b of document.querySelectorAll('.edit-top:not([hidden]) > :not(.edit-mode-label)')) {
+    for (const b of document.querySelectorAll('.edit-top:not([hidden]) > :not(.build-mode-label)')) {
       const r = visible(b); if (r && r.top <= cy && r.bottom >= cy) hi = Math.max(hi, r.right);
     }
     // the room left on the row; chips that don't fit WRAP to a second line under the first (a phone with three
@@ -156,7 +156,7 @@ function place() {
     let end = edge === 'right' ? 0 : innerWidth;
     const pill = visible(document.getElementById('lantern-pill'));
     if (pill && pill.top <= cy && pill.bottom >= cy) end = edge === 'right' ? Math.max(end, pill.right + GAP) : Math.min(end, pill.left - GAP);
-    const modeLabel = visible(document.querySelector('.edit-top:not([hidden]) .edit-mode-label'));   // the bar's right end: the tool's name
+    const modeLabel = visible(document.querySelector('.edit-top:not([hidden]) .build-mode-label'));   // the bar's right end: the tool's name
     if (modeLabel && modeLabel.top <= cy && modeLabel.bottom >= cy && edge !== 'right') end = Math.min(end, modeLabel.left - GAP);
     const room = Math.max(80, edge === 'right' ? lo - GAP - end : end - hi - GAP - 4);
     strip.style.maxWidth = `${Math.round(room)}px`;

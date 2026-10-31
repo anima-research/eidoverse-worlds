@@ -510,10 +510,10 @@ export function previewMesh(id, m) {
 // part, at rest: execMount), so an occupant's seat and the cargo on it ride whatever carries the socket through the scene graph.
 const CREATE = { light: (id, ent) => createHost(id, ent, 'light'), mesh: createMesh, empty: createEmpty, model: createModel, socket: (id, ent) => createHost(id, ent, 'socket') };
 
-// An Empty is invisible, so in EDIT MODE it wears a small wireframe marker
+// An Empty is invisible, so in BUILD MODE it wears a small wireframe marker
 // that a click can pick (build.js walks up from the hit mesh to entityId).
 // Attached only while editing, not merely hidden: three's raycaster ignores
-// `visible`, and outside edit mode nothing should be able to hit a thing
+// `visible`, and outside build mode nothing should be able to hit a thing
 // nobody can see. One shared geometry and material for every marker.
 let editing = false;
 let _emGeo = null;
@@ -1143,7 +1143,7 @@ export function initModelsRealizer() {
     const obj = entities.get(id); if (!obj || !obj.parent || obj.parent.isScene) return;
     scene.attach(obj); delete obj.userData.mountedTo; delete obj.userData.mountRel; indexSceneMount(id, null);
   });
-  bus.on('edit-mode', (on) => {
+  bus.on('build-mode', (on) => {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind !== 'model' && t.kind !== 'socket' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });

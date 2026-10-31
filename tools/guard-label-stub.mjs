@@ -16,7 +16,7 @@ export const editorsFor = () => [];
 // renders it directly with the fixture instead of through the scene panel
 export const editors = [];
 export const registerEditor = (fn) => { editors.push(fn); };
-export const registerHandler = () => {};   // the edit-mode gestures (upload); these suites test the html block
+export const registerHandler = () => {};   // the build-mode gestures (upload); these suites test the html block
 export const commitEdit = () => ({ ok: true, errors: [] });
 // pictures.js: assets.js / ui.js — hang() primes the image; upload failures toast
 export const primeFiles = async () => {};

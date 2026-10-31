@@ -76,7 +76,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["dismount-height", "../dismount-height-test.ts", 1], // review of PR #260 (localbody.js:151): standing up keeps the height I'm let go at (vacated.at, a socket exit, a leave clip's end)
   ["latestread", "../latestread-test.ts", 1], // the panels' paced re-read and the History retry's back-off (latestread.js, backoff.js); it existed, but no lane ran it
   ["csp", "../csp-test.ts", 0.5],          // the page's script-src hashes are the browser's: a CRLF copy of index.html still boots (CI windows 10-23)
-  ["build-gate", "../build-gate-test.ts", 1], // edit mode is gated at the chokepoint, never trapping a demoted builder (revived D6)
+  ["build-gate", "../build-gate-test.ts", 1], // build mode is gated at the chokepoint, never trapping a demoted builder (revived D6)
   ["capsule-recovery", "../capsule-recovery-test.mjs", 1], // a remote's capsule fallback: bounded retries, the identity guard across takeovers (revived D6)
   ["debug-tabs", "../debug-tabs-test.ts", 1], // the debug window builds only the chosen tab's groups (revived D6)
   ["governor-xr", "../governor-xr-test.ts", 1], // in a headset the frame governor never moves the pixel ratio (revived D6)
@@ -96,8 +96,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["names", "names-check.ts", 1],     // R 10-17 14:34–14:41: names carry no body plan and set no kind against another (refusal codes, punt {contact}, trusted-components, consent words + delegates, one people list, the occupy family, stale addresses)
   ["parity", "parity-check.ts", 1],     // research agent/human parity Part B (R 10-17 12:42): one kind of participant — a status is declared at the door, never inferred from the credential or logged; move {client} gone; the spoken trio is anyone's; §6a, §8 by shape
   ["directory", "directory-check.ts", 1],
-  ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in edit mode (every modifier tagged and shown)
-  ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
+  ["keyhints", "../keyhints-check.ts", 1], // R 10-04: no hidden keys in build mode (every modifier tagged and shown)
+  ["client", "client-check.ts", 1],     // slice 3b: build mode in headless Chromium against a scratch server (one browser, guarded)
   ["upgrade", "upgrade-check.ts", 1], // an old-format world: the verified backup (CLI and server), the structured join refusal, the operator-only upgrade through the CLI
   ["refusedjoin", "refusedjoin-check.ts", 1], // R 10-16 00:02: a refused join (old-format world, no such world) stays on the splash in the server's words — the early socket's refusal is honoured, no redial, no empty world
   ["server", "server-check.ts", 1],     // the server: real processes, real WebSockets, scratch ports
@@ -132,7 +132,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["roles", "roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions, ghost
   ["access", "access-check.ts", 1],     // who may come in (upstream #258/#259 in our terms): @world.access join/watch, per-caller /worlds and /access, the settle (4010), timed grants (expire-roles), reset keeps the door
   ["batch2", "batch2-check.ts", 1],
-  ["describe-particles", "describe-particles-check.ts", 1], // R 10-07: description (the accessibility reading) and particles as effect documents (Godot's CPUParticles3D ported)     // edit mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
+  ["describe-particles", "describe-particles-check.ts", 1], // R 10-07: description (the accessibility reading) and particles as effect documents (Godot's CPUParticles3D ported)     // build mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
   ["client-b2", "batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
   ["access-panel", "access-panel-probe.ts", 1], // World Settings › Who may come in › Listed here in headless Chromium: listed rows, add by a name seen here or an exact identity, the authority's refusal in words (R 10-27)
   ["lock-strength", "../lock-strength-test.ts", 1], // review of PR #260 (editpanels.js:479): the Hierarchy row's padlock word is the lock the thing holds now: a builder's re-lock after an owner's reads as a builder's, and a refused ask is asked again

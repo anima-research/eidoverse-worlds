@@ -4,7 +4,7 @@
 // the SAME dispatcher the desktop frame calls. No DOM crosses the threshold.
 //
 // Any module opts a frame in with registerXRPanel — the dock has no body in
-// VR, so this registry IS the dock's edit-mode: what you can reach, floating
+// VR, so this registry IS the dock's build-mode: what you can reach, floating
 // at desk height. Frames that never register (chat's free text, the debug
 // log) simply have no VR body yet, and say nothing rather than pretend.
 

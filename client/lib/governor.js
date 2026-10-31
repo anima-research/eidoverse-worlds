@@ -74,7 +74,7 @@ export const REDUCED_CHIP = {
 
 let reducedChipHidden = false;   // the viewer put the chip away (for this visit)
 // builder mode: the governor's frame-rate toasts landed on the selection bar (review 10-07 S11); the work still happens
-const building = () => typeof document !== 'undefined' && document.body?.classList.contains('edit-mode');
+const building = () => typeof document !== 'undefined' && document.body?.classList.contains('build-mode');
 
 // ---- the resident's render-scale dial (§22k) --------------------------------
 // The §22j A/B proved pixel-bound machines exist; the cruise answers them

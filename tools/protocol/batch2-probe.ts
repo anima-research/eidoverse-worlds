@@ -150,8 +150,8 @@ try {
   // ---- STO: a story on Inspect ----
   await empty("kiosk", [0, 0, -2], { story: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.\n\nOne tree, renewing, not accumulating." } });
   await waitFor(`import('/lib/world.js').then((m) => m.entities.has('kiosk'))`);
-  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(true), true))`);
-  await waitFor(`document.body.classList.contains('edit-mode')`);
+  await evalJson(`import('/lib/build.js').then((m) => (m.setBuildMode(true), true))`);
+  await waitFor(`document.body.classList.contains('build-mode')`);
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('kiosk'); return true;`);
   check("STO1 the Inspector shows its Story card, title and text", await waitFor(`(() => { const f = document.querySelector('[data-frame="inspector"]'); if (!f) return false; const vals = [...f.querySelectorAll('input,textarea')].map((x) => x.value); return vals.includes('The first marker tree') && vals.some((v) => v.includes('renewing')); })()`, 6000),
     await evalJson(`[...(document.querySelector('[data-frame="inspector"]')?.querySelectorAll('input,textarea') ?? [])].map((x) => x.value).slice(0, 12)`));

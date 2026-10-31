@@ -303,7 +303,7 @@ check("the wrench has a row while gated open", !!row("edit"));
 }
 { // ...and a row while gated CLOSED too — dead, not absent (R: "It SHOULD be
   // in the reverse-E menu regardless"). paintEMenu used to `continue` past a
-  // closed gate, so the only way to learn edit mode existed was to already
+  // closed gate, so the only way to learn build mode existed was to already
   // have build rights.
   const was = editGate;
   editGate = false; bus.emit("frames");
@@ -373,8 +373,8 @@ check("the wrench has a row while gated open", !!row("edit"));
   // NEVER `on` AND `dead`. .on's brand ink and 2px edge-bar come later in the
   // sheet at equal specificity, so a dead+on button rendered as "active but
   // broken": 42% opacity in full brand colour. Reachable in the product —
-  // setEditMode has no rights check and KeyB is ungated, so a builder can
-  // enter edit mode and then lose rights mid-session. (round 5)
+  // setBuildMode has no rights check and KeyB is ungated, so a builder can
+  // enter build mode and then lose rights mid-session. (round 5)
   editOn = true; bus.emit("frames");
   check("a dead action button never also paints as active",
     btn("edit")!.classList.contains("dead") && !btn("edit")!.classList.contains("on"),

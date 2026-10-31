@@ -1,6 +1,6 @@
-// edittheme — the ONE source of edit mode's look (DESIGN-SPEC 2026-09-30, "Edit mode: the look").
+// edittheme — the ONE source of build mode's look (DESIGN-SPEC 2026-09-30, "Build mode: the look").
 //
-// Edit mode is a dark-grey utilitarian editor (Blender / Godot / Resonite / Maya family): the chrome
+// Build mode is a dark-grey utilitarian editor (Blender / Godot / Resonite / Maya family): the chrome
 // is grey and the WORLD is the only colour. Colour in the chrome means exactly one of: selection /
 // focus (accent), an axis (x/y/z), danger, a driven value, or "only you" (mine). Nothing is coloured for decoration.
 //

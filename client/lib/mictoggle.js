@@ -29,7 +29,7 @@ import { pathData } from './icons.js';
 // matches perceived weight rather than nominal colour.
 // glyph inks come from the token sheet (no hex outside it) —
 // read fresh each paint (1Hz + events): live token edits restyle us too.
-// Read off the BUTTON (it inherits the sheet's tokens): edit mode re-points the OFF inks on the glyphs alone
+// Read off the BUTTON (it inherits the sheet's tokens): build mode re-points the OFF inks on the glyphs alone
 // (index.html body.edit-workspace #micbtn…: --dim, --edge-hi) so an off glyph sits grey-on-grey in the editor bar;
 // live stays the brand and hot the attention gold there too (R, gym 10-17 20:44: they stayed grey when live).
 const tok = (n, fb) => (getComputedStyle((micBtn?.isConnected && micBtn) || document.documentElement).getPropertyValue(n) || fb).trim();
@@ -241,7 +241,7 @@ export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" heigh
 export const micIndicatorState = () => (!micIsOn() ? 'off' : micHot ? 'hot' : 'on');
 export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
-/** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of edit mode). */
+/** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of build mode). */
 export const micGlyphFor = (on, hot) => MIC_SVG(!!on, !!hot);
 export const earGlyphFor = (on) => EAR_SVG(!!on);
 export const earGlyph = (size = 16) => { let on = false; try { on = receivingVoice() && !isHushed(); } catch {} return EAR_SVG(on).replace('width="26" height="26"', `width="${size}" height="${size}"`); };
@@ -373,8 +373,8 @@ bus.on('audio:receive', paint);
 bus.on('audio:mic', paint);
 bus.on('style', paint);
 bus.on('xr:state', paint);
-// edit mode moves the ∃ into the workspace's corner and re-inks the glyphs: re-seat and repaint once its CSS is on
-bus.on('edit-mode', () => requestAnimationFrame(() => { paint(); placeMic(); }));   // session start/end (live 09-05 22:04)       // the badge is baked from tokens (INK) — a Style change repaints it (live, 09-05)
+// build mode moves the ∃ into the workspace's corner and re-inks the glyphs: re-seat and repaint once its CSS is on
+bus.on('build-mode', () => requestAnimationFrame(() => { paint(); placeMic(); }));   // session start/end (live 09-05 22:04)       // the badge is baked from tokens (INK) — a Style change repaints it (live, 09-05)
 setInterval(ensure, 1000);
 ensure();
 

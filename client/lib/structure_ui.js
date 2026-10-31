@@ -299,7 +299,7 @@ export function initStructureUI() {
   // the selected building is the one the tools edit (and its lattice is the one drawn)
   bus.on('selection', ({ ids, kind }) => { selectedId = kind === 'things' ? ids[0] ?? null : null; if (active) refreshGrid(); });
   // the mode arrives and leaves with eidoverse's own build mode — B, or Esc
-  bus.on('edit-mode', (on) => setStructureMode(on));
+  bus.on('build-mode', (on) => setStructureMode(on));
   // a building appearing or changing under us moves the lattice with it
   bus.on('entity', (ev) => { if (active && ev?.kind !== 'collider') refreshGrid(); });
 

@@ -66,7 +66,7 @@ check('info shows the value as text', rows[0].querySelector('.sp-info')?.textCon
   plus.onclick!(new Event('click'));
   check('+ steps by step and clamps to max: edit("h", 2)', last() === '["h",2]', last());
   minus.onclick!(new Event('click'));
-  // the stepper shows what it just set (p1 edit mode): + then − returns to the start, 1.5 — the old face stayed
+  // the stepper shows what it just set (p1 build mode): + then − returns to the start, 1.5 — the old face stayed
   // at 1.5 after a + and stepped to 1, i.e. two clicks that should cancel moved the value
   check('− steps down from the SHOWN value (+ then − cancel): edit("h", 1.5)', last() === '["h",1.5]', last());
   num.value = '-4'; num.onchange!(new Event('change'));

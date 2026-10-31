@@ -1,4 +1,4 @@
-// edittheme — edit mode's look holds its durable promises (DESIGN-SPEC 2026-09-30).
+// edittheme — build mode's look holds its durable promises (DESIGN-SPEC 2026-09-30).
 //
 //   bun tools/edittheme-test.ts
 //

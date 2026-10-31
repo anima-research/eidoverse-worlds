@@ -138,7 +138,7 @@ const liftsOf = (w, ctx, plan) => { const released = new Set(handsLetGo(w, plan,
 
 // The hands a write's ops empty, by the rule the replay ends a lift by (simlayer's ends() and endsUnder()), so the two
 // agree on what is in a hand: a held thing it moves, re-parents or removes is where the edit put it now. (R, 10-10:
-// moved a held barrel in edit mode; her client let go, the authority didn't, and every throw after was refused from a
+// moved a held barrel in build mode; her client let go, the authority didn't, and every throw after was refused from a
 // hand the two no longer agreed on.) Switching it off takes it out of the hand too (review 5d5eef5c #5): an off thing
 // can't be thrown, so it's set down where the record has it. …And switching off (or removing) a thing lets go of
 // whatever is held UNDER it (attack-editor S2-1: a held child of a switched-off parent could be neither put, dropped nor

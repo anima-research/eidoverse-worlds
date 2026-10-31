@@ -4,7 +4,7 @@
 // a hidden xr-flagged DOM frame that domquad.js mirrors (as the VR keyboard does), or on the canvas path (?domquads=0) a
 // schema panel in xrpanels.js; showXRPanel picks whichever is live, and either's buttons answer it. Refusals, which are toasts
 // on the desk and therefore silent in a headset, show here too, with an OK.
-// R, 10-06 23:39: VR edit mode comes later, but nothing should be broken in principle there.
+// R, 10-06 23:39: VR build mode comes later, but nothing should be broken in principle there.
 import { renderer } from './core.js';
 import { bus } from './base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
