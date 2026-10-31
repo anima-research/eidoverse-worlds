@@ -7,6 +7,7 @@
 // freezes-then-teleports under loss.
 
 import { THREE, camera, scene } from './core.js';
+import { declaresAI } from './plate.js';
 import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
 import { onceAnimOf } from '../../shared/onceanim.js';
@@ -73,7 +74,7 @@ function retryBody(r) {
       const av = await loadBody(id, path);
       if (remotes.get(id) !== r) { av.dispose(); return; }   // superseded while loading
       r.avatar?.dispose();                        // the capsule steps down
-      r.avatar = av;
+      r.avatar = av; markAI(r);
       r.capsuleFor = null;
       r.retries = 0;
       if (r.buf.length) applyImmediate(r);
@@ -85,10 +86,13 @@ function retryBody(r) {
   }, RETRY_BACKOFF_MS[Math.min(n, RETRY_BACKOFF_MS.length - 1)]);
 }
 
+/** The plate's AI tag follows the door declaration (plate.js declaresAI). */
+const markAI = (r) => r.avatar?.setAI?.(declaresAI(r.declares));
+
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
-    if (meta.declares !== undefined) existing.declares = meta.declares;   // the word they declared at the door (§6a), or null
+    if (meta.declares !== undefined) { existing.declares = meta.declares; markAI(existing); }   // the word they declared at the door (§6a), or null
     // same person, new body: rebuild (live avatar switching re-announces via
     // join). A switch that lands while the OLD body is still loading must not
     // be dropped — delete the map entry and let the stale load's own guard
@@ -140,7 +144,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
           try {
             const av = await loadBody(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); fresh.capsuleFor = fresh.avatarPath || DEFAULT_AVATAR; return makeCapsuleAvatar(id); });   // the capsule floor
             if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
-            fresh.avatar = av;
+            fresh.avatar = av; markAI(fresh);
             if (fresh.buf.length) applyImmediate(fresh);
           } catch (e) { report(`avatar ${id}`, e); }
           fresh.loading = false;
@@ -166,7 +170,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   gens.set(id, r.gen);
   remotes.set(id, r);
   try {
-    r.avatar = await loadBody(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); r.capsuleFor = avatarPath || DEFAULT_AVATAR; return makeCapsuleAvatar(id); });   // the capsule floor
+    r.avatar = await loadBody(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); r.capsuleFor = avatarPath || DEFAULT_AVATAR; return makeCapsuleAvatar(id); }); markAI(r);   // the capsule floor
     // Stale-load guard: they left OR switched bodies while this one loaded.
     // Compare against OUR record, not mere key presence — a replacement body
     // re-occupies the key, and checking has(id) let the old avatar finish

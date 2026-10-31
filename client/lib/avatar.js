@@ -3,6 +3,7 @@
 // blink, head pitch, mouth movement while speaking).
 
 import { renderAside } from './render.js';
+import { plateText } from './plate.js';
 import { THREE, scene, camera, renderer, backendName } from './core.js';
 import { makeCapsuleVrm } from './capsulebody.js';
 import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
@@ -2378,13 +2379,15 @@ export class Avatar {
     return pts;
   }
 
+  /** The AI tag on the plate (a self-declared agent: plate.js). */
+  setAI(on) { if (this._ai === !!on) return; this._ai = !!on; this.repaintLabel(); }
   /** rebuild the nameplate sprite from the current tokens (rename, or a Style change) */
   repaintLabel() {
     const name = this._labelName ?? this.id ?? '';
     const at = this.label.position.clone();   // where the body hangs it (_placePlate); the new sprite takes the same spot
     this.root.remove(this.label);
     disposeSprite(this.label);
-    this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
+    this.label = makeLabel(plateText(name, { approx: this._seatApprox, ai: this._ai }));
     this.label.position.copy(at);
     this.root.add(this.label);
   }
