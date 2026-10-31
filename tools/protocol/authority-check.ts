@@ -216,7 +216,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     hc("olive", "create-world", { title: "held" }); hc("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
     hc("olive", "create", { id: "tbl", model: "table", place: { at: [0, 1] } });
     hc("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "builder" } }, place: { on: "tbl" } });
-    hc("bob", "move", { to: [0, 0, 0.6] }); hc("olive", "set", { id: "tbl", component: "lock", value: true });
+    hc("bob", "move", { to: [0, 0, 0.35] }); hc("olive", "set", { id: "tbl", component: "lock", value: true });   // beside the table: its 0.75 m top is no step (mover 0.55 m)
     ok(code(hc("bob", "grab", { id: "cup" })) === "locked", "P42 picking a cup up off a locked table is refused (the grab relocates what's attached)");
     hc("olive", "delete", { id: "tbl", component: "lock" }); const g = hc("bob", "grab", { id: "cup" });
     hc("olive", "set", { id: "tbl", component: "lock", value: true });

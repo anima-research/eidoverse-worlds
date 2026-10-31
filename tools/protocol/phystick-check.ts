@@ -109,7 +109,9 @@ function world(name, N) {
   ok(openMs < 1500, `T6 opening from the checkpoint is quick (${openMs.toFixed(0)} ms; this world's history re-simulated takes longer)`, { openMs, genesisMs });
   // a throw after reopening still flies and rests from the checkpointed state
   w2.simPeek(); const r = { call: (v, args, s = 100) => { T2 += s; return request(w2, "rowan", v, args); }, tick: (ms) => { T2 += ms; } };
-  { const bp = w2.state().entities.ball.c.transform.pos; r.call("move", { to: [bp[0], 0, bp[2] - 0.5] }); }   // bodies are presence: the reopened world has none until I move; the ball rested where the knock left it
+  { const bp = w2.state().entities.ball.c.transform.pos; let mv: any = null;   // within reach of the ball, wherever the crates it rolled among leave room
+    for (const [dx, dz] of [[0, -0.6], [0, 0.6], [-0.6, 0], [0.6, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]]) { mv = r.call("move", { to: [bp[0] + dx, 0, bp[2] + dz] }); if (mv.ok) break; }
+    ok(mv?.ok, "T6 the reopened body arrives beside the ball (clear of the crates)", mv?.refused); }   // bodies are presence: the reopened world has none until I move; the ball rested where the knock left it
   // an edit of a pre-checkpoint thing, then its flight: the reopened engine must agree with a from-genesis fold of the same
   // log, and the throw must really fly and rest (second review 10-11 S1-1: the cut carried no fold state; the first edit
   // removed the thing from the engine and a later throw was silently dropped — th.ok alone passed)

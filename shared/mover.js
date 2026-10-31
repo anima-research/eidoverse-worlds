@@ -42,7 +42,8 @@ export const MOVER = Object.freeze({
   body: Object.freeze({
     radius: 0.2,   // m, half the body's width: the walking capsule, the authority's box
     height: 1.7,   // m, the body's height over its feet
-    step: 0.8,     // m, the highest ledge a body walks onto without a mantle; the authority's box starts here
+    step: 0.55,    // m, the highest ledge a body walks onto without a mantle (main's; decision table row 6); the authority's box starts here
+    skin: 0.02,    // m the authority forgives a stride grazing a side: clients resolve out to the surface (Unity skinWidth, PhysX contactOffset)
   }),
   track: Object.freeze({
     speed: 6,      // m/s the authority lets a tracked body sustain (a run with latency to spare)

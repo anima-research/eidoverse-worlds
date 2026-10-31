@@ -64,7 +64,7 @@ function playground(name) {
   ok(!blind.entities.ball.c.parent && Math.abs(blind.entities.ball.c.transform.pos[1]) < ON && (RIGID ? bz > 0.5 && bz < 3.6 : bz > 3),
     "A non-carrier: short of the table, on the ground, from the log alone", blind.entities.ball.c.transform);
   call(W, "rowan", "move", { to: [0, 0, 2.6] }); call(W, "rowan", "grab", { id: "ball" });
-  call(W, "rowan", "move", { to: [0, 0, 3.9] }); const d = call(W, "rowan", "drop", { id: "ball" });
+  call(W, "rowan", "move", { to: [0, 0, 3.35] }); const d = call(W, "rowan", "drop", { id: "ball", pos: [0, 1.1, 3.9] });   // from the table's edge, the hand over it: its 0.75 m top is no step (mover 0.55 m)
   ok(d.ok, "A drop over the table", d); call(W, "rowan", "wait", {}, 3000);
   const b2 = fold(log(W)).entities.ball.c;
   ok(b2.parent?.to === "table-1", "A a dropped ball rests on the table, and the log says so (parent: it rides with it)", b2);
@@ -150,7 +150,7 @@ function playground(name) {
     const W9 = playground("pc-d9");
     const c9 = call(W9, "rowan", "create", { id: "pad", model: "table", place: { at: [10, 0] } });
     const b9 = call(W9, "rowan", "create", { id: "kid", model: "ball", components: { physics: { kind: "dynamic", who: "member" }, parent: { to: "pad" }, transform: { pos: [0, 0.75, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-    const m9 = call(W9, "rowan", "move", { to: [10, 0, -0.5], teleport: true }); if (!m9.ok) console.log("D9 move", JSON.stringify(m9.refused));
+    const m9 = call(W9, "rowan", "move", { to: [10, 0, -0.65], teleport: true }); if (!m9.ok) console.log("D9 move", JSON.stringify(m9.refused));   // beside the table, not on it
     const x0 = worldT(fold(log(W9)), "kid").pos[0];
     const g9 = call(W9, "rowan", "grab", { id: "kid" }), t9 = call(W9, "rowan", "throw", { id: "kid", v: [0, 6, 0] });
     const f9 = call(W9, "rowan", "delete", { id: "@world", component: "physics-engine", force: true }, 200);
@@ -261,7 +261,7 @@ function playground(name) {
 {
   const run = (name) => { clock.t = 1800000000000; const W = playground(name);
     call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [1.3, 2.7, 3.1] });
-    call(W, "rowan", "move", { to: [1.6, 0, 0.5] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [-2, 3, 3] });
+    call(W, "rowan", "move", { to: [1.6, 0, 0.6] }); call(W, "rowan", "grab", { id: "crate-1" }); call(W, "rowan", "throw", { id: "crate-1", v: [-2, 3, 3] });   // clear of the 0.6 m crate (no step)
     call(W, "rowan", "wait", {}, 8000);
     // §3d C1: two worlds' geneses differ in their nonce by design (so do their world ids); everything after is the same
     const [g, ...rest] = fs.readFileSync(`${root}worlds/${W}.jsonl`, "utf8").split("\n"); const gb = JSON.parse(g); const wid = JSON.parse(rest[0]).world;
@@ -324,7 +324,8 @@ function playground(name) {
   const top = call(W, "rowan", "wait", {});
   ok(top.cameToRest?.some((r) => r.id === "crate-2" && Math.abs(r.at[1]) < 1e-6), "L wait says where it came to rest (the ground)", top);
   const far = call(W, "rowan", "move", { to: [50, 0, 50] }); ok(!far.ok && far.refused.code === "out-of-bounds", "L you can't walk out of the world", far.refused);
-  for (const x of [5, 9, 13, 17, 19]) { const m = call(W, "rowan", "move", { to: [x, 0, 0] }, 1000); ok(m.ok, `L walked to x=${x} carrying it`, m); }
+  // z 2: round the fallen 0.6 m crate (no step)
+  for (const x of [5, 9, 13, 17, 19]) { const m = call(W, "rowan", "move", { to: [x, 0, 2] }, 1000); ok(m.ok, `L walked to x=${x} carrying it`, m); }
   call(W, "rowan", "put", { id: "crate-1" }); call(W, "rowan", "grab", { id: "crate-1" });
   const before = call(W, "rowan", "inspect", { id: "crate-1" }).world.pos;
   call(W, "rowan", "throw", { id: "crate-1", v: [20, 2, 0] }); call(W, "rowan", "wait", {}, 8000);

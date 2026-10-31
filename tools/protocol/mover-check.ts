@@ -4,7 +4,7 @@
 //       Before the port this was red with three answers to "is a 0.7 m ledge a floor?": the agent had no floors at all
 //       (terrain only), the authority said yes (TRACK.step 0.8), the client said no (colliders STEP 0.55) — and three
 //       radii/heights (none / 0.2 × 1.7 / 0.32 × 1.9).
-//   M   the mover alone: a stride's length (walk, run, a cap), the floor rule (onto 0.7, onto 0.8, not 0.9), a wall
+//   M   the mover alone: a stride's length (walk, run, a cap), the floor rule (onto 0.5, onto 0.55, not 0.6 — a mantle — nor 0.9), a wall
 //       (env.blocked refuses the step and the body stays put), arrival (tolerance, its bounds, no overshoot)
 //   A   agreement: every spot the mover walks an agent-shaped body to is a `move` the real authority accepts at the
 //       same millimetre; the ledge and the wall the mover refuses are the ones the authority refuses; the client's
@@ -73,10 +73,11 @@ if (M) {
     ok(near(easeSpeed(0, 1.55, 0.1), 1.55 * (1 - Math.exp(-1))) && easeSpeed(0.01, 0, 1) === 0, "M1 easeSpeed is the client's ramp (10/s) and snaps to 0 under 0.02");
   }
   { const flat = { floorAt: () => 0 }, ledge = (top) => ({ floorAt: (x, z) => (z > 1 ? top : 0) });
-    const on7 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.7)); ok(on7.blocked === null && near(on7.pos[1], 0.7) && near(on7.pos[2], 1.105), "M2 a 0.7 m ledge is stepped onto (y follows the floor)", on7);
-    const on8 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.8)); ok(on8.blocked === null && near(on8.pos[1], 0.8), "M2 so is one exactly a step (0.8 m) high", on8);
+    const on7 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.5)); ok(on7.blocked === null && near(on7.pos[1], 0.5) && near(on7.pos[2], 1.105), "M2 a 0.5 m ledge is stepped onto (y follows the floor)", on7);
+    const on8 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.55)); ok(on8.blocked === null && near(on8.pos[1], 0.55), "M2 so is one exactly a step (0.55 m, main's) high", on8);
+    const no6 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.6)); ok(no6.blocked?.by === "ledge" && no6.moved === 0 && canMantle(0.6, 1), "M2 a 0.6 m ledge needs a mantle (not a step): the walk is refused, the mantle reaches it (decision table row 6)", no6);
     const no9 = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1 }, ledge(0.9)); ok(no9.blocked?.by === "ledge" && near(no9.blocked.top, 0.9) && no9.pos.join() === "0,0,0.95" && no9.moved === 0, "M2 a 0.9 m ledge is a wall: the body stays put and the step says why", no9);
-    const down = stepWalk({ pos: [0, 0.7, 1.5], dir: [0, -1], dt: 1 }, ledge(0.7)); ok(down.blocked === null && near(down.pos[1], 0), "M2 stepping off it is free (any drop)", down);
+    const down = stepWalk({ pos: [0, 0.5, 1.5], dir: [0, -1], dt: 1 }, ledge(0.5)); ok(down.blocked === null && near(down.pos[1], 0), "M2 stepping off it is free (any drop)", down);
     const small = stepWalk({ pos: [0, 0, 0.95], dir: [0, 1], dt: 0.1, scale: 0.5 }, ledge(0.5)); ok(small.blocked?.by === "ledge", "M2 a 50% body's step is 0.4 m: 0.5 m is a wall to it", small);
     const keep = stepWalk({ pos: [0, 2.5, 0], dir: [1, 0], dt: 0.1 }, {}); ok(near(keep.pos[1], 2.5), "M2 no floorAt: y is kept (the client's collider pass owns it)");
     const unk = stepWalk({ pos: [0, 2.5, 0], dir: [1, 0], dt: 0.1 }, { floorAt: () => NaN }); ok(near(unk.pos[1], 2.5), "M2 an unknown floor keeps y too");
@@ -85,10 +86,10 @@ if (M) {
   { let seen = null; const wall = { blocked: (box, step) => { seen = { box, step }; return box.max[0] > 1 ? "wall-1" : null; } };
     const hit = stepWalk({ pos: [0.9, 0, 0], dir: [1, 0], dt: 0.1 }, wall);
     ok(hit.blocked?.by === "wall-1" && hit.pos.join() === "0.9,0,0" && hit.moved === 0, "M3 a wall refuses the step: the body stays where it was", hit);
-    ok(seen && near(seen.box.min[1], 0.8) && near(seen.box.max[1], 1.7) && near(seen.box.max[0] - seen.box.min[0], 0.4) && near(seen.step.to[0], 1.055) && seen.step.from.join() === "0.9,0,0", "M3 it was asked with the body's box at the new spot (0.8–1.7 m up, 0.2 m either side) and the step", seen);
+    ok(seen && near(seen.box.min[1], 0.55) && near(seen.box.max[1], 1.7) && near(seen.box.max[0] - seen.box.min[0], 0.4) && near(seen.step.to[0], 1.055) && seen.step.from.join() === "0.9,0,0", "M3 it was asked with the body's box at the new spot (0.55–1.7 m up, 0.2 m either side) and the step", seen);
     const free = stepWalk({ pos: [0, 0, 0], dir: [1, 0], dt: 0.1 }, wall); ok(free.blocked === null && near(free.pos[0], 0.155), "M3 …and lets a step that meets nothing through");
-    const b = bodyBox([1, 2, 3]); ok(b.min.join() === `0.8,2.8,2.8` && b.max.join() === `1.2,3.7,3.2`, "M3 bodyBox is the authority's box", b);
-    const b2 = bodyBox([0, 0, 0], 2); ok(near(b2.min[1], 1.6) && near(b2.max[1], 3.4) && near(b2.max[0], 0.4), "M3 …and grows with the body", b2);
+    const b = bodyBox([1, 2, 3]); ok(b.min.join() === `0.8,2.55,2.8` && b.max.join() === `1.2,3.7,3.2`, "M3 bodyBox is the authority's box", b);
+    const b2 = bodyBox([0, 0, 0], 2); ok(near(b2.min[1], 1.1) && near(b2.max[1], 3.4) && near(b2.max[0], 0.4), "M3 …and grows with the body", b2);
     ok(sweep([0, 0, 0], [0, 0, 0.12]).length === 3 && sweep([0, 0, 0], [0, 0, 0.12]).at(-1)[2] === 0.12 && sweep([0, 0, 0], [0, 0, 0.01]).length === 1, "M3 sweep: a point every 5 cm, the last at the destination, never the start");
     ok(near(tokensAfter(undefined, 0), 4) && near(tokensAfter(0, 500), 3) && near(tokensAfter(3, 1000), 4), "M3 the track's bucket: full at first, 6 m/s refill, 4 m cap");
   }
@@ -107,8 +108,8 @@ if (M) {
     const root = scratch("mover"); const clock = labClock(1_700_000_000_000);
     const call = (actor, verb, args = {}, step = 100) => { clock.advance(step); return request(openWorld(root, "walk"), actor, verb, args); };
     call("olive", "create-world", { title: "walk" });
-    // a 0.7 m ledge ahead (+z), a 0.9 m one to the side (+x), a wall behind (−z)
-    ok(call("olive", "create", { id: "ledge7", components: { mesh: { shape: "box", size: [2, 0.7, 2] }, transform: { pos: [0, 0, 5] } } }).ok, "A0 a 0.7 m ledge");
+    // a 0.5 m ledge ahead (+z), a 0.9 m one to the side (+x), a wall behind (−z)
+    ok(call("olive", "create", { id: "ledge7", components: { mesh: { shape: "box", size: [2, 0.5, 2] }, transform: { pos: [0, 0, 5] } } }).ok, "A0 a 0.5 m ledge");
     ok(call("olive", "create", { id: "ledge9", components: { mesh: { shape: "box", size: [2, 0.9, 2] }, transform: { pos: [5, 0, 0] } } }).ok, "A0 a 0.9 m ledge");
     ok(call("olive", "create", { id: "wall", components: { mesh: { shape: "box", size: [4, 2.6, 0.2] }, transform: { pos: [0, 0, -5] } } }).ok, "A0 a wall");
     const st = openWorld(root, "walk").state();
@@ -119,14 +120,14 @@ if (M) {
     // the agent's env: a floor map (the client's collider pass answers the same question from the drawn geometry)
     const env = { floorAt: (x, z) => (inXZ(L7, x, z) ? L7.max[1] : inXZ(L9, x, z) ? L9.max[1] : 0), blocked: (box) => (meets(box, W) ? "wall" : meets(box, L9) ? "ledge9" : null) };
     const arrive = call("ann", "move", { to: [0, 0, 0] }); ok(arrive.ok, "A1 the body arrives at the origin", arrive.refused);
-    // walk +z onto the 0.7 m ledge: every stride the mover takes is a move the authority accepts, at the same spot
+    // walk +z onto the 0.5 m ledge: every stride the mover takes is a move the authority accepts, at the same spot
     let p = [0, 0, 0], strides = 0, mism = null, refusedAt = null, climbed = false;
     for (let i = 0; i < 60 && !mism && !refusedAt; i++) { const r = walkToward({ pos: p, target: [0, 5], dt: 0.1 }, env); if (r.arrived) break; strides++;
       const r3 = (n) => Math.round(n * 1000) / 1000; const to = r.pos.map(r3);
       const m = call("ann", "move", { to }, 100); if (!m.ok) { refusedAt = { to, refused: m.refused }; break; }
       if (!(near(m.at[0], to[0]) && near(m.at[1], to[1]) && near(m.at[2], to[2]))) mism = { to, at: m.at };
-      p = r.pos; if (p[1] > 0.69) climbed = true; }
-    ok(!mism && !refusedAt && climbed && strides >= 30, "A1 every stride the mover walks (onto the 0.7 m ledge included) the authority accepts at the same millimetre", { mism, refusedAt, strides, p });
+      p = r.pos; if (p[1] > 0.49) climbed = true; }
+    ok(!mism && !refusedAt && climbed && strides >= 30, "A1 every stride the mover walks (onto the 0.5 m ledge included) the authority accepts at the same millimetre", { mism, refusedAt, strides, p });
     // the 0.9 m ledge: the mover calls it a wall, and so does the authority for the same step
     const back = call("ann", "move", { to: [0, 0, 0], teleport: true }); ok(back.ok, "A2 back to the origin (a teleport)", back.refused);
     let q = [0, 0, 0], moverRef = null, authRef = null;
@@ -143,6 +144,13 @@ if (M) {
       if (r.blocked) { mRef = r.blocked; const ahead = stepWalk({ pos: s, dir: [0, -1], dt: 0.1, run: true }, {}).pos.map(r3); const m = call("ann", "move", { to: ahead }, 100); aRef = m.ok ? { ok: true, at: m.at } : m.refused; break; }
       const m = call("ann", "move", { to: r.pos.map(r3) }, 100); if (!m.ok) { aRef = { early: m.refused }; break; } s = r.pos; }
     ok(mRef?.by === "wall" && aRef?.code === "solid" && /wall/.test(aRef.reason) && s[2] < -4 && s[2] > -4.9, "A3 the wall: the mover refuses the stride and the authority refuses the same move as solid, at the same spot", { mRef, aRef, s });
+    // skin (row 6, 10-30): the client resolves a body out to a face's surface; the authority forgives a graze within
+    // MOVER.body.skin, and still refuses a real overlap (Unity skinWidth, PhysX contactOffset)
+    { const r = MOVER.body.radius, face = W.max[2];   // the wall's near face (−z side of the walker)
+      call("ann", "move", { to: [0, 0, face + r + 0.5], teleport: true });
+      const graze = call("ann", "move", { to: [0, 0, face + r - 0.013] }, 400); call("ann", "move", { to: [0, 0, face + r + 0.5], teleport: true });
+      const into = call("ann", "move", { to: [0, 0, face + r - 0.05] }, 400);
+      ok(graze.ok && into.refused?.code === "solid", "SK1 a stride grazing a wall by 1.3 cm is taken (the skin); 5 cm into it is refused", { graze: graze.refused ?? "ok", into: into.refused ?? "ok" }); }
     // too fast: the mover's bucket is the authority's
     const far = call("ann", "move", { to: [0, 0, 0], teleport: true }); ok(far.ok, "A4 back");
     const leap = call("ann", "move", { to: [0, 0, 4.2] }, 100); ok(leap.refused?.code === "too-fast" && near(tokensAfter(4, 100), 4), "A4 a 4.2 m step is over the bucket's cap (4 m): too-fast", leap.refused);
@@ -152,7 +160,7 @@ if (M) {
     const BS = await import(ENGINE + "client/lib/bodyscale.js");
     const c1 = BS.colliderFor(1), c2 = BS.colliderFor(2), m1 = capsule(1), m2 = capsule(2);
     ok(near(c1.r, m1.r) && near(c1.tall, m1.tall) && near(c2.r, m2.r) && near(c2.tall, m2.tall) && near(c1.r, 0.2) && near(c1.tall, 1.7), "A5 the client's walking capsule is the mover's body (0.2 × 1.7, scaled)", { c1, m1 });
-    ok(BS.canMantle === canMantle && canMantle(0.8, 1) === false && canMantle(0.81, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.8 m) and reaches its height (1.7 m)");
+    ok(BS.canMantle === canMantle && canMantle(0.55, 1) === false && canMantle(0.56, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.55 m) and reaches its height (1.7 m)");
   }
   // A6 the speed track is paced by elapsed time, not by the wall clock (gate 18 navgrid/places too-fast): a host whose wall
   // clock is stepped back (WSL2's sync pulls it back ~1.4 s every ~30 s on Burrow; NTP does it anywhere) froze the running
@@ -354,11 +362,11 @@ if (M) {
   // ---- G6 THE BODY'S OWN SIZE (holes r3 F2): the mover judges water by the body's stature and ledges by its scale; so does the
   // authority, from the height and scale the body sends with its moves. A 1.2 m body in 1.0 m of water by a bank 0.5 m above
   // the surface swims and hauls out (the reviewer's case: before, the authority judged a 1.7 m wader and refused every stride);
-  // a 2.2 m body in 1.5 m wades and the same bank is a wall to both; a scale-2 body steps a 1.2 m terrain ledge and onto a
-  // 1.2 m crate (a 1.6 m step, its box 1.6 m up), a scale-0.5 body is refused a 0.6 m ledge (a 0.4 m step)
+  // a 2.2 m body in 1.5 m wades and the same bank is a wall to both; a scale-2 body steps a 1.0 m terrain ledge and onto a
+  // 1.0 m crate (a 1.1 m step, its box 1.1 m up), a scale-0.5 body is refused a 0.6 m ledge (a 0.275 m step)
   const SHALLOW = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -1.5, edge: 0.01 }], water: { level: -0.5 } };
   const DEEP = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 0, z: 0, radius: 4, height: -2.0, edge: 0.01 }], water: { level: -0.5 } };
-  const SHELF = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 10, z: 0, radius: 4, height: 1.2, edge: 0.01 }, { type: "flatten", x: -10, z: 0, radius: 4, height: 0.6, edge: 0.01 }, { type: "flatten", x: 0, z: 10, radius: 4, height: 2.0, edge: 0.01 }] };
+  const SHELF = { amplitude: 0, size: 80, features: [{ type: "flatten", x: 10, z: 0, radius: 4, height: 1.0, edge: 0.01 }, { type: "flatten", x: -10, z: 0, radius: 4, height: 0.6, edge: 0.01 }, { type: "flatten", x: 0, z: 10, radius: 4, height: 2.0, edge: 0.01 }] };
   const worlds6 = { shallow: SHALLOW, deep: DEEP, shelf: SHELF };
   for (const [wn, tv] of Object.entries(worlds6)) { call(wn, "olive", "create-world", { title: wn }); ok(ground(wn, tv).ok, `G0 the ${wn} world's terrain`); }
   const hS = fieldOf(SHALLOW), hD = fieldOf(DEEP), hF = fieldOf(SHELF);
@@ -376,26 +384,26 @@ if (M) {
     const d17 = agree("deep", "fay", [0, 0], [6, 0], envD, { claim, h: hD });
     ok(d17.accepted && d17.seen.swim && d17.at[0] > 5.9, `G6 [${claim}] a 1.7 m body there swims and hauls out: accepted by both`, d17);
     const up2 = agree("shelf", "gus", [2, 0], [10, 0], envF, { claim, h: hF, body: { scale: 2 } });
-    ok(up2.accepted && near(up2.seen.maxY, 1.2, 1e-3) && up2.at[0] > 9.9, `G6 [${claim}] a scale-2 body steps up a 1.2 m terrain ledge (its step is 1.6 m): accepted by both`, up2);
+    ok(up2.accepted && near(up2.seen.maxY, 1.0, 1e-3) && up2.at[0] > 9.9, `G6 [${claim}] a scale-2 body steps up a 1.0 m terrain ledge (its step is 1.1 m): accepted by both`, up2);
     const up1 = agree("shelf", "hal", [2, 0], [10, 0], envF, { claim, h: hF });
     ok(both(up1) && up1.moverRef.by === "ledge", `G6 [${claim}] a scale-1 body at the same ledge: refused by both`, up1);
     const lo5 = agree("shelf", "ivy", [-2, 0], [-10, 0], envF, { claim, h: hF, body: { scale: 0.5 } });
-    ok(both(lo5) && lo5.moverRef.by === "ledge", `G6 [${claim}] a scale-0.5 body at a 0.6 m ledge (its step is 0.4 m): refused by both (the authority let a 0.8 m step through)`, lo5);
+    ok(both(lo5) && lo5.moverRef.by === "ledge", `G6 [${claim}] a scale-0.5 body at a 0.6 m ledge (its step is 0.275 m): refused by both (the authority let a 0.8 m step through)`, lo5);
   }
-  // a flat world (no terrain): a crate 1.2 m tall. A scale-2 body walks up onto it (a 1.6 m step; its box starts 1.6 m up)
+  // a flat world (no terrain): a crate 1.0 m tall. A scale-2 body walks up onto it (a 1.1 m step; its box starts 1.1 m up)
   call("flat2", "olive", "create-world", { title: "flat2" });
-  const CR = { id: "crate12", p: [5, 0, 0], s: [2, 1.2, 2] };
-  ok(call("flat2", "olive", "create", { id: CR.id, components: { mesh: { shape: "box", size: CR.s }, transform: { pos: CR.p } } }).ok, "G0 a 1.2 m crate on a flat world");
+  const CR = { id: "crate12", p: [5, 0, 0], s: [2, 1.0, 2] };
+  ok(call("flat2", "olive", "create", { id: CR.id, components: { mesh: { shape: "box", size: CR.s }, transform: { pos: CR.p } } }).ok, "G0 a 1.0 m crate on a flat world");
   const envC = envOf(() => 0, null, [{ id: CR.id, box: meshBox(CR.p, CR.s) }]);
   const cr2 = agree("flat2", "jo", [0, 0], [5, 0], envC, { body: { scale: 2 } });
-  ok(cr2.accepted && near(cr2.seen.maxY, 1.2, 1e-6) && cr2.at[0] > 4.9, "G6 flat world: a scale-2 body walks up onto a 1.2 m crate: accepted by both", cr2);
+  ok(cr2.accepted && near(cr2.seen.maxY, 1.0, 1e-6) && cr2.at[0] > 4.9, "G6 flat world: a scale-2 body walks up onto a 1.0 m crate: accepted by both", cr2);
   const cr1 = agree("flat2", "kit", [0, 0], [5, 0], envC);
   ok(cr1.moverRef && cr1.authRef && !cr1.authRef.ok && cr1.mism === null, "G6 flat world: a scale-1 body at the same crate: refused by both", cr1);
   // the bounds: what a body may say about itself (a liar's reach is the size slider's, no further)
   const bnd = (args) => call("shelf", "lia", "move", { to: [0, 0, 0], teleport: true, ...args });
   ok(!bnd({ height: "tall" }).ok && !bnd({ scale: -1 }).ok && !bnd({ scale: NaN }).ok && !bnd({ height: 0 }).ok, "G6 a height or scale that isn't a positive number is refused (shape)", [bnd({ height: "tall" }).refused?.code, bnd({ scale: -1 }).refused?.code]);
   { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, scale: 50 }), up = r.ok && call("shelf", "lia", "move", { to: [0, 2, 6.3] });
-    ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.6 m)", { r, up }); }
+    ok(r.ok && up && !up.ok && up.refused.code === "solid" && /ground/.test(up.refused.blocker ?? ""), "G6 a claimed scale of 50 is the mover's largest body (2): a 2 m terrain ledge is still a wall (its step is 1.1 m)", { r, up }); }
   { const r = call("shelf", "lia", "move", { to: [0, 0, 5.5], teleport: true, height: 0.1 }), kept = openWorld(root, "shelf").presence.bodies.lia?.size?.height;
     ok(r.ok && kept === 0.5, "G6 a claimed height of 0.1 m is kept as 0.5 m: the walker's own floor (the browser's bodyHeight and the agent's rigbones bound 0.5-4) (review r4 F7)", { r: r.refused, kept }); }
 
