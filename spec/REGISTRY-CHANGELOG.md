@@ -380,3 +380,4 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-31: physics-area.modes: new field (Mica 10-31 row 27; walk|swim|fly|climb, absent all)
 - 2026-10-31: reactions impulse: opened (main's script-free swing; Mica 10-31 matrix 8, decision row 19)
 - 2026-10-31: Mica 10-31 (matrix 8, decision row 19): reactions {kind: 'impulse', strength?, angular?} is open again (main's script-free swing push; use.js already ran it for translated worlds). reservedKinds is empty.
+- 2026-10-31: particle-effect limits: 4,000 particles per emitter, 8,000 per effect, 64 m extent (were 600 / 1,000 / 32 m), so main's motes (≤3,000, ≤60 m) translate unclamped (decision row 7); the Essentials' count param keeps its 600 bound (their addresses unchanged); translate-v1@38

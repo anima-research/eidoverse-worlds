@@ -196,11 +196,11 @@ const cases: Case[] = [
       const read = s.call("vic", "effect", { name: h });
       return { up: show(up), h, a: show(a), b: show(b), bad: code(bad), read: read?.effect?.name, ess: s.call("vic", "effect", { name: "smoke" })?.effect?.emitters?.length }; },
     good: (o) => o.up === "ok" && /^sha256:[0-9a-f]{64}$/.test(o.h ?? "") && o.a === "ok" && o.b === "ok" && o.bad === "shape" && o.read === "lantern glow" && o.ess === 1 },
-  { id: "X6", what: "a document is bounded: 601 particles, 5 emitters, 1001 in all, a 31 s life, a texture outside the library, an unknown module, and a non-effect are each refused at upload", run(s) { cast(s);
+  { id: "X6", what: "a document is bounded: 4001 particles, 5 emitters, 8001 in all, a 31 s life, a texture outside the library, an unknown module, and a non-effect are each refused at upload", run(s) { cast(s);
       const up = (d: any) => code(s.call("bob", "upload", { effect: d }));
       const e0 = doc().emitters[0];
-      return { good: show(s.call("bob", "upload", { effect: doc() })), amount: up(doc({ emitters: [{ ...e0, spawn: { amount: 601, lifetime: 1 } }] })), five: up(doc({ emitters: [e0, e0, e0, e0, e0] })),
-        total: up(doc({ emitters: [{ ...e0, spawn: { amount: 600 } }, { ...e0, spawn: { amount: 401 } }] })), life: up(doc({ emitters: [{ ...e0, spawn: { amount: 4, lifetime: 31 } }] })),
+      return { good: show(s.call("bob", "upload", { effect: doc() })), amount: up(doc({ emitters: [{ ...e0, spawn: { amount: 4001, lifetime: 1 } }] })), five: up(doc({ emitters: [e0, e0, e0, e0, e0] })),
+        total: up(doc({ emitters: [{ ...e0, spawn: { amount: 4000 } }, { ...e0, spawn: { amount: 4000 } }, { ...e0, spawn: { amount: 1 } }] })), life: up(doc({ emitters: [{ ...e0, spawn: { amount: 4, lifetime: 31 } }] })),
         tex: up(doc({ emitters: [{ ...e0, render: { texture: "../../etc/passwd.png" } }] })), mod: up(doc({ emitters: [{ ...e0, turbulence: {} }] })), kind: up({ kind: "nope", v: 1, emitters: [] }) }; },
     good: (o) => o.good === "ok" && Object.entries(o).every(([k, c]) => k === "good" || c === "shape") },
   { id: "X7", what: "an address nothing here stores is not-found; a visitor can't upload a document but may read one", run(s) { cast(s); thing(s, "lantern");

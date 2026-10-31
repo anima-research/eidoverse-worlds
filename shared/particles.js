@@ -14,7 +14,7 @@ import { quoted } from './text.js';
 export { hashSeed, QUALITY_TIERS };
 /** The Essentials and how each reads (the first protocol's presets, now documents). */
 export const PARTICLE_PRESETS = Object.freeze(Object.fromEntries(ESSENTIAL_NAMES.map((k) => [k, { count: ESSENTIALS[k].emitters[0].spawn.amount, reads: ESSENTIALS[k].reads }])));
-export const PARTICLE_MAX_COUNT = 600;
+export const PARTICLE_MAX_COUNT = 4000;   // EFFECT_LIMITS.amount: main's motes (3,000) fit
 
 /** mulberry32 — small, fast, and the same sequence everywhere. */
 export function mulberry32(seed) {

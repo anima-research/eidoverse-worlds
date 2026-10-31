@@ -67,8 +67,8 @@ export const EFFECT_ADDRESS = /^(?:sha256:|eido:sha256\/)([0-9a-f]{64})$/;
 export const effectBlobName = (s) => { const m = typeof s === 'string' ? EFFECT_ADDRESS.exec(s) : null; return m ? `sha256:${m[1]}` : null; };
 
 export const EFFECT_LIMITS = Object.freeze({
-  emitters: 4, amount: 600, totalAmount: 1000, lifetime: [0.05, 30], preprocess: [0, 30], speedScale: [0.01, 10],
-  extent: 32, speed: 50, accel: 100, damping: 100, angle: 20 * Math.PI, angularVelocity: 20 * Math.PI, size: [0.001, 8], random: [0, 10],
+  emitters: 4, amount: 4000, totalAmount: 8000, lifetime: [0.05, 30], preprocess: [0, 30], speedScale: [0.01, 10],
+  extent: 64, speed: 50, accel: 100, damping: 100, angle: 20 * Math.PI, angularVelocity: 20 * Math.PI, size: [0.001, 8], random: [0, 10],
   points: 16, curveValue: [0, 16], hue: [-1, 1], params: 16, bindings: 8, frames: 16, animSpeed: 64,
   drift: 2, rate: 60, swirl: 2, bytes: 16384, text: 80,
 });
@@ -391,7 +391,8 @@ function builderEffect(name, P) {
 // opacity, speed, lifetime, area, texture and quality read as these, with the builder's bounds
 function LEGACY_PARAMS() {
   return {
-    count: { type: 'number', min: 1, max: 600, help: 'how many particles', to: [{ path: 'emitters.*.spawn.amount', round: true }] },
+    count: { type: 'number', min: 1, max: 600,   // fixed: part of every Essential's bytes (its address); EFFECT_LIMITS.amount may be larger
+      help: 'how many particles', to: [{ path: 'emitters.*.spawn.amount', round: true }] },
     size: { type: 'number', min: 0.005, max: 4, help: 'a particle\'s size (m)', to: [{ path: 'emitters.*.size.base' }] },
     opacity: { type: 'number', min: 0, max: 1, to: [{ path: 'emitters.*.color.alpha' }] },
     speed: { type: 'number', min: 0.05, max: 8, help: 'how fast it runs (× its own clock)', to: [{ path: 'emitters.*.spawn.speedScale' }] },

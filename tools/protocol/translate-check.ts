@@ -261,8 +261,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 37 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 37 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@37/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @37; a report reviewed under @36 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 38 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 38 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@38/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @38; a report reviewed under @37 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -293,11 +293,12 @@ row("S3-T1", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: 
 // decision table row 8 (@34): main's ambient motes keep their count, range and colour in a derived dust document
 row("DT8", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", { id: "land", lib: "t.glb" }], ["olga", "comp", { id: "land", type: "environment", data: { particles } }]]);
   const fx = (o: any) => o.E[TV1.envChildId("land", "particles")]?.particles, em = (o: any) => o.r.effects.get(fx(o)?.effect)?.emitters?.[0];
-  const a = env({ count: 450, range: 24, color: "#336699" }), b = env({ count: 3000, range: 60 }), c = env({});
+  const a = env({ count: 450, range: 24, color: "#336699" }), b = env({ count: 3000, range: 60 }), c = env({}), d = env({ count: 9000, range: 90 });
   ok(/^sha256:/.test(fx(a)?.effect) && em(a)?.spawn?.amount === 450 && em(a).shape.extents[0] === 24 && em(a).color.base === 0x336699 && a.E.land["imported:environment"] === undefined
-    && em(b)?.spawn?.amount === PE.EFFECT_LIMITS.amount && em(b).shape.extents[0] === PE.EFFECT_LIMITS.extent && em(b).color.base === 0xaec8b4 && JSON.stringify(b.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 3000, range: 60 } })
+    && em(b)?.spawn?.amount === 3000 && em(b).shape.extents[0] === 60 && em(b).color.base === 0xaec8b4 && b.E.land["imported:environment"] === undefined
+    && em(d)?.spawn?.amount === PE.EFFECT_LIMITS.amount && em(d).shape.extents[0] === PE.EFFECT_LIMITS.extent && JSON.stringify(d.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 9000, range: 90 } })
     && em(c)?.shape?.extents?.[0] === 16 && em(c).color.base === 0xaec8b4 && !PE.effectProblem(a.r.effects.get(fx(a).effect)),
-    "DT8 main's motes: count, range and colour ride in a derived dust document (main's 16 m and #aec8b4 where unset); past the effect limits (600, 32 m) they're clamped and carried", { a: em(a), b: [em(b)?.spawn, b.E.land["imported:environment"]] }); });
+    "DT8 main's motes: count, range and colour ride in a derived dust document (main's 16 m and #aec8b4 where unset); main's largest (3,000, 60 m) fit unclamped; past the effect limits they're clamped and carried", { a: em(a), b: [em(b)?.spawn, b.E.land["imported:environment"]], d: em(d)?.spawn }); });
 // decision table row 9 (@33): main sat a socket with no pos at [0, 0.5, 0] (client/lib/world.js); the translation writes it
 row("DT9", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { bare: { pose: "sit" }, nul: { pos: null }, set: { pos: [1, 0.2, 0] } } }]]);
   const S = E.s?.sockets ?? {};
