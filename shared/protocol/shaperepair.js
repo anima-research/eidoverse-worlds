@@ -131,7 +131,7 @@ export function repairSky(sky) {
     if ("dwellSec" in f) { if (f.dwell === undefined) f.dwell = f.dwellSec; delete f.dwellSec; }
     if ("transitionSec" in f) { if (f.transition === undefined) f.transition = f.transitionSec; delete f.transitionSec; }
     out.forecast = f; }
-  for (const k of ["sun", "fill", "world"]) if (k in out) { edit(); delete out[k]; }
+  for (const k of ["world"]) if (k in out) { edit(); delete out[k]; }
   return out;
 }
 /** @world's components repaired: {c, set, del}, as repairComps. Only the world's look is touched. NOT idempotent on a sky:

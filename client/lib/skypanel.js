@@ -27,7 +27,9 @@ const SLIDERS = [
   ['hours', 'time', 0, 24, 0.1, 12],
   ['rate', 'rate', 0, 48, 0.5, 0],
   ['azimuth', 'azim', 0, 360, 5, 180],   // shown in degrees, stored in radians (shape audit 10-16)
-  ['ambient', 'ambnt', 0, 2.5, 0.05, 1],   // sun and fill were cut: knobs on the renderer's own rig, never stored
+  ['sun', 'sun', 0, 2.5, 0.05, 1],
+  ['ambient', 'ambnt', 0, 2.5, 0.05, 1],
+  ['fill', 'fill', 0, 2.5, 0.05, 1],
   ['exposure', 'expos', 0.3, 1.8, 0.05, 1],
   ['fog', 'fog', 0, 3, 0.05, 1],
 ];

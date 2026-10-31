@@ -1573,6 +1573,8 @@
    "fog": "number",
    "exposure": "number",
    "ambient": "number",
+   "sun": "number",
+   "fill": "number",
    "forecast": "object",
    "override": "object",
    "gradient": "object",
@@ -1633,6 +1635,12 @@
    "ambient": {
     "min": 0
    },
+   "sun": {
+    "min": 0
+   },
+   "fill": {
+    "min": 0
+   },
    "transition": {
     "gt": 0,
     "max": 600
@@ -1656,9 +1664,13 @@
    "system": "eidoverse: the detailed sky",
    "colors": "the sky's own colours",
    "audio": "off: no weather sounds (main's default)",
+   "sun": "1: the sun at its own strength (a multiplier, as main's sun slider)",
+   "fill": "1: the bounce light opposite the sun at its own strength (main's fill slider)",
    "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
   "docs": {
+   "sun": "how strong the sun is, a multiplier on the renderer's own sun (main's sun slider)",
+   "fill": "how strong the bounce light opposite the sun is, a multiplier (main's fill slider)",
    "hours": "the hour of day at ts, 0 ≤ h ≤ 24",
    "rate": "world hours a real hour (0: the sun stands still)",
    "ts": "the instant hours held, epoch ms (stamped by the authority)",

@@ -261,8 +261,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 38 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 38 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@38/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @38; a report reviewed under @37 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 39 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 39 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@39/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @39; a report reviewed under @38 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -335,6 +335,10 @@ row("S3-LP", () => { const { r, E } = tr([OWNER, ["olga", "light", { id: "l", in
 row("S3-SA", () => { const { r, W } = tr([OWNER, ["olga", "sky", { world: "earth", audio: true }]]), b = tr([OWNER, ["olga", "sky", { world: "earth", audio: 1 }]]).W;
   ok(W.sky?.audio === true && b.sky?.audio === true && W["imported:sky"] === undefined && !r.stats.unmapped?.some((x) => x.component === "sky") && COMPONENTS.sky.fields.audio === "bool",
     "S3-SA main's sky.audio (rain and thunder) is @world.sky.audio, as makeSky read it (Boolean); nothing carried", { sky: W.sky, b: b.sky, imp: W["imported:sky"] }); });
+// decision table (R 10-30): main's sun and fill sliders are kept (the renderer still reads both; fill is the bounce light opposite the sun, not ambient)
+row("S3-SF", () => { const { W } = tr([OWNER, ["olga", "sky", { world: "earth", sun: 1.4, fill: 0.6, ambient: 0.9 }]]);
+  ok(W.sky?.sun === 1.4 && W.sky?.fill === 0.6 && W.sky?.ambient === 0.9 && W["imported:sky"] === undefined,
+    "S3-SF main's sun and fill sliders arrive on @world.sky as they were", { sky: W.sky, imp: W["imported:sky"] }); });
 row("S3-LD", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "lamp", lib: "x.glb" }], ["olga", "comp", { id: "lamp", type: "light", data: { color: 0xffd9a0 } }]]);
   ok(E.lamp.light?.decay === 2 && E.lamp.light.intensity === COMPONENTS.light.defaults.intensity && E.lamp.light.intensity === TV1.parityIntensity(16, 10),
     "S3-LD a main light with no intensity is main's 16 brightened once (never the registry default brightened again): a new default light's intensity", { l: E.lamp.light, d: COMPONENTS.light.defaults.intensity }); });
