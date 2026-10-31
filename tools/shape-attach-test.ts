@@ -91,13 +91,13 @@ tryRow('HG', () => {
   check('HG8 carries is taken', W.call('set', { id: 'ball', component: 'grabbable', value: { carries: true } }).ok);
 });
 
-// ===================================================================== reactions: kinds frozen and pinned, impulse reserved, refs
+// ===================================================================== reactions: kinds frozen and pinned, impulse open again (decision row 19), refs
 tryRow('RX', () => {
   const W = scratchWorld('w2-rx').seed({ swing: { model: 'crate', pos: [0, 0, 0], motion: { type: 'pendulum' } }, b0: { model: 'ball', pos: [1, 0, 0] } });
-  check('RX1 an impulse handler is refused as reserved (even on a pendulum)', code(W.call('set', { id: 'swing', component: 'reactions', value: { push: { kind: 'impulse', strength: 0.5 } } })) === 'reserved');
+  check('RX1 an impulse handler is written on a pendulum (main\'s script-free swing, open again)', code(W.call('set', { id: 'swing', component: 'reactions', value: { push: { kind: 'impulse', strength: 0.5 } } })) === 'ok');
   const P = pinOf().reactions;
-  check('RX2 the pin carries the handler kinds and each one\'s args', JSON.stringify(Object.keys(P.handlers ?? {})) === '["toggle","set","script","play","reset"]' && JSON.stringify(P.handlers?.reset) === '["targets"]', P);
-  check('RX2 …and the reserved kind', JSON.stringify(P.reservedKinds) === '["impulse"]', P.reservedKinds);
+  check('RX2 the pin carries the handler kinds and each one\'s args', JSON.stringify(Object.keys(P.handlers ?? {})) === '["toggle","set","script","play","impulse","reset"]' && JSON.stringify(P.handlers?.reset) === '["targets"]' && JSON.stringify(P.handlers?.impulse) === '["strength","angular"]', P);
+  check('RX2 …and no kind reserved', JSON.stringify(P.reservedKinds) === '[]', P.reservedKinds);
   const v = { home: { kind: 'reset', targets: ['b0', 'b1'] }, flip: { kind: 'toggle' } };
   const refs = refsOf('reactions', v);
   check('RX3 reset.targets are references (a copy or fork remaps them)', JSON.stringify(refs) === '[{"path":"reactions.home.targets[0]","id":"b0"},{"path":"reactions.home.targets[1]","id":"b1"}]', refs);
