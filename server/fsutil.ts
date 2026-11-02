@@ -10,8 +10,10 @@
 // inherits testability), and stale-tmp tolerance (a crash between write
 // and rename leaves <path>.tmp; the next write simply overwrites it).
 
-import { writeFileSync, renameSync, lstatSync, openSync, writeSync, fsyncSync, closeSync, unlinkSync } from "node:fs";
+import fs, { writeFileSync, renameSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
+import { writeAll, syncDir } from "./durable.ts";
 
 export type AtomicFs = {
   writeFileSync: typeof writeFileSync;
@@ -30,12 +32,14 @@ export function atomicWrite(
   fs.renameSync(`${path}.tmp`, path);
 }
 
-/** A private file (0600), written atomically: a fresh random temp made with "wx" (a planted temp or symlink is never followed),
- *  and a symlink at the target refused rather than replaced (post-review 10-28 #5). */
+/** A private file (0600), written atomically and durably: a fresh random temp made with "wx" (a planted temp or symlink is never
+ *  followed), written whole and synced, then its directory synced after the rename (bot review of #260, #2); a symlink at the
+ *  target refused rather than replaced (post-review 10-28 #5). */
 export function writePrivate(path: string, data: string) {
-  let link = false; try { link = lstatSync(path).isSymbolicLink(); } catch { /* absent: fine */ }
+  let link = false; try { link = fs.lstatSync(path).isSymbolicLink(); } catch { /* absent: fine */ }
   if (link) throw new Error(`${path} is a symlink: refused (remove it, then try again)`);
-  const tmp = `${path}.${randomBytes(8).toString("hex")}.tmp`, fd = openSync(tmp, "wx", 0o600);
-  try { writeSync(fd, data); fsyncSync(fd); closeSync(fd); renameSync(tmp, path); }
-  catch (e) { try { closeSync(fd); } catch { /* closed */ } try { unlinkSync(tmp); } catch { /* gone */ } throw e; }
+  const tmp = `${path}.${randomBytes(8).toString("hex")}.tmp`, fd = fs.openSync(tmp, "wx", 0o600);
+  try { writeAll(fd, Buffer.from(data, "utf8")); fs.fsyncSync(fd); fs.closeSync(fd); fs.renameSync(tmp, path); }
+  catch (e) { try { fs.closeSync(fd); } catch { /* closed */ } try { fs.unlinkSync(tmp); } catch { /* gone */ } throw e; }
+  syncDir(dirname(path));
 }

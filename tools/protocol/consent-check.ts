@@ -67,4 +67,22 @@ ok(decide(P, "u-bbbbbbbbbbbbbbbbbbbb", "u-alice", "shove").mode === "deny", "C5 
   const mode = (() => { try { return fs.statSync(path.join(dir, CONSENT_FILE)).mode & 0o777; } catch { return null; } })();
   ok(set.ok && (read.table?.block ?? []).includes(B) && shove.refused?.code === "consent" && (process.platform === "win32" ? mode !== null : mode === 0o600) && bodies === 0,
     "C11 a block survives a restart: the reopened authority refuses the blocked person, the read returns it, the file is 0600 (POSIX; Windows has no mode bits); bodies don't survive", { set, read: read.table, shove, mode, bodies }); }
+// C12 (bot review of #260, #2): the consent file is replaced durably: written whole through a short write, its directory synced
+// after the rename (a new name isn't on disk until its directory is: POSIX)
+{ const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const { openLive, CONSENT_FILE } = await import("../../server/livehost.ts"); const { request } = await import("../../shared/protocol/authority.js");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "consent-durable-")), dir = path.join(root, "w"); fs.mkdirSync(dir);
+  const A = "u-aaaaaaaaaaaaaaaaaaaa", B = "u-bbbbbbbbbbbbbbbbbbbb"; let now = 1800000000000;
+  const w = openLive(dir, "w", { now: () => now, custodyFile: path.join(root, "custody.json"), nameOf: () => null, kindOf: () => "human" });
+  now += 1000; request(w, A, "create-world", { title: "w" });
+  const o = { open: fs.openSync, sync: fs.fsyncSync, write: fs.writeSync }; const dirFds = new Set<number>(), tmpFds = new Set<number>(); let dirSynced = 0, shorts = 0;
+  fs.openSync = function (p: any, ...a: any[]) { const fd = o.open.call(fs, p, ...a); if (path.resolve(String(p)) === path.resolve(dir)) dirFds.add(fd);
+    if (/consent\.json\..*\.tmp$/.test(String(p))) tmpFds.add(fd); return fd; };
+  fs.fsyncSync = function (fd: number) { if (dirFds.has(fd)) dirSynced++; return o.sync.call(fs, fd); };
+  fs.writeSync = function (fd: number, b: any, off?: any, len?: any, ...r: any[]) {   // the consent temp's first write takes all but its last byte
+    if (shorts === 0 && tmpFds.has(fd) && typeof b !== "string" && len > 1) { shorts++; return o.write.call(fs, fd, b, off, len - 1, ...r); } return o.write.call(fs, fd, b, off, len, ...r); };
+  let set: any; try { now += 1000; set = request(w, A, "consent", { block: B }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync, writeSync: o.write }); }
+  let saved: any = null; try { saved = JSON.parse(fs.readFileSync(path.join(dir, CONSENT_FILE), "utf8")); } catch { /* torn or absent */ }
+  ok(set?.ok && dirSynced >= 1, "C12 a block's consent file: its directory is synced after the rename", { set: set?.ok, dirSynced });
+  ok(set?.ok && shorts === 1 && Object.keys(saved?.consent?.[A]?.block ?? {}).includes(B), "C12b …and a short write still lands the whole file (the injected short write is taken)", { shorts, saved }); }
 console.log(`[consent-check] ${fails ? fails + " failed" : "all pass"}`); process.exit(fails ? 1 : 0);
