@@ -435,7 +435,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4} on that zone (2.4 m/s: the stroke a volume swims at here), which scales every body's speed inside it (walking and wading too, where main changed only the swim); a speed within 5% of 2.4 is dropped" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']} on that zone (2.4 m/s: the stroke a volume swims at here), which slows the swim only, as main did; a speed within 5% of 2.4 is dropped" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform; anything else (another key, a box's other keys, an entry that is no box) imported:air, listed" },
 };
 export const AIR_PRIORITY = 1;

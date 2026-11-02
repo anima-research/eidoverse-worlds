@@ -1492,7 +1492,7 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   ['hulls'], layer: [its own band layer]}`, its thing `collider {mask: [1, that layer]}`: another hull passes) set off by the hull's measured box, so its origin keeps main's band (unmeasured: at `minY`/`maxY`, the
   whole hull in it); `probes` ride `imported:vehicle`, listed under `unmapped` (collision is the hull's own collider). A
   water volume's `speed` is a `physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']}` on its zone (2.4 m/s: the volume
-  stroke here, shared/water.js; it scales walking and wading there too); within 5% of 2.4 none is written. Driving is not
+  stroke here, shared/water.js; walking and wading there are not slowed, as in main); within 5% of 2.4 none is written. Driving is not
   bit-identical to main's (a collider sweep, not ray probes). The translator's DEFERRED table is empty.
 - **A world that uses a deferred feature is refused**, naming each use (component, entity, actor, seq): a water volume
   or air box on `@world`, which has no frame to hold one (`water` on `@world` without one is the world's water level and
