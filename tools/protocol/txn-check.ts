@@ -46,9 +46,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'fix: "ask whoever runs this server" } }); return; }   // an owner', 'fix: "repair through the world\'s own roles: ask an owner" } }); return; }   // an owner', ["T9f"]],
   ["a false refusal: operator-repair compares the world role", "server/requestwire.ts", "recheck(cap, Date.now(), { role: false })", "recheck(cap, Date.now())", ["T9c"]],
   ["a false refusal: the account compared un-normalised (undefined vs null)", "server/reqcap.ts", "(c.account ?? null) !== cap.account", "c.account !== cap.account", ["T10"]],
-  ["a person's founding as it was: no sync after the rename, the ledger by atomicWrite", "server/worldlog.ts", "    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));", "    fs.renameSync(tmp, dest);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; atomicWrite(foundersPath(), JSON.stringify(L, null, 1));", ["T8f"]],
+  ["a person's founding as it was: no sync after the rename, the ledger written unsynced", "server/worldlog.ts", "    fs.renameSync(tmp, dest); syncDir(WORLDS_DIR);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; replaceDurable(foundersPath(), JSON.stringify(L, null, 1));", "    fs.renameSync(tmp, dest);\n    const L = foundersLedger(); L[name] = { account, actor, ts: now }; fs.writeFileSync(foundersPath(), JSON.stringify(L, null, 1));", ["T8f"]],
   ["a fork's copied blobs left unsynced", "server/worldlog.ts", " syncTree(path.join(tmp, \"blobs\")); }", " }", ["T8f"]],
-  ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "path.join(dir, \"world.jsonl\")); syncDir(dir);", "path.join(dir, \"world.jsonl\"));", ["T8f"]],
+  ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "    syncDir(dir);\n  } catch (e: Any) { const err", "  } catch (e: Any) { const err", ["T8f"]],
   ["CONTROL (no-op: must stay green)", "server/reqcap.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
 // T8c and T8e check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
@@ -272,11 +272,12 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 // (the directory they land in synced AFTER the rename; a fork's copied blobs synced before its directory moves). None on
 // win32, where the server can't sync a directory
 { const WL = await import("../../server/worldlog.ts"); const { putBlobFile } = await import("../../server/durable.ts");
-  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync }; let fdPath = new Map(), ev = [];
+  const o = { openSync: nodefs.openSync, fsyncSync: nodefs.fsyncSync, renameSync: nodefs.renameSync, linkSync: nodefs.linkSync }; let fdPath = new Map(), ev = [];
   const watch = () => { fdPath = new Map(); ev = [];
     nodefs.openSync = function (p, ...r) { const fd = o.openSync.call(nodefs, p, ...r); fdPath.set(fd, path.resolve(String(p))); return fd; };
     nodefs.fsyncSync = function (fd) { ev.push(["fsync", fdPath.get(fd)]); return o.fsyncSync.call(nodefs, fd); };
-    nodefs.renameSync = function (a, b) { ev.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.renameSync.call(nodefs, a, b); }; };
+    nodefs.renameSync = function (a, b) { ev.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.renameSync.call(nodefs, a, b); };
+    nodefs.linkSync = function (a, b) { ev.push(["rename", path.resolve(String(a)), path.resolve(String(b))]); return o.linkSync.call(nodefs, a, b); }; };   // a reset links the old log into its archive (bot #10)
   const unwatch = () => Object.assign(nodefs, o);
   const syncedAfter = (to, dir) => { const i = ev.findIndex((e) => e[0] === "rename" && e[2] === path.resolve(to)); return i >= 0 && ev.slice(i + 1).some((e) => e[0] === "fsync" && e[1] === path.resolve(dir)); };
   const none = process.platform === "win32";
