@@ -17,7 +17,8 @@
 //   physics  no kind read as the old materialized default, dynamic; material → surface (renamed); layers, mask, ccd
 //            (cut, never read) are dropped.
 // …and the render-media-env family (render-media-env.md §3, §4, §13–§15), the same callers:
-//   light      no decay fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2), and no intensity as 16; day → daytime
+//   light      no decay (a light from before 10-16) fell off as the rig's three.js decay 1.7: written (a NEW light's default is 2),
+//              and, if it also has no intensity, 16; day → daytime
 //              (true dim, false full); shadows (read by nothing) dropped
 //   model      (R 10-17, v2) a content address eido:sha256/<hex> (translate-v1@8–@11 wrote them) → the library path this
 //              host's index names for it, with the address's hash beside it as model-hash sha256:<hex>; only with a resolver
