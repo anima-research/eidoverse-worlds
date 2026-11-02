@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@41";
+export const TRANSLATOR = "eidoverse/translate-v1@42";
+// @42 (bot review 58): where any water writes a speed area, every other water gets physics-area {factor: 1, modes: [swim]}, so the water a body is in sets its stroke (main read the selected volume's own speed). Output differs there.
 // @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
 // @40 (bot review 60, R 10-30): main's ambient motes take main's defaults where unset or 0 (1,200 motes, not the effect limit) and main's 0.08 size cap. Output differs there.
 // @39 (decision table, R 10-30): main's sky sun and fill sliders are kept (shaperepair no longer drops them)
@@ -238,7 +239,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@41";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@42";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -435,7 +436,7 @@ const VOLUME_FIELDS = ["center", "size", "absorption", "scatter", "waves"];
 const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248 (Unreal native client) / #254" }, air: { feature: "air box on @world", since: "main #248" } };
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
-  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']} on that zone (2.4 m/s: the stroke a volume swims at here), which slows the swim only, as main did; a speed within 5% of 2.4 is dropped" },
+  water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4, modes: ['swim']} on that zone (2.4 m/s: the stroke a volume swims at here), which slows the swim only, as main did; a speed within 5% of 2.4 is dropped, and where another water has an area this one gets factor 1 (the water a body is in sets its stroke, as in main)" },
   air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform; anything else (another key, a box's other keys, an entry that is no box) imported:air, listed" },
 };
 export const AIR_PRIORITY = 1;
@@ -457,13 +458,17 @@ export function waterOfOld(d) {
 }
 /** A main water speed this close (as × the stroke) to the one a body swims at here is dropped, not written as a physics-area. */
 export const SPEED_NEAR = 0.05;
+/** @42: the area every other water gets where one water's speed is written, so the speed areas overlap as the waters do (the
+ *  last by priority, then id, wins both: shared/zone.js), and a body in this water strokes at its own pace, as in main. */
+export const SPEED_PIN = Object.freeze({ kind: "speed", factor: 1, modes: Object.freeze(["swim"]) });
+export const pinsSpeed = (st) => Object.values(st?.entities ?? {}).some((e) => { const w = e?.comp?.water; return !!(w && typeof w === "object" && !Array.isArray(w) && waterOfOld(w).area); });
 /** One old thing's water / air as [id, components] parts: `own` is merged into the thing's components, `children` are new
  *  things under it. `c` is the thing's components so far (its model, light). */
-export function volumePartsOf(host, comp, c) {
+export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const own = {}, children = [];
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
-    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : {};
+    const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] } } : {};
     if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
     else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
   }
@@ -505,12 +510,13 @@ export function stageBoundsOf(st) {
 }
 /** The water volumes and air boxes a v1 state holds, as the report lists them: [{component, feature, id (as written), into (ids)}] */
 export function volumeMappings(st) {
-  const out = [];
+  const out = [], pin = pinsSpeed(st);
   for (const [id, e] of Object.entries(st?.entities ?? {})) for (const k of ["water", "air"]) {
     if (e?.comp?.[k] == null) continue;
     const c = { ...(e.lib !== undefined ? { model: e.lib } : {}), ...(e.kind === "light" ? { light: {} } : {}) };
     const { own, children } = volumePartsOf(enc(id), { [k]: e.comp[k] }, c);
-    const sp = k === "water" && e.comp.water && typeof e.comp.water === "object" ? waterOfOld(e.comp.water).speed : undefined;   // @35: what main's speed became
+    const m = k === "water" && e.comp.water && typeof e.comp.water === "object" && !Array.isArray(e.comp.water) ? waterOfOld(e.comp.water) : null;   // @35: what main's speed became
+    const sp = m && !m.area && pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] }, why: "another water here has a speed area: factor 1 keeps this one's own stroke where they overlap (@42)" } : m?.speed;
     out.push({ component: k, feature: VOLUMES[k].feature, id, into: [...(Object.keys(own).length ? [enc(id)] : []), ...children.map(([cid]) => cid)], ...(sp ? { speed: sp } : {}) });
   }
   return out;
@@ -821,7 +827,7 @@ export function mainRights(st) {
 }
 export function project(st, seen = null, who = null, ns = NAMESPACE, content = null, col = null) {
   const effects = col?.effects, adjust = (id, component, field, was, now, why) => col?.adjusted?.set(`${id}\0${component}\0${field}`, { id, component, field, was: brief(was), now: brief(now), why });
-  const out = {};
+  const out = {}, pinned = pinsSpeed(st);   // @42
   // a key the v1 fold lowercased (a ban's) isn't an account as written: who() restores its case first, then reads it
   const person = (k, v, lowered = false) => (who && !SYSTEM.has(k) ? who(k, { sub: (v && typeof v === "object" && typeof v.sub === "string" ? v.sub : undefined) ?? (lowered ? undefined : asSub(k)), ...(lowered ? { lowered } : {}) }) : enc(k));
   const unsub = (v) => { if (!v || typeof v !== "object" || Array.isArray(v) || !("sub" in v)) return v; const { sub, ...rest } = v; return rest; };   // @12: always
@@ -856,7 +862,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       if (k === "collide" && (v === "exact" || v === "box")) { if (!(c.collider && typeof c.collider === "object" && c.collider.shape)) c.collider = { ...(c.collider && typeof c.collider === "object" ? c.collider : {}), shape: v === "exact" ? "mesh" : "box" }; continue; }   // @24: main's spawn collide
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
-    const vol = volumePartsOf(enc(id), volumes, c); Object.assign(c, vol.own);
+    const vol = volumePartsOf(enc(id), volumes, c, { pin: pinned }); Object.assign(c, vol.own);
     const airLeft = volumes.air !== undefined ? airLeftOf(volumes.air) : null; if (airLeft && !(keyed("imported", "air") in c)) c[keyed("imported", "air")] = airLeft.left;   // @41
     // collision off is collider {enabled: false}; anything else it said rides imported:collision
     if (carried.collision && typeof carried.collision === "object") { const { enabled, ...rest } = carried.collision;

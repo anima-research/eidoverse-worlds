@@ -236,6 +236,15 @@ row("F51a", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "hab", l
     && JSON.stringify(u?.fields) === JSON.stringify(["air.custom", "air.boxes[0].custom", "air.boxes[1] (not a box)"]) && u?.as === "hab imported:air"
     && plain.E.hab["imported:air"] === undefined && !plain.r.stats.unmapped?.some((x) => x.component === "air") && /imported:air, listed/.test(TV1.VOLUMES.air.to),
     "F51a main's air: a key beside boxes, a box's own extra key and an entry that is no box ride imported:air on the host, listed under unmapped; the box still becomes its pocket; a plain air carries nothing", { imp: E.hab["imported:air"], u, pockets: pockets.length, plain: plain.E.hab["imported:air"] }); });
+// bot review 58 (@42): where a slow water overlaps a default one, the water a body is in sets its stroke (main read the selected volume's speed)
+row("F51b", () => { const Z = require("../../shared/zone.js"), WJ = require("../../shared/water.js"), P = [0, 0, 0];
+  const both = (first: any, second: any) => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...first } }],
+      ["olga", "spawn", { id: "z", lib: "p.glb" }], ["olga", "comp", { id: "z", type: "water", data: { center: [0, 0, 0], size: [8, 4, 8], ...second } }]]);
+    const st = { entities: Object.fromEntries(Object.entries<any>(E).map(([k, c]) => [k, { c }])) }, V = Z.waterVolumes(Z.zonesOf(st)), w = WJ.mediumAt(P, V.waters, V.airs);
+    const own = E[w?.id]?.["physics-area"]?.factor ?? 1; return { inSlow: own !== 1, own, swim: Z.speedFactorAt(Z.physicsAreasOf(st), P, "swim"), mapped: r.stats.mapped?.filter((m: any) => m.component === "water").map((m: any) => m.speed ?? null) }; };
+  const runs = [both({ speed: 1.2 }, {}), both({}, { speed: 1.2 }), both({ speed: 1.2 }, { speed: 2.45 })], lone = tr([OWNER, ["olga", "spawn", { id: "a", lib: "p.glb" }], ["olga", "comp", { id: "a", type: "water", data: { size: [8, 4, 8] } }]]);
+  ok(runs.every((x) => x.swim === x.own) && runs.some((x) => !x.inSlow) && runs.every((x) => x.mapped?.length === 2 && x.mapped.every(Boolean)) && !JSON.stringify(lone.r.out).includes("physics-area"),
+    "F51b two overlapping waters, one slow (1.2) and one at the stroke here (unset or 2.45): a swimmer's speed factor is the one of the water mediumAt puts them in, either way round (the other gets factor 1, said in the report); a lone default water writes no area", { runs, lone: JSON.stringify(lone.r.out).includes("physics-area") }); });
 row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
   const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
   ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),
@@ -269,8 +278,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 41 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 41 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@41/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @41; a report reviewed under @40 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 42 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 42 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@42/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @42; a report reviewed under @41 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
