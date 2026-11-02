@@ -14,7 +14,6 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { WORLDS_DIR, STATE_CACHE_EVERY, SIM_CHECKPOINT_EVERY, RATE_POLICY } from "./config.ts";
 import { directoryFor } from "./directory.ts";
-import { atomicWrite } from "./fsutil.ts";
 import { mkdirDurable, replaceDurable, syncDir, syncTree } from "./durable.ts";
 import { forkCopy, operatorRepair as authorityOperatorRepair, request as authorityRequest, actIndexOf, roleIn, isBanned, muteOf, sanctionsNow, effectiveIn, seniorOwnerOf, tick as authorityTick, settle as authoritySettle, checkpointNow as authorityCheckpointNow, presenceEvent, scriptsView, settleOrphans, liftWorld, reachAdmits, reachLetGo, noteRefused, expireRoles as authorityExpireRoles, drives as authorityDrives } from "../shared/protocol/authority.js";
 import { authorityTime } from "./readmeter.ts";
@@ -436,7 +435,7 @@ export class WorldLog {
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;
     this.poses[id] = settle(pose);
-    try { fs.mkdirSync(this.dir, { recursive: true }); atomicWrite(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
+    try { replaceDurable(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
   }
   /** What the snapshot says about this world's protocol (agents read it to route their tools). */
   info() { return { dialect: DIALECT, v: VERSION, head: this.head, worldId: this.live.worldId, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
@@ -560,13 +559,20 @@ export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true
     return { ok: false, err: String(e?.message ?? e) };
   }
 }
+/** `to` gets `from`'s bytes as a second name (a hard link), or as a synced copy where links aren't supported. */
+function keepCopy(from: string, to: string) {
+  try { fs.linkSync(from, to); return; } catch (e: Any) { if (!["EPERM", "ENOTSUP", "EXDEV", "EOPNOTSUPP", "ENOSYS"].includes(e?.code)) throw e; }
+  fs.copyFileSync(from, to); const fd = fs.openSync(to, process.platform === "win32" ? "r+" : "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
 /** Reset: the world's log and remembered poses move into reset-<time>/ beside it (archived, never deleted; blobs
  *  stay: they're content), and a fresh genesis is founded by the same owners, its founding act naming the world it
  *  replaced. Returns the archive directory. The caller swaps in a fresh WorldLog and tells everyone present. */
 export function resetWorld(log: WorldLog): string {
   const st = log.live.state();
-  const owners = Object.entries<Any>(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith("roles:") && isOwner(v)).map(([k]) => k.slice(6));
-  if (!owners.length) throw new Error("this world has no owner to found it again");
+  const held = Object.entries<Any>(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith("roles:") && isOwner(v)).map(([k]) => k.slice(6));
+  if (!held.length) throw new Error("this world has no owner to found it again");
+  // the senior owner founds it again, so seniority survives the reset (bot review of #260, #13: key order made another the founder)
+  const senior = seniorOwnerOf(log.live), owners = senior && held.includes(senior) ? [senior, ...held.filter((o) => o !== senior)] : held;
   const prev = { world: log.live.worldId, name: log.name, head: headOf(log.live) };
   const dir = path.join(WORLDS_DIR, log.name);
   // found the fresh world ASIDE first: a refused founding changes nothing; only then do the files trade places
@@ -582,28 +588,33 @@ export function resetWorld(log: WorldLog): string {
     // signed-in-only world to everyone, or drops its watch rule, age or size limit (review of #260, server I7: only
     // "listed" was kept). Its door (access, default-role) and every live role come back; a timed grant keeps its end, one
     // already past is left behind.
+    // with or without an access component: a world at the default door can still hold grants, custom roles, a default-role (bot #9)
     const wc = st.entities["@world"]?.c ?? {};
-    if (wc.access != null) {
-      const now = Date.now();
-      const keep: [string, Any][] = Object.entries<Any>(wc).filter(([k, v]) => (k === "access" || k === "default-role" || k === "role-defs"
-        || (k.startsWith("roles:") && !isOwner(v))) && !(Number.isSafeInteger(v?.until) && v.until <= now));
-      keep.sort(([a], [b]) => (a === "role-defs" ? -1 : b === "role-defs" ? 1 : 0));   // custom roles first: a role refers to them
-      for (const [k, v] of keep) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: k, value: v });
-        if (!r.ok) throw new Error(`keeping ${k} through the reset refused: ${r.refused?.reason}`); }
-    }
+    const now = Date.now();
+    const keep: [string, Any][] = Object.entries<Any>(wc).filter(([k, v]) => (k === "access" || k === "default-role" || k === "role-defs"
+      || (k.startsWith("roles:") && !isOwner(v))) && !(Number.isSafeInteger(v?.until) && v.until <= now));
+    keep.sort(([a], [b]) => (a === "role-defs" ? -1 : b === "role-defs" ? 1 : 0));   // custom roles first: a role refers to them
+    for (const [k, v] of keep) { const r = authorityRequest(w, owners[0], "set", { id: "@world", component: k, value: v });
+      if (!r.ok) throw new Error(`keeping ${k} through the reset refused: ${r.refused?.reason}`); }
   } catch (e) { fs.rmSync(fresh, { recursive: true, force: true }); throw e; }
   const arch = path.join(dir, `reset-${new Date().toISOString().replace(/[:.]/g, "-")}`);
   mkdirDurable(arch);
   // from the first rename on, a failure has changed something: it says where the old log went (review of #260, server I19)
   dropCache(dir);   // derived from the log that leaves (server/statecache.ts): the fresh world derives its own
+  // the old files are linked into the archive, then the fresh log renamed OVER world.jsonl: no moment, crash or failure, leaves the
+  // world without a log (bot review of #260, #10: moved out first, a crash between the renames lost the world from the listing)
+  const linked: string[] = []; let swapped = false;
   try {
-    for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) fs.renameSync(path.join(dir, f), path.join(arch, f));
+    for (const f of ["world.jsonl", "poses.json"]) if (fs.existsSync(path.join(dir, f))) { keepCopy(path.join(dir, f), path.join(arch, f)); linked.push(f); }
     syncDir(arch);   // the archive's names first, then the world's: a crash never loses the old log (house 6344940039)
-    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl")); syncDir(dir);
+    fs.renameSync(path.join(fresh, "world.jsonl"), path.join(dir, "world.jsonl")); swapped = true;
+    try { fs.unlinkSync(path.join(dir, "poses.json")); } catch { /* none */ }   // the old world's poses: in the archive now
+    syncDir(dir);
   } catch (e: Any) { const err: Any = new Error(String(e?.message ?? e)); err.movedTo = arch; err.freshAt = fresh;
-    // whether the old log is gone from its place (this attempt moved it, or an earlier failed one did): if not, the world is
-    // as it was and stays live
-    err.logMoved = fs.existsSync(path.join(arch, "world.jsonl")) || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
+    // not swapped: the old log is where it was, and the archive's copies of it go (the world stays live); logMoved also
+    // covers an earlier failed reset that left no world.jsonl
+    if (!swapped) { for (const f of linked) try { fs.unlinkSync(path.join(arch, f)); } catch { /* gone */ } try { fs.rmdirSync(arch); } catch { /* not empty */ } }
+    err.logMoved = swapped || !fs.existsSync(path.join(dir, "world.jsonl")); throw err; }
   // the fresh log is in place, and nothing left in the scratch directory is used again: failing to remove it, whole or in
   // part, leaves litter for the operator, not a failed reset
   try { fs.rmSync(fresh, { recursive: true, force: true }); } catch (e) { console.warn(`[world] reset left its scratch directory ${fresh}: ${e}`); }

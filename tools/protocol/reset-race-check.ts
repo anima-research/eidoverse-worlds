@@ -1,6 +1,7 @@
 // tools/protocol/reset-race-check.ts — a request that was awaiting warm() when the world was reset must refuse, not
 // append the old world's line into the new world's file (review 10-14 C1). The slow warm is simulated: the request's
 // await is held by a gate; everything after it (the retired log, the real resetWorld, the real file) is production code.
+// Also: a reset that fails at its last step leaves the world live (PR), what a reset keeps and who founds it (RS), durable poses (DW).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/reset-race-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -94,42 +95,71 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   // the control: a connection that stays writes
   hold(); const stays = tab(4); send(stays, "c1", "from-a-live-tab"); release(); await tryUntil("the live tab's request is answered", () => stays.replies.length, { ms: 2000, step: 10 });
   ok(stays.replies[0]?.ok === true && described("from-a-live-tab"), "SR3 (control) a connection that is still in the world writes", stays.replies[0]); }
-// ---- PR (house 6340433633): a reset that fails after the old log was moved aside. The old log stayed live in memory and kept
-// taking writes, which appendDurable (it opens by path) put in a NEW world.jsonl holding only the tail: a broken chain on disk.
-// The failure is injected at the last rename (the fresh world's log into place); the rest is the real wire handler and reset.
+// ---- PR (house 6340433633; bot review of #260, #10): a reset that fails at the last step. The old log is linked into the archive and
+// the fresh one renamed OVER it, so a failure (or a crash) there leaves the old world in place and live. A world whose log an older
+// server's failed reset already moved aside (no world.jsonl) takes no writes, and resetting again finishes the erase.
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
   const dir = path.join(process.env.WORLDS_DIR, "half"); const { owner } = foundWorld(dir, "half", "olive");
-  const hw = new World("half"); const n0 = hw.log.live.entries.length;
+  fs.writeFileSync(path.join(dir, "poses.json"), "{}");
+  const hw = new World("half"); const before = fs.readFileSync(path.join(dir, "world.jsonl"), "utf8");
   const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
-  const rename = fs.renameSync;
+  const reset = () => REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" });
+  const rename = fs.renameSync; let injected = 0;
+  fs.renameSync = function (a, b) { if (String(a).includes(".refound-")) { injected++; throw new Error("EIO: injected (the fresh log into place)"); } return rename.call(fs, a, b); };
+  try { reset(); } finally { fs.renameSync = rename; }
+  const still = fs.existsSync(path.join(dir, "world.jsonl")) && fs.readFileSync(path.join(dir, "world.jsonl"), "utf8") === before;
+  const archived = fs.readdirSync(dir).filter((f) => f.startsWith("reset-") && fs.existsSync(path.join(dir, f, "world.jsonl")));
+  const w0 = hw.log.requestSync(owner, "say", { text: "the reset failed; the world goes on" });
+  ok(injected === 1 && still && fs.existsSync(path.join(dir, "poses.json")) && w0?.ok === true && /goes on as before/.test(errs[0] ?? "") && archived.length === 0,
+    "PR0 a reset that fails at the last rename leaves the old log (and poses) in place and live, says so, and no archive holds a copy", { injected, still, w0: w0?.ok ?? w0?.refused, errs, archived });
+  // the log already gone from its place (what an older server's failed reset left): the same failure retires the world
+  if (fs.existsSync(path.join(dir, "world.jsonl"))) fs.renameSync(path.join(dir, "world.jsonl"), path.join(dir, "aside.jsonl")); const n0 = hw.log.live.entries.length;
   fs.renameSync = function (a, b) { if (String(a).includes(".refound-")) throw new Error("EIO: injected (the fresh log into place)"); return rename.call(fs, a, b); };
-  try { REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" }); } finally { fs.renameSync = rename; }
-  const said = errs[0] ?? "";
+  try { reset(); } finally { fs.renameSync = rename; }
+  const said = errs[1] ?? "";
   const w1 = hw.log.requestSync(owner, "say", { text: "after the failed reset" });
   const file = fs.existsSync(path.join(dir, "world.jsonl"));
-  ok(!w1?.ok && !file, "PR1 after a reset that failed partway a write is refused and no world.jsonl appears", { w1: w1?.ok ?? w1?.refused, file, lines: file ? lines("half").length : 0, n0 });
+  ok(!w1?.ok && !file, "PR1 with the log already moved aside, after a reset that failed a write is refused and no world.jsonl appears", { w1: w1?.ok ?? w1?.refused, file, lines: file ? lines("half").length : 0, n0 });
   ok(/takes no writes until the server's operator puts it back/.test(said) && /resetting again is safe/i.test(said) && /takes no writes/.test(w1?.refused?.reason ?? ""),
     "PR2 the answer and the refusal say the world takes no writes until the operator puts its log back, and whether resetting again is safe", { said, refused: w1?.refused });
-  // resetting again finishes the erase; the old log stays in the first attempt's archive
-  REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half" });
-  const archives = fs.readdirSync(dir).filter((f) => f.startsWith("reset-")); const kept = archives.filter((a) => fs.existsSync(path.join(dir, a, "world.jsonl")));
+  // resetting again finishes the erase
+  reset();
   const w2 = hw.log.requestSync(owner, "say", { text: "in the fresh world" });
-  ok(errs.length === 1 && fs.existsSync(path.join(dir, "world.jsonl")) && kept.length === 1 && w2?.ok === true,
-    "PR3 resetting again finishes the erase (a fresh world that takes writes); the old log stays in the first archive", { errs, archives, kept, w2: w2?.ok ?? w2?.refused }); }
-// PR4 (review of the house fixes): a failure at the SECOND rename (poses.json), twice. The second attempt finds no world.jsonl to
-// move, so "did this attempt move the log" is no; the world is still retired, and the answer must say so, not "goes on as before"
-{ const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
-  const dir = path.join(process.env.WORLDS_DIR, "half2"); const { owner } = foundWorld(dir, "half2", "olive");
-  fs.writeFileSync(path.join(dir, "poses.json"), "{}");
-  const hw = new World("half2");
-  const errs = []; const c = { id: "olive", world: hw, actorId: owner, gen: 0, legGen: 0, ws: { send: (d) => { const m = JSON.parse(d); if (m.type === "error") errs.push(m.error); } } };
-  const rename = fs.renameSync; const reset = () => REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws, now: Date.now(), expel: () => {} }, { name: "half2" });
-  fs.renameSync = function (a, b) { if (String(a).endsWith("poses.json")) throw new Error("EIO: injected (poses.json)"); return rename.call(fs, a, b); };
-  try { reset(); reset(); } finally { fs.renameSync = rename; }
-  const w1 = hw.log.requestSync(owner, "say", { text: "after two failed resets" });
-  ok(errs.length === 2 && errs.every((e) => /takes no writes/.test(e)) && !/goes on as before/.test(errs[1]) && !w1?.ok,
-    "PR4 a second failed attempt, with the log already moved by the first, still says the world takes no writes (and it doesn't)", { errs, w1: w1?.ok ?? w1?.refused });
-  reset(); const w2 = hw.log.requestSync(owner, "say", { text: "fresh" });
-  ok(errs.length === 2 && w2?.ok === true, "PR4 …and a third attempt that succeeds leaves a fresh world that takes writes", { errs, w2: w2?.ok ?? w2?.refused }); }
+  ok(errs.length === 2 && fs.existsSync(path.join(dir, "world.jsonl")) && w2?.ok === true,
+    "PR3 resetting again finishes the erase (a fresh world that takes writes)", { errs, w2: w2?.ok ?? w2?.refused }); }
+// PR4: a reset that succeeds archives the old log and poses (the fresh world has none) and is durable: both directories synced
+{ const dir = path.join(process.env.WORLDS_DIR, "whole"); const { owner } = foundWorld(dir, "whole", "olive");
+  fs.writeFileSync(path.join(dir, "poses.json"), '{"x":1}'); const hw = new World("whole"); hw.log.requestSync(owner, "say", { text: "old" });
+  const before = fs.readFileSync(path.join(dir, "world.jsonl"), "utf8");
+  const arch = hw.resetWorld(); const fresh = fs.readFileSync(path.join(dir, "world.jsonl"), "utf8");
+  ok(fs.readFileSync(path.join(arch, "world.jsonl"), "utf8") === before && fs.readFileSync(path.join(arch, "poses.json"), "utf8") === '{"x":1}' && !fs.existsSync(path.join(dir, "poses.json")) && fresh !== before && !fs.readdirSync(process.env.WORLDS_DIR).some((f) => f.startsWith(".refound-whole-")),
+    "PR4 a reset archives the old log and poses whole, and the fresh log takes world.jsonl's place", { arch: fs.readdirSync(arch), dir: fs.readdirSync(dir) }); }
+// ---- RS (bot review of #260, #9 and #13): what a reset keeps, and who founds it again ----
+const { directoryFor } = await import("../../server/directory.ts");
+const idOf = (n) => directoryFor(process.env.WORLDS_DIR).resolve({ sub: `local:${n}`, name: n });
+const comps = (hw) => hw.log.live.state().entities["@world"]?.c ?? {};
+// RS9: a world at the default door (no access component) keeps its grants, custom roles and default-role
+{ const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "nodoor"), "nodoor", "olive"); const hw = new World("nodoor"); const bob = idOf("bob");
+  const a = hw.log.requestSync(owner, "set", { id: "@world", component: `roles:${bob}`, value: { role: "builder" } });
+  const b = hw.log.requestSync(owner, "set", { id: "@world", component: "default-role", value: { role: "member" } });
+  const had = comps(hw).access; hw.resetWorld(); const c = comps(hw);
+  ok(a?.ok && b?.ok && had == null && c[`roles:${bob}`]?.role === "builder" && c["default-role"]?.role === "member",
+    "RS9 a reset of a world with no access component keeps its grants and default-role", { a: a?.ok ?? a?.refused, b: b?.ok ?? b?.refused, had, kept: Object.keys(c) }); }
+// RS13: the senior owner founds the fresh world: B (senior once A stepped down and B made A owner again) stays senior after the reset
+{ const { owner: A } = foundWorld(path.join(process.env.WORLDS_DIR, "senior"), "senior", "olive"); const hw = new World("senior"); const B = idOf("bea");
+  const r1 = hw.log.requestSync(A, "set", { id: "@world", component: `roles:${B}`, value: { role: "owner" } });
+  const r2 = hw.log.requestSync(A, "set", { id: "@world", component: `roles:${A}`, value: { role: "member" } });
+  const r3 = hw.log.requestSync(B, "set", { id: "@world", component: `roles:${A}`, value: { role: "owner" } });
+  const was = hw.log.seniorOwner(); hw.resetWorld();
+  const now = hw.log.seniorOwner(), demote = hw.log.requestSync(A, "set", { id: "@world", component: `roles:${B}`, value: { role: "member" } });
+  ok(r1?.ok && r2?.ok && r3?.ok && was === B && now === B && !demote?.ok,
+    "RS13 the senior owner stays senior through a reset (the junior can't demote them after)", { r: [r1?.ok, r2?.ok, r3?.ok], was, now, B, demote: demote?.ok ?? demote?.refused?.code }); }
+// DW1 (bot review of #260, #2): remembered poses are replaced durably (the file synced before its rename)
+{ foundWorld(path.join(process.env.WORLDS_DIR, "poses"), "poses", "olive"); const hw = new World("poses"); const pp = path.join(process.env.WORLDS_DIR, "poses", "poses.json");
+  const o = { open: fs.openSync, sync: fs.fsyncSync }; const fds = new Map(); let synced = 0;
+  fs.openSync = function (p, ...a) { const fd = o.open.call(fs, p, ...a); fds.set(fd, String(p)); return fd; };
+  fs.fsyncSync = function (fd) { if ((fds.get(fd) ?? "").startsWith(pp)) synced++; return o.sync.call(fs, fd); };
+  try { hw.log.rememberPose("u-p", { at: [1, 2, 3] }, (p) => p); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync }); }
+  ok(synced >= 1 && JSON.parse(fs.readFileSync(pp, "utf8"))["u-p"]?.at?.[2] === 3, "DW1 remembered poses: the new file is synced before it replaces the old", { synced }); }
 fs.rmSync(root, { recursive: true, force: true });
 console.log(`[reset-race-check] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
