@@ -145,7 +145,7 @@ function report(src: string, dest: string, r: ReturnType<typeof translateV1World
     + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
   if (r.renamedBlobs?.length) console.log(`NOTE: ${r.renamedBlobs.length} store blob(s) no longer hash to their names (rewritten after upload); their addresses are of the bytes this host has: ${r.renamedBlobs.join(", ")}`);
   if (r.stats.modelsHashed !== undefined) console.log(`models: kept as library paths; ${r.stats.modelsHashed} with model-hash (sha256:…) beside them${r.stats.modelsUnhashed.length ? `; ${r.stats.modelsUnhashed.length} without (no bytes on this host): ${r.stats.modelsUnhashed.join(", ")}` : ""}`);
-  if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) became launches, ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
+  if (r.sim) console.log(`physics: ${r.sim.engine?.engine ?? "the epoch was left"} — ${r.sim.launches} punt(s) set a body flying (each kept as its imported act; no launch is written), ${r.sim.rests} rest(s) logged where her sim rests them; the authority's sim layer re-checked ${r.sim.agree}/${r.sim.rests}`);
   // PROTOCOL §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
   // world's owners can be told what changed (and which entities to look at).
   sayPeople(r.people);
