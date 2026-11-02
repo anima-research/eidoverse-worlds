@@ -228,6 +228,14 @@ row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", 
   ok(JSON.stringify(kid(slow)?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] }) && JSON.stringify(M(slow)?.speed?.["physics-area"]) === JSON.stringify({ kind: "speed", factor: 0.5, modes: ["swim"] })
     && kid(near) && kid(near)["physics-area"] === undefined && /within 5%/.test(M(near)?.speed?.dropped ?? "") && !json.includes('"drag"'),
     "F51 main's slow water (speed 1.2, half the 2.4 stroke a volume swims at here) is physics-area {kind: speed, factor: 0.5, modes: [swim]} on the water's zone (a swim only, as main: walking on the pond floor is not slowed), said in the report; 2.45 (within 5%) writes nothing and says so; no translated world carries a drag field", { slow: kid(slow), mapped: M(slow), near: M(near) }); });
+// bot review 59 (@41): main read only boxes[i].{center, size, q}; anything else main's air held is carried and listed, never silent
+row("F51a", () => { const { r, E } = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { custom: "keep", boxes: [{ center: [0, 1, 0], size: [2, 2, 2], custom: "also keep" }, null] } }]]);
+  const plain = tr([OWNER, ["olga", "spawn", { id: "hab", lib: "h.glb" }], ["olga", "comp", { id: "hab", type: "air", data: { boxes: [{ center: [0, 1, 0], size: [2, 2, 2] }] } }]]);
+  const u = r.stats.unmapped?.find((x) => x.component === "air"), pockets = Object.values<any>(E).filter((c) => c["water-exclusion"]);
+  ok(JSON.stringify(E.hab["imported:air"]) === JSON.stringify({ custom: "keep", boxes: { 0: { custom: "also keep" }, 1: null } }) && pockets.length === 1
+    && JSON.stringify(u?.fields) === JSON.stringify(["air.custom", "air.boxes[0].custom", "air.boxes[1] (not a box)"]) && u?.as === "hab imported:air"
+    && plain.E.hab["imported:air"] === undefined && !plain.r.stats.unmapped?.some((x) => x.component === "air") && /imported:air, listed/.test(TV1.VOLUMES.air.to),
+    "F51a main's air: a key beside boxes, a box's own extra key and an entry that is no box ride imported:air on the host, listed under unmapped; the box still becomes its pocket; a plain air carries nothing", { imp: E.hab["imported:air"], u, pockets: pockets.length, plain: plain.E.hab["imported:air"] }); });
 row("F52", () => { const bare = tr([OWNER, ["olga", "spawn", { id: "far", lib: "x.glb", pos: [120, 70, 0] }]]), terr = tr([OWNER, ["olga", "terrain", { seed: 3, size: 300 }]]);
   const B = bare.W.bounds, M = bare.r.stats.mapped?.find((m) => m.component === "stage");
   ok(JSON.stringify(B) === JSON.stringify({ min: [-78, -2, -78], max: [122, 72, 78] }) && /78 m of the origin/.test(M?.feature ?? "") && terr.W.bounds === undefined && !terr.r.stats.mapped?.some((m) => m.component === "stage"),
@@ -261,8 +269,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 40 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 40 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@40/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @40; a report reviewed under @39 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 41 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 41 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@41/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @41; a report reviewed under @40 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");

@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@40";
+export const TRANSLATOR = "eidoverse/translate-v1@41";
+// @41 (bot review 59): what main's air held beyond its boxes' centre, size and q (another key, a box's other keys, an entry that is no box) rides imported:air, listed. Output differs there.
 // @40 (bot review 60, R 10-30): main's ambient motes take main's defaults where unset or 0 (1,200 motes, not the effect limit) and main's 0.08 size cap. Output differs there.
 // @39 (decision table, R 10-30): main's sky sun and fill sliders are kept (shaperepair no longer drops them)
 // @38 (decision table row 7): the particle limits grew (4,000 per emitter, 64 m), so main's motes (≤3,000, ≤60 m) carry over unclamped
@@ -237,7 +238,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@40";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@41";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -435,7 +436,7 @@ const ON_WORLD = { water: { feature: "water volume on @world", since: "main #248
 // main #248's water volume and air boxes as zone + water / water-exclusion things (spec/PROTOCOL.md §14; tools/water/requests.js too)
 export const VOLUMES = {
   water: { feature: "water volume", to: "zone {shape: 'box', size} + water, on the thing (no model or light, centred) or a child at its centre; main's speed → physics-area {kind: 'speed', factor: speed / 2.4} on that zone (2.4 m/s: the stroke a volume swims at here), which scales every body's speed inside it (walking and wading too, where main changed only the swim); a speed within 5% of 2.4 is dropped" },
-  air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform" },
+  air:   { feature: "air box (dry interior)", to: "one child per box: zone {shape: 'box', size, priority: 1} + water-exclusion {}, its centre and q its transform; anything else (another key, a box's other keys, an entry that is no box) imported:air, listed" },
 };
 export const AIR_PRIORITY = 1;
 export const waterChildId = (host) => `water-${sha256(`eido-water\0${host}`).slice(0, 26)}`;
@@ -471,6 +472,17 @@ export function volumePartsOf(host, comp, c) {
     children.push([airChildId(host, i), { transform: ID_POSE(vec3(b.center, [0, 0, 0]), qNorm(b.q) ?? [0, 0, 0, 1]), parent: { to: host }, label: `dry box ${i + 1}`,
       zone: { shape: "box", size: vec3(b.size, [1, 1, 1]).map((x) => Math.max(0.001, Math.min(1e4, Math.abs(x)))), priority: AIR_PRIORITY }, "water-exclusion": {} }]); });
   return { own, children };
+}
+/** What of main's air {boxes} no box child holds (@41): {left (imported:air), fields (for the report)}, or null. Main read only boxes[i].{center, size, q}. */
+export function airLeftOf(a) {
+  if (!a || typeof a !== "object" || Array.isArray(a)) return { left: a, fields: ["air"] };
+  const { boxes, ...rest } = a, left = { ...rest }, fields = Object.keys(rest).map((k) => `air.${k}`);
+  if (Array.isArray(boxes)) { const bl = {};
+    boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) { bl[i] = b; fields.push(`air.boxes[${i}] (not a box)`); return; }
+      const { center, size, q, ...x } = b; if (Object.keys(x).length) { bl[i] = x; fields.push(...Object.keys(x).map((k) => `air.boxes[${i}].${k}`)); } });
+    if (Object.keys(bl).length) left.boxes = bl; }
+  else if (boxes !== undefined) { left.boxes = boxes; fields.push("air.boxes"); }
+  return fields.length ? { left, fields } : null;
 }
 /** main's empty-world edge: a body walked or swam no further than 78 m from the origin where the world had no bounds (main
  *  client/lib/controller.js constrainMovement, "the legacy stage boundary"), and flew under 60 m. Here @world.bounds is the only
@@ -539,6 +551,7 @@ export function unmappedOf(st) {
     if (comp.traversal != null) { const n = climbPartsOf(enc(id), comp.traversal).left.length; if (n || !Array.isArray(comp.traversal?.routes)) out.push({ component: "traversal", id, fields: n ? [`${n} route(s) no climb holds (2–16 points)`] : ["routes"], as: `${enc(id)} imported:traversal` }); }
     if (comp.vehicle != null) { const f = Object.keys(vehiclePartsOf(enc(id), comp.vehicle).left); if (f.length) out.push({ component: "vehicle", id, fields: f, as: `${enc(id)} imported:vehicle`, ...fatesOf("vehicle", f) }); }
     for (const p of particlesPlan(id, comp)) if (p.carried.length) out.push({ component: "particles", id, ...(p.emitter ? { emitter: p.emitter } : {}), fields: p.carried.map((c) => c.field), as: `${p.host} imported:particles`, why: p.carried.map((c) => `${c.field}: ${c.why}`).join("; ") });
+    if (comp.air != null) { const a = airLeftOf(comp.air); if (a) out.push({ component: "air", id, fields: a.fields, as: `${enc(id)} imported:air` }); }
     if (comp.collision != null && typeof comp.collision === "object") { const f = Object.keys(comp.collision).filter((k) => k !== "enabled"); if (f.length) out.push({ component: "collision", id, fields: f, as: `${enc(id)} imported:collision` }); }
     if (comp.picture != null) { const m = materialOf(comp.picture);
       if (m.left) out.push({ component: "picture", id, fields: Object.keys(m.left), as: `${enc(id)} imported:material`, why: "upside-down UVs: the material has no field for a texture transform yet (glTF's KHR_texture_transform)" });
@@ -844,6 +857,7 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
       c[keyed("imported", k)] = v; // anything the mapping doesn't know is carried, never dropped (R10)
     }
     const vol = volumePartsOf(enc(id), volumes, c); Object.assign(c, vol.own);
+    const airLeft = volumes.air !== undefined ? airLeftOf(volumes.air) : null; if (airLeft && !(keyed("imported", "air") in c)) c[keyed("imported", "air")] = airLeft.left;   // @41
     // collision off is collider {enabled: false}; anything else it said rides imported:collision
     if (carried.collision && typeof carried.collision === "object") { const { enabled, ...rest } = carried.collision;
       if (enabled === false) c.collider = { ...(c.collider && typeof c.collider === "object" ? c.collider : {}), enabled: false };
