@@ -33,6 +33,7 @@ import path from "node:path";
 import { WORLDS_DIR } from "../../server/config.ts";
 import { directoryFor } from "../../server/directory.ts";
 import { foundWorld, isWorldSaved } from "../../server/worldlog.ts";
+import { syncDir } from "../../server/durable.ts";
 import { translateV1World, reportV1World, warmHulls, approvalProblem, makeApproval, ownerWarning, ownerRecognised, ownerlessRefusal, NO_FOUNDER, type Approval } from "./import-v1/world.ts";
 import { contentAddressOf } from "../../server/eidoindex.ts";
 import { custodyAt } from "../../server/custody.ts";
@@ -356,7 +357,16 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
 if (cmd === "found") {
   const name = rest[0], owner = flag("owner");
   if (!name || !NAME.test(name) || !owner) die("usage: found <name> --owner <your id> [--title …]");
-  const r = foundWorld(path.join(WORLDS_DIR, name), name, owner!, flag("title"));
+  const dest = path.join(WORLDS_DIR, name);
+  if (fs.existsSync(path.join(dest, "world.jsonl")) || fs.existsSync(path.join(dest, "log.jsonl"))) die(`${dest} already holds a world`);
+  // built aside and renamed into place, as the server founds (worldlog foundOwnedWorld): a stop mid-way leaves no genesis-only world (bot review 56)
+  const tmp = path.join(WORLDS_DIR, `.founding-${name}-${crypto.randomBytes(4).toString("hex")}`);
+  if (process.env.WORLD_TS_DIE_WHILE_FOUNDING) { const open = fs.openSync;   // tests only: the process dies at the append after genesis (inplace-check IP31b)
+    (fs as any).openSync = (p: any, f: any, ...m: any[]) => { if (f === "a" && String(p).endsWith("world.jsonl") && (fs.statSync(p, { throwIfNoEntry: false })?.size ?? 0) > 0) process.exit(9); return open(p, f, ...m); }; }
+  let r; try { r = foundWorld(tmp, name, owner!, flag("title")); } catch (e: any) { fs.rmSync(tmp, { recursive: true, force: true }); die(String(e?.message ?? e)); }
+  if (!fs.existsSync(dest)) fs.renameSync(tmp, dest);
+  else { for (const f of fs.readdirSync(tmp).sort((a, b) => Number(a === "world.jsonl") - Number(b === "world.jsonl"))) fs.renameSync(path.join(tmp, f), path.join(dest, f)); fs.rmdirSync(tmp); }   // world.jsonl last
+  syncDir(WORLDS_DIR); syncDir(dest);
   console.log(`founded world "${name}" in ${WORLDS_DIR}: world id ${r.worldId}, owner ${r.owner}, ${r.entries} entries`);
 } else if (cmd === "owner-key") {
   // a founder's key check (import-v1/README.md): the founder signed "eidoverse-owner-key:<their key>" with the key's

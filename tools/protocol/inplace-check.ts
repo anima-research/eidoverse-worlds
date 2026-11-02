@@ -50,6 +50,7 @@
 //        countersignature, an absent owner without NO_OWNER's exact text → refused by name; makeApproval makes the one form
 //   IP31 FOUNDING a brand-new world is a different path: create-world still takes the founder's own ownerKey for tier 0, and
 //        `world.ts found` still founds
+//   IP31b `world.ts found` stopped after genesis leaves no world under the name (built aside, renamed into place); a rerun founds it
 //   IP24c a fold cache the server left (server/statecache.ts: derived) neither blocks a rollback nor is left behind
 //   IP24b rollback keeps an identity another world's log names (the second world reused the first one's id)
 //   IP30 (r14 M3) a world.mod.jsonl the server made after the translation blocks rollback without --discard-changes, is removed with it, and the world translates again
@@ -281,6 +282,13 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
     "IP31 founding a NEW world (create-world) still takes the founder's own key: ownerKey becomes tier 0 (no prior owner to bind); without one tier 0 is empty", [w1.entries[0]?.body?.owners, r1.refused, r2.refused]);
   const f = tool(["found", "fresh-founded", "--owner", "ann"]); const info = tool(["info", "fresh-founded"]);
   ok(f.code === 0 && /founded world "fresh-founded"/.test(f.out) && isWorldDir(path.join(W, "fresh-founded")) && /"roles:/.test(info.out), "IP31 `world.ts found <name> --owner <id>` founds a world as before", { f: f.out.slice(-300), info: info.out.slice(-300) }); }
+// bot review 56: the CLI's founding is built aside, so a stop after genesis leaves nothing under the name, and a rerun founds it
+{ const died = tool(["found", "half-founded", "--owner", "ann"], { WORLD_TS_DIE_WHILE_FOUNDING: "1" }), at = path.join(W, "half-founded");
+  const leftLog = fs.existsSync(path.join(at, "world.jsonl")) ? fs.readFileSync(path.join(at, "world.jsonl"), "utf8").trim().split("\n").length : 0;
+  const aside = fs.readdirSync(W).filter((f) => f.startsWith(".founding-half-founded-")), genesisAside = aside.some((d) => fs.statSync(path.join(W, d, "world.jsonl"), { throwIfNoEntry: false })?.size > 0);
+  const served = isWorldDir(at), again = tool(["found", "half-founded", "--owner", "ann"]);
+  ok(died.code === 9 && genesisAside && leftLog === 0 && !served && again.code === 0 && /founded world "half-founded"/.test(again.out) && isWorldDir(at),
+    "IP31b `world.ts found` stopped once genesis is written leaves no world under the name (genesis only in a .founding- dot directory, never served); founding it again succeeds", { died: [died.code, died.out.slice(-200)], leftLog, served, aside, genesisAside, again: again.out.slice(-300) }); }
 
 
 // ================= IP24–IP25: rollback restores the whole operational set =================
