@@ -122,7 +122,8 @@ function newReactions(rx) {
   return out;
 }
 
-export const TRANSLATOR = "eidoverse/translate-v1@39";
+export const TRANSLATOR = "eidoverse/translate-v1@40";
+// @40 (bot review 60, R 10-30): main's ambient motes take main's defaults where unset or 0 (1,200 motes, not the effect limit) and main's 0.08 size cap. Output differs there.
 // @39 (decision table, R 10-30): main's sky sun and fill sliders are kept (shaperepair no longer drops them)
 // @38 (decision table row 7): the particle limits grew (4,000 per emitter, 64 m), so main's motes (≤3,000, ≤60 m) carry over unclamped
 // @37 (Mica 10-31, decision row 27): main's water.speed slowed only the swim; its physics-area now carries modes: ['swim'], so a
@@ -236,7 +237,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // came to rest; but a punt stays its imported act (no v4 launch), each rest is a plain change by `sim` caused by that act
 // (no digest), the world's engine is today's eidosim from the epoch on, and (R 2026-10-08) a thing v1 ever punted is a
 // `dynamic` collider, every other one `static`. Nothing in the new log asks a reader to fly her engine.
-export const TRANSLATOR_SIM = "eidoverse/translate-v1@39";
+export const TRANSLATOR_SIM = "eidoverse/translate-v1@40";
 // @9 (2026-10-07, R's particles ruling): a v1 `particles` bag is today's instance: its preset is the effect, its origin is
 // `at`, its seed stays, and its count, size, opacity, speed, lifetime, area, texture and quality are the params of the
 // same names every Essential declares (shared/particle_effects.js modernize; instanceOf reads it back exactly). A key
@@ -403,8 +404,9 @@ export function environmentPartsOf(host, env, has = {}) {
     if (Object.keys(skyRest).length) { left.sky = skyRest; fields.push([Object.keys(skyRest).map((k) => `sky.${k}`).join(", "), null]); } }
   else if (sky !== undefined) { left.sky = sky; fields.push(["sky", null]); }
   if (particles && typeof particles === "object" && !Array.isArray(particles)) { const id = envChildId(host, "particles"), p = particles;
-    // @34 (decision table row 8): main's count, range and colour in a derived dust document (the effect limits bound it), main's defaults
-    const count = clampN(Math.floor(p.count), 1, EFFECT_LIMITS.amount, EFFECT_LIMITS.amount), size = clampN(p.size, 0.005, 4, 0.018), area = clampN(p.range, 2, EFFECT_LIMITS.extent, 16), hc = hexColor(p.color), color = Number.isInteger(hc) && hc >= 0 && hc <= 0xffffff ? hc : 0xaec8b4;
+    // @34 (decision table row 8): main's count, range and colour in a derived dust document (the effect limits bound it); @40: main's defaults
+    // where unset, 0 or unreadable (Number(x) || d, as makeParticles read them) and main's 0.08 size cap (base client/lib/watervolumes.js)
+    const count = clampN(Math.floor(Number(p.count) || 1200), 1, EFFECT_LIMITS.amount, 1200), size = clampN(Number(p.size) || 0.018, 0.005, 0.08, 0.018), area = clampN(Number(p.range) || 16, 2, EFFECT_LIMITS.extent, 16), hc = hexColor(p.color), color = Number.isInteger(hc) && hc >= 0 && hc <= 0xffffff ? hc : 0xaec8b4;
     const doc = derivedEffect("dust", { count, size, area, color }), effect = effectAddress(doc); effects.push([effect, doc]);
     things.push([id, { transform: ID_POSE([0, 0, 0]), parent: { to: host }, label: "particles", particles: { effect, seed: hashSeed(`${host}:environment:particles`) } }]); fields.push(["particles", id]);
     const kept = { count: p.count === count, size: p.size === size, range: p.range === area, color: p.color === undefined || color === hc };   // a clamped value, or one the effect has no knob for, rides along

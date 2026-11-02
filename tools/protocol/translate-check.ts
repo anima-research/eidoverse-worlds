@@ -261,8 +261,8 @@ row("V5", () => { const root = scratch("translate-v5"), W = path.join(root, "wor
   const old = /H ([0-9a-f]{64})/.exec(rep.stdout.toString())?.[1];
   const up = Bun.spawnSync(["bun", "tools/protocol/world.ts", "translate", "--no-founder-key", "--operator-only-no-owner", "--approved", old ?? "x", "--", "den"], { cwd: ENGINE, env });
   const said = up.stdout.toString() + up.stderr.toString();
-  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 39 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 39 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@39/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
-    "V5 the translator is @39; a report reviewed under @38 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
+  ok(TV1.translatorVersion(TV1.TRANSLATOR) === 40 && TV1.translatorVersion(TV1.TRANSLATOR_SIM) === 40 && old && up.exitCode !== 0 && /is not the one that was approved/.test(said) && /earlier translator than eidoverse\/translate-v1@40/.test(said) && fs.existsSync(path.join(d, "log.jsonl")) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "V5 the translator is @40; a report reviewed under @39 is refused, saying an earlier translator's review never approves this one, and nothing moves", { v: TV1.TRANSLATOR, said: said.slice(-500) }); });
 
 row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "worlds"), d = path.join(W, "den"), opt = path.join(root, "opt"); fs.mkdirSync(d, { recursive: true }); fs.mkdirSync(path.join(opt, "store"), { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "boat", lib: "store/boat.glb" }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
@@ -299,6 +299,13 @@ row("DT8", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", 
     && em(d)?.spawn?.amount === PE.EFFECT_LIMITS.amount && em(d).shape.extents[0] === PE.EFFECT_LIMITS.extent && JSON.stringify(d.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 9000, range: 90 } })
     && em(c)?.shape?.extents?.[0] === 16 && em(c).color.base === 0xaec8b4 && !PE.effectProblem(a.r.effects.get(fx(a).effect)),
     "DT8 main's motes: count, range and colour ride in a derived dust document (main's 16 m and #aec8b4 where unset); main's largest (3,000, 60 m) fit unclamped; past the effect limits they're clamped and carried", { a: em(a), b: [em(b)?.spawn, b.E.land["imported:environment"]], d: em(d)?.spawn }); });
+// bot review 60 (@40): an unset or 0 count is main's 1,200 (never the effect limit), a size past main's 0.08 cap is 0.08 and carried
+row("DT8b", () => { const env = (particles: any) => tr([OWNER, ["olga", "spawn", { id: "land", lib: "t.glb" }], ["olga", "comp", { id: "land", type: "environment", data: { particles } }]]);
+  const em = (o: any) => o.r.effects.get(o.E[TV1.envChildId("land", "particles")]?.particles?.effect)?.emitters?.[0];
+  const c = env({}), z = env({ count: 0 }), s = env({ size: 0.5 }), q = env({ size: 0.03 });
+  ok(em(c)?.spawn?.amount === 1200 && em(z)?.spawn?.amount === 1200 && JSON.stringify(z.E.land["imported:environment"]) === JSON.stringify({ particles: { count: 0 } })
+    && em(s)?.size?.base === 0.08 && JSON.stringify(s.E.land["imported:environment"]) === JSON.stringify({ particles: { size: 0.5 } }) && em(q)?.size?.base === 0.03 && q.E.land["imported:environment"] === undefined,
+    "DT8b main's motes with no count (or 0) are main's 1,200, not the 4,000 limit; a size past main's 0.08 cap is 0.08, the old value carried; 0.03 arrives as it was", { c: em(c)?.spawn, z: [em(z)?.spawn, z.E.land["imported:environment"]], s: [em(s)?.size, s.E.land["imported:environment"]], q: em(q)?.size }); });
 // decision table row 9 (@33): main sat a socket with no pos at [0, 0.5, 0] (client/lib/world.js); the translation writes it
 row("DT9", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "s", lib: "x.glb" }], ["olga", "comp", { id: "s", type: "sockets", data: { bare: { pose: "sit" }, nul: { pos: null }, set: { pos: [1, 0.2, 0] } } }]]);
   const S = E.s?.sockets ?? {};
