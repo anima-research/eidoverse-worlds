@@ -396,6 +396,9 @@ if (cmd === "found") {
   const [src, dest] = words;
   for (const w of words) { try { if (fs.lstatSync(path.join(WORLDS_DIR, w)).isSymbolicLink()) die(`"${w}" in ${WORLDS_DIR} is a symlink: translate and its backup never follow one. Nothing was changed.`); } catch { /* absent */ } }
   { const half = isWorldDir(path.join(WORLDS_DIR, src)) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
+  if (dest !== undefined && isWorldDir(path.join(WORLDS_DIR, dest)) && fs.existsSync(path.join(WORLDS_DIR, dest, IDENTITIES))) {   // a new-name translation stopped before its identities were written (bot review 21)
+    const f = path.join(WORLDS_DIR, dest, IDENTITIES), n = putIdentities(JSON.parse(fs.readFileSync(f, "utf8"))); fs.rmSync(f);
+    console.log(`the translation into "${dest}" was interrupted after its world.jsonl landed; finished it now: ${n} identit${n === 1 ? "y" : "ies"} added to the directory. "${dest}" is a translated world.`); process.exit(0); }
   { const D = path.join(WORLDS_DIR, src);   // marked but world.jsonl never landed: the swap died before its first rename, so nothing moved
     if (isSwapUnfinished(D) && !fs.existsSync(path.join(D, "world.jsonl"))) { let t = ""; try { t = JSON.parse(fs.readFileSync(path.join(D, SWAP_MARKER), "utf8")).temp ?? ""; } catch { /* unreadable: no temp named */ }
       if (t && path.dirname(t) === WORLDS_DIR && path.basename(t).startsWith(`.translating-${src}-`)) fs.rmSync(t, { recursive: true, force: true });
@@ -416,18 +419,28 @@ if (cmd === "found") {
   if (dest === undefined) translateInPlace(src, approval, approvedSource);
   else {
     const before = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
-    const destDir = path.join(WORLDS_DIR, dest), had = fs.existsSync(destDir) ? new Set(fs.readdirSync(destDir)) : null;
-    // identities join the shared directory only once the bytes are known to be the approved ones
+    const destDir = path.join(WORLDS_DIR, dest);
+    if (fs.existsSync(path.join(destDir, "world.jsonl")) || fs.existsSync(path.join(destDir, "log.jsonl"))) die(`${destDir} already holds a world. Nothing was changed.`);
+    // translated into a temporary sibling with its planned identities beside it, then moved in (world.jsonl last), then the
+    // identities written and their file removed: a stop in between is finished by the next run (above; bot review 21)
+    const T = path.join(WORLDS_DIR, `.translating-${dest}-${crypto.randomBytes(4).toString("hex")}`);
     // the importer refuses a log whose report isn't the approved one, and puts back what it wrote (house importer I25, I35):
     // say so in this tool's own words, never as a stack trace
     let r: ReturnType<typeof translateV1World>;
-    try { r = translateV1World(srcDir, destDir, { approval, deferIdentities: true, claim: CLAIM }); }
-    catch (x) { if (!had && fs.existsSync(destDir) && !fs.readdirSync(destDir).length) fs.rmSync(destDir, { recursive: true, force: true });
+    try { r = translateV1World(srcDir, T, { name: dest, approval, deferIdentities: true, claim: CLAIM }); }
+    catch (x) { fs.rmSync(T, { recursive: true, force: true });
       die(`the translation failed: ${(x as Error).message}\nNothing was changed: "${src}" is as it was, and no identity was added.`); }
     { const why = unapproved(r.source, approvedSource);
-      if (why) { if (!had) fs.rmSync(destDir, { recursive: true, force: true }); else for (const f of fs.readdirSync(destDir)) if (!had.has(f)) fs.rmSync(path.join(destDir, f), { recursive: true, force: true });
-        die(`${why}\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
-    putIdentities(r.planned);
+      if (why) { fs.rmSync(T, { recursive: true, force: true }); die(`${why}\nNothing was changed: what this run wrote under "${dest}" was removed, and no identity was added.`); } }
+    fs.writeFileSync(path.join(T, IDENTITIES), JSON.stringify(r.planned));
+    if (!fs.existsSync(destDir)) fs.renameSync(T, destDir);
+    else { const into = (from: string, to: string) => { for (const f of fs.readdirSync(from).sort((a, b) => Number(a === "world.jsonl") - Number(b === "world.jsonl"))) {
+        if (fs.statSync(path.join(from, f)).isDirectory() && fs.existsSync(path.join(to, f))) { into(path.join(from, f), path.join(to, f)); fs.rmdirSync(path.join(from, f)); }
+        else fs.renameSync(path.join(from, f), path.join(to, f)); } };
+      into(T, destDir); fs.rmdirSync(T); }
+    syncDir(WORLDS_DIR); syncDir(destDir);
+    if (process.env.WORLD_TS_DIE_BEFORE_IDENTITIES) process.exit(9);   // tests only: the process dies once the world landed (inplace-check IP8b)
+    putIdentities(r.planned); fs.rmSync(path.join(destDir, IDENTITIES), { force: true });
     const after = fs.statSync(path.join(WORLDS_DIR, src, "log.jsonl"));
     report(src, dest, r);
     console.log(`approval: report ${approval.report} ${approvalWords(approval)}, recorded in ${dest}/world.jsonl as the system's translation-approved act`);

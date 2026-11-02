@@ -16,6 +16,7 @@
 //   IP6  a failure at every step of the swap (injected: WORLD_TS_FAULT_AT_STEP) puts everything back; a clean run after works
 //   IP7  `info` counts entities (not "things"), and says @world isn't counted
 //   IP8  the two-name form still translates into a new name and leaves the old directory as it was
+//   IP8b …and stopped after its world landed, before its identities were written, the next run writes them
 //   IP9  the world's own inventions are namespaced by its NAME, never by the temporary directory's
 //   IP10 a name with no old log refuses with that reason
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
@@ -565,6 +566,13 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
   ok(died.code !== 0 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out),
     "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
+// IP8b (bot review 21) the two-name form, stopped once its world landed: the next run writes the identities it planned
+{ const name = "nameless3", dest = "nameless3-new"; oldWorld(name); const D = path.join(W, dest);
+  const died = xlate([name, dest], { TRUST_NAMES: "", WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }), landed = isWorldDir(D);
+  const mid = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {}; const actors = landed ? actorsOf(D) : [];
+  const r = tool(["translate", name, dest, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
+  ok(died.code === 9 && landed && actors.length >= 2 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out) && !fs.existsSync(path.join(D, ".identities.json")),
+    "IP8b `translate <old> <new>` stopped after its world landed and before its identities were written: the next run adds them", { died: died.code, landed, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
 
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
