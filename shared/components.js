@@ -492,9 +492,10 @@ export function lightOf(ent) {
     decay: decay ?? 1.7,
     daytime: daytime ?? (src.day === false ? 'full' : 'dim'),
     // a spot's cone, glTF's half-angles (rad): angle = outer (default π/4), inner where the edge starts to soften
-    // a point light is the default and says nothing more; a spot adds its kind and cone
+    // a point light is the default and says nothing more; a spot adds its kind and cone; a sun its kind (models.js leaves it to the rig)
     ...(src.kind === 'spot' ? (() => { const angle = finite(src.angle) && src.angle > 0 && src.angle <= Math.PI / 2 ? src.angle : Math.PI / 4;
-      return { kind: 'spot', angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })() : {}),
+      return { kind: 'spot', angle, inner: finite(src.inner) && src.inner >= 0 && src.inner < angle ? src.inner : 0 }; })()
+      : src.kind === 'directional' ? { kind: 'directional' } : {}),
   };
 }
 
