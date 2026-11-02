@@ -8,7 +8,7 @@
 //
 // Every spelling the wire has is an ALIAS here (design §2.4, §6): `lib`,
 // `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …,
-// `comp.light` on any entity, `comp.collider`, and the Empty — a spawn with no
+// `comp.light` on a thing of its own, `comp.collider`, and the Empty — a spawn with no
 // `lib`. (The old protocol's `kind: "light"` light entity is gone from the view:
 // the importer rewrites it to comp.light; shared/protocol/kind.js kindOf names
 // what a thing is.) `componentsOf` reads any folded entity as a component list,
@@ -134,7 +134,7 @@ const DEFS = [
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, important, day} on any entity (an imported lamp is a Model and a Light)' },
+    note: 'wire: comp.light {color, intensity, range, important, day} on a thing of its own (one place per thing: never beside a model or mesh; an imported lamp becomes a Model with a Light child)' },
   // the motions' READS: a whole thing swings and turns about its Pivot component, else its origin (shape audit 10-16; a pendulum
   // was [0, 2, 0]); a part about its own origin; an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
