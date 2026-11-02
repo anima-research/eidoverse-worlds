@@ -564,6 +564,27 @@ const file = path.join(tmp, "worlds", ".directory.json");
       "EP4 …and undo of an imported punt's act changes nothing: where her sim rested it, and its kind, are no one's act", answers.map((r: any) => r.refused?.code ?? r.would)); }
 }
 
+// ---- DW (bot review of #260, #19, #20): writers in two processes, and a durable file ----
+// DW19: four processes that all miss on one account at once (each holds the mint open ~400 ms) mint ONE id, and the file keeps it
+{ const f = path.join(tmp, "race", ".directory.json"); fs.mkdirSync(path.dirname(f), { recursive: true });
+  const kid = path.join(tmp, "race-kid.ts"); const mod = path.resolve(import.meta.dir, "../../server/directory.ts");
+  fs.writeFileSync(kid, `import { directoryAt } from ${JSON.stringify(mod)};
+const slow = () => { const t = Date.now() + 400; while (Date.now() < t) {} return Date.now(); };
+process.stdout.write(directoryAt(${JSON.stringify(f)}, slow).resolve({ sub: "human:race", name: "Race" }));`);
+  const kids = [0, 1, 2, 3].map(() => Bun.spawn([process.execPath, kid], { stdout: "pipe", stderr: "pipe", env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }));
+  const ids = await Promise.all(kids.map(async (k) => { await k.exited; return (await new Response(k.stdout).text()).trim() || `(exit ${k.exitCode}: ${(await new Response(k.stderr).text()).slice(0, 200)})`; }));
+  const onDisk = Object.entries(JSON.parse(fs.readFileSync(f, "utf8")).ids).filter(([, e]: any) => e.subs.includes("human:race")).map(([id]) => id);
+  ok(ids.every((id) => isMinted(id)) && new Set(ids).size === 1 && onDisk.length === 1 && onDisk[0] === ids[0] && !fs.existsSync(`${f}.lock`),
+    "DW19 four processes that miss on one account at once mint one id between them, the file holds it, and the lock is let go", { ids, onDisk }); }
+// DW20: the file is replaced durably: the temp synced before its rename, the directory after it
+{ const f = path.join(tmp, "dur", ".directory.json"); const d = directoryAt(f); d.resolve({ sub: "human:first", name: "First" });
+  const o = { open: fs.openSync, sync: fs.fsyncSync }; const what = new Map<number, string>(); const synced: string[] = [];
+  (fs as any).openSync = function (p: any, ...a: any[]) { const fd = (o.open as any).call(fs, p, ...a); what.set(fd, path.resolve(String(p))); return fd; };
+  (fs as any).fsyncSync = function (fd: number) { synced.push(what.get(fd) ?? "?"); return o.sync.call(fs, fd); };
+  try { d.resolve({ sub: "human:second", name: "Second" }); } finally { Object.assign(fs, { openSync: o.open, fsyncSync: o.sync }); }
+  const dirSynced = synced.includes(path.resolve(path.dirname(f))), tmpSynced = synced.some((p) => p.startsWith(path.resolve(f) + ".") && p.endsWith(".tmp"));
+  ok(tmpSynced && (process.platform === "win32" || dirSynced), "DW20 a directory write syncs its temp file, then (POSIX) the directory holding the new name", synced); }
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`[directory-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

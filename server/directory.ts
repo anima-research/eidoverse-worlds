@@ -2,9 +2,9 @@
 // outside the log, so purging a person never needs the skeleton"). Round-2 review R1/R2 (10-05); security review
 // 10-06 (M2, M6, H4).
 //
-// Every actor a log names is an OPAQUE id, `u-` + 20 base32 characters, minted here. Nothing about the person is in
-// the log: their display name, the account(s) that prove them, and anything else about them live in this file, which
-// is never logged and is written 0600. So:
+// Every actor a log names is an OPAQUE id, `u-` + 20 base32 characters, minted here. Nothing the server knows about the
+// person is in the log (what they say in chat is public, and stays): their display name, the account(s) that prove them,
+// and anything else about them live in this file, which is never logged and is written 0600. So:
 //   - a role is held by an id, and an id is reached only through its account (a `sub`): typing someone's display name
 //     gets you nothing. Two people who share a name are two ids; one person renamed is still one id.
 //   - forgetting a person is deleting their entries here: the log keeps ids that no longer mean anyone.
@@ -20,6 +20,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
 import { directoryFileIn } from "./keyfiles.ts";
+import { replaceDurable } from "./durable.ts";
 
 // kind is about the ACCOUNT, never what holds it (PROTOCOL §6a rule 3): "account" (one is bound), "anon" (none: a guest),
 // "imported" (a name from an imported log, no account yet). Files written before 10-17 said "human"/"agent": read as "account".
@@ -64,12 +65,13 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     for (const s of e.subs) { const k = mine.world ? `${s}|${mine.world}` : s;
       if (mine.subs.includes(s) || !ACCOUNT_SHAPE.test(s) || (byKey.has(k) && byKey.get(k) !== id)) continue;
       mine.subs.push(s); if (mine.kind === "imported") mine.kind = "account"; byKey.set(k, id); } };
-  const save = () => {
+  const locked = lockFor(file);
+  // durable: the world log that names a new id is fsynced, so the id's entry is too (bot review of #260, #20)
+  const save = () => locked(() => {
     const disk = fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, "utf8")) as File) : null;
     if (disk) for (const [id, e] of Object.entries(disk.ids ?? {})) if (!d.ids[id] && !tomb.has(id)) { d.ids[id] = unkind(e); index(id, e); } else takeBinds(id, e);
-    fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(d, null, 1), { mode: 0o600 }); fs.renameSync(tmp, file); fs.chmodSync(file, 0o600);
-  };
+    replaceDurable(file, JSON.stringify(d, null, 1), 0o600); fs.chmodSync(file, 0o600);
+  });
   if (fs.existsSync(file) && JSON.parse(fs.readFileSync(file, "utf8")).v !== 2) save();   // the one-time upgrade lands
   // another writer (the found / translate tools) may have added an account since this process read the file: a MISS on
   // an account re-reads before minting, or the server would hand a translated world's owner a fresh, roleless id
@@ -86,9 +88,11 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
      *  current), or, with no account, a fresh anonymous id held in memory only. `world` is the world's id (its
      *  genesis hash); without it the id is server-wide (tools, tests, legacy worlds). */
     resolve({ sub, name, world = null }: { sub?: string | null; name: string; world?: string | null }): string {
-      if (sub) { let id = byKey.get(keyOf(sub, world)); if (!id) { refresh(); id = byKey.get(keyOf(sub, world)); }
-        if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
-        return add({ name, subs: [sub], kind: "account", since: now() }); }
+      if (sub) { let id = byKey.get(keyOf(sub, world)); if (id) { if (d.ids[id].name !== name) { d.ids[id].name = name; save(); } return id; }
+        // a miss re-reads, and mints, holding the file's lock: two writers that both missed can't mint two ids for one account (bot #19)
+        return locked(() => { refresh(); const had = byKey.get(keyOf(sub, world));
+          if (had) { if (d.ids[had].name !== name) { d.ids[had].name = name; save(); } return had; }
+          return add({ name, subs: [sub], kind: "account", since: now() }); }); }
       let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId();
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
       return id;
@@ -112,10 +116,10 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
      *  EXACTLY as the translation wrote them (`planned`: nobody has bound an account or renamed them since) are removed;
      *  the rest are returned as kept, and said. Saved only if something was removed. */
     forgetPlanned(planned: Record<string, Entry>): { removed: string[]; kept: string[] } {
-      refresh(); const removed: string[] = [], kept: string[] = [];
+      return locked(() => { refresh(); const removed: string[] = [], kept: string[] = [];
       for (const [id, was] of Object.entries(planned)) { const e = d.ids[id]; if (!e) continue;
         if (JSON.stringify(e) === JSON.stringify(was)) { delete d.ids[id]; tomb.add(id); for (const s of was.subs) byKey.delete(e.world ? `${s}|${e.world}` : s); removed.push(id); } else kept.push(id); }
-      if (removed.length) save(); return { removed, kept };
+      if (removed.length) save(); return { removed, kept }; });
     },
     nameOf: (id: string): string | null => get(id)?.name ?? null,
     entry: (id: string): Entry | null => get(id),
@@ -161,6 +165,30 @@ function worldIdsIn(worldsDir: string): string[] {
       const w = g ? worldIdOf(g) : null; if (w) out.push(w); } catch { /* an unreadable log isn't a world */ }
   }
   return out;
+}
+
+/** Run `f` holding `<file>.lock` (O_EXCL: another process writing the same directory waits), re-entrant within this process. A lock
+ *  whose holder is gone (its pid no longer runs, or older than STALE_MS) is taken over; one held past WAIT_MS throws. */
+const WAIT_MS = 10_000, STALE_MS = 60_000, held = new Map<string, number>();
+const wait = new Int32Array(new SharedArrayBuffer(4));
+export function lockFor(file: string) {
+  const lock = `${file}.lock`;
+  const take = () => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    for (const until = Date.now() + WAIT_MS; ;) {
+      try { const fd = fs.openSync(lock, "wx", 0o600); fs.writeSync(fd, String(process.pid)); fs.closeSync(fd); return; }
+      catch (e: any) { if (e?.code !== "EEXIST") throw e; }
+      let pid = NaN, age = 0; try { pid = Number(fs.readFileSync(lock, "utf8")); age = Date.now() - fs.statSync(lock).mtimeMs; } catch { continue; }   // gone meanwhile: try again
+      const alive = Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && (() => { try { process.kill(pid, 0); return true; } catch (x: any) { return x?.code === "EPERM"; } })();
+      if (!alive || age > STALE_MS) { try { fs.unlinkSync(lock); } catch { /* another took it over */ } continue; }
+      if (Date.now() > until) throw new Error(`${file}: another process (pid ${pid}) has held ${path.basename(lock)} for ${Math.round(age / 1000)} s; nothing was written`);
+      Atomics.wait(wait, 0, 0, 5);
+    }
+  };
+  return <T>(f: () => T): T => {
+    const n = held.get(lock) ?? 0; if (n === 0) take(); held.set(lock, n + 1);
+    try { return f(); } finally { const m = held.get(lock)! - 1; held.set(lock, m); if (m === 0) { held.delete(lock); try { fs.unlinkSync(lock); } catch { /* gone */ } } }
+  };
 }
 
 const cache = new Map<string, Directory>();
