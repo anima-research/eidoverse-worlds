@@ -1187,7 +1187,11 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   { const r1 = call("bob", "set", { id: "mb", component: "model", value: "crate" }); const r2 = call("bob", "set", { id: "mb", component: "light", value: { color: 0xffd9a0, intensity: 16, range: 10 } });
     call("bob", "create", { id: "cr", model: "crate", place: { at: [5, 5] } }); const r3 = call("bob", "set", { id: "cr", component: "mesh", value: { shape: "sphere", size: [1, 1, 1] } });
     call("bob", "create", { id: "lt", components: { light: { color: 0xffd9a0, intensity: 16, range: 10 }, transform: { pos: [7, 1, 7] } } }); const r4 = call("bob", "set", { id: "lt", component: "mesh", value: { shape: "box", size: [1, 1, 1] } });
-    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok")); }
+    ok([r1, r2, r3, r4].every((r) => code(r) === "one-place"), "MS2 one place per thing: a model or a light on a mesh, a mesh on a model or a light, are all refused", [r1, r2, r3, r4].map((r) => r.refused?.code ?? "ok"));
+    // bot #260 #28: the refusal's fix, submitted as written (its {…} a real mesh), is a create the door takes, ids not seeded
+    const fx = String(r3.refused?.fix ?? ""), lit = fx.match(/^create (\{.*\}), or /)?.[1]?.replace("{…}", "{shape: 'box', size: [1, 1, 1]}");
+    fixtureIds(false); let r5: any; try { r5 = lit ? call("bob", "create", new Function(`return (${lit})`)()) : null; } finally { fixtureIds(true); }
+    ok(!!lit && r5?.ok === true, "MS2b the one-place fix for a mesh on a model, sent as written, is accepted (no writer-chosen id)", { fx, r5: r5?.refused ?? r5?.ok }); }
   { const r1 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "box", size: [0.01, 1, 1] } }); const r2 = call("bob", "set", { id: "mb", component: "mesh", value: { shape: "cone", size: [1, 1, 1] } });
     ok(code(r1) === "bounds" && code(r2) === "shape" && /each must be/.test(r1.refused?.reason ?? ""), "MS3 a size outside 0.05..200 (the definition's ranges, per element) and an unknown shape are refused", [r1.refused, r2.refused]); }
   { const r = call("bob", "create", { id: "cup", model: "ball", place: { on: "mb" } }); const y = E("cup")?.transform?.pos?.[1];
