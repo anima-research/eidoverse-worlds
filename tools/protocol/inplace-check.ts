@@ -19,6 +19,7 @@
 //   IP8b …and stopped after its world landed, before its identities were written, the next run writes them
 //   IP9  the world's own inventions are namespaced by its NAME, never by the temporary directory's
 //   IP10 a name with no old log refuses with that reason
+//   IP21c the report pins poses.json: one rewritten after the dry run refuses the approval
 //   IP12 the snapshot oracle re-runs on a translated world's kept originals (log.original.jsonl, snapshot.original.json)
 //   IP13 the process dies between swap steps (WORLD_TS_DIE_AT_STEP, no rollback): a re-run sees the half-swapped
 //        directory and finishes the swap, saying so (review r11 L4)
@@ -573,6 +574,12 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, dest, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
   ok(died.code === 9 && landed && actors.length >= 2 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out) && !fs.existsSync(path.join(D, ".identities.json")),
     "IP8b `translate <old> <new>` stopped after its world landed and before its identities were written: the next run adds them", { died: died.code, landed, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
-
+// IP21c (bot review 29) the report pins the old poses.json the apply carries: one edited after the dry run refuses the approval
+{ const name = "posey"; const d = oldWorld(name); const dry = tool(["translate", name, "--dry-run", "--no-founder-key", "--json"]);
+  const rep = JSON.parse(/^report-json (.*)$/m.exec(dry.out)?.[1] ?? "null"), was = fs.readFileSync(path.join(d, "poses.json"));
+  fs.writeFileSync(path.join(d, "poses.json"), JSON.stringify({ Ann: { p: [40, 0, 40], yaw: 1 } }));
+  const r = tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", rep?.hash ?? "x"]);
+  ok(rep?.report?.source?.poses?.sha256 === crypto.createHash("sha256").update(was).digest("hex") && r.code !== 0 && /is not the one that was approved/.test(r.out) && !fs.existsSync(path.join(d, "world.jsonl")),
+    "IP21c the dry run's report pins poses.json (size, sha256); a poses.json rewritten after it refuses the approval, and nothing moves", { pin: rep?.report?.source?.poses, code: r.code, out: r.out.slice(-300) }); }
 console.log(`inplace: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
