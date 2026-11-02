@@ -383,3 +383,4 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-31: particle-effect limits: 4,000 particles per emitter, 8,000 per effect, 64 m extent (were 600 / 1,000 / 32 m), so main's motes (≤3,000, ≤60 m) translate unclamped (decision row 7); the Essentials' count param keeps its 600 bound (their addresses unchanged); translate-v1@38
 - 2026-10-31: sky.sun and sky.fill: stored again (multipliers on the renderer's sun and its bounce light, absent = 1), so main's sliders carry over (decision table, R 10-30); translate-v1@39
 - 2026-10-31: sky.sun and sky.fill stored again (decision table, R 10-30)
+- 2026-11-02: reactions help and comment no longer call impulse reserved (it was opened 10-31; text only, the pin is unchanged; bot #260 #25)
