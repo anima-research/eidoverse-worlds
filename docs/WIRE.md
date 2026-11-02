@@ -75,7 +75,8 @@ Every message belongs to exactly one plane:
   or was taken over (4002) while its request waited (a model warm-up) is
   answered refused `superseded`, and nothing is written — the recheck sits
   immediately before the authority's synchronous call.
-- **Presence** — relayed or batched, never persisted, gone when it's gone:
+- **Presence** — relayed or batched, never in the log, gone when it's gone (one exception: a signed-in body's settled last
+  pose is kept by identity in the world's `poses.json` for `restore`; server.ts `settledPose`):
   `pose`/`frame`, `typing`, `caption`, `drag`, `anim`, `puppet`,
   `bodydrag`, `holds` (who holds what), `attest`/`performed`. (`whisper`
   was here until it was removed, 2026-10-18: spec/PROTOCOL.md §5 "Speech".)

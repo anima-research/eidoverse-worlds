@@ -3,7 +3,8 @@
 *Field-level contract of the `pose` bag. The message-level inventory (planes, close codes, the message types) is `docs/WIRE.md` §3 — this file is what that table's `{pose}` contains.*
 
 `{ type: 'pose', pose }` at ≤15 Hz per embodied client; the server batches the latest per id into
-`frame` messages and keeps `lastPose` for late joiners. Nothing here is persisted. The server
+`frame` messages and keeps `lastPose` for late joiners. Nothing here reaches the log; a signed-in body's settled last pose
+(`settledPose` strips mic/hear/t/seq, a once-anim and ragdoll) is kept by identity in `poses.json` for `restore`. The server
 refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
 
 | field | type | meaning |
