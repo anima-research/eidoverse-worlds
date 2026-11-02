@@ -1,6 +1,7 @@
-// Roaming renderers, end to end, in a real browser against a running server.
-//   bun tools/roaming-renderer-check.ts http://127.0.0.1:<port> [SHOT=path.png]
-//   (each run founds two worlds: start the scratch sequencer with FOUND_DAILY_CAP=off, or the sixth run is refused)
+// Roaming renderers, end to end, in a real browser.
+//   bun tools/roaming-renderer-check.ts [SHOT=path.png]          (owns a scratch server with both worlds founded)
+//   LOBBY=<w> WORLD=<w> JOIN_KEY=<k> AGENT_TOKEN=<t> bun tools/roaming-renderer-check.ts http://host:port   (a running server:
+//   both worlds founded by its operator, WORLD owned by the agent the token enrols; joining never founds one)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
 // crates). Its arrival alone must send the renderer over (pre-warm); a screenshot must come only once the world is
 // REALIZED (every crate loaded — never a partial frame); a second screenshot is fast (the renderer stays). Then the
@@ -12,16 +13,25 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { health } from '../deploy/render-health.ts';
-const base = process.argv[2] ?? 'http://127.0.0.1:19347';
+import { ownedWorld } from './probe-harness.mjs';
+const live = process.argv[2] ?? null;
 const shot = process.env.SHOT;
-const world = `roam-build-${Date.now().toString(36)}`, lobby = `roam-lobby-${Date.now().toString(36)}`;
-const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ verb: 'spawn', args: { id: `crate-${c}`, lib: `eidoverse/assets/models/crate_large_${c}.glb`, pos: [Math.cos(i * 1.57) * 4, 0, 6 + Math.sin(i * 1.57) * 4], yaw: 0 } }));
+const world = live ? process.env.WORLD : `roam-build-${Date.now().toString(36)}`, lobby = live ? process.env.LOBBY : `roam-lobby-${Date.now().toString(36)}`;
+if (!world || !lobby) { console.error('a running server needs LOBBY and WORLD: two worlds its operator founded'); process.exit(2); }
+// the v4 wire: worlds founded before anyone joins, a replica join, and every write a {type: 'request'} (server.ts admitJoin)
+// only an ENROLLED agent's arrival pre-warms (server.ts: c.tokenVerified), so the owned server gets a scratch enrolment
+const tokDir = mkdtempSync(join(tmpdir(), 'roam-tokens-')), agentToken = live ? (process.env.AGENT_TOKEN ?? '') : crypto.randomUUID();
+if (!live) writeFileSync(join(tokDir, 'tokens.json'), JSON.stringify({ [agentToken]: { id: 'builder-agent' } }));
+const owned = await ownedWorld({ live, worlds: [lobby, world], owner: 'agent:token:builder-agent', env: { AGENT_TOKENS_PATH: join(tokDir, 'tokens.json') } });
+const base = owned.origin, key = owned.key, AUTH = { headers: { authorization: `Bearer ${key}` } };   // /snap is behind the door
+const crates = ['blue', 'green', 'red', 'yellow'].map((c, i) => ({ type: 'request', id: `crate-${c}`, verb: 'create', args: { model: `eidoverse/assets/models/crate_large_${c}.glb`, at: { pos: [Math.cos(i * 1.57) * 4, 0, 6 + Math.sin(i * 1.57) * 4], yaw: 0 } } }));
 let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | undefined;
 // A devtools port, so the watchdog's own check (deploy/render-health.ts health) can judge the roamer below. Chrome
 // picks it (port 0) and writes it to DevToolsActivePort in its profile, so no other process can take it between the
 // choosing and the binding; that is why this is a persistent context, in a profile this check owns.
 const profile = mkdtempSync(join(tmpdir(), 'roam-check-'));
-const browser = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chrome', viewport: { width: 960, height: 540 },
+const exe = process.env.SFU_TEST_CHROME;   // probe-harness's override; else the installed Chrome
+const browser = await chromium.launchPersistentContext(profile, { headless: true, ...(exe ? { executablePath: exe } : { channel: 'chrome' }), viewport: { width: 960, height: 540 },
   args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--remote-debugging-port=0'] });
 let dbg = 0;
 try {
@@ -29,24 +39,23 @@ try {
     try { dbg = Number(readFileSync(join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]) || 0; } catch { await Bun.sleep(100); }
   }
   assert.ok(dbg > 0, `Chrome wrote no DevToolsActivePort in ${profile}`);
-  // The lobby must exist before the renderer comes: a renderer is a spectator, and there is nothing to watch in a world
-  // nobody has founded (server.ts, 4011, retried forever). Production's lobbies were founded once; found this one.
-  // A refusal (a sequencer that wants JOIN_TOKEN, a founding cap) fails the check with the server's reason, and so
-  // does silence: this must never hang with the browser above left open.
+  // The lobby must take a join before the renderer comes (a renderer is a spectator; a world nobody founded refuses it).
+  // A refusal (a wrong key, an unfounded world) fails the check with the server's reason, and so does silence: this must
+  // never hang with the browser above left open.
   {
     const f = new WebSocket(base.replace('http', 'ws') + '/ws');
     try {
       await new Promise<void>((res, rej) => {
-        const timer = setTimeout(() => rej(new Error(`founding the lobby "${lobby}": no answer in 15 s`)), 15000);
+        const timer = setTimeout(() => rej(new Error(`joining the lobby "${lobby}": no answer in 15 s`)), 15000);
         const settle = (err?: Error) => { clearTimeout(timer); err ? rej(err) : res(); };
-        f.onerror = () => settle(new Error(`founding the lobby "${lobby}": cannot connect to ${base}`));
-        f.onclose = (e) => settle(new Error(`founding the lobby "${lobby}": the server closed the socket (${e.code} ${e.reason || 'no reason'})`));
+        f.onerror = () => settle(new Error(`joining the lobby "${lobby}": cannot connect to ${base}`));
+        f.onclose = (e) => settle(new Error(`joining the lobby "${lobby}": the server closed the socket (${e.code} ${e.reason || 'no reason'})`));
         f.onmessage = (e) => {
           const m = JSON.parse(String(e.data));
           if (m.type === 'snapshot') settle();
-          else if (m.type === 'error') settle(new Error(`founding the lobby "${lobby}" was refused: ${m.error}`));
+          else if (m.type === 'error') settle(new Error(`joining the lobby "${lobby}" was refused: ${m.error}`));
         };
-        f.onopen = () => f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-founder', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+        f.onopen = () => f.send(JSON.stringify({ type: 'join', world: lobby, id: 'lobby-visitor', agent: true, token: key, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
       });
     } finally { f.onclose = null; f.close(); }
   }
@@ -59,7 +68,7 @@ try {
   if (tripped) await page.addInitScript((w) => {
     try { localStorage.setItem(`ew-boot-attempt:${w}`, '1'); localStorage.setItem(`ew-boot-retried:${w}`, '1'); } catch { /* storage blocked */ }
   }, lobby);
-  await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check`);
+  await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${key}`);
   const boot = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
   console.log(JSON.stringify({ tripped, boot }));
   assert.equal(boot.lite, false, `the roaming renderer boots the full client: ${JSON.stringify(boot)}`);
@@ -70,10 +79,15 @@ try {
   ws = new WebSocket(base.replace('http', 'ws') + '/ws');
   const sock = ws;
   await new Promise<void>((res, rej) => { sock.onopen = () => res(); sock.onerror = () => rej(new Error('cannot connect')); });
-  const joined = new Promise<void>((res) => { sock.onmessage = (e) => { if (JSON.parse(String(e.data)).type === 'snapshot') res(); }; });
-  sock.send(JSON.stringify({ type: 'join', world, id: 'builder-agent', agent: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
+  const made: Record<string, boolean> = {};
+  const joined = new Promise<void>((res, rej) => { sock.onmessage = (e) => { const m = JSON.parse(String(e.data));
+    if (m.type === 'snapshot') res(); else if (m.type === 'error') rej(new Error(`the agent's join was refused: ${m.error}`));
+    else if (m.type === 'reply') made[m.id] = m.ok === true; }; });
+  sock.send(JSON.stringify({ type: 'join', world, id: 'builder-agent', agent: true, token: key, agentToken, replica: true, avatar: 'eidoverse/assets/vrms/shino.vrm' }));
   await joined;
-  for (const v of crates) { sock.send(JSON.stringify({ type: 'verb', ...v })); await Bun.sleep(300); }
+  for (const v of crates) { sock.send(JSON.stringify(v)); await Bun.sleep(300); }
+  for (let i = 0; i < 50 && Object.keys(made).length < crates.length; i++) await Bun.sleep(100);
+  assert.ok(crates.every((v) => made[v.id]), `every crate was created: ${JSON.stringify(made)}`);
   const pose = () => sock.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: 'idle' } }));
   pose(); keepPose = setInterval(pose, 200);
   // PRE-WARM: the agent's arrival alone sends the roaming renderer to its world, before any screenshot is asked
@@ -83,7 +97,7 @@ try {
   // the agent keeps building while the renderer loads — or (GRACE_MS=0) asks at once: the renderer must WAIT for the
   // world rather than send what it has so far
   await Bun.sleep(Number(process.env.GRACE_MS ?? 4000));
-  const snap = async () => { const t0 = Date.now(); const r = await fetch(`${base}/snap?world=${world}&follow=builder-agent&view=third`);
+  const snap = async () => { const t0 = Date.now(); const r = await fetch(`${base}/snap?world=${world}&follow=builder-agent&view=third`, AUTH);
     return { status: r.status, ms: Date.now() - t0, png: r.ok ? new Uint8Array(await r.arrayBuffer()) : null, err: r.ok ? '' : await r.text() }; };
   const first = await snap();
   console.log(JSON.stringify({ first: { status: first.status, ms: first.ms, err: first.err.slice(0, 160) } }));
@@ -115,7 +129,7 @@ try {
   // is bad").
   await page.close();
   const again = await browser.newPage();
-  await again.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check`);
+  await again.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${key}`);
   const againWorld = () => again.evaluate(async () => (await import('/lib/base.js')).CONFIG.world).catch(() => null);
   const tb = Date.now(); while (Date.now() - tb < 30000 && (await againWorld()) !== world) await Bun.sleep(250);
   const backMs = Date.now() - tb;
@@ -126,4 +140,4 @@ try {
   assert.equal(afterRestart.status, 200, `the first screenshot after the roamer's restart is served: ${afterRestart.err}`);
   assert.ok(afterRestart.ms < 3000, `…at once, from the roamer already there (${afterRestart.ms} ms)`);
   console.log(`PASS: an agent arriving alone brought a roaming renderer (${prewarmMs} ms); every model loaded (${where.real}) before capture; screenshots ${first.ms} ms then ${second.ms} ms; the watchdog judged it healthy (${verdict.reason}) and a page with no client not joined; after a restart the roamer was swept back in ${backMs} ms and the next screenshot took ${afterRestart.ms} ms`);
-} finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); }
+} finally { clearInterval(keepPose); ws?.close(); await browser.close(); rmSync(profile, { recursive: true, force: true }); rmSync(tokDir, { recursive: true, force: true }); await owned.close(); }
