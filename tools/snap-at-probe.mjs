@@ -9,17 +9,29 @@
 // `at` parameter is ignored, the frame is first person, and the middle is not red: watched failing.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 const { check, done } = checker();
-const world = await ownedWorld({});
 const W = `snapat-${Math.random().toString(36).slice(2, 7)}`;
+const world = await ownedWorld({ worlds: [W], owner: 'agent', env: { TRUST_NAMES: '1' } });   // the agent owns W, so its create is admitted
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const AUTH = { headers: { authorization: `Bearer ${world.key}` } };   // /snap is behind the world's door (routes.ts mayRead)
 
+// the v4 join: a world founded before boot, replica: true, writes as {type: 'request'} (server.ts admitJoin; requestwire.ts)
 const ws = new WebSocket(world.origin.replace('http', 'ws') + '/ws');
 await new Promise((r) => (ws.onopen = r));
-ws.send(JSON.stringify({ type: 'join', world: W, id: 'agent', token: world.key }));
-await sleep(800);
+const replies = new Map(); let joined = null;
+ws.onmessage = (m) => { const d = JSON.parse(String(m.data));
+  if (d.type === 'snapshot') joined ??= 'ok'; else if (d.type === 'error') joined ??= `refused: ${d.error}`;
+  else if (d.type === 'reply') replies.set(d.id, d); };
+ws.onclose = (e) => { joined ??= `closed ${e.code} ${e.reason}`; };
+ws.send(JSON.stringify({ type: 'join', world: W, id: 'agent', token: world.key, replica: true }));
+for (let i = 0; i < 100 && !joined; i++) await sleep(100);
+if (joined !== 'ok') { console.error(`the agent's join failed: ${joined ?? 'no answer in 10 s'}`); await world.close(); process.exit(1); }
 ws.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: 'idle' } }));
-ws.send(JSON.stringify({ type: 'verb', verb: 'spawn', args: { id: 'crate1', lib: 'eidoverse/assets/models/crate_large_red.glb', pos: [0, 0, -6], yaw: 0 } }));
-await sleep(500);
+ws.send(JSON.stringify({ type: 'request', id: 'crate', verb: 'create', args: { id: '$crate', model: 'eidoverse/assets/models/crate_large_red.glb', at: { pos: [0, 0, -6], yaw: 0 } } }));
+for (let i = 0; i < 100 && !replies.has('crate'); i++) await sleep(100);
+const made = replies.get('crate');
+if (!made?.ok) { console.error(`the crate's create was refused: ${JSON.stringify(made?.reply ?? 'no reply in 10 s').slice(0, 300)}`); ws.close(); await world.close(); process.exit(1); }
+const CRATE = made.reply.ids?.$crate;
+console.log(`    crate created as ${CRATE}`);
 
 const { browser, page } = await launchBrowser();
 try {
@@ -29,8 +41,9 @@ try {
   // keep the agent alive + posed while the renderer loads the crate
   const keep = setInterval(() => ws.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: 'idle' } })), 500);
   const redMiddle = async (q) => {
+    let last = '';
     for (let i = 0; i < 40; i++) {
-      const r = await fetch(`${world.origin}/snap?world=${W}&follow=agent${q}`);
+      const r = await fetch(`${world.origin}/snap?world=${W}&follow=agent${q}`, AUTH);
       if (r.ok) {
         const png = Buffer.from(await r.arrayBuffer());
         if (process.env.SNAP_DUMP) await Bun.write(`${process.env.SNAP_DUMP}/snap${q.replace(/[^a-z0-9]/gi, '_')}.png`, png);
@@ -44,17 +57,20 @@ try {
           return red / (d.length / 4);
         }, png.toString('base64'));
       }
+      else last = `${r.status} ${(await r.text()).slice(0, 120)}`;
       await sleep(1500);
     }
+    console.log(`    ${q}: no frame in 40 asks (last: ${last})`);
     return -1;
   };
   await sleep(8000);
   const first = await redMiddle('&view=first');
-  const at = await redMiddle('&at=crate1');
-  const missing = await fetch(`${world.origin}/snap?world=${W}&follow=agent&at=nope`);
+  const at = await redMiddle(`&at=${encodeURIComponent(CRATE)}`);
+  await sleep(2500);   // the broker's per-renderer cooldown, or the refusal below is a 503 'busy'
+  const missing = await fetch(`${world.origin}/snap?world=${W}&follow=agent&at=nope`, AUTH);
   clearInterval(keep);
   check('control: the first-person snap does not see the crate behind the agent', first >= 0 && first < 0.02, `red=${first}`);
-  check('snapshot at: crate1 puts the red crate in the middle third of the frame', at > 0.25, `red=${at}`);
+  check('snapshot at: the crate puts the red crate in the middle third of the frame', at > 0.25, `red=${at}`);
   check('an unknown thing is a clear refusal, not a picture of nothing', !missing.ok && /not a placed thing/.test(await missing.text()), String(missing.status));
 } finally {
   await browser.close(); ws.close(); await world.close();
