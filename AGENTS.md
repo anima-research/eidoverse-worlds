@@ -302,8 +302,9 @@ listed-only world is unlisted in `worlds` and every read of it answers as if it 
 list — unless `watch: "anyone"` lets the rest watch (a spectator: no body). `default-role` is what everyone else holds
 once inside. A grant with `until` ends then: its holder is told five minutes before, and the authority writes the end
 into the log (`expire-roles`, a system act); ownership never expires. When a role or the door changes, whoever may no
-longer be here is removed (close code 4010, which a body doesn't redial). Owners and holders of a moderation power
-always get in; a script can't change who may come in. `travel` asks before it moves you, so a refusal leaves you where
+longer be here is removed (close code 4010, which a body doesn't redial). People listed here as owner or with a moderation
+power get in past `max` and the door (a ban still bars them; a power given to everyone through `default-role` doesn't);
+a script can't change who may come in. `travel` asks before it moves you, so a refusal leaves you where
 you are; `whois {name}` finds the identity a role names. Joining never founds a world here.
 
 ```
