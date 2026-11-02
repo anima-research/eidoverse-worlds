@@ -105,8 +105,8 @@ Outside it, today:
 - **Capability expiry**: `ReqCap` carries no `expiry` field. A timed grant (`roles:<id>.until`) is rechecked *through the
   role* at both seams (`reqcap.ts recheck`: `w.log.roleOf(cap.actorId) !== cap.role`), and the role ends when the
   authority writes `expire-roles` — the server's one-second sweep (`server/access.ts sweepAccess`,
-  `scriptrun.js expireRoles`), not the request itself. Between `until` and that sweep (under a second) the grant still
-  stands, by design (server.ts, "between `until` and the sweep the grant still holds"). A request that outlives its
-  grant by more than the sweep is refused at the seam as a role change.
+  `scriptrun.js expireRoles`), not the request itself. Every read takes an ended grant as absent at `now` (security review
+  10-18 M6, `shared/protocol/access.js listedIn`), so in the window between `until` and that sweep a listed-only world's
+  door refuses a recheck as `no-access`; the sweep only writes the ending down. After it, the seam refuses as a role change.
 - **Scripts** run on their sponsor's rights outside `ReqCap`; a script's write goes through the authority's own gate, not a
   connection's capability, and never reaches a connection's commit seam.
