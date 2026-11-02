@@ -249,7 +249,8 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 write on its own side and answers each `world.*` call down a pipe. Fuel and the 300 ms backstop stop runaway bytecode;
 a call into a slow native builtin (`indexOf` on crafted text, a huge BigInt, running out of memory inside `fill`)
 can't be interrupted, so at 500 ms the authority kills the process and the activation fails with `time` (a spare process
-takes the next one). The authority's thread is never held longer than that by one activation, and script time across every
+takes the next one). The authority's thread is never held longer than that by one activation (give or take the one
+`world.*` answer it is computing, which is the authority's own bounded read), and script time across every
 world in the process is capped at 500 ms per second (refused as `busy` past it), so one request that wakes many
 scripts can't add their deadlines up. A killed run counts as a failure and against its sponsor's `cpu`.
 

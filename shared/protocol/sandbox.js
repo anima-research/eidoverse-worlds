@@ -285,7 +285,8 @@ export function checkSyntax(text) {
 // script's world.* calls itself (makeHost). So an activation stays one synchronous step of the authority (L7: one act + one
 // batch, admitted at the head it read), and the authority holds the process's handle: at `wallMs + GRACE` after the job was
 // sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
-// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline.
+// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline, give or take one host
+// answer: a world.* call is answered on this thread and runs to its end (each is the authority's own bounded read; I9).
 // (A Worker can't do this: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3; measured 2026-10-06.)
 export const GRACE = 200;        // ms over the script's own wall-clock backstop: the pipes, a loaded host, and the kill
 const MAX = 2 << 20;             // bytes of one message (a job, a host call, an answer)
