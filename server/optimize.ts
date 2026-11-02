@@ -43,7 +43,7 @@ import { join, basename, dirname } from "node:path";
 // functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
 // The ranges do not intersect, so no installer can dedupe them and BOTH land
 // on disk — node_modules/sharp (0.33.5) beside
-// node_modules/ndarray-pixels/node_modules/sharp (0.35.3). Importing plain
+// node_modules/ndarray-pixels/node_modules/sharp (0.35.5). Importing plain
 // "sharp" here therefore loads a SECOND native libvips into a process that
 // already has one, and the two disagree about libvips' own enums:
 //
