@@ -118,7 +118,11 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     ...modLogAt(path.join(dir, "world.mod.jsonl")),
   });
 
+  if (!lazy) dropPurgedLeftovers(dir, entries, blobPath, cfile);
+
   // ---- the views, built once from the log (or seeded from the cache's, at its covered line), then advanced per entry ----
+  // a cache's views that don't fit (a hand edit, a bad disk) throw somewhere below: the boot reads the whole log instead (bot #30)
+  try {
   let X = logIndex();
   // the sim starts from the last VALID checkpoint (authority checkpointSim): its blob present and hashing to its name, written
   // right after the entry it says (at = seq - 1), no purge after it (a purge is retroactive: its bytes may sit in the cut), an
@@ -226,6 +230,18 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     return false;
   }).catch((x: Any) => { console.error(`[world:${name}] the fold cache's re-derive failed: ${x?.message ?? x}`); return null; });
   return w;
+  } catch (x) { if (!lazy) throw x; refused(`its views don't fit the log: ${(x as Error)?.message ?? x}`); return openLive(dir, name, { ...opts, eager: true, [RETRY]: true } as LiveOpts); }
+}
+
+/** What a crash between a purge's line and its unlinks left (bot review of #260, #15): every checkpoint blob from before the last
+ *  purge (unless a later checkpoint shares it) and a fold cache not read as covering it. Done at each whole-log boot. */
+function dropPurgedLeftovers(dir: string, entries: Any[], blobPath: (h: string) => string, cfile: Any) {
+  let last = -1; for (let s = entries.length - 1; s >= 0; s--) if (isE(entries[s]) && entries[s].kind === "purge") { last = s; break; }
+  if (last < 0) return;
+  const ck = (e: Any) => isE(e) && e.kind === "sim" && e.verb === "checkpoint" && typeof e.body?.state === "string";
+  const after = new Set<string>(); for (let s = last + 1; s < entries.length; s++) if (ck(entries[s])) after.add(entries[s].body.state);
+  for (let s = 0; s < last; s++) if (ck(entries[s]) && !after.has(entries[s].body.state)) try { fs.unlinkSync(blobPath(entries[s].body.state)); } catch { /* gone */ }
+  if (!(Number.isInteger(cfile?.coversIndex) && cfile.coversIndex >= last)) dropCache(dir);   // one this boot didn't read is derived: it goes too
 }
 
 /** Every view a boot seeded, gone, so each rebuilds from genesis at its next read (a re-derive that disagreed). */

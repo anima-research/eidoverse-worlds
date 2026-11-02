@@ -6,6 +6,7 @@
 //   PC2 a boot replays at most N entries into the engine, and lands on the bits a replay from genesis gets
 //   PC3 an unchanged state writes nothing: a tail of says alone writes no checkpoint; an unchanged engine shares one blob
 //   PC4 a purge still forces a full replay: earlier blobs gone, a boot right after it is from genesis; the next one follows it
+//   PC4b a crash between a purge's line and its unlinks: the next boot removes what they would have
 //   PC5 an audit re-run accepts the log: the strict fold, a sim replay from genesis (no disagreement), every checkpoint bootable,
 //       and the reference reader and chain verifier (spec/conformance, when python3 has `cryptography`)
 //   PC6 a clean shutdown (checkpointNow) writes one for a non-trivial tail, none for a trivial one
@@ -99,6 +100,21 @@ const sameAsGenesis = (b) => digestOf(b.sim().sim) === digestOf(simFold(b.entrie
   ok(after.length === 1, "PC4 …and the next quiet beat checkpoints after it (the whole log is the tail again)", { after, pseq });
   const b2 = reopen(x.dir);
   ok(b2.bootedFrom === after[0] && sameAsGenesis(b2), "PC4 …which the next boot starts from, on the same bits", { from: b2.bootedFrom }); }
+
+// ---- PC4b (bot review of #260, #15): a crash between the purge's line and its unlinks (here: every unlink fails) leaves the blobs
+// and the cache holding the purged value; the next boot removes them ----
+{ const x = world("p2", 6, N, { stateCache: { every: 5 } }); x.call("set", { id: "cr-5", component: "label", value: "secret" }); labels(x, N + 3);   // labels() leaves cr-5 alone
+  const C = cks(x.w); const files = C.map((s) => blobFile(x.dir, x.w.entries[s].body.state)); x.w.saveCache();
+  const cacheFile = path.join(x.dir, SC.CACHE_FILE), holds = () => fs.existsSync(cacheFile) && fs.readFileSync(cacheFile, "utf8").includes("secret");
+  const target = x.w.entries.findIndex((e) => e.kind === "change" && e.verb === "set" && e.body?.value === "secret");
+  const before = fs.readFileSync(cacheFile);   // a crash right after the line also stops the host's own cache rewrite: the old one is what's left
+  const unlink = fs.unlinkSync; let refusedUnlinks = 0; fs.unlinkSync = function () { refusedUnlinks++; throw new Error("EIO: injected (the crash after the purge line)"); };
+  try { T += 100; x.w.append({ kind: "purge", actor: "system", verb: "purge", body: { values: [{ seq: target }] } }); } finally { fs.unlinkSync = unlink; }
+  fs.writeFileSync(cacheFile, before);
+  const left = files.filter((f) => fs.existsSync(f)).length, cacheLeft = holds();
+  ok(C.length >= 1 && refusedUnlinks > 0 && left === files.length && cacheLeft, "PC4b (setup) the purge's unlinks failed: its blobs and the cache holding the value are still on disk", { C, refusedUnlinks, left, cacheLeft });
+  reopen(x.dir, { stateCache: { every: 5 } });
+  ok(files.every((f) => !fs.existsSync(f)) && !holds(), "PC4b the next boot removes the checkpoint blobs from before the purge and the cache that holds the purged value", { left: files.filter((f) => fs.existsSync(f)), cache: holds() }); }
 
 // ---- PC5 ----
 { const x = world("r"); labels(x, N + 1);

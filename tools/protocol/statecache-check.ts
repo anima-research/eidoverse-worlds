@@ -13,6 +13,7 @@
 //   SC9 other doubts: a malformed line after it → not read; a malformed line before it, or an unsigned log → never written
 //   SC10 boot time with and without the cache on a generated large log (numbers printed; the fold phase must shrink)
 //   SC11 the re-derive runs off the event loop
+//   SC12 a cache that parses but whose views are malformed: the world opens from the whole log, never throws
 // @ts-nocheck
 import "./fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -152,6 +153,14 @@ async function said(f) { const lines = [], ow = console.warn, oe = console.error
   const u = path.join(W, "g-unsigned"); fs.mkdirSync(u);
   fs.writeFileSync(path.join(u, "world.jsonl"), logOf(path.join(W, "a")).map(({ head, sig, ...e }) => JSON.stringify(e)).join("\n") + "\n");
   const x = reopen(u); x.saveCache(); ok(!fs.existsSync(cacheP(u)), "SC9 an unsigned log (no head to check) is never cached"); }
+
+// ---- SC12 (bot review of #260, #30): a cache that parses but whose views are malformed: the boot reads the whole log, never throws ----
+{ const { dir, w, call } = world("v", 3, 5); for (let i = 0; i < 6; i++) call("set", { id: "t-0", component: "label", value: `v ${i}` }); w.saveCache();
+  const c = cacheOf(dir); const had = !!(c.views && c.at); c.views = {}; fs.writeFileSync(cacheP(dir), JSON.stringify(c));
+  let b = null, threw = null; const { lines } = await said(() => { try { b = reopen(dir); } catch (x) { threw = String(x?.message ?? x); } });
+  ok(had && !threw && b && canon(b.state()) === truth(dir) && lines.some((l) => /fold cache not used \(its views don't fit/.test(l)),
+    "SC12 a cache whose views are malformed: the world opens from the whole log (equal to the fold), and says why", { had, threw, lines });
+  if (b) { now += 100; const r = request(b, "rowan", "set", { id: "t-1", component: "label", value: "after" }); ok(r.ok && canon(b.state()) === truth(dir), "SC12 …and takes writes after", r.refused); } }
 
 // ---- SC10 / SC11: a generated large log ----
 { const K = Number(process.env.SC_ENTRIES ?? 60000);
