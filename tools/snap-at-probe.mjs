@@ -71,7 +71,8 @@ try {
   clearInterval(keep);
   check('control: the first-person snap does not see the crate behind the agent', first >= 0 && first < 0.02, `red=${first}`);
   check('snapshot at: the crate puts the red crate in the middle third of the frame', at > 0.25, `red=${at}`);
-  check('an unknown thing is a clear refusal, not a picture of nothing', !missing.ok && /not a placed thing/.test(await missing.text()), String(missing.status));
+  const said = missing.ok ? '' : await missing.text();
+  check('an unknown thing is a clear refusal, not a picture of nothing', !missing.ok && /not a placed thing/.test(said), `${missing.status} ${said.slice(0, 120)}`);
 } finally {
   await browser.close(); ws.close(); await world.close();
 }
