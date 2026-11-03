@@ -1,6 +1,6 @@
 // tools/protocol/names-check.ts — names carry no body plan and set no kind against another (R 10-17 14:34–14:41, protocol
-// minor 0, unreleased). Each row red first (against BASE: `--control` extracts it and runs every row there) and held by a
-// mutation below; G rows are guards (green at base by design: what must NOT change).
+// minor 0, unreleased). Each row red first (against BASE: `--control` extracts it and runs every row there) and most held
+// by a mutation below (P1 has none); G rows are guards (green at base by design: what must NOT change).
 //   bun tools/protocol/names-check.ts                 every row
 //   bun tools/protocol/names-check.ts --only P1,C1    just those
 //   bun tools/protocol/names-check.ts --tree <dir>    against another checkout (a mutant, or the base)
@@ -60,8 +60,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the registry says trusted", "shared/protocol/componentspec.js", "  \"trusted-components\": { on: \"world\",", "  trusted: { on: \"world\",", ["T1"]],
   ["no rename at load", "shared/protocol/shaperepair.js", "export const RENAMED_COMPONENTS = Object.freeze({ \"@world\": Object.freeze({ trusted: \"trusted-components\" }) });", "export const RENAMED_COMPONENTS = Object.freeze({});", ["T2"]],
   ["drafts reads only the new key", "shared/drafts.js", "(worldC?.[TRUSTED] ?? worldC?.[OLD_TRUSTED])?.components", "worldC?.[TRUSTED]?.components", ["T3"]],
-  ["the old tier is the tier", "shared/protocol/consent.js", "export const TIERS = [\"everyone\", \"friends\"];", "export const TIERS = [\"strangers\", \"friends\"];", ["C1", "C2"]],
-  ["no old words on the wire", "shared/protocol/consent.js", "const tierOf = (t) => (Object.hasOwn(LEGACY_TIER, t) ? LEGACY_TIER[t] : t);", "const tierOf = (t) => t;", ["C2"]],
+  ["the old tier is the tier", "shared/protocol/consent.js", "export const TIERS = [\"everyone\", \"friends\"];", "export const TIERS = [\"strangers\", \"friends\"];", ["C1"]],
+  // "no old words on the wire" mutant RETIRED with C2 (recut A2; #260 375)
   ["drag is move again", "shared/protocol/consent.js", "drag: \"displace\", occupy: \"displace\", carry: \"displace\"", "drag: \"move\", occupy: \"displace\", carry: \"displace\"", ["C1"]],
   // "a friend may close the table" mutant RETIRED with C3 (recut A2)
   ["no presence migration at load", "shared/protocol/authority/storage.js", "if (migratePresence(w.presence)) w.presenceDirty = true;", "", ["C5"]],
