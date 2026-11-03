@@ -16,6 +16,8 @@ export const UNTRUSTED_KEY = 'eido.allowUntrustedLinks';
 
 export const allowUntrusted = () => lsGet(UNTRUSTED_KEY) === '1';
 export function setAllowUntrusted(on) { lsSet(UNTRUSTED_KEY, on ? '1' : '0'); bus.emit('media:trust', { allowUntrusted: !!on }); }
+// another tab's change reaches this one (the browser's storage event), so a revoke there stops untrusted fetches here too (bot #141)
+globalThis.addEventListener?.('storage', (e) => { if (e.key === UNTRUSTED_KEY) bus.emit('media:trust', { allowUntrusted: e.newValue === '1' }); });
 
 const muteKey = () => `ew-mymuted-${CONFIG.world ?? ''}`;
 let muted = new Set();
