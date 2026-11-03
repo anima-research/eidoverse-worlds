@@ -17,7 +17,8 @@
 // show IS the new fold (digest); the reference reader says ok with 0 malformed; chain.py verifies every head. The old
 // logs are kept beside them as world.jsonl.before-identities (and world.mod.jsonl.before-identities). A world that
 // already has that backup, or names nobody by a legacy name, is refused: a second run would overwrite the only way
-// back. The directory learns the new ids before the logs name them. Dry run without --apply.
+// back — unless world.jsonl is still byte-equal to its backup (a run killed before the renames): that run is finished
+// from the backups. The directory learns the new ids before the logs name them. Dry run without --apply.
 // usage: bun tools/protocol/migrate-identities.ts [--apply] [--trust-names] <world dir>…
 import fs from "node:fs";
 import path from "node:path";
@@ -43,11 +44,14 @@ const out: Record<string, unknown>[] = [];
 for (const dir of dirs) {
   const f = path.join(dir, "world.jsonl"), mf = path.join(dir, "world.mod.jsonl");
   const backups = [f, mf].map((x) => x + ".before-identities");
-  if (backups.some((b) => fs.existsSync(b))) { out.push({ dir, skipped: `a migration's backup is already here (${backups.filter((b) => fs.existsSync(b)).map((b) => path.basename(b)).join(", ")}): this world was migrated. A second run would overwrite the only way back; to run it again, restore the backup by hand first` }); continue; }
+  // a backup beside a world.jsonl still byte-equal to it: a run killed between the backup and the renames (#260 133); it
+  // finishes from the backups (fresh ids for a name the directory can't look up; a mod log already renamed is read from its backup)
+  const interrupted = fs.existsSync(backups[0]) && fs.readFileSync(f).equals(fs.readFileSync(backups[0]));
+  if (backups.some((b) => fs.existsSync(b)) && !interrupted) { out.push({ dir, skipped: `a migration's backup is already here (${backups.filter((b) => fs.existsSync(b)).map((b) => path.basename(b)).join(", ")}): this world was migrated. A second run would overwrite the only way back; to run it again, restore the backup by hand first` }); continue; }
   const raw = fs.readFileSync(f);
   const old = readLog(raw); const oldSt = fold(old);
   if (oldSt.status !== "ok") { out.push({ dir, skipped: `folds to ${oldSt.status}` }); continue; }
-  const oldMod: any[] = modLogAt(mf).mod;
+  const oldMod: any[] = modLogAt(interrupted && fs.existsSync(backups[1]) ? backups[1] : mf).mod;
   const worlds = path.dirname(path.resolve(dir));
   const directory = directoryFor(worlds); const cust = custodyAt(custodyFileIn(worlds));
   if (cust.sequencer() !== old[0].body.sequencer) { out.push({ dir, skipped: "this worlds dir's custody doesn't hold the world's sequencer key" }); continue; }
@@ -115,14 +119,14 @@ for (const dir of dirs) {
   const good = same && rd.status === "ok" && !malformed && ch.status === "ok" && ch.unsigned_tail === 0;
   if (good && apply) {
     // the backups first (never over an existing one), then the directory: the ids exist before any log names them
-    fs.copyFileSync(f, backups[0], fs.constants.COPYFILE_EXCL);
-    if (nextMod.length) fs.copyFileSync(mf, backups[1], fs.constants.COPYFILE_EXCL);
+    if (!interrupted) fs.copyFileSync(f, backups[0], fs.constants.COPYFILE_EXCL);
+    if (nextMod.length && !fs.existsSync(backups[1])) fs.copyFileSync(mf, backups[1], fs.constants.COPYFILE_EXCL);
     directory.put(planned);
     if (process.env.MIGRATE_IDENTITIES_DIE_BEFORE_LOGS) process.exit(9);   // tests only: a crash between the directory and the logs (migrate-identities-check MI6)
     if (nextMod.length) fs.renameSync(mtmp, mf);
     fs.renameSync(tmp, f);
   } else { fs.rmSync(tmp, { force: true }); fs.rmSync(mtmp, { force: true }); }
-  out.push({ dir, entries: old.length, moderation: oldMod.length, identities: Object.keys(planned).length, same, problems: problems.slice(0, 8), reader: rd.status, malformed, chain: ch.status, written: good && apply,
+  out.push({ dir, ...(interrupted ? { interrupted: true } : {}), entries: old.length, moderation: oldMod.length, identities: Object.keys(planned).length, same, problems: problems.slice(0, 8), reader: rd.status, malformed, chain: ch.status, written: good && apply,
     people: Object.values(planned).map((p) => `${p.name}${p.subs.length ? ` (${p.subs[0].split(":")[0]})` : " (legacy)"}`) });
 }
 for (const o of out) console.log(JSON.stringify(o));
