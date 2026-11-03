@@ -84,7 +84,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
 }
 { const d = oldWorld("cracked"); const before = tree(d);
   const r = xlate("cracked", { WORLD_TS_CORRUPT_BACKUP: "1" });
-  ok(r.code !== 0 && /backup/i.test(r.out) && /verif|SHA256SUMS|doesn't match/i.test(r.out) && /Nothing was (moved|changed)/.test(r.out) && same(tree(d), before) && !isWorldDir(d) && !temps().length,
+  ok(r.code !== 0 && /the backup's copy of log\.jsonl doesn't match the original/.test(r.out) && /the backup of "cracked" failed and was removed/.test(r.out) && /Nothing was (moved|changed)/.test(r.out) && same(tree(d), before) && !isWorldDir(d) && !temps().length,
     "UB2 a backup whose copy doesn't verify refuses the translation: nothing moved, the world as it was", { code: r.code, out: r.out.slice(-600) });
 }
 { const d = oldWorld("inside"); const before = tree(d);
@@ -95,7 +95,7 @@ const backupsOf = (name: string) => (fs.existsSync(B) ? fs.readdirSync(B).filter
 
 { const d = oldWorld("shed"); const before = tree(d);
   const r = xlate("shed", { WORLD_TS_FAULT_AT_STEP: "0" }), b = backupsOf("shed")[0], copied = b ? tree(b) : {}; delete copied.SHA256SUMS;
-  ok(r.code !== 0 && !!b && r.out.includes(`The verified backup made first is kept at ${b}`) && !/nothing was left behind/.test(r.out) && same(copied, before) && same(tree(d), before),
+  ok(r.code !== 0 && /the swap failed: \(injected\) step 0 failed/.test(r.out) && !!b && r.out.includes(`The verified backup made first is kept at ${b}`) && !/nothing was left behind/.test(r.out) && same(copied, before) && same(tree(d), before),
     "UB9 a translation that fails after its backup (an injected swap failure) says the verified backup is kept, and where; the world as it was", { code: r.code, b, out: r.out.slice(-500) }); }
 
 { oldWorld("vault"); const BB = path.join(root, "backups-sync"), o = { openSync: fs.openSync, fsyncSync: fs.fsyncSync }, fds = new Map(), synced = new Set<string>();
