@@ -4,10 +4,10 @@
 //   SH  physics.shape has a grammar: a bare [[min],[max]] is a box forever; every other shape is a tagged object
 //       ({type: sphere|capsule|cylinder|box|convex|mesh|compound}); convex, mesh and compound name a content address.
 //       The authority refuses anything else; the sim layer gives eidosim only boxes
-//   PH  physical properties are registered with units and a stated meaning of absence (mass, density, material,
-//       friction, restitution, damping, centre of mass, ccd, collision layers/mask, combine modes), a world's surfaces, kinematic, and a
-//       reserved joint:<name> the authority refuses until an engine carries joints
-//   TH  a throw or drop carries spin (w, rad/s, world frame) and its capture time (t); the act and the launch keep them
+//   PH  physical properties are registered with units and a stated meaning of absence (mass, density, surface,
+//       friction, restitution, damping, centre of mass, combine modes; ccd, layers, mask cut), a world's surfaces, kinematic, and a
+//       reserved physics-joint:<name> the authority refuses until an engine carries joints
+//   TH  a throw or drop carries spin (w, rad/s, world frame) and its capture time (t); the act keeps both, the launch carries w (t stays on the act)
 //   ST  the state-sync lane's sample shape {id, by, aseq, oseq, t, p, q, v, w, sleep}: absolute, self-contained
 //   CK  one time base: a round-trip clock, a sample's own capture time and sequence, sanitized at the server's fence
 //   SV  against a real server whose world log runs AHEAD of wall time: frames and the clock reply carry the authority's
