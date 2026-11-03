@@ -4,7 +4,7 @@
 //   - ONE map from each legacy identity to one id, applied everywhere a person is named: every actor, every
 //     roles:/imported-bans: key, a say's `to`, an act's capability.author and sponsor, and every record of the moderator
 //     log (world.mod.jsonl: who and actor). A role value's `sub` binds that NAME to its account first, so the person's
-//     acts land on the id they sign in as; otherwise a reserved agent name -> agent:<slug>; with --trust-names (a
+//     acts land on the id they sign in as; otherwise a reserved agent name -> agent:token:<slug>; with --trust-names (a
 //     PRIVATE server that runs TRUST_NAMES=1) a bare name -> local:<name>, the account a join there gets; otherwise a
 //     legacy identity an operator binds later. An escaped name (x--…) is read back first. The `sub` moves into the
 //     directory. The authority's own actors (system, world, sim), script:<entity> actors, ids already minted and a
