@@ -53,7 +53,8 @@ import { openLive } from "../../server/livehost.ts";
 import { ENGINE_CATALOGUE } from "../../server/modelcatalogue.ts";
 import { request, operatorRepair } from "../../shared/protocol/authority.js";
 import { banOf } from "../../shared/protocol/authority/rights.js";
-import { claimWords } from "../../client/lib/upgradeview.js";
+import * as UV from "../../client/lib/upgradeview.js";
+const { claimWords } = UV;
 
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail)?.slice(0, 700)}` : ""}`); } };
@@ -349,6 +350,12 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
   row("OR11", () => ok(r11.code !== 0 && !/^bound /m.test(r11.out) && k11.code === 0 && /^bound /m.test(k11.out),
     "OR11 under a genesis with an unsupported minor (the fold reads no world) nobody's entry counts; the same log with its own genesis binds Late", { r11, k11 }));
 }
+
+// UW (bot #260 29): the splash says "nothing was changed" only for the CLI's own refusal; no answer or a stopped CLI is unknown
+row("UW1", () => { const W = (code: string) => (typeof (UV as any).upgradeFailedWords === "function" ? (UV as any).upgradeFailedWords({ ok: false, refused: { code, reason: "x" } }) : "The upgrade was refused, and nothing was changed: x");
+  const w = { refused: W("refused"), stale: W("stale"), timeout: W("timeout"), offline: W("offline"), interrupted: W("interrupted"), failed: W("failed") };
+  ok(/nothing was changed/.test(w.refused) && /nothing was changed/.test(w.stale) && ["timeout", "offline", "interrupted", "failed"].every((k) => /outcome is unknown/.test(w[k]) && !/nothing was changed/.test(w[k])),
+    "UW1 an upgrade the CLI refused says nothing was changed; a timeout, a closed socket, a stopped CLI or a failure says its outcome is unknown", w); });
 
 console.log(`[owners-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

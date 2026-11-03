@@ -37,10 +37,11 @@ const CLI = path.join(ROOT, "tools", "protocol", "world.ts");
 const CLI_MS = 10 * 60_000;
 async function runCli(args: string[], extra: Record<string, string> = {}) {
   const p = Bun.spawn([process.execPath, CLI, ...args], { cwd: ROOT, env: { ...process.env, WORLDS_DIR, BACKUPS_DIR, OPT_DIR, ...extra }, stdout: "pipe", stderr: "pipe" });
-  const timer = setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, CLI_MS);
+  let stopped = false;
+  const timer = setTimeout(() => { stopped = true; try { p.kill(); } catch { /* gone */ } }, CLI_MS);
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   const code = await p.exited; clearTimeout(timer);
-  return { code, out, err };
+  return { code, out, err, stopped };
 }
 const tagged = (out: string, tag: string): Any => { const l = out.split("\n").find((x) => x.startsWith(`${tag} `)); try { return l ? JSON.parse(l.slice(tag.length + 1)) : null; } catch { return null; } };
 
@@ -113,6 +114,8 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     void runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--claim", "--approved", approved, "--json", "--", a.world], claimEnv(a)).then((r) => {
       const got = r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();
+      // a CLI the timer stopped may have been mid-swap: its outcome is unknown, never "refused" (bot #260 29)
+      if (!got && r.stopped) { a.refuse("interrupted", `the upgrade ran past ${CLI_MS / 60_000} min and was stopped; it may be half done: ${said.slice(-1200)}`); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} stopped (timeout)`); return; }
       if (!got) { a.refuse(/is not the one that was approved/.test(said) ? "stale" : "refused", said.slice(-1500)); console.log(`[upgrade] ${a.world}: upgrade by ${a.account} refused`); return; }
       // the world is on disk in this protocol now: the next join opens it (nothing of it was ever loaded while it was old)
       console.log(`[upgrade] ${a.world}: upgraded by ${a.account} as ${a.as} (report ${got.report}); backup ${got.backup}${got.claimed ? `; it had no owner: ${a.account} claimed it` : ""}`);
