@@ -70,8 +70,9 @@ export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
 // the cloud march's tier is THIS viewer's (SWEEP-3 S1: main's sky.quality was world data): balanced, or high; read at the next build
 export const SKY_QUALITY = ['balanced', 'high'];
-export const skyQuality = () => { try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
-export function setSkyQuality(q) { try { localStorage.setItem('ew-sky-quality', q === 'high' ? 'high' : 'balanced'); } catch { /* this session only */ } }
+let chosenQuality = null;   // this session's choice, kept even where storage refuses (bot #228)
+export const skyQuality = () => { if (chosenQuality) return chosenQuality; try { return localStorage.getItem('ew-sky-quality') === 'high' ? 'high' : 'balanced'; } catch { return 'balanced'; } };
+export function setSkyQuality(q) { chosenQuality = q === 'high' ? 'high' : 'balanced'; try { localStorage.setItem('ew-sky-quality', chosenQuality); } catch { /* this session only */ } }
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];

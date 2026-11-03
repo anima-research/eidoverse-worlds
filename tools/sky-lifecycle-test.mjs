@@ -341,6 +341,13 @@ try {
       has && aHas === true && off && aOff === false && noMod && aNoMod === false, { has, aHas, off, aOff, noMod, aNoMod });
   }
 
+  // bot #228: the detail tier chosen where storage refuses is kept for this session (the panel said "this session only")
+  { const realLS = Object.getOwnPropertyDescriptor(globalThis, 'localStorage'); localStorage.setItem('ew-sky-quality', 'balanced');
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: () => { throw new DOMException('denied', 'SecurityError'); } });   // a sandboxed frame
+    let threw = false; try { sky.setSkyQuality('high'); } catch { threw = true; } const kept = sky.skyQuality(); Object.defineProperty(globalThis, 'localStorage', realLS);
+    check('setup: storage refused and the catch held; nothing stored', !threw && localStorage.getItem('ew-sky-quality') === 'balanced', localStorage.getItem('ew-sky-quality'));
+    check('sky detail chosen where storage refuses still reads back high this session', kept === 'high' && sky.skyQuality() === 'high', kept);
+    sky.setSkyQuality('balanced'); }
   check('no reported errors', reports.length === 0, reports.slice(0, 3));
 } catch (e) { check('ran', false, e?.stack ?? String(e)); }
 
