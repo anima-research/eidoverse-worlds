@@ -20,6 +20,7 @@
 //   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
 //   T11 (r14 M1) server.ts writes only through requestwire (voice-moderate via requestAs); no direct w.log.request caller
+//   T12 a connection's queue behind a stalled request holds 256; the rest are refused busy at once, and it drains after
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/protocol/txn-check.ts
 //        … --mutants   each row's mutation, applied to a scratch copy of the tree: every one must turn its rows red
 // @ts-nocheck
@@ -382,6 +383,18 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
   await tryUntil('the reply to "operator-repair visitor"', () => t.replies.length === 100, { ms: 3000, step: 10 });
   const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
+
+// ---------------- T12 (bot review #260 110) ----------------
+// a connection's queue behind a stalled warm is bounded: past 256 waiting, a request is refused at arrival (busy), and once the
+// stall ends every queued one is answered and the queue is empty again
+{ const X = world("t12"); const guest = directoryFor(W).resolve({ sub: null, name: "guest12" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
+  X.g.hold(); send(t, "say", { text: "stalled" }); await tryUntil('"stalled" is held at the await', () => X.g.entered > 0, { ms: 3000, step: 10 });
+  for (let i = 0; i < 300; i++) send(t, "say", { text: `q${i}` });   // writes: no arrival meter, so each one meets the queue
+  await new Promise((r) => setTimeout(r, 50));
+  const early = t.replies.filter((m) => m.reply?.refused?.code === "busy").length;
+  X.g.release(); await tryUntil("every request is answered", () => t.replies.length === 301, { ms: 5000, step: 10 });
+  ok(early === 300 - 255 && t.replies.length === 301 && t.c.verbQueue === undefined,
+    "T12 behind a stalled request, a connection's queue holds 256: the rest are refused busy at once, and after the stall all are answered and the queue drains", { early, n: t.replies.length, queue: !!t.c.verbQueue }); }
 
 ok(!publishedNotOnDisk.length, "T3d every line any client was sent was on disk when it was sent", publishedNotOnDisk);
 // ---------------- T11 (review r14 M1, 10-18) ----------------

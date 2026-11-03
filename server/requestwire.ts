@@ -123,14 +123,21 @@ export const actorOf = (c: Client) => { if (!c.actorId) throw new Error(`request
  *  escapes before the request was answered is answered with the request's own id (`unanswered`), never an id-less error:
  *  a client never leaves a request pending. WorldLog.request never throws (its outcome rides its reply), so such a throw
  *  happened before the authority was reached: nothing was written (rolled back, code server-error). */
+const QUEUE_MAX = 256;   // requests one connection may have waiting behind a slow one (a stalled warm): past it, refused at arrival (bot review #260 110)
+const queued = new WeakMap<Client, number>();
 function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>, unanswered?: (r: Any) => void) {
+  const n = queued.get(c) ?? 0;
+  if (n >= QUEUE_MAX) { const no = { code: "busy", reason: `${n} of your requests are still waiting their turn`, fix: "wait for their replies, then ask again" };
+    try { if (unanswered) unanswered({ ok: false, txn: "rolled-back", refused: no }); else ws.send(JSON.stringify({ type: "error", error: `${no.reason}: ${no.fix}` })); } catch { /* gone */ }
+    return; }
+  queued.set(c, n + 1);
   const tail = (c.verbQueue ?? Promise.resolve()).then(fn).catch((err) => {
     console.error(`[ws] request from ${c.id} failed server-side:`, err);
     try { if (unanswered) unanswered(txnRefusal({ outcome: "rolled-back" }));
       else ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* gone */ }
   });
   c.verbQueue = tail;
-  void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
+  void tail.then(() => { queued.set(c, (queued.get(c) ?? 1) - 1); if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
 const forkAt = new Map<string, number>(), forksBy = new Map<string, number[]>();   // the fork limits' memory (config.ts FORK_*)
