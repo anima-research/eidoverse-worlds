@@ -283,7 +283,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!!jr3.snapshot && !!jm2.snapshot && Object.keys(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).length === 0, "A12 global-unban by name or by account lifts it: both join again, the list is empty", [jr3.errors, jm2.errors]);
   row2.close(); row3.close(); moss.close(); moss2.close();
   // A12b (bot #260 #41, #42): a global ban by u- identity binds the absent person's account, and days gives it an end; unban by identity lifts it
-  await sleep(200); const k2 = fen.msgs.length; fen.raw({ type: "global-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.length > k2, { ms: 2000, step: 50 });
+  const k2 = fen.msgs.length; fen.raw({ type: "global-ban", id: ids.Moss, days: 2, reason: "A12b" }); await tryUntil("Fen hears back on the identity ban", () => fen.msgs.slice(k2).some((m: any) => /ban/i.test(JSON.stringify(m))), { ms: 2000, step: 50 });
   const recI: any = Object.values(JSON.parse(fs.readFileSync(path.join(W, ".bans.json"), "utf8"))).find((b: any) => b.account === "agent:token:moss");
   const moss3 = await sock(s3.port); const jm3 = await moss3.join("keep", "Moss", { agentToken: "tok-moss" });
   const k3 = fen.msgs.length; fen.raw({ type: "global-unban", id: ids.Moss }); await tryUntil("Fen hears back on the identity unban", () => fen.msgs.length > k3, { ms: 2000, step: 50 });
