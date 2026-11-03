@@ -803,7 +803,7 @@ try {
 // bot review #260 51: on a JOIN_TOKEN server /upload takes the key as an Authorization Bearer header (RFC 6750), as the read
 // door does; ?token= still works. as=script answers 415 right after the door, so 415 = let in, 401 = refused at the door.
 { const { spawnSync } = await import("node:child_process");
-  const src = `const { handleUpload } = await import(${JSON.stringify(new URL("../server/upload.ts", import.meta.url).pathname)});
+  const src = `const { handleUpload } = await import(${JSON.stringify(new URL("../server/upload.ts", import.meta.url).href)});   // a file URL: a pathname is "/D:/…" on Windows
     const go = async (q, h, ip) => { const u = new URL("http://127.0.0.1/upload?as=script" + q); return (await handleUpload(new Request(u, { method: "POST", body: "x", headers: h }), u, { requestIP: () => ({ address: ip }) })).status; };
     console.log(JSON.stringify({ bearer: await go("", { authorization: "Bearer up-door" }, "10.0.0.1"), query: await go("&token=up-door", {}, "10.0.0.2"),
       wrong: await go("", { authorization: "Bearer nope" }, "10.0.0.3"), none: await go("", {}, "10.0.0.4") }));`;
