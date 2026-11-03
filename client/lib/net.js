@@ -1261,7 +1261,14 @@ async function onSnapshot(msg) {
 
   // State adopts the snapshot FIRST, synchronously: the authority's own cut, drawn as the view of THIS client's fold of it
   // (the snapshot's `state` is the chat window: chat isn't world state).
-  if (!msg.cut?.state) { replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)')); return; }
+  if (!msg.cut?.state) {
+    replica.reset(); report('snapshot', new Error('the server sent no world cut (an old server?)'));
+    // an older server: not "live" with nothing loaded — say so, fail the queued says, hang up without a redial (#470)
+    net.joined = false; net.status = 'rejected'; bus.emit('net', net); failSays();
+    toast('this server is older than the page: nothing will load — reload once it is updated', 'warn', 60000);
+    intentionalClose = net.ws ?? true; try { net.ws?.close(4000); } catch { /* already gone */ }
+    return;
+  }
   replica.adopt(msg.cut); bus.emit('my-acts', msg.cut.mine ?? []); bus.emit('cut-adopted'); bus.emit('holds', msg.cut.holds ?? {});
   shadowHydrate(replica.view(msg.state), typeof msg.throughSeq === 'number' ? msg.throughSeq : -1);
   rememberWorld();   // the door said yes, and the shadow now holds what is here
