@@ -11,7 +11,8 @@
 //     (<worlds dir>/.custody.json, server/custody.ts), so a running server reads the same keys.
 //   - nonce: the first 16 bytes of sha256(the old log's bytes): unique per log, and reproducible.
 //   - translatedFrom can't stay in a known minor's genesis (its fields are exact). The old genesis line is kept,
-//     verbatim, in <world dir>/world.genesis-before.jsonl with both world ids. (A newly translated world carries it as the
+//     verbatim, in <world dir>/world.genesis-before.jsonl with both world ids; the whole old log is kept, fsynced, as
+//     <world dir>/world.pre-genesis-migration.jsonl before the new one replaces it (durably: temp, fsync, rename, directory sync). (A newly translated world carries it as the
 //     `translated` act after genesis instead; an existing log can't gain an entry in the middle.)
 //   - every later line's `world` is rewritten from the old id to the new one (a text replace: number spellings kept).
 // SAFETY: a log is rewritten only if the state digest is the same before (the previous fold, from git --old-fold, default d4e0677a~1) and after
@@ -24,8 +25,10 @@ import { readLog, fold, digest, worldIdOf, parseLine, DIALECT, VERSION } from ".
 import { custodyAt } from "../../server/custody.ts";
 import { custodyFileIn } from "../../server/keyfiles.ts";
 import { ENGINE } from "./common.ts";
+import { appendDurable, replaceDurable, syncDir, writeAll } from "../../server/durable.ts";
 
 const apply = process.argv.includes("--apply");
+const KEPT = "world.pre-genesis-migration.jsonl";   // the old log, whole, kept beside the migrated one
 // --old-fold <git ref>: the fold that still reads the OLD genesis (the "before" digest). Default: the tree just before the
 // §3d port (d4e0677a~1) for shape A, the last tree before the names pass's genesis change (4d7b81cd) for shape B. HEAD is
 // wrong: its fold rightly reads an old genesis as no-world.
@@ -59,9 +62,12 @@ try {
     const py = Bun.spawnSync(["python3", path.join(ENGINE, "spec/conformance/reader.py"), "/dev/stdin", "--json"], { stdin: Buffer.from(next) });
     const dPy = (() => { try { return JSON.parse(py.stdout.toString()).digest; } catch { return null; } })();
     const same = dBefore !== null && dBefore === dAfter && dAfter === dPy;
+    const kept = path.join(dir, KEPT);
+    if (same && apply && fs.existsSync(kept) && !fs.readFileSync(kept).equals(raw)) { out.push({ dir, shape, refused: `${kept} already holds other bytes: move it aside first. Nothing was changed.` }); continue; }
     if (same && apply) {
-      fs.appendFileSync(path.join(dir, "world.genesis-before.jsonl"), JSON.stringify({ oldId, newId, genesis: g, at: new Date().toISOString() }) + "\n");
-      fs.writeFileSync(f + ".tmp", next); fs.renameSync(f + ".tmp", f);
+      if (!fs.existsSync(kept)) { const t = `${kept}.tmp`, fd = fs.openSync(t, "w"); try { writeAll(fd, raw); fs.fsyncSync(fd); } finally { fs.closeSync(fd); } fs.renameSync(t, kept); syncDir(dir); }   // the whole old log, durable, before it is replaced (bot review #260 10)
+      appendDurable(path.join(dir, "world.genesis-before.jsonl"), JSON.stringify({ oldId, newId, genesis: g, at: new Date().toISOString() }));
+      replaceDurable(f, next);
     }
     out.push({ dir, shape, status: [before.status, after.status], digest: dBefore?.slice(0, 16), same, written: same && apply, owners: owners.map((t) => t.length),
       ...(same ? {} : { dAfter: dAfter?.slice(0, 16), dPy: dPy?.slice(0, 16), py: py.stderr.toString().slice(0, 200) }) });
