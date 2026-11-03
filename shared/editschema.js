@@ -1533,7 +1533,7 @@ export function editOps(ent, id, edits, live = {}) {
   // (design §5): read q in the entity's order, set the typed channels, recompose.
   if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
     basePlace();
-    const q0 = pv.q ?? qFromYaw(pv.yaw ?? 0);
+    const q0 = headingSet ? qWithHeading(pv.q ?? qFromYaw(pv.yaw ?? 0), place.yaw) : (pv.q ?? qFromYaw(pv.yaw ?? 0));   // a heading typed with them turns first (bot #260 111)
     const order = rotOrderOf(live);   // this viewer's (live.rotOrder): Euler channels are a view (PROTOCOL §9.1)
     if (Object.keys(quatSet).length) {
       const qn = qNorm(q0.map((v, i) => (quatSet[i] ?? v)));
@@ -1547,7 +1547,7 @@ export function editOps(ent, id, edits, live = {}) {
       if (e[0] === 0 && e[2] === 0) place.yaw = round(e[1], 4);
       else { const q = qFromEuler(e, order); place.q = q; place.yaw = qHeading(q); euler = { order, e, q }; }
     } else {
-      const { e } = eulerFromQ(place.q ?? q0, order, live.euler ?? uprightHint(pv));
+      const { e } = eulerFromQ(place.q ?? q0, order, headingSet ? uprightHint({ q: q0, yaw: place.yaw }) : live.euler ?? uprightHint(pv));
       for (const [i, v] of Object.entries(rotSet)) e[+i] = v;
       const q = qFromEuler(e, order);
       place.q = q; place.yaw = qHeading(q); euler = { order, e, q };
