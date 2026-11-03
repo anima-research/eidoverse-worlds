@@ -294,7 +294,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
         // disk (where the fresh log is), and everyone present reloads (review of the house's PR #9: "stays closed" wasn't so)
         if (worlds.get(w.name) === w) worlds.delete(w.name);
         w.broadcast({ type: "world-reset", world: w.name, by: c.id });
-        return err("the world was erased (its history is archived), but the server couldn't open the fresh world just now: it opens again from disk at the next join, and if that fails too, ask whoever runs this server (what failed is in its log). Resetting again erases nothing more"); }
+        return err("the world was erased (its history is archived), but the server couldn't open the fresh world just now: it opens again from disk at the next join, and if that fails too, ask whoever runs this server (what failed is in its log). There is nothing more to erase right now"); }
       // what the world does now, and whether to reset again (house 6340433633): world.ts retires a log that was moved aside
       else return err(e?.logMoved
         ? "the reset failed partway: the world's old log was moved aside (the server's log says where), so this world takes no writes until the server's operator puts it back. Resetting again is safe: it finishes the erase, and the old log stays in the archive this attempt made"

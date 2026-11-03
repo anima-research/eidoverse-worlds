@@ -62,7 +62,7 @@ export const SWAP_MARKER = "translation.lock";
 export const isSwapUnfinished = (dir: string): boolean => fs.existsSync(path.join(dir, SWAP_MARKER));
 /** What the operator does about an unfinished swap (boot notice, openLive's refusal). */
 export const swapRecovery = (name: string, tool = "bun tools/protocol/world.ts") => `its in-place translation was interrupted mid-swap (${SWAP_MARKER} is still in its directory), so its bans and identity mappings may not be in place yet. `
-  + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only); then, to have the old world back: ${tool} rollback ${name}.`;
+  + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only; it says what it did). If the translated world landed and you want the old one back: ${tool} rollback ${name}.`;   // bot review #260 57
 
 const RETRY = Symbol("the tail boot's whole-log retry: its refusal was said once");
 /** Open (or prepare to found) the world stored in `dir`. */

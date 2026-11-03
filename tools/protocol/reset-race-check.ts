@@ -48,9 +48,9 @@ ok(old.requestSync("olive", "say", { text: "late" })?.refused?.code === "reset",
   const { worlds, getWorld } = await import("../../server/world.ts");
   const gone = !worlds.has("reopen"); const next = gone ? getWorld("reopen") : null;
   const fresh = !!next && next !== rw && !next.log.retired && !!next.log.live.worldId && next.log.live.worldId !== erasedId;   // the fresh world, not the erased one
-  ok(/was erased/.test(e) && /next join/.test(e) && /whoever runs this server/.test(e) && /Resetting again erases nothing more/.test(e) && !/nothing changed/.test(e) && !/stays closed/.test(e)
+  ok(/was erased/.test(e) && /next join/.test(e) && /whoever runs this server/.test(e) && /There is nothing more to erase right now/.test(e) && !/Resetting again/.test(e) && !/nothing changed/.test(e) && !/stays closed/.test(e)
     && archived && casts.some((m) => m.type === "world-reset") && gone && fresh,
-    "RR6 the fresh log doesn't open after the reset swapped it: the owner is told the world was erased and opens at the next join (who to ask if not), resetting again erases nothing more; everyone present reloads, and the next join opens the fresh world from disk, never the erased one from memory", { e, archived, gone, fresh, casts: casts.map((m) => m.type) }); }
+    "RR6 the fresh log doesn't open after the reset swapped it: the owner is told the world was erased and opens at the next join (who to ask if not), and that there is nothing more to erase right now; everyone present reloads, and the next join opens the fresh world from disk, never the erased one from memory", { e, archived, gone, fresh, casts: casts.map((m) => m.type) }); }
 // RR6b: once the fresh log is open the reset stands: a failure starting the fresh world's scripts (it has none) is the
 // server log's, and everyone present is told of the reset as usual
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts"); const { WorldScripts } = await import("../../server/scripts.ts");
