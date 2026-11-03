@@ -131,10 +131,11 @@ const todo = files.filter((f) => !only.length || only.some((o) => rel(f).include
 const results: Res[] = [];
 const t0 = performance.now();
 const browserQ = todo.filter(launchesBrowser), otherQ = todo.filter((f) => !browserQ.includes(f));
+const browserSet = new Set(browserQ);   // the lane drains browserQ; the report reads this (bot #412)
 const lane = async (q: string[]) => { while (q.length) {
     const f = q.shift()!; const r = await run(f); results.push(r);
     const mark = { pass: "ok   ", loaded: "ok   ", red: "RED  ", dead: "DEAD ", timeout: "SLOW ", env: "ENV  ", skip: "skip ", flaky: "FLAKY" }[r.kind];
-    console.log(`${mark} ${rel(f)}${browserQ.includes(f) ? " [browser, alone]" : ""}${r.why ? `  — ${r.why}` : ""}${r.kind === "red" && r.tail ? `\n        ${r.tail.replace(/\n/g, "\n        ")}` : ""}`);
+    console.log(`${mark} ${rel(f)}${browserSet.has(f) ? " [browser, alone]" : ""}${r.why ? `  — ${r.why}` : ""}${r.kind === "red" && r.tail ? `\n        ${r.tail.replace(/\n/g, "\n        ")}` : ""}`);
   } };
 await Promise.all([lane(browserQ), ...Array.from({ length: Math.max(1, JOBS - (browserQ.length ? 1 : 0)) }, () => lane(otherQ))]);
 
@@ -145,7 +146,7 @@ if (!importOnly && JOBS > 1) for (const r of results.filter((x) => x.kind === "r
 }
 
 const by = (k: Res["kind"]) => results.filter((r) => r.kind === k).map((r) => rel(r.file)).sort();
-console.log(`\n${results.length} files in ${((performance.now() - t0) / 1000).toFixed(0)} s (${importOnly ? "import-only" : "full"}, ${JOBS} at a time, ${TIMEOUT_S} s each; ${browserQ.length} launch a browser: one at a time)`);
+console.log(`\n${results.length} files in ${((performance.now() - t0) / 1000).toFixed(0)} s (${importOnly ? "import-only" : "full"}, ${JOBS} at a time, ${TIMEOUT_S} s each; ${browserSet.size} launch a browser: one at a time)`);
 for (const [k, label] of [["dead", "dead at import"], ["red", "red"], ["timeout", "timed out"], ["flaky", "red only beside others (pass alone)"], ["env", "need what this host lacks"], ["skip", "skipped"]] as const) {
   const l = by(k); if (l.length) console.log(`  ${label}: ${l.length}\n    ${l.join("\n    ")}`);
 }

@@ -19,6 +19,7 @@ ${tail}
 `;
 fs.writeFileSync(path.join(dir, "a-holds-pipes-passes-test.ts"), fixture("process.exit(0);"));
 fs.writeFileSync(path.join(dir, "b-holds-pipes-hangs-test.ts"), fixture("setInterval(() => {}, 1 << 30);"));
+fs.writeFileSync(path.join(dir, "c-browser-test.ts"), `// puppeteer: the mark suites.ts reads as "launches a browser" (bot #412: the report counts it after its lane drained the queue)\nconsole.log("fixture ran"); process.exit(0);\n`);
 
 const t0 = performance.now();
 const rc = spawn(process.execPath, [path.join(ENGINE, "tools/run-client.ts"), "--dir", dir, "--jobs", "1", "--timeout", "3"],
@@ -33,4 +34,5 @@ for (const p of fs.readFileSync(pids, "utf8").split("\n").filter(Boolean)) try {
 ok(finished, `run-client finished while both grandchildren still held the pipes (${s.toFixed(1)} s; they live 90 s)`, out.slice(-400));
 ok(/^ok\s+\S*a-holds-pipes-passes-test\.ts/m.test(out), "the file that exited 0 is a pass", out.slice(-400));
 ok(/^SLOW\s+\S*b-holds-pipes-hangs-test\.ts/m.test(out), "the file that hung is a timeout", out.slice(-400));
+ok(/^ok\s+\S*c-browser-test\.ts \[browser, alone\]/m.test(out) && /; 1 launch a browser/.test(out), "the browser-marked file is reported [browser, alone] and counted once the lanes have drained the queue (bot #412)", out.slice(-600));
 console.log(`[run-client-settle] ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
