@@ -706,7 +706,7 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   // reason names who gives it and the set that does
   check('no grant names who gives flight and the roles set that does it',
         /a role's fly permission, which the world's owner/.test(reasonOf({ role: 'owner', fly: false })) &&
-        /set \{id: "@world", component: "roles:<your id>", value: \{role: <your role>, can: \{fly: true\}\}\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
+        /set \{id: "@world", component: "roles:<your id>", value: \{can: \{fly: true\}\}, merge: true\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
   check('a wingless body is told it has no wing bones', /no wing bones/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
   const oneChain = { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] };
   check('four wing bones in one chain are counted as such, not called too few',
