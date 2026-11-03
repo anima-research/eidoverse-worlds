@@ -1,7 +1,7 @@
 // tools/protocol/chrome.ts — the one place a Chromium is found and its launch flags are chosen: the gate's preflight
-// (run.ts), the bench harness (tools/harness.ts), browser-check's playwright launch, and the standalone benches.
+// (run.ts), the bench harness (tools/harness.ts), browser-check's CDP launch (cdpPage), and the standalone benches.
 //   findChrome()            CHROME, else playwright's own build, else this OS's installed Chrome/Edge, else (Linux) the
-//                           newest build already in playwright's cache
+//                           newest full Chromium in playwright's cache, else its newest headless shell
 //   chromeArgs({…})         a CDP-driven launch: headless, debugging port, fresh profile, quiet profile flags, this OS's flags
 //   platformArgs()          only this OS's flags (+ EIDO_CHROME_ARGS): what a playwright launch adds to its own
 // EIDO_CHROME_ARGS="<flags>" is appended last, an override for an experiment; a flag every run on an OS needs belongs in
