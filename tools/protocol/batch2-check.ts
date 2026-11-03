@@ -242,12 +242,14 @@ const cases: Case[] = [
         { seq: 2, ts: 3, actor: "mica", verb: "spawn", args: { id: "tree", lib: "crate", pos: [0, 0, 0] } },
         { seq: 3, ts: 4, actor: "mica", verb: "comp", args: { id: "tree", type: "story", data: { title: "The first marker tree", text: "Mica's fire — already burning when FC arrived.", assetAuthor: "SkyeShark", plantedBy: "mica", practice: "One tree, renewing, not accumulating. The next event belongs to the next planter.", markedEntity: "fire" } } }];
       const r = TV1.translate(old, {}); const c = r.final.translated[TV1.enc("tree")] ?? {};
-      return { story: c.story, imported: c["imported:story"], div: r.stats.divergences }; },
-    good: (o) => o.story?.title === "The first marker tree" && o.story?.text === "Mica's fire — already burning when FC arrived.\n\nOne tree, renewing, not accumulating. The next event belongs to the next planter." && JSON.stringify(o.story?.marks) === '["fire"]'
+      cast(s); for (const id of ["fire", "tree"]) s.call("olive", "create", { id, components: { transform: { pos: [0, 0, 0] } } });
+      const edit = s.call("olive", "set", { id: "tree", component: "story", value: { ...c.story, title: "The first marker tree, kept" } });   // the translated story, as a story edit
+      return { story: c.story, imported: c["imported:story"], div: r.stats.divergences, edit: show(edit), kept: comp(s, "tree", "story")?.title }; },
+    good: (o) => o.edit === "ok" && o.kept === "The first marker tree, kept" && o.story?.title === "The first marker tree" && o.story?.text === "Mica's fire — already burning when FC arrived.\n\nOne tree, renewing, not accumulating. The next event belongs to the next planter." && JSON.stringify(o.story?.marks) === '["fire"]'
       && Object.keys(o.story).sort().join() === "marks,text,title" && o.imported?.plantedBy === "mica" && o.imported?.assetAuthor === "SkyeShark" && !o.div },
 
   // ---------------- P: picture ----------------
-  { id: "P1", what: "picture with no part (a quad of its own): admitted, {lit: scene, flip: false, width: 1} written out, on an Empty too", run(s) { cast(s);
+  { id: "P1", what: "picture with no part (a quad of its own): admitted, {lit: scene, width: 1} written out and flip left absent, on an Empty too", run(s) { cast(s);
       s.call("olive", "create", { id: "poster", components: { transform: { pos: [0, 0, 0] } } });
       const r = s.call("olive", "set", { id: "poster", component: "picture", value: { src: IMG, description: "a print of the hearth at dusk" } });
       return { r: show(r), v: comp(s, "poster", "picture"), noted: (r.notes ?? []).some((n: any) => /isn't a component/.test(n.why)) }; },
@@ -372,7 +374,7 @@ const cases: Case[] = [
       const set = (target: string) => s.call("olive", "set", { id: "statue", component: "look-at", value: { target } });
       const typo = set("lmap");
       return { typo: code(typo), dym: typo.refused?.didYouMean, at: code(set("@viewers")), self: code(set("statue")), kid: code(set("hat")), near: show(set("@nearest")), who: show(set("u-" + "a".repeat(20))) }; },
-    good: (o) => o.typo === "not-found" && o.dym?.[0] === "lamp" && o.at === "shape" && o.self === "loop" && o.kid === "loop" && o.near === "ok" },
+    good: (o) => o.typo === "not-found" && o.dym?.[0] === "lamp" && o.at === "shape" && o.self === "loop" && o.kid === "loop" && o.near === "ok" && o.who === "ok" },
   { id: "L3", what: "one driver per node: look-at + a spin on the same node refused in either order, naming both; a spinning part + a whole-thing look-at fine; bob + look-at fine; look-at on a dynamic thing refused", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       for (const id of ["a", "b", "c", "d", "e"]) s.call("olive", "create", { id, model: "crate", place: { at: [3 + ["a", "b", "c", "d", "e"].indexOf(id) * 2, 0] } });
