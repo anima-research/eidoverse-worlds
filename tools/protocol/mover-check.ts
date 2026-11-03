@@ -14,8 +14,8 @@
 //       in water — a terrain hill (up, over, down at a run), wading (and into a stone a wader's box meets), swimming (and
 //       standing up on a sunk rock), hauling out onto a dock 0.5 m above the surface (both accept) / 0.6 m (both refuse,
 //       same stride), a dug pit's rim at the waterline (both accept) / a terrain bank 0.6 m above the water (both refuse);
-//       each with the mover's y and with the bed's (the agent's permit). GP: place {at}, create {at: [x, z]} and the spawn
-//       alias seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world. Red first: before the fix 19 G rows
+//       each with the mover's y and with the bed's (the agent's permit). GP: place {at}, create {at: [x, z]} and the old spawn's
+//       words mapped as create takes them (no alias) seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world. Red first: before the fix 19 G rows
 //       failed (G3 bed, G4, G5 bank, GP1-3, GP5); G1/G2-stone/G5-rim/GP4 were seen red under mutations (see the commit)
 //   G6  the body's own size (holes r3 F2): 1.2 m / 2.2 m / scale 2 / scale 0.5 bodies, the same verdict from stepWalk and from
 //       the authority (which is sent the height and scale with the moves); a size's bounds
@@ -515,8 +515,8 @@ if (M) {
     const sp = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `sp${i}` }), spy = TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: yx, z: yz, yaw: 0.7, id: `sy${i}` });
     // the alias's old id is the thing's label now (R 10-17: the authority mints ids): the new thing is the reply's ref
     const rsp = call("hill", "olive", "create", sp), rspy = call("hill", "olive", "create", spy); const spId = rsp.refs?.[0]?.id, syId = rspy.refs?.[0]?.id;
-    ok(rsp.ok && near(bottom("hill", spId), hH(sx, sz), 0.01), `GP3 the spawn alias {lib, x, z} on the hill: the same (${r3(hH(sx, sz))} m)`, { args: sp, got: bottom("hill", spId) });
-    ok(rspy.ok && near(bottom("hill", syId), hH(yx, yz), 0.01), `GP3 the spawn alias with a yaw (place {at, facing}): the same (${r3(hH(yx, yz))} m)`, { args: spy, got: bottom("hill", syId) });
+    ok(rsp.ok && near(bottom("hill", spId), hH(sx, sz), 0.01), `GP3 the old spawn's words {lib, x, z}, mapped as create takes them (no alias), on the hill: the same (${r3(hH(sx, sz))} m)`, { args: sp, got: bottom("hill", spId) });
+    ok(rspy.ok && near(bottom("hill", syId), hH(yx, yz), 0.01), `GP3 the old spawn's words with a yaw (place {at, facing}): the same (${r3(hH(yx, yz))} m)`, { args: spy, got: bottom("hill", syId) });
     const rfs = call("flat", "olive", "create", { id: `fc${i}`, model: "crate", at: [cx, cz] }).ok && bottom("flat", `fc${i}`) === 0 ? call("flat", "olive", "create", TOOL_ALIAS_ARGS.spawn({ lib: "crate", x: sx, z: sz, id: `fs${i}` })) : null; const fsId = rfs?.refs?.[0]?.id;
     ok(rfs?.ok && bottom("flat", fsId) === 0
       && call("flat", "olive", "create", { id: `fp${i}`, model: "crate" }).ok && call("flat", "olive", "place", { id: `fp${i}`, at: [px, pz] }).ok && bottom("flat", `fp${i}`) === 0,
