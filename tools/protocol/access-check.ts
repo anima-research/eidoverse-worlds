@@ -461,12 +461,16 @@ const gonePid = await exitedPid();
   fs.rmSync(T.lock, { force: true }); }
 { // A9 (final review M1): an invite-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
-  const base = { access: { join: "listed" } };
+  const { effectiveOf } = await import(path.join(ENGINE, "shared/protocol/roles.js"));
+  // an owner, or roleIdOf caps everyone at member; the stranger holds the default role, member (bot #260 114)
+  const base = { access: { join: "listed" }, "roles:u-owner000000000000000000": { role: "owner" } };
   const cases = [
     ["default-role {can:{kick}}", { ...base, "default-role": { role: "member", can: { kick: true } } }],
     ["default-role {role: moderator}", { ...base, "default-role": { role: "moderator" } }],
-    ["role-defs.visitor.can.mute", { ...base, "default-role": { role: "member" }, "role-defs": { visitor: { can: { mute: true } } } }],
+    ["role-defs.member.can.mute (visitor's new name)", { ...base, "default-role": { role: "member" }, "role-defs": { member: { can: { mute: true } } } }],
   ];
+  const powers = cases.map(([n, wc]) => [n, effectiveOf(wc, "u-stranger00000000000000").permissions.filter((p) => ["kick", "mute", "ban"].includes(p))]);
+  ok(powers.every(([, p]) => p.length), "A9 (setup) each row really hands the stranger a moderation power", powers);
   const got = cases.map(([n, wc]) => [n, entryFor({ name: "m1", wc, label: "members" }, { account: "acct-stranger", actorId: "u-stranger00000000000000", addr: "1.2.3.4" }, "embody")?.code ?? "admitted"]);
   ok(got.every(([, c]) => c !== "admitted"), "A9 a stranger in an invite-only world stays out even when the default role (or a role-def) carries a moderation power", got);
   const mem = { ...cases[1][1], "roles:u-member0000000000000000": { role: "moderator" } };
