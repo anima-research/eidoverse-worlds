@@ -17,7 +17,7 @@ import { readback, purgedSeqs, delOp, holdsCustody, isE, opsQuiet, setOp, versio
 import { worldT } from "./math.js";
 import { r3 } from "../round.js";
 import { legacyHosts, liftHostOps, storedLegacyHosts } from "./sockets.js";
-import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, roleOf } from "./rights.js";
+import { creatorOf, isBanned, isScriptActor, lastSetterOf, may, muteOf, roleOf } from "./rights.js";
 import { bodyGate } from "./bodyconsent.js";
 import { scriptUse } from "./use.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
@@ -111,6 +111,7 @@ function activate(w, id, name, ev) {
   const cap = { kind: "script", key, id, sponsor: sp.sponsor, ids: scopeIds(st, id, v.scope?.ids), comps: v.scope?.comps ?? [], create: !!v.scope?.create };
   const mark = (code, why) => out("refused", { code, why, sponsor: sp.sponsor, ...logs });
   if (res.says.length && !v.scope?.say) return mark("scope", `${key} doesn't declare say: true`);
+  if (res.says.length && muteOf(w, sp.sponsor, "chat")) return mark("muted", `its sponsor ${said(sp.sponsor)} is muted in this world's chat; nothing ran`);   // as the say verb (bot review #260 16)
   for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark("scope", `${key} doesn't declare bodies: ['${b.kind}']`);
   for (const u of uses) if (!cap.ids.includes(u.id)) return mark("scope", `${key} on ${id} may use only ${cap.ids.join(", ") || "nothing"}, not ${u.id}`);
   { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length + uses.length); if (why) return mark("budget", why); } // what it would actually write

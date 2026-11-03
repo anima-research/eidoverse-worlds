@@ -50,6 +50,7 @@ const MUTANTS: [string, string, string, string[]][] = [
   ["hygiene at upload", "authority/scriptrun.js", "const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason", "const dirty = null; if (dirty) refuse(dirty.code, dirty.reason", ["H1"]],
   ["scope names checked for typos at install", "authority/scripts.js", "if (near.length) refuse(\"schema\", `${at}.scope.comps:", "if (false) refuse(\"schema\", `${at}.scope.comps:", ["H4"]],
   ["syntax at install", "authority/scripts.js", "const syn = w.scripts?.checkSyntax?.(blob.text); if (syn)", "const syn = null; if (syn)", ["H3"]],
+  ["chat-muted sponsor can't say", "authority/scriptrun.js", "if (res.says.length && muteOf(w, sp.sponsor, \"chat\"))", "if (false)", ["B15b"]],
   ["banned → suspended", "authority/scriptrun.js", "if (isBanned(w, sp.sponsor)) return out(\"suspended\"", "if (false) return out(\"suspended\"", ["B15"]],
   ["adopt base", "authority/scriptrun.js", "if (base !== undefined && lt && lt.seq > base) refuse(\"stale\", `${a.id}.${key}", "if (false) refuse(\"stale\", `${a.id}.${key}", ["B14"]],
   ["always needs an owner", "authority/scripts.js", "if (v.always === true && prev?.always !== true && !Roles.isOwner(role))", "if (false)", ["B17"]],
@@ -481,6 +482,12 @@ const cases: Case[] = [
       return { ban: show(ban), r: st(s, r), why: sv?.why, status: sv?.status, newKinds: kinds(s.entries().slice(n0)), worldLogHasBan: s.entries().some((e: any) => JSON.stringify(e).includes('"ban"')),
         modLog: s.w().mod.some((m: any) => m.verb === "ban" && m.who === "bob") }; },
     good: (o) => o.r === "suspended" && o.status === "suspended" && /banned/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && !o.worldLogHasBan && o.modLog },
+  { id: "B15b", what: "a chat-muted sponsor's script can't say (bot review #260 16): the activation is refused as muted, no say and no act is written; a voice-only mute changes nothing", run(s) { cast(s);
+      bell(s, "bob"); const voice = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["voice"] }); const rv = s.call("vic", "use", { id: "bell1", action: "ring" });
+      const mute = s.call("olive", "mute", { who: "bob", minutes: 30, channels: ["chat"] }); const n0 = s.entries().length;
+      const r = s.call("vic", "use", { id: "bell1", action: "ring" });
+      return { voice: show(voice), rv: st(s, rv), mute: show(mute), r: st(s, r), code: r.script?.code, why: r.script?.why, newKinds: kinds(s.entries().slice(n0)), scriptSays: s.entries().slice(n0).filter((e: any) => e.kind === "say" && e.actor === "script:bell1").length }; },
+    good: (o) => o.voice === "ok" && o.rv === "ran" && o.mute === "ok" && o.r === "refused muted" && o.code === "muted" && /muted/.test(o.why) && JSON.stringify(o.newKinds) === '{"act":1}' && o.scriptSays === 0 },
   { id: "B16", what: "no-op elision (a stated rule for script batches, §3d): a use that re-sets the same value logs the visitor's act and nothing else", run(s) { cast(s);
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       install(s, "bob", "lamp", "on", onUse(`world.set("self", "light", { kind: "point", color: 1, intensity: 1, range: 6, decay: 2 });`), { scope: { ids: "self", comps: ["light"] }, on: ["use"] });
