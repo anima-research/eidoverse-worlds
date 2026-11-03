@@ -23,6 +23,7 @@ import { onWorldChange } from './state.js';
 import { dryAt } from './watervolumes.js';   // the dry boxes' mask (a cycle, used only at build time)
 import { waterParams } from '../../shared/terrainshape.js';
 import { analyzeWater, waterGridSeg } from '../../shared/waterkind.js';
+import { rippleField, tickRipples, clearRipples } from './ripples.js';
 
 let current = null;   // { mesh, level }
 const _eye = new THREE.Vector3();
@@ -167,8 +168,10 @@ export function applyWater(args, heightAt) {
   const sZ = cos(pz.mul(1.1).add(t.mul(cyc(0.45)))).mul(0.018).add(cos(px.mul(1.9).add(t.mul(cyc(0.35)))).mul(0.01));
   const along = cos(ph1).mul(0.085).add(cos(ph2).mul(0.04)), across = cos(ph2).mul(0.05);
   const rX = F.x.mul(along).sub(F.y.mul(across)), rZ = F.y.mul(along).add(F.x.mul(across));
-  const nx = still.mul(sX).add(river.mul(rX.add(sX.mul(0.5)))).add(ocean.mul(S.x.mul(oSlope).negate().add(sX)));
-  const nz = still.mul(sZ).add(river.mul(rZ.add(sZ.mul(0.5)))).add(ocean.mul(S.y.mul(oSlope).negate().add(sZ)));
+  // …and the rings bodies make in it (ripples.js: wakes, wading legs, splashes)
+  const rip = rippleField(px, pz);
+  const nx = still.mul(sX).add(river.mul(rX.add(sX.mul(0.5)))).add(ocean.mul(S.x.mul(oSlope).negate().add(sX))).add(rip.x);
+  const nz = still.mul(sZ).add(river.mul(rZ.add(sZ.mul(0.5)))).add(ocean.mul(S.y.mul(oSlope).negate().add(sZ))).add(rip.y);
   mat.normalNode = transformNormalToView(normalize(vec3(nx, float(1), nz)));
 
   // ---- foam: made by water MOVING at the edge ---------------------------------------------------------
@@ -187,6 +190,7 @@ export function applyWater(args, heightAt) {
     .mul(smoothstep(0.55, 1.0, sin(ph1.mul(0.4)).mul(0.5).add(0.5)));   // 0.4: whole cycles a period (waves.js)
   const foam = band.mul(float(0.08).add(uprush.mul(0.9)))
     .add(streak.mul(river).mul(0.22).mul(float(1).sub(smoothstep(0.5, 2.5, d).mul(0.6))))
+    .add(rip.z.mul(0.85))   // a splash's white crown
     .clamp(0, 1);
 
   // colour: the world's water colour, murkier and greener in a river, a deeper blue out at sea with
@@ -224,6 +228,7 @@ export function applyWater(args, heightAt) {
   // sheet draws twice, which above the water would be pure cost (the swell reaches ~0.6 m over the level)
   mesh.onBeforeRender = (_r, _s, cam) => {
     waveT.value = waveTime();
+    tickRipples();
     const side = cam.getWorldPosition(_eye).y < W.level + 1 ? THREE.DoubleSide : THREE.FrontSide;
     if (mat.side !== side) { mat.side = side; mat.needsUpdate = true; }
   };
@@ -234,7 +239,7 @@ export function applyWater(args, heightAt) {
 
 // Travel resets the world; a destination with no terrain never rebuilds the water, so the old level (its sheet,
 // its fog and the under-water background) would follow. Clear it with the world.
-onWorldChange((ev) => { if (ev.type === 'reset') applyWater(null); });
+onWorldChange((ev) => { if (ev.type === 'reset') { applyWater(null); clearRipples(); } });
 
 /** What kind of water is at a point, for the HUD and probes (shared/waterkind.js sample). */
 export const waterAt = (x, z) => current?.analysis?.sample(x, z) ?? null;
