@@ -115,5 +115,31 @@ def roles_stripped(t):
 r = strip_unnamed(roles_stripped)
 check("4m a roles: value stripped, named only by a purge the fold refuses, is detected", r["status"] == "broken" and r["at"] == len(es), r)
 
+# --- the verifier is as strict as the spec (bot #260 #480-482) ---
+t = copy.deepcopy(es); t[3]["body"]["salt"] = chain.b64u(b"x" * 8)
+for e in t: e.pop("head", None); e.pop("sig", None)
+r = chain.verify(dump(chain.seal(t, priv, 2)))
+check("4n a chained log's set with a short salt (8 bytes) is refused", r["status"] == "broken" and r["at"] == 3 and "salt" in r["detail"], r)
+t = copy.deepcopy(es); t[1]["body"]["salt"] = chain.b64u(b"y" * 4)
+for e in t: e.pop("head", None); e.pop("sig", None)
+r = chain.verify(dump(chain.seal(t, priv, 2)))
+check("4o …and an act body with a short salt is refused", r["status"] == "broken" and r["at"] == 1 and "salt" in r["detail"], r)
+t = copy.deepcopy(es)
+for e in t: e.pop("head", None); e.pop("sig", None)
+t[3]["body"]["salt"] = "short"
+r = chain.verify(dump(t))
+check("4p an unchained log (no chain point) is not held to the salt rule", r["status"] == "unchained", r)
+t = copy.deepcopy(es); i = next(i for i, e in enumerate(t) if "sig" in e); t[i]["sig"] = t[i]["sig"][:-2] + "!" + t[i]["sig"][-2:]
+r = chain.verify(dump(t))
+check("4q a sig with a non-base64url character is refused as encoding, not decoded leniently", r["status"] == "broken" and r["at"] == i and "encoding" in r["detail"], r)
+r = chain.verify(b"")
+check("4r an empty log is unchained, not a crash", r["status"] == "unchained", r)
+t = copy.deepcopy(es); t[0]["body"]["sequencer"] = "ed25519:AAAA"
+r = chain.verify(dump(t))
+check("4s a malformed sequencer key is broken at 0, not a crash", r["status"] == "broken" and r["at"] == 0 and "sequencer" in r["detail"], r)
+t = copy.deepcopy(es); t[0]["body"]["sequencer"] = "nokey"
+r = chain.verify(dump(t))
+check("4t …a key without its ed25519: prefix likewise", r["status"] == "broken" and r["at"] == 0, r)
+
 print("%d/%d passed" % (passed, passed + failed))
 raise SystemExit(1 if failed else 0)

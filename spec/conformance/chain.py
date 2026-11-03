@@ -4,22 +4,55 @@
   head(-1) = 32 zero bytes
   head(i)  = sha256( head(i-1) || sha256( UTF-8( JCS( skeleton(entry i) ) ) ) )
   skeleton = the entry without `head`/`sig`, where every set op's `value` + `salt` is replaced by
-             `commit` = hex sha256( UTF-8(salt) || UTF-8(JCS(value)) ). A purged line already carries
-             `commit` in place of value+salt, so purge never changes a head.
+             `commit` = hex sha256( UTF-8(salt) || UTF-8(JCS(value)) ), and every act/say/sim body by
+             `{commit}` = hex sha256( UTF-8(salt) || UTF-8(JCS(body without salt)) ). A purged line already
+             carries `commit` in place of value+salt (or the body), so purge never changes a head.
+  In a chained log (one carrying any chain point) every set value and act/say/sim body carries a `salt`
+  of >= 16 random bytes, base64url (PROTOCOL "Salted commitments"): the verifier refuses one without.
   chain point = an entry carrying `head` (hex of head(i), this entry included) and `sig`
              (base64url Ed25519 over UTF-8 "eidoverse-head:<world id>:<seq>:<head hex>").
   The sequencer key is genesis body.sequencer = "ed25519:<base64url raw 32 bytes>".
 
 Usage: python3 chain.py verify LOG.jsonl
 """
-import base64, hashlib, json, os, sys
+import base64, hashlib, json, os, re, sys
 from reader import parse_ijson, jcs, Malformed, Reader
 
 ZERO = bytes(32)
+SALT_MIN = 16   # bytes, once decoded (PROTOCOL "Salted commitments": >= 16 random bytes)
+B64U = re.compile(r"[A-Za-z0-9_-]*")
 
 
 def b64u(b): return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-def unb64u(s): return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+def unb64u(s):
+    # strict: urlsafe_b64decode discards characters outside the alphabet, so a sig with `!` in it still verified (#481)
+    if not isinstance(s, str) or not B64U.fullmatch(s):
+        raise Malformed("b64url")
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def salt_ok(salt):
+    """A salt a chained log may carry: base64url of >= SALT_MIN bytes (#480)."""
+    try:
+        return isinstance(salt, str) and len(unb64u(salt)) >= SALT_MIN
+    except (Malformed, ValueError):
+        return False
+
+
+def short_salts(e):
+    """The set values and act/say/sim body of a stored entry that carry no adequate salt (a purged one carries none to check)."""
+    out = []
+    if e.get("kind") in ("act", "say", "sim"):
+        b = e.get("body")
+        if isinstance(b, dict) and not (list(b) == ["commit"]) and not salt_ok(b.get("salt")):
+            out.append("body")
+    elif e.get("kind") == "change":
+        b = e.get("body", {})
+        ops = b.get("ops", []) if e.get("verb") == "batch" else [b] if e.get("verb") == "set" else []
+        for i, o in enumerate(ops):
+            if isinstance(o, dict) and (e.get("verb") != "batch" or o.get("verb") == "set") and "value" in o and not salt_ok(o.get("salt")):
+                out.append("op %d" % i)
+    return out
 
 
 def commit_of(op):
@@ -77,20 +110,37 @@ def verify(data):
             entries.append(parse_ijson(raw))
         except Malformed as m:
             return {"status": "broken", "at": seq, "detail": "malformed line in a chained log: " + m.code}
+    if not entries:
+        return {"status": "unchained", "detail": "empty log"}
     g = entries[0]
     world_id = "sha256:" + hashlib.sha256(jcs(g).encode()).hexdigest()
-    key = g.get("body", {}).get("sequencer")
+    key = g.get("body", {}).get("sequencer") if isinstance(g.get("body"), dict) else None
     if not key:
         return {"status": "unchained", "detail": "genesis names no sequencer key"}
-    pub = Ed25519PublicKey.from_public_bytes(unb64u(key.split(":", 1)[1]))
+    try:
+        if not isinstance(key, str) or not key.startswith("ed25519:"):
+            raise ValueError("not ed25519:<base64url>")
+        pub = Ed25519PublicKey.from_public_bytes(unb64u(key[len("ed25519:"):]))
+    except (Malformed, ValueError):
+        return {"status": "broken", "at": 0, "detail": "sequencer key malformed"}
+    chained = any("head" in e or "sig" in e for e in entries)
     head, last = ZERO, None
     for seq, e in enumerate(entries):
-        head = step(head, e)
+        try:
+            head = step(head, e)
+        except (Malformed, ValueError, TypeError, KeyError, AttributeError):
+            return {"status": "broken", "at": seq, "detail": "entry can't be hashed (malformed skeleton)"}
+        if chained and short_salts(e):
+            return {"status": "broken", "at": seq, "detail": "set without a >= 16-byte base64url salt (%s)" % ", ".join(short_salts(e))}
         if "head" in e or "sig" in e:
             if e.get("head") != head.hex():
                 return {"status": "broken", "at": seq, "detail": "head mismatch (an earlier entry was altered)"}
             try:
-                pub.verify(unb64u(e["sig"]), sig_msg(world_id, seq, head.hex()))
+                sig = unb64u(e.get("sig"))
+            except Malformed:
+                return {"status": "broken", "at": seq, "detail": "bad signature encoding (not base64url)"}
+            try:
+                pub.verify(sig, sig_msg(world_id, seq, head.hex()))
             except Exception:
                 return {"status": "broken", "at": seq, "detail": "bad signature"}
             last = seq
@@ -119,8 +169,8 @@ def unpurged_stubs(data, entries):
 
 
 def seal(entries, priv, every=1):
-    """Door side: add salts to set values, and head+sig to every `every`-th entry and the last.
-    Mutates and returns entries. Genesis must already name the sequencer key."""
+    """Door side: add salts to set values, and head+sig to every `every`-th entry and the last (genesis is never a
+    chain point). Mutates and returns entries. Genesis must already name the sequencer key."""
     world_id = "sha256:" + hashlib.sha256(jcs(entries[0]).encode()).hexdigest()
     for e in entries:
         if e.get("kind") == "change":
