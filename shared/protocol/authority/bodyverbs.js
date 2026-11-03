@@ -47,10 +47,10 @@ const rateCheck = (...a) => UP.rateCheck(...a);
 const request = (...a) => UP.request(...a);
 const warnings = (...a) => UP.warnings(...a);
 function returnHeld(w, actor, id, why, how, seq) {
-  delete w.presence.holds[id];
   const st = w.state(); const t = st.entities["@world"]?.c["physics-engine"] ? st.entities[id]?.c.transform : null; let back;
   if (t) { const p = admit(w, st, { actor: "system", cap: { kind: "system", ids: [id], comps: ["transform"] } }, [setOp(id, "transform", t)]);
     back = w.append(actEntry(w, "system", "return-held", { id, holder: actor, why })); changeEntry(w, p, back); }
+  delete w.presence.holds[id];   // after the return is logged: a throw above keeps the hold, so a retried leave finds it (bot review #260 539)
   const act = seq ?? back;
   if (st.entities[id]) heldEvent(w, "release", id, { by: actor, how, ...(act !== undefined ? { seq: act } : {}) });
 }

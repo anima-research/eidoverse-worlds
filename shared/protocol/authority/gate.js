@@ -65,12 +65,12 @@ class Admitted { constructor(who, ops, after, notes = [], vacate = [], followUps
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
 // admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
 // teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
-// agents" is the actor alone here. Refusals aren't logged, so they cost the authority, not the log (authority practice).
+// agents" is the actor alone here. A refused write's values aren't logged (its attempt is: authority.js logRefusal), so it costs the authority, not the log (authority practice).
 function rateCheck(w, actor, kind = "act", extra = 0) {
   if (w.leaving === actor) return; // a disconnect's settlement is the authority's duty, not the leaver's request: never rate-refused
   const RATE = w.rate ?? RATE_DEFAULT, r = rateOf(w, actor, RATE.ms); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
   if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
-  if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; big data goes in a blob");
+  if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; keep values small (a script's source or an effect goes through upload {text|effect})");
 }
 // what this actor put in the log over the window: acts, says (counted apart), and all their bytes (incl. results)
 function rateOf(w, actor, ms) {
@@ -112,7 +112,7 @@ function admit(w, st, who, ops) {
     if (op.verb === "set" && op.comp === "parent" && op.value && typeof op.value === "object" && !Array.isArray(op.value) && "order" in op.value) { const { order: _o, ...rest } = op.value; op.value = rest; }
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
-      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values under 64 KiB`, "put big data in a blob and store its hash"); }
+      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values under 64 KiB`, "keep values small; a script's source or an effect goes through upload {text|effect}"); }
     const e = s.entities[op.id];
     if (verb === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
       if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");
@@ -195,7 +195,7 @@ function lockCheck(w, st, who, role, k, op, at) {
   const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
   const fix = CTX.through && who.cap ? `throughLock covers only your own edits, not a handler, a held thing or a script acting for you, so the lock stands for this route; someone who may unlock it can (delete {id: '${k}', component: 'lock'})`
-    : below ? `this lock is ${lockWord(strength, wcOf(st))} (its setter's rank); you are ${role}`
+    : below ? `this lock is ${lockWord(strength, wcOf(st))} (its setter's rank); you are ${role}; ask someone who may build here at that rank to unlock it (delete {id: '${k}', component: 'lock'})`
     : mayUnlock ? `send the same request with throughLock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; history shows who lifted it`
     : `someone who may build here at its setter's rank can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
   refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), mayLift: mayUnlock });   // the padlock's question offers its buttons on true only (bot #260 122)
@@ -275,7 +275,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     // a pause write (only `paused` changes) by a pauseScripts holder needs no edit rights on the thing: keyRights judges it
     if (pause && may(st, actor, "pauseScripts")) return;
     const n = lacks(w, st, actor, op, made); if (!n) { if (needOf(op) === "grant") grantCheck(w, st, s, actor, op, at); return; }
-    refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner (say {text, to: <owner>}); help shows your role and permissions" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
+    refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner; help shows your role and permissions; say {text, to: <owner>} reaches them" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
   }
   if (cap.kind === "script") {
     // WHO MAY COME IN is changed by the world's owners directly, never by a script (upstream #258): a script closing a
@@ -305,7 +305,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
 // changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
 // or by an owner. Making a new key needs only the component's ordinary rank. A capability changes it with the rights it
 // carries: a handler with its author's. The authority's own scoped follow-ups (rest, system, handle, founding) touch no keys
-// that someone else made; founding makes roles:<founder>. A whole-entity delete is NOT gated here (see note 34).
+// that someone else made; founding makes roles:<founder>. A whole-entity delete is gated per key (§3d H7, keyRights above).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
 // §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, blueprints:, roles:) carry the creator
 // rule; PARTITION keys (terrain-tile:, terrain-paint:) are pieces of one shared surface: ordinary rank rules only.

@@ -1643,14 +1643,21 @@ for (const [name, work] of [["sru2a", "hook"], ["sru2b", "perch"], ["sru2c", "de
   const ct = call("olive", "batch", { ops: [{ verb: "create", args: { id: "crate-bt", model: "crate", components: { transform: { pos: [3, 0, 3] } } } }, { verb: "turn", args: { id: "crate-bt", axis: "y", deg: 90 } }] });
   const cq = ents()["crate-bt"]?.c?.transform?.q;
   ok(ct.ok && Math.abs(Math.abs(cq?.[1] ?? 0) - Math.SQRT1_2) < 1e-6, "BT4b a batch's turn finds a thing made earlier in the same batch and turns it", { ct: ct.refused ?? ct.ok, q: cq });
+  // an inherited name is no argument (review of #260, #522/#538): `toString` is `in` every object; the attempt act doesn't list it as known
+  const n2 = openWorld(root, name).entries.length;
+  const ih = call("olive", "delete", { id: "lamp", toString: 1 });
+  const att = openWorld(root, name).entries.slice(n2).map((e) => e.body).find((b) => b?.refused);
+  ok(!ih.ok && code(ih) === "unknown-arg" && !!ents().lamp && att && !att.args.includes("toString") && att.unknownArgs === 1, "BT6 delete {id, toString} is refused unknown-arg; its attempt act counts toString as unknown, never as a known name", [ih.refused ?? ih, att]);
   // each verb the help names, with args it accepts alone, dry: a verb named here without args below fails the row too
   const ARGS = { create: { model: "crate" }, set: { id: "lamp", component: "description", value: "x" }, delete: { id: "shade" }, place: { id: "shade", on: "lamp" },
     turn: { id: "lamp", axis: "y", deg: 10 }, sky: { hours: 7 }, weather: { hours: 7 } };
+  // the list is literal here, not read from BATCH_OPS (review of #260, #523): a verb dropped from the list goes red, not unseen
+  const WANT = ["create", "set", "delete", "place", "turn", "sky", "weather"];
   const named = (VERBSPEC.batch.doc.match(/ of ([a-z-]+(?:, [a-z-]+)*)$/)?.[1] ?? "").split(", ").filter(Boolean);
-  const alone = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
-  const inBatch = Object.fromEntries(named.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
-  const turnedAway = named.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
-  ok(named.length >= 5 && !turnedAway.length, "BT5 every verb batch's help names goes in a batch, dry, as it goes alone", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
+  const alone = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", v, { ...ARGS[v], dry: true }) : null]));
+  const inBatch = Object.fromEntries(WANT.map((v) => [v, ARGS[v] ? call("olive", "batch", { ops: [{ verb: v, args: ARGS[v] }], dry: true }) : null]));
+  const turnedAway = WANT.filter((v) => !alone[v]?.ok || !inBatch[v]?.ok);
+  ok(JSON.stringify(named) === JSON.stringify(WANT) && !turnedAway.length, "BT5 batch's help names exactly create, set, delete, place, turn, sky, weather, and each goes in a batch, dry, as it goes alone (a builder for each)", { named, turnedAway: turnedAway.map((v) => [v, alone[v]?.refused ?? alone[v]?.ok, inBatch[v]?.refused ?? inBatch[v]?.ok]) }); }
 
 // ---- RA (review of #260): a log changed outside the purge rule reads as unknown and the fold names the line (commit-unpurged); writes, reads and the operator's repair go on ----
 { const name = "altered"; const file = `${root}worlds/${name}.jsonl`;

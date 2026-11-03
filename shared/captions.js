@@ -60,9 +60,10 @@
 //
 // BOUNDS are in CHARACTERS (String.length, UTF-16 code units), not bytes: a
 // 240-character line of CJK is ~720 UTF-8 bytes and that is fine — the bag is
-// folded state, not a verb payload under the comp cap; and that cap is the
-// same unit (8192 characters of JSON, server/verbs.ts vComp), so a bag of 20
-// full lines plus title and speakers stays well inside it in any script.
+// folded state, not a verb payload under the value cap; the authority keeps a
+// value under 64 KiB of UTF-8 (protocol/gate.js), a different unit from these
+// character bounds, and a bag of 20 full lines plus title and speakers stays
+// well inside it in any script.
 
 import { shown } from './shown.js';
 
@@ -233,6 +234,6 @@ export function captionsDetail(data, lines = CAPTIONS_MAX_LINES, earlier = []) {
   const n = normalizeCaptions(data);
   if (!n.ok) return [];
   const before = (Array.isArray(earlier) ? earlier : []).flatMap((b) => { const m = normalizeCaptions(b); return m.ok && m.captions.session === n.captions.session ? m.captions.window : []; });
-  const w = [...before, ...n.captions.window].slice(-Math.max(0, lines));
+  const k = Math.max(0, lines), all = [...before, ...n.captions.window], w = k ? all.slice(-k) : [];   // slice(-0) is slice(0): zero lines is none (#258)
   return w.map((c) => `[${clock(c.t0)}–${clock(c.t1)}] ${c.speaker ? `${c.speaker}: ` : ''}${c.text}`);
 }

@@ -149,8 +149,8 @@ export function occupied(st, id, v, { mounted = null, bodies = [] } = {}) {
   if (!bodies.length) return null;
   const boxes = [...fam].map((k) => footprint(st, k)).filter(Boolean);
   for (const p of bodies) if (boxes.some((b) => feetOn(b, p))) return { why: "standing" };
-  const box = footprint(st, id);
-  if (box && v) for (const p of bodies) if (sweptCovers(box, v, p)) return { why: "in-the-way" };
+  // the whole family slides, so a child's overhang is in the way too (review of #260, #288)
+  if (v) for (const p of bodies) if (boxes.some((b) => sweptCovers(b, v, p))) return { why: "in-the-way" };
   return null;
 }
 

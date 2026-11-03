@@ -54,8 +54,9 @@ export function mediaTier(src, kind) {
   if (u.username || u.password) return { tier: 'bad', why: 'the link carries a user name or password', fix: 'a link without user:password@' };
   if (u.port) return { tier: 'bad', why: `the link names a port (:${u.port})`, fix: 'a link on the usual https port' };
   const host = u.hostname.toLowerCase().replace(/\.$/, '');
-  if (/^\[|^\d+(\.\d+){3}$|^\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host))
-    return { tier: 'bad', why: `${host} is an address or a local name, not a public host`, fix: 'a link to a public site by its name (a visitor\'s own network is never fetched)' };
+  // a dotted or dashed IPv4 inside a label (192.168.1.1.nip.io) is an address too: review of #260, #268
+  if (/^\[|^\d+(\.\d+){3}$|^\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host) || /(^|[^0-9])\d{1,3}([.-]\d{1,3}){3}([^0-9]|$)/.test(host))
+    return { tier: 'bad', why: `${host} is an address or a local name, not a public host`, fix: 'a link to a public site by its name (a visitor\'s own network is never fetched by address or local name)' };
   const hosts = MEDIA_HOSTS[kind === 'image' ? 'image' : 'audio'];
   const page = PAGE_HOSTS.some((p) => hostMatch(host, `*.${p}`)) && !/\.(mp3|ogg|opus|wav|webm|m4a|mp4|aac|flac|m3u8|png|jpe?g|webp)$/i.test(u.pathname);
   return { tier: hosts.some((p) => hostMatch(host, p)) ? 'host' : 'link', host, ...(page ? { page: true } : {}) };

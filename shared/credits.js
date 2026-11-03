@@ -7,7 +7,8 @@
 // What counts: a CHANGE entry that touches the thing, caused by a building act (create, set, place, turn, delete, batch,
 // undo, …; an imported act by its original verb). A refused act changes nothing and never reaches a change entry, so it
 // can't count. Play isn't authorship: a `use` (opening a door 40 times), a grab, a throw, the sim's rests and the
-// authority's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
+// authority's own corrections are left out (a follow-up inside your own act — clearing a reference to what you deleted —
+// is still credited to you). Consecutive moves by one person less than five minutes apart are one session ("moved it",
 // not "moved it ×591": the Commons has people with hundreds of imported nudges).
 import { opsOf } from './protocol/fold.js';
 

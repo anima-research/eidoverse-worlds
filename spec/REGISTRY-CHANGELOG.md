@@ -385,3 +385,6 @@ docs/COMPONENT-LADDER.md). Written by `bun tools/protocol/pretrans-check.ts --pi
 - 2026-10-31: sky.sun and sky.fill stored again (decision table, R 10-30)
 - 2026-11-02: reactions help and comment no longer call impulse reserved (it was opened 10-31; text only, the pin is unchanged; bot #260 #25)
 - 2026-11-02: sky's shape-audit comment no longer lists sun and fill as gone (stored again since 10-31); comment only, the pin follows the file (bot #260 #43)
+- 2026-11-03: light.important's doc says what lightrig does (first claim on a slot; more important lights than slots: the nearest cast); collider.layer's absentMeans names who scans it; sky help: a tz overrides rate: 0; header comments; prose only (bot #260 #265 #282 #281 #280 #622 #623)
+  - collider.layer: its meaning of absence "[1] (Godot's default): every mover meets it" → "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)"
+  - light.important: its meaning "always casts: first claim on a light slot, never governor-shed" → "first claim on a light slot, never governor-shed (more important lights than slots: the nearest cast)"

@@ -312,7 +312,7 @@ try {
   n0 = myActs().length;
   await drag(1);
   check("K1 the release asks: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
-  check("K2 …with three choices, in R's order", JSON.stringify(await evalJson(dlgBtns)) === JSON.stringify(["✓ Move anyway", "✕ Cancel", "🔓 Unlock"]), await evalJson(dlgBtns));
+  check("K2 …with three choices, in R's order", JSON.stringify(await evalJson(dlgBtns)) === JSON.stringify(["✓ Move anyway", "✕ Cancel", "🔓 Unlock, then Move"]), await evalJson(dlgBtns));
   await dlgClick("Cancel");
   check("K3 ✕ Cancel: it snaps back to where the log has it", await waitFor(`${posX(crate)}.then((x) => Math.abs(x - ${kStart.pos[0]}) < 1e-3)`), await evalJson(posX(crate)));
   await sleep(800);

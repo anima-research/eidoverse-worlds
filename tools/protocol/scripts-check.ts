@@ -1430,6 +1430,27 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       s.advance(61000); rs.push(code(s.call("bob", "upload", { text: "// later" })) ?? "ok");
       return { rs }; },
     good: (o) => o.rs.slice(0, 20).every((x: string) => x === "ok") && o.rs[20] === "rate" && o.rs[21] === "rate" && o.rs[22] === "ok" },
+  { id: "H6", what: "bot review #260 278: with no QuickJS (a host whose runtime didn't load), checkSyntax answers undefined (unchecked), not null (clean), and a dry upload says the syntax went unchecked instead of claiming it parses", run(s) {
+      if (!SB) return { absent: true };
+      const plug = path.join(root, "no-quickjs.ts"), f = path.join(root, "noq-probe.ts");
+      fs.writeFileSync(plug, `Bun.plugin({ name: "no-quickjs", setup(b) { b.module("quickjs-emscripten", () => ({ exports: { getQuickJS: async () => { throw new Error("stand-in: no QuickJS here"); } }, loader: "object" })); } });\n`);
+      fs.writeFileSync(f, `const { checkSyntax } = await import(${JSON.stringify(TREE + "shared/protocol/sandbox.js")});\nconsole.log(JSON.stringify({ bad: String(checkSyntax("function {")), fine: String(checkSyntax("1")) }));\n`);
+      const r = Bun.spawnSync(["bun", "--preload", plug, f], { env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000 });
+      let child: any; try { child = JSON.parse(r.stdout.toString()); } catch { child = { raw: `${r.stdout}${r.stderr}`.slice(0, 300) }; }
+      cast(s); const dry = s.call("bob", "upload", { text: "function {", dry: true });
+      return { child, dry: show(dry), note: dry.note ?? null }; },
+    opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, checkSyntax: () => undefined } : null },   // the authority side: what that host's checkSyntax hands scriptrun
+    good: (o) => o.child.bad === "undefined" && o.child.fine === "undefined" && o.dry === "ok" && /unchecked/.test(o.note ?? "") && !/parses/.test(o.note ?? "") },
+  { id: "H7", what: "bot review #260 196: a deleted script's console ring leaves presence.scripts (saved whole with presence) once the request drains; a live script's stays", run(s) { cast(s);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      for (const n of ["a", "b"]) install(s, "bob", "box", n, onUse(`world.set("self", "t/${n}", 1);`), { scope: { ids: "self", comps: [`t/${n}`] }, on: ["use"] });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { a: { kind: "script", script: "a" }, b: { kind: "script", script: "b" } } });
+      s.call("vic", "use", { id: "box", action: "a" }); s.call("vic", "use", { id: "box", action: "b" });
+      const before = Object.keys(s.w().presence.scripts ?? {}).sort();
+      const del = s.call("bob", "delete", { id: "box", component: "script:a" });
+      const after = Object.keys(s.w().presence.scripts ?? {}).sort();
+      return { before, del: show(del), after }; },
+    good: (o) => JSON.stringify(o.before) === JSON.stringify(["box|a", "box|b"]) && o.del === "ok" && JSON.stringify(o.after) === JSON.stringify(["box|b"]) },
   { id: "H3", what: "source that doesn't parse is refused at upload and at install, with the line", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const u = s.call("bob", "upload", { text: "world.on('use', () => {\n  world.set('self', 't/a' 1);\n});" });

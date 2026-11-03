@@ -7,9 +7,8 @@
 //   fold       the four operations and their fields; the batch body (§3)
 //   identity   the grammar of an identity, an entity id and a component name (§3.1)
 //   version    {dialect, v} and the minors this reader knows (§13; genesis's fields)
-//   transform  the one placement component (§9.3: glTF's rule)
-//   parent     the one attachment component (§9.3)
-//   model      what a thing shows (its library path; §9.3) — reviewer item 5 (10-18): "envelope/fold/identity/version/transform/parent/model/roles/access"
+//   (transform, parent and model — reviewer item 5's "envelope/fold/identity/version/transform/parent/model/roles/access" — are the
+//   registry's since recut C11: pinned there as trial, not here)
 //   roles      who may do what (§7): the component's shape. Its VOCABULARY (ranks, built-in ids, permissions, the custom-id
 //              pattern, reserved ids) is the registry's (componentspec roles.vocab), not the kernel's (recut C11: the kernel
 //              holds what the fold reads; the ladder is read by the authority, and a registry break still needs --ack)
@@ -17,7 +16,7 @@
 // Each has status `trial-kernel`: like trial it may still change during the alpha, but a change is never a re-pin with an
 // acknowledgement. spec/kernel-pin.json holds the pin; tools/protocol/kernel-check.ts (the gate's CORE lane) is red the moment
 // the code's kernel differs from the pin, and `kernel-check.ts --pin` re-pins ONLY when the same change brings its three
-// companions, which the pin then records and the gate verifies forever after:
+// companions, which the pin then records and the gate verifies until the next re-pin replaces them:
 //   (a) a translator change: the translator's name moved (tools/protocol/import-v1/translate-v1.js TRANSLATOR @N → @N+1, or a
 //       new translate step named with --translator), so a stored log has a path forward;
 //   (b) a REGISTRY-CHANGELOG.md line (--ack "<why>"), prefixed `kernel:`, naming what changed and why;

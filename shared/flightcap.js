@@ -187,7 +187,7 @@ export function worldFlightProvider({ rights = null, label = 'world-grant' } = {
         return {
           enabled: false,
           reason: "this world hasn't given you flight; flight comes with a role's fly permission, which the world's owner " +
-            '(or anyone who may give roles and can fly) gives you by sending set {id: "@world", component: "roles:<your id>", value: {can: {fly: true}}, merge: true} ' +
+            '(or someone who may give roles, can fly, and outranks you) gives you by sending set {id: "@world", component: "roles:<your id>", value: {can: {fly: true}}, merge: true} ' +
             '(merge keeps the rest of your record, a time limit included; with no record yet, value: {role: <your role>, can: {fly: true}})',
         };
       }

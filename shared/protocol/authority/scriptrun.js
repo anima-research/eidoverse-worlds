@@ -502,8 +502,14 @@ const heldEvent = (w, kind, id, ev) => { (w.heldQ ??= []).push({ kind, id, ev })
 // script's move may let go of a held thing (letGoEdited), which is a hand event again. So the two queues are drained in
 // turn until neither holds anything (drainScripts loops on its own two), a few rounds at most.
 function drainAll(w) {
-  for (let k = 0; k < 8; k++) { drainHeld(w); drainScripts(w); if (!w.heldQ?.length) return; }
+  for (let k = 0; k < 8; k++) { drainHeld(w); drainScripts(w); if (!w.heldQ?.length) break; }
   if (w.heldQ) w.heldQ.length = 0;
+  dropDeadRings(w);
+}
+// a deleted script's console ring would otherwise sit in presence (saved whole) for ever (bot review #260 196)
+function dropDeadRings(w) {
+  const R = w.presence.scripts; if (!R) return; const live = new Set(allScripts(w.state()).map((x) => rtKey(x.id, x.name)));
+  for (const k of Object.keys(R)) if (!live.has(k)) { delete R[k]; w.presenceDirty = true; }
 }
 function drainHeld(w) {
   let guard = 0;
@@ -590,7 +596,7 @@ const SCRIPT_VERBS = {
       U.push(now); w.presenceDirty = true; }
     const dirty = SR.hygiene(a.text); if (dirty) refuse(dirty.code, dirty.reason, dirty.fix ?? "refused: reviewers must see what runs");
     const syn = w.scripts?.checkSyntax?.(a.text); if (syn) refuse("syntax", syn.why, "docs/SCRIPTS.md shows the API");
-    if (a.dry) return { ok: true, dry: true, note: "it parses and is clean; nothing stored" };
+    if (a.dry) return { ok: true, dry: true, note: syn === undefined ? "it's clean; syntax unchecked (no sandbox here); nothing stored" : "it parses and is clean; nothing stored" };   // undefined = no checker ran (sandbox.js checkSyntax)
     return { ok: true, src: w.putBlob({ lang: SR.LANG, api: SR.API, text: a.text }), next: "set {id, component: 'script:<name>', value: {src, scope: {ids: 'self', comps: [...]}, on: ['use']}}" };
   },
   // a particle effect document by name (an Essential's, or one stored here): what a renderer draws and an agent reads

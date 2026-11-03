@@ -266,7 +266,7 @@ function historyDiff(w, id, at, ops) {
   return Object.keys(out).length ? out : null;
 }
 // R 10-17 (ID HARDENING (4)): a thing's deletion nulls the typed references to it (and to the children that go with it) in
-// the same act, as Unity, Unreal and Resonite do — a reference never outlives what it names. A list loses the entry; a single
+// the same act, as Unity, Unreal and Resonite do — a reference never outlives what it names (a script's scope excepted: a dead id there reaches nothing). A list loses the entry; a single
 // reference's field goes, and with it a value that can't stand without it (look-at's target: the look-at goes); a reset
 // left with no targets is dropped from the reactions (it can't send nothing home); a home's parent goes (home under the
 // root). Parent links need nothing here: the children went with it. The reply's note lists every reference cleared.

@@ -213,7 +213,8 @@ export function waterCost(level, ground, height = MOVER.body.height) {
   return s.swimming ? MOVER.walk.speed / MOVER.swim.speed : 1 / s.speedFactor;
 }
 
-/** THE FLOOR LAW for one step, in every runtime (the walker below, and the authority's check of a move: it calls this,
+/** THE FLOOR LAW for one step, in every runtime (the browser hands it the floor only where water is involved, controller.js;
+ *  on dry ground its collider pass owns y) (the walker below, and the authority's check of a move: it calls this,
  *  never its own copy). A body with feet at `y`, standing on `ground0` in water of surface `level0` (null: dry), steps to
  *  where the floor is `f` and the water `level1`. → {y, stance, swim, blocked}: `y` where its feet end up (afloat: the float
  *  height); `stance` (waterStance) there; `swim`: the water's rule held for this step (bodyBox takes the level then);

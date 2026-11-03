@@ -10,7 +10,7 @@
 //
 //   {kind: "particle-effect", v: 1, name?, reads?, emitters: [Emitter, …] (1–4), params?: {<name>: Param, …} (≤ 16)}
 //   Emitter = {
-//     spawn:    {amount (1–600), lifetime (s), lifetimeRandom? 0..1, explosiveness? 0..1, randomness? 0..1, oneShot?,
+//     spawn:    {amount (1–4000; 8000 across emitters), lifetime (s), lifetimeRandom? 0..1, explosiveness? 0..1, randomness? 0..1, oneShot?,
 //                preprocess? (s simulated before the first frame), speedScale?, ratio? 0..1 (the share of amount drawn)},
 //     shape?:   {type: point | sphere | sphere-surface | box | ring, extents? [x, y, z] (m: a sphere's semi-axes, a box's
 //                half-sizes), radius? (a round sphere), ring: radius, inner, height, cone (rad, 0..π/2), axis},
@@ -408,7 +408,8 @@ export const derivedEffect = (name, over = {}) => (Object.hasOwn(BUILDER, name) 
 export const ESSENTIAL_NAMES = Object.freeze(Object.keys(ESSENTIALS));
 /** An Essential's content address: the same document stored in a world has this name. */
 export const effectAddress = (doc) => `sha256:${sha256(jcs(doc))}`;
-// The address each Essential is STORED as (shape audit 10-16, render-media-env §4): the door takes a name and writes this, so
+// Each Essential's content address (shape audit 10-16, render-media-env §4): the door stores the NAME since 10-17 (a stored
+// address from before still reads: essentialNameOf), and a stored document names one frozen address, so
 // a stored fire names one frozen document, never whatever ESSENTIALS.fire says in a later build (Resonite's PhotonDust
 // lesson: meaning held in code migrates every world when the code changes). Pinned here as literals, and
 // tools/shape-render-test PT2 holds each to its document's hash: a retuned Essential turns that row red. To change one,
@@ -452,7 +453,7 @@ const LEGACY_PARAM_KEYS = ['count', 'size', 'opacity', 'speed', 'lifetime', 'are
 export const INSTANCE_FIELDS = Object.freeze(['effect', 'part', 'at', 'seed', 'playing', 'scale', 'params']);
 export const isLegacy = (v) => isObj(v) && v.effect === undefined && v.preset !== undefined;
 /** Any stored particles value (or grabbable.fx.particles) → the instance it means: {effect, part, at, seed, playing,
- *  scale, params}. An older value's knobs become params; nothing it said is dropped. */
+ *  scale, params}. An older value's knobs become params (modernize, below, carries the rest at the top). */
 export function instanceOf(v) {
   if (!isObj(v)) return null;
   if (v.effect === undefined && v.preset !== undefined) {

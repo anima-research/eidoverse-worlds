@@ -121,7 +121,7 @@ function settleSim(w) {
 // replaced by a settlement, and named, so the person knows what to change.
 export function refuseForeign(spec, what) {
   refuse("foreign-engine", `this world runs ${spec.engine}, which this server doesn't carry: ${what}, and only that engine computes it`,
-    `put it down or leave it be; an owner can set one this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${engineName(spec.engine)}'}}`);
+    `put it down or leave it be; an owner can set one this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
 }
 const restampTried = new WeakMap();
 function restampEngine(w) {
@@ -233,9 +233,9 @@ function gripOf(w, actor, id) {
 // L6 / 25d M3: the authority's own plausibility TRACK of each body (presence: unlogged). A body is where the authority last
 // ACCEPTED it, never where a client last claimed. Walking spends a token bucket (SPEED m/s sustained, CAP m of
 // burst) and may not enter a solid a body can't step over; a refused step leaves the body where it was (reverted for
-// its sender, visibly). Arriving, or `teleport: true`, is a teleport: an ACT on the record (it resets the track), refused
+// its sender, visibly). A teleport while present (`teleport: true`) is an ACT on the record (it resets the track; an arrival writes nothing), refused
 // while holding anything, refused inside a solid, and (for visitors) refused away from @world.spawn when the world
-// declares one. Every settlement (grab, put, throw) measures reach from the track and records the presence it used.
+// declares one. Every settlement (grab, put, throw) measures reach from the track (the act records the thing, not the body).
 // The numbers and the body's box are the MOVER's (shared/mover.js): the one walker the agent and the client step with,
 // so a step the mover takes is one this track accepts, and this track's refusal is the mover's own answer.
 // both ask the spatial index: only what the body's box (or the whole step's swept box) meets is tested (review 10-06 S0-2)

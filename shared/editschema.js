@@ -1,5 +1,5 @@
 // editschema — what can be edited on a thing, and how, as a PURE FUNCTION of
-// its folded record. Dependency-free, shared verbatim by three surfaces:
+// its folded record (plus, for a host's sockets, the world it lives in: live.world). Dependency-free, shared verbatim by three surfaces:
 //
 //   desktop inspector   client/lib/editpanels.js renders the fields (panels.js)
 //   VR quad             the same fields painted to a canvas (xrpanels.js)
@@ -15,7 +15,7 @@
 //   fields are panels.js specs: { t, k, label, value, def?, … } with k a plain name (def: the
 //   registry default a reset ↺ writes; an unwritten legacy value draws as the field's `absent` reading, which can differ)
 //   inside the group. Address a field from outside as "<group>.<k>"
-//   (pos.x · light.intensity · motion.amp · sockets.seat.yaw · comp.recipe).
+//   (pos.x · light.intensity · motion.amp · sockets.seat|rot|1 · comp.recipe).
 // editOps(ent, id, edits)       → { ops: [{verb, args}], errors: [] }
 //   edits: { "<group>.<k>": value } — a number, a boolean, a string, or a
 //   relative expression ("+=2", "*=-1", "-=10%") against the current value.
@@ -36,7 +36,7 @@ import { graphemes } from './text.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
-import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, bodyOf, socketQ, MESH_SHAPES, lightOf } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { checkSockets, ANCHORS, ACTION_DEFAULTS, socketMapIn, socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
@@ -483,14 +483,14 @@ export function inspectSchema(ent, id, live = {}) {
 
   // the `light` group: `light.intensity` is the same address to the panel, the VR quad and the agent's edit tool
   if (compLight(ent)) {
-    const src = c.light; const L = (k, over) => rowOf('Light', k, src, over);
+    const src = c.light, lit = lightOf(ent); const L = (k, over) => rowOf('Light', k, src, over); const drawn = (k) => (lit ? { value: lit[k] } : {});   // a row shows what draws (lightOf): an older light's 16 / 1.7, not the registry default (#147)
     const fields = [
       L('color', { label: 'color' }),
       // sliders that preview while dragged (SWEEP-3 N4, main's lights.js): inspect.js's light handler; the write path stays num's
-      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0 }),
+      L('intensity', { label: 'brightness', t: 'range', min: 0, max: Math.max(64, src.intensity ?? 16), step: 1, dp: 0, ...drawn('intensity') }),
       L('range', { label: 'range', t: 'range', min: 1, max: Math.max(40, src.range ?? 10), step: 1, dp: 0 }),
-      L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)' }),
-      L('important', { label: 'important', hint: 'always casts: first claim on a light slot, never governor-shed' }),
+      L('decay', { label: 'falloff', hint: 'how fast it dims with distance (2 is physical; absent, 1.7)', ...drawn('decay') }),
+      L('important', { label: 'important', hint: 'first claim on a light slot, never governor-shed (more such lights than slots: the nearest cast)' }),
       L('daytime', { label: 'burns at noon', hint: 'on: daytime full (opts out of the day cycle); off: daytime dim' }),
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
@@ -1597,7 +1597,8 @@ export function describeSchema(schema, { verbsHint = true } = {}) {
         : f.t === 'text' ? (f.value === '' ? '—' : String(f.value).slice(0, 120))
         : f.t === 'json' ? String(f.value).replace(/\s+/g, ' ').slice(0, 120)
         : f.t === 'ref' ? (f.value == null ? '— (none)' : String(f.value)) : String(f.value);
-      const lim = f.t === 'num' && (f.min != null || f.max != null || f.softMax != null) ? `  (${f.min ?? ''}…${f.max ?? f.softMax ?? ''}${f.max == null && f.softMax != null ? ' soft' : ''})` : '';
+      const lv = (x) => (x == null ? '' : f.deg ? `${Math.round(x * R2D)}°` : x);   // a deg field's limits in the unit its value shows (#473)
+      const lim = f.t === 'num' && (f.min != null || f.max != null || f.softMax != null) ? `  (${lv(f.min)}…${lv(f.max ?? f.softMax)}${f.max == null && f.softMax != null ? ' soft' : ''})` : '';
       const ro = f.disabled ? '  [read-only: ' + (f.hint ?? '') + ']' : f.driven ? `  [rest pose — driven by ${f.driven}]` : '';
       L.push(`  ${g.group}.${f.k} = ${val}${lim}${ro}`);
     }

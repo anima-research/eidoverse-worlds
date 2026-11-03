@@ -123,8 +123,8 @@ export function worldOf(io) {
     if (!bad) try { checkEntry(parsed, seq); } catch (x) { bad = x; }
     return { line, parsed, bad };
   };
-  // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any is written, so a
-  // request is all or nothing (an act is never left without its result, 33 C2). A size or depth cap is a refusal.
+  // Would these entries, appended in this order, all be lines a reader accepts? Checked BEFORE any line is written, so
+  // a cap refuses the whole request (an act is never left without its result, 33 C2); a throw between lines is `ambiguous` (DESIGN-txn §4 T1). A size or depth cap is a refusal.
   w.fits = (...es) => { for (const [k, e] of es.entries()) { const { bad } = render(e, entries.length + k, "size"); if (!bad) continue;   // with the chain fields append adds
     if (/^cap-/.test(bad.code)) refuse("too-big", `that would be a ${bad.code === "cap-size" ? `${bad.detail}-byte` : "too deeply nested"} ${e.kind} entry; a log line is at most 1 MiB, 64 deep (§1)`, "split it into smaller requests, or put big data in a blob and store its hash");
     throw new Error(`authority bug: would write a malformed entry (${bad.code} ${bad.detail})`); } };

@@ -6,8 +6,7 @@
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
-//   worldOf(view)             → { sky, terrain, grass }   (the inverse, exact:
-//                               tools/components-corpus-test.ts holds it on every world log)
+//   worldOf(view)             → { sky, terrain, grass }   (the inverse)
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration

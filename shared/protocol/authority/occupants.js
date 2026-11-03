@@ -21,7 +21,7 @@ const lastTouch = (...a) => UP.lastTouch(...a);
 const lockCheck = (...a) => UP.lockCheck(...a);
 const needWords = (...a) => UP.needWords(...a);
 
-// A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
+// A seated body's first accepted step stands it up (bodyverbs clears the occupant; a seated client sends no steps)
 // Who sits where (presence, never logged: review 10-12 S1-1): {to: <socket id>}. A seat whose socket is gone or switched
 // off is no seat (its occupant was let go by every client), so a reader never sees one.
 function occupantOf(w, st, who) { const s = w.presence.occupants?.[who];

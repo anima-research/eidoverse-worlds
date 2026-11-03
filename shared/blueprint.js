@@ -361,7 +361,8 @@ export function modernize(components) {
 }
 
 // ------------------------------------------------------------ placing a copy (6b)
-// A copy is placed as ORDINARY verbs (principle 1: the log records the result):
+// LEGACY placing (v3 verbs: kept for the import-v1 translator and tools/components-corpus-test.ts; the authority's
+// blueprints.js places copies today). A copy is placed as ORDINARY verbs (principle 1: the log records the result):
 // each part a `spawn` (an Empty when it has no Model), a child `mount`ed under
 // its parent at its LOCAL pose, every other component a `comp`, the link a
 // `comp blueprint`. Nothing on the wire is new except what the link says:

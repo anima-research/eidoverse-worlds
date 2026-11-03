@@ -351,11 +351,11 @@ const cases: Case[] = [
     good: (o) => o.v?.playing === true && o.v?.near === 1.5 && o.v?.radius === 12 && o.v?.spatial === true && o.v?.pitch === 1 },
 
   // ---------------- M: media links ----------------
-  { id: "M1", what: "mediaTier: a store path, a trusted host (VRChat's list), an untrusted host, and refusals (http, an address, a local name)", run() {
+  { id: "M1", what: "mediaTier: a store path, a trusted host (VRChat's list), an untrusted host, and refusals (http, an address, a local name, an address inside a label: #268)", run() {
       const t = (src: string, k = "audio") => MS.mediaTier?.(src, k)?.tier ?? null;
       return { store: t(AUD), yt: t("https://www.youtube.com/watch?v=x"), vrcdn: t("https://stream.vrcdn.live/live/x.m3u8"), imgur: t("https://i.imgur.com/a.png", "image"), other: t("https://radio.example.org/a.mp3"),
-        http: t("http://radio.example.org/a.mp3"), ip: t("https://8.8.8.8/a.mp3"), lan: t("https://nas.lan/a.mp3"), v6: t("https://[::1]/a.mp3") }; },
-    good: (o) => o.store === "store" && o.yt === "host" && o.vrcdn === "host" && o.imgur === "host" && o.other === "link" && o.http === "bad" && o.ip === "bad" && o.lan === "bad" && o.v6 === "bad" },
+        http: t("http://radio.example.org/a.mp3"), ip: t("https://8.8.8.8/a.mp3"), lan: t("https://nas.lan/a.mp3"), v6: t("https://[::1]/a.mp3"), nip: t("https://192.168.1.1.nip.io/a.mp3"), dash: t("https://10-0-0-1.sslip.io/a.mp3"), ver: t("https://cdn.v1.2.3.example.org/a.mp3") }; },
+    good: (o) => o.store === "store" && o.yt === "host" && o.vrcdn === "host" && o.imgur === "host" && o.other === "link" && o.http === "bad" && o.ip === "bad" && o.lan === "bad" && o.v6 === "bad" && o.nip === "bad" && o.dash === "bad" && o.ver === "link" },
   { id: "M2", what: "clientMayFetch: an untrusted link only with the viewer's own opt-in; a store file and a trusted host always; a refused src never", run() {
       const f = MS.clientMayFetch; if (!f) return { none: true };
       return { off: f("https://radio.example.org/a.mp3", "audio", false), on: f("https://radio.example.org/a.mp3", "audio", true), store: f(AUD, "audio", false), host: f("https://stream.vrcdn.live/a.mp3", "audio", false), bad: f("http://radio.example.org/a.mp3", "audio", true) }; },

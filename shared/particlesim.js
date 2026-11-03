@@ -152,7 +152,8 @@ function rampAt(R, x, out) {
  * every default written). `seed`: this instance's seed. Returns the sim: step(dt) advances it, and these arrays hold
  * what to draw (index i < amount): alive[i], pos[3i..], size[i], angle[i] (rad), color[4i..] (rgba, rgb may exceed 1
  * for additive), frame[i] (flipbook frame, a float). setEmitting(on) stops or restarts the spawning (Godot's emitting).
- * Structure of arrays, and nothing allocated per particle per frame: a viewer may run thousands of these.
+ * Structure of arrays, and nothing allocated per particle per frame (hue rotation is the exception today: hueRotate
+ * builds two small arrays per particle): a viewer may run thousands of these.
  */
 export function makeSim(em, { seed = 0 } = {}) {
   const n = em.spawn.amount | 0;

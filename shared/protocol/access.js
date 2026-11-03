@@ -56,6 +56,7 @@ export function doorOf(wc) {
  *  Bans, kicks, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
 export function entryOf(wc, who = {}, worldName = "this world", now = null) {
   if (who.bypass) return { may: "embody" };
+  if (who.trustedRenderer) return { may: "watch" };   // the renderers' credential never embodies, whatever the door (review of #260, #610)
   const a = accessOf(wc);
   const join = a?.join ?? "anyone";
   const w = `"${worldName}"`;

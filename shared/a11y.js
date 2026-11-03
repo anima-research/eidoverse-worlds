@@ -1,7 +1,7 @@
 // a11y — how a thing reads to anyone who perceives by reading (R 10-07: "this is how the object is described to any
 // text-based entity"), on the accessibility model: its NAME (label), its DESCRIPTION (description), then what
-// it CAN do and its STATE, GENERATED from its components, so a description never restates an affordance and can never
-// contradict one. One reading for the authority's look/inspect (shared/protocol/authority.js describe), mcpl's look
+// it CAN do and its STATE, GENERATED from its components, so a description needn't restate an affordance (the reading
+// generates them; the prose is the author's, quoted as is). One reading for the authority's look/inspect (shared/protocol/authority.js describe), mcpl's look
 // (mcpl/agent.ts) and the human inspector (shared/editschema.js), so they can't disagree. Compact on purpose: an agent's
 // context is precious, so each line is a short phrase and only what a component actually says.
 //
@@ -27,7 +27,7 @@ export function openAction(c) {
 /**
  * {name, description, can: [phrases], state: [phrases]} for a thing's components c. opts: {name (a fallback name: its
  * model's), heldBy (who holds it now, a display name), lookup (stored particle effects), sockets (its socket children,
- * [{name, sock}]: a thing's seats are children, never a component of its own)}.
+ * [{name, station}] (authority/sockets.js socketsOf): a thing's seats are children, never a component of its own)}.
  */
 export function readOut(c, { name = null, heldBy = null, lookup = () => null, sockets = null } = {}) {
   c = isObj(c) ? c : {};
@@ -38,7 +38,7 @@ export function readOut(c, { name = null, heldBy = null, lookup = () => null, so
   if (isObj(c.openable)) out.can.push(open ? `opens and shuts (use '${open}')` : 'opens and shuts (nothing here opens it)');
   const gr = grabOf(c);
   if (gr) out.can.push(!gr.enabled ? "can't be picked up now" : isBase(gr.who) ? 'can be picked up' : `${whoWords(gr.who)} can pick it up`);
-  // its seats are its socket children ([{name, sock}], the caller's socketsOf / socketsIn: switched-off ones aren't offered)
+  // its seats are its socket children ([{name, station}], the caller's socketsOf / socketsIn: switched-off ones aren't offered)
   if (Array.isArray(sockets)) {
     const seats = sockets.map((x) => [x.name, bodyOf(x.station)]).filter(([, b]) => b);
     const acts = [...new Set(seats.map(([, b]) => b.action))];
@@ -57,7 +57,7 @@ export function readOut(c, { name = null, heldBy = null, lookup = () => null, so
   return out;
 }
 
-/** One compact line: «name»: «description» — can …; … · state … (what look prints for a thing). */
+/** One compact line after the name (the caller prints that): «description» — can …; … — state … (what look prints for a thing). */
 export function readLine(r, { max = DESCRIPTION_LOOK_MAX } = {}) {
   if (!r) return '';
   const bits = [];

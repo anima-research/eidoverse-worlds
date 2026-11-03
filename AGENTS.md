@@ -348,7 +348,7 @@ The ones you'll reach for:
 | `description` | how it is described to anyone who reads rather than sees it (≤ 500); what it can do and its state are read out from its other components, so don't restate them. A visible nameplate is a child thing with `text {billboard: "yaw"}` |
 | `parent` | `{to}`: it rides another thing (to sit at a socket, parent it to the socket child) |
 | `pivot` | `{pos}`: where it turns and scales from |
-| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — a light ON anything: model + light = a lamp; `daytime: "full"` burns at noon too, `important` always casts |
+| `light` | `{kind: point\|spot, color, intensity, range, angle, inner, decay, daytime: dim\|full, important}` — a light ON anything: model + light = a lamp; `daytime: "full"` burns at noon too, `important` claims a slot first (more such lights than slots: the nearest cast) |
 | `motion` | `{type: pendulum\|spin\|orbit\|oscillate\|path, …}`: spin `degPerSec` or `period`; oscillate `axis`, `amp` (m), `period`, `phase?` (back and forth along its axis, a sine; up by default); orbit `radius`, `center?`, `period` or `degPerSec`, `face?`; path `points`, `speed` or `duration`, `loop?`; the authority stamps `t0` |
 | `openable` | `{open, locked?, angle?, axis?, slide?, time?, part?}`: it opens and closes when used (a door, a gate, a lid); it turns about its `pivot`, or slides; every client animates it |
 | `socket`, `station` | an attachment point is a child entity: `socket {name, part?, accepts?, radius?}` (its pose is its transform, local to its host), and `station {action, anim, anchor, exit?, leaveBy?, who?}` on the same child makes it a place a person can sit, ride, stand (below); `anim` is an open name of a pose or a clip (one the body doesn't know is its default; absent, picked from the action). The old map `sockets` is reserved: a write of it is lifted into socket children |
@@ -855,7 +855,7 @@ sim use):
 Water is its own component on `@world`, not a terrain key (`terrain.water`
 is refused): `set {id: "@world", component: "water", value: {level, color?,
 opacity?}}` is one water level for the world: every
-bit of ground below `level` m is under water (lakes in every low place).
+bit of ground below `level` m is under water (lakes in every low place) unless a pocket zone keeps it dry.
 Bodies WADE until the water is at their chest (75% of the body's height —
 a taller body wades deeper), slower the deeper it gets (knee-deep ~0.86 of
 the pace, waist-deep ~0.66, 0.5 by ~1.25 m); past that they float and SWIM

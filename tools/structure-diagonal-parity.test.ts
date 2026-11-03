@@ -24,7 +24,7 @@ for (const axis of [2, 3]) for (const aperture of [null, "door", "window", "arch
     expect(Math.min(...zs)).toBeGreaterThan(-6.3);
     expect(Math.max(...zs)).toBeLessThan(-3.7);
     const boxes = plan.boxes.filter(b => b.kind === "wall");
-    expect(boxes.length).toBe(9);
+    expect(boxes.length).toBe(1 + Math.max(8, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (g.wallT * 1.2))));   // shared/structure.js: steps ≤ 1.2 wallT (#287)
     for (const box of boxes) {
       const x = (box.x0 + box.x1) / 2, z = (box.z0 + box.z1) / 2;
       expect(axis === 2 ? (x - 8) - (z + 6) : (x - 8) + (z + 6)).toBeCloseTo(axis === 2 ? 0 : 2, 10);
@@ -44,3 +44,12 @@ for (const axis of [2, 3]) for (const aperture of [null, "door", "window", "arch
     }
   });
 }
+
+// a diagonal wall's stair-stepped boxes overlap at a big tile too (review of #260, #287): tile 10, wallT 0.15
+test("diagonal boxes at tile 10 overlap step to step, so a body cannot slip between", () => {
+  const plan = planStructure({ tile: 10, wallT: 0.15, levels: [{ tiles: [[0, 0]], walls: [[2, 0, 0]] }] });
+  const steps = plan.boxes.filter((b: any) => b.kind === "wall").sort((p: any, q: any) => p.x0 - q.x0);
+  expect(steps.length).toBeGreaterThan(1);
+  const gaps = steps.slice(1).filter((b: any, i: number) => b.x0 >= steps[i].x1 || Math.max(b.z0, steps[i].z0) >= Math.min(b.z1, steps[i].z1));
+  expect(gaps.length).toBe(0);
+});

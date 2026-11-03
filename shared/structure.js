@@ -609,14 +609,14 @@ function levelBoxes(level, g) {
   // axis-aligned boxes along the line. The collider entry carries ONE yaw
   // shared by every box of a building, so a genuinely rotated box would mean
   // changing that contract; stepping keeps the existing machinery and the
-  // steps (~18cm apart, boxes wider than that) are well under a 32cm body
-  // radius, so nothing can slip between them. Visually the wall is a true
+  // steps are at most 1.2 wallT apart and the boxes 1.6 wallT wide at any
+  // tile (review of #260, #287), so nothing can slip between them. Visually the wall is a true
   // mitred diagonal — this approximation is only what the body feels.
   for (const [k, e] of level.walls) {
     if (e.axis < 2) continue;
     const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
     const open = ['door', 'arch'].includes(level.apertures.get(k));
-    const N = 8, r = g.wallT * 0.8;
+    const r = g.wallT * 0.8, N = Math.max(8, Math.ceil(Math.hypot(ex - sx, ez - sz) / (g.wallT * 1.2)));
     for (let i = 0; i <= N; i++) {
       const t = i / N;
       const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
