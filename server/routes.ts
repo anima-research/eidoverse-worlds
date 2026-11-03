@@ -652,7 +652,7 @@ const ROUTES: Route[] = [
         const sum = file ? await summarizeGlb(file) : null;
         return j({ ...record(id, e),
           geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
-          note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim" });
+          note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim. The pose is the log's: a thing in flight reads at its last logged pose until its rest is logged" });   // bot review #260 109
       }
       const withBoxes = url.searchParams.get("boxes") !== "0";
       const out = [];
