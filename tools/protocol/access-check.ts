@@ -26,7 +26,8 @@
 //       only by the actor's id. Pinned: a role under a bare name is refused, and deleting one member's role leaves a co-owner
 //       an owner and the door closed
 //   A17 (review 10-17) a revoke takes effect: accepted, the member is removed now (4010), can't rejoin, and the log holds it
-//   B7, B14, B17 (anima-review[bot] on #260, 11-02): a torn door line, a sweep without custody, a world name's case — at their block
+//   B5, B7, B12, B14, B16, B17 (anima-review[bot] on #260, 11-02): address bans at the reads, a torn door line, a person's aid1
+//       token at the reads, a sweep without custody, /library-list's siblings, a world name's case — each at its block
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -526,6 +527,36 @@ const gonePid = await exitedPid();
     "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
     { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
   r.close(); back.close(); ann.close(); try { s4.proc.kill(); } catch {} await sleep(300); }
+// ---- B5, B12, B16 (anima-review[bot] on #260, 11-02): a server with a door key and an aid1 issuer; yard (A15's) is open ----
+//   B5  a guest's address ban holds at the reads: from the banned address /geom, /heightmap and /worlds answer as for no world
+//   B12 a person's aid1 token is no Bearer for the reads (it signs in at /auth); an agent's is
+//   B16 /library-list stays inside its directories: a sibling sharing the opt directory's name as a prefix lists nothing
+{ const pair = crypto.generateKeyPairSync("ed25519"), spki = pair.publicKey.export({ type: "spki", format: "der" });
+  const ISSUER = `ed25519:${spki.subarray(spki.length - 32).toString("base64url")}`;
+  const mint = (over) => { const now = Math.floor(Date.now() / 1000);
+    const seg = Buffer.from(JSON.stringify({ v: 1, iss: "id.test", sub: "agent:quill@home.test", kind: "agent", name: "Quill", aud: "eidoverse", scopes: ["worlds:join"], iat: now, exp: now + 600, jti: crypto.randomUUID(), ...over })).toString("base64url");
+    return `aid1.${seg}.${crypto.sign(null, Buffer.from(`aid1.${seg}`), pair.privateKey).toString("base64url")}`; };
+  const hashed = (ip) => crypto.createHash("sha256").update(`eidoverse-addr:${ip}`).digest("hex").slice(0, 24);
+  fs.writeFileSync(path.join(W, ".bans.json"), JSON.stringify({ [`addr:${hashed("203.0.113.9")}`]: { by: "op", ts: Date.now(), addr: hashed("203.0.113.9"), until: Date.now() + 3600_000, reason: "B5" } }));
+  const OPT = path.join(root, "opt");
+  fs.mkdirSync(path.join(OPT, "inner"), { recursive: true }); fs.writeFileSync(path.join(OPT, "inner", "a.txt"), "a");
+  fs.mkdirSync(path.join(root, "opt-sib"), { recursive: true }); fs.writeFileSync(path.join(root, "opt-sib", "secret.txt"), "s");
+  const s5 = await start({ JOIN_TOKEN: "jt-b", HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test" });
+  const get = (u, h = {}) => fetch(`http://127.0.0.1:${s5.port}${u}`, { headers: h });
+  const as = (ip) => ({ authorization: "Bearer jt-b", "x-real-ip": ip });   // the server's peer is loopback: a trusted proxy, so X-Real-IP stands
+  const st = async (u, h) => (await get(u, h)).status;
+  const onMap = async (h) => ((await (await get("/worlds", h)).json()).worlds ?? []).some((w) => w.name === "yard");
+  const banned = { geom: await st("/geom?world=yard", as("203.0.113.9")), hm: await (await get("/heightmap?world=yard&format=json", as("203.0.113.9"))).text(), map: await onMap(as("203.0.113.9")) };
+  const other = { geom: await st("/geom?world=yard", as("203.0.113.10")), map: await onMap(as("203.0.113.10")) };
+  ok(!s5.dead && banned.geom === 404 && /no such world/.test(banned.hm) && !banned.map && other.geom === 200 && other.map,
+    "B5 a guest's address ban holds at the reads: from the banned address /geom answers 404, /heightmap 'no such world', and /worlds lacks the world; from another address the same key reads it", { banned, other });
+  const human = mint({ kind: "human", sub: "human:test:hal", name: "Hal" }), agent = mint({});
+  const byHuman = await st("/worlds", { authorization: `Bearer ${human}` }), byAgent = await st("/worlds", { authorization: `Bearer ${agent}` }), byNone = await st("/worlds");
+  ok(byHuman === 401 && byAgent === 200 && byNone === 401, "B12 a person's aid1 token is no Bearer for the reads (401: it signs in at /auth); an agent's aid1 credential is (200); nothing is 401", { byHuman, byAgent, byNone });
+  const lib = async (dir) => (await (await get(`/library-list?dir=${encodeURIComponent(dir)}`)).json()).map((f) => f.path);
+  const inside = await lib("inner"), sibling = await lib("../opt-sib");
+  ok(inside.includes("inner/a.txt") && sibling.length === 0, "B16 /library-list lists inside its directory and nothing from a sibling whose name shares its prefix (../opt-sib)", { inside, sibling });
+  try { s5.proc.kill(); } catch {} fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- B7, B14, B17 (anima-review[bot] on #260, 11-02; pure, in a process of their own with its own WORLDS_DIR) ----
 //   B7  an unloaded world's door leaves out a torn last line (no newline), as the log's reader does
 //   B14 a timed grant that has ended in a world that can't log the end (no custody) still removes its holder at the sweep

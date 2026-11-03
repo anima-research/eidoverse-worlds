@@ -169,6 +169,13 @@ export function bearerCaller(req: Request): Who | null | undefined {
   const a = accountOf(tok);
   return a && "account" in a ? whoAccount(a.account) : null;
 }
+/** A request's hashed address (never kept raw), as a guest's ban names it: the upgrade and the HTTP reads hash alike. */
+export const hashedAddress = (req: Request, srv?: Parameters<typeof addressOf>[1]) =>
+  new Bun.CryptoHasher("sha256").update(`eidoverse-addr:${addressOf(req, srv)}`).digest("hex").slice(0, 24);
+/** Who a read is for: the caller, else a guest at their hashed address, so a guest's address ban holds at the reads (#260 bot 5). */
+export function httpVisitor(req: Request, srv?: Parameters<typeof addressOf>[1]): Who {
+  return httpCaller(req) ?? { account: null, addr: hashedAddress(req, srv) };
+}
 const whoAccount = (account: string): Who => ({ account, actorId: directoryFor(WORLDS_DIR).idOfSub(account) });
 
 /** A connection as the door sees it. */
