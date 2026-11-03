@@ -390,8 +390,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 { const X = world("t12"); const guest = directoryFor(W).resolve({ sub: null, name: "guest12" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
   X.g.hold(); send(t, "say", { text: "stalled" }); await tryUntil('"stalled" is held at the await', () => X.g.entered > 0, { ms: 3000, step: 10 });
   for (let i = 0; i < 300; i++) send(t, "say", { text: `q${i}` });   // writes: no arrival meter, so each one meets the queue
-  await new Promise((r) => setTimeout(r, 50));
-  const early = t.replies.filter((m) => m.reply?.refused?.code === "busy").length;
+  const early = t.replies.filter((m) => m.reply?.refused?.code === "busy").length;   // a refusal at arrival is sent before send() returns
   X.g.release(); await tryUntil("every request is answered", () => t.replies.length === 301, { ms: 5000, step: 10 });
   ok(early === 300 - 255 && t.replies.length === 301 && t.c.verbQueue === undefined,
     "T12 behind a stalled request, a connection's queue holds 256: the rest are refused busy at once, and after the stall all are answered and the queue drains", { early, n: t.replies.length, queue: !!t.c.verbQueue }); }
