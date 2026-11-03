@@ -28,7 +28,11 @@ export const pendingBans: Record<string, BanRec & { why: string }> = {};
 /** Why a ban bound by name alone is worth a look (review full-260 L11): the name was typed, so its wearer may not be that account. */
 export const BOUND_BY_NAME = "the name was typed, so a guest who wore it may have been someone else; global-unban <the name> lifts it";
 export const PENDING_WORDS = "pre-account ban: bind to a person (global-ban <the name> binds whoever wears it here) or lift (global-unban <the name>)";
+/** A ban or sanction file that couldn't be read at boot: kept as it was, never saved over (bot review #260 17; the ledger's rule). */
+const unreadable = new Set<string>();
+const keptAside = (f: string, what: string) => { if (!unreadable.has(f)) return false; console.log(`[mod] ${what} not saved: ${f} couldn't be read at boot and is kept as it was; fix or move it aside and restart`); return true; };
 export function saveGlobalBans() {
+  if (keptAside(BANS_FILE, "global bans")) return;
   try {
     const pending = Object.fromEntries(Object.entries(pendingBans).map(([k, { why: _w, ...b }]) => [k, b]));
     writePrivate(BANS_FILE, JSON.stringify({ ...pending, ...refusedBans, ...globalBans }, null, 2));
@@ -68,7 +72,7 @@ try {
     if (Object.entries(globalBans).some(([k, b]) => b.boundFrom && !(k in raw))) saveGlobalBans();   // the binding, kept
     if (Object.keys(globalBans).length) console.log(`[mod] ${Object.keys(globalBans).length} global ban(s) loaded`);
   }
-} catch (e) { console.log(`[mod] global ban restore failed (starting empty): ${e}`); }
+} catch (e) { unreadable.add(BANS_FILE); console.log(`[mod] WARNING global ban restore failed: ${e}. ${BANS_FILE} is kept as it was and not saved over; its bans aren't enforced until it is fixed and the server restarted`); }
 
 /** The operator's ban list in words (global-bans): the enforced bans, then the pre-account ones, listed and never enforced. */
 export function globalBansText(map: Record<string, BanRec> = globalBans, pending: Record<string, BanRec & { why: string }> = pendingBans): string {
@@ -119,6 +123,7 @@ export const ADDR_SANCTIONS_FILE = join(WORLDS_DIR, ".addr-sanctions.json");
 export const addrSanctions: Record<string, AddrSanction> = {};
 export const addrSanctionKey = (kind: string, world: string, addr: string) => `world:${world}:addr:${addr}:${kind}`;
 export function saveAddrSanctions(now = Date.now()) {
+  if (keptAside(ADDR_SANCTIONS_FILE, "address sanctions")) return;
   for (const [k, s] of Object.entries(addrSanctions)) if (!(s.until > now)) delete addrSanctions[k];
   try { writePrivate(ADDR_SANCTIONS_FILE, JSON.stringify(addrSanctions, null, 2)); }
   catch (e) { console.log(`[mod] address sanction save failed: ${e}`); }
@@ -128,7 +133,7 @@ try {
     const raw = JSON.parse(readFileSync(ADDR_SANCTIONS_FILE, "utf8")) as Record<string, AddrSanction>;
     for (const [k, s] of Object.entries(raw)) if (s && s.kind === "mute" && typeof s.addr === "string" && typeof s.world === "string" && typeof s.actor === "string" && s.until > Date.now()) addrSanctions[k] = { ...s, ids: Array.isArray(s.ids) ? s.ids : [] };
   }
-} catch (e) { console.log(`[mod] address sanction restore failed (starting empty): ${e}`); }
+} catch (e) { unreadable.add(ADDR_SANCTIONS_FILE); console.log(`[mod] WARNING address sanction restore failed: ${e}. ${ADDR_SANCTIONS_FILE} is kept as it was and not saved over; its sanctions aren't enforced until it is fixed and the server restarted`); }
 /** The address sanctions in force for a guest joining `world` from `addr`. */
 export function addrSanctionsFor(world: string, addr: string | null | undefined, now = Date.now()): AddrSanction[] {
   if (!addr) return [];

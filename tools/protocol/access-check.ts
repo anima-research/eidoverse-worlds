@@ -302,6 +302,17 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
   ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
     "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
+// ---- A13m (bot review #260 17): a damaged ban or sanction file is kept as it was: a later ban or mute never saves over it ----
+{ const modTs = new URL("../../server/moderation.ts", import.meta.url).href, D = fs.mkdtempSync(path.join(scratch("a13m"), "w-"));
+  const bans = path.join(D, ".bans.json"), sanc = path.join(D, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
+  fs.writeFileSync(bans, torn); fs.writeFileSync(sanc, torn);
+  const code = `const M = await import(${JSON.stringify(modTs)});
+    M.globalBans["acct:u-bbbbbbbbbbbbbbbbbbbb"] = { by: "op", ts: 2, account: "u-bbbbbbbbbbbbbbbbbbbb" }; M.saveGlobalBans();
+    M.fileAddrSanction({ kind: "mute", world: "w", addr: "h", actor: "u-cccccccccccccccccccc", by: "op", who: "g-1" });`;
+  const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const out = r.stdout.toString() + r.stderr.toString(), b = fs.readFileSync(bans, "utf8"), s = fs.readFileSync(sanc, "utf8");
+  ok(r.exitCode === 0 && /restore failed/.test(out) && b === torn && s === torn && /not saved/.test(out),
+    "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) }); }
 // ---- A13c (review of #260): a global ban made before accounts, on an aid1 agent's bare sub, still holds (pure) ----
 { const { restoreBans, findBan } = await import("../../server/moderation.ts");
   const was = { "old-agent": { by: "op", ts: 1, sub: "agent-7f3a" }, "old-person": { by: "op", ts: 1, sub: "discord|123" }, "namesake": { by: "op", ts: 1, name: "bob" } };
