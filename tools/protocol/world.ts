@@ -347,7 +347,6 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
   const did: string[] = [], stuck: string[] = [];
   const mv = (a: string, b: string) => { if (!fs.existsSync(a)) return; if (fs.existsSync(b)) { stuck.push(`${a} (${b} is already there)`); return; } fs.renameSync(a, b); did.push(`${path.relative(WORLDS_DIR, a).split(path.sep).join("/")} → ${path.relative(WORLDS_DIR, b).split(path.sep).join("/")}`); };
   mv(path.join(D, "log.jsonl"), path.join(D, ORIGINAL.log));
-  if (process.env.WORLD_TS_DIE_IN_RECOVERY === "1") process.exit(9);   // tests only: the recovery itself dies after its first rename (IP36)
   // the other renames are the swap's own list (its manifest, still in the temporary sibling or already moved in): the swap
   // recorded poses.json → poses.original.json whether or not the translation wrote a new poses.json (bot review #260 432)
   const mfAt = [...(temps[0] ? [temps[0]] : []), D].map((d) => path.join(d, MANIFEST)).find((f) => fs.existsSync(f));
@@ -358,6 +357,7 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
   else if (temps.length || at.oldLog) { mv(path.join(D, "snapshot.json"), path.join(D, ORIGINAL.snapshot));
     if (fs.existsSync(path.join(D, "poses.json")) && !fs.existsSync(path.join(D, ORIGINAL.poses)) && (!temps.length || fs.existsSync(path.join(temps[0], "poses.json")))) mv(path.join(D, "poses.json"), path.join(D, ORIGINAL.poses)); }
   for (const T of temps) {
+    if (process.env.WORLD_TS_DIE_IN_RECOVERY === "1") process.exit(9);   // tests only: the recovery dies after the first rename, before the moves (IP36)
     if (fs.existsSync(path.join(T, IDENTITIES))) { const n = putIdentities(JSON.parse(fs.readFileSync(path.join(T, IDENTITIES), "utf8"))); fs.rmSync(path.join(T, IDENTITIES)); if (n) did.push(`${n} identit${n === 1 ? "y" : "ies"} added to the directory`); }
     for (const f of fs.readdirSync(T)) if (!TEMP_ONLY.has(f)) mv(path.join(T, f), path.join(D, f));
     fs.rmSync(path.join(T, SOURCE), { force: true });   // last: a recovery interrupted before this still checks the old log next time (bot review #260 139)
