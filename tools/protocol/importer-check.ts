@@ -372,6 +372,15 @@ row("IM-W5", () => {
     "IM-W5 a scaled host's water and air boxes are main's size in metres: the host keeps its scale, its children's zones are read through it (main: size × the host's scale), no correction needed", o);
 });
 
+row("IM-W6", () => {   // bot #260 103: main's water box stayed world-axis-aligned on a turned host (watervolumes.js: q discarded)
+  const L = seqd([BASIC[0], { actor: "Ann", verb: "spawn", args: { id: "barge", lib: "b.glb", pos: [0, -10, 0], yaw: Math.PI / 2 } },
+    { actor: "Ann", verb: "comp", args: { id: "barge", type: "water", data: { center: [0, 0, 0], size: [20, 2, 4] } } }]);
+  const T = TV1.translate(L).final.translated, st = { entities: Object.fromEntries(Object.entries(T).map(([id, c]) => [id, { c }])) }, z = ZN.zonesOf(st);
+  const at = (p: number[]) => ZN.mediumOf(p, z).body, w = TV1.waterChildId("barge");
+  const o = { alongX: at([8, -10, 0]), alongZ: at([0, -10, 8]) };
+  ok(o.alongX === w && o.alongZ === null, "IM-W6 a yawed host's water is main's world-aligned box: 20 m along x stays wet at x 8, dry at z 8", o);
+});
+
 // ---- IM-I36, IM-I37, IM-I13, IM-I3: values read as v1 read them ----
 const finalOf = (L: any[]) => TV1.translate(seqd(L)).final.translated;
 row("IM-I36", () => {

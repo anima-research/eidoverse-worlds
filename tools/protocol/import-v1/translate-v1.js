@@ -473,8 +473,11 @@ export function volumePartsOf(host, comp, c, { pin = false } = {}) {
   const w = comp?.water;
   if (w && typeof w === "object" && !Array.isArray(w)) {
     const m = waterOfOld(w), a = m.area ? { "physics-area": m.area } : pin ? { "physics-area": { ...SPEED_PIN, modes: ["swim"] } } : {};
-    if (c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
-    else children.push([waterChildId(host), { transform: ID_POSE(m.center), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
+    // main kept a water box axis-aligned whatever its host's turn: a turned host's water is a child turned back by it (bot #260 103;
+    // the host's own q: a host under a turned parent still turns with that parent)
+    const hq = Array.isArray(c.transform?.q) ? c.transform.q : [0, 0, 0, 1], turned = Math.abs(hq[0]) + Math.abs(hq[1]) + Math.abs(hq[2]) > 1e-12;
+    if (!turned && c.model === undefined && c.light === undefined && m.center.every((x) => x === 0)) Object.assign(own, { zone: m.zone, water: m.water, ...a });
+    else children.push([waterChildId(host), { transform: ID_POSE(m.center, turned ? qNorm([-hq[0], -hq[1], -hq[2], hq[3]]) : undefined), parent: { to: host }, label: "water", zone: m.zone, water: m.water, ...a }]);
   }
   const boxes = Array.isArray(comp?.air?.boxes) ? comp.air.boxes : [];
   boxes.forEach((b, i) => { if (!b || typeof b !== "object" || Array.isArray(b)) return;
