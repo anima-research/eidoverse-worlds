@@ -48,7 +48,7 @@
   "bare-wait": 7
  },
  "tools/protocol/access-check.ts": {
-  "bare-wait": 11
+  "bare-wait": 7
  },
  "tools/protocol/agentshove-check.ts": {
   "bare-wait": 39

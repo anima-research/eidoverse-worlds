@@ -185,8 +185,7 @@ const geomAs = async (port, world, bearer) => (await fetch(`http://127.0.0.1:${p
 const fenUntil = Date.now() + 2500;
 { const r = await own.req("set", { id: "@world", component: `roles:${ids.Fen}`, value: { role: "member", until: fenUntil } }); ok(r.ok, "(A14 setup) Fen holds a timed grant", r.refused); }
 own.close();
-try { srv.proc.kill(); } catch {}
-await sleep(300);
+try { srv.proc.kill(); await srv.proc.exited; } catch {}
 
 // ---- A3 (idle): after a restart, nobody in it, the invite-only world's door is read from its log without loading it ----
 // A10's sessions (restored at boot): Rowan's account as a cookie session, once from a native pairing made before
@@ -236,7 +235,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     ok(gN === 200 && gF === 200 && mapN.some((x) => x.name === "keep") && mapF.some((x) => x.name === "keep") && aN.you === "enter" && aF.you === "enter",
       "A10 an old native session (nativeWorld water) reads another world as its account does (/geom 200, on /worlds, /access enter): no per-world fence",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
-  try { s2.proc.kill(); } catch {} }
+  try { s2.proc.kill(); await s2.proc.exited; } catch {} }
 { // A11 (review of PR #260, server.ts:742): a server operator (SERVER_OPERATORS) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
@@ -294,7 +293,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A12b a global ban by u- identity binds the absent person's account (join refused), days sets until (and findBan lets a lapsed one go), unban by identity lifts it",
     { rec: recI, said: fen.msgs.slice(k2).map((m) => m.text ?? m.error), refused: jm3.errors, again: jm4.errors, lapsed: !!lapsed, held: !!held });
   moss3.close(); moss4.close();
-  fen.close(); row.close(); try { s3.proc.kill(); } catch {} await sleep(300); }
+  fen.close(); row.close(); try { s3.proc.kill(); await s3.proc.exited; } catch {} }
 // ---- A13 (security review 10-18 H2): the client's address, from a trusted proxy only (pure) ----
 { const { clientAddress } = await import("../../server/peer.ts");
   const hdr = (h) => ({ headers: { get: (k) => h[k.toLowerCase()] ?? null } });
@@ -373,7 +372,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
     { joins: [jb.errors, jw.errors], theirs, seen });
-  body.close(); watch.close(); op.close(); try { s.proc.kill(); } catch {} await sleep(300); fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
+  body.close(); watch.close(); op.close(); try { s.proc.kill(); await s.proc.exited; } catch {} fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
 // ---- A13d (review of #260, server I5): two worlds opening the same keys file keep each other's keys ----
 { const { custodyAt } = await import("../../server/custody.ts");
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
@@ -562,7 +561,7 @@ const gonePid = await exitedPid();
   ok(!!jr.snapshot && del.ok && out && r.closed === 4010 && acc.body?.you === "none" && !jb.snapshot && back.closed === 4010 && logged,
     "A17 a revoke takes effect: deleting a present member's role is accepted, removes them now (4010), /access says none, the rejoin is refused, and the log holds the delete",
     { joined: !!jr.snapshot, del: del.refused, closed: r.closed, acc: acc.body, back: [jb.errors, back.closed], logged });
-  r.close(); back.close(); ann.close(); try { s4.proc.kill(); } catch {} await sleep(300); }
+  r.close(); back.close(); ann.close(); try { s4.proc.kill(); await s4.proc.exited; } catch {} }
 // ---- B5, B12, B16 (anima-review[bot] on #260, 11-02): a server with a door key and an aid1 issuer; yard (A15's) is open ----
 //   B5  a guest's address ban holds at the reads: from the banned address /geom, /heightmap and /worlds answer as for no world
 //   B12 a person's aid1 token is no Bearer for the reads (it signs in at /auth); an agent's is
