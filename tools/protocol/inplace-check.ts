@@ -30,6 +30,8 @@
 //   IP16 finishing an interrupted swap refuses when the old log changed since the translation read it
 //   IP17 a failed in-place translation adds no identity to the shared directory; the clean run adds them once
 //   IP18 the recovery of an interrupted swap writes the identities the interrupted run planned
+//   IP34–IP37 (bot review #260 138/435/139/432) an interrupted rollback finishes; a swap failing after its identities forgets them;
+//        a recovery dying after its first rename keeps the source record; the recovery renames poses.json as the swap recorded
 //   IP11 a snapshot.json the oracle can't compare (a fold of part of the log) doesn't block the translation: it says,
 //        in its output, that the snapshot was NOT compared and why, and keeps it as snapshot.original.json
 //   —— review of PR #260 (Mica) item 6: the approval is bound to the dry-run report's hash; rollback is tested ——
@@ -570,6 +572,32 @@ const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.
   const r = tool(["translate", name, "--no-founder-key"], { TRUST_NAMES: "" }); const ids = JSON.parse(fs.readFileSync(dirf, "utf8")).ids ?? {};
   ok(died.code !== 0 && actors.some((a) => !mid[a]) && r.code === 0 && actors.every((a) => ids[a]) && /identit/.test(r.out),
     "IP18 an interrupted swap's identities aren't in the directory until the recovery finishes it, which adds them", { died: died.code, missingMid: actors.filter((a) => !mid[a]).length, code: r.code, out: r.out.slice(-300) }); }
+// ---- bot review #260 435/138/139/432: the swap, its recovery and the rollback each decide from the manifest, idempotently ----
+// IP35 (435) a swap that fails after its identities went in (injected step 7: the marker's removal) forgets them again
+{ const name = "nameless4"; oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
+  const r = xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: "7" });
+  ok(r.code !== 0 && /\(injected\) step 7 failed/.test(r.out) && fs.readFileSync(dirf, "utf8") === before && !temps().some((t) => t.includes(name)),
+    "IP35 a swap that fails after the identities were written forgets them: the shared directory is as it was", { code: r.code, dirSame: fs.readFileSync(dirf, "utf8") === before, out: r.out.slice(-300) }); }
+// IP34 (138) a rollback interrupted after it put the log back (log.original.jsonl → log.jsonl, the manifest still there) finishes on a re-run
+{ const name = "halfback"; const d = oldWorld(name); const fp = fingerprint(d);
+  const t = xlate([name]); fs.renameSync(path.join(d, "log.original.jsonl"), path.join(d, "log.jsonl"));   // what the interrupted rollback had done
+  const r = tool(["rollback", name]); const after = fingerprint(d);
+  ok(t.code === 0 && r.code === 0 && /already back/.test(r.out) && same(after, fp) && !fs.existsSync(path.join(d, MANIFEST)),
+    "IP34 a rollback interrupted after the log went back is finished by the next: nothing is reported gone, every file is as before", { t: t.code, code: r.code, out: r.out.slice(-400), keys: Object.keys(after) }); }
+// IP36 (139) a recovery that dies after its first rename (WORLD_TS_DIE_IN_RECOVERY) still holds the source record: a write to the old log since is refused next time
+{ const name = "recov"; const d = oldWorld(name);
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" }); const half = tool(["translate", name, "--no-founder-key"], { WORLD_TS_DIE_IN_RECOVERY: "1" });
+  const T = temps().filter((t) => t.includes(name)); const src = T.length === 1 && fs.existsSync(path.join(W, T[0], ".source.json"));
+  fs.appendFileSync(path.join(d, "log.original.jsonl"), '{"seq":999,"ts":1,"actor":"late","verb":"say","args":{"text":"an old server, still writing"}}\n');
+  const r = tool(["translate", name, "--no-founder-key"]);
+  ok(died.code !== 0 && half.code !== 0 && src && r.code !== 0 && /interrupted/.test(r.out) && /Nothing was moved/.test(r.out) && temps().some((t) => t.includes(name)),
+    "IP36 a recovery that died after its first rename kept the source record; the next run sees the old log was written to and moves nothing", { died: died.code, half: half.code, src, code: r.code, out: r.out.slice(-400) }); }
+// IP37 (432) an old world whose poses.json names nobody the log knows (the translation writes none): the recovery still renames it as the swap recorded, and rollback works
+{ const name = "noposes"; const d = oldWorld(name); fs.writeFileSync(path.join(d, "poses.json"), JSON.stringify({ Zed: { p: [1, 0, 1], yaw: 0 } })); const fp = fingerprint(d);
+  const died = xlate([name], { WORLD_TS_DIE_AT_STEP: "1" }); const r = tool(["translate", name, "--no-founder-key"]); const mid = fingerprint(d);
+  const back = tool(["rollback", name]); const after = fingerprint(d);
+  ok(died.code !== 0 && r.code === 0 && !!mid["poses.original.json"] && !mid["poses.json"] && back.code === 0 && same(after, fp),
+    "IP37 the recovery renames the old poses.json as the swap recorded even when the translation wrote no new one; the rollback then puts everything back", { died: died.code, code: r.code, mid: Object.keys(mid), back: back.code, out: back.out.slice(-300) }); }
 // IP8b (bot review 21) the two-name form, stopped once its world landed: the next run writes the identities it planned
 { const name = "nameless3", dest = "nameless3-new"; oldWorld(name); const D = path.join(W, dest);
   const died = xlate([name, dest], { TRUST_NAMES: "", WORLD_TS_DIE_BEFORE_IDENTITIES: "1" }), landed = isWorldDir(D);
