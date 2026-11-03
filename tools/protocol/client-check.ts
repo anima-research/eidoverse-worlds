@@ -410,7 +410,8 @@ try {
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at?.[0]}, clientY: ${at?.[1]} })), true))`);
     check("F1 a press on the pebble selects it", await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`));
     const move = (m: number[]) => evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${m?.[0]}, clientY: ${m?.[1]} })), true)`);
-    await move(m0); await sleep(400);
+    const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
+    await move(m0); await waitFor(`globalThis.__buildDrag?.()?.armed === true`); await frames(2);   // armed, and a frame has applied it (not a fixed 400 ms)
     const p0 = (await geo(0, 0)).P;
     await move(m1);   // the pebble's move, not a fixed 400 ms (macOS CI 10-29 read dp 0 at 400); a miss is F2's evidence
     const p1 = (await tryUntil("the pebble moved", async () => { const P = (await geo(0, 0)).P; return P && Math.hypot(P[0] - p0[0], P[2] - p0[2]) > 0.01 ? P : null; }, { ms: 5000 })) ?? (await geo(0, 0)).P;
@@ -421,9 +422,10 @@ try {
     n0 = myActs().length;
     await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${m1?.[0]}, clientY: ${m1?.[1]} })), true)`);
     check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === IDS.of("pebble") && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
-    await sleep(800);
+    const setT = disk().entities[IDS.of("pebble")]?.c.transform;   // the echo: the page's replica holds the authority's transform, then a frame draws it
+    const echoed = await waitFor(`import('/lib/world.js').then((m) => JSON.stringify(m.bagOf('pebble')?.transform) === ${JSON.stringify(JSON.stringify(setT ?? null))})`); await frames(2);
     const pAfter = (await geo(0, 0)).P;
-    check("F5 …and once the authority's echo is drawn, the pebble is where the drag left it", Math.hypot(...d(pAfter, p1)) < 0.02, { pAfter, p1 });
+    check("F5 …and once the authority's echo is drawn, the pebble is where the drag left it", echoed && Math.hypot(...d(pAfter, p1)) < 0.02, { echoed, pAfter, p1 });
     // a mesh drag of a thing I locked asks too (the old client stopped it before the authority was asked)
     check("(setup) I lock the pebble", (await page(`return (await (await import('/lib/editwrites.js')).lock('pebble', true)).ok;`)) === true);
     n0 = myActs().length;
@@ -431,7 +433,7 @@ try {
     const g2 = (await findPress())?.xy ?? at;
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${g2?.[0]}, clientY: ${g2?.[1]} })), true))`);
     await move([g2?.[0] + 10, g2?.[1] + 8]);
-    await sleep(400);
+    await waitFor(`globalThis.__buildDrag?.()?.armed === true`); await frames(2);   // the drag has started, and moved the pebble, before the release
     await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${g2?.[0] + 10}, clientY: ${g2?.[1] + 8} })), true)`);
     check("F6 a mesh drag of my locked pebble asks 'Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
     await dlgClick("Cancel");
@@ -537,6 +539,7 @@ try {
     c.object.quaternion.setFromAxisAngle({ x: 0, y: 1, z: 0, isVector3: true, clone() { return this; } }, Math.PI / 2); c.object.updateMatrixWorld(true);
     c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; })()`);
   check("PV2 a quarter turn about the pivot is ONE act", await waitDisk(() => myActs().length === nPv + 1), myActs().slice(nPv).map((a) => a.e.verb));
+  await waitDisk(() => { const p = disk().entities[IDS.of("pv")]?.c.transform?.pos; return !!p && (Math.abs(p[0] - 10) > 1e-3 || Math.abs(p[2] - 10) > 1e-3); });   // the request entry lands before the change (as D)
   const pvT = disk().entities[IDS.of("pv")]?.c.transform;
   check("PV3 …the crate swung round the pivot: its origin went from (10, 0, 10) to (11, 0, 11)", pvT && Math.abs(pvT.pos[0] - 11) < 1e-3 && Math.abs(pvT.pos[2] - 11) < 1e-3, pvT);
   check("PV4 …and the pivot itself stayed where it was (11, 0, 10)", await waitFor(`(() => { const g = __gizmo(); return Math.abs(g.proxyPos[0] - 11) < 1e-3 && Math.abs(g.proxyPos[2] - 10) < 1e-3; })()`), await evalJson(`__gizmo().proxyPos`));
